@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { WorktreeFormModal } from './WorktreeFormModal';
 
@@ -68,6 +68,45 @@ function openFor(remoteId: string | undefined) {
 }
 
 describe('WorktreeFormModal machine ownership', () => {
+  it('uses the shared modal, header, fields and action controls', async () => {
+    openFor('B');
+    const dialog = screen.getByRole('dialog', { name: 'New worktree session' });
+    expect(dialog).toHaveClass('oc-modal');
+    expect(within(dialog).getByTestId('modal-header')).toBeInTheDocument();
+    for (const button of within(dialog).getAllByRole('button')) expect(button).toHaveClass('oc-button');
+    for (const input of within(dialog).getAllByRole('textbox')) expect(input).toHaveClass('oc-field');
+    expect(screen.getByLabelText('Project directory')).toHaveAttribute('readonly');
+    expect(screen.getByRole('button', { name: 'Create & launch' })).toHaveClass('oc-button--accent');
+    await waitFor(() => expect(screen.getByLabelText('Base ref')).toHaveValue('main'));
+  });
+
+  it('blocks all dismissal actions and edits while creation is pending', async () => {
+    let reject!: (error: unknown) => void;
+    wt.createAndLaunch.mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
+    openFor('B');
+    await waitFor(() => expect(screen.getByLabelText('Base ref')).toHaveValue('main'));
+    fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'feature/settings' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create & launch' }));
+    expect(screen.getByLabelText('Branch')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Close worktree session dialog' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(uiState.closeWorktreeForm).not.toHaveBeenCalled();
+    await act(async () => { reject(new Error('Creation failed')); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Creation failed');
+    expect(screen.getByLabelText('Branch')).toBeEnabled();
+  });
+
+  it('keeps base-ref validation when creating a new branch', async () => {
+    openFor('B');
+    await waitFor(() => expect(screen.getByLabelText('Base ref')).toHaveValue('main'));
+    fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'feature/settings' } });
+    fireEvent.change(screen.getByLabelText('Base ref'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create & launch' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Base ref is required');
+    expect(wt.createAndLaunch).not.toHaveBeenCalled();
+  });
+
   it('creates on the named remote and opens the session there', async () => {
     wt.createAndLaunch.mockResolvedValue({
       sessionId: 'ses_b', worktreePath: '/.worktrees/repo/x', branch: 'x',

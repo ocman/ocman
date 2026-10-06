@@ -136,8 +136,8 @@ test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) 
   await openPaletteStore(page);
   await page.fill('.oc-cmd-input', '>wt');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.oc-wt-modal')).toBeVisible();
-  await expect(page.locator('.oc-wt-modal', { hasText: 'New worktree session' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'New worktree session', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New worktree session', exact: true })).toBeVisible();
 });
 
 test('"> " prefix shows only command items (no session status indicators)', async ({

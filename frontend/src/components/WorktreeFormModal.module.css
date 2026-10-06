@@ -1,0 +1,8 @@
+.form { display: grid; gap: 16px; }
+.body { display: grid; gap: 12px; }
+.field { display: grid; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.readOnly { color: var(--text-dim); }
+.hint { font-size: 12px; color: var(--text-dim); }
+.warning { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border)); background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); white-space: pre-wrap; }
+.progress { font-size: 13px; color: var(--text-dim); }
+.message { white-space: pre-wrap; overflow-wrap: anywhere; }
