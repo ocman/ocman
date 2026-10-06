@@ -30,14 +30,19 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
   useEffect(() => {
     const reset = () => { setResolved(null); setGeneration((g) => g + 1); };
     const refresh = (event: Event) => {
-      // Scoped hints update CI through usePRChecks without re-resolving cards.
-      if ((event as CustomEvent<string[]>).detail) return;
+      const repositories = (event as CustomEvent<string[]>).detail;
+      if (repositories && !resolved?.previews.some((preview) => {
+        if (preview.kind !== 'pr' || !preview.url) return false;
+        try {
+          return repositories.includes(`${new URL(preview.url).host}/${preview.id.split('#')[0]}`);
+        } catch { return false; }
+      })) return;
       refreshPending.current = true; reset();
     };
     window.addEventListener(PREVIEW_AUTH_EVENT, reset);
     window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
     return () => { window.removeEventListener(PREVIEW_AUTH_EVENT, reset); window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh); };
-  }, []);
+  }, [resolved]);
 
   useEffect(() => {
     const abort = new AbortController();
