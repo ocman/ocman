@@ -61,6 +61,39 @@ func TestDiscoveryWaiterCanCancelWithoutCancelingLeader(t *testing.T) {
 	}
 }
 
+func TestDiscoveryCanceledLeaderDoesNotDisconnectWaiter(t *testing.T) {
+	resetPortCacheForTests()
+	t.Cleanup(resetPortCacheForTests)
+	started, release := make(chan struct{}), make(chan struct{})
+	fn := func(ctx context.Context) map[string]string {
+		close(started)
+		<-release
+		if ctx.Err() != nil {
+			return nil
+		}
+		return map[string]string{"/repo": "1001"}
+	}
+	previous := discoverPortsImpl.Swap(&fn)
+	defer discoverPortsImpl.Store(previous)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	leader := make(chan map[string]string, 1)
+	go func() { leader <- DiscoverOpenCodePortsContext(ctx) }()
+	<-started
+	waiterCtx := &signalingContext{Context: context.Background(), waiting: make(chan struct{})}
+	waiter := make(chan map[string]string, 1)
+	go func() { waiter <- DiscoverOpenCodePortsContext(waiterCtx) }()
+	<-waiterCtx.waiting
+	cancel()
+	if ports := <-leader; len(ports) != 0 {
+		t.Error(ports)
+	}
+	close(release)
+	if ports := <-waiter; ports["/repo"] != "1001" {
+		t.Fatalf("canceled leader disconnected an uncanceled waiter: %v", ports)
+	}
+}
+
 func TestCanceledDiscoveryDoesNotPoisonCache(t *testing.T) {
 	resetPortCacheForTests()
 	t.Cleanup(resetPortCacheForTests)

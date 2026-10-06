@@ -83,6 +83,10 @@ func pidCwdContext(ctx context.Context, pid string) (string, bool) {
 
 var lsofWarnOnce sync.Once
 
+func discoverOpenCodePorts() map[string]string {
+	return DiscoverOpenCodePortsContext(context.Background())
+}
+
 func discoverOpenCodeServersUncached() []openCodeServer {
 	return discoverOpenCodeServersUncachedContext(context.Background())
 }

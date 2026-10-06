@@ -147,14 +147,8 @@ func forgetSessionsForPort(port string) {
 	})
 }
 
-// discoverOpenCodePorts returns a map of directory -> port for all running
-// OpenCode instances. Results are cached for portCacheTTL.
-func discoverOpenCodePorts() map[string]string {
-	return DiscoverOpenCodePortsContext(context.Background())
-}
-
-// DiscoverOpenCodePortsContext cancels both cold-cache waits and the underlying
-// discovery subprocesses. A canceled scan is never cached as an empty result.
+// DiscoverOpenCodePortsContext lets each caller cancel its own wait. Shared
+// scans have an independent ten-second deadline; timed-out scans are not cached.
 func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 	if ctx.Err() != nil {
 		return nil
@@ -165,11 +159,13 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 
 	const flightKey = "discoverOpenCodePorts"
 	result := portFlight.DoChan(flightKey, func() (interface{}, error) {
+		scanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		if cached, ok := readCachedPorts(); ok {
 			return cached, nil
 		}
-		result := (*discoverPortsImpl.Load())(ctx)
-		if err := ctx.Err(); err != nil {
+		result := (*discoverPortsImpl.Load())(scanCtx)
+		if err := scanCtx.Err(); err != nil {
 			return nil, err
 		}
 		portCache.mu.Lock()
