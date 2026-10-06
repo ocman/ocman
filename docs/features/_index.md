@@ -63,6 +63,13 @@ in a sidebar pane. Expand a row to read the body, then launch a session in
 the project, or check the PR branch out into a fresh worktree. The prompt
 comes from a template you control in **Settings**.
 
+Each PR shows its CI status as soon as its row is visible. A running build is
+re-checked every 15 seconds while the row stays on screen. Once every check
+has finished, the result is remembered for that commit (also across reloads)
+and not fetched again. If CI is re-run on the same commit, press the pane's
+refresh button: it forgets the remembered results and checks every visible PR
+again.
+
 ## Guides
 
 {{< cards >}}

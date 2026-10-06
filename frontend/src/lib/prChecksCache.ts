@@ -13,10 +13,14 @@ const isFinalCIState = (state: CIState) => state === 'success' || state === 'fai
 
 /**
  * True once every check has finished. The rolled-up state alone is not
- * enough: it reports failure while other checks are still running.
+ * enough: it reports failure while other checks are still running, and a
+ * rate-limited response may hold only some of the checks.
  */
 export const isSettled = (checks: PRChecks) =>
-  checks.checks.length > 0 && isFinalCIState(checks.state) && checks.checks.every((c) => isFinalCIState(c.state));
+  !checks.rateLimit?.limited &&
+  checks.checks.length > 0 &&
+  isFinalCIState(checks.state) &&
+  checks.checks.every((c) => isFinalCIState(c.state));
 
 export const prChecksCacheKey = (host: string, repo: string, sha: string) => `${host}/${repo}@${sha}`;
 

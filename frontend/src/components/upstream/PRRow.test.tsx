@@ -245,6 +245,22 @@ describe('PRRow CI build-status indicator', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps polling after a rate-limited partial success', async () => {
+    vi.useFakeTimers();
+    const limited = { ...success, rateLimit: { limited: true } };
+    const complete = { state: 'failure' as const, checks: [{ name: 'build', state: 'success' as const }, { name: 'e2e', state: 'failure' as const }] };
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValueOnce(limited).mockResolvedValueOnce(complete);
+    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await act(async () => {});
+    expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))).toBeUndefined();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-failure');
+    expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))?.state).toBe('failure');
+  });
+
   it('does not share a cached status between repositories with the same SHA', async () => {
     const failed = { state: 'failure' as const, checks: [{ name: 'build', state: 'failure' as const }] };
     const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValueOnce(success).mockResolvedValueOnce(failed);

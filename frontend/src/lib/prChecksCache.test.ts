@@ -19,6 +19,7 @@ describe('prChecksCache', () => {
     ['failure while another check runs', { state: 'failure', checks: [{ name: 'a', state: 'failure' }, { name: 'b', state: 'pending' }] }, false],
     ['pending', { state: 'pending', checks: [{ name: 'a', state: 'pending' }] }, false],
     ['no checks yet', { state: 'unknown', checks: [] }, false],
+    ['rate-limited partial success', { ...ok, rateLimit: { limited: true } }, false],
   ])('isSettled: %s', (_name, checks, want) => {
     expect(isSettled(checks)).toBe(want);
   });

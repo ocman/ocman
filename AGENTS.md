@@ -199,7 +199,11 @@ default action launches a new OpenCode session in the project
 directory; the menu offers "new worktree" instead, which checks out
 the PR's source branch into a fresh worktree (or fetches the PR head
 ref into `ocman/pr-<n>` for cross-fork PRs after explicit
-confirmation). The prompt sent to the new session is rendered from a
+confirmation). A PR row fetches its CI checks once it is visible and polls
+every 15s until every check has finished (a rate-limited response never
+counts); the settled result is cached in localStorage by `host/repo@sha`
+(newest 1000, `frontend/src/lib/prChecksCache.ts`) and the pane's refresh
+button clears it. The prompt sent to the new session is rendered from a
 user-customizable template under Settings → "PR & Issue templates",
 persisted in the `setting` table of `state.db` (migration v12). See
 `spec/pr-issue-sidebar/` for the full spec.
