@@ -166,10 +166,15 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	var pendingGraph bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, epicID).Scan(&pendingGraph); err != nil {
+		return true, err
+	}
 	// Optional work that never runs must not leave a mandatory PR for an unchanged project.
+	// Pending removals cannot retire Delivery or release another Epic's merge gate.
 	for _, issue := range issues {
 		step := steps[issue.ID]
-		if step == nil || (issue.Kind != "task" && issue.Kind != "delivery") || (step.Kind != "verification" && step.Kind != "delivery") || projects[issue.Project] || issue.Status == "in_progress" {
+		if pendingGraph || step == nil || (issue.Kind != "task" && issue.Kind != "delivery") || (step.Kind != "verification" && step.Kind != "delivery") || projects[issue.Project] || issue.Status == "in_progress" {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = 'Project has no participating work' WHERE id = ?`, issue.ID); err != nil {

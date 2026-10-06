@@ -17,10 +17,16 @@ import (
 // approval in the mutation transaction. Reuse the plan gate and its human UI.
 func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string, baseIssues []model.NativeIssue) error {
 	var gateID, project, rationale string
-	if err := tx.QueryRowContext(ctx, `SELECT id, project_path FROM factory_issue WHERE epic_id = ? AND kind = 'gate' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id) ORDER BY id LIMIT 1`, epicID).Scan(&gateID, &project); err != nil {
+	err := tx.QueryRowContext(ctx, `SELECT i.id, i.project_path FROM factory_plan_gate g JOIN factory_issue i ON i.id = g.issue_id WHERE g.epic_id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)`, epicID).Scan(&gateID, &project)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Hand-built legacy work may have no proposal yet. Its root Formula's
+		// materialization dependency identifies approval, never runtime gates.
+		err = tx.QueryRowContext(ctx, `SELECT i.id, i.project_path FROM factory_issue i JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id JOIN factory_mol_formula f ON f.mol_id = h.parent_issue_id WHERE i.epic_id = ? AND i.kind = 'gate' AND NOT EXISTS (SELECT 1 FROM factory_issue_hierarchy WHERE child_issue_id = f.mol_id) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id) AND EXISTS (SELECT 1 FROM factory_issue_dependency d JOIN factory_issue m ON m.id = d.issue_id WHERE d.depends_on_issue_id = i.id AND m.kind = 'materialization' AND m.epic_id = i.epic_id)`, epicID).Scan(&gateID, &project)
+	}
+	if err != nil {
 		return err
 	}
-	err := tx.QueryRowContext(ctx, `SELECT rationale_markdown FROM factory_proposal_revision WHERE epic_id = ? ORDER BY revision DESC LIMIT 1`, epicID).Scan(&rationale)
+	err = tx.QueryRowContext(ctx, `SELECT rationale_markdown FROM factory_proposal_revision WHERE epic_id = ? ORDER BY revision DESC LIMIT 1`, epicID).Scan(&rationale)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}

@@ -148,6 +148,10 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	if err != nil || applied.Revision == 0 {
 		t.Fatalf("apply scope Plan = %#v, %v", applied, err)
 	}
+	storedProposal, err := db.GetFactoryProposalRevision(ctx, epic.ID, applied.Revision)
+	if err != nil || storedProposal != applied {
+		t.Fatalf("scope submission differs from stored revision: Mol=%s/%s, createdAt=%d/%d, %v", applied.MolID, storedProposal.MolID, applied.CreatedAt, storedProposal.CreatedAt, err)
+	}
 	if archived, err := db.IsSessionArchived(ctx, "opencode", "scope-plan"); err != nil || !archived {
 		t.Fatalf("scope plan session archived = %v, %v", archived, err)
 	}

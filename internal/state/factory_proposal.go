@@ -219,10 +219,7 @@ func (d *DB) ApplyFactoryScopePlan(ctx context.Context, proposal model.NativePro
 	if err := reopenFactoryGraphApprovalTx(ctx, tx, proposal.EpicID, baseIssues); err != nil {
 		return model.NativeProposalRevision{}, err
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT proposal_revision, proposal_hash FROM factory_plan_gate WHERE epic_id = ?`, proposal.EpicID).Scan(&proposal.Revision, &proposal.ContentHash); err != nil {
-		return model.NativeProposalRevision{}, err
-	}
-	if err := tx.QueryRowContext(ctx, `SELECT manifest_json FROM factory_proposal_revision WHERE epic_id = ? AND revision = ?`, proposal.EpicID, proposal.Revision).Scan(&proposal.ManifestJSON); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT p.epic_id, p.mol_id, p.project_path, p.revision, p.manifest_json, p.rationale_markdown, p.content_hash, p.created_at FROM factory_proposal_revision p JOIN factory_plan_gate g ON g.epic_id = p.epic_id AND g.proposal_revision = p.revision WHERE p.epic_id = ?`, proposal.EpicID).Scan(&proposal.EpicID, &proposal.MolID, &proposal.Project, &proposal.Revision, &proposal.ManifestJSON, &proposal.RationaleMarkdown, &proposal.ContentHash, &proposal.CreatedAt); err != nil {
 		return model.NativeProposalRevision{}, err
 	}
 	if err := tx.Commit(); err != nil {
