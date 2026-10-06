@@ -47,6 +47,11 @@
   white-space: nowrap;
 }
 
+.oc-composer-notices:focus-within .oc-sse-indicator > span[title] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .oc-composer-notices button,
 .oc-composer-notices .oc-rate-limit-attempt,
 .oc-composer-notices .oc-sse-indicator-dot {
