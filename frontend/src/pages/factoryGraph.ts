@@ -37,6 +37,7 @@ export function factoryIssueState(issue: FactoryIssue): GraphState {
 // Shapes a not-yet-materialized proposal as issues so the epic graph can draw
 // it. Nodes without blockers are 'ready', the rest 'waiting'.
 export function proposalIssues(manifest: FactoryProposal['manifest']): FactoryIssue[] {
+  if (manifest.issues) return [...manifest.issues, ...(manifest.externalIssues ?? []).map((issue) => ({ ...issue, title: `${issue.epicId}: ${issue.title}` }))];
   const dependsOn = new Map<string, { id: string; type: string }[]>();
   const add = (key: string, id: string, type: string) => dependsOn.set(key, [...(dependsOn.get(key) ?? []), { id, type }]);
   for (const node of manifest.nodes) for (const dependency of node.dependsOn ?? []) add(node.key, dependency, 'blocks');
@@ -64,11 +65,11 @@ export function formulaIssues(formula: Pick<FactoryFormula, 'nodes' | 'edges' | 
   }));
 }
 
-export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
+export function factoryGraphModel(issues: FactoryIssue[], preserveHierarchy = false): { nodes: GraphNode[]; edges: GraphEdge[] } {
   // ponytail: Mols are invisible containers everywhere else in the UI; their
   // children are lifted to the nearest visible ancestor instead.
   const byID = new Map(issues.map((issue) => [issue.id, issue]));
-  let visible = issues.filter((issue) => issue.kind !== 'mol');
+  let visible = issues.filter((issue) => preserveHierarchy || issue.kind !== 'mol');
   const shown = new Set(visible.map((issue) => issue.id));
   if (!visible.length) return { nodes: [], edges: [] };
   const visibleAncestor = (id?: string): string | undefined => {
@@ -93,7 +94,7 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
     const interrupted = issue.recovery?.workId ?? issue.authority?.workId;
     const parent = visibleAncestor(issue.parentId);
     if (interrupted) add(visibleAncestor(interrupted), issue.id, 'interrupts');
-    else if (parent && byID.get(parent)?.kind === 'phase') {
+    else if (!preserveHierarchy && parent && byID.get(parent)?.kind === 'phase') {
       // Match the workflow's phase-completion barrier, not parent-first execution.
       const excluded = issue.requirement === 'reference' || issue.dispatchState === 'not_applicable'
         || (issue.requirement === 'optional' && (issue.status === 'closed' || issue.status === 'deferred' || issue.dispatchState === 'terminally_blocked'));
@@ -108,7 +109,7 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
 
   // Materialized tickets replace their phase placeholder. Route completion
   // dependencies through those tickets while leaving empty Formula steps visible.
-  const replaced = visible.filter((phase) => phase.kind === 'phase' && issues.some((child) => child.parentId === phase.id && ['implementation', 'task', 'phase'].includes(child.kind)));
+  const replaced = preserveHierarchy ? [] : visible.filter((phase) => phase.kind === 'phase' && issues.some((child) => child.parentId === phase.id && ['implementation', 'task', 'phase'].includes(child.kind)));
   for (const phase of replaced) {
     const incoming = edges.filter((edge) => edge.target === phase.id && edge.kind === 'completion');
     const outgoing = edges.filter((edge) => edge.source === phase.id);

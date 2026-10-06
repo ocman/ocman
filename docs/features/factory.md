@@ -331,11 +331,17 @@ immutable revision of the updated graph and shows an approval card. Review it
 in the card or Epic page. Approval must match the exact revision and hash;
 another edit makes an older approval stale.
 
+The approval preview uses that frozen graph, including parent groups and
+dependencies on other Epics. External endpoints are labelled with their Epic
+ID. The initial proposal must materialize before an agent can edit live work;
+until then, submit a revised proposal so its planned tickets are preserved.
+
 New dispatch pauses until that graph is approved. Already-running work can
 finish, and completed Issues and checkpoints remain intact. The implementation
 model is retained. Requesting a revision keeps dispatch paused; rejecting the
 graph closes the Epic and cancels its remaining open work. Pending approval and
 proposal history survive a restart. Agents cannot approve their own changes.
+Approving a graph revision does not complete any active scope-planning session.
 
 An implementation agent that discovers another required repository can request
 it with the project path and a reason. Factory pauses and preserves that Attempt

@@ -28,6 +28,10 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 	if err != nil {
 		return err
 	}
+	external, err := factoryGraphExternalReferences(ctx, tx, epicID)
+	if err != nil {
+		return err
+	}
 	sort.Slice(issues, func(i, j int) bool { return issues[i].ID < issues[j].ID })
 	type node struct {
 		Key         string `json:"key"`
@@ -49,8 +53,9 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 		Nodes   []node `json:"nodes"`
 		Edges   []edge `json:"edges"`
 		// Preserve hierarchy and completed history alongside the reviewable work.
-		Issues []model.NativeIssue `json:"issues"`
-	}{EpicID: epicID, Project: project, Nodes: []node{}, Edges: []edge{}, Issues: issues}
+		Issues         []model.NativeIssue `json:"issues"`
+		ExternalIssues []model.NativeIssue `json:"externalIssues,omitempty"`
+	}{EpicID: epicID, Project: project, Nodes: []node{}, Edges: []edge{}, Issues: issues, ExternalIssues: external}
 	work := map[string]bool{}
 	for _, issue := range issues {
 		if issue.Kind == "mol" && issue.ParentID == "" {
@@ -71,9 +76,7 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 			continue
 		}
 		for _, dependency := range issue.DependsOn {
-			if work[dependency.ID] {
-				manifest.Edges = append(manifest.Edges, edge{issue.ID, dependency.ID, dependency.Type})
-			}
+			manifest.Edges = append(manifest.Edges, edge{issue.ID, dependency.ID, dependency.Type})
 		}
 	}
 	encoded, err := json.Marshal(manifest)
@@ -102,6 +105,27 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome = '', outcome_reason = '' WHERE id = ?`, gateID)
 	return err
+}
+
+// External endpoints are frozen references, not work admitted to this Epic.
+func factoryGraphExternalReferences(ctx context.Context, tx *sql.Tx, epicID string) ([]model.NativeIssue, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT b.id, b.epic_id, b.project_path, b.kind, b.title, b.description, b.status, b.outcome
+		FROM factory_issue_dependency d JOIN factory_issue i ON i.id = d.issue_id JOIN factory_issue b ON b.id = d.depends_on_issue_id
+		WHERE i.epic_id = ? AND b.epic_id <> i.epic_id
+		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id IN (i.id, b.id)) ORDER BY b.id`, epicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var issues []model.NativeIssue
+	for rows.Next() {
+		issue := model.NativeIssue{Requirement: "reference", DispatchState: "reference"}
+		if err := rows.Scan(&issue.ID, &issue.EpicID, &issue.Project, &issue.Kind, &issue.Title, &issue.Description, &issue.Status, &issue.Outcome); err != nil {
+			return nil, err
+		}
+		issues = append(issues, issue)
+	}
+	return issues, rows.Err()
 }
 
 func blockFactoryGraphApproval(ctx context.Context, reader factoryIssueReader, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {

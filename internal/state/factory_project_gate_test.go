@@ -108,6 +108,20 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	if changed, err := db.ActivateFactoryAttempt(ctx, planAttempt.ID, model.PlanningSession{Platform: "opencode", ID: "scope-plan"}, time.UnixMilli(18)); err != nil || !changed {
 		t.Fatalf("activate scope plan = %v, %v", changed, err)
 	}
+	// A separate graph revision must not complete the still-running scope Plan.
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "edit", Actor: "mcp", EpicID: epic.ID, IssueID: issueIDWithTitle(t, db, epic.ID, "Unrelated work"), Title: "Unrelated corrected work"}); err != nil {
+		t.Fatal(err)
+	}
+	graphGate, err := db.GetFactoryPlanGate(ctx, epic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", graphGate.ProposalRevision, graphGate.ProposalHash, ""); err != nil {
+		t.Fatal(err)
+	}
+	if active, found, err := db.GetFactoryAttempt(ctx, planAttempt.ID); err != nil || !found || active.Phase != model.FactoryAttemptActive {
+		t.Fatalf("graph approval terminated scope planner: %#v, %v", active, err)
+	}
 	manifest, _ := json.Marshal(map[string]any{"epicId": epic.ID, "molId": nestedMolID, "project": "/repo", "nodes": []map[string]any{{"key": "blocker", "type": "implementation", "requirement": "required", "title": "New blocker", "project": "/canonical"}, {"key": "follow-up", "type": "implementation", "requirement": "optional", "title": "Optional follow-up", "project": "/canonical", "dependsOn": []string{"blocker"}}}})
 	proposal := model.NativeProposalRevision{EpicID: epic.ID, MolID: nestedMolID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "scope"}
 	for name, invalid := range map[string]model.NativeProposalRevision{

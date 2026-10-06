@@ -309,8 +309,14 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 		return model.NativePlanGate{}, err
 	}
 	if action == "approve" {
-		if err := closePlanOnApprovalTx(ctx, tx, epicID, time.Now().UnixMilli()); err != nil {
+		var graphRevision bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_proposal_revision WHERE epic_id = ? AND revision = ? AND content_hash = ? AND json_type(manifest_json, '$.issues') = 'array')`, epicID, revision, hash).Scan(&graphRevision); err != nil {
 			return model.NativePlanGate{}, err
+		}
+		if !graphRevision {
+			if err := closePlanOnApprovalTx(ctx, tx, epicID, time.Now().UnixMilli()); err != nil {
+				return model.NativePlanGate{}, err
+			}
 		}
 		if err := closeHandBuiltMaterializationTx(ctx, tx, epicID); err != nil {
 			return model.NativePlanGate{}, err

@@ -13,7 +13,7 @@ import './EpicGraph.css';
 export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; preview?: boolean }) {
   const [selected, setSelected] = useState<FactoryIssue>();
   const { nodes, edges } = useMemo(() => {
-    const model = factoryGraphModel(issues ?? []);
+    const model = factoryGraphModel(issues ?? [], preview);
     const flowNodes: Node[] = model.nodes.map((node) => ({
       id: node.id,
       position: { x: node.x, y: node.y },
@@ -34,7 +34,7 @@ export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; previe
       markerEnd: edge.kind === 'interrupts' || edge.kind === 'hierarchy' ? undefined : { type: MarkerType.ArrowClosed },
     }));
     return { nodes: flowNodes, edges: flowEdges };
-  }, [issues]);
+  }, [issues, preview]);
   if (!nodes.length) return <EmptyState>This epic has no work to draw yet.</EmptyState>;
   const byID = new Map((issues ?? []).map((issue) => [issue.id, issue]));
   return <div className="factory-graph">

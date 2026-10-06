@@ -37,6 +37,15 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	if epicStatus != "open" {
 		return invalid("factory epic is unavailable for structural mutation")
 	}
+	if m.Actor == "mcp" {
+		var unmaterialized bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision JOIN factory_issue i ON i.epic_id = g.epic_id AND i.kind = 'materialization' AND i.status <> 'closed' WHERE g.epic_id = ? AND json_type(p.manifest_json, '$.issues') IS NULL)`, m.EpicID).Scan(&unmaterialized); err != nil {
+			return err
+		}
+		if unmaterialized {
+			return invalid("revise the initial proposal before editing live work")
+		}
+	}
 	if m.Action == "create" && m.Project == "" {
 		m.Project = epicProject
 	}

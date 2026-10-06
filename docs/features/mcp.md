@@ -97,9 +97,11 @@ Agents can list and append persistent Issue comments with `issue_comments`
 and `add_issue_comment`. Comments are append-only and remain separate from the
 linked session conversation.
 
-Agent MCP sessions cannot perform operator decisions, create executable graph
-issues, or change Factory configuration. Non-executable graph edits remain
-available through `mutate_graph`; `create` can create Epics after explicitly
+Agent MCP sessions cannot perform operator decisions or change Factory
+configuration. Agents can propose executable tickets and structural edits with
+`mutate_graph`; each revised graph requires human approval before new work runs.
+While the initial proposal awaits materialization, revise that proposal instead
+of editing live work. `create` can create Epics after explicitly
 acknowledging local execution and uses the built-in tracer Formula. `save_formula`,
 `set_capacity_policy`, Plan decisions, recovery decisions, authority
 decisions, and `reopen_issue` (returning failed work to the queue) are

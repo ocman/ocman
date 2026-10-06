@@ -18,6 +18,9 @@ func TestAgentGraphMutationRequiresFreshApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	mol := factoryIssueID(t, db, epic.ID, "mol")
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Existing work"}); err != nil {
+		t.Fatal(err)
+	}
 	proposal, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: mol, Project: "/repo", ManifestJSON: `{"nodes":[]}`, ContentHash: "initial"})
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +44,7 @@ func TestAgentGraphMutationRequiresFreshApproval(t *testing.T) {
 	if gate.ImplementationModel != "provider/model" {
 		t.Fatalf("lost model: %#v", gate)
 	}
-	issue := issueByID(t, db, epic.ID, factoryIssueID(t, db, epic.ID, "task"))
+	issue := issueByID(t, db, epic.ID, issueIDWithTitle(t, db, epic.ID, "Discovered gap"))
 	if issue.DispatchState == "ready" {
 		t.Fatal("unapproved task is ready")
 	}

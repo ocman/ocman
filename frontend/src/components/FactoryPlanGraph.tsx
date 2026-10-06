@@ -13,7 +13,7 @@ const PAD = 20;
 
 export function FactoryPlanGraph({ issues }: { issues: FactoryIssue[] }) {
   const [expanded, setExpanded] = useState(false);
-  const { nodes, edges } = useMemo(() => factoryGraphModel(issues), [issues]);
+  const { nodes, edges } = useMemo(() => factoryGraphModel(issues, true), [issues]);
   if (!nodes.length) return null;
   const at = new Map(nodes.map((node) => [node.id, node]));
   const minX = Math.min(...nodes.map((node) => node.x)) - PAD;

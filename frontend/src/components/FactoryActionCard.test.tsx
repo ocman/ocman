@@ -42,6 +42,25 @@ beforeEach(() => {
 });
 
 describe('Factory human action cards', () => {
+  it('renders the frozen hierarchy and cross-Epic link in the approval card', async () => {
+    vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 2, proposalHash: 'hash' } });
+    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 2, contentHash: 'hash', manifest: {
+      epicId: 'ship', molId: 'mol', project: '/repo', nodes: [],
+      issues: [
+        { ...issue, id: 'old-parent', title: 'Old parent', kind: 'mol' },
+        { ...issue, id: 'new-parent', title: 'New parent', kind: 'mol' },
+        { ...issue, id: 'work', title: 'Frozen task', parentId: 'new-parent', dependsOn: [{ id: 'other.1', type: 'blocks' }] },
+      ],
+      externalIssues: [{ ...issue, id: 'other.1', epicId: 'other', title: 'External blocker' }],
+    } }]);
+    renderCard('[[ocman:card type=factory-epic epic=ship action=approve_plan]]');
+    const thumbnail = await screen.findByRole('button', { name: 'Expand plan graph' });
+    expect(screen.getByRole('img', { name: 'Plan graph with 4 steps' })).toBeInTheDocument();
+    expect(screen.getByText('New parent', { selector: 'text' })).toBeInTheDocument();
+    expect(screen.getByText('other: External blocker', { selector: 'title' })).toBeInTheDocument();
+    expect(thumbnail.querySelectorAll('line')).toHaveLength(2);
+  });
+
   it('draws the gated plan revision and expands it into a modal', async () => {
     vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 2, proposalHash: 'hash' } });
     const manifest = (title: string) => ({ epicId: 'ship', molId: 'mol', project: '/repo', nodes: [{ key: 'api', type: 'implementation', requirement: 'required', title }, { key: 'ui', type: 'implementation', requirement: 'required', title: 'Build UI', dependsOn: ['api'] }] });

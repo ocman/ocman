@@ -39,6 +39,9 @@ type ProposalManifest struct {
 	Project string         `json:"project"`
 	Nodes   []ManifestNode `json:"nodes"`
 	Edges   []ManifestEdge `json:"edges,omitempty"`
+	// Output-only frozen graph revisions include hierarchy and external endpoints.
+	Issues         []model.NativeIssue `json:"issues,omitempty"`
+	ExternalIssues []model.NativeIssue `json:"externalIssues,omitempty"`
 }
 
 type SubmitProposalRequest struct {
@@ -156,6 +159,9 @@ func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalR
 }
 
 func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitProposalRequest) (model.NativeProposalRevision, error) {
+	if req.Manifest.Issues != nil || req.Manifest.ExternalIssues != nil {
+		return model.NativeProposalRevision{}, fmt.Errorf("%w: frozen graph snapshots are output-only", ErrInvalidRequest)
+	}
 	epic, err := s.store.GetFactoryEpic(ctx, req.EpicID)
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		return model.NativeProposalRevision{}, ErrWorkEpicNotFound
