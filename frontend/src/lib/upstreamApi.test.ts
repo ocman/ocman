@@ -56,6 +56,22 @@ describe('upstreamApi', () => {
     await expect(fetchUpstreams('/x', 'local')).rejects.toBe(error);
   });
 
+  it('resets connection failures after a successful forge response and recovers after an outage', async () => {
+    markBackendReachable();
+    const fail = () => Promise.reject(new TypeError('Load failed'));
+    const ok = () => Promise.resolve(new Response('{"upstreams":[]}', { status: 200 }));
+    fetchSpy.mockImplementationOnce(fail).mockImplementationOnce(ok).mockImplementationOnce(fail)
+      .mockImplementationOnce(fail).mockImplementationOnce(ok);
+    await expect(fetchUpstreams('/x', 'local')).rejects.toThrow();
+    await fetchUpstreams('/x', 'local');
+    await expect(fetchUpstreams('/x', 'local')).rejects.toThrow();
+    expect(useBackendStatus.getState().unreachable).toBe(false);
+    await expect(fetchUpstreams('/x', 'local')).rejects.toThrow();
+    expect(useBackendStatus.getState().unreachable).toBe(true);
+    await fetchUpstreams('/x', 'local');
+    expect(useBackendStatus.getState().unreachable).toBe(false);
+  });
+
   describe('fetchUpstreams', () => {
     it('includes explicit project ownership', async () => {
       fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ upstreams: [] }), { status: 200 }));
