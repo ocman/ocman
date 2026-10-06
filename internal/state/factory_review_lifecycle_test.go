@@ -165,3 +165,77 @@ func TestHandBuiltScopeFindsRootFormulaApproval(t *testing.T) {
 		t.Fatalf("hand-built scope selected wrong gate: %#v, %v", gate, err)
 	}
 }
+
+func TestGraphSnapshotCannotBeReplacedByInitialProposal(t *testing.T) {
+	for _, approved := range []bool{false, true} {
+		t.Run(map[bool]string{false: "pending", true: "approved"}[approved], func(t *testing.T) {
+			db := openTestStateDB(t)
+			t.Cleanup(func() { _ = db.Close() })
+			ctx := t.Context()
+			epic, err := db.CreateFactoryEpic(ctx, "", "Immutable graph approval", "", "/repo", "", nativeTracerFormula(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mol := factoryIssueID(t, db, epic.ID, "mol")
+			initial := model.NativeProposalRevision{EpicID: epic.ID, MolID: mol, Project: "/repo", ManifestJSON: `{"nodes":[]}`, ContentHash: "initial"}
+			proposal, err := db.SaveFactoryProposalRevision(ctx, initial)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", proposal.Revision, proposal.ContentHash, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Work"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Actor: "mcp", Action: "edit", EpicID: epic.ID, IssueID: issueIDWithTitle(t, db, epic.ID, "Work"), Title: "Amended work"}); err != nil {
+				t.Fatal(err)
+			}
+			gate, err := db.GetFactoryPlanGate(ctx, epic.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if approved {
+				gate, err = db.DecideFactoryPlanGate(ctx, epic.ID, "approve", gate.ProposalRevision, gate.ProposalHash, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := db.SaveFactoryProposalRevision(ctx, initial); err == nil {
+				t.Fatal("ordinary proposal replaced graph snapshot")
+			}
+			if _, _, err := db.ImportFactoryProposalRevision(ctx, initial); err == nil {
+				t.Fatal("import replaced graph snapshot")
+			}
+			after, err := db.GetFactoryPlanGate(ctx, epic.ID)
+			if err != nil || after.ProposalRevision != gate.ProposalRevision || after.ProposalHash != gate.ProposalHash || after.Resolution != gate.Resolution {
+				t.Fatalf("graph gate changed: %#v, %v", after, err)
+			}
+		})
+	}
+}
+
+func TestScopePlannerCannotSubmitAnInitialProposalWithoutAGraphSnapshot(t *testing.T) {
+	db := openTestStateDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := t.Context()
+	gate, _, epicID, mol := createActiveProjectRequestGate(t, db, "/repo")
+	resolved, _, err := db.ResolveFactoryProjectRequestGate(ctx, gate.IssueID, "approve", "/other", "", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, attempt, err := db.ClaimFactoryPlan(ctx, epicID, resolved.PlanIssueID, "factory-plan/v1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activated, err := db.ActivateFactoryAttempt(ctx, attempt.ID, model.PlanningSession{Platform: "opencode", ID: "scope"}, time.Now()); err != nil || !activated {
+		t.Fatalf("activate scope = %v, %v", activated, err)
+	}
+	proposal := model.NativeProposalRevision{EpicID: epicID, MolID: mol, Project: "/repo", ManifestJSON: `{"nodes":[]}`, ContentHash: "ordinary"}
+	if _, allowed, err := db.SaveFactoryProposalRevisionForAttempt(ctx, proposal, attempt.ID, attempt.AgentToken); err != nil || allowed {
+		t.Fatalf("scope planner ordinary proposal authorization = %v, %v", allowed, err)
+	}
+	if proposals, err := db.ListFactoryProposalRevisions(ctx, epicID); err != nil || len(proposals) != 0 {
+		t.Fatalf("scope planner created initial proposals: %#v, %v", proposals, err)
+	}
+}

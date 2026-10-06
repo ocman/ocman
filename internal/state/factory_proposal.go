@@ -32,6 +32,13 @@ func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.Nat
 		return model.NativeProposalRevision{}, false, fmt.Errorf("beginning Factory proposal submission: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	var graphSnapshot bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND json_type(p.manifest_json, '$.issues') = 'array')`, proposal.EpicID).Scan(&graphSnapshot); err != nil {
+		return model.NativeProposalRevision{}, false, err
+	}
+	if graphSnapshot {
+		return model.NativeProposalRevision{}, false, errors.New("factory graph revisions cannot be replaced by an initial proposal")
+	}
 	if imported {
 		// Completing the Plan in this transaction prevents a concurrent human
 		// claim from starting a planner for a proposal already awaiting review.
@@ -53,7 +60,7 @@ func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.Nat
 	}
 	if attemptID != "" {
 		var authorized int
-		err := tx.QueryRowContext(ctx, `SELECT 1 FROM factory_attempt a JOIN factory_external_mapping m ON m.system = 'factory' AND m.external_kind = 'attempt_token' AND m.external_id = ? AND m.entity_kind = 'attempt' AND m.entity_id = a.id WHERE a.id = ? AND a.epic_id = ? AND a.phase = 'active' AND json_extract(a.frozen_policy_json, '$.profile') = 'factory-plan/v1' AND NOT EXISTS (SELECT 1 FROM factory_plan_gate g WHERE g.epic_id = a.epic_id AND g.resolution IN ('approved', 'rejected'))`, token, attemptID, proposal.EpicID).Scan(&authorized)
+		err := tx.QueryRowContext(ctx, `SELECT 1 FROM factory_attempt a JOIN factory_external_mapping m ON m.system = 'factory' AND m.external_kind = 'attempt_token' AND m.external_id = ? AND m.entity_kind = 'attempt' AND m.entity_id = a.id WHERE a.id = ? AND a.epic_id = ? AND a.phase = 'active' AND json_extract(a.frozen_policy_json, '$.profile') = 'factory-plan/v1' AND NOT EXISTS (SELECT 1 FROM factory_project_request_gate scope WHERE scope.plan_issue_id = a.work_item_id) AND NOT EXISTS (SELECT 1 FROM factory_plan_gate g WHERE g.epic_id = a.epic_id AND g.resolution IN ('approved', 'rejected'))`, token, attemptID, proposal.EpicID).Scan(&authorized)
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.NativeProposalRevision{}, false, nil
 		}

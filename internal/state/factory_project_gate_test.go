@@ -30,7 +30,7 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", initial.Revision, initial.ContentHash, ""); err != nil {
+	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", initial.Revision, initial.ContentHash, "", "provider/model"); err != nil {
 		t.Fatal(err)
 	}
 	attempt, err := db.CreatePreparedFactoryAttempt(ctx, epic.ID, workID, model.FactoryAttemptPolicy{Repository: "/repo", Profile: "factory-implement/v1", CheckpointSHA: "keep-me"}, time.UnixMilli(10))
@@ -122,6 +122,20 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	graphGate, err := db.GetFactoryPlanGate(ctx, epic.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := db.UpsertFactoryLocalExecutionAck(ctx, "local", "/repo", "factory-implement", "v1", "user", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ordinary := model.NativeProposalRevision{EpicID: epic.ID, MolID: nestedMolID, Project: "/repo", ManifestJSON: `{"nodes":[]}`, ContentHash: "ordinary-scope"}
+	if _, authorized, err := db.SaveFactoryProposalRevisionForAttempt(ctx, ordinary, planAttempt.ID, planAttempt.AgentToken); err == nil && authorized {
+		t.Fatal("scope planner replaced pending graph via ordinary proposal submission")
+	}
+	unchangedGate, err := db.GetFactoryPlanGate(ctx, epic.ID)
+	if err != nil || unchangedGate.ProposalRevision != graphGate.ProposalRevision || unchangedGate.ProposalHash != graphGate.ProposalHash || unchangedGate.ImplementationModel != "provider/model" {
+		t.Fatalf("ordinary scope submission changed graph approval: %#v, %v", unchangedGate, err)
+	}
+	if _, _, err := db.ClaimFactoryImplementation(ctx, epic.ID, issueIDWithTitle(t, db, epic.ID, "Unrelated corrected work"), "factory-implement/v1", time.Now()); err == nil {
+		t.Fatal("ordinary scope submission released unapproved amended work")
 	}
 	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", graphGate.ProposalRevision, graphGate.ProposalHash, ""); err != nil {
 		t.Fatal(err)
