@@ -45,7 +45,7 @@ for (const width of [1280, 390]) {
     await expect(notices.getByRole('button', { name: 'Change model' })).toBeAttached();
   });
 
-  test(`conversation scrolling stays above the composer at ${width}px`, async ({ mockedPage: page }) => {
+  test(`conversation scrolls beneath notices and clears them at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 720 });
     const historical = buildSyntheticHistoricalThread(MOCK_SESSION.id);
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
@@ -60,6 +60,7 @@ for (const width of [1280, 390]) {
     await page.goto(SESSION_URL);
     const viewport = page.getByTestId('conversation-viewport');
     const composer = page.getByTestId('conversation-composer');
+    const notices = composer.getByRole('region', { name: 'Conversation status' });
     await expect(composer.getByRole('textbox')).toBeVisible();
     await expect.poll(() => viewport.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     const initialComposer = (await composer.boundingBox())!;
@@ -69,10 +70,16 @@ for (const width of [1280, 390]) {
       }, position);
       const scrollBox = (await viewport.boundingBox())!;
       const composerBox = (await composer.boundingBox())!;
-      expect(scrollBox.y + scrollBox.height).toBeLessThanOrEqual(composerBox.y);
+      const noticeBox = (await notices.boundingBox())!;
+      expect(scrollBox.y + scrollBox.height).toBeGreaterThan(noticeBox.y);
+      expect(scrollBox.y + scrollBox.height).toBeCloseTo(noticeBox.y + noticeBox.height, 0);
       expect(composerBox.y).toBe(initialComposer.y);
       expect(composerBox.y + composerBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     }
+    const noticeTop = (await notices.boundingBox())!.y;
+    await expect.poll(() => viewport.getByText('Historical assistant summary 28.', { exact: true })
+      .evaluate(el => el.closest('[data-message-id]')!.getBoundingClientRect().bottom))
+      .toBeLessThanOrEqual(noticeTop + 1); // Allow fractional scroll-height rounding.
   });
 }
 
