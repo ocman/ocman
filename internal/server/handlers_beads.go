@@ -19,6 +19,9 @@ func (s *Server) handleProjectBeadsStatus(w http.ResponseWriter, r *http.Request
 
 	status, err := host.BeadsStatus(r.Context(), dir)
 	if err != nil {
+		if writeCancellation(w, "beads status canceled", err) {
+			return
+		}
 		log.WithError(err).Warn("beads status failed")
 		http.Error(w, "failed to read Beads status", http.StatusBadGateway)
 		return

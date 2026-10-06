@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -866,30 +865,4 @@ func (s *Server) get(h http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) post(h http.HandlerFunc) http.HandlerFunc {
 	return requirePOST(s.requireAuth(h))
-}
-
-// writeJSON writes a JSON response with an implicit 200 status.
-func writeJSON(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.WithError(err).Error("failed to encode JSON response")
-	}
-}
-
-// writeJSONStatus writes a JSON response with an explicit status code.
-// Callers must not call WriteHeader themselves first: the header map is
-// flushed by WriteHeader, so a Content-Type set afterwards is silently
-// dropped and the client sniffs the type instead.
-func writeJSONStatus(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.WithError(err).Error("failed to encode JSON response")
-	}
-}
-
-// serverError logs the real error and returns a generic message to the client.
-func serverError(w http.ResponseWriter, msg string, err error) {
-	log.WithError(err).Error(msg)
-	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
