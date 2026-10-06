@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react';
 import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
 
 /**
@@ -46,7 +46,7 @@ export function useComposerDrafts(
 
   // Load the session's draft; flush the text under the same session when it
   // changes or the composer unmounts (before the next load overwrites it).
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el || !sessionId) return;
     el.value = persistedRef.current = getDraft(sessionId);

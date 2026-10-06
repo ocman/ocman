@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useComposerDrafts } from './useComposerDrafts';
 import { getDraft, saveDraft } from '../../lib/composerDraft';
 
@@ -47,6 +47,19 @@ describe('useComposerDrafts', () => {
     saveDraft('s1', 'hello world');
     setup('s1', el);
     expect(el.value).toBe('hello world');
+  });
+
+  it('restores the draft before an interactive editor can write new text', () => {
+    saveDraft('s1', 'saved draft');
+    const { unmount } = renderHook(() => {
+      const inputRef = useRef<HTMLTextAreaElement | null>(el);
+      const inFlightRef = useRef<string | null>(null);
+      useComposerDrafts(inputRef, 's1', inFlightRef);
+      useLayoutEffect(() => { el.value = 'new follow-up'; }, []);
+    });
+    expect(el.value).toBe('new follow-up');
+    unmount();
+    expect(getDraft('s1')).toBe('new follow-up');
   });
 
   it('reloads the draft when the session changes', () => {
