@@ -141,7 +141,7 @@ describe('UpstreamPane owner-scoped resources', () => {
   });
 
   it('clears cached CI statuses on refresh', () => {
-    cachePRChecks('abc123', { state: 'success', checks: [] });
+    cachePRChecks('abc123', { state: 'success', checks: [{ name: 'build', state: 'success' }] });
     let refresh = () => {};
     render(<UpstreamPane directory="/repo" remoteId="box" upstreams={[upstreams[0]]} onRefresh={(fn) => { refresh = fn; }} />);
     expect(getCachedPRChecks('abc123')).toBeDefined();

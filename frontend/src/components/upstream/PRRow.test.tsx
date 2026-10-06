@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PRRow } from './PRRow';
-import { CI_POLL_MS, clearPRChecksCache, getCachedPRChecks, resetPRChecksMemoryForTest } from '../../lib/prChecksCache';
+import { CI_POLL_MS, clearPRChecksCache, getCachedPRChecks, prChecksCacheKey, resetPRChecksMemoryForTest } from '../../lib/prChecksCache';
 import type { PR } from '../../lib/upstreamApi';
 import * as api from '../../lib/upstreamApi';
 
@@ -217,14 +217,45 @@ describe('PRRow CI build-status indicator', () => {
     await act(async () => {});
     expect(spy).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-pending');
-    expect(getCachedPRChecks('abc123')).toBeUndefined();
+    expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))).toBeUndefined();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
     expect(spy).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success');
-    expect(getCachedPRChecks('abc123')?.state).toBe('success');
+    expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))?.state).toBe('success');
 
     await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS * 3); });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps polling a failure while other checks still run', async () => {
+    vi.useFakeTimers();
+    const partial = { state: 'failure' as const, checks: [{ name: 'lint', state: 'failure' as const }, { name: 'e2e', state: 'pending' as const }] };
+    const done = { state: 'failure' as const, checks: [{ name: 'lint', state: 'failure' as const }, { name: 'e2e', state: 'success' as const }] };
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValueOnce(partial).mockResolvedValueOnce(done);
+    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await act(async () => {});
+    expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))).toBeUndefined();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))).toEqual(done);
+    await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS * 2); });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not share a cached status between repositories with the same SHA', async () => {
+    const failed = { state: 'failure' as const, checks: [{ name: 'build', state: 'failure' as const }] };
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValueOnce(success).mockResolvedValueOnce(failed);
+    const first = render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await waitFor(() => expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success'));
+    first.unmount();
+
+    render(<PRRow pr={makePR({ headSha: 'abc123', host: 'code.example' })} directory="/repo" remoteId="local" remote="mirror" />);
+    show(true);
+    await waitFor(() => expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-failure'));
     expect(spy).toHaveBeenCalledTimes(2);
   });
 

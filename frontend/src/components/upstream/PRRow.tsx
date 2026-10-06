@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CIState, Check, PR, PRChecks } from '../../lib/upstreamApi';
 import { fetchPRChecks } from '../../lib/upstreamApi';
-import { CI_POLL_MS, cachePRChecks, getCachedPRChecks, isFinalCIState } from '../../lib/prChecksCache';
+import { CI_POLL_MS, cachePRChecks, getCachedPRChecks, isSettled, prChecksCacheKey } from '../../lib/prChecksCache';
 import { ExpandableRow } from './ExpandableRow';
 
 interface PRRowProps {
@@ -107,13 +107,14 @@ interface ChecksResult {
 
 /**
  * usePRChecks fetches a PR's CI/build status while its row is visible.
- * A final status (success/failure) is cached per head SHA, so a SHA is
- * fetched once; anything else is re-fetched every CI_POLL_MS until it
- * settles or the row scrolls out of view.
+ * A settled status (every check finished) is cached per repository + head
+ * SHA, so it is fetched once; anything else is re-fetched every CI_POLL_MS
+ * until it settles or the row scrolls out of view.
  */
 function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string, visible: boolean): ChecksState {
   const sha = pr.headSha ?? '';
   const requestKey = `${remoteId}\0${directory}\0${remote}\0${sha}`;
+  const cacheKey = prChecksCacheKey(pr.host, pr.repo, sha);
   const [result, setResult] = useState<ChecksResult>({ key: requestKey, data: null, loading: false, error: false });
 
   useEffect(() => {
@@ -121,7 +122,7 @@ function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string
     const ctrl = new AbortController();
     let timer: number | undefined;
     const run = () => {
-      const cached = getCachedPRChecks(sha);
+      const cached = getCachedPRChecks(cacheKey);
       if (cached) {
         setResult({ key: requestKey, data: cached, loading: false, error: false });
         return;
@@ -130,9 +131,9 @@ function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string
       fetchPRChecks({ dir: directory, remoteId, remote, sha, signal: ctrl.signal })
         .then((res) => {
           if (ctrl.signal.aborted) return;
-          cachePRChecks(sha, res);
+          cachePRChecks(cacheKey, res);
           setResult({ key: requestKey, data: res, loading: false, error: false });
-          if (!isFinalCIState(res.state)) timer = window.setTimeout(run, CI_POLL_MS);
+          if (!isSettled(res)) timer = window.setTimeout(run, CI_POLL_MS);
         })
         .catch(() => {
           if (ctrl.signal.aborted) return;
@@ -145,7 +146,7 @@ function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string
       ctrl.abort();
       window.clearTimeout(timer);
     };
-  }, [sha, directory, remoteId, remote, visible, requestKey]);
+  }, [sha, directory, remoteId, remote, visible, requestKey, cacheKey]);
 
   const current = result.key === requestKey;
   return {
