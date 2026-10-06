@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,9 +19,10 @@ import (
 // for simplicity; port discovery is infrequent enough that read/write
 // contention is not a concern.
 var portCache struct {
-	mu      sync.Mutex
-	ports   map[string]string
-	updated time.Time
+	mu             sync.Mutex
+	ports          map[string]string
+	lastSuccessful map[string]string
+	updated        time.Time
 }
 
 var serverCache struct {
@@ -60,7 +62,13 @@ func init() {
 // setDiscoverPortsImplForTests installs fn as the seam and returns a
 // restore func that re-installs the previous value.
 func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
-	wrapper := func(context.Context) map[string]string { return fn() }
+	wrapper := func(context.Context) map[string]string {
+		ports := fn()
+		if ports == nil {
+			return map[string]string{}
+		}
+		return ports
+	}
 	prev := discoverPortsImpl.Swap(&wrapper)
 	return func() { discoverPortsImpl.Store(prev) }
 }
@@ -89,18 +97,6 @@ func resetPortCache() {
 // a recently cached "not running yet" result.
 func InvalidateOpenCodePortCache() {
 	resetPortCache()
-}
-
-// resetPortCacheForTests clears the cache so each test starts with a cold path.
-func resetPortCacheForTests() {
-	resetPortCache()
-}
-
-func resetSessionPortAffinityForTests() {
-	sessionPortAffinity.Range(func(key, _ interface{}) bool {
-		sessionPortAffinity.Delete(key)
-		return true
-	})
 }
 
 func rememberSessionPort(sessionID, port string) {
@@ -149,6 +145,7 @@ func forgetSessionsForPort(port string) {
 
 // DiscoverOpenCodePortsContext lets each caller cancel its own wait. Shared
 // scans have an independent ten-second deadline; timed-out scans are not cached.
+// A nil map signals failure; a non-nil empty map signals successful emptiness.
 func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 	if ctx.Err() != nil {
 		return nil
@@ -168,8 +165,12 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 		if err := scanCtx.Err(); err != nil {
 			return nil, err
 		}
+		if result == nil {
+			return nil, errors.New("OpenCode port discovery failed")
+		}
 		portCache.mu.Lock()
 		portCache.ports = result
+		portCache.lastSuccessful = copyMap(result)
 		portCache.updated = time.Now()
 		portCache.mu.Unlock()
 		return copyMap(result), nil
@@ -178,6 +179,9 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 	case <-ctx.Done():
 		return nil
 	case result := <-result:
+		if result.Err != nil {
+			return nil
+		}
 		if m, ok := result.Val.(map[string]string); ok {
 			return copyMap(m)
 		}
@@ -202,13 +206,10 @@ func copyMap(m map[string]string) map[string]string {
 	return cp
 }
 
-func copyOpenCodeServers(servers []openCodeServer) []openCodeServer {
-	return append([]openCodeServer(nil), servers...)
-}
-
 func writeCachedPorts(ports map[string]string) {
 	portCache.mu.Lock()
 	portCache.ports = ports
+	portCache.lastSuccessful = copyMap(ports)
 	portCache.updated = time.Now()
 	portCache.mu.Unlock()
 }

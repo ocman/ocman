@@ -28,6 +28,10 @@ type openCodeServer struct {
 	port      string
 }
 
+func copyOpenCodeServers(servers []openCodeServer) []openCodeServer {
+	return append([]openCodeServer(nil), servers...)
+}
+
 // parseOpenCodeListeners accepts lsof's nine-character command truncation.
 func parseOpenCodeListeners(lsofOut string) []pidPort {
 	var candidates []pidPort
@@ -84,7 +88,14 @@ func pidCwdContext(ctx context.Context, pid string) (string, bool) {
 var lsofWarnOnce sync.Once
 
 func discoverOpenCodePorts() map[string]string {
-	return DiscoverOpenCodePortsContext(context.Background())
+	if ports := DiscoverOpenCodePortsContext(context.Background()); ports != nil {
+		return ports
+	}
+	// Failed scans must not make liveness readers or the watcher remove healthy
+	// instances. Keep the last successful snapshot without renewing its TTL.
+	portCache.mu.Lock()
+	defer portCache.mu.Unlock()
+	return copyMap(portCache.lastSuccessful)
 }
 
 func discoverOpenCodeServersUncached() []openCodeServer {
@@ -94,7 +105,7 @@ func discoverOpenCodeServersUncached() []openCodeServer {
 // Enumerate listeners, then resolve their directories with bounded fan-out.
 func discoverOpenCodeServersUncachedContext(ctx context.Context) []openCodeServer {
 	if ocv2.InstalledV2() {
-		return machineServers()
+		return append([]openCodeServer{}, machineServers()...)
 	}
 	out, err := lsofOutput(ctx, "-iTCP", "-sTCP:LISTEN", "-P", "-n")
 	if err != nil {
@@ -107,7 +118,7 @@ func discoverOpenCodeServersUncachedContext(ctx context.Context) []openCodeServe
 	}
 	candidates := parseOpenCodeListeners(string(out))
 	if len(candidates) == 0 {
-		return nil
+		return []openCodeServer{}
 	}
 	workers := min(16, len(candidates))
 	type cwdResult struct {
@@ -175,8 +186,12 @@ func readCachedServers() ([]openCodeServer, bool) {
 
 // Multiple servers for one directory retain the existing unspecified choice.
 func discoverOpenCodePortsUncachedContext(ctx context.Context) map[string]string {
+	servers := discoverOpenCodeServersUncachedContext(ctx)
+	if servers == nil {
+		return nil
+	}
 	result := make(map[string]string)
-	for _, server := range discoverOpenCodeServersUncachedContext(ctx) {
+	for _, server := range servers {
 		result[server.directory] = server.port
 	}
 	return result

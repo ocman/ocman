@@ -11,6 +11,56 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
+func resetPortCacheForTests() {
+	resetPortCache()
+	portCache.mu.Lock()
+	portCache.lastSuccessful = nil
+	portCache.mu.Unlock()
+}
+
+func resetSessionPortAffinityForTests() {
+	sessionPortAffinity.Range(func(key, _ interface{}) bool {
+		sessionPortAffinity.Delete(key)
+		return true
+	})
+}
+
+func TestFailedDiscoveryKeepsLastSnapshotWithoutRenewingTTL(t *testing.T) {
+	resetPortCacheForTests()
+	t.Cleanup(resetPortCacheForTests)
+	restore := setDiscoverPortsImplForTests(func() map[string]string { return map[string]string{"/repo": "1001"} })
+	defer restore()
+	if ports := discoverOpenCodePorts(); ports["/repo"] != "1001" {
+		t.Fatal(ports)
+	}
+	expired := time.Now().Add(-2 * portCacheTTL)
+	portCache.mu.Lock()
+	portCache.updated = expired
+	portCache.mu.Unlock()
+	failed := func(context.Context) map[string]string { return nil }
+	previous := discoverPortsImpl.Swap(&failed)
+	defer discoverPortsImpl.Store(previous)
+	if ports := DiscoverOpenCodePortsContext(context.Background()); ports != nil {
+		t.Fatalf("failed scan returned a successful snapshot: %v", ports)
+	}
+	if port := DiscoverOpenCodePort("/repo"); port != "1001" {
+		t.Fatalf("failed scan disconnected a known live instance: %s", port)
+	}
+	ports := discoverOpenCodePorts()
+	ports["/another"] = "1002"
+	portCache.mu.Lock()
+	unchanged := portCache.updated.Equal(expired) && len(portCache.lastSuccessful) == 1
+	portCache.mu.Unlock()
+	if !unchanged {
+		t.Fatal("fallback renewed the cache TTL or leaked a mutable snapshot")
+	}
+	empty := func(context.Context) map[string]string { return map[string]string{} }
+	discoverPortsImpl.Store(&empty)
+	if ports := discoverOpenCodePorts(); ports == nil || len(ports) != 0 {
+		t.Fatalf("successful empty discovery retained disappeared instances: %v", ports)
+	}
+}
+
 func TestDiscoveryColdCallersOwnIndependentSnapshots(t *testing.T) {
 	resetPortCacheForTests()
 	t.Cleanup(resetPortCacheForTests)

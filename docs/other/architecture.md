@@ -502,6 +502,9 @@ flowchart TD
   directories on cancellation, so an unresponsive instance still leaves fallback
   choices available. Shared port scans have an independent ten-second deadline;
   canceling a caller only cancels its wait, preserving other clients' live status.
+  A failed scan preserves the last successful snapshot for liveness readers and
+  the auto-approval watcher without renewing the cache TTL. A successful empty
+  scan still removes disappeared instances.
   An explicit composer selection wins.
   `projectSettingsCache` shares the project settings fetch across conversations
   and sibling worktrees, keyed by owner and project root. Successful global or
