@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { GitInfo, Session } from '../../lib/api';
 import { shortPath } from '../../lib/format';
 import { nestSessions } from '../../lib/nestSessions';
-import { compareSidebarActivity } from '../../lib/sidebarHelpers';
+import { compareSidebarCompletion } from '../../lib/sidebarHelpers';
 import { checkoutKey } from '../../lib/projectIdentity';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { HostBadge } from '../../components/HostBadge';
@@ -42,11 +42,13 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
     if (bucket) bucket.push(s);
     else byDir.set(dir, [s]);
   }
-  const latest = (dir: string) => Math.max(...(byDir.get(dir) ?? []).map((s) => s.timeUpdated));
+  // The parent supplies completion-sorted sessions, so each bucket's head
+  // also determines its checkout's rank.
+  const latest = (dir: string) => byDir.get(dir)![0];
   const dirs = [...byDir.keys()].sort((a, b) => {
     const aMain = byDir.get(a)?.[0]?.directory === group.directory ? 0 : 1;
     const bMain = byDir.get(b)?.[0]?.directory === group.directory ? 0 : 1;
-    return aMain !== bMain ? aMain - bMain : compareSidebarActivity({ timeUpdated: latest(a) }, { timeUpdated: latest(b) });
+    return aMain !== bMain ? aMain - bMain : compareSidebarCompletion(latest(a), latest(b));
   });
   return (
     <div ref={setNodeRef} style={style} className="session-sidebar-group">

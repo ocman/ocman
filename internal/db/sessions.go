@@ -47,7 +47,7 @@ func (d *DB) sessionListProjection() string {
 		)
 		SELECT
 			s.id, s.project_id, s.parent_id, s.title, s.directory,
-			s.time_created, s.time_updated,
+			s.time_created, s.time_updated, ` + lastTurnCompletedAtSQL + `,
 			s.summary_additions, s.summary_deletions, s.summary_files,
 			s.share_url,
 			(SELECT count(*) FROM message m WHERE m.session_id = s.id) AS message_count,
@@ -142,7 +142,7 @@ func scanSessionRow(scan func(dest ...any) error) (s Session, keep bool, err err
 	var lastSynthTerminal int
 	err = scan(
 		&s.ID, &s.ProjectID, &parentID, &s.Title, &s.Directory,
-		&s.TimeCreated, &s.TimeUpdated,
+		&s.TimeCreated, &s.TimeUpdated, &s.LastTurnCompletedAt,
 		&s.SummaryAdditions, &s.SummaryDeletions, &s.SummaryFiles,
 		&s.ShareURL,
 		&s.MessageCount,
@@ -319,13 +319,13 @@ func (d *DB) GetSession(ctx context.Context, sessionID string) (*Session, error)
 	err := d.db.QueryRowContext(ctx, `
 		SELECT
 			s.id, s.project_id, COALESCE(s.parent_id, ''), s.title, s.directory,
-			s.time_created, s.time_updated,
+			s.time_created, s.time_updated, `+lastTurnCompletedAtSQL+`,
 			s.summary_additions, s.summary_deletions, s.summary_files,
 			s.share_url
 		FROM session s WHERE s.id = ?
 	`, sessionID).Scan(
 		&s.ID, &s.ProjectID, &s.ParentID, &s.Title, &s.Directory,
-		&s.TimeCreated, &s.TimeUpdated,
+		&s.TimeCreated, &s.TimeUpdated, &s.LastTurnCompletedAt,
 		&s.SummaryAdditions, &s.SummaryDeletions, &s.SummaryFiles,
 		&s.ShareURL,
 	)

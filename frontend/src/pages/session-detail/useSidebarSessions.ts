@@ -197,24 +197,31 @@ export function useSidebarSessions({
       loadRecentSessions(abortSignalRef.current?.signal)
         .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
     };
+    let subscribed = true;
     const unsubscribeChanged = onSessionChanged((sessionID, _session, patch) => {
       if (patch && useApiStore.getState().recentSessions.some((session) => session.id === sessionID)) {
         patchRecentSession(sessionID, patch);
-        return;
+        // A terminal status patch carries no completion timestamp. Refresh
+        // the durable row before promoting it; never rank by event arrival.
+        if (!patch.status || patch.status === 'busy') return;
+        peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
+          if (!subscribed) return;
+          const current = useApiStore.getState().recentSessions.find(s => s.id === sessionID);
+          patchRecentSession(sessionID, { lastTurnCompletedAt: Math.max(
+            row.lastTurnCompletedAt ?? 0, current?.lastTurnCompletedAt ?? 0,
+          ) });
+        }).catch((err) => remoteLog.error('Failed to refresh completed session', err));
       }
       refresh();
     });
     const unsubscribeConnect = onSseConnect(refresh);
     const pendingActivity = new Map<string, number>();
     const hiddenSessions = new Set<string>();
-    let subscribed = true;
     const unsubscribeActivity = onSessionActivity((sessionID, timeUpdated) => {
       const session = useApiStore.getState().recentSessions.find((s) => s.id === sessionID);
       if (session) {
-        // Activity arrives per streamed token. The sidebar sorts and
-        // displays time at minute granularity, so a patch inside the same
-        // minute would only re-sort the list and re-render the page for
-        // nothing.
+        // Activity arrives per token; only refresh the relative-time label
+        // at minute granularity. It no longer determines row order.
         if (compareSidebarActivity(session, { timeUpdated }) > 0) patchRecentSession(sessionID, { timeUpdated });
       } else if (!hiddenSessions.has(sessionID)) {
         const pending = pendingActivity.get(sessionID);

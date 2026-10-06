@@ -66,10 +66,10 @@ describe('useSidebarSessions project visibility', () => {
   it('keeps a quiet project after newer sessions, including when switching views', async () => {
     const sessions = Array.from({ length: 25 }, (_, i) => ({
       id: `session-${i}`, platform: 'opencode', directory: '/repo/busy',
-      title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now() - i * 1000,
+      title: `Work ${i}`, status: 'waiting', timeCreated: Date.now() - i * 1000, timeUpdated: Date.now() - i * 1000,
       seen: false, seenTimeUpdated: 0, unreadCount: 0,
     } as Session));
-    const quiet = { ...sessions[0], id: 'dev-stack', directory: '/repo/dev-stack', timeUpdated: Date.now() - 60_000 };
+    const quiet = { ...sessions[0], id: 'dev-stack', directory: '/repo/dev-stack', timeCreated: Date.now() - 60_000, timeUpdated: Date.now() - 60_000 };
     const all = [...sessions, quiet];
     const getSessions = vi.fn(async ({ limit }: { limit?: number } = {}) =>
       all.slice(0, limit === 0 ? undefined : (limit ?? 500)));
@@ -114,7 +114,7 @@ describe('useSidebarSessions project visibility', () => {
   it('keeps all recent sessions including older pinned sessions', async () => {
     const sessions = Array.from({ length: 25 }, (_, i) => ({
       id: `session-${i}`, platform: 'opencode', directory: '/repo',
-      title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now() - i * 1000,
+      title: `Work ${i}`, status: 'waiting', timeCreated: Date.now() - i * 1000, timeUpdated: Date.now() - i * 1000,
       pinned: i === 24, pinnedAt: i === 24 ? 1 : 0,
       seen: false, seenTimeUpdated: 0, unreadCount: 0,
     } as Session));
@@ -147,18 +147,19 @@ describe('useSidebarSessions live refresh', () => {
     });
   });
 
-  it('reorders background activity without a refetch and ignores older events', () => {
+  it('updates background activity without reordering or refetching and ignores older events', () => {
     useApiStore.setState({ recentSessions: [
-      { id: 'first', timeUpdated: 120_000 }, { id: 'background', timeUpdated: 60_000 },
+      { id: 'first', timeCreated: 2, lastTurnCompletedAt: 120_000, timeUpdated: 120_000 },
+      { id: 'background', timeCreated: 1, lastTurnCompletedAt: 60_000, timeUpdated: 60_000 },
     ] as Session[] });
     const { unmount } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     act(() => sessionActivity?.('background', 180_000));
-    expect(useApiStore.getState().recentSessions.map((s) => s.id)).toEqual(['background', 'first']);
+    expect(useApiStore.getState().recentSessions.map((s) => s.id)).toEqual(['first', 'background']);
     act(() => sessionActivity?.('background', 90_000));
-    expect(useApiStore.getState().recentSessions[0].timeUpdated).toBe(180_000);
+    expect(useApiStore.getState().recentSessions[1].timeUpdated).toBe(180_000);
     expect(getSessions).not.toHaveBeenCalled();
     unmount();
     expect(sessionActivity).toBeUndefined();
@@ -255,6 +256,25 @@ describe('useSidebarSessions live refresh', () => {
 
     act(() => sseConnect?.());
     await waitFor(() => expect(getSessions).toHaveBeenCalledTimes(3));
+  });
+
+  it.each(['done', 'waiting', 'error'] as const)('refreshes durable completion on a %s status patch', async (status) => {
+    const first = { id: 'first', platform: 'opencode', timeCreated: 1, timeUpdated: 120_000, lastTurnCompletedAt: 120_000 } as Session;
+    const background = { ...first, id: 'background', status: 'busy' as const, lastTurnCompletedAt: 60_000 };
+    // The global list snapshot can still be stale at the terminal edge.
+    getSessions.mockResolvedValueOnce([first, background]);
+    const peekSession = vi.fn().mockResolvedValue({ session: { ...background, status, lastTurnCompletedAt: 180_000 } });
+    useApiStore.setState({ peekSession, recentSessions: [first, background], recentSessionsHash: '' });
+    const abortSignalRef = { current: new AbortController() };
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    await act(async () => { sessionChanged?.('background', undefined, { status }); });
+    expect(getSessions).toHaveBeenCalledOnce();
+    expect(peekSession).toHaveBeenCalledWith('background', expect.anything());
+    expect(useApiStore.getState().recentSessions.map(s => s.id)).toEqual(['background', 'first']);
+    expect(useApiStore.getState().recentSessions[0].lastTurnCompletedAt).toBe(180_000);
   });
 
   it.each(['(auto-approve subagent)', 'Research (@explore subagent)'])(

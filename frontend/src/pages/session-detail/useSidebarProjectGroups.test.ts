@@ -88,8 +88,8 @@ describe('useSidebarProjectGroups', () => {
   it('buckets sessions, adds empty unarchived projects, pins on top, honours saved order', () => {
     useUiStore.setState({ projectOrder: ['/repo/quiet', '/repo/a'] });
     const recentSessions = [
-      session({ id: 'a1', directory: '/repo/a', timeUpdated: 60_000, status: 'busy' }),
-      session({ id: 'a2', directory: '/repo/a', timeUpdated: 120_000 }),
+      session({ id: 'a1', directory: '/repo/a', timeCreated: 1, timeUpdated: 60_000, status: 'busy' }),
+      session({ id: 'a2', directory: '/repo/a', timeCreated: 2, timeUpdated: 120_000 }),
       session({ id: 'b1', directory: '/repo/b', timeUpdated: 5, pinned: true, pinnedAt: 1 }),
     ];
     const { result } = renderHook(() =>
@@ -104,13 +104,18 @@ describe('useSidebarProjectGroups', () => {
     expect(groups[2].aggregate).toMatchObject({ kind: 'waiting' });
   });
 
-  it('preserves same-minute row order while retaining the exact latest activity', () => {
-    const recentSessions = [session({ id: 'first', timeUpdated: 60_001 }), session({ id: 'second', timeUpdated: 119_999 })];
-    const { result } = renderHook(() =>
-      useSidebarProjectGroups({ id: undefined, recentSessions, displayStatus: 'done' }));
+  it('orders by completion while retaining exact activity through streaming updates', () => {
+    const recentSessions = [
+      { ...session({ id: 'first', timeUpdated: 60_001 }), lastTurnCompletedAt: 20 },
+      { ...session({ id: 'second', timeUpdated: 119_999 }), lastTurnCompletedAt: 10 },
+    ];
+    const { result, rerender } = renderHook(({ recentSessions }) =>
+      useSidebarProjectGroups({ id: undefined, recentSessions, displayStatus: 'done' }), { initialProps: { recentSessions } });
     const group = result.current.sidebarProjectGroups.find((g) => g.directory === '/repo/a')!;
     expect(group.sessions.map((s) => s.id)).toEqual(['first', 'second']);
     expect(group.lastUpdated).toBe(119_999);
+    rerender({ recentSessions: [recentSessions[0], { ...recentSessions[1], timeUpdated: 180_000 }] });
+    expect(result.current.sidebarProjectGroups.find(g => g.directory === '/repo/a')!.sessions.map(s => s.id)).toEqual(['first', 'second']);
   });
 
   it('reorders without the pinned pseudo-group and hides archived projects optimistically', async () => {

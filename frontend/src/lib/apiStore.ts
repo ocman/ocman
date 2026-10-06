@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
-import { compareSidebarActivity, computeSidebarHash } from './sidebarHelpers';
+import { compareSidebarCompletion, computeSidebarHash } from './sidebarHelpers';
 import type {
   CapabilitiesResponse,
   DirectoryBrowseResponse,
@@ -170,7 +170,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       const updated = { ...state.recentSessions[idx], ...patch };
       const next = [...state.recentSessions];
       next[idx] = updated;
-      next.sort(compareSidebarActivity);
+      next.sort(compareSidebarCompletion);
       // Recompute hash so the next poll's dedup check stays accurate.
       return { recentSessions: next, recentSessionsHash: computeSidebarHash(next) };
     });

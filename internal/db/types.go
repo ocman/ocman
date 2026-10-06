@@ -145,17 +145,20 @@ type Session struct {
 	// ParentID is the session this one descends from, when any. OpenCode
 	// populates it from session.parent_id for subagent sessions. Empty for
 	// top-level sessions. The frontend uses it to render the session tree.
-	ParentID         string  `json:"parentId,omitempty"`
-	Title            string  `json:"title"`
-	Directory        string  `json:"directory"`
-	TimeCreated      int64   `json:"timeCreated"`
-	TimeUpdated      int64   `json:"timeUpdated"`
-	SummaryAdditions *int    `json:"summaryAdditions"`
-	SummaryDeletions *int    `json:"summaryDeletions"`
-	SummaryFiles     *int    `json:"summaryFiles"`
-	ShareURL         *string `json:"shareUrl"`
-	MessageCount     int     `json:"messageCount"`
-	DurationMs       int64   `json:"durationMs"`
+	ParentID    string `json:"parentId,omitempty"`
+	Title       string `json:"title"`
+	Directory   string `json:"directory"`
+	TimeCreated int64  `json:"timeCreated"`
+	TimeUpdated int64  `json:"timeUpdated"`
+	// LastTurnCompletedAt is the durable timestamp of the latest terminal
+	// assistant turn, including errors. Streaming and tool steps do not advance it.
+	LastTurnCompletedAt int64   `json:"lastTurnCompletedAt"`
+	SummaryAdditions    *int    `json:"summaryAdditions"`
+	SummaryDeletions    *int    `json:"summaryDeletions"`
+	SummaryFiles        *int    `json:"summaryFiles"`
+	ShareURL            *string `json:"shareUrl"`
+	MessageCount        int     `json:"messageCount"`
+	DurationMs          int64   `json:"durationMs"`
 	// ActiveDurationMs is the time the agent was actually working on a
 	// turn, computed as the sum of (time.completed - time.created)
 	// across assistant messages. Excludes idle gaps between turns

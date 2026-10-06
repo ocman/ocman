@@ -1,10 +1,15 @@
 import type { Session } from './api';
 import { projectRootForDirectory } from './worktrees';
 
-// Keep concurrent streams from trading places on every token. Ties retain
-// their existing order; timestamps themselves remain exact.
+// Throttle streaming activity updates to the relative-time label's precision.
 export function compareSidebarActivity(a: Pick<Session, 'timeUpdated'>, b: Pick<Session, 'timeUpdated'>): number {
   return Math.floor(b.timeUpdated / 60_000) - Math.floor(a.timeUpdated / 60_000);
+}
+
+/** Streaming and read-state changes leave the ordering key unchanged. */
+export function compareSidebarCompletion(a: Session, b: Session): number {
+  return (b.lastTurnCompletedAt || b.timeCreated || 0) - (a.lastTurnCompletedAt || a.timeCreated || 0)
+    || `${a.platform}:${a.id}`.localeCompare(`${b.platform}:${b.id}`);
 }
 
 /**
@@ -20,7 +25,7 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
   return sessions
     .map(
       (s) =>
-        `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}`,
+        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}`,
     )
     .join(',');
 }
@@ -87,7 +92,7 @@ export async function resolveOpenSession(opts: {
 /**
  * Merge a fresh /api/sessions poll result over the current store rows.
  *
- * Read watermarks and activity timestamps are monotonic. A stale response
+ * Read watermarks, activity and completion timestamps are monotonic. A stale response
  * must not undo a local read, but newer activity must become unread again.
  *
  * `status` is not sticky either: sticky-busy used to live here because
@@ -111,7 +116,6 @@ export function mergeSidebarSessions(
   current: readonly Session[],
   activeId?: string,
 ): Session[] {
-  const rank = new Map(current.map((s, index) => [s.id, index]));
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id);
@@ -121,9 +125,9 @@ export function mergeSidebarSessions(
       seen: s.seen || (live.seen && live.seenTimeUpdated >= s.timeUpdated),
       seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),
       timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),
+      lastTurnCompletedAt: Math.max(live.lastTurnCompletedAt ?? 0, s.lastTurnCompletedAt ?? 0),
     };
-  }).sort((a, b) => compareSidebarActivity(a, b) ||
-    (rank.get(a.id) ?? current.length) - (rank.get(b.id) ?? current.length));
+  }).sort(compareSidebarCompletion);
 }
 
 /**

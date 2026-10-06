@@ -16,6 +16,11 @@ new activity restores an archived session to the sidebar: **Session halts**
 is the default and waits for done, waiting, error, or interrupted status;
 **Any activity** restores it even while it is running.
 
+The session sidebar orders rows by their last completed assistant turn,
+including errors, newest first. Streaming output, sending a prompt and reading
+a session do not move it. Sessions without a completed turn use creation time;
+pinned sessions keep their pin order.
+
 **Status you can trust.** A session's status comes from the agent's own turn
 lifecycle rather than a guess about stored messages: **busy** while a turn
 runs, **waiting** when it finishes, **error** when it fails, and

@@ -381,6 +381,8 @@ export interface Session {
   directory: string;
   timeCreated: number;
   timeUpdated: number;
+  /** Last terminal assistant turn, including errors; absent on older remotes. */
+  lastTurnCompletedAt?: number;
   summaryAdditions: number | null;
   summaryDeletions: number | null;
   summaryFiles: number | null;

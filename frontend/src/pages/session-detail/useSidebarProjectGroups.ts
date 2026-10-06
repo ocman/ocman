@@ -6,7 +6,7 @@ import { useProjects } from '../../lib/queries';
 import { shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { projectIdentityIndex } from '../../lib/projectIdentity';
-import { compareSidebarActivity, rollupGroupStatus } from '../../lib/sidebarHelpers';
+import { compareSidebarCompletion, rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SidebarProjectGroup } from './SessionSidebar';
 
@@ -75,7 +75,7 @@ export function useSidebarProjectGroups({
     const rollup = (sessions: Session[]) => rollupGroupStatus(sessions, effectiveStatus);
 
     const groups: SidebarProjectGroup[] = Array.from(buckets.entries()).map(([key, sessions]) => {
-      const sorted = [...sessions].sort(compareSidebarActivity);
+      const sorted = [...sessions].sort(compareSidebarCompletion);
       const target = identity(sorted[0].directory || '', sorted[0].remoteId);
       const representative = sorted.find((s) => (s.remoteId || 'local') === (target.remoteId || 'local'));
       return {
