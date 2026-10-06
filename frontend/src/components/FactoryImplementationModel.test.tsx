@@ -58,4 +58,11 @@ describe('implementation model choice', () => {
 		expect(picker()).toHaveTextContent('p/sol');
 		expect(picker()).toBeDisabled();
 	});
+
+	it('retains an approved runtime default as the initial amendment choice', async () => {
+		vi.mocked(api.sessionModels).mockResolvedValue({ models: [{ provider: 'p', model: 'sol' }], hasProviders: true });
+		mount({ ...epic, proposal: { revision: 2, contentHash: 'new', manifest: { epicId: 'epic', molId: 'mol', project: '/repo', nodes: [], baseRevision: 1 } } });
+		await waitFor(() => expect(picker()).toBeEnabled());
+		expect(picker()).toHaveTextContent('Runtime default');
+	});
 });

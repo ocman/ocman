@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { EpicGraph } from '../pages/EpicGraph';
-import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, factoryGraphModel } from '../pages/factoryGraph';
+import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, factoryGraphModel, graphEdgeGroups } from '../pages/factoryGraph';
 import type { FactoryIssue } from '../lib/api';
 import { Modal } from './Modal';
 import './FactoryPlanGraph.css';
@@ -23,11 +23,12 @@ export function FactoryPlanGraph({ issues }: { issues: FactoryIssue[] }) {
   return <>
     <button type="button" className="oc-factory-plan-graph" aria-label="Expand plan graph" onClick={() => setExpanded(true)}>
       <svg viewBox={`${minX} ${minY} ${width} ${height}`} role="img" aria-label={`Plan graph with ${nodes.length} steps`}>
-        {edges.map((edge) => {
+        {graphEdgeGroups(edges).map((group) => {
+          const edge = group[0];
           const from = at.get(edge.source);
           const to = at.get(edge.target);
           if (!from || !to) return null;
-          return <line key={edge.id} className={`oc-factory-plan-graph-edge ${edge.kind}`} x1={from.x + GRAPH_NODE_WIDTH / 2} y1={from.y + GRAPH_NODE_HEIGHT} x2={to.x + GRAPH_NODE_WIDTH / 2} y2={to.y} />;
+          return <line key={edge.id} className={`oc-factory-plan-graph-edge ${edge.kind}`} x1={from.x + GRAPH_NODE_WIDTH / 2} y1={from.y + GRAPH_NODE_HEIGHT} x2={to.x + GRAPH_NODE_WIDTH / 2} y2={to.y}><title>{group.map((item) => item.kind).join(', ')}</title></line>;
         })}
         {nodes.map((node) => <g key={node.id} className={`factory-node-box--${node.state}`}>
           <title>{node.issue.title}</title>

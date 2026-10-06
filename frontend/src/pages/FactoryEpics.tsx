@@ -234,7 +234,7 @@ export function FactoryEpicDetail() {
 	const gatedProposal = proposalHistory.find((proposal) => proposal.revision === epic.data?.planGate?.proposalRevision);
 	const baseline = gatedProposal && proposalBaseline(gatedProposal, proposalHistory);
 	const changes = gatedProposal && proposalChanges(gatedProposal.manifest, baseline?.manifest);
-	const decidePlan = (action: 'approve' | 'revise' | 'reject', revision: number, hash: string) => decideGate.mutate({ action, expectedRevision: revision, expectedHash: hash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } });
+	const decidePlan = (action: 'approve' | 'revise' | 'reject', revision: number, hash: string) => decideGate.mutate({ action, expectedRevision: revision, expectedHash: hash, feedback, ...(action === 'approve' && implementation.approvalModel) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } });
 	const close = async () => {
 		try {
 			// ponytail: the root Mol is a container the user never sees; close it on the way out.
@@ -288,7 +288,7 @@ export function FactoryEpicDetail() {
       <IssueList epicID={id} />
       {!!removedIssues.data?.length && <section aria-label="Removed work audit"><h3>Removed work audit</h3><ul className="factory-issues">{removedIssues.data.map((issue) => <li key={issue.id}><strong>{issue.title}</strong><span>{issue.kind} · Removed {issue.removedAt ? new Date(issue.removedAt).toISOString() : 'previously'}</span><span>Audit reference: {issue.id}</span></li>)}</ul></section>}
     </section></TabsContent>
-    <TabsContent value="graph" asChild><section><EpicGraph issues={graphIssues.data} changes={epic.data.planGate?.resolution === 'open' ? changes : undefined} /></section></TabsContent>
+    <TabsContent value="graph" asChild><section>{epic.data.planGate?.resolution === 'open' && gatedProposal ? <EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview changes={changes} /> : <EpicGraph issues={graphIssues.data} />}</section></TabsContent>
     <TabsContent value="plan" asChild><section>
       <PlanningAttempts epicID={id} attempts={epic.data.attempts ?? []} />
       {proposals.isError && <QueryError error={proposals.error} retry={() => void proposals.refetch()} />}

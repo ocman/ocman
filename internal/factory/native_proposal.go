@@ -80,11 +80,12 @@ type PlanGate struct {
 }
 
 type PlanGateDecisionRequest struct {
-	ImplementationModel string `json:"implementationModel,omitempty"`
-	ExpectedRevision    int    `json:"expectedRevision"`
-	ExpectedHash        string `json:"expectedHash"`
-	Actor               string `json:"actor,omitempty"`
-	Feedback            string `json:"feedback,omitempty"`
+	ImplementationModel           string `json:"implementationModel,omitempty"`
+	UseDefaultImplementationModel bool   `json:"useDefaultImplementationModel,omitempty"`
+	ExpectedRevision              int    `json:"expectedRevision"`
+	ExpectedHash                  string `json:"expectedHash"`
+	Actor                         string `json:"actor,omitempty"`
+	Feedback                      string `json:"feedback,omitempty"`
 }
 
 type ClaimedPlan struct {

@@ -118,7 +118,7 @@ func factoryGraphExternalReferences(ctx context.Context, tx *sql.Tx, epicID stri
 	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT b.id, b.epic_id, b.project_path, b.kind, b.title, b.description, b.status, b.outcome
 		FROM factory_issue_dependency d JOIN factory_issue i ON i.id = d.issue_id JOIN factory_issue b ON b.id = d.depends_on_issue_id
 		WHERE i.epic_id = ? AND b.epic_id <> i.epic_id
-		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id IN (i.id, b.id)) ORDER BY b.id`, epicID)
+		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id) AND `+effectiveFactoryBlockerSQL+` ORDER BY b.id`, epicID)
 	if err != nil {
 		return nil, err
 	}

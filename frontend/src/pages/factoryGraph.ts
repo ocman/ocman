@@ -21,6 +21,15 @@ export interface GraphEdge {
   kind: 'hierarchy' | 'completion' | 'blocks' | 'on_failure' | 'merge_gated' | 'interrupts';
 }
 
+export function graphEdgeGroups(edges: GraphEdge[]): GraphEdge[][] {
+  const groups = new Map<string, GraphEdge[]>();
+  for (const edge of edges) {
+    const pair = `${edge.source}->${edge.target}`;
+    groups.set(pair, [...(groups.get(pair) ?? []), edge]);
+  }
+  return [...groups.values()];
+}
+
 export const GRAPH_NODE_WIDTH = 200;
 export const GRAPH_NODE_HEIGHT = 100;
 
@@ -80,12 +89,12 @@ export function factoryGraphModel(issues: FactoryIssue[], preserveHierarchy = fa
   };
 
   let edges: GraphEdge[] = [];
-  // One edge per pair: a gate's link to the work it interrupted is both stored as
-  // a dependency and derivable from its attempt, and drawing it twice is noise.
+  // Keep distinct kinds on the same pair: each dependency is part of approval.
+  // The interrupted-work provenance edge is skipped explicitly below.
   const seen = new Set<string>();
   const add = (source: string | undefined, target: string, kind: GraphEdge['kind']) => {
-    if (!source || source === target || seen.has(`${source}->${target}`)) return;
-    seen.add(`${source}->${target}`);
+    if (!source || source === target || seen.has(`${kind}:${source}->${target}`)) return;
+    seen.add(`${kind}:${source}->${target}`);
     edges.push({ id: `${kind}:${source}->${target}`, source, target, kind });
   };
   for (const issue of visible) {

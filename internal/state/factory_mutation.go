@@ -39,13 +39,18 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	}
 	if m.Actor == "mcp" {
 		var unmaterialized bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision JOIN factory_issue i ON i.epic_id = g.epic_id AND i.kind = 'materialization' AND i.status <> 'closed' WHERE g.epic_id = ? AND json_type(p.manifest_json, '$.issues') IS NULL)`, m.EpicID).Scan(&unmaterialized); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_issue i LEFT JOIN factory_plan_gate g ON g.epic_id = i.epic_id LEFT JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE i.epic_id = ? AND i.kind = 'materialization' AND i.status <> 'closed' AND json_type(p.manifest_json, '$.issues') IS NULL)`, m.EpicID).Scan(&unmaterialized); err != nil {
 			return err
 		}
 		if unmaterialized {
 			return invalid("revise the initial proposal before editing live work")
 		}
 	}
+	var pendingGraph bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, m.EpicID).Scan(&pendingGraph); err != nil {
+		return err
+	}
+	requiresApproval := m.Actor == "mcp" || pendingGraph
 	if m.Action == "create" && m.Project == "" {
 		m.Project = epicProject
 	}
@@ -256,7 +261,7 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 				err = invalid("factory issue is unavailable for structural mutation")
 			}
 			if err == nil {
-				_, err = tx.ExecContext(ctx, `WITH RECURSIVE descendants(id) AS (SELECT ? UNION ALL SELECT h.child_issue_id FROM factory_issue_hierarchy h JOIN descendants d ON h.parent_issue_id = d.id) INSERT INTO factory_removed_issue (issue_id, plan_id, plan_revision, removed_at) SELECT id, epic_id, 0, ? FROM factory_issue WHERE id IN (SELECT id FROM descendants) ON CONFLICT(issue_id) DO NOTHING`, m.IssueID, time.Now().UnixMilli())
+				err = removeFactoryGraphSubtreeTx(ctx, tx, m, requiresApproval)
 			}
 		default:
 			err = invalid("unknown Factory graph mutation")
@@ -265,11 +270,7 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	if err != nil {
 		return err
 	}
-	var pendingGraph bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, m.EpicID).Scan(&pendingGraph); err != nil {
-		return err
-	}
-	if m.Actor == "mcp" || pendingGraph {
+	if requiresApproval {
 		if err := reopenFactoryGraphApprovalTx(ctx, tx, m.EpicID); err != nil {
 			return err
 		}

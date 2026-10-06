@@ -53,7 +53,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 			JOIN factory_issue b ON b.id = d.depends_on_issue_id
 			LEFT JOIN factory_plan_gate g ON g.issue_id = b.id
 			WHERE d.issue_id = i.id
-			AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id)
+			AND `+effectiveFactoryBlockerSQL+`
 			AND NOT (
 				(d.type = 'blocks' AND b.status = 'closed' AND b.outcome = 'succeeded' AND (b.kind <> 'gate' OR g.resolution = 'approved'))
 				OR (d.type = 'on_failure' AND b.status = 'closed' AND ((b.kind <> 'gate' AND b.outcome = 'failed') OR (b.kind = 'gate' AND g.resolution = 'rejected')))

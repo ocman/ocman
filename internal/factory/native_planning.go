@@ -23,7 +23,14 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 	if !validModel(implementationModel) {
 		return PlanGate{}, fmt.Errorf("%w: implementation model must be provider/model", ErrInvalidRequest)
 	}
-	gate, err := store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback), implementationModel)
+	if req.UseDefaultImplementationModel && implementationModel != "" {
+		return PlanGate{}, fmt.Errorf("%w: runtime default cannot include an implementation model", ErrInvalidRequest)
+	}
+	var modelChoice []string
+	if implementationModel != "" || req.UseDefaultImplementationModel {
+		modelChoice = []string{implementationModel}
+	}
+	gate, err := store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback), modelChoice...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlanGate{}, fmt.Errorf("%w: factory Plan gate is unavailable", ErrInvalidRequest)
 	}

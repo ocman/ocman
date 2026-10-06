@@ -26,6 +26,13 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	workID := factoryIssueID(t, db, epic.ID, "implementation")
+	initial, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: molID, Project: "/repo", ManifestJSON: `{"nodes":[]}`, ContentHash: "initial"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", initial.Revision, initial.ContentHash, ""); err != nil {
+		t.Fatal(err)
+	}
 	attempt, err := db.CreatePreparedFactoryAttempt(ctx, epic.ID, workID, model.FactoryAttemptPolicy{Repository: "/repo", Profile: "factory-implement/v1", CheckpointSHA: "keep-me"}, time.UnixMilli(10))
 	if err != nil {
 		t.Fatal(err)

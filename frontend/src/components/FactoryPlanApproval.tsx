@@ -20,7 +20,7 @@ export function FactoryPlanApproval({ epicID, platformID, sessionID }: { epicID:
 	const approve = async () => {
 		try {
 			if (!visible) return;
-			await decide.mutateAsync({ action: 'approve', expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, ...(implementation.model && { implementationModel: implementation.model }) });
+			await decide.mutateAsync({ action: 'approve', expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, ...implementation.approvalModel });
 			setStarted(true);
 		} catch { /* Mutation errors are rendered below. */ }
 	};

@@ -91,7 +91,7 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 		byID[issues[i].ID] = &issues[i]
 		issues[i].DispatchState = "waiting"
 	}
-	rows, err := reader.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, ''), COALESCE(o.status, ''), COALESCE(o.reason, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id LEFT JOIN factory_merge_gate_observation o ON o.delivery_issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
+	rows, err := reader.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, ''), COALESCE(o.status, ''), COALESCE(o.reason, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id LEFT JOIN factory_merge_gate_observation o ON o.delivery_issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND `+effectiveFactoryBlockerSQL+` ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
 	if err != nil {
 		return nil, err
 	}

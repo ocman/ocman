@@ -31,6 +31,39 @@ test('graph approval shows frozen parent groups and external dependencies', asyn
   const screenshot = test.info().outputPath('frozen-graph-preview.png');
   await page.screenshot({ path: screenshot });
   await test.info().attach('frozen-graph-preview', { path: screenshot, contentType: 'image/png' });
+  await page.getByRole('tab', { name: 'Graph', exact: true }).click();
+  const pendingGraph = page.getByRole('tabpanel', { name: 'Graph', exact: true });
+  await expect(pendingGraph.getByText('New parent', { exact: true })).toBeVisible();
+  await expect(pendingGraph.getByText('other: External blocker', { exact: true })).toBeVisible();
+  await expect(pendingGraph.getByText('Frozen task', { exact: true })).toBeVisible();
+  const graphScreenshot = test.info().outputPath('pending-graph-tab.png');
+  await page.screenshot({ path: graphScreenshot });
+  await test.info().attach('pending-graph-tab', { path: graphScreenshot, contentType: 'image/png' });
+});
+
+test('a reopened approval accepts an explicit runtime-default model choice', async ({ mockedPage: page }) => {
+  const proposal = { revision: 2, contentHash: 'new', manifest: { epicId: 'ship', molId: 'mol', project: '/repo', nodes: [{ key: 'work', type: 'implementation', requirement: 'required', title: 'Work' }] } };
+  const epic = { id: 'ship', status: 'open', goal: 'Change amendment model', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 4, formulaRevision: 4, formulaHash: 'formula', formulaOrigin: 'built_in', progress: { requiredTotal: 1, requiredSucceeded: 0, optionalOpen: 0 }, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 2, proposalHash: 'new', implementationModel: 'p/sol' }, proposal, attempts: [{ id: 'attempt', workId: 'work', phase: 'terminal', session: { id: 'session', platform: 'opencode' } }] };
+  await page.route('/api/factory/epics', (route) => route.fulfill({ json: [epic] }));
+  await page.route('/api/factory/epics/ship', (route) => route.fulfill({ json: epic }));
+  await page.route('/api/factory/epics/ship/issues', (route) => route.fulfill({ json: [] }));
+  await page.route('/api/factory/epics/ship/proposals', (route) => route.fulfill({ json: [proposal] }));
+  await page.route('/api/session/session/models*', (route) => route.fulfill({ json: { models: [{ provider: 'p', model: 'sol' }, { provider: 'p', model: 'terra' }], hasProviders: true } }));
+  await page.route('/api/factory/epics/ship/plan-gate/approve', async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({ useDefaultImplementationModel: true });
+    expect(route.request().postDataJSON().implementationModel).toBeUndefined();
+    epic.planGate.resolution = 'approved';
+    await route.fulfill({ json: epic.planGate });
+  });
+  await page.goto('/factory/epics/ship');
+  const picker = page.getByLabel('Plan approval gate').getByRole('combobox', { name: 'Implementation model' });
+  await expect(picker).toContainText('p/sol');
+  await picker.click();
+  await page.getByRole('option', { name: 'Runtime default', exact: true }).click();
+  await expect(picker).toContainText('Runtime default');
+  const approval = page.waitForResponse((response) => response.url().endsWith('/plan-gate/approve'));
+  await page.getByRole('button', { name: 'Approve revision 2', exact: true }).click();
+  await approval;
 });
 
 test('the pending proposal can be approved with its additions visible', async ({ mockedPage: page }) => {

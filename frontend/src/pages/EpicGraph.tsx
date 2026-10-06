@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Background, Controls, MarkerType, Position, ReactFlow, type Edge, type Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, GRAPH_STATES, factoryGraphModel } from './factoryGraph';
+import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, GRAPH_STATES, factoryGraphModel, graphEdgeGroups } from './factoryGraph';
 import { IssueDrawer } from './FactoryIssues';
 import { EmptyState } from '../components/EmptyState';
 import type { FactoryIssue } from '../lib/api';
@@ -25,15 +25,22 @@ export function EpicGraph({ issues, preview, changes }: { issues?: FactoryIssue[
       targetPosition: Position.Top,
       connectable: false,
     }));
-    const flowEdges: Edge[] = model.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      label: changes?.addedEdges.has(edge.id) ? `Added ${edge.kind === 'hierarchy' ? 'contains' : edge.kind.replaceAll('_', ' ')}` : edge.kind === 'on_failure' ? 'on failure' : edge.kind === 'merge_gated' ? 'merge gated' : edge.kind === 'interrupts' ? 'decision for task' : edge.kind === 'completion' ? 'phase completion' : edge.kind === 'hierarchy' ? 'contains' : undefined,
-      animated: edge.kind === 'blocks' || edge.kind === 'merge_gated',
-      className: `factory-edge factory-edge--${edge.kind}${changes?.addedEdges.has(edge.id) ? ' factory-edge--added' : ''}`,
-      markerEnd: edge.kind === 'interrupts' || edge.kind === 'hierarchy' ? undefined : { type: MarkerType.ArrowClosed },
-    }));
+    const flowEdges: Edge[] = graphEdgeGroups(model.edges).map((group) => {
+      // Parallel paths and labels would overlap. Show every relationship in one
+      // readable label while the model and additions retain all typed edges.
+      const edge = group.find((item) => ['blocks', 'on_failure', 'merge_gated', 'completion'].includes(item.kind)) ?? group[0];
+      const added = group.some((item) => changes?.addedEdges.has(item.id));
+      const labels = group.map((item) => changes?.addedEdges.has(item.id) ? `Added ${item.kind === 'hierarchy' ? 'contains' : item.kind.replaceAll('_', ' ')}` : item.kind === 'on_failure' ? 'on failure' : item.kind === 'merge_gated' ? 'merge gated' : item.kind === 'interrupts' ? 'decision for task' : item.kind === 'completion' ? 'phase completion' : item.kind === 'hierarchy' ? 'contains' : group.length > 1 ? 'blocks' : undefined);
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        label: labels.filter(Boolean).join(' · ') || undefined,
+        animated: group.some((item) => item.kind === 'blocks' || item.kind === 'merge_gated'),
+        className: `factory-edge factory-edge--${edge.kind}${added ? ' factory-edge--added' : ''}`,
+        markerEnd: edge.kind === 'interrupts' || edge.kind === 'hierarchy' ? undefined : { type: MarkerType.ArrowClosed },
+      };
+    });
     return { nodes: flowNodes, edges: flowEdges };
   }, [issues, preview, changes]);
   if (!nodes.length) return <EmptyState>This epic has no work to draw yet.</EmptyState>;

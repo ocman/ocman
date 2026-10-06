@@ -24,7 +24,7 @@ function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate 
     {planIssues && <FactoryPlanGraph issues={planIssues} />}
     <label>Plan feedback<TextField value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>
     <FactoryImplementationModel {...implementation} />
-    <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess || (action === 'approve' && implementation.loading)} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>
+    <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess || (action === 'approve' && implementation.loading)} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback, ...(action === 'approve' && implementation.approvalModel) })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>
     {decide.isPending && <span role="status">Saving decision…</span>}
     {decide.isSuccess && <span role="status">Plan decision saved.</span>}
     {decide.isError && <span role="alert">{decide.error.message}</span>}

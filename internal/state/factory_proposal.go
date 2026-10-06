@@ -251,7 +251,7 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 	}
 	if action == "approve" {
 		gate.Outcome, gate.Resolution = "succeeded", "approved"
-		if len(implementationModel) > 0 && implementationModel[0] != "" {
+		if len(implementationModel) > 0 {
 			gate.ImplementationModel = implementationModel[0]
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_plan_gate SET implementation_model = ? WHERE epic_id = ?`, gate.ImplementationModel, epicID); err != nil {

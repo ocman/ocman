@@ -1,9 +1,17 @@
 import { expect, it } from 'vitest';
 import type { FactoryIssue, FactoryProposal } from '../lib/api';
 import { proposalBaseline, proposalChanges } from './factoryProposalChanges';
+import { factoryGraphModel, proposalIssues } from './factoryGraph';
 
 const issue = (id: string, overrides: Partial<FactoryIssue> = {}): FactoryIssue => ({ id, epicId: 'epic', project: '/repo', kind: 'task', title: id, status: 'open', ...overrides });
 const manifest = (issues: FactoryIssue[]): FactoryProposal['manifest'] => ({ epicId: 'epic', molId: 'mol', project: '/repo', nodes: [], issues });
+
+it('shows a second dependency type and dependencies overlapping hierarchy', () => {
+  const old = manifest([issue('parent'), issue('work', { dependsOn: [{ id: 'parent', type: 'blocks' }] })]);
+  const next = manifest([issue('parent'), issue('work', { parentId: 'parent', dependsOn: [{ id: 'parent', type: 'blocks' }, { id: 'parent', type: 'on_failure' }] })]);
+  expect(factoryGraphModel(proposalIssues(next), true).edges.map((edge) => edge.kind)).toEqual(['hierarchy', 'blocks', 'on_failure']);
+  expect(proposalChanges(next, old).addedEdges).toEqual(new Set(['hierarchy:parent->work', 'on_failure:parent->work']));
+});
 
 it('compares to the approved baseline even when newer unapproved revisions exist', () => {
   const baseline: FactoryProposal = { revision: 2, contentHash: 'base', manifest: manifest([issue('old')]) };

@@ -192,6 +192,7 @@ export interface FactoryPlanGate {
 
 export interface FactoryPlanGateDecisionRequest {
 	implementationModel?: string;
+	useDefaultImplementationModel?: boolean;
 	expectedRevision: number;
 	expectedHash: string;
 	feedback?: string;

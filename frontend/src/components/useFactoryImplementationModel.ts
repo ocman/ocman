@@ -25,13 +25,17 @@ export function useFactoryImplementationModel(epic?: FactoryEpic) {
 	const suggested = models.find((model) => implementationModelTier(model) === 'Balanced') ?? models.find((model) => implementationModelTier(model) === 'Fast') ?? '';
 	const [selection, setSelection] = useState<{ gate: string; model: string }>();
 	const gate = `${id}/${planGate?.proposalHash}`;
-	const { model, locked } = resolveImplementationModel(epic, selection?.gate === gate ? selection.model : suggested);
-	return { model, models, entries, setModel: (model: string) => setSelection({ gate, model }), loading: catalog.isFetching, error: catalog.isError, locked };
+	const selected = selection?.gate === gate;
+	const retained = planGate?.implementationModel ?? (epic?.proposal?.manifest?.baseRevision ? '' : suggested);
+	const { model, locked } = resolveImplementationModel(epic, selected ? selection.model : retained);
+	const approvalModel = model ? { implementationModel: model } : selected && !locked ? { useDefaultImplementationModel: true } : {};
+	return { model, models, entries, approvalModel, setModel: (model: string) => setSelection({ gate, model }), loading: catalog.isFetching, error: catalog.isError, locked };
 }
 
 // An epic-level implementation model wins at claim time, so the approval picker just mirrors it.
 function resolveImplementationModel(epic: FactoryEpicWithModels | undefined, picked: string) {
 	const epicModel = epic?.models?.implementation;
 	if (epicModel) return { model: epicModel, locked: true };
-	return { model: epic?.planGate?.implementationModel ?? picked, locked: epic?.planGate?.resolution === 'approved' };
+	const locked = epic?.planGate?.resolution === 'approved';
+	return { model: locked ? epic?.planGate?.implementationModel ?? picked : picked, locked };
 }

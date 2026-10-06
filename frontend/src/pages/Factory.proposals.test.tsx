@@ -9,7 +9,7 @@ import { FactoryEpicDetail } from './FactoryEpics';
 
 vi.mock('@xyflow/react', async (original) => ({
   ...await original<typeof import('@xyflow/react')>(),
-  ReactFlow: ({ nodes }: { nodes: { id: string; className: string; data: { label: React.ReactNode } }[] }) => <div>{nodes.map((node) => <div key={node.id} data-testid={`node-${node.id}`} className={node.className}>{node.data.label}</div>)}</div>,
+  ReactFlow: ({ nodes, edges }: { nodes: { id: string; className: string; data: { label: React.ReactNode } }[]; edges: { id: string; label?: string }[] }) => <div>{nodes.map((node) => <div key={node.id} data-testid={`node-${node.id}`} className={node.className}>{node.data.label}</div>)}{edges.map((edge) => <span key={edge.id} data-testid={`edge-${edge.id}`}>{edge.label}</span>)}</div>,
 }));
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryEpics: vi.fn(), factoryIssues: vi.fn(), factoryRemovedIssues: vi.fn(),
@@ -84,4 +84,44 @@ it('keeps additions visible in the Graph tab', async () => {
   await userEvent.setup().click(await screen.findByRole('tab', { name: 'Graph' }));
   const graph = within(screen.getByRole('tabpanel', { name: 'Graph' }));
   await waitFor(() => expect(within(graph.getByTestId('node-ship.2')).getByText('Added')).toBeInTheDocument());
+});
+
+it('renders the frozen external endpoint and reparenting in the Graph tab overlay', async () => {
+  const next = { ...pending, manifest: { ...pending.manifest, issues: [
+    ...pending.manifest.issues!,
+    { id: 'group', epicId: 'ship', project: '/repo', kind: 'mol', title: 'New parent', status: 'open' },
+  ].map((item) => item.id === 'ship.2' ? { ...item, parentId: 'group', dependsOn: [{ id: 'other.1', type: 'blocks' }] } : item), externalIssues: [{ id: 'other.1', epicId: 'other', project: '/other', kind: 'task', title: 'External blocker', status: 'open' }] } };
+  vi.mocked(api.factoryProposals).mockResolvedValue([{ ...original, manifest: { ...original.manifest, issues: pending.manifest.issues! } }, next]);
+  vi.mocked(api.factoryIssues).mockResolvedValue(pending.manifest.issues!);
+  mount();
+  await userEvent.setup().click(await screen.findByRole('tab', { name: 'Graph' }));
+  const graph = within(screen.getByRole('tabpanel', { name: 'Graph' }));
+  expect(await graph.findByText('other: External blocker')).toBeInTheDocument();
+  expect(graph.getByText('New parent')).toBeInTheDocument();
+  expect(graph.getByTestId('edge-blocks:other.1->ship.2')).toHaveTextContent('Added blocks');
+  expect(graph.getByTestId('edge-hierarchy:group->ship.2')).toHaveTextContent('Added contains');
+});
+
+it('renders all dependency types on a shared pair in a readable approval label', async () => {
+  const before = { ...pending, revision: 2, contentHash: 'old', manifest: { ...pending.manifest, issues: pending.manifest.issues!.map((item) => item.id === 'ship.3' ? { ...item, dependsOn: [{ id: 'ship.2', type: 'blocks' }] } : item) } };
+  const next = { ...pending, manifest: { ...pending.manifest, issues: pending.manifest.issues!.map((item) => item.id === 'ship.3' ? { ...item, parentId: 'ship.2', dependsOn: [{ id: 'ship.2', type: 'blocks' }, { id: 'ship.2', type: 'on_failure' }] } : item) } };
+  vi.mocked(api.factoryProposals).mockResolvedValue([before, next]);
+  mount();
+  const preview = within(await screen.findByLabelText('Proposed plan'));
+  expect(await preview.findByTestId('edge-blocks:ship.2->ship.3')).toHaveTextContent('Added contains · blocks · Added on failure');
+  expect(preview.getByLabelText('Proposal additions')).toHaveTextContent('0 added issues · 2 added connections');
+});
+
+it.each(['p/terra', 'Runtime default'])('submits an explicit replacement %s on a reopened gate', async (choice) => {
+  vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { ...epic.planGate!, implementationModel: 'p/sol' }, attempts: [{ id: 'attempt', workId: 'work', phase: 'terminal', session: { id: 'session', platform: 'opencode' } }] });
+  vi.mocked(api.sessionModels).mockResolvedValue({ models: [{ provider: 'p', model: 'sol' }, { provider: 'p', model: 'terra' }], hasProviders: true });
+  mount();
+  const user = userEvent.setup();
+  const picker = within(await screen.findByLabelText('Plan approval gate')).getByRole('combobox', { name: 'Implementation model' });
+  await waitFor(() => expect(picker).toHaveTextContent('p/sol'));
+  await waitFor(() => expect(picker).toBeEnabled());
+  await user.click(picker);
+  await user.click(screen.getByRole('option', { name: choice === 'Runtime default' ? choice : /terra/ }));
+  await user.click(screen.getByRole('button', { name: 'Approve revision 4' }));
+  await waitFor(() => expect(api.factoryPlanGate).toHaveBeenCalledWith('ship', 'approve', expect.objectContaining(choice === 'Runtime default' ? { useDefaultImplementationModel: true } : { implementationModel: 'p/terra' })));
 });

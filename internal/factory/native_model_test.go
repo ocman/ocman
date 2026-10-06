@@ -3,8 +3,10 @@ package factory
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestApprovalFreezesImplementationModel(t *testing.T) {
@@ -59,5 +61,55 @@ func TestApprovalFreezesImplementationModel(t *testing.T) {
 	saved, err = db.GetFactoryPlanGate(t.Context(), epic.ID)
 	if err != nil || saved.ImplementationModel != gate.ImplementationModel {
 		t.Fatalf("recovered gate = %#v, %v", saved, err)
+	}
+}
+
+func TestAmendmentModelChoiceReplacesClearsOrRetainsSavedModel(t *testing.T) {
+	for _, tc := range []struct {
+		name, selected, want string
+		useDefault           bool
+	}{
+		{"replacement", "p/terra", "p/terra", false},
+		{"runtime default", "", "", true},
+		{"omitted choice", "", "p/sol", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := state.Open(statetest.Path(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+			epic := createPouredWorkEpic(t, svc, "Replace model")
+			proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash, ImplementationModel: "p/sol"}); err != nil {
+				t.Fatal(err)
+			}
+			work := pouredIssueID(t, svc, epic.ID, "implementation")
+			if err := svc.MutateGraph(t.Context(), GraphMutation{Actor: "mcp", Action: "edit", EpicID: epic.ID, IssueID: work, Title: "Updated work"}); err != nil {
+				t.Fatal(err)
+			}
+			detail, err := svc.GetWorkEpic(t.Context(), epic.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := PlanGateDecisionRequest{ExpectedRevision: detail.PlanGate.ProposalRevision, ExpectedHash: detail.PlanGate.ProposalHash, ImplementationModel: tc.selected, UseDefaultImplementationModel: tc.useDefault}
+			bad := req
+			bad.ImplementationModel, bad.UseDefaultImplementationModel = "p/sol", true
+			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", bad); err == nil {
+				t.Fatal("accepted contradictory model choices")
+			}
+			gate, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", req)
+			if err != nil || gate.ImplementationModel != tc.want {
+				t.Fatalf("model decision = %#v, %v", gate, err)
+			}
+			_, attempt, err := db.ClaimFactoryImplementation(t.Context(), epic.ID, work, "factory-implement/v1", time.Now())
+			if err != nil || attempt.FrozenPolicy.Model != tc.want {
+				t.Fatalf("claimed model = %#v, %v", attempt.FrozenPolicy, err)
+			}
+		})
 	}
 }

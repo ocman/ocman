@@ -232,6 +232,8 @@ Plan approval includes an implementation model selector in the planning session,
 Epic page, and inline action card. It suggests an available Opus or Sol model for
 balanced implementation, or Sonnet or Terra when only a fast model is available.
 Choose a fast model for speed, any other available model, or Runtime default.
+An amendment initially retains the saved implementation model. While its gate
+is open, a new selection, including Runtime default, replaces that saved choice.
 
 Approval saves the exact model reference with the Plan gate and copies it into
 each implementation Attempt, including final delivery. Retrying approval keeps
@@ -355,6 +357,11 @@ model is retained. Requesting a revision keeps dispatch paused; rejecting the
 graph closes the Epic and cancels its remaining open work. Pending approval and
 proposal history survive a restart. Agents cannot approve their own changes.
 Approving a graph revision does not complete any active scope-planning session.
+Agent graph edits are available only after initial planning and materialization;
+before the first proposal, submit that proposal rather than editing live work.
+Proposed blocker removals stay effective for dependent work in other Epics until
+the source amendment is approved. Previously approved removals remain applied
+when later amendments are proposed.
 
 An implementation agent that discovers another required repository can request
 it with the project path and a reason. Factory pauses and preserves that Attempt

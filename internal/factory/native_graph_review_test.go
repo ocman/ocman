@@ -129,6 +129,15 @@ func TestGraphProposalResponsePreservesHierarchyAndExternalReferences(t *testing
 		t.Fatal(err)
 	}
 	work, blocker := ids(local)["Work"], ids(external)["External blocker"]
+	for _, epicID := range []string{local, external} {
+		proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epicID, Manifest: ProposalManifest{EpicID: epicID, MolID: pouredIssueID(t, svc, epicID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.DecidePlanGate(t.Context(), epicID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, mutation := range []GraphMutation{
 		{Action: "reparent", IssueID: work, ParentID: parents["New parent"]},
 		{Action: "link", IssueID: work, DependsOnID: blocker, DependencyType: "blocks"},
