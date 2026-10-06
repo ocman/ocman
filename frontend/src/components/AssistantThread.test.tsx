@@ -379,3 +379,13 @@ describe('composer footer observer', () => {
     expect(footerObservers.every((o) => o.disconnected)).toBe(true);
   });
 });
+
+describe('empty thread', () => {
+  it('shows the default placeholder unless the caller supplies one', () => {
+    const { rerender } = render(<AssistantThread />);
+    expect(screen.getByText('No messages yet.')).toBeInTheDocument();
+    rerender(<AssistantThread empty={<span>Starting session</span>} />);
+    expect(screen.queryByText('No messages yet.')).toBeNull();
+    expect(screen.getByText('Starting session')).toBeInTheDocument();
+  });
+});

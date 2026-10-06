@@ -532,6 +532,7 @@ export function AssistantThread({
   onLoadMore,
   composer,
   footer,
+  empty,
   bookmarkedMessageIds,
   onToggleMessageBookmark,
   scrollToMessageId,
@@ -543,6 +544,8 @@ export function AssistantThread({
   onLoadMore?: () => void;
   composer?: React.ReactNode;
   footer?: React.ReactNode;
+  /** Replaces the "No messages yet." placeholder. */
+  empty?: React.ReactNode;
   bookmarkedMessageIds?: Set<string>;
   onToggleMessageBookmark?: (messageId: string) => void;
   scrollToMessageId?: string | null;
@@ -839,7 +842,7 @@ export function AssistantThread({
             </div>
           )}
           <ThreadPrimitive.Empty>
-            <div className="oc-empty">No messages yet.</div>
+            {empty ?? <div className="oc-empty">No messages yet.</div>}
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
           {speech.error && <div role="status" className="oc-thread-error-note">{speech.error}</div>}

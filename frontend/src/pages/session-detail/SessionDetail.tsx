@@ -84,6 +84,7 @@ import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { platformMessageCount, useSession } from './useSession';
 import { usePendingSend } from './usePendingSend';
+import { StartProgress, startHandoffs } from './StartProgress';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
@@ -206,6 +207,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Tracks an in-flight send and failed-send retry state. It is never
   // materialised into the thread; server messages are the source of truth.
   const pending = usePendingSend(id);
+  // A conversation just started here keeps its prompt and steps on screen
+  // until the first message lands, instead of flashing an empty thread.
+  const startHandoff = id ? startHandoffs.get(id) : undefined;
   // Auto-clear pending when SSE delivers the real user message.
   // Runs in an effect (not render) so the pending → null setState
   // is properly batched and React doesn't see a setState during
@@ -962,6 +966,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   scrollToMessageId={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.id : null}
                   scrollToMessageTick={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.tick : 0}
                   scrollToToolCall={commitSourceJump?.sessionId === session.id && commitSourceJump.platformId === session.platform ? commitSourceJump : null}
+                  empty={startHandoff && <StartProgress prompt={startHandoff.prompt} steps={startHandoff.steps} />}
                   composer={(
                     <SessionComposerSlot
                       sessionId={session.id}

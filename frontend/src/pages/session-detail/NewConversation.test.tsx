@@ -40,6 +40,7 @@ vi.mock('../../components/assistant/Composer', () => ({
   Composer: (props: ComposerProps) => { composer = props; return <span>{props.target}:{String(props.disabled)}</span>; },
 }));
 import { NewConversation } from './NewConversation';
+import { startHandoffs } from './StartProgress';
 
 const navigate = vi.fn();
 const navigateToSession = vi.fn();
@@ -288,6 +289,8 @@ describe('NewConversation', () => {
     await act(async () => { finish({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/wt', firstMessageSent: true }); await sent; });
     expect(navigateToSession).toHaveBeenCalledWith('child');
     expect(mocks.progress.size).toBe(0);
+    // The session view keeps showing them until the first message arrives.
+    expect(startHandoffs.get('child')).toEqual({ prompt: 'Fix login', steps: { opencode: 'active', worktree: 'done' } });
   });
 
   it('keeps ocman built-ins out of the first submission and opens the worktree form for /wt', async () => {

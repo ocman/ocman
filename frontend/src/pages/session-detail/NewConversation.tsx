@@ -28,7 +28,7 @@ import { InlineAlert } from '../../components/InlineAlert';
 import { useWorktreeEligibility } from './useWorktreeEligibility';
 import { startFirstSubmission } from './firstSubmission';
 import { sendFirstFiles } from './sendFirstFiles';
-import { StartProgress, type StartSteps } from './StartProgress';
+import { StartProgress, startHandoffs, type StartSteps } from './StartProgress';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -182,9 +182,12 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     // under the pending prompt; it all goes away with this page.
     const startId = randomId();
     setPending({ key: routeKey, text, startId, steps: {} });
+    let steps: StartSteps = {};
     // Subscribed before the request so the first step can't be missed.
     const unsubscribe = onSessionStartProgress((id, step, state) => {
-      if (id === startId) setPending((p) => p?.startId === id ? { ...p, steps: { ...p.steps, [step]: state } } : p);
+      if (id !== startId) return;
+      steps = { ...steps, [step]: state };
+      setPending((p) => p?.startId === id ? { ...p, steps } : p);
     });
     try {
       // Synchronous when ready, so a re-point right after submit cannot drop it.
@@ -211,6 +214,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       if (execute) {
         startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
+      startHandoffs.set(res.sessionId, { prompt: text, steps });
       if (stillCurrent()) {
         navigateToSession(res.sessionId);
         // Only the initiating draft may be cleared, never a newer route's draft.
