@@ -15,10 +15,13 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
   const [generation, setGeneration] = useState(refreshOnMount ? 1 : 0);
   const consumedRefresh = useRef(0);
   useEffect(() => {
-    const refresh = () => setGeneration((g) => g + 1);
+    const refresh = (event: Event) => {
+      const repositories = (event as CustomEvent<string[]>).detail;
+      if (!repositories || repositories.some((repo) => cacheKey.startsWith(`${repo}@`))) setGeneration((g) => g + 1);
+    };
     window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
     return () => window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
-  }, []);
+  }, [cacheKey]);
   const [result, setResult] = useState<{ key: string; data: PRChecks | null; loading: boolean; error: boolean }>({ key: requestKey, data: null, loading: false, error: false });
   useEffect(() => {
     if (!visible) return;

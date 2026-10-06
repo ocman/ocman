@@ -81,7 +81,9 @@ sequenceDiagram
   identity. Unknown identities are skipped; no transcript read or RPC delays
   the stream. The visible PR/Issue tab refreshes its lists and CI
   checks after a 750 ms debounce, scoped by owner and project, including sibling
-  worktrees. This is a command-string heuristic, not proof that git succeeded;
+  worktrees and session-loading transitions. Automatic CI invalidation targets
+  only that project's upstream repositories; unrelated cached checks and rich
+  previews stay intact. This is a command-string heuristic, not proof that git succeeded;
   commands run outside agent bash tools are not observed.
 - Activity timestamps stay exact, but sorting uses one-minute buckets with
   stable ties. Concurrent streams in the same minute do not continually swap

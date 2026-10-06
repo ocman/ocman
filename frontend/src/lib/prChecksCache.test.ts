@@ -55,6 +55,17 @@ describe('prChecksCache', () => {
     expect(getCachedPRChecks('a')).toBeUndefined();
   });
 
+  it('scoped clear preserves unrelated repositories in memory and storage', () => {
+    cachePRChecks('github.com/a/repo@one', ok);
+    cachePRChecks('github.com/a/repository@two', ok);
+    cachePRChecks('other.example/a/repo@three', ok);
+    clearPRChecksCache(['github.com/a/repo']);
+    resetPRChecksMemoryForTest();
+    expect(getCachedPRChecks('github.com/a/repo@one')).toBeUndefined();
+    expect(getCachedPRChecks('github.com/a/repository@two')).toEqual(ok);
+    expect(getCachedPRChecks('other.example/a/repo@three')).toEqual(ok);
+  });
+
   it('ignores old SHA-only and potentially incomplete storage and survives corrupt storage', () => {
     localStorage.setItem('ocman.prChecks.v1', JSON.stringify([['a', ok]]));
     localStorage.setItem('ocman.prChecks.v2', JSON.stringify([['a', ok]]));

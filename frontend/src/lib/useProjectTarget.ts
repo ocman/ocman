@@ -3,6 +3,7 @@ import { useState } from 'react';
 export interface ProjectTarget {
   directory: string | undefined;
   remoteId: string;
+  projectId?: string;
 }
 
 /**
@@ -23,6 +24,6 @@ export function useProjectTarget(
   const project = session.projectId && session.projectId !== 'global' ? session.projectId : `dir:${directory}`;
   const key = `${remoteId}\0${project}`;
   if (pinned?.key === key) return pinned;
-  setPinned({ key, directory, remoteId });
-  return { directory, remoteId };
+  setPinned({ key, directory, remoteId, projectId: session.projectId });
+  return { directory, remoteId, projectId: session.projectId };
 }

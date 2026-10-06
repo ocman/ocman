@@ -63,7 +63,16 @@ export function cachePRChecks(key: string, checks: PRChecks) {
   save(map);
 }
 
-export function clearPRChecksCache() {
+export function clearPRChecksCache(repositories?: string[]) {
+  if (repositories) {
+    const map = load();
+    for (const key of map.keys()) {
+      if (repositories.some((repo) => key.startsWith(`${repo}@`))) map.delete(key);
+    }
+    save(map);
+    window.dispatchEvent(new CustomEvent(PR_CHECKS_REFRESH_EVENT, { detail: repositories }));
+    return;
+  }
   entries = new Map();
   try {
     window.localStorage.removeItem(STORAGE_KEY);

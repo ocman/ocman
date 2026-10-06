@@ -190,10 +190,13 @@ function UpstreamTabContent({
       const sameProject = projectId && projectId !== 'global' && hint.projectId === projectId;
       if (!sameProject && hint.directory !== directory && hint.directory !== launchDirectory) return;
       clearTimeout(refreshTimer.current);
-      refreshTimer.current = setTimeout(refreshAll, 750);
+      refreshTimer.current = setTimeout(() => {
+        clearPRChecksCache(upstreams.map((u) => `${u.host}/${u.repo}`));
+        for (const refresh of groupRefreshers) refresh();
+      }, 750);
     });
     return unsubscribe;
-  }, [directory, launchDirectory, projectId, remoteId, refreshAll]);
+  }, [directory, launchDirectory, projectId, remoteId, upstreams, groupRefreshers]);
 
   // The retained list owns the timer, not the active sibling checkout.
   useEffect(() => () => clearTimeout(refreshTimer.current), [directory, remoteId]);

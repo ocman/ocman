@@ -9,6 +9,7 @@ import { _resetForgeUserCacheForTests } from '../../lib/useForgeUser';
 import { cachePRChecks, getCachedPRChecks } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import type { GitCommandHint } from '../../lib/useGlobalEvents';
+import { useProjectTarget } from '../../lib/useProjectTarget';
 
 const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], page: 1, hasMore: false, setPage: vi.fn(), refresh: vi.fn() }));
 const gitHints = vi.hoisted(() => new Set<(hint: GitCommandHint) => void>());
@@ -47,6 +48,24 @@ beforeEach(() => {
 });
 
 describe('UpstreamPane owner-scoped resources', () => {
+  it('accepts newly arriving sibling hints during an unresolved session transition', async () => {
+    function PinnedPane({ current, session }: { current?: string; session?: { projectId: string; remoteId: string } }) {
+      const target = useProjectTarget(current, session);
+      return <UpstreamPane directory={target.directory} projectId={target.projectId} currentDirectory={current} remoteId={target.remoteId} upstreams={[upstreams[0]]} actionsEnabled={!!session} />;
+    }
+    const { rerender, unmount } = render(<PinnedPane current="/first" session={{ projectId: 'p', remoteId: 'box' }} />);
+    await act(async () => {});
+    vi.useFakeTimers();
+    try {
+      rerender(<PinnedPane />);
+      act(() => {
+        for (const cb of gitHints) cb({ sessionID: 'background', action: 'push', remoteId: 'box', projectId: 'p', directory: '/third' });
+        vi.advanceTimersByTime(750);
+      });
+      expect(upstreamListMock.refresh).toHaveBeenCalledOnce();
+      unmount();
+    } finally { vi.useRealTimers(); }
+  });
   it('debounces same-project git hints including sibling worktrees, and cancels on unmount', async () => {
     const { unmount, rerender } = render(<UpstreamPane directory="/repo" currentDirectory="/first" projectId="p" remoteId="box" upstreams={[upstreams[0]]} />);
     await act(async () => {});
