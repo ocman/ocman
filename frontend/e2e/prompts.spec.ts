@@ -198,18 +198,16 @@ test('hotkey "Shift+A" triggers allow-always', async ({ mockedPage: page }) => {
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
   );
   await setupLivePage(page);
-  await expect(page.locator('.oc-permission-wrap')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('dialog', { name: 'Permission required' })).toBeVisible({ timeout: 5_000 });
 
   // Wait out the mount-time settle window so the affirmative hotkey isn't
   // swallowed as an in-flight keystroke.
   await page.waitForTimeout(PERMISSION_SETTLE_MS + 50);
 
-  // Two-step: Shift+A opens the confirmation screen with Cancel focused by
-  // default (CONFIRM_DEFAULT_IDX = 1), so Tab switches focus to Confirm,
-  // and Enter submits.
+  // Shift+A opens the confirmation screen with Confirm focused; Enter submits.
   await page.keyboard.press('Shift+A');
-  await expect(page.locator('.oc-permission-wrap[aria-label="Confirm always allow"]')).toBeVisible();
-  await page.keyboard.press('Tab');
+  await expect(page.getByRole('dialog', { name: 'Confirm always allow' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm', exact: true })).toBeFocused();
   const [req] = await Promise.all([
     page.waitForRequest((r) => r.url().includes('/permissions/perm-A') && r.method() === 'POST'),
     page.keyboard.press('Enter'),
