@@ -53,6 +53,9 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 	for _, session := range tree {
 		byID[session.ID] = session
 	}
+	// The detail's tree projection already reads durable completion metadata.
+	// Keep ownership/directory lookups on GetSession free of message scans.
+	detail.Session.LastTurnCompletedAt = byID[id].LastTurnCompletedAt
 
 	ports := discoverOpenCodePorts()
 	detail.SessionTree = make([]db.Session, 0, len(byID))

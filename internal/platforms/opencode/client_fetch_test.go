@@ -49,12 +49,29 @@ func TestFetchSessionFromOpenCodeCtxPreservesCompletedTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail, ok := New(database, nil).fetchSessionFromOpenCodeCtx(t.Context(), sid, 1, 0)
-	if !ok {
-		t.Fatal("live session fetch failed")
+	detail, err := New(database, nil).Session(t.Context(), sid, 1, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if summary.LastTurnCompletedAt != 2000 || detail.Session.LastTurnCompletedAt != summary.LastTurnCompletedAt {
 		t.Fatalf("live completion = %d, list completion = %d, want 2000", detail.Session.LastTurnCompletedAt, summary.LastTurnCompletedAt)
+	}
+	// A failed live fetch takes the DB fallback, whose detail must carry
+	// the same timestamp without broadening metadata-only lookups.
+	fake.SetSession(sid, nil)
+	fallback, err := New(database, nil).Session(t.Context(), sid, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallback.Session.LastTurnCompletedAt != 2000 {
+		t.Fatalf("fallback completion = %d, want 2000", fallback.Session.LastTurnCompletedAt)
+	}
+}
+
+func TestOwnsSessionDoesNotParseMessageHistory(t *testing.T) {
+	database := newTestDBWithSessions(t, []testSession{{id: "metadata", directory: "/repo", messageData: "not-json"}})
+	if !New(database, nil).Owns(t.Context(), "metadata") {
+		t.Fatal("ownership lookup parsed message history")
 	}
 }
 

@@ -36,11 +36,11 @@ func TestSessionCompletionTimestamp(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		detail, err := d.GetSession(t.Context(), "session")
+		tree, err := d.GetSessionTree(t.Context(), "session")
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, row := range []any{list[0], summary, detail} {
+		for _, row := range []any{list[0], summary, tree[0]} {
 			if got := completionTimestamp(t, row); got != want {
 				t.Fatalf("completion = %d, want %d", got, want)
 			}
@@ -69,6 +69,22 @@ func TestSessionCompletionTimestamp(t *testing.T) {
 		"role": "assistant", "finish": "length", "time": map[string]any{"completed": 100},
 	})
 	check(100)
+}
+
+func TestSessionMetadataLookupDoesNotParseMessages(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	insertSession(t, d, "metadata", "Metadata", "/repo", 1, 999)
+	if _, err := d.db.Exec(`INSERT INTO message (id, session_id, data) VALUES ('invalid', 'metadata', 'not-json')`); err != nil {
+		t.Fatal(err)
+	}
+	row, err := d.GetSession(t.Context(), "metadata")
+	if err != nil {
+		t.Fatalf("metadata lookup inspected message JSON: %v", err)
+	}
+	if row.ID != "metadata" || row.Directory != "/repo" || row.TimeUpdated != 999 {
+		t.Fatalf("metadata lookup = %+v", row)
+	}
 }
 
 func TestSessionCompletionTimestampV2(t *testing.T) {

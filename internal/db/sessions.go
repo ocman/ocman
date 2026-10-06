@@ -313,19 +313,19 @@ func FilterInactiveChildren(sessions []Session) []Session {
 	return out
 }
 
-// GetSession returns a single session by ID.
+// GetSession returns session metadata by ID without reading message history.
 func (d *DB) GetSession(ctx context.Context, sessionID string) (*Session, error) {
 	var s Session
 	err := d.db.QueryRowContext(ctx, `
 		SELECT
 			s.id, s.project_id, COALESCE(s.parent_id, ''), s.title, s.directory,
-			s.time_created, s.time_updated, `+lastTurnCompletedAtSQL+`,
+			s.time_created, s.time_updated,
 			s.summary_additions, s.summary_deletions, s.summary_files,
 			s.share_url
 		FROM session s WHERE s.id = ?
 	`, sessionID).Scan(
 		&s.ID, &s.ProjectID, &s.ParentID, &s.Title, &s.Directory,
-		&s.TimeCreated, &s.TimeUpdated, &s.LastTurnCompletedAt,
+		&s.TimeCreated, &s.TimeUpdated,
 		&s.SummaryAdditions, &s.SummaryDeletions, &s.SummaryFiles,
 		&s.ShareURL,
 	)
