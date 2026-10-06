@@ -171,7 +171,7 @@ it('reuses settled results after refresh across visibility and request-key chang
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
-it('holds an offscreen refresh until visible and consumes it even when the request aborts', async () => {
+it('holds an offscreen refresh until a visible request succeeds, including after an abort', async () => {
   let onVisible: (entries: { isIntersecting: boolean }[]) => void = () => {};
   vi.stubGlobal('IntersectionObserver', class {
     constructor(callback: typeof onVisible) { onVisible = callback; }
@@ -188,6 +188,6 @@ it('holds an offscreen refresh until visible and consumes it even when the reque
   await act(async () => onVisible([{ isIntersecting: false }]));
   expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
   await act(async () => onVisible([{ isIntersecting: true }]));
-  expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBeUndefined();
+  expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBe(true);
   expect(screen.getByLabelText('All checks passed')).toBeInTheDocument();
 });

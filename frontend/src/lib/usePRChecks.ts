@@ -18,7 +18,10 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
   useEffect(() => {
     const refresh = (event: Event) => {
       const repositories = (event as CustomEvent<string[]>).detail;
-      if (!repositories || repositories.some((repo) => cacheKey.startsWith(`${repo}@`))) setGeneration((g) => g + 1);
+      if (!repositories || repositories.some((repo) => cacheKey.startsWith(`${repo}@`))) {
+        refreshedKey.current = undefined;
+        setGeneration((g) => g + 1);
+      }
     };
     window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
     return () => window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
@@ -37,13 +40,14 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
       }
       setResult((prev) => ({ key: requestKey, data: prev.key === requestKey ? prev.data : null, loading: true, error: false }));
       const request = fetchChecks(ctrl.signal, refresh);
-      if (refresh) {
-        consumedRefresh.current = generation;
-        refreshedKey.current = requestKey;
-      }
+      const wasRefresh = refresh;
       refresh = false;
       request.then((res) => {
         if (ctrl.signal.aborted) return;
+        if (wasRefresh) {
+          consumedRefresh.current = generation;
+          refreshedKey.current = requestKey;
+        }
         cachePRChecks(cacheKey, res);
         setResult({ key: requestKey, data: res, loading: false, error: false });
         if (!isSettled(res)) {

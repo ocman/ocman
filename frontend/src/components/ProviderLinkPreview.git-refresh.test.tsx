@@ -114,3 +114,24 @@ it('refreshes metadata without the initial debounce and retains the card if refr
   rerender(<Cards text="https://github.com/other/repo/pull/2" />);
   expect(screen.queryByTestId('provider-preview-card')).toBeNull();
 });
+
+it('keeps cache bypass when same-SHA metadata arrives before refreshing checks finish', async () => {
+  const preview: PreviewResult = { provider: 'github', kind: 'pr', id: 'a/repo#1', url: 'https://github.com/a/repo/pull/1', title: 'Change', state: 'ok', headSha: 'A' };
+  let finishMetadata!: (previews: PreviewResult[]) => void;
+  vi.mocked(resolvePreviews).mockResolvedValueOnce([preview])
+    .mockImplementationOnce(() => new Promise((resolve) => { finishMetadata = resolve; }));
+  vi.mocked(fetchPreviewChecks).mockResolvedValueOnce({ state: 'success', checks: [{ name: 'build', state: 'success' }] })
+    .mockImplementationOnce(() => new Promise(() => {}))
+    .mockResolvedValueOnce({ state: 'pending', checks: [{ name: 'build', state: 'pending' }] });
+  render(<Cards />);
+  await screen.findByLabelText('All checks passed');
+  act(() => clearPRChecksCache());
+  await waitFor(() => expect(fetchPreviewChecks).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(resolvePreviews).toHaveBeenCalledTimes(2));
+  const refreshingSignal = vi.mocked(fetchPreviewChecks).mock.calls[1][3]!;
+  await act(async () => finishMetadata([preview]));
+  await waitFor(() => expect(fetchPreviewChecks).toHaveBeenCalledTimes(3));
+  expect(refreshingSignal.aborted).toBe(true);
+  expect(fetchPreviewChecks).toHaveBeenLastCalledWith(preview.url, 'A', 'local', expect.any(AbortSignal), true);
+  expect(screen.getByLabelText('Checks running')).toBeInTheDocument();
+});
