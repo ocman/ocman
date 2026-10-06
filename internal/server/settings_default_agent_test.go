@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -14,7 +15,9 @@ import (
 func TestKnownAgentOptions(t *testing.T) {
 	ports, catalog := defaultAgentPorts, defaultAgentCatalog
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
-	defaultAgentPorts = func() map[string]string { return map[string]string{"/a": "1001", "/b": "1002", "/c": "1003"} }
+	defaultAgentPorts = func(context.Context) map[string]string {
+		return map[string]string{"/a": "1001", "/b": "1002", "/c": "1003"}
+	}
 	defaultAgentCatalog = func(_ context.Context, port, _ string) []string {
 		switch port {
 		case "1001":
@@ -28,8 +31,44 @@ func TestKnownAgentOptions(t *testing.T) {
 	if got := knownAgentOptions(context.Background(), nil); !reflect.DeepEqual(got, []string{"build", "custom", "plan", "review"}) {
 		t.Fatal(got)
 	}
-	defaultAgentPorts = func() map[string]string { return nil }
+	defaultAgentPorts = func(context.Context) map[string]string { return nil }
 	if got := knownAgentOptions(context.Background(), nil); !reflect.DeepEqual(got, []string{"build", "plan"}) {
+		t.Fatal(got)
+	}
+}
+
+func TestKnownAgentOptionsKeepsDiscoverySnapshot(t *testing.T) {
+	ports, catalog, port := defaultAgentPorts, defaultAgentCatalog, defaultAgentPort
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog, defaultAgentPort = ports, catalog, port })
+	snapshot := map[string]string{"/alpha": "1001"}
+	defaultAgentPorts = func(context.Context) map[string]string { return snapshot }
+	defaultAgentPort = func(context.Context, string) string { return "1001" }
+	defaultAgentCatalog = func(context.Context, string, string) []string { return nil }
+	knownAgentOptions(context.Background(), []string{"/beta"})
+	var wg sync.WaitGroup
+	for i := range 25 {
+		wg.Go(func() { knownAgentOptions(context.Background(), []string{fmt.Sprintf("/project-%d", i)}) })
+	}
+	wg.Wait()
+	if len(snapshot) != 1 {
+		t.Fatalf("discovery snapshot mutated: %v", snapshot)
+	}
+}
+
+func TestKnownAgentOptionsFallsBackAfterCanceledPortDiscovery(t *testing.T) {
+	ports, catalog := defaultAgentPorts, defaultAgentCatalog
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	defaultAgentPorts = func(ctx context.Context) map[string]string {
+		<-ctx.Done()
+		return nil
+	}
+	defaultAgentCatalog = func(context.Context, string, string) []string {
+		t.Fatal("catalog scheduled after port-discovery cancellation")
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if got := knownAgentOptions(ctx, []string{"/repo"}); !reflect.DeepEqual(got, []string{"build", "plan"}) {
 		t.Fatal(got)
 	}
 }
@@ -37,8 +76,8 @@ func TestKnownAgentOptions(t *testing.T) {
 func TestKnownAgentOptionsScopesDirectoriesSharingPort(t *testing.T) {
 	ports, catalog, port := defaultAgentPorts, defaultAgentCatalog, defaultAgentPort
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog, defaultAgentPort = ports, catalog, port })
-	defaultAgentPorts = func() map[string]string { return map[string]string{"/alpha": "1001"} }
-	defaultAgentPort = func(directory string) string {
+	defaultAgentPorts = func(context.Context) map[string]string { return map[string]string{"/alpha": "1001"} }
+	defaultAgentPort = func(_ context.Context, directory string) string {
 		if directory == "/offline" {
 			return ""
 		}
@@ -58,7 +97,7 @@ func TestKnownAgentOptionsScopesDirectoriesSharingPort(t *testing.T) {
 func TestKnownAgentOptionsStopsAfterStalledCatalog(t *testing.T) {
 	ports, catalog := defaultAgentPorts, defaultAgentCatalog
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
-	defaultAgentPorts = func() map[string]string {
+	defaultAgentPorts = func(context.Context) map[string]string {
 		targets := make(map[string]string)
 		for i := range 500 {
 			targets[fmt.Sprintf("/project-%d", i)] = "1001"
@@ -81,7 +120,7 @@ func TestKnownAgentOptionsStopsAfterStalledCatalog(t *testing.T) {
 func TestKnownAgentOptionsSetsOverallDeadline(t *testing.T) {
 	ports, catalog := defaultAgentPorts, defaultAgentCatalog
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
-	defaultAgentPorts = func() map[string]string { return map[string]string{"/repo": "1001"} }
+	defaultAgentPorts = func(context.Context) map[string]string { return map[string]string{"/repo": "1001"} }
 	bounded := false
 	defaultAgentCatalog = func(ctx context.Context, _, _ string) []string {
 		deadline, ok := ctx.Deadline()

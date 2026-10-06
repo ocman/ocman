@@ -2,28 +2,17 @@ package opencode
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
-
-// rePortSuffix matches a port number at the end of a string (e.g. ":4096").
-var rePortSuffix = regexp.MustCompile(`:(\d+)$`)
 
 // portCache holds cached port discovery results with a single mutex
 // for simplicity; port discovery is infrequent enough that read/write
@@ -57,21 +46,22 @@ const portCacheTTL = 10 * time.Second
 // discoverPortsImpl is the seam used so tests can swap out the expensive
 // lsof execution. Stored as an atomic pointer so reads and writes are
 // race-free without a mutex.
-var discoverPortsImpl atomic.Pointer[func() map[string]string]
+var discoverPortsImpl atomic.Pointer[func(context.Context) map[string]string]
 var discoverServersImpl atomic.Pointer[func() []openCodeServer]
 
 func init() {
 	serverFn := func() []openCodeServer { return discoverOpenCodeServersUncached() }
 	discoverServersImpl.Store(&serverFn)
 
-	fn := func() map[string]string { return discoverOpenCodePortsUncached() }
+	fn := discoverOpenCodePortsUncachedContext
 	discoverPortsImpl.Store(&fn)
 }
 
 // setDiscoverPortsImplForTests installs fn as the seam and returns a
 // restore func that re-installs the previous value.
 func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
-	prev := discoverPortsImpl.Swap(&fn)
+	wrapper := func(context.Context) map[string]string { return fn() }
+	prev := discoverPortsImpl.Swap(&wrapper)
 	return func() { discoverPortsImpl.Store(prev) }
 }
 
@@ -160,24 +150,41 @@ func forgetSessionsForPort(port string) {
 // discoverOpenCodePorts returns a map of directory -> port for all running
 // OpenCode instances. Results are cached for portCacheTTL.
 func discoverOpenCodePorts() map[string]string {
+	return DiscoverOpenCodePortsContext(context.Background())
+}
+
+// DiscoverOpenCodePortsContext cancels both cold-cache waits and the underlying
+// discovery subprocesses. A canceled scan is never cached as an empty result.
+func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
+	if ctx.Err() != nil {
+		return nil
+	}
 	if cached, ok := readCachedPorts(); ok {
 		return cached
 	}
 
 	const flightKey = "discoverOpenCodePorts"
-	v, _, _ := portFlight.Do(flightKey, func() (interface{}, error) {
+	result := portFlight.DoChan(flightKey, func() (interface{}, error) {
 		if cached, ok := readCachedPorts(); ok {
 			return cached, nil
 		}
-		result := (*discoverPortsImpl.Load())()
+		result := (*discoverPortsImpl.Load())(ctx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		portCache.mu.Lock()
 		portCache.ports = result
 		portCache.updated = time.Now()
 		portCache.mu.Unlock()
 		return copyMap(result), nil
 	})
-	if m, ok := v.(map[string]string); ok {
-		return m
+	select {
+	case <-ctx.Done():
+		return nil
+	case result := <-result:
+		if m, ok := result.Val.(map[string]string); ok {
+			return copyMap(m)
+		}
 	}
 	return map[string]string{}
 }
@@ -255,189 +262,6 @@ func foldWorktreeToProjectRoot(directory string) string {
 	return prefix + "/" + parts[idx+1]
 }
 
-// pidPort is a (pid, port) pair extracted from `lsof -iTCP -sTCP:LISTEN`.
-type pidPort struct {
-	pid  string
-	port string
-}
-
-type openCodeServer struct {
-	directory string
-	port      string
-}
-
-// parseOpenCodeListeners extracts (pid, port) pairs for OpenCode
-// processes from the output of `lsof -iTCP -sTCP:LISTEN -P -n`.
-//
-// Factored out of discoverOpenCodePortsUncached so the matching rules
-// (including lsof's 9-char COMMAND truncation) can be unit-tested
-// without spawning a real lsof.
-func parseOpenCodeListeners(lsofOut string) []pidPort {
-	var candidates []pidPort
-	for _, line := range strings.Split(lsofOut, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 9 {
-			continue
-		}
-		// lsof's COMMAND column is truncated to 9 characters by
-		// default, so the OpenCode v2+ single-file binary
-		// "opencode.exe" appears as "opencode.". Accept any command
-		// that starts with "opencode" so we keep working across
-		// renames and the lsof truncation boundary.
-		if !strings.HasPrefix(fields[0], "opencode") {
-			continue
-		}
-		pid := fields[1]
-		if _, err := strconv.Atoi(pid); err != nil {
-			log.WithField("pid", pid).Warn("skipping non-numeric PID in lsof output")
-			continue
-		}
-		name := fields[len(fields)-2]
-		m := rePortSuffix.FindStringSubmatch(name)
-		if m == nil {
-			continue
-		}
-		candidates = append(candidates, pidPort{pid: pid, port: m[1]})
-	}
-	return candidates
-}
-
-// pidCwd returns the working directory of the process with the given PID.
-//
-// On Linux it reads /proc/<pid>/cwd via a single readlink(2) syscall,
-// avoiding a second lsof fork entirely. On other platforms (and as a
-// fallback when /proc is unavailable) it shells out to
-// `lsof -a -p <pid> -d cwd -F n`.
-func pidCwd(pid string) (string, bool) {
-	if runtime.GOOS == "linux" {
-		if dir, err := os.Readlink(fmt.Sprintf("/proc/%s/cwd", pid)); err == nil {
-			return dir, true
-		}
-		// /proc unavailable (container without procfs, etc.) — fall through.
-	}
-	cwdOut, err := exec.Command("lsof", "-a", "-p", pid, "-d", "cwd", "-F", "n").Output()
-	if err != nil {
-		return "", false
-	}
-	for _, line := range strings.Split(string(cwdOut), "\n") {
-		if strings.HasPrefix(line, "n/") {
-			return line[1:], true
-		}
-	}
-	return "", false
-}
-
-// lsofWarnOnce rate-limits the lsof failure warning to once per process.
-var lsofWarnOnce sync.Once
-
-// discoverOpenCodeServersUncached performs the actual lsof-based discovery.
-// Two-phase: enumerate listening opencode PIDs, then fan-out to resolve cwds.
-func discoverOpenCodeServersUncached() []openCodeServer {
-	if ocv2.InstalledV2() {
-		return machineServers()
-	}
-	out, err := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-P", "-n").Output()
-	if err != nil {
-		// Once is enough: this runs on every discovery poll.
-		lsofWarnOnce.Do(func() {
-			log.WithError(err).Warn("lsof failed; external OpenCode instance discovery skipped")
-		})
-		return nil
-	}
-
-	candidates := parseOpenCodeListeners(string(out))
-	if len(candidates) == 0 {
-		return nil
-	}
-
-	const maxWorkers = 16
-	workers := maxWorkers
-	if len(candidates) < workers {
-		workers = len(candidates)
-	}
-
-	type cwdResult struct {
-		dir  string
-		port string
-	}
-	jobs := make(chan pidPort, len(candidates))
-	results := make(chan cwdResult, len(candidates))
-
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for c := range jobs {
-				if dir, ok := pidCwd(c.pid); ok {
-					results <- cwdResult{dir: dir, port: c.port}
-				}
-			}
-		}()
-	}
-
-	for _, c := range candidates {
-		jobs <- c
-	}
-	close(jobs)
-	wg.Wait()
-	close(results)
-
-	servers := make([]openCodeServer, 0, len(candidates))
-	for r := range results {
-		servers = append(servers, openCodeServer{
-			directory: normalizePortDirectory(r.dir),
-			port:      r.port,
-		})
-	}
-
-	return servers
-}
-
-func discoverOpenCodeServers() []openCodeServer {
-	if cached, ok := readCachedServers(); ok {
-		return cached
-	}
-
-	const flightKey = "discoverOpenCodeServers"
-	v, _, _ := serverFlight.Do(flightKey, func() (interface{}, error) {
-		if cached, ok := readCachedServers(); ok {
-			return cached, nil
-		}
-		result := (*discoverServersImpl.Load())()
-		serverCache.mu.Lock()
-		serverCache.servers = copyOpenCodeServers(result)
-		serverCache.updated = time.Now()
-		serverCache.mu.Unlock()
-		return copyOpenCodeServers(result), nil
-	})
-	if servers, ok := v.([]openCodeServer); ok {
-		return servers
-	}
-	return nil
-}
-
-func readCachedServers() ([]openCodeServer, bool) {
-	serverCache.mu.Lock()
-	defer serverCache.mu.Unlock()
-	if time.Since(serverCache.updated) < portCacheTTL && serverCache.servers != nil {
-		return copyOpenCodeServers(serverCache.servers), true
-	}
-	return nil, false
-}
-
-// discoverOpenCodePortsUncached returns one directory -> port entry per
-// running OpenCode directory. If multiple servers share a directory, the
-// selected port remains intentionally unspecified, matching the previous map
-// assignment behavior.
-func discoverOpenCodePortsUncached() map[string]string {
-	result := make(map[string]string)
-	for _, server := range discoverOpenCodeServersUncached() {
-		result[server.directory] = server.port
-	}
-	return result
-}
-
 func duplicateOpenCodeServerPortsForDirectory(directory string, servers []openCodeServer) []string {
 	key := normalizePortDirectory(directory)
 	seen := make(map[string]struct{})
@@ -496,7 +320,7 @@ func lookupPortWithWorktreeFold(ports map[string]string, directory string) strin
 // process for portCacheTTL. Hits refresh the shared cache so subsequent
 // read-heavy callers can reuse the fresh snapshot.
 func discoverOpenCodePortFresh(directory string) string {
-	ports := (*discoverPortsImpl.Load())()
+	ports := (*discoverPortsImpl.Load())(context.Background())
 	port := lookupPortWithWorktreeFold(ports, directory)
 	if port != "" {
 		writeCachedPorts(ports)
@@ -508,7 +332,7 @@ func discoverOpenCodePortFresh(directory string) string {
 // opencode instance, for diagnostic logging when a directory lookup
 // misses. Uses the same seam as the fresh scan so the snapshot matches.
 func discoveredOpenCodeDirs() []string {
-	ports := (*discoverPortsImpl.Load())()
+	ports := (*discoverPortsImpl.Load())(context.Background())
 	out := make([]string, 0, len(ports))
 	for dir, port := range ports {
 		out = append(out, dir+"="+port)
@@ -523,6 +347,14 @@ func discoveredOpenCodeDirs() []string {
 // through the Platform adapter interface.
 func DiscoverOpenCodePort(directory string) string {
 	return discoverOpenCodePort(directory)
+}
+
+func DiscoverOpenCodePortContext(ctx context.Context, directory string) string {
+	ports := DiscoverOpenCodePortsContext(ctx)
+	if ctx.Err() != nil {
+		return ""
+	}
+	return lookupPortWithWorktreeFold(ports, directory)
 }
 
 // DiscoverOpenCodePortFresh is the exported equivalent of

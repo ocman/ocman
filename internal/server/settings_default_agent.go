@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
@@ -15,15 +16,15 @@ import (
 const defaultAgentKey = "session.default_agent"
 
 var defaultAgentOptions = knownAgentOptions
-var defaultAgentPorts = opencode.DiscoverOpenCodePorts
+var defaultAgentPorts = opencode.DiscoverOpenCodePortsContext
 var defaultAgentCatalog = opencode.AgentNames
-var defaultAgentPort = opencode.DiscoverOpenCodePort
+var defaultAgentPort = opencode.DiscoverOpenCodePortContext
 
 func knownAgentOptions(ctx context.Context, directories []string) []string {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	known := map[string]bool{"build": true, "plan": true}
-	targets := defaultAgentPorts()
+	targets := maps.Clone(defaultAgentPorts(ctx))
 	if targets == nil {
 		targets = make(map[string]string)
 	}
@@ -31,7 +32,7 @@ func knownAgentOptions(ctx context.Context, directories []string) []string {
 		if ctx.Err() != nil {
 			break
 		}
-		if port := defaultAgentPort(directory); port != "" {
+		if port := defaultAgentPort(ctx, directory); port != "" {
 			targets[directory] = port
 		}
 	}
