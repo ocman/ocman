@@ -210,7 +210,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const pending = usePendingSend(id);
   // A conversation just started here keeps its prompt and steps on screen
   // until the first message lands, instead of flashing an empty thread.
-  const startHandoff = useStartHandoff(id, messages.length);
+  const startHandoff = useStartHandoff(id, session?.id, messages.length);
   // Auto-clear pending when SSE delivers the real user message.
   // Runs in an effect (not render) so the pending → null setState
   // is properly batched and React doesn't see a setState during
