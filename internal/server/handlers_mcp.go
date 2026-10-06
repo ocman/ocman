@@ -12,7 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
@@ -102,61 +101,6 @@ func (s *Server) mcpHandler() http.Handler {
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
 	return s.buildMCPHandlerFor(factoryMCPService{factoryService: s.factory, consumeUnblock: s.consumeFactoryUnblock}, s.routineSvc, sessionMCPService{s})
-}
-
-// factoryMCPService keeps operator decisions behind the browser while allowing
-// agents to create Epics and maintain Factory Issues that have not started or closed.
-type factoryMCPService struct {
-	factoryService
-	consumeUnblock func(string, string) bool
-}
-
-func (s factoryMCPService) ConsumeFactoryUnblock(token, epicID string) bool {
-	return s.consumeUnblock != nil && s.consumeUnblock(token, epicID)
-}
-
-func (s factoryMCPService) CreateWorkEpic(ctx context.Context, req factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {
-	if req.FormulaID != "" || req.FormulaRevision != 0 {
-		return factory.WorkEpic{}, factory.ErrActionNotPermitted
-	}
-	return s.factoryService.CreateWorkEpic(ctx, req)
-}
-
-func (s factoryMCPService) MutateGraph(ctx context.Context, mutation factory.GraphMutation) error {
-	if mutation.Action == "create" && (mutation.Kind == "implementation" || mutation.Kind == "task") {
-		return factory.ErrActionNotPermitted
-	}
-	return s.factoryService.MutateGraph(ctx, mutation)
-}
-func (s factoryMCPService) ReopenIssue(ctx context.Context, epicID, issueID string) error {
-	reopener, ok := s.factoryService.(interface {
-		ReopenIssue(context.Context, string, string) error
-	})
-	if !ok {
-		return factory.ErrActionNotPermitted
-	}
-	return reopener.ReopenIssue(ctx, epicID, issueID)
-}
-func (s factoryMCPService) MutateFactoryUnblock(ctx context.Context, mutation factory.GraphMutation) error {
-	return s.factoryService.MutateGraph(ctx, mutation)
-}
-func (factoryMCPService) SaveFormula(context.Context, factory.FormulaSaveRequest) (factory.NativeFormulaView, error) {
-	return factory.NativeFormulaView{}, factory.ErrActionNotPermitted
-}
-func (factoryMCPService) SetCapacityPolicy(context.Context, factory.CapacityPolicy) (factory.CapacityPolicy, error) {
-	return factory.CapacityPolicy{}, factory.ErrActionNotPermitted
-}
-func (factoryMCPService) DecidePlanGate(context.Context, string, string, factory.PlanGateDecisionRequest) (factory.PlanGate, error) {
-	return factory.PlanGate{}, factory.ErrActionNotPermitted
-}
-func (factoryMCPService) ResolveRecoveryGate(context.Context, string, string, string) (factory.RecoveryGate, error) {
-	return factory.RecoveryGate{}, factory.ErrActionNotPermitted
-}
-func (factoryMCPService) ResolveAuthorityEscalationGate(context.Context, string, string) (factory.AuthorityEscalationGate, error) {
-	return factory.AuthorityEscalationGate{}, factory.ErrActionNotPermitted
-}
-func (factoryMCPService) ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error) {
-	return factory.ProjectRequestGate{}, factory.ErrActionNotPermitted
 }
 
 func (s *Server) buildMCPHandlerFor(factoryService factoryService, routineService *routines.Service, sessionService sessionMCPService) http.Handler {

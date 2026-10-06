@@ -212,6 +212,15 @@ func (d *DB) ApplyFactoryScopePlan(ctx context.Context, proposal model.NativePro
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) VALUES (?, ?, ?, 'agent', 'project.replanned', json_object('proposalRevision', ?), ?)`, proposal.EpicID, originalID, attemptID, proposal.Revision, now); err != nil {
 		return model.NativeProposalRevision{}, err
 	}
+	if err := reopenFactoryGraphApprovalTx(ctx, tx, proposal.EpicID); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT proposal_revision, proposal_hash FROM factory_plan_gate WHERE epic_id = ?`, proposal.EpicID).Scan(&proposal.Revision, &proposal.ContentHash); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT manifest_json FROM factory_proposal_revision WHERE epic_id = ? AND revision = ?`, proposal.EpicID, proposal.Revision).Scan(&proposal.ManifestJSON); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return model.NativeProposalRevision{}, err
 	}
@@ -242,7 +251,7 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 	}
 	if action == "approve" {
 		gate.Outcome, gate.Resolution = "succeeded", "approved"
-		if len(implementationModel) > 0 {
+		if len(implementationModel) > 0 && implementationModel[0] != "" {
 			gate.ImplementationModel = implementationModel[0]
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_plan_gate SET implementation_model = ? WHERE epic_id = ?`, gate.ImplementationModel, epicID); err != nil {

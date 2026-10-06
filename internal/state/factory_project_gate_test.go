@@ -153,7 +153,16 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	if len(followUp.DependsOn) != 2 {
 		t.Fatalf("optional follow-up dependencies = %#v", followUp.DependsOn)
 	}
+	if got := issueByID(t, db, epic.ID, blocker); got.DispatchState != "waiting" {
+		t.Fatalf("new work before approval = %#v", got)
+	}
 	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ?`, blocker); err != nil {
+		t.Fatal(err)
+	}
+	if got := issueByID(t, db, epic.ID, workID); got.DispatchState != "waiting" {
+		t.Fatalf("original ran before graph approval = %#v", got)
+	}
+	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", applied.Revision, applied.ContentHash, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := issueByID(t, db, epic.ID, workID); got.DispatchState != "ready" {

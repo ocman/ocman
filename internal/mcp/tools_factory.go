@@ -83,14 +83,14 @@ var factoryActions = []factoryAction{
 	{name: "set_capacity_policy", description: "Sets Factory capacity limits.", example: `{"action":"set_capacity_policy","global_capacity":10,"project_capacity":4,"project_overrides":{"/repo":2}}`, required: []string{"global_capacity", "project_capacity", "project_overrides"}, output: "CapacityPolicy", errors: []string{"global_capacity is required", "project_capacity is required", "project_overrides is invalid", "factory request failed"}},
 	{name: "request_recovery", description: "Pauses the assigned implementation Attempt for a human decision while preserving its session and worktree.", example: `{"action":"request_recovery","attempt_id":"fa-1","attempt_token":"token","question":"Which API should I use?","reason":"Both supported APIs change persisted behavior.","choices_json":"[\"API A\",\"API B\"]"}`, required: []string{"attempt_id", "attempt_token", "question", "reason"}, optional: []string{"choices_json"}, output: "RecoveryGate", errors: []string{"attempt_id is required", "attempt_token is required", "question is required", "reason is required", "choices_json is invalid", "factory request failed"}},
 	{name: "request_project", description: "Pauses the assigned implementation Attempt and asks a human to admit one additional local Git project.", example: `{"action":"request_project","attempt_id":"fa-1","attempt_token":"token","project":"/repo","reason":"The shared contract must change."}`, required: []string{"attempt_id", "attempt_token", "project", "reason"}, output: "ProjectRequestGate", errors: []string{"attempt_id is required", "attempt_token is required", "project is required", "reason is required", "factory action is not permitted", "factory request failed"}},
-	{name: "submit_scope_plan", description: "Appends required work for an approved project expansion without replacing completed Issues or checkpoints.", example: `{"action":"submit_scope_plan","epic_id":"epic-1","manifest_json":"{\"epicId\":\"epic-1\",\"molId\":\"epic-1.1\",\"project\":\"/repo\",\"nodes\":[{\"key\":\"shared\",\"type\":\"implementation\",\"requirement\":\"required\",\"project\":\"/other\"}]}","attempt_id":"fa-1","attempt_token":"token"}`, required: []string{"epic_id", "manifest_json", "attempt_id", "attempt_token"}, optional: []string{"rationale_markdown"}, output: "ProposalRevision", errors: []string{"factory action is not permitted", "manifest_json is invalid", "factory request failed"}},
+	{name: "submit_scope_plan", description: "Appends required work for an approved project expansion without replacing completed Issues or checkpoints. The revised graph requires separate human approval before new work can run.", example: `{"action":"submit_scope_plan","epic_id":"epic-1","manifest_json":"{\"epicId\":\"epic-1\",\"molId\":\"epic-1.1\",\"project\":\"/repo\",\"nodes\":[{\"key\":\"shared\",\"type\":\"implementation\",\"requirement\":\"required\",\"project\":\"/other\"}]}","attempt_id":"fa-1","attempt_token":"token"}`, required: []string{"epic_id", "manifest_json", "attempt_id", "attempt_token"}, optional: []string{"rationale_markdown"}, output: "ProposalRevision", errors: []string{"factory action is not permitted", "manifest_json is invalid", "factory request failed"}},
 	{name: "complete_attempt", description: "Records a verified clean, pushed commit checkpoint for an implementation Attempt. Omit pr_url during implementation. Only the final delivery Attempt requires pr_url, after creating or reusing the Epic's final review-ready pull request.", example: `{"action":"complete_attempt","attempt_id":"fa-1","attempt_token":"token","summary":"Implemented and tested."}`, required: []string{"attempt_id", "attempt_token", "summary"}, optional: []string{"pr_url"}, output: map[string]string{"status": "completed"}, errors: []string{"attempt_id is required", "attempt_token is required", "summary is required", "factory request failed"}},
 	{name: "resume_recovery", description: "Resumes the paused implementation session with a durable human response.", example: `{"action":"resume_recovery","recovery_gate_id":"gate-1","response":"Use API A."}`, required: []string{"recovery_gate_id"}, optional: []string{"response"}, output: "RecoveryGate", errors: []string{"recovery_gate_id is required", "factory request failed"}},
 	{name: "retry_recovery", description: "Ends the paused attempt and starts a fresh implementation Attempt.", example: `{"action":"retry_recovery","recovery_gate_id":"gate-1","response":"Retry from a clean worktree."}`, required: []string{"recovery_gate_id"}, optional: []string{"response"}, output: "RecoveryGate", errors: []string{"recovery_gate_id is required", "factory request failed"}},
 	{name: "cancel_recovery", description: "Cancels the paused implementation Issue.", example: `{"action":"cancel_recovery","recovery_gate_id":"gate-1","response":"No longer needed."}`, required: []string{"recovery_gate_id"}, optional: []string{"response"}, output: "RecoveryGate", errors: []string{"recovery_gate_id is required", "factory request failed"}},
 	{name: "approve_authority", description: "Approves one out-of-profile permission request exactly once.", example: `{"action":"approve_authority","authority_gate_id":"gate-1"}`, required: []string{"authority_gate_id"}, output: "AuthorityEscalationGate", errors: []string{"authority_gate_id is required", "factory request failed"}},
 	{name: "reject_authority", description: "Rejects one out-of-profile permission request exactly once.", example: `{"action":"reject_authority","authority_gate_id":"gate-1"}`, required: []string{"authority_gate_id"}, output: "AuthorityEscalationGate", errors: []string{"authority_gate_id is required", "factory request failed"}},
-	{name: "mutate_graph", description: "Creates, edits, reparents, links, unlinks, or soft-deletes local Factory Issues unless they are in progress or closed. Dependency types are blocks, on_failure, and merge_gated; merge_gated must target another project's Delivery.", example: `{"action":"mutate_graph","mutation_json":"{\"action\":\"create\",\"epicId\":\"epic-1\",\"parentId\":\"epic-1.1\",\"kind\":\"task\",\"title\":\"Implement the change\"}"}`, required: []string{"mutation_json"}, output: map[string]string{"status": "ok"}, errors: []string{"mutation_json is required", "mutation_json is invalid", "factory request failed"}},
+	{name: "mutate_graph", description: "Creates, edits, reparents, links, unlinks, or soft-deletes local Factory Issues unless they are in progress or closed. Every edit creates a revised graph awaiting human approval; new work cannot run until the user approves the exact revision. Dependency types are blocks, on_failure, and merge_gated; merge_gated must target another project's Delivery.", example: `{"action":"mutate_graph","mutation_json":"{\"action\":\"create\",\"epicId\":\"epic-1\",\"parentId\":\"epic-1.1\",\"kind\":\"task\",\"title\":\"Implement the change\"}"}`, required: []string{"mutation_json"}, output: map[string]string{"status": "awaiting_approval"}, errors: []string{"mutation_json is required", "mutation_json is invalid", "factory request failed"}},
 	{name: "create", description: "Creates and pours a Factory Work Epic with the built-in tracer Formula. For an already-planned ticket breakdown, use issues then import_proposal to skip the planning session while keeping human approval. goal is the Epic's title: one short clear line of at most 80 characters, e.g. \"Prettify Factory Epic IDs\" — never a paragraph. Put context, constraints and decisions in brief instead. Always pass epic_id: a short human-friendly kebab-case name for the work (2-40 lowercase letters, digits and dashes), e.g. pretty-epic-ids. If it comes back taken, call create again with a different name.", example: `{"action":"create","epic_id":"pretty-epic-ids","goal":"Prettify Factory Epic IDs","brief":"IDs are built from initials today.","initial_project":"/repo","acknowledge_local_execution":true,"projects":[{"path":"/other","acknowledgeLocalExecution":true}]}`, required: []string{"goal", "initial_project", "acknowledge_local_execution"}, optional: []string{"epic_id", "brief", "instantiation_id", "projects"}, output: "WorkEpic", errors: []string{"goal is required", "initial_project is required", "acknowledge_local_execution must be true", "goal must be a short clear title of at most 80 characters; move the detail into brief", "factory epic id already taken: pick another human-friendly id", "factory action is not permitted", "factory request failed"}},
 	{name: "claim_plan", description: "Claiming Factory Planning Work is a human action. Ocman shows the user a card to handle it; tell them it is waiting and do not copy its marker.", example: `{"action":"claim_plan","epic_id":"epic-1","issue_id":"epic-1.1"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
 	{name: "reopen_issue", description: "Reopening failed or cancelled work is a human action. Pass epic_id and issue_id, then tell the user the Reopen issue card Ocman shows is waiting for them; do not copy its marker. Do not retry the denied action.", example: `{"action":"reopen_issue","epic_id":"epic-1","issue_id":"epic-1.3"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
@@ -292,22 +292,8 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 		result := toolResultJSON(gate)
 		result.Content = append(result.Content, mcplib.NewTextContent("The project request needs a human decision: "+factoryCardMarker(gate.EpicID, gate.IssueID, "request_project")+". "+factoryCardHandoff))
 		return result, nil
-	case "submit_scope_plan":
-		service, ok := t.svc.(interface {
-			SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
-		})
-		if !ok {
-			return mcplib.NewToolResultError("factory action is not permitted"), nil
-		}
-		manifest, result := factoryProposalManifest(req)
-		if result != nil {
-			return result, nil
-		}
-		proposal, err := service.SubmitScopePlan(ctx, factory.SubmitProposalRequest{EpicID: req.GetString("epic_id", ""), Manifest: manifest, RationaleMarkdown: req.GetString("rationale_markdown", ""), AttemptID: req.GetString("attempt_id", ""), AttemptToken: req.GetString("attempt_token", "")})
-		if err != nil {
-			return factoryToolError(err), nil
-		}
-		return toolResultJSON(proposal), nil
+	case "submit_scope_plan", "mutate_graph":
+		return t.handleGraphAction(ctx, req)
 	case "resume_recovery", "retry_recovery", "cancel_recovery":
 		gateID, _ := req.RequireString("recovery_gate_id")
 		response, _ := req.RequireString("response")
@@ -316,25 +302,6 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			return factoryToolError(err), nil
 		}
 		return toolResultJSON(gate), nil
-	case "mutate_graph":
-		mutator, ok := t.svc.(interface {
-			MutateGraph(context.Context, factory.GraphMutation) error
-		})
-		if !ok {
-			return mcplib.NewToolResultError("factory action is not permitted"), nil
-		}
-		raw, err := req.RequireString("mutation_json")
-		var mutation factory.GraphMutation
-		decoder := json.NewDecoder(bytes.NewReader([]byte(raw)))
-		decoder.DisallowUnknownFields()
-		if err != nil || decoder.Decode(&mutation) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-			return mcplib.NewToolResultError("mutation_json is invalid"), nil
-		}
-		mutation.Actor = "mcp"
-		if err := mutator.MutateGraph(ctx, mutation); err != nil {
-			return factoryToolError(err), nil
-		}
-		return toolResultJSON(map[string]string{"status": "ok"}), nil
 	case "help":
 		return toolResultJSON(factoryHelp()), nil
 	case "get_capacity_policy":

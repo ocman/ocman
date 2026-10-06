@@ -288,7 +288,7 @@ func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 	}
 }
 
-func TestMainMuxMCPRejectsExecutableIssueCreation(t *testing.T) {
+func TestMainMuxMCPProposesExecutableIssueCreation(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
 	srv.factory = svc
@@ -306,11 +306,11 @@ func TestMainMuxMCPRejectsExecutableIssueCreation(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "factory action is not permitted") {
-		t.Fatalf("main-mux /mcp accepted executable issue creation: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "awaiting_approval") || !strings.Contains(rec.Body.String(), "action=approve_plan") {
+		t.Fatalf("main-mux /mcp did not request graph approval: %s", rec.Body.String())
 	}
-	if svc.mutation.Action != "" {
-		t.Fatalf("MutateGraph = %+v, want no call", svc.mutation)
+	if svc.mutation.Action != "create" || svc.mutation.Actor != "mcp" {
+		t.Fatalf("MutateGraph = %+v, want agent proposal", svc.mutation)
 	}
 }
 
@@ -368,7 +368,7 @@ func TestDedicatedMCPFactoryServiceAllowsGraphMutations(t *testing.T) {
 	underlying := &fakeFactoryService{}
 	service := factoryMCPService{factoryService: underlying}
 	for _, action := range []string{"create", "edit", "reparent", "link", "unlink", "delete"} {
-		mutation := factory.GraphMutation{Action: action, EpicID: "epic", ParentID: "epic.1", Kind: "mol", Title: "Work"}
+		mutation := factory.GraphMutation{Action: action, EpicID: "epic", ParentID: "epic.1", Kind: "mol", Title: "Work", Actor: "mcp"}
 		if err := service.MutateGraph(t.Context(), mutation); err != nil {
 			t.Fatalf("%s: %v", action, err)
 		}
@@ -377,8 +377,8 @@ func TestDedicatedMCPFactoryServiceAllowsGraphMutations(t *testing.T) {
 		}
 	}
 	for _, kind := range []string{"implementation", "task"} {
-		if err := service.MutateGraph(t.Context(), factory.GraphMutation{Action: "create", Kind: kind}); !errors.Is(err, factory.ErrActionNotPermitted) {
-			t.Fatalf("%s create error = %v, want ErrActionNotPermitted", kind, err)
+		if err := service.MutateGraph(t.Context(), factory.GraphMutation{Action: "create", Kind: kind, Actor: "user"}); err != nil || underlying.mutation.Actor != "mcp" {
+			t.Fatalf("%s create = %#v, %v, want agent proposal", kind, underlying.mutation, err)
 		}
 	}
 }

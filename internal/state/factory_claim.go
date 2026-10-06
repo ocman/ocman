@@ -32,6 +32,13 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if epic.Status != "open" {
 		return model.NativeEpic{}, model.FactoryAttempt{}, errors.New("factory Epic is closed")
 	}
+	var pendingApproval bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, epicID).Scan(&pendingApproval); err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	if pendingApproval {
+		return model.NativeEpic{}, model.FactoryAttempt{}, errors.New("factory graph is awaiting approval")
+	}
 	var kind, status, project string
 	if err := tx.QueryRowContext(ctx, `WITH RECURSIVE ancestors(parent_id, requirement) AS (
 		SELECT parent_issue_id, requirement FROM factory_issue_hierarchy WHERE child_issue_id = ?

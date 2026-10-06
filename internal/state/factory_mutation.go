@@ -244,6 +244,15 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	if err != nil {
 		return err
 	}
+	var pendingGraph bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, m.EpicID).Scan(&pendingGraph); err != nil {
+		return err
+	}
+	if m.Actor == "mcp" || pendingGraph {
+		if err := reopenFactoryGraphApprovalTx(ctx, tx, m.EpicID); err != nil {
+			return err
+		}
+	}
 	details, _ := json.Marshal(m)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, actor, action, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`, m.EpicID, m.IssueID, m.Actor, "graph."+m.Action, string(details), time.Now().UnixMilli()); err != nil {
 		return err

@@ -284,7 +284,7 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 		if got.IsError != denied {
 			t.Fatalf("%s example = %q, error = %v", action, resultText(got), got.IsError)
 		}
-		if !denied && action != "create" && action != "import_proposal" && action != "request_project" && len(got.Content) != 1 {
+		if !denied && action != "create" && action != "import_proposal" && action != "request_project" && action != "mutate_graph" && action != "submit_scope_plan" && len(got.Content) != 1 {
 			t.Fatalf("%s unexpectedly emitted extra card guidance: %#v", action, got.Content)
 		}
 	}
@@ -380,7 +380,7 @@ func TestFactoryToolMutateGraphUsesStrictInput(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 	mutation := `{"action":"link","epicId":"epic-1","issueId":"epic-1.1","dependsOnId":"other-1.1","dependencyType":"blocks","project":"/other"}`
-	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": mutation}); got.IsError {
+	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": mutation}); got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "action=approve_plan") || !strings.Contains(resultText(got), "awaiting_approval") {
 		t.Fatalf("mutate = %q", resultText(got))
 	}
 	if svc.mutation != (factory.GraphMutation{Action: "link", EpicID: "epic-1", IssueID: "epic-1.1", DependsOnID: "other-1.1", DependencyType: "blocks", Project: "/other", Actor: "mcp"}) {
@@ -423,7 +423,7 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 		t.Fatalf("project request arguments = %#v", svc.projectRequest)
 	}
 	got = callTool(t, srv, "factory", map[string]any{"action": "submit_scope_plan", "epic_id": "epic-1", "manifest_json": manifest, "attempt_id": "fa_1", "attempt_token": "fat_1"})
-	if got.IsError || !strings.Contains(resultText(got), `"epicId": "epic-1"`) || svc.scopeProposalReq.AttemptID != "fa_1" || svc.scopeProposalReq.AttemptToken != "fat_1" || svc.scopeProposalReq.Manifest.Nodes[0].Project != "/other" {
+	if got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "action=approve_plan") || !strings.Contains(resultText(got), `"epicId": "epic-1"`) || svc.scopeProposalReq.AttemptID != "fa_1" || svc.scopeProposalReq.AttemptToken != "fat_1" || svc.scopeProposalReq.Manifest.Nodes[0].Project != "/other" {
 		t.Fatalf("scope Plan = %#v", got)
 	}
 	if got := callTool(t, srv, "factory", map[string]any{"action": "proposal", "epic_id": "epic-1", "revision": 2}); got.IsError {

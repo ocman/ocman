@@ -323,14 +323,27 @@ Delivery commit satisfies the gate. Open, draft, closed-unmerged, changed, and
 temporarily unavailable PR observations keep the dependent Issue blocked and
 show the reason rather than failing it automatically.
 
-## Scope expansion
+## Graph changes and scope expansion
+
+When an agent finds a gap, it can use `mutate_graph` to add tickets or change
+dependencies and descriptions on work that has not started. Factory saves an
+immutable revision of the updated graph and shows an approval card. Review it
+in the card or Epic page. Approval must match the exact revision and hash;
+another edit makes an older approval stale.
+
+New dispatch pauses until that graph is approved. Already-running work can
+finish, and completed Issues and checkpoints remain intact. The implementation
+model is retained. Requesting a revision keeps dispatch paused; rejecting the
+graph closes the Epic and cancels its remaining open work. Pending approval and
+proposal history survive a restart. Agents cannot approve their own changes.
 
 An implementation agent that discovers another required repository can request
 it with the project path and a reason. Factory pauses and preserves that Attempt
 until a user decides. Approval verifies the local Git repository, requires a new
 local-execution acknowledgement, admits it to the project set, and launches an
-additive replan of the remaining work. Completed Issues and checkpoints remain
-intact, and the paused Issue retries only after any new blockers succeed.
+additive replan of the remaining work. The new graph needs a separate human
+approval before any new tickets run. Completed Issues and checkpoints remain
+intact, and the paused Issue retries only after graph approval and any new blockers succeed.
 Rejection records the response and resumes the same implementation session.
 
 If a PR is merged before Factory records Delivery, the agent must request

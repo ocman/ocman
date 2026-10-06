@@ -224,7 +224,7 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 			issue.DispatchState = "waiting"
 		}
 	}
-	return issues, nil
+	return blockFactoryGraphApproval(ctx, reader, epicID, issues)
 }
 
 func (d *DB) DeferFactoryIssue(ctx context.Context, epicID, issueID, reason string) error {
