@@ -344,6 +344,8 @@ connections, comparing amendments with the last approved revision rather than
 an intermediate unapproved edit. The **Graph** tab also marks added Issues
 while approval is pending. An already approved plan shows **Approved** and
 **No new proposal is awaiting approval** instead of another approval button.
+The first amendment compares against the materialized graph captured before
+the edit, so new containment and reparenting connections are highlighted too.
 
 Missing work can also be proposed during verification, after the implementation
 group has completed. Adding a task reopens that group; completed tasks stay
@@ -357,6 +359,8 @@ model is retained. Requesting a revision keeps dispatch paused; rejecting the
 graph closes the Epic and cancels its remaining open work. Pending approval and
 proposal history survive a restart. Agents cannot approve their own changes.
 Approving a graph revision does not complete any active scope-planning session.
+Each dispatch captures its Issue text, Formula ancestry, and verification
+criteria in the same transaction that claims its approved revision.
 Agent graph edits are available only after initial planning and materialization;
 before the first proposal, submit that proposal rather than editing live work.
 Blockers proposed for removal remain effective for dependent work in other Epics

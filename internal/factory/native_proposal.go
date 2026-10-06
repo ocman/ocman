@@ -43,6 +43,7 @@ type ProposalManifest struct {
 	Issues         []Issue `json:"issues,omitempty"`
 	ExternalIssues []Issue `json:"externalIssues,omitempty"`
 	BaseRevision   *int    `json:"baseRevision,omitempty"`
+	BaseIssues     []Issue `json:"baseIssues,omitempty"`
 }
 
 type SubmitProposalRequest struct {
@@ -161,7 +162,7 @@ func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalR
 }
 
 func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitProposalRequest) (model.NativeProposalRevision, error) {
-	if req.Manifest.Issues != nil || req.Manifest.ExternalIssues != nil || req.Manifest.BaseRevision != nil {
+	if req.Manifest.Issues != nil || req.Manifest.ExternalIssues != nil || req.Manifest.BaseRevision != nil || req.Manifest.BaseIssues != nil {
 		return model.NativeProposalRevision{}, fmt.Errorf("%w: frozen graph snapshots are output-only", ErrInvalidRequest)
 	}
 	epic, err := s.store.GetFactoryEpic(ctx, req.EpicID)

@@ -51,6 +51,13 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		return err
 	}
 	requiresApproval := m.Actor == "mcp" || pendingGraph
+	var baseIssues []model.NativeIssue
+	if requiresApproval {
+		baseIssues, err = factoryAmendmentBaselineTx(ctx, tx, m.EpicID)
+		if err != nil {
+			return err
+		}
+	}
 	if m.Action == "create" && m.Project == "" {
 		m.Project = epicProject
 	}
@@ -271,7 +278,7 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		return err
 	}
 	if requiresApproval {
-		if err := reopenFactoryGraphApprovalTx(ctx, tx, m.EpicID); err != nil {
+		if err := reopenFactoryGraphApprovalTx(ctx, tx, m.EpicID, baseIssues); err != nil {
 			return err
 		}
 	}

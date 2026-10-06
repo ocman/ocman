@@ -307,6 +307,8 @@ type FactoryAttempt struct {
 	StartedAt        int64                 `json:"startedAt,omitempty"`
 	FinishedAt       int64                 `json:"finishedAt,omitempty"`
 	AgentToken       string                `json:"-"`
+	// LaunchIssues is the claim transaction's process-local launch snapshot.
+	LaunchIssues []NativeIssue `json:"-"`
 }
 
 type RecoveryGate struct {

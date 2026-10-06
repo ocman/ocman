@@ -10,6 +10,7 @@ export interface FactoryProposal {
     issues?: FactoryIssue[];
     externalIssues?: FactoryIssue[];
     baseRevision?: number;
+    baseIssues?: FactoryIssue[];
   };
   revision: number;
   contentHash: string;

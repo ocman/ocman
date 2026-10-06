@@ -65,18 +65,26 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		return ready[i].issue.ID < ready[j].issue.ID
 	})
 	for _, next := range ready {
-		stage := "implementation"
-		if next.issue.Kind == "delivery" {
-			stage = "delivery"
-		}
-		prompt, err := s.issuePrompt(ctx, next.epic, next.issue.ID, stage)
-		if err != nil {
-			return err
-		}
 		epic, attempt, err := store.ClaimFactoryImplementation(ctx, next.epic.ID, next.issue.ID, "factory-implement/v1", time.Now())
 		if err != nil {
 			continue
 		} // A saturated project must not stall other projects.
+		var issue model.NativeIssue
+		for _, claimed := range attempt.LaunchIssues {
+			if claimed.ID == attempt.WorkID {
+				issue = claimed
+				break
+			}
+		}
+		stage := "implementation"
+		if issue.Kind == "delivery" {
+			stage = "delivery"
+		}
+		prompt, promptErr := s.issuePromptFromIssues(ctx, epic, attempt.WorkID, stage, attempt.LaunchIssues)
+		if promptErr != nil || issue.ID == "" {
+			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: fmt.Sprintf("Implementation launch context is unavailable: %v", promptErr)}, time.Now())
+			continue
+		}
 		branch := "factory/" + epic.ID
 		baseRef := ""
 		repository := attempt.FrozenPolicy.Repository
@@ -120,15 +128,15 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 				continue
 			}
 		}
-		description := next.issue.Description
-		if strings.HasPrefix(next.issue.OutcomeReason, "Project request rejected: ") {
-			description = strings.TrimSpace(description + "\n\n" + next.issue.OutcomeReason)
+		description := issue.Description
+		if strings.HasPrefix(issue.OutcomeReason, "Project request rejected: ") {
+			description = strings.TrimSpace(description + "\n\n" + issue.OutcomeReason)
 		}
-		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery, PermissionRules: attempt.FrozenPolicy.PermissionRules}
+		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery, PermissionRules: attempt.FrozenPolicy.PermissionRules}
 		request.Prompt = prompt
-		request.Verification = next.issue.Workflow != nil && next.issue.Workflow.Kind == "verification"
+		request.Verification = issue.Workflow != nil && issue.Workflow.Kind == "verification"
 		if request.Verification {
-			request.Criteria = s.verificationCriteria(ctx, epic.ID, repository)
+			request.Criteria = verificationCriteriaFromIssues(attempt.LaunchIssues, repository)
 		}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {

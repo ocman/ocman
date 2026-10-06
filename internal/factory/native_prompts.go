@@ -34,6 +34,10 @@ func (s *NativeService) issuePrompt(ctx context.Context, epic model.NativeEpic, 
 	if err != nil {
 		return "", err
 	}
+	return s.issuePromptFromIssues(ctx, epic, issueID, stage, issues)
+}
+
+func (s *NativeService) issuePromptFromIssues(ctx context.Context, epic model.NativeEpic, issueID, stage string, issues []model.NativeIssue) (string, error) {
 	byID := make(map[string]model.NativeIssue, len(issues))
 	for _, issue := range issues {
 		byID[issue.ID] = issue

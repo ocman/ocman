@@ -203,7 +203,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if err := tx.Commit(); err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
-	return epic, model.FactoryAttempt{ID: id, EpicID: epicID, WorkID: issueID, Sequence: sequence, Phase: model.FactoryAttemptPrepared, FrozenPolicy: attemptPolicy, CreatedAt: now, UpdatedAt: now, AgentToken: agentToken}, nil
+	return epic, model.FactoryAttempt{ID: id, EpicID: epicID, WorkID: issueID, Sequence: sequence, Phase: model.FactoryAttemptPrepared, FrozenPolicy: attemptPolicy, CreatedAt: now, UpdatedAt: now, AgentToken: agentToken, LaunchIssues: workflowIssues}, nil
 }
 
 // ClaimFactoryPlan marks one poured Plan as claimed and allocates its attempt together.

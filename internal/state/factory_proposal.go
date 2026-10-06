@@ -148,6 +148,10 @@ func (d *DB) ApplyFactoryScopePlan(ctx context.Context, proposal model.NativePro
 	if err := tx.QueryRowContext(ctx, `SELECT parent_issue_id FROM factory_issue_hierarchy WHERE child_issue_id = ?`, planID).Scan(&parentID); err != nil || parentID != manifest.MolID {
 		return model.NativeProposalRevision{}, errors.New("factory scope Plan manifest is invalid")
 	}
+	baseIssues, err := factoryAmendmentBaselineTx(ctx, tx, proposal.EpicID)
+	if err != nil {
+		return model.NativeProposalRevision{}, err
+	}
 	ids := make(map[string]string, len(manifest.Nodes))
 	for _, node := range manifest.Nodes {
 		var admitted bool
@@ -212,7 +216,7 @@ func (d *DB) ApplyFactoryScopePlan(ctx context.Context, proposal model.NativePro
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) VALUES (?, ?, ?, 'agent', 'project.replanned', json_object('proposalRevision', ?), ?)`, proposal.EpicID, originalID, attemptID, proposal.Revision, now); err != nil {
 		return model.NativeProposalRevision{}, err
 	}
-	if err := reopenFactoryGraphApprovalTx(ctx, tx, proposal.EpicID); err != nil {
+	if err := reopenFactoryGraphApprovalTx(ctx, tx, proposal.EpicID, baseIssues); err != nil {
 		return model.NativeProposalRevision{}, err
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT proposal_revision, proposal_hash FROM factory_plan_gate WHERE epic_id = ?`, proposal.EpicID).Scan(&proposal.Revision, &proposal.ContentHash); err != nil {

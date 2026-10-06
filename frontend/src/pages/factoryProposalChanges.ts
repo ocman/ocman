@@ -14,6 +14,7 @@ export function proposalBaseline(proposal: FactoryProposal, history: FactoryProp
 // Manifest keys survive materialization into real Issue IDs. Compare those keys
 // when the baseline is an initial plan; its Formula containers are not in nodes.
 export function proposalChanges(manifest: FactoryProposal['manifest'], baseline?: FactoryProposal['manifest']): ProposalChanges {
+  if (!baseline?.issues && manifest.baseIssues) baseline = { ...manifest, issues: manifest.baseIssues, externalIssues: [] };
   const current = proposalIssues(manifest);
   const previous = baseline ? proposalIssues(baseline) : [];
   const key = (issue: FactoryIssue) => issue.manifestKey || issue.id;

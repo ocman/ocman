@@ -15,7 +15,7 @@ import (
 
 // reopenFactoryGraphApprovalTx freezes the edited graph and invalidates its old
 // approval in the mutation transaction. Reuse the plan gate and its human UI.
-func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string) error {
+func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string, baseIssues []model.NativeIssue) error {
 	var gateID, project, rationale string
 	if err := tx.QueryRowContext(ctx, `SELECT id, project_path FROM factory_issue WHERE epic_id = ? AND kind = 'gate' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id) ORDER BY id LIMIT 1`, epicID).Scan(&gateID, &project); err != nil {
 		return err
@@ -61,7 +61,8 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 		// Preserve hierarchy and completed history alongside the reviewable work.
 		Issues         []model.NativeIssue `json:"issues"`
 		ExternalIssues []model.NativeIssue `json:"externalIssues,omitempty"`
-	}{EpicID: epicID, Project: project, Nodes: []node{}, Edges: []edge{}, Issues: issues, ExternalIssues: external, BaseRevision: baseline}
+		BaseIssues     []model.NativeIssue `json:"baseIssues,omitempty"`
+	}{EpicID: epicID, Project: project, Nodes: []node{}, Edges: []edge{}, Issues: issues, ExternalIssues: external, BaseRevision: baseline, BaseIssues: baseIssues}
 	work := map[string]bool{}
 	for _, issue := range issues {
 		if issue.Kind == "mol" && issue.ParentID == "" {
@@ -111,6 +112,37 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome = '', outcome_reason = '' WHERE id = ?`, gateID)
 	return err
+}
+
+// Initial proposals have no materialized hierarchy. Freeze it before the first
+// edit, then retain that baseline through every unapproved amendment.
+func factoryAmendmentBaselineTx(ctx context.Context, tx *sql.Tx, epicID string) ([]model.NativeIssue, error) {
+	var resolution, encoded string
+	err := tx.QueryRowContext(ctx, `SELECT g.resolution, p.manifest_json FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ?`, epicID).Scan(&resolution, &encoded)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	var manifest struct {
+		Issues     []model.NativeIssue `json:"issues"`
+		BaseIssues []model.NativeIssue `json:"baseIssues"`
+	}
+	if encoded != "" {
+		if err := json.Unmarshal([]byte(encoded), &manifest); err != nil {
+			return nil, err
+		}
+		if resolution != "approved" {
+			return manifest.BaseIssues, nil
+		}
+		if manifest.Issues != nil {
+			return nil, nil
+		}
+	}
+	issues, err := listFactoryIssues(ctx, tx, epicID)
+	if err != nil {
+		return nil, err
+	}
+	external, err := factoryGraphExternalReferences(ctx, tx, epicID)
+	return append(issues, external...), err
 }
 
 // External endpoints are frozen references, not work admitted to this Epic.

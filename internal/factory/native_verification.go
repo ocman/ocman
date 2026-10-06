@@ -213,6 +213,10 @@ func (s *NativeService) verificationCriteria(ctx context.Context, epicID, projec
 	if err != nil {
 		return "(unavailable: " + err.Error() + ")"
 	}
+	return verificationCriteriaFromIssues(issues, project)
+}
+
+func verificationCriteriaFromIssues(issues []model.NativeIssue, project string) string {
 	var out strings.Builder
 	for _, issue := range issues {
 		stepKind := ""

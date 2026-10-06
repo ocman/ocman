@@ -77,6 +77,7 @@ func TestProposalSubmissionCannotForgeFrozenGraphRevision(t *testing.T) {
 		{Issues: []Issue{}},
 		{ExternalIssues: []Issue{}},
 		{BaseRevision: &baseline},
+		{BaseIssues: []Issue{}},
 	} {
 		if _, err := svc.proposalForRequest(t.Context(), SubmitProposalRequest{Manifest: manifest}); err == nil || !strings.Contains(err.Error(), "output-only") {
 			t.Fatalf("submitted output-only graph: %v", err)
@@ -171,6 +172,7 @@ func TestGraphProposalResponsePreservesHierarchyAndExternalReferences(t *testing
 			Manifest struct {
 				Issues         []Issue
 				ExternalIssues []Issue
+				BaseIssues     []Issue
 			}
 		}
 		if err := json.Unmarshal(encoded, &response); err != nil {
@@ -187,6 +189,18 @@ func TestGraphProposalResponsePreservesHierarchyAndExternalReferences(t *testing
 		}
 		if !found || (len(response.Manifest.ExternalIssues) != 0) != linked {
 			t.Fatalf("response lost frozen graph: %s", encoded)
+		}
+		baselineFound := false
+		for _, issue := range response.Manifest.BaseIssues {
+			if issue.ID == work {
+				baselineFound = true
+				if issue.ParentID != parents["Original parent"] {
+					t.Fatalf("materialized baseline changed after amendment: %#v", issue)
+				}
+			}
+		}
+		if !baselineFound {
+			t.Fatal("first amendment lost the materialized baseline")
 		}
 		if linked && (response.Manifest.ExternalIssues[0].ID != blocker || response.Manifest.ExternalIssues[0].EpicID != external || response.Manifest.ExternalIssues[0].Title != "External blocker") {
 			t.Fatalf("external reference lost: %#v", response.Manifest.ExternalIssues)

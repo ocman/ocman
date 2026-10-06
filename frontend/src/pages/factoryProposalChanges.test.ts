@@ -6,6 +6,14 @@ import { factoryGraphModel, proposalIssues } from './factoryGraph';
 const issue = (id: string, overrides: Partial<FactoryIssue> = {}): FactoryIssue => ({ id, epicId: 'epic', project: '/repo', kind: 'task', title: id, status: 'open', ...overrides });
 const manifest = (issues: FactoryIssue[]): FactoryProposal['manifest'] => ({ epicId: 'epic', molId: 'mol', project: '/repo', nodes: [], issues });
 
+it('highlights first-amendment reparenting and new-task containment against the materialized baseline', () => {
+  const old: FactoryProposal['manifest'] = { epicId: 'epic', molId: 'mol', project: '/repo', nodes: [{ key: 'work', type: 'implementation', requirement: 'required' }] };
+  const baseIssues = [issue('old-parent', { kind: 'mol' }), issue('new-parent', { kind: 'mol' }), issue('runtime-work', { manifestKey: 'work', parentId: 'old-parent' })];
+  const next = { ...manifest([baseIssues[0], baseIssues[1], { ...baseIssues[2], parentId: 'new-parent' }, issue('new-task', { parentId: 'new-parent' })]), baseIssues };
+  expect(proposalChanges(next, old).addedIssues).toEqual(new Set(['new-task']));
+  expect(proposalChanges(next, old).addedEdges).toEqual(new Set(['hierarchy:new-parent->runtime-work', 'hierarchy:new-parent->new-task']));
+});
+
 it.each(['snapshot', 'initial plan'])('counts a link-only amendment against %s as a connection, not new work', (format) => {
   const old: FactoryProposal['manifest'] = format === 'snapshot' ? manifest([issue('work')]) : { epicId: 'epic', molId: 'mol', project: '/repo', nodes: [{ key: 'work', type: 'implementation', requirement: 'required' }] };
   const next = { ...manifest([issue('work', { manifestKey: 'work', dependsOn: [{ id: 'external', type: 'blocks' }] })]), externalIssues: [issue('external', { epicId: 'other', requirement: 'reference' })] };
