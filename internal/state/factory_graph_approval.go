@@ -24,6 +24,11 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
+	var baseline int
+	err = tx.QueryRowContext(ctx, `SELECT CASE WHEN g.resolution = 'approved' THEN g.proposal_revision ELSE COALESCE(json_extract(p.manifest_json, '$.baseRevision'), 0) END FROM factory_plan_gate g LEFT JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ?`, epicID).Scan(&baseline)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	issues, err := listFactoryIssues(ctx, tx, epicID)
 	if err != nil {
 		return err
@@ -47,15 +52,16 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 		Type string `json:"type"`
 	}
 	manifest := struct {
-		EpicID  string `json:"epicId"`
-		MolID   string `json:"molId"`
-		Project string `json:"project"`
-		Nodes   []node `json:"nodes"`
-		Edges   []edge `json:"edges"`
+		EpicID       string `json:"epicId"`
+		MolID        string `json:"molId"`
+		Project      string `json:"project"`
+		Nodes        []node `json:"nodes"`
+		Edges        []edge `json:"edges"`
+		BaseRevision int    `json:"baseRevision"`
 		// Preserve hierarchy and completed history alongside the reviewable work.
 		Issues         []model.NativeIssue `json:"issues"`
 		ExternalIssues []model.NativeIssue `json:"externalIssues,omitempty"`
-	}{EpicID: epicID, Project: project, Nodes: []node{}, Edges: []edge{}, Issues: issues, ExternalIssues: external}
+	}{EpicID: epicID, Project: project, Nodes: []node{}, Edges: []edge{}, Issues: issues, ExternalIssues: external, BaseRevision: baseline}
 	work := map[string]bool{}
 	for _, issue := range issues {
 		if issue.Kind == "mol" && issue.ParentID == "" {

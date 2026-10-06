@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { EpicGraph } from './EpicGraph';
 import { proposalIssues } from './factoryGraph';
+import { proposalBaseline, proposalChanges } from './factoryProposalChanges';
+import { FactoryProposalHistory } from '../components/FactoryProposalHistory';
 import { Button, ButtonGroup, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { EmptyState } from '../components/EmptyState';
@@ -230,6 +232,9 @@ export function FactoryEpicDetail() {
 	const active = tab ?? (epic.data.planGate?.resolution === 'open' ? 'plan' : 'board');
 	// The gate decides one exact revision; draw that one, not whatever is newest.
 	const gatedProposal = proposalHistory.find((proposal) => proposal.revision === epic.data?.planGate?.proposalRevision);
+	const baseline = gatedProposal && proposalBaseline(gatedProposal, proposalHistory);
+	const changes = gatedProposal && proposalChanges(gatedProposal.manifest, baseline?.manifest);
+	const decidePlan = (action: 'approve' | 'revise' | 'reject', revision: number, hash: string) => decideGate.mutate({ action, expectedRevision: revision, expectedHash: hash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } });
 	const close = async () => {
 		try {
 			// ponytail: the root Mol is a container the user never sees; close it on the way out.
@@ -249,14 +254,14 @@ export function FactoryEpicDetail() {
     <section className="factory-epic-actions" aria-label="Epic actions">
       {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate">
         <h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p>
-        {gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview />{gatedProposal.rationaleMarkdown && <details className="factory-proposal"><summary>Rationale</summary><MarkdownContent text={gatedProposal.rationaleMarkdown} /></details>}</div>}
+        {gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview changes={changes} />{gatedProposal.rationaleMarkdown && <details className="factory-proposal"><summary>Rationale</summary><MarkdownContent text={gatedProposal.rationaleMarkdown} /></details>}</div>}
         <FactoryImplementationModel {...implementation} />
         <label>Feedback<textarea value={feedback} disabled={decideGate.isPending} placeholder="Changes to request or a reason for rejecting the plan" onChange={(event) => setFeedback(event.target.value)} /></label>
         <ButtonGroup label="Plan approval actions">{([
           ['approve', 'Approve plan', 'Approving…'],
           ['revise', 'Request revision', 'Requesting revision…'],
           ['reject', 'Reject plan', 'Rejecting…'],
-        ] as const).map(([action, label, pendingLabel]) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} aria-busy={decideGate.isPending && decideGate.variables?.action === action} disabled={decideGate.isPending || (action === 'approve' && implementation.loading)} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } })}>{decideGate.isPending && decideGate.variables?.action === action ? pendingLabel : label}</Button>)}</ButtonGroup>
+        ] as const).map(([action, label, pendingLabel]) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} aria-busy={decideGate.isPending && decideGate.variables?.action === action} disabled={decideGate.isPending || (action === 'approve' && implementation.loading)} onClick={() => decidePlan(action, epic.data!.planGate!.proposalRevision, epic.data!.planGate!.proposalHash)}>{decideGate.isPending && decideGate.variables?.action === action ? pendingLabel : label}</Button>)}</ButtonGroup>
         {decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}
       </div>}
       {epic.data.planGate?.resolution === 'revision_requested' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p role="status">Revision requested. Waiting for a new Plan proposal.</p><Button type="button" disabled={epic.isFetching || proposals.isFetching} onClick={() => { setGateStatus(''); void Promise.all([epic.refetch(), proposals.refetch()]); }}>{epic.isFetching || proposals.isFetching ? 'Checking…' : 'Check for new proposal'}</Button></div>}
@@ -283,12 +288,12 @@ export function FactoryEpicDetail() {
       <IssueList epicID={id} />
       {!!removedIssues.data?.length && <section aria-label="Removed work audit"><h3>Removed work audit</h3><ul className="factory-issues">{removedIssues.data.map((issue) => <li key={issue.id}><strong>{issue.title}</strong><span>{issue.kind} · Removed {issue.removedAt ? new Date(issue.removedAt).toISOString() : 'previously'}</span><span>Audit reference: {issue.id}</span></li>)}</ul></section>}
     </section></TabsContent>
-    <TabsContent value="graph" asChild><section><EpicGraph issues={graphIssues.data} /></section></TabsContent>
+    <TabsContent value="graph" asChild><section><EpicGraph issues={graphIssues.data} changes={epic.data.planGate?.resolution === 'open' ? changes : undefined} /></section></TabsContent>
     <TabsContent value="plan" asChild><section>
       <PlanningAttempts epicID={id} attempts={epic.data.attempts ?? []} />
       {proposals.isError && <QueryError error={proposals.error} retry={() => void proposals.refetch()} />}
       {!proposals.isError && !proposalHistory.length && <EmptyState>No plan has been proposed yet.</EmptyState>}
-      {proposalHistory.map((proposal) => <details key={proposal.revision} className="factory-proposal"><summary>Proposal revision: {proposal.revision}</summary><p>Content hash: {proposal.contentHash}</p><pre>{JSON.stringify(proposal.manifest, null, 2)}</pre>{proposal.rationaleMarkdown && <MarkdownContent text={proposal.rationaleMarkdown} />}</details>)}
+      <FactoryProposalHistory proposals={proposalHistory} gate={epic.data.planGate} disabled={epic.data.status === 'closed' || decideGate.isPending || implementation.loading} approving={decideGate.isPending && decideGate.variables?.action === 'approve'} onApprove={(proposal) => decidePlan('approve', proposal.revision, proposal.contentHash)} />
     </section></TabsContent>
     </Tabs>
     {managing && graphIssues.data && <Drawer title="Manage graph" onClose={() => setManaging(false)}><GraphControls epicID={id} issues={graphIssues.data} allIssues={graphIssueQueries.flatMap((query) => query.data ?? [])} /></Drawer>}

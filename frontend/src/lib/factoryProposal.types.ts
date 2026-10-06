@@ -9,6 +9,7 @@ export interface FactoryProposal {
     edges?: { from: string; to: string; type: 'blocks' | 'on_failure' | 'merge_gated' }[];
     issues?: FactoryIssue[];
     externalIssues?: FactoryIssue[];
+    baseRevision?: number;
   };
   revision: number;
   contentHash: string;

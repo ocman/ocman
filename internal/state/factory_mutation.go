@@ -138,6 +138,13 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		if workflow && !implementationParent {
 			return invalid("add workflow implementation tasks under the implementation phase")
 		}
+		// Phase completion is derived from its children. New work reopens the
+		// group, while completed leaf Issues remain immutable.
+		if m.Actor == "mcp" && implementationParent && m.Kind != "mol" {
+			if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome = '', outcome_reason = '' WHERE id = ? AND epic_id = ? AND kind = 'phase' AND status = 'closed' AND outcome = 'succeeded'`, m.ParentID, m.EpicID); err != nil {
+				return err
+			}
+		}
 		if _, err := openIssue(m.ParentID, true); err != nil {
 			return err
 		}
@@ -161,6 +168,11 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, ?)`, m.ParentID, id, index, requiredMutationRequirement(m.Requirement)); err != nil {
 			return err
+		}
+		if implementationParent && m.Kind != "mol" {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency(issue_id, depends_on_issue_id, type) SELECT ?, depends_on_issue_id, type FROM factory_issue_dependency WHERE issue_id = ?`, id, m.ParentID); err != nil {
+				return err
+			}
 		}
 		if m.Kind != "mol" {
 			if err = closeHandBuiltMaterializationTx(ctx, tx, epicID); err != nil {

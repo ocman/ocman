@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -51,6 +52,28 @@ func TestNativeGraphApprovalSurvivesRestartWithoutDuplicatingWork(t *testing.T) 
 	if detail.Proposal.RationaleMarkdown != "Original design" || len(detail.Proposal.Manifest.Nodes) != 2 {
 		t.Fatalf("graph proposal = %#v", detail.Proposal)
 	}
+	checkBaseline := func(want int) {
+		latest, err := svc.GetProposal(t.Context(), epic.ID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(latest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			Manifest struct {
+				BaseRevision *int `json:"baseRevision"`
+			}
+		}
+		if err := json.Unmarshal(encoded, &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Manifest.BaseRevision == nil || *response.Manifest.BaseRevision != want {
+			t.Fatalf("approval baseline = %s, want %d", encoded, want)
+		}
+	}
+	checkBaseline(proposal.Revision)
 	// Human corrections to the pending graph must also invalidate the snapshot.
 	if err := svc.MutateGraph(t.Context(), GraphMutation{Actor: "user", Action: "edit", EpicID: epic.ID, IssueID: firstID, Title: "First corrected", Description: "Updated description"}); err != nil {
 		t.Fatal(err)
@@ -70,6 +93,7 @@ func TestNativeGraphApprovalSurvivesRestartWithoutDuplicatingWork(t *testing.T) 
 	if err != nil || detail.PlanGate.Resolution != "open" {
 		t.Fatalf("restarted graph = %#v, %v", detail, err)
 	}
+	checkBaseline(proposal.Revision)
 	issues, err = svc.ListIssues(t.Context(), epic.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -99,4 +123,8 @@ func TestNativeGraphApprovalSurvivesRestartWithoutDuplicatingWork(t *testing.T) 
 	if _, _, err := db.ClaimFactoryImplementation(t.Context(), epic.ID, gapID, "factory-implement/v1", time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Actor: "mcp", Action: "edit", EpicID: epic.ID, IssueID: firstID, Title: "Next amendment"}); err != nil {
+		t.Fatal(err)
+	}
+	checkBaseline(gate.ProposalRevision)
 }

@@ -336,6 +336,19 @@ dependencies on other Epics. External endpoints are labelled with their Epic
 ID. The initial proposal must materialize before an agent can edit live work;
 until then, submit a revised proposal so its planned tickets are preserved.
 
+On the Epic page, open **Plan**. The pending proposal expands automatically
+and has an **Approve revision** button. Its graph marks added Issues and
+connections, comparing amendments with the last approved revision rather than
+an intermediate unapproved edit. The **Graph** tab also marks added Issues
+while approval is pending. An already approved plan shows **Approved** and
+**No new proposal is awaiting approval** instead of another approval button.
+
+Missing work can also be proposed during verification, after the implementation
+group has completed. Adding a task reopens that group; completed tasks stay
+closed. An active validator can finish its current scope, but Factory runs a
+fresh verification of the approved amendment before delivery, even if the new
+task leaves the commit checkpoint unchanged.
+
 New dispatch pauses until that graph is approved. Already-running work can
 finish, and completed Issues and checkpoints remain intact. The implementation
 model is retained. Requesting a revision keeps dispatch paused; rejecting the

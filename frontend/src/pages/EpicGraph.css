@@ -26,3 +26,6 @@
 .react-flow__edge-text { fill: var(--text-dim); font-size: 10px; }
 .react-flow__controls-button { border-bottom-color: var(--border); background: var(--bg-card); fill: var(--text); }
 .react-flow__controls-button:hover { background: var(--bg-hover); }
+.factory-node-box--added { outline: 2px solid var(--accent); }
+.factory-node .factory-graph-added-label { color: var(--accent); font-weight: 600; }
+.react-flow__edge.factory-edge--added .react-flow__edge-path { stroke: var(--accent); stroke-width: 2; }

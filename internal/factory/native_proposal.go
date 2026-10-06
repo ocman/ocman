@@ -40,8 +40,9 @@ type ProposalManifest struct {
 	Nodes   []ManifestNode `json:"nodes"`
 	Edges   []ManifestEdge `json:"edges,omitempty"`
 	// Output-only frozen graph revisions include hierarchy and external endpoints.
-	Issues         []model.NativeIssue `json:"issues,omitempty"`
-	ExternalIssues []model.NativeIssue `json:"externalIssues,omitempty"`
+	Issues         []Issue `json:"issues,omitempty"`
+	ExternalIssues []Issue `json:"externalIssues,omitempty"`
+	BaseRevision   *int    `json:"baseRevision,omitempty"`
 }
 
 type SubmitProposalRequest struct {
@@ -159,7 +160,7 @@ func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalR
 }
 
 func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitProposalRequest) (model.NativeProposalRevision, error) {
-	if req.Manifest.Issues != nil || req.Manifest.ExternalIssues != nil {
+	if req.Manifest.Issues != nil || req.Manifest.ExternalIssues != nil || req.Manifest.BaseRevision != nil {
 		return model.NativeProposalRevision{}, fmt.Errorf("%w: frozen graph snapshots are output-only", ErrInvalidRequest)
 	}
 	epic, err := s.store.GetFactoryEpic(ctx, req.EpicID)
@@ -373,12 +374,4 @@ func validateProposalManifest(manifest ProposalManifest, epic model.NativeEpic, 
 		}
 	}
 	return nil
-}
-
-func nativeProposal(proposal model.NativeProposalRevision) (ProposalRevision, error) {
-	var manifest ProposalManifest
-	if err := json.Unmarshal([]byte(proposal.ManifestJSON), &manifest); err != nil {
-		return ProposalRevision{}, fmt.Errorf("decoding proposal manifest: %w", err)
-	}
-	return ProposalRevision{EpicID: proposal.EpicID, MolID: proposal.MolID, Project: proposal.Project, Revision: proposal.Revision, Manifest: manifest, RationaleMarkdown: proposal.RationaleMarkdown, ContentHash: proposal.ContentHash, CreatedAt: proposal.CreatedAt}, nil
 }

@@ -139,7 +139,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		attemptPolicy.Projects = append(attemptPolicy.Projects, admitted.Path)
 	}
 	attemptPolicy.Delivery = kind == "delivery"
-	if err := tx.QueryRowContext(ctx, `SELECT implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID).Scan(&attemptPolicy.Model); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT implementation_model, proposal_revision, proposal_hash FROM factory_plan_gate WHERE epic_id = ?`, epicID).Scan(&attemptPolicy.Model, &attemptPolicy.PlanRevision, &attemptPolicy.PlanHash); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	workflowIssues, err := listFactoryIssues(ctx, tx, epicID)

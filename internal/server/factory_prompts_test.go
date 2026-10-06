@@ -40,7 +40,7 @@ func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
 			if fallback := factory.DefaultFormulaPrompts()[stage]; fallback != "" && strings.Contains(sent.Message, fallback) {
 				t.Fatal("custom prompt did not replace the default")
 			}
-			if stage == "implementation" && (!strings.Contains(sent.Message, "mutate_graph") || !strings.Contains(sent.Message, "human approval")) {
+			if (stage == "implementation" || stage == "verification") && (!strings.Contains(sent.Message, "mutate_graph") || !strings.Contains(sent.Message, "human approval")) {
 				t.Fatal("implementation prompt omits graph proposal protocol")
 			}
 		})

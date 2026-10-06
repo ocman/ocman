@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
@@ -73,9 +72,11 @@ func TestAgentCannotReplaceUnmaterializedInitialProposal(t *testing.T) {
 
 func TestProposalSubmissionCannotForgeFrozenGraphRevision(t *testing.T) {
 	svc := NewNative(&nativeStoreFake{})
+	baseline := 1
 	for _, manifest := range []ProposalManifest{
-		{Issues: []model.NativeIssue{}},
-		{ExternalIssues: []model.NativeIssue{}},
+		{Issues: []Issue{}},
+		{ExternalIssues: []Issue{}},
+		{BaseRevision: &baseline},
 	} {
 		if _, err := svc.proposalForRequest(t.Context(), SubmitProposalRequest{Manifest: manifest}); err == nil || !strings.Contains(err.Error(), "output-only") {
 			t.Fatalf("submitted output-only graph: %v", err)
@@ -145,6 +146,17 @@ func TestGraphProposalResponsePreservesHierarchyAndExternalReferences(t *testing
 		encoded, err := json.Marshal(proposal)
 		if err != nil {
 			t.Fatal(err)
+		}
+		var wire struct {
+			Manifest struct {
+				Issues []map[string]any `json:"issues"`
+			} `json:"manifest"`
+		}
+		if err := json.Unmarshal(encoded, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if len(wire.Manifest.Issues) == 0 || wire.Manifest.Issues[0]["id"] == nil || wire.Manifest.Issues[0]["title"] == nil {
+			t.Fatalf("snapshot does not use browser issue fields: %s", encoded)
 		}
 		var response struct {
 			Manifest struct {
