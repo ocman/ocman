@@ -1,18 +1,16 @@
 .oc-viewport-footer:has(.oc-composer-notices) {
-  margin-top: -2.5rem;
-  background: linear-gradient(to bottom, transparent 0, var(--bg) 2.5rem);
+  margin-top: -1.25rem;
+  background: linear-gradient(to bottom, transparent 0, var(--bg) 1.25rem);
 }
 
 /* Keep the last message clear of the overlaid notification area. */
 .oc-thread:has(.oc-composer-notices) .oc-thread-viewport {
-  padding-bottom: 2.5rem;
+  padding-bottom: 1.25rem;
 }
 
 .oc-composer-notices {
-  height: 2.5rem;
+  min-height: 1.25rem;
   flex-shrink: 0;
-  overflow: auto;
-  scrollbar-width: thin;
   padding-inline: 1rem;
   color: var(--text-dim);
 }
@@ -22,6 +20,8 @@
   padding: 0.25rem 0;
   text-align: left;
   justify-content: flex-start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .oc-composer-notices button {

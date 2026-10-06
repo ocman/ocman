@@ -20,12 +20,12 @@ import { test, expect, MOCK_SESSION, MOCK_SESSION_2, mockSessionWithLiveConnecti
 const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 
 for (const width of [1280, 390]) {
-  test(`composer notice row reserves space at ${width}px`, async ({ mockedPage: page }) => {
+  test(`composer notice row fits its content at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 720 });
     let notice: Record<string, unknown> | undefined = undefined;
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
       route.fulfill({ json: {
-        session: { ...mockSessionWithLiveConnection(), notice },
+        session: { ...MOCK_SESSION, notice },
         ...buildSyntheticHistoricalThread(MOCK_SESSION.id),
       } }),
     );
@@ -33,15 +33,24 @@ for (const width of [1280, 390]) {
     const composer = page.getByTestId('conversation-composer');
     const notices = composer.getByRole('region', { name: 'Conversation status' });
     await expect(composer.getByRole('textbox')).toBeVisible();
-    const before = (await composer.boundingBox())!;
     const reservedHeight = (await notices.boundingBox())!.height;
     expect(reservedHeight).toBeGreaterThan(0);
-    notice = { kind: 'rate_limit', message: 'Provider quota exceeded. '.repeat(30), retryAt: 0, attempt: 2 };
+    expect(reservedHeight).toBeLessThanOrEqual(24);
+    notice = { kind: 'error', message: 'Provider unavailable.', retryAt: 0, attempt: 0 };
     await page.reload();
     await expect(composer.getByRole('textbox')).toBeVisible();
     await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
-    expect((await notices.boundingBox())!.height).toBe(reservedHeight);
-    expect((await composer.boundingBox())!.y).toBe(before.y);
+    const singleLineHeight = (await notices.boundingBox())!.height;
+    expect(singleLineHeight).toBeLessThanOrEqual(24);
+    notice = { kind: 'error', message: 'Provider unavailable.\nPlease retry.\nCheck your connection.', retryAt: 0, attempt: 0 };
+    await page.reload();
+    await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
+    expect((await notices.boundingBox())!.height).toBeGreaterThan(singleLineHeight * 2);
+    notice = { kind: 'rate_limit', message: 'Provider quota exceeded. '.repeat(30), retryAt: 0, attempt: 2 };
+    await page.reload();
+    await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
+    expect((await notices.boundingBox())!.height).toBeGreaterThan(reservedHeight);
+    expect(await notices.evaluate(el => el.scrollHeight)).toBe(await notices.evaluate(el => el.clientHeight));
     await expect(notices.getByRole('button', { name: 'Change model' })).toBeAttached();
   });
 
@@ -51,7 +60,7 @@ for (const width of [1280, 390]) {
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
       route.fulfill({
         json: {
-          session: mockSessionWithLiveConnection(),
+          session: MOCK_SESSION,
           ...historical,
           totalMessages: historical.messages.length,
         },
