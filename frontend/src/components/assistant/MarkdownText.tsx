@@ -205,7 +205,7 @@ function MarkdownLink(props: any) {
       href = url.pathname + url.search + url.hash;
     }
   }
-  const internal = href?.startsWith('/') && !href.startsWith('//');
+  const internal = href?.startsWith('/') && !href.startsWith('//') && !/^\/api(?:\/|$)/.test(href);
   // In-app paths must not reload the page; anchors and externals stay plain.
   if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;
   const local = internal || href?.startsWith('#');

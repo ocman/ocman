@@ -158,6 +158,17 @@ describe('MarkdownText', () => {
     expect(screen.getByRole('link', { name: 'Section' })).not.toHaveAttribute('target');
   });
 
+  it.each(['', window.location.origin])('keeps artifact file resources as ordinary anchors with prefix %s', (origin) => {
+    render(<MemoryRouter>
+      <MarkdownText text={`[Download report](${origin}/api/artifacts/report/files/0?download=1#page=2)`} />
+    </MemoryRouter>);
+
+    const link = screen.getByRole('link', { name: 'Download report' });
+    expect(link).toHaveAttribute('href', '/api/artifacts/report/files/0?download=1#page=2');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
   it('shows the source when Mermaid cannot render it', async () => {
     renderDiagram.mockRejectedValueOnce(new Error('invalid diagram'));
     render(<MarkdownText text={'```mermaid\nnot a diagram\n```'} />);
