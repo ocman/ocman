@@ -5,8 +5,10 @@ import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { SettingRow, SettingToggle } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { DataTable } from './DataTable';
+import { EmptyState } from './EmptyState';
+import { InlineAlert } from './InlineAlert';
+import { ShareLinkActions } from './ShareLinkActions';
 import { useShareLinks } from '../lib/useShareLinks';
-import { Button, ButtonGroup } from './Control';
 
 /**
  * SharingSettings renders the master "allow sharing" toggle plus a
@@ -87,19 +89,16 @@ export function SharingSettings() {
       </SettingRow>
 
       <SettingRow block setting="shared-sessions">
-        {state.error && <div className="oc-share-menu-error" role="alert">{state.error}</div>}
-        {state.loaded && state.links.length === 0 && <div className="oc-share-menu-empty">No shared sessions.</div>}
-        {state.links.length > 0 && <DataTable aria-label="Shared sessions">
+        {state.error && <InlineAlert>{state.error}</InlineAlert>}
+        {state.loaded && state.links.length === 0 && <EmptyState>No shared sessions.</EmptyState>}
+        {state.links.length > 0 && <DataTable framed aria-label="Shared sessions">
           <thead><tr><th scope="col">Session title</th><th scope="col">Shared at</th><th scope="col">Actions</th></tr></thead>
           <tbody>{state.links.map((link) => {
             const session = sessions.find((item) => item.id === link.sessionId && item.platform === link.platform);
             return <tr key={link.token}>
               <td><Link to={`/session/${encodeURIComponent(link.sessionId)}?platform=${encodeURIComponent(link.platform)}`}>{cleanTitle(session?.title ?? '') || link.sessionId}</Link></td>
               <td><time dateTime={new Date(link.createdAt).toISOString()}>{formatDateTimeShort(link.createdAt)}</time></td>
-              <td><ButtonGroup label="Share actions">
-                <Button type="button" size="small" onClick={() => void state.copy(link)} data-testid="share-copy-link">{state.copied === link.token ? 'Copied!' : 'Copy URL'}</Button>
-                <Button type="button" size="small" variant="danger" onClick={() => void state.revoke(link)} disabled={state.busy} data-testid="share-revoke-link">Revoke</Button>
-              </ButtonGroup></td>
+              <td><ShareLinkActions state={state} link={link} copyLabel="Copy URL" /></td>
             </tr>;
           })}</tbody>
         </DataTable>}

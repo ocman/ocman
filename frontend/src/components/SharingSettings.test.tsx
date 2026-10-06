@@ -137,6 +137,8 @@ describe('SharingSettings', () => {
     expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Session title', 'Shared at', 'Actions']);
     expect(await within(table).findByRole('link', { name: 'Fix webhook setup' })).toHaveAttribute('href', '/session/ses_a?platform=fake');
     expect(within(table).getByText(formatDateTimeShort(link.createdAt))).toHaveAttribute('datetime', new Date(link.createdAt).toISOString());
+    expect(within(table).getByRole('button', { name: 'Copy URL' })).toHaveClass('oc-button');
+    expect(within(table).getByRole('button', { name: 'Revoke' })).toHaveClass('oc-button--danger');
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));

@@ -85,7 +85,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-muted);
+  color: var(--text-dim);
   background: var(--bg-card);
   border: 1px solid var(--border);
 }
@@ -106,7 +106,7 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--text-dim);
   cursor: pointer;
   user-select: none;
 }
@@ -119,11 +119,11 @@
 .oc-shared-error {
   padding: 48px 16px;
   text-align: center;
-  color: var(--oc-text-muted);
+  color: var(--text-dim);
 }
 
 .oc-shared-error {
-  color: var(--oc-danger);
+  color: var(--danger);
 }
 
 /* Print stylesheet: drop interactive chrome so the browser's

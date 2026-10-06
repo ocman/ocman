@@ -6,6 +6,8 @@ import { shortPath } from '../lib/format';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { SettingRow, SettingSelect, SettingToggle } from '../components/SettingRow';
 import { SaveStatus } from '../components/SaveStatus';
+import { InlineAlert } from '../components/InlineAlert';
+import { EmptyState } from '../components/EmptyState';
 import type { SearchSelectOption } from '../components/SearchSelect';
 import { Button } from '../components/Control';
 import { IconButton } from '../components/IconButton';
@@ -87,12 +89,12 @@ export function ProjectSettingsView() {
 
   return (
     <div className="settings-section" data-testid="project-settings">
-      {error && <div className="oc-share-menu-error" role="alert">{error}</div>}
+      {error && <InlineAlert>{error}</InlineAlert>}
       <SettingRow block setting="project-models">
         {models.length === 0 ? (
-          <div className="oc-share-menu-empty" data-testid="project-models-empty">
+          <EmptyState data-testid="project-models-empty">
             No models configured. Sessions use OpenCode's own default model and never switch provider when one runs out of tokens.
-          </div>
+          </EmptyState>
         ) : (
           <ol className={styles.models} aria-label="Project models">
             {models.map((m, i) => (

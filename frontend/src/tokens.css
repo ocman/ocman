@@ -70,15 +70,6 @@
   /* Brand: OpenCode signature orange (PlatformBadge). */
   --brand-opencode: #d97757;
 
-  /* Export/share menu local theme (ShareExportMenu). Fixed dark palette,
-   * previously only expressed as var() fallbacks. */
-  --oc-bg: #141414;
-  --oc-surface: #1e1e1e;
-  --oc-surface-hover: #2a2a2a;
-  --oc-border: #333;
-  --oc-text: #e0e0e0;
-  --oc-text-muted: #888;
-  --oc-danger: #e06c75;
   --heatmap-0-bg: #2a2b3d;
   --heatmap-1: rgba(203, 166, 247, 0.25);
   --heatmap-2: rgba(203, 166, 247, 0.50);
