@@ -5,6 +5,7 @@ import { prChecksCacheKey } from '../../lib/prChecksCache';
 import { CI_LABEL, usePRChecks } from '../../lib/usePRChecks';
 import type { ChecksState } from '../../lib/usePRChecks';
 import { ExpandableRow } from './ExpandableRow';
+import './PRRow.css';
 
 interface PRRowProps {
   pr: PR;

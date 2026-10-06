@@ -1,0 +1,8 @@
+.oc-upstream-group { border-bottom: 1px solid var(--border); }
+.oc-upstream-group:last-child { border-bottom: none; }
+.oc-upstream-group-header { display: flex; gap: 8px; align-items: baseline; padding: 6px 10px; background: var(--mantle); font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.oc-upstream-group-host { color: var(--subtext0); font-weight: 500; }
+.oc-upstream-group-repo { color: var(--text-dim); }
+.oc-upstream-list { list-style: none; margin: 0; padding: 0; }
+.oc-upstream-pagination { justify-content: space-between; padding: 8px 10px; font-size: 11px; border-top: 1px solid var(--border); }
+.oc-upstream-empty { padding: 16px 10px; text-align: center; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; font-size: 12px; font-style: italic; }

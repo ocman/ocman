@@ -1,0 +1,2 @@
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.mine { margin-left: auto; }

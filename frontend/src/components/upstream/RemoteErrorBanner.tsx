@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { UpstreamApiError } from '../../lib/upstreamApi';
 import { Button } from '../Control';
+import './RemoteErrorBanner.css';
 
 interface RemoteErrorBannerProps {
   error: UpstreamApiError | Error;

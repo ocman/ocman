@@ -7,6 +7,7 @@ import { PRRow } from './PRRow';
 import { IssueRow } from './IssueRow';
 import { RemoteErrorBanner } from './RemoteErrorBanner';
 import { Pagination } from '../Pagination';
+import './UpstreamRemoteGroup.css';
 
 export interface UpstreamRemoteGroupProps {
   kind: 'prs' | 'issues';
@@ -153,4 +154,3 @@ export function UpstreamRemoteGroup({
 function scrollToCurrentBranch(section: HTMLElement | null) {
   section?.querySelector('.current-branch')?.scrollIntoView?.({ block: 'nearest' });
 }
-

@@ -69,7 +69,7 @@ beforeEach(() => {
 it('keeps the PR list when switching to another session of the same project', async () => {
   const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
   expect(await screen.findByText('PR 1')).toBeInTheDocument();
-  await userEvent.click(screen.getByTestId('upstream-filter-closed'));
+  await userEvent.click(screen.getByRole('radio', { name: 'closed' }));
   await waitFor(() => expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(2));
   await screen.findByText('PR 1');
 
@@ -78,7 +78,7 @@ it('keeps the PR list when switching to another session of the same project', as
   rerender(panel(session('s2', '/wt/repo/b', 'proj')));
 
   expect(screen.getByText('PR 1')).toBeInTheDocument();
-  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
   await waitFor(() =>
     expect(screen.getByText('PR 2').closest('li')).toHaveClass('current-branch'),
   );
@@ -104,13 +104,13 @@ it('keeps upstream controls during detection and hides them only for an unsuppor
   const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
   await screen.findByText('PR 1');
   await userEvent.click(screen.getByRole('tab', { name: 'Issues' }));
-  await userEvent.click(screen.getByTestId('upstream-filter-closed'));
+  await userEvent.click(screen.getByRole('radio', { name: 'closed' }));
   let resolve!: (upstreams: upstreamApi.Upstream[]) => void;
   vi.mocked(upstreamApi.fetchUpstreams).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
 
   rerender(panel(session('s2', '/other', 'other-proj')));
   expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
-  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
   expect(screen.queryByText('No supported upstream detected')).not.toBeInTheDocument();
   await act(async () => resolve([]));
   expect(screen.getByText('No supported upstream detected')).toBeInTheDocument();
@@ -119,7 +119,7 @@ it('keeps upstream controls during detection and hides them only for an unsuppor
   rerender(panel(session('s3', '/third', 'third-proj')));
   await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(3));
   expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
-  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
 });
 
 it('does not flash upstream detection during a fast project switch', async () => {

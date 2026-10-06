@@ -1,0 +1,15 @@
+.oc-upstream-launch { position: relative; display: inline-flex; align-items: stretch; margin-top: 4px; }
+.oc-upstream-launch-main, .oc-upstream-launch-chevron { background: var(--accent); color: var(--crust); border: 1px solid var(--accent); border-radius: 0; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 500; padding: 5px 12px; transition: background .15s; }
+.oc-upstream-launch-chevron { border-left-color: rgba(0, 0, 0, .25); padding: 5px 8px; }
+.oc-upstream-launch-main:hover:not(:disabled), .oc-upstream-launch-chevron:hover:not(:disabled) { background: var(--sapphire); }
+.oc-upstream-launch-main:disabled, .oc-upstream-launch-chevron:disabled { opacity: .6; cursor: not-allowed; }
+.oc-upstream-launch-hint { margin-left: 6px; font-family: 'SF Mono', Consolas, monospace; font-size: 10px; color: var(--text-dim); }
+.oc-upstream-launch-confirm { display: block; margin-top: 6px; padding: 10px; border: 1px solid var(--accent4); background: rgba(250, 179, 135, .1); font-size: 12px; }
+.oc-upstream-launch-confirm p { margin: 0 0 8px; }
+.oc-upstream-launch-confirm code { font-family: 'SF Mono', Consolas, monospace; font-size: .92em; padding: 1px 5px; background: var(--crust); color: var(--subtext0); }
+.oc-upstream-launch-confirm-buttons { display: flex; gap: 6px; }
+.oc-upstream-launch-confirm-buttons button { padding: 4px 12px; border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 0; cursor: pointer; font-family: inherit; font-size: 12px; }
+.oc-upstream-launch-confirm-buttons button:first-child { background: var(--accent4); color: var(--crust); border-color: var(--accent4); }
+.oc-upstream-launch-confirm-buttons button:first-child:hover { background: var(--peach); }
+.oc-upstream-launch-confirm-buttons button:last-child:hover { border-color: var(--overlay0); }
+.oc-upstream-launch-error { display: block; margin-top: 6px; padding: 6px 10px; background: rgba(243, 139, 168, .1); border: 1px solid var(--danger); font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--danger); }

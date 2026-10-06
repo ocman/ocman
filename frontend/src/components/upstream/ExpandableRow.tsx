@@ -5,6 +5,7 @@ import type { ForgeUser, Label } from '../../lib/upstreamApi';
 import { LaunchSplitButton } from './LaunchSplitButton';
 import { OpenInBrowser } from './OpenInBrowser';
 import { RowMeta } from './RowMeta';
+import './ExpandableRow.css';
 
 interface ExpandableRowProps {
   type: 'pr' | 'issue';

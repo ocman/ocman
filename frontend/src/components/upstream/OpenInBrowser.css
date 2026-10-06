@@ -1,0 +1,4 @@
+.oc-upstream-row-open { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: var(--radius); color: var(--text-dim); opacity: .55; transition: opacity .12s ease, color .12s ease, background .12s ease; }
+.oc-upstream-row:hover .oc-upstream-row-open { opacity: 1; }
+.oc-upstream-row-open:hover { opacity: 1; color: var(--accent); background: var(--bg-hover); }
+.oc-upstream-row-open:focus-visible { opacity: 1; outline: 2px solid var(--accent); outline-offset: 1px; }
