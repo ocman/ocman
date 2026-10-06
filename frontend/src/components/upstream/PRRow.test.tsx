@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PRRow } from './PRRow';
+import { CI_POLL_MS, clearPRChecksCache, getCachedPRChecks, resetPRChecksMemoryForTest } from '../../lib/prChecksCache';
 import type { PR } from '../../lib/upstreamApi';
 import * as api from '../../lib/upstreamApi';
 
@@ -131,103 +132,148 @@ describe('PRRow detail slots', () => {
 });
 
 describe('PRRow CI build-status indicator', () => {
+  // Rows observed by the stubbed IntersectionObserver; `show` flips visibility.
+  let observers: Array<{ cb: (e: { isIntersecting: boolean }[]) => void; disconnected: boolean }>;
+  const show = (visible: boolean) =>
+    act(() => {
+      for (const o of observers) if (!o.disconnected) o.cb([{ isIntersecting: visible }]);
+    });
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
+    clearPRChecksCache();
+    observers = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      o: (typeof observers)[number];
+      constructor(cb: (e: { isIntersecting: boolean }[]) => void) {
+        this.o = { cb, disconnected: false };
+        observers.push(this.o);
+      }
+      observe() {}
+      disconnect() { this.o.disconnected = true; }
+    });
   });
   afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it('renders a neutral (unknown) CI dot when the PR has no head SHA', () => {
-    render(<PRRow pr={makePR()} directory="/repo" remoteId="local" remote="origin" />);
-    const dot = screen.getByTestId('pr-row-42-ci');
-    expect(dot).toBeInTheDocument();
-    expect(dot.className).toContain('oc-upstream-ci-dot-unknown');
-  });
+  const success = { state: 'success' as const, checks: [{ name: 'build', state: 'success' as const }] };
+  const pending = { state: 'pending' as const, checks: [{ name: 'build', state: 'pending' as const }] };
 
-  it('does not fetch checks when the PR has no head SHA', () => {
+  it('renders a neutral CI dot and never fetches without a head SHA', () => {
     const spy = vi.spyOn(api, 'fetchPRChecks');
     render(<PRRow pr={makePR()} directory="/repo" remoteId="local" remote="origin" />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    show(true);
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-unknown');
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('renders a neutral CI dot when a head SHA is present', () => {
+  it('fetches once the collapsed row becomes visible, not before', async () => {
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue(success);
     render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
-    const dot = screen.getByTestId('pr-row-42-ci');
-    expect(dot).toBeInTheDocument();
-    expect(dot.className).toContain('oc-upstream-ci-dot-unknown');
+    expect(spy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-unknown');
+
+    show(true);
+    await waitFor(() => expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success'));
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ dir: '/repo', remote: 'origin', sha: 'abc123' }));
+    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument();
   });
 
-  it('cancels stale checks and can load a changed head SHA', async () => {
-    const spy = vi.spyOn(api, 'fetchPRChecks').mockReturnValue(new Promise(() => {}));
+  it('fetches without IntersectionObserver', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue(success);
+    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  });
+
+  it('never fetches a SHA with a cached final status again, even after a reload', async () => {
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue(success);
+    const first = render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    resetPRChecksMemoryForTest();
+    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await waitFor(() => expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success'));
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByTestId('pr-detail-42-checks')).toBeInTheDocument();
+  });
+
+  it('polls a non-final status every 15s while visible, then caches the final one', async () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(api, 'fetchPRChecks')
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(success);
+    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-pending');
+    expect(getCachedPRChecks('abc123')).toBeUndefined();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success');
+    expect(getCachedPRChecks('abc123')?.state).toBe('success');
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS * 3); });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops polling while the row is out of view and resumes when it returns', async () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue(pending);
+    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    show(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS * 3); });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-pending');
+
+    show(true);
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed fetch after 15s and shows the error meanwhile', async () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(api, 'fetchPRChecks')
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(success);
+    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
+    show(true);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByText('Failed to load checks.')).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('pr-detail-42-checks')).toBeInTheDocument();
+  });
+
+  it('aborts a stale request and clears the dot when the head SHA changes', async () => {
+    const spy = vi.spyOn(api, 'fetchPRChecks').mockReturnValueOnce(new Promise(() => {})).mockResolvedValue(success);
     const { rerender } = render(
       <PRRow pr={makePR({ headSha: 'old' })} directory="/repo" remoteId="local" remote="origin" />,
     );
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    show(true);
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
     const oldSignal = spy.mock.calls[0][0].signal;
 
     rerender(<PRRow pr={makePR({ headSha: 'new' })} directory="/repo" remoteId="local" remote="origin" />);
     expect(oldSignal?.aborted).toBe(true);
-    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-unknown');
-    fireEvent.click(screen.getByRole('button', { expanded: true }));
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
     expect(spy.mock.calls[1][0].sha).toBe('new');
-  });
-
-  it('clears a loaded CI result when the head SHA changes', async () => {
-    vi.spyOn(api, 'fetchPRChecks').mockResolvedValue({
-      state: 'success', checks: [{ name: 'build', state: 'success' }],
-    });
-    const { rerender } = render(
-      <PRRow pr={makePR({ headSha: 'old' })} directory="/repo" remoteId="local" remote="origin" />,
-    );
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-    await waitFor(() => expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success'));
-
-    rerender(<PRRow pr={makePR({ headSha: 'new' })} directory="/repo" remoteId="local" remote="origin" />);
-    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-unknown');
-  });
-
-  it('lazily fetches checks on expansion and colors the dot', async () => {
-    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue({
-      state: 'success',
-      checks: [{ name: 'build', state: 'success' }],
-    });
-
-    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
-
-    // No fetch until interaction.
-    expect(spy).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success');
-    });
-    expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ dir: '/repo', remote: 'origin', sha: 'abc123' }),
-    );
-  });
-
-  it('fetches at most once across repeated toggles', async () => {
-    const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue({
-      state: 'failure',
-      checks: [{ name: 'test', state: 'failure', url: 'https://ci/test' }],
-    });
-
-    render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
-
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-    fireEvent.click(screen.getByRole('button', { expanded: true }));
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('pr-detail-42-checks')).toBeInTheDocument();
-    });
-    // Repeated toggles must not double-fetch.
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('test')).toBeInTheDocument();
   });
 });

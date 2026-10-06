@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CIState, Check, PR, PRChecks } from '../../lib/upstreamApi';
 import { fetchPRChecks } from '../../lib/upstreamApi';
+import { CI_POLL_MS, cachePRChecks, getCachedPRChecks, isFinalCIState } from '../../lib/prChecksCache';
 import { ExpandableRow } from './ExpandableRow';
 
 interface PRRowProps {
@@ -34,7 +35,8 @@ interface PRRowProps {
  * note in FR-7; can be tightened later).
  */
 export function PRRow({ pr, directory, checksDirectory = directory ?? '', remoteId, remote, currentBranch }: PRRowProps) {
-  const checks = usePRChecks(pr, checksDirectory, remoteId, remote);
+  const [visible, setVisible] = useState(false);
+  const checks = usePRChecks(pr, checksDirectory, remoteId, remote, visible);
 
   // Cross-fork PRs share their head branch name with the user's
   // local tree by coincidence at best (different repo entirely), so
@@ -43,7 +45,7 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
     !pr.crossFork && !!currentBranch && pr.branch === currentBranch;
 
   // The CI dot is always rendered for PRs (grey/unknown until the
-  // lazy fetch resolves). We can only *fetch* a status when the forge
+  // fetch, which starts once the row is visible, resolves). We can only *fetch* a status when the forge
   // reported a head SHA, so gate the fetch — not the dot — on that.
   // This keeps the indicator visible (and its absence meaningful)
   // even when a forge omits the SHA.
@@ -67,7 +69,7 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
       remote={remote}
       crossFork={pr.crossFork}
       className={isCurrentBranch ? 'current-branch' : undefined}
-      onToggle={canFetchCI ? checks.load : undefined}
+      onVisibleChange={canFetchCI ? setVisible : undefined}
       summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} />}
       summarySuffix={isCurrentBranch ? (
         <span
@@ -94,69 +96,64 @@ interface ChecksState {
   loading: boolean;
   loaded: boolean;
   error: boolean;
-  load: () => void;
+}
+
+interface ChecksResult {
+  key: string;
+  data: PRChecks | null;
+  loading: boolean;
+  error: boolean;
 }
 
 /**
- * usePRChecks lazily fetches a PR's CI/build status. The fetch fires
- * only when `load()` is called (on hover or expand), runs at most
- * once per row, and is aborted on unmount. Until it resolves the
- * state is "unknown" (neutral dot).
+ * usePRChecks fetches a PR's CI/build status while its row is visible.
+ * A final status (success/failure) is cached per head SHA, so a SHA is
+ * fetched once; anything else is re-fetched every CI_POLL_MS until it
+ * settles or the row scrolls out of view.
  */
-function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string): ChecksState {
-  const requestKey = `${remoteId}\0${directory}\0${remote}\0${pr.headSha ?? ''}`;
-  const [data, setData] = useState<PRChecks | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [activeKey, setActiveKey] = useState(requestKey);
-  // Guards against duplicate fetches: hover + click can both fire.
-  const startedRef = useRef(false);
-  const abortRef = useRef<AbortController | null>(null);
+function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string, visible: boolean): ChecksState {
+  const sha = pr.headSha ?? '';
+  const requestKey = `${remoteId}\0${directory}\0${remote}\0${sha}`;
+  const [result, setResult] = useState<ChecksResult>({ key: requestKey, data: null, loading: false, error: false });
 
   useEffect(() => {
-    const reset = () => {
-      abortRef.current?.abort();
-      startedRef.current = false;
-      setActiveKey(requestKey);
-      setData(null);
-      setLoading(false);
-      setError(false);
-    };
-    reset();
-    return () => abortRef.current?.abort();
-  }, [pr.headSha, directory, remoteId, remote, requestKey]);
-
-  const load = useCallback(() => {
-    if (startedRef.current || !pr.headSha) return;
-    startedRef.current = true;
-    setLoading(true);
+    if (!sha || !visible) return;
     const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    fetchPRChecks({ dir: directory, remoteId, remote, sha: pr.headSha, signal: ctrl.signal })
-      .then((res) => {
-        if (!ctrl.signal.aborted) setData(res);
-      })
-      .catch((err) => {
-        if (ctrl.signal.aborted) return;
-        // Failed fetch shouldn't break the row; allow a retry by
-        // clearing the started guard.
-        startedRef.current = false;
-        setError(true);
-        void err;
-      })
-      .finally(() => {
-        if (!ctrl.signal.aborted) setLoading(false);
-      });
-  }, [pr.headSha, directory, remoteId, remote]);
+    let timer: number | undefined;
+    const run = () => {
+      const cached = getCachedPRChecks(sha);
+      if (cached) {
+        setResult({ key: requestKey, data: cached, loading: false, error: false });
+        return;
+      }
+      setResult((prev) => ({ key: requestKey, data: prev.key === requestKey ? prev.data : null, loading: true, error: false }));
+      fetchPRChecks({ dir: directory, remoteId, remote, sha, signal: ctrl.signal })
+        .then((res) => {
+          if (ctrl.signal.aborted) return;
+          cachePRChecks(sha, res);
+          setResult({ key: requestKey, data: res, loading: false, error: false });
+          if (!isFinalCIState(res.state)) timer = window.setTimeout(run, CI_POLL_MS);
+        })
+        .catch(() => {
+          if (ctrl.signal.aborted) return;
+          setResult((prev) => ({ ...prev, key: requestKey, loading: false, error: true }));
+          timer = window.setTimeout(run, CI_POLL_MS);
+        });
+    };
+    run();
+    return () => {
+      ctrl.abort();
+      window.clearTimeout(timer);
+    };
+  }, [sha, directory, remoteId, remote, visible, requestKey]);
 
-  const current = activeKey === requestKey;
+  const current = result.key === requestKey;
   return {
-    state: current ? data?.state ?? 'unknown' : 'unknown',
-    checks: current ? data?.checks ?? [] : [],
-    loading: current && loading,
-    loaded: current && data !== null,
-    error: current && error,
-    load,
+    state: current ? result.data?.state ?? 'unknown' : 'unknown',
+    checks: current ? result.data?.checks ?? [] : [],
+    loading: current && result.loading,
+    loaded: current && result.data !== null,
+    error: current && result.error,
   };
 }
 

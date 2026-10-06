@@ -6,6 +6,7 @@ import { UpstreamPane } from './UpstreamPane';
 import * as upstreamApi from '../../lib/upstreamApi';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { _resetForgeUserCacheForTests } from '../../lib/useForgeUser';
+import { cachePRChecks, getCachedPRChecks } from '../../lib/prChecksCache';
 
 const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], page: 1, hasMore: false, setPage: vi.fn() }));
 
@@ -137,5 +138,14 @@ describe('UpstreamPane owner-scoped resources', () => {
 
     rerender(<UpstreamPane directory="/new" remoteId="box" upstreams={oneUpstream} />);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('clears cached CI statuses on refresh', () => {
+    cachePRChecks('abc123', { state: 'success', checks: [] });
+    let refresh = () => {};
+    render(<UpstreamPane directory="/repo" remoteId="box" upstreams={[upstreams[0]]} onRefresh={(fn) => { refresh = fn; }} />);
+    expect(getCachedPRChecks('abc123')).toBeDefined();
+    refresh();
+    expect(getCachedPRChecks('abc123')).toBeUndefined();
   });
 });

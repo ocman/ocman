@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ForgeUser, Label } from '../../lib/upstreamApi';
@@ -23,8 +23,8 @@ interface ExpandableRowProps {
   remote: string;
   crossFork: boolean;
   className?: string;
-  onToggle?: () => void;
-  onMouseEnter?: () => void;
+  /** Called as the row enters or leaves the viewport. */
+  onVisibleChange?: (visible: boolean) => void;
   summaryPrefix?: ReactNode;
   summarySuffix?: ReactNode;
   detailBeforeBody?: ReactNode;
@@ -48,8 +48,7 @@ export function ExpandableRow({
   remote,
   crossFork,
   className = '',
-  onToggle,
-  onMouseEnter,
+  onVisibleChange,
   summaryPrefix,
   summarySuffix,
   detailBeforeBody,
@@ -57,21 +56,35 @@ export function ExpandableRow({
 }: ExpandableRowProps) {
   const [expanded, setExpanded] = useState(false);
   const rowId = `${type}-row-${number}`;
+  const rowRef = useRef<HTMLLIElement>(null);
+
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!onVisibleChange || !el) return;
+    // Without IntersectionObserver, treat the row as visible.
+    if (typeof IntersectionObserver === 'undefined') {
+      onVisibleChange(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry) onVisibleChange(entry.isIntersecting);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onVisibleChange]);
 
   return (
     <li
       className={`oc-upstream-row oc-upstream-row-${type}${expanded ? ' expanded' : ''}${className ? ` ${className}` : ''}`}
       data-testid={rowId}
-      onMouseEnter={onMouseEnter}
+      ref={rowRef}
     >
       <div className="oc-upstream-row-head">
         <button
           type="button"
           className="oc-upstream-row-summary"
-          onClick={() => {
-            setExpanded((value) => !value);
-            onToggle?.();
-          }}
+          onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
         >
           {summaryPrefix}

@@ -202,7 +202,7 @@ export async function fetchIssues(opts: {
 }
 
 // fetchPRChecks returns the combined CI/build status for a PR's head
-// commit. Fetched lazily (on expand/hover) so the list stays cheap.
+// commit. Fetched per visible row; final results are cached by SHA.
 export async function fetchPRChecks(opts: {
   dir: string;
   remoteId: string;

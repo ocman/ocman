@@ -5,6 +5,7 @@ import type { PaneSummary } from '../SessionChangesSidebar';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { ProjectLabel } from '../ProjectLabel';
 import { UpstreamRemoteGroup } from './UpstreamRemoteGroup';
+import { clearPRChecksCache } from '../../lib/prChecksCache';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 
 interface UpstreamPaneProps {
@@ -169,6 +170,8 @@ function UpstreamTabContent({
 
   // Compose a single refresh callback that fans out to every group.
   const refreshAll = useCallback(() => {
+    // A manual refresh re-checks CI too, even for SHAs with a cached final status.
+    clearPRChecksCache();
     for (const r of groupRefreshers) r();
   }, [groupRefreshers]);
 
