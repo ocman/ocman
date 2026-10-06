@@ -118,7 +118,7 @@ export function mergeSidebarSessions(
 ): Session[] {
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
-    const live = current.find((ls) => ls.id === s.id);
+    const live = current.find((ls) => ls.id === s.id && ls.platform === s.platform);
     if (!live) return unarchived;
     return {
       ...unarchived,

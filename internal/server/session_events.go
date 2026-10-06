@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
@@ -46,7 +47,7 @@ func (s *Server) broadcastSessionPatch(sessionID string, patch map[string]interf
 	if sessionID == "" {
 		return
 	}
-	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID, "patch": patch})
+	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID, "platform": opencode.PlatformID, "patch": patch})
 	if err == nil {
 		s.broadcastGlobalEvent("ocman.session.changed", payload)
 	}

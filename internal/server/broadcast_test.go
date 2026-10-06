@@ -21,6 +21,7 @@ func TestBroadcastSessionStatusCarriesPatch(t *testing.T) {
 	ev := <-sub.ch
 	var payload struct {
 		SessionID string `json:"sessionID"`
+		Platform  string `json:"platform"`
 		Patch     struct {
 			Status db.SessionStatus `json:"status"`
 		} `json:"patch"`
@@ -28,7 +29,7 @@ func TestBroadcastSessionStatusCarriesPatch(t *testing.T) {
 	if err := json.Unmarshal(ev.data, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if ev.event != "ocman.session.changed" || payload.SessionID != "s1" || payload.Patch.Status != db.StatusBusy {
+	if ev.event != "ocman.session.changed" || payload.SessionID != "s1" || payload.Platform != "opencode" || payload.Patch.Status != db.StatusBusy {
 		t.Fatalf("unexpected event: %+v payload=%+v", ev, payload)
 	}
 }
@@ -40,7 +41,7 @@ func TestBroadcastSessionTitleCarriesPatch(t *testing.T) {
 
 	srv.broadcastSessionTitle("s1", "Renamed")
 	ev := <-sub.ch
-	if ev.event != "ocman.session.changed" || string(ev.data) != `{"patch":{"title":"Renamed"},"sessionID":"s1"}` {
+	if ev.event != "ocman.session.changed" || string(ev.data) != `{"patch":{"title":"Renamed"},"platform":"opencode","sessionID":"s1"}` {
 		t.Fatalf("unexpected event: %s %s", ev.event, ev.data)
 	}
 }
@@ -57,7 +58,7 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 	srv.broadcastSessionTitle("s1", "Renamed")
 	srv.broadcastSessionStatus("s1", db.StatusBusy)
 	pending := sub.drainPending()
-	if len(pending) != 1 || string(pending[0].data) != `{"patch":{"status":"busy","title":"Renamed"},"sessionID":"s1"}` {
+	if len(pending) != 1 || string(pending[0].data) != `{"patch":{"status":"busy","title":"Renamed"},"platform":"opencode","sessionID":"s1"}` {
 		t.Fatalf("pending = %+v", pending)
 	}
 
@@ -67,7 +68,7 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 	srv.broadcastSessionChanged("s1")
 	srv.broadcastSessionStatus("s1", db.StatusDone)
 	pending = sub.drainPending()
-	if len(pending) != 1 || string(pending[0].data) != `{"sessionID":"s1"}` {
+	if len(pending) != 1 || string(pending[0].data) != `{"platform":"opencode","sessionID":"s1"}` {
 		t.Fatalf("pending = %+v", pending)
 	}
 }

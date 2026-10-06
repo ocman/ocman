@@ -26,7 +26,11 @@ sequenceDiagram
     D-->>B: JSON (status settled at query time)
     D-->>E: watcher observes message/part mutation
     E-->>B: /api/events: ocman.session.activity (id, timestamp)
-    B->>B: patch activity; stable minute-bucket sort; animate moved rows
+    B->>B: patch activity label; keep completion order
+    E-->>B: ocman.session.changed (id, platform, terminal status)
+    B->>S: GET /api/session/id?platform=owner&peek=1
+    S-->>B: JSON with durable lastTurnCompletedAt
+    B->>B: sort by completion; animate moved rows
     D-->>S: settled bash part containing git commit/push
     S->>E: ocman.git.command (session, owner, project, action)
     E-->>B: debounce matching PR/Issue refresh
@@ -89,12 +93,19 @@ sequenceDiagram
   repository links can also match before the initial metadata response arrives.
   This is a command-string heuristic, not proof that git succeeded;
   commands run outside agent bash tools are not observed.
-- Activity timestamps stay exact, but sorting uses one-minute buckets with
-  stable ties. Concurrent streams in the same minute do not continually swap
-  places. Stale list responses cannot roll activity timestamps backwards.
+- Rows sort by `lastTurnCompletedAt`, including terminal errors, with creation
+  time as fallback and compound session identity as a deterministic tie-breaker.
+  Tool-call steps, compaction and streaming do not advance that key. Worktree
+  groups use the same order, with the main checkout first. Stale list responses
+  cannot roll activity or completion timestamps backwards or merge different owners.
+- Terminal status patches carry their platform. The browser fetches the exact
+  owner-qualified session and validates its identity before applying completion
+  metadata, bypassing a potentially stale global list snapshot. Older events
+  with ambiguous owners trigger a list refresh without patching a guessed row.
 - Sending a message updates sidebar activity optimistically. Queued messages
   wait until sent. Failed sends restore the old timestamp unless newer SSE
-  activity has arrived. Reorders use a 180 ms native animation and respect
+  activity has arrived. Sending and reading do not change the completion key.
+  Reorders use a 180 ms native animation and respect
   reduced-motion preferences. Pinned ordering and manual project ordering remain.
 - A changed session title (OpenCode auto-title, a TUI rename, another
   client) refreshes that session's list row, then broadcasts

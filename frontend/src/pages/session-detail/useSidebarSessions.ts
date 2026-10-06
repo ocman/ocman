@@ -198,18 +198,21 @@ export function useSidebarSessions({
         .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
     };
     let subscribed = true;
-    const unsubscribeChanged = onSessionChanged((sessionID, _session, patch) => {
-      if (patch && useApiStore.getState().recentSessions.some((session) => session.id === sessionID)) {
-        patchRecentSession(sessionID, patch);
+    const unsubscribeChanged = onSessionChanged((sessionID, _session, patch, platform) => {
+      const matches = useApiStore.getState().recentSessions.filter(s => s.id === sessionID && (!platform || s.platform === platform));
+      // Older unqualified events are safe only when the owner is unambiguous.
+      if (patch && matches.length === 1) {
+        const owner = matches[0].platform;
+        patchRecentSession(sessionID, patch, owner);
         // A terminal status patch carries no completion timestamp. Refresh
         // the durable row before promoting it; never rank by event arrival.
         if (!patch.status || patch.status === 'busy') return;
-        peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
-          if (!subscribed) return;
-          const current = useApiStore.getState().recentSessions.find(s => s.id === sessionID);
+        peekSession(sessionID, abortSignalRef.current?.signal, owner).then(({ session: row }) => {
+          if (!subscribed || row.id !== sessionID || row.platform !== owner) return;
+          const current = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
           patchRecentSession(sessionID, { lastTurnCompletedAt: Math.max(
             row.lastTurnCompletedAt ?? 0, current?.lastTurnCompletedAt ?? 0,
-          ) });
+          ) }, owner);
         }).catch((err) => remoteLog.error('Failed to refresh completed session', err));
       }
       refresh();

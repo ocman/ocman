@@ -100,3 +100,17 @@ it('falls back to creation time and breaks completion ties consistently across r
   expect(mergeSidebarSessions(rows, []).map(s => s.id)).toEqual(['new', 'a', 'b']);
   expect(mergeSidebarSessions([...rows].reverse(), []).map(s => s.id)).toEqual(['new', 'a', 'b']);
 });
+
+it('keeps completion and read watermarks isolated across owners with matching IDs', async () => {
+  const local = { ...sessions[0], id: 'shared', lastTurnCompletedAt: 300_000, seen: true, seenTimeUpdated: 300_000 };
+  const remote = { ...local, platform: 'r-owner:opencode', lastTurnCompletedAt: 100_000, seen: false, seenTimeUpdated: 0 };
+  const merged = mergeSidebarSessions([remote, local], [local, remote]);
+  expect(merged.find(s => s.platform === remote.platform)).toMatchObject({ lastTurnCompletedAt: 100_000, seen: false, seenTimeUpdated: 0 });
+  useApiStore.setState({ recentSessions: merged });
+  useApiStore.getState().patchRecentSession('shared', { lastTurnCompletedAt: 400_000 }, remote.platform);
+  expect(useApiStore.getState().recentSessions[0]).toMatchObject({ platform: remote.platform, lastTurnCompletedAt: 400_000 });
+  expect(useApiStore.getState().recentSessions[1]).toMatchObject({ platform: local.platform, lastTurnCompletedAt: 300_000 });
+  const peek = vi.spyOn(api, 'session').mockResolvedValue({ session: remote } as never);
+  await useApiStore.getState().peekSession('shared', undefined, remote.platform);
+  expect(peek).toHaveBeenCalledWith('shared', 1, 0, undefined, remote.platform, true);
+});

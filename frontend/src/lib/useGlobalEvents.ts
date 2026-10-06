@@ -48,6 +48,7 @@ function nextReconnectDelay(): number {
 /** Payload shape carrying a session id (all broadcast events have one). */
 type SessionEventPayload = {
   sessionID?: string;
+  platform?: string;
   permissionId?: string;
   requestId?: string;
   reason?: string;
@@ -103,6 +104,7 @@ const sessionChangedListeners = new Set<(
   sessionId: string,
   session?: Session,
   patch?: Partial<Session>,
+  platform?: string,
 ) => void>();
 
 const projectsChangedListeners = new Set<() => void>();
@@ -191,9 +193,10 @@ function handleProjectsChanged(): void {
  * The second arg is a provisional session row when the event carries
  * one (freshly-created sessions), so listeners can insert it before the
  * authoritative refetch.
+ * The fourth arg is the owning compound platform when supplied.
  */
 export function onSessionChanged(
-  cb: (sessionId: string, session?: Session, patch?: Partial<Session>) => void,
+  cb: (sessionId: string, session?: Session, patch?: Partial<Session>, platform?: string) => void,
 ): () => void {
   sessionChangedListeners.add(cb);
   return () => sessionChangedListeners.delete(cb);
@@ -203,7 +206,7 @@ function handleSessionChanged(raw: string): void {
   const parsed = parsePayload(raw);
   const sessionId = parsed?.sessionID;
   if (!sessionId) return;
-  for (const cb of sessionChangedListeners) cb(sessionId, parsed?.session, parsed?.patch);
+  for (const cb of sessionChangedListeners) cb(sessionId, parsed?.session, parsed?.patch, parsed?.platform ?? parsed?.session?.platform);
 }
 
 // queueUpdatedListeners: the composer's queue view registers here so a

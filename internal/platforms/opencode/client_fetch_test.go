@@ -35,6 +35,29 @@ func TestFetchSessionFromOpenCodeCtx_Healthy(t *testing.T) {
 	}
 }
 
+func TestFetchSessionFromOpenCodeCtxPreservesCompletedTurn(t *testing.T) {
+	const sid, dir = "completion", "/tmp/completion"
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"completion","directory":"/tmp/completion","time":{"created":1000,"updated":3000}}`))
+	fake.AddMessage(sid, []byte(`{"info":{"id":"running","sessionID":"completion","role":"assistant","time":{"created":2500}},"parts":[]}`))
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSessions(t, []testSession{{id: sid, directory: dir, messages: []string{
+		`{"role":"assistant","finish":"stop","time":{"completed":2000}}`,
+		`{"role":"assistant","finish":"tool-calls","time":{"completed":2900}}`,
+	}}})
+	summary, err := database.GetSessionSummary(t.Context(), sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, ok := New(database, nil).fetchSessionFromOpenCodeCtx(t.Context(), sid, 1, 0)
+	if !ok {
+		t.Fatal("live session fetch failed")
+	}
+	if summary.LastTurnCompletedAt != 2000 || detail.Session.LastTurnCompletedAt != summary.LastTurnCompletedAt {
+		t.Fatalf("live completion = %d, list completion = %d, want 2000", detail.Session.LastTurnCompletedAt, summary.LastTurnCompletedAt)
+	}
+}
+
 func TestFetchSessionFromOpenCodeCtx_DoesNotCountUnobservedTurn(t *testing.T) {
 	const sid = "sess-1"
 	const dir = "/tmp/proj"

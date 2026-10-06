@@ -82,7 +82,7 @@ type ApiStore = {
   recentSessions: Session[];
   recentSessionsHash: string;
   setRecentSessions: (sessions: Session[], hash: string) => void;
-  patchRecentSession: (id: string, patch: Partial<Session>) => void;
+  patchRecentSession: (id: string, patch: Partial<Session>, platform?: string) => void;
   /**
    * Stack of recently-closed (archived) sessions, most-recent last. Pushed
    * by the archive call sites and popped by the "reopen last closed session"
@@ -115,7 +115,7 @@ type ApiStore = {
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
   /** Reads a session without opening it, so it is not unarchived. */
-  peekSession: (id: string, signal?: AbortSignal) => Promise<SessionDetail>;
+  peekSession: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionDetail>;
   getSessionChanges: (id: string, signal?: AbortSignal) => Promise<SessionChanges>;
   getSessionInfo: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionInfo>;
   getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
@@ -163,9 +163,9 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     if (get().recentSessionsHash === hash) return;
     set({ recentSessions: sessions, recentSessionsHash: hash });
   },
-  patchRecentSession: (id, patch) => {
+  patchRecentSession: (id, patch, platform) => {
     set((state) => {
-      const idx = state.recentSessions.findIndex((s) => s.id === id);
+      const idx = state.recentSessions.findIndex((s) => s.id === id && (!platform || s.platform === platform));
       if (idx === -1) return state;
       const updated = { ...state.recentSessions[idx], ...patch };
       const next = [...state.recentSessions];
@@ -344,7 +344,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     });
   },
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
-  peekSession: (id, signal) => get().runRequest(`session:peek:${id}`, () => api.session(id, 1, 0, signal, undefined, true)),
+  peekSession: (id, signal, platform) => get().runRequest(`session:peek:${platform ?? ''}:${id}`, () => api.session(id, 1, 0, signal, platform, true)),
   getSessionChanges: (id, signal) => get().runRequest(`session:changes:${id}`, () => api.sessionChanges(id, signal)),
   getSessionInfo: (id, signal, platform) => get().runRequest(
     `session:info:${platform ?? 'local'}:${id}`,

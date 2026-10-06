@@ -312,6 +312,7 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 
 	typedPhase := srvtiming.Begin(ctx, "typed")
 	session := sessionFromOpenCode(ocSession, stats, userMsgCount, sessionStatus)
+	session.LastTurnCompletedAt = dbSession.LastTurnCompletedAt
 	session.LastErrorName = lastErrorName
 	session.LastErrorMessage = lastErrorMessage
 	session.LastErrorAt = lastErrorAt

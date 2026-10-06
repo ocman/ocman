@@ -292,7 +292,7 @@ describe('useGlobalEvents session.changed handler', () => {
     const cb = vi.fn();
     const unsub = onSessionChanged(cb);
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-new' }));
-    expect(cb).toHaveBeenCalledWith('sess-new', undefined, undefined);
+    expect(cb).toHaveBeenCalledWith('sess-new', undefined, undefined, undefined);
     unsub();
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-2' }));
     expect(cb).toHaveBeenCalledTimes(1); // not called after unsubscribe
@@ -303,7 +303,7 @@ describe('useGlobalEvents session.changed handler', () => {
     const unsub = onSessionChanged(cb);
     const session = { id: 'sess-new', directory: '/repo/a' };
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-new', session }));
-    expect(cb).toHaveBeenCalledWith('sess-new', session, undefined);
+    expect(cb).toHaveBeenCalledWith('sess-new', session, undefined, undefined);
     unsub();
   });
 
@@ -312,7 +312,19 @@ describe('useGlobalEvents session.changed handler', () => {
     const unsub = onSessionChanged(cb);
     const patch = { status: 'busy' };
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-live', patch }));
-    expect(cb).toHaveBeenCalledWith('sess-live', undefined, patch);
+    expect(cb).toHaveBeenCalledWith('sess-live', undefined, patch, undefined);
+    unsub();
+  });
+
+  it('preserves the compound platform on completion events', () => {
+    const cb = vi.fn();
+    const unsub = onSessionChanged(cb);
+    const patch = { status: 'waiting' };
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'shared', platform: 'r-owner:opencode', patch }));
+    expect(cb).toHaveBeenCalledWith('shared', undefined, patch, 'r-owner:opencode');
+    const session = { id: 'shared', platform: 'r-owner:opencode' };
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'shared', session }));
+    expect(cb).toHaveBeenLastCalledWith('shared', session, undefined, session.platform);
     unsub();
   });
 
