@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { ProviderPreview } from './ProviderLinkPreview';
 import { useProviderPreviews } from '../lib/useProviderPreviews';
 import { clearPRChecksCache } from '../lib/prChecksCache';
@@ -21,6 +21,8 @@ function Cards({ text = 'https://github.com/a/repo/pull/1' }: { text?: string })
   return previews.map((preview) => <ProviderPreview key={preview.id} preview={preview} providers={providers} refreshChecks={refreshChecks} />);
 }
 
+afterEach(() => vi.useRealTimers());
+
 it('reloads matching PR metadata and fetches checks for the new head after a scoped refresh', async () => {
   clearPRChecksCache();
   const preview: PreviewResult = { provider: 'github', kind: 'pr', id: 'a/repo#1', url: 'https://github.com/a/repo/pull/1', title: 'Change', state: 'ok', headSha: 'A' };
@@ -29,10 +31,30 @@ it('reloads matching PR metadata and fetches checks for the new head after a sco
     text.includes('/other/') ? [unrelated] : [{ ...preview, headSha: refresh ? 'B' : 'A' }]);
   render(<><Cards /><Cards text={unrelated.url} /></>);
   await waitFor(() => expect(screen.getAllByLabelText('All checks passed')).toHaveLength(2));
+  const card = screen.getByText('a/repo#1 Change').closest('a');
   act(() => clearPRChecksCache(['github.com/a/repo']));
+  expect(screen.getByText('a/repo#1 Change').closest('a')).toBe(card);
   expect(screen.getByText('other/repo#2 Unrelated')).toBeInTheDocument();
   await screen.findByLabelText('Some checks failed');
+  expect(screen.getByText('a/repo#1 Change').closest('a')).toBe(card);
   await waitFor(() => expect(fetchPreviewChecks).toHaveBeenCalledWith(preview.url, 'B', 'local', expect.any(AbortSignal), true));
   expect(resolvePreviews).toHaveBeenLastCalledWith('https://github.com/a/repo/pull/1', 'local', expect.any(AbortSignal), true);
   expect(vi.mocked(resolvePreviews).mock.calls.filter(([text]) => text === unrelated.url)).toHaveLength(1);
+});
+
+it('refreshes metadata without the initial debounce and retains the card if refresh fails', async () => {
+  clearPRChecksCache();
+  vi.useFakeTimers();
+  const preview: PreviewResult = { provider: 'github', kind: 'pr', id: 'a/repo#1', url: 'https://github.com/a/repo/pull/1', title: 'Change', state: 'ok', headSha: 'A' };
+  vi.mocked(resolvePreviews).mockReset().mockResolvedValueOnce([preview]).mockRejectedValueOnce(new Error('offline'));
+  const { rerender } = render(<Cards />);
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  const card = screen.getByTestId('provider-preview-card');
+  act(() => clearPRChecksCache(['github.com/a/repo']));
+  expect(screen.getByTestId('provider-preview-card')).toBe(card);
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+  expect(resolvePreviews).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('provider-preview-card')).toBe(card);
+  rerender(<Cards text="https://github.com/other/repo/pull/2" />);
+  expect(screen.queryByTestId('provider-preview-card')).toBeNull();
 });

@@ -37,7 +37,8 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
           return repositories.includes(`${new URL(preview.url).host}/${preview.id.split('#')[0]}`);
         } catch { return false; }
       })) return;
-      refreshPending.current = true; reset();
+      refreshPending.current = true;
+      setGeneration((g) => g + 1);
     };
     window.addEventListener(PREVIEW_AUTH_EVENT, reset);
     window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
@@ -59,12 +60,11 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
         const previews = await resolvePreviews(text, owner, abort.signal, refresh);
         if (!abort.signal.aborted) setResolved({ text, owner, previews, providers: config?.providers ?? [], refreshChecks: refresh });
       }).catch(() => {
-        // Safe fallback: plain links and custom rule cards still render.
-        if (!abort.signal.aborted) setResolved(null);
+        // Keep an existing card on refresh failure; initial failures use plain links.
       }).finally(() => {
         if (!abort.signal.aborted) setPending(false);
       });
-    }, RESOLVE_DELAY_MS);
+    }, refreshPending.current ? 0 : RESOLVE_DELAY_MS);
     return () => { clearTimeout(timer); abort.abort(); };
   }, [text, owner, generation]);
 

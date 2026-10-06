@@ -14,6 +14,7 @@ export interface ChecksState {
 export function usePRChecks(cacheKey: string, requestKey: string, visible: boolean, fetchChecks: (signal: AbortSignal, refresh: boolean) => Promise<PRChecks>, refreshOnMount = false): ChecksState {
   const [generation, setGeneration] = useState(refreshOnMount ? 1 : 0);
   const consumedRefresh = useRef(0);
+  const refreshedKey = useRef<string | undefined>(undefined);
   useEffect(() => {
     const refresh = (event: Event) => {
       const repositories = (event as CustomEvent<string[]>).detail;
@@ -27,7 +28,7 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
     if (!visible) return;
     const ctrl = new AbortController();
     let timer: number | undefined;
-    let refresh = generation > consumedRefresh.current;
+    let refresh = generation > consumedRefresh.current || (refreshOnMount && refreshedKey.current !== requestKey);
     const run = () => {
       const cached = refresh ? undefined : getCachedPRChecks(cacheKey);
       if (cached) {
@@ -36,13 +37,19 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
       }
       setResult((prev) => ({ key: requestKey, data: prev.key === requestKey ? prev.data : null, loading: true, error: false }));
       const request = fetchChecks(ctrl.signal, refresh);
-      if (refresh) consumedRefresh.current = generation;
+      if (refresh) {
+        consumedRefresh.current = generation;
+        refreshedKey.current = requestKey;
+      }
       refresh = false;
       request.then((res) => {
         if (ctrl.signal.aborted) return;
         cachePRChecks(cacheKey, res);
         setResult({ key: requestKey, data: res, loading: false, error: false });
-        if (!isSettled(res)) timer = window.setTimeout(run, CI_POLL_MS);
+        if (!isSettled(res)) {
+          refresh = true;
+          timer = window.setTimeout(run, CI_POLL_MS);
+        }
       }).catch(() => {
         if (ctrl.signal.aborted) return;
         setResult((prev) => ({ ...prev, key: requestKey, loading: false, error: true }));
@@ -51,7 +58,7 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
     };
     run();
     return () => { ctrl.abort(); window.clearTimeout(timer); };
-  }, [cacheKey, requestKey, visible, fetchChecks, generation]);
+  }, [cacheKey, requestKey, visible, fetchChecks, generation, refreshOnMount]);
   const current = result.key === requestKey;
   return {
     state: current ? result.data?.state ?? 'unknown' : 'unknown',

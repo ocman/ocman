@@ -8,7 +8,7 @@ const STORAGE_KEY = 'ocman.prChecks.v3';
 const MAX_ENTRIES = 1000;
 
 /** How often a visible row re-asks for a non-final (pending/unknown) status. */
-export const CI_POLL_MS = 15_000;
+export const CI_POLL_MS = 5_000;
 export const PR_CHECKS_REFRESH_EVENT = 'ocman:pr-checks-refresh';
 
 const isFinalCIState = (state: CIState) => state === 'success' || state === 'failure';

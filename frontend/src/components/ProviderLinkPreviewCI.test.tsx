@@ -41,8 +41,9 @@ it('polls unfinished checks on the conversation owner and fills the sidebar cach
   expect(getCachedPRChecks(key)).toBeUndefined();
   expect(fetch.mock.calls[0][0]).toBe('/api/previews/resolve?remoteId=r1');
   expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ text: preview.url, checksSha: 'abc123' });
-  await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
   expect(screen.getByLabelText('All checks passed')).toBeInTheDocument();
+  expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBe(true);
   expect(getCachedPRChecks(key)).toEqual(done);
   await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
   expect(fetch).toHaveBeenCalledTimes(2);
@@ -123,7 +124,7 @@ it('shows loading and a failed refresh instead of retained success', async () =>
   expect(screen.queryByLabelText('All checks passed')).toBeNull();
 });
 
-it('sends the server refresh flag only on the first fetch of a refresh cycle', async () => {
+it('bypasses the server cache while polling unfinished checks', async () => {
   vi.useFakeTimers();
   cachePRChecks(key, { state: 'success', checks: [{ name: 'build', state: 'success' }] });
   const fetch = vi.fn().mockResolvedValue(response({ state: 'pending', checks: [{ name: 'build', state: 'pending' }] }));
@@ -132,7 +133,7 @@ it('sends the server refresh flag only on the first fetch of a refresh cycle', a
   await act(async () => clearPRChecksCache());
   expect(JSON.parse(fetch.mock.calls[0][1].body).refreshChecks).toBe(true);
   await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
-  expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBeUndefined();
+  expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBe(true);
 });
 
 it('renders nullable empty provider checks as normal unknown CI', async () => {
