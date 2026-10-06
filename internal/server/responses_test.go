@@ -151,7 +151,7 @@ func (h *failedGitDiffHost) GitDiff(context.Context, string, hostsvc.GitDiffOpti
 }
 
 func TestReadHandlersClassifyCancellation(t *testing.T) {
-	for _, route := range []string{"/api/sessions", "/api/sessions/notify", "/api/inbox", "/api/git/diff?dir=/repo", "/api/project/beads-status?dir=/repo"} {
+	for _, route := range []string{"/api/sessions", "/api/sessions/notify", "/api/inbox", "/api/git/diff?dir=/repo"} {
 		t.Run(route, func(t *testing.T) {
 			srv, _ := newSessionsTestServer(t)
 			ctx, cancel := context.WithCancel(t.Context())
@@ -168,9 +168,6 @@ func TestReadHandlersClassifyCancellation(t *testing.T) {
 			case "/api/git/diff?dir=/repo":
 				srv.hostRouter = hostsvc.NewRouter(&failedGitDiffHost{err: fmt.Errorf("git diff: %w", ctx.Err())})
 				handler = srv.handleGitDiff
-			default:
-				srv.hostRouter = hostsvc.NewRouter(&beadsHost{id: "local", err: ctx.Err()})
-				handler = srv.handleProjectBeadsStatus
 			}
 			w := httptest.NewRecorder()
 			handler(w, req)
@@ -183,17 +180,12 @@ func TestReadHandlersClassifyCancellation(t *testing.T) {
 
 func TestHostReadDeadlinesRemainGatewayErrors(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
-	for _, route := range []string{"/api/git/diff?dir=/repo", "/api/project/beads-status?dir=/repo"} {
+	for _, route := range []string{"/api/git/diff?dir=/repo"} {
 		t.Run(route, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, route, nil)
-			if route == "/api/git/diff?dir=/repo" {
-				srv.hostRouter = hostsvc.NewRouter(&failedGitDiffHost{err: context.DeadlineExceeded})
-				srv.handleGitDiff(w, req)
-			} else {
-				srv.hostRouter = hostsvc.NewRouter(&beadsHost{id: "local", err: context.DeadlineExceeded})
-				srv.handleProjectBeadsStatus(w, req)
-			}
+			srv.hostRouter = hostsvc.NewRouter(&failedGitDiffHost{err: context.DeadlineExceeded})
+			srv.handleGitDiff(w, req)
 			if w.Code != http.StatusBadGateway {
 				t.Fatalf("status = %d, want 502; body=%s", w.Code, w.Body)
 			}

@@ -2,53 +2,17 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { labelInteraction } from './perfMonitor';
 
-export const SIDEBAR_MIN_WIDTH = 180;
-export const SIDEBAR_MAX_WIDTH = 600;
-export const SIDEBAR_DEFAULT_WIDTH = 260;
+import {
+  SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_DEFAULT_WIDTH,
+  CHANGES_SIDEBAR_MIN_WIDTH, CHANGES_SIDEBAR_MAX_WIDTH, CHANGES_SIDEBAR_DEFAULT_WIDTH,
+  SESSION_HOURS_DEFAULT, SESSION_HOURS_MIN, SESSION_HOURS_MAX,
+  uiStorePersistence,
+  type PaletteMode, type PaletteCommand, type SidebarView,
+  type ChangesSidebarTab, type ChangesSidebarTabSizes, type ArtifactsSidebarScope,
+} from './uiStoreConfig';
+export * from './uiStoreConfig';
 
-// Right-hand session-changes sidebar bounds. Defaults match the
-// historical fixed CSS sizing (`.oc-changes-sidebar` width / min /
-// max in SessionChangesSidebar.css) so users who haven't dragged the
-// handle see no visual change.
-export const CHANGES_SIDEBAR_MIN_WIDTH = 320;
-export const CHANGES_SIDEBAR_MAX_WIDTH = 720;
-export const CHANGES_SIDEBAR_DEFAULT_WIDTH = 480;
-
-// Session time windows (in hours), user-configurable in Settings.
-// Both default to 3 days so returning after a weekend still shows
-// recent work (issues #141 / #142).
-//   dashboardTimeRangeDefault — the start-screen Sessions tab's default
-//     lookback when no `?t=` URL param is set.
-//   sidebarRecentHours — the per-session "recent sessions" sidebar window.
-export const SESSION_HOURS_DEFAULT = 72;
-export const SESSION_HOURS_MIN = 1;
-export const SESSION_HOURS_MAX = 8760; // 1 year
-
-type PaletteMode = 'command' | 'search' | 'project' | 'project-session';
-
-export type PaletteCommand =
-  | { kind: 'nav'; id: string; label: string; path: string }
-  | { kind: 'scoped'; id: string; label: string; description: string };
-
-export type SidebarView = 'recent' | 'projects';
-
-// One of the views available in the right-hand panel. Adding a new
-// view is just an extra entry here plus a render branch in
-// RightPanel — the strip / open-tabs logic handles n tabs uniformly.
-//
-// 'info' is the per-session info view (context tokens / MCP / LSP);
-// it stacks above the change-related panes. 'upstream' is the PR/Issue
-// sidebar (spec/pr-issue-sidebar/), only shown when the current project
-// has a supported GitHub/Forgejo remote.
-export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream' | 'beads' | 'artifacts';
-export type ArtifactsSidebarScope = 'session' | 'project';
-
-// Per-tab height fraction in split mode. Sums to 1 across openTabs.
-// Values are pinned to a minimum of 0.1 so a pane can't be dragged
-// to zero (it would become unrecoverable without keyboard support).
-export type ChangesSidebarTabSizes = Partial<Record<ChangesSidebarTab, number>>;
-
-type UiStore = {
+export type UiStore = {
   mainNavCollapsed: boolean;
   toggleMainNav: () => void;
   lastOpenedSessionId: string | undefined;
@@ -328,7 +292,7 @@ export const useUiStore = create<UiStore>()(
       setPromptSections: (sections) => set({ promptSections: sections }),
 
       changesSidebarOpenTabs: ['session'],
-      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'beads', 'artifacts'],
+      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'artifacts'],
       setChangesSidebarTabOrder: (order) => set({ changesSidebarTabOrder: order }),
       changesSidebarTabSizes: {},
       artifactsSidebarScope: 'session',
@@ -417,67 +381,6 @@ export const useUiStore = create<UiStore>()(
         worktreeFormRemoteId: undefined,
       }),
     }),
-    {
-      name: 'ocman:ui',
-      // v1: renamed right-panel tab id 'thread' -> 'session'.
-      // v2: added autoApproveDefault + autoApproveDelayMs.
-      // v3: added promptSections with a default feature-branch rule.
-      // v4: added changesSidebarTabOrder (user-controlled strip order
-      //     via drag-and-drop). Default seeded from the legacy
-      //     hardcoded BASE_TABS so existing users see no change.
-      // v6: added dashboardTimeRangeDefault + sidebarRecentHours
-      //     (configurable session time windows, default 72h).
-       version: 6,
-      migrate: (persisted, version) => {
-        if (!persisted || typeof persisted !== 'object') return persisted;
-        const next = persisted as Record<string, unknown>;
-        if (version < 1) {
-          if (Array.isArray(next.changesSidebarOpenTabs)) {
-            next.changesSidebarOpenTabs = (next.changesSidebarOpenTabs as unknown[])
-              .map((t) => (t === 'thread' ? 'session' : t));
-          }
-          if (next.changesSidebarTabSizes && typeof next.changesSidebarTabSizes === 'object') {
-            const sizes = next.changesSidebarTabSizes as Record<string, unknown>;
-            if ('thread' in sizes) {
-              sizes.session = sizes.thread;
-              delete sizes.thread;
-            }
-          }
-        }
-        if (version < 4) {
-          // Seed tab order from the legacy fixed order so the strip
-          // looks identical on first load after the upgrade.
-          next.changesSidebarTabOrder = ['info', 'session', 'working-tree', 'bookmarks', 'upstream'];
-        }
-        return next;
-      },
-      // Only persist layout preferences; transient UI state (shortcutsOpen) stays in memory.
-      partialize: (s) => ({
-        mainNavCollapsed: s.mainNavCollapsed,
-        lastOpenedSessionId: s.lastOpenedSessionId,
-        sidebarWidth: s.sidebarWidth,
-        sidebarView: s.sidebarView,
-        bellEnabled: s.bellEnabled,
-        showToolDetails: s.showToolDetails,
-        showReasoning: s.showReasoning,
-        showMessageMetadata: s.showMessageMetadata,
-        autoReadAnswers: s.autoReadAnswers,
-        speechVoiceURI: s.speechVoiceURI,
-        speechRate: s.speechRate,
-        notificationsEnabled: s.notificationsEnabled,
-        collapsedProjects: s.collapsedProjects,
-        projectOrder: s.projectOrder,
-        changesSidebarWidth: s.changesSidebarWidth,
-        changesSidebarOpenTabs: s.changesSidebarOpenTabs,
-        changesSidebarTabOrder: s.changesSidebarTabOrder,
-        changesSidebarTabSizes: s.changesSidebarTabSizes,
-        artifactsSidebarScope: s.artifactsSidebarScope,
-        autoApproveDefault: s.autoApproveDefault,
-        autoApproveDelayMs: s.autoApproveDelayMs,
-        promptSections: s.promptSections,
-        dashboardTimeRangeDefault: s.dashboardTimeRangeDefault,
-        sidebarRecentHours: s.sidebarRecentHours,
-      }),
-    },
+    uiStorePersistence,
   ),
 );

@@ -29,7 +29,7 @@ export type ArtifactListParams = { directory?: string; q?: string; cursor?: stri
 
 const path = (id: string) => `/api/artifacts/${encodeURIComponent(id)}`;
 
-// ponytail: kept out of api.ts (already >1000 lines), same as beadsApi.ts.
+// ponytail: kept out of api.ts, which already exceeds 1000 lines.
 export const artifactsApi = {
   list: (params: ArtifactListParams = {}, signal?: AbortSignal) => {
     const q = new URLSearchParams();

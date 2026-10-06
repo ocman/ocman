@@ -39,6 +39,7 @@ type PluginRequest struct {
 	Input     PluginInput           `json:"input,omitempty"`
 	Action    plugins.ActionRequest `json:"action,omitempty"`
 	Handle    string                `json:"handle,omitempty"`
+	Pane      plugins.PaneRequest   `json:"pane,omitempty"`
 }
 
 type PluginResponse struct {
@@ -65,6 +66,9 @@ func (s *Server) PluginOperation(ctx context.Context, req *pb.JsonReq) (*pb.Json
 	}
 	if (operation.Operation == "invoke" || operation.Operation == "actions") &&
 		(operation.Action.Context.OwnerID != s.instanceID || (operation.Action.OwnerID != "" && operation.Action.OwnerID != s.instanceID)) {
+		return jsonResp(PluginResponse{Error: &plugins.WireError{Category: plugins.ErrorPermissionDenied}}, nil)
+	}
+	if (operation.Operation == "panes" || operation.Operation == "pane-read") && operation.Pane.OwnerID != s.instanceID {
 		return jsonResp(PluginResponse{Error: &plugins.WireError{Category: plugins.ErrorPermissionDenied}}, nil)
 	}
 	return jsonResp(s.plugins(ctx, operation), nil)

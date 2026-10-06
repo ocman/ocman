@@ -1,0 +1,140 @@
+.oc-plugin-tree-pane {
+  font-size: 12px;
+  height: 100%;
+  overflow: auto;
+  padding: 0.5rem 0.65rem;
+}
+
+.oc-plugin-tree-list,
+.oc-plugin-tree-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.oc-plugin-tree-list {
+  --oc-plugin-tree-circle-size: 10px;
+  --oc-plugin-tree-elbow-height: 9px;
+}
+
+.oc-plugin-tree-node {
+  align-items: start;
+  display: grid;
+  gap: 5px;
+  grid-template-columns: var(--oc-plugin-tree-marker-width) minmax(0, 1fr);
+}
+
+.oc-plugin-tree-marker {
+  align-self: stretch;
+  position: relative;
+  width: var(--oc-plugin-tree-marker-width);
+}
+
+.oc-plugin-tree-guide,
+.oc-plugin-tree-child-bridge {
+  border-left: 1px solid var(--border);
+  bottom: 0;
+  position: absolute;
+  top: 0;
+}
+
+.oc-plugin-tree-child-bridge {
+  top: 14px;
+}
+
+.oc-plugin-tree-branch {
+  border-left: 1px solid var(--border);
+  height: var(--oc-plugin-tree-elbow-height);
+  position: absolute;
+  top: 0;
+  width: 7px;
+}
+
+.oc-plugin-tree-branch.continues {
+  bottom: 0;
+  height: auto;
+}
+
+.oc-plugin-tree-branch::after {
+  border-top: 1px solid var(--border);
+  content: '';
+  left: 0;
+  position: absolute;
+  top: var(--oc-plugin-tree-elbow-height);
+  width: 7px;
+}
+
+.oc-plugin-tree-status {
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  box-sizing: border-box;
+  color: var(--accent2);
+  height: var(--oc-plugin-tree-circle-size);
+  position: absolute;
+  top: 4px;
+  width: var(--oc-plugin-tree-circle-size);
+  z-index: 1;
+}
+
+.oc-plugin-tree-status.in_progress {
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+  color: var(--accent4);
+}
+.oc-plugin-tree-status.blocked { background: var(--danger); color: var(--danger); }
+.oc-plugin-tree-status.deferred { color: var(--accent); }
+
+.oc-plugin-tree-content {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.oc-plugin-tree-main,
+.oc-plugin-tree-details {
+  align-items: baseline;
+  display: flex;
+  gap: 0.35rem;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.oc-plugin-tree-badge,
+.oc-plugin-tree-kind {
+  color: var(--text-dim);
+  font-size: inherit;
+  white-space: nowrap;
+}
+
+.oc-plugin-tree-id {
+  color: var(--text-dim);
+  font-size: 0.9em;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.oc-plugin-tree-title {
+  line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.oc-plugin-tree-error {
+  align-items: center;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.5rem;
+}
+
+.oc-plugin-tree-error button {
+  background: none;
+  border: 0;
+  color: inherit;
+  text-decoration: underline;
+}
+
+.oc-plugin-tree-empty {
+  color: var(--text-dim);
+  margin: 0.5rem 0;
+}
