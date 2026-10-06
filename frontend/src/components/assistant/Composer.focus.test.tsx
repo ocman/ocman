@@ -119,8 +119,7 @@ it.each(['Cancel', 'Confirm'])('returns focus after %s on a permission confirmat
   await waitFor(() => expect(input).toHaveFocus());
   await user.click(await screen.findByLabelText('Permission mode: Default'));
   await user.click(screen.getByRole('option', { name: /YOLO/ }));
-  const cancel = screen.getByRole('button', { name: 'Cancel' });
-  expect(cancel).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus();
   expect(save).not.toHaveBeenCalled();
 
   await user.click(screen.getByRole('button', { name: action }));
