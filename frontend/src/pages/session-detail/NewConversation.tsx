@@ -139,6 +139,21 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const canWorktree = worktreesCapable && (eligibility.resolved?.canCreate ?? false);
   const effectiveAgent = selectedAgent || catalog?.defaultAgent || '';
 
+  // The composer stays usable while the catalog and target resolve; a
+  // submission made before then waits here (or fails with the prepare error).
+  const ready = eligibility.resolved && catalog ? { catalog, canWorktree, platform, model: activeModel } : undefined;
+  const readyError = catalogError || eligibility.error || '';
+  const readyRef = useRef(ready);
+  const readyWaiters = useRef<{ resolve: (value: NonNullable<typeof ready>) => void; reject: (err: Error) => void }[]>([]);
+  useEffect(() => {
+    readyRef.current = ready;
+    if (ready) readyWaiters.current.splice(0).forEach((w) => w.resolve(ready));
+    else if (readyError) readyWaiters.current.splice(0).forEach((w) => w.reject(new Error(readyError)));
+  });
+  const waitReady = () => readyRef.current ? Promise.resolve(readyRef.current)
+    : readyError ? Promise.reject(new Error(readyError))
+    : new Promise<NonNullable<typeof ready>>((resolve, reject) => { readyWaiters.current.push({ resolve, reject }); });
+
   // Create the session at the target, then either the server has sent the
   // prompt or the client runs `execute` on the new session. Failures stay
   // retryable on that session, independently of the next composer draft.
@@ -147,7 +162,6 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     send: StartSessionRequest['send'] | undefined,
     execute?: (sessionId: string, platform: string) => Promise<void>,
   ) => {
-    if (!catalog) throw new Error('Session catalog is still loading');
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
@@ -162,10 +176,18 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       if (id === startId) setPending((p) => p?.startId === id ? { ...p, steps: { ...p.steps, [step]: state } } : p);
     });
     try {
+      // Synchronous when ready, so a re-point right after submit cannot drop it.
+      let ready = readyRef.current;
+      if (!ready) {
+        ready = await waitReady();
+        if (!stillCurrent()) throw new Error('The session target changed before it was ready');
+      }
+      // A prompt sent before the catalog arrived falls back to its defaults.
+      if (send) send = { ...send, model: send.model || ready.model, agent: send.agent || ready.catalog.defaultAgent || undefined };
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
-        platform, remoteId, title, prompt: text, send, startId,
-        worktree: canWorktree && target === 'worktree',
+        platform: ready.platform, remoteId, title, prompt: text, send, startId,
+        worktree: ready.canWorktree && target === 'worktree',
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
       // No title: OpenCode titles the session from its first message.
@@ -196,7 +218,9 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       unsubscribe();
       if (inFlight.current === sourceGeneration) inFlight.current = undefined;
     }
-  }, [directory, remoteId, platform, title, routeKey, canWorktree, target, seedNewSession, navigateToSession, catalog]);
+  // waitReady only reads refs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directory, remoteId, title, routeKey, target, seedNewSession, navigateToSession]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     const send = { message: text, images, model: selectedModel, agent: effectiveAgent || undefined, reasoning: selectedReasoning || undefined };
@@ -226,7 +250,6 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title }));
   };
 
-  const resolving = !eligibility.resolved || !catalog;
   return (
     // Same shell as AssistantThread: an empty viewport pushes the composer
     // to the bottom with the thread's padding.
@@ -246,8 +269,6 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
           onShell={caps.shellExec ? onShell : undefined}
           shellExec={caps.shellExec}
           isRunning={false}
-          disabled={resolving}
-          disabledHint={!catalog ? 'Preparing session…' : resolving ? 'Checking session target…' : undefined}
           whisperAvailable={whisperAvailable}
           models={models}
           modelEntries={catalog?.models.models ?? []}

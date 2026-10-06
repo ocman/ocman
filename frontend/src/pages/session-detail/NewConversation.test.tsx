@@ -47,6 +47,10 @@ function mount(params = { directory: '/repo', remoteId: 'machine', platform: 'r-
   return render(<NewConversation params={{ directory: params.directory!, remoteId: params.remoteId, platform: params.platform, title: params.title }}
     whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
 }
+const ready = () => waitFor(() => {
+  expect(composer.agentsLoaded).toBe(true);
+  expect(composer.worktrees).toBeDefined();
+});
 
 describe('NewConversation', () => {
   beforeEach(() => {
@@ -116,7 +120,7 @@ describe('NewConversation', () => {
   it('keeps a failed custom command as child-keyed retry state', async () => {
     mocks.post.mockRejectedValueOnce(new Error('command offline'));
     mount();
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     await act(() => composer.onCommand!('review', 'main'));
     await waitFor(() => expect(useFirstSubmission.getState().entries.child).toMatchObject({ text: '/review main', error: 'command offline' }));
     expect(navigateToSession).toHaveBeenCalledWith('child');
@@ -124,8 +128,9 @@ describe('NewConversation', () => {
 
   it('prepares the directory on its owner and offers its catalog before any session exists', async () => {
     mount();
-    expect(composer.disabled).toBe(true);
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    // Usable immediately: a submission waits for the catalog instead.
+    expect(composer.disabled).toBeFalsy();
+    await ready();
     expect(mocks.prepare).toHaveBeenCalledWith({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode' }, expect.any(AbortSignal));
     expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dir=%2Frepo&remoteId=machine', expect.any(AbortSignal));
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
@@ -153,7 +158,7 @@ describe('NewConversation', () => {
 
   it('creates the session at the target with the first prompt and moves there', async () => {
     mount({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'Login' });
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
     act(() => composer.onAgentChange!('plan'));
     expect(composer.selectedModel).toBe('prov/plan-model');
@@ -174,7 +179,7 @@ describe('NewConversation', () => {
   it('honours the current-checkout target and preserves an unsent prompt for retry', async () => {
     mocks.start.mockResolvedValue({ sessionId: 's2', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/repo', firstMessageSent: false, firstMessageError: 'boom' });
     mount();
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     act(() => composer.onTargetChange!('current'));
     act(() => composer.onReasoningChange!('high'));
     await act(() => composer.onSend!('Fix login'));
@@ -189,7 +194,7 @@ describe('NewConversation', () => {
       { path: '/feature', branch: 'feature', main: false },
     ] });
     mount();
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     expect(composer.worktrees).toEqual([{ path: '/feature', branch: 'feature' }]);
     act(() => composer.onTargetChange!('dir:/feature'));
     await act(() => composer.onSend!('Fix login'));
@@ -200,7 +205,7 @@ describe('NewConversation', () => {
     mocks.prepare.mockResolvedValue({ platform: 'opencode', agents: [], commands: [], models: { models: [] }, liveConnection: true });
     mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', branch: 'main', main: true }, { path: '/wt/feat', branch: 'feat' }] });
     mount({ directory: '/wt/feat/sub', remoteId: 'local', platform: undefined });
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     expect(composer.worktreesSupported).toBe(false);
     expect(composer.target).toBe('current');
     await act(() => composer.onSend!('hi'));
@@ -210,7 +215,7 @@ describe('NewConversation', () => {
   it('runs a platform command on the new session itself, and surfaces start failures', async () => {
     mocks.post.mockResolvedValue(undefined);
     mount();
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     await act(() => composer.onCommand!('review', 'main'));
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ prompt: '/review main', send: undefined }));
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/session/child/command?platform=r-machine%3Aopencode',
@@ -231,7 +236,7 @@ describe('NewConversation', () => {
     vi.stubGlobal('crypto', { getRandomValues: (values: Uint32Array) => values.fill(1) });
     try {
       mount();
-      await waitFor(() => expect(composer.disabled).toBe(false));
+      await ready();
       await act(() => composer.onSend!('Fix login'));
       expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ startId: '00000001'.repeat(4) }));
       expect(navigateToSession).toHaveBeenCalledWith('child');
@@ -245,13 +250,13 @@ describe('NewConversation', () => {
     mocks.start.mockReturnValueOnce(new Promise((_, reject) => { failOld = reject; }));
     mocks.start.mockReturnValueOnce(new Promise(() => {}));
     const view = mount({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'A' });
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     let old!: Promise<void>;
     act(() => { old = Promise.resolve(composer.onSend!('first')).catch(() => {}); });
     // Re-point the same mounted page (new title), then start again.
     view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'B' }}
       whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     act(() => { void Promise.resolve(composer.onSend!('second')).catch(() => {}); });
     expect(screen.getByTestId('pending-prompt')).toHaveTextContent('second');
     await act(async () => { failOld(new Error('old failed')); await old; });
@@ -262,7 +267,7 @@ describe('NewConversation', () => {
     let finish!: (value: unknown) => void;
     mocks.start.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     mount();
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     let sent!: Promise<void>;
     act(() => { sent = Promise.resolve(composer.onSend!('Fix login')); });
     expect(screen.getByTestId('pending-prompt')).toHaveTextContent('Fix login');
@@ -287,7 +292,7 @@ describe('NewConversation', () => {
 
   it('keeps ocman built-ins out of the first submission and opens the worktree form for /wt', async () => {
     mount();
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     await act(() => composer.onCommand!('wt', 'feature-x'));
     expect(mocks.openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/repo', branch: 'feature-x', remoteId: 'machine' });
     await act(() => composer.onCommand!('rename', 'x'));
@@ -297,7 +302,7 @@ describe('NewConversation', () => {
 
   it('switches machines by re-pointing the route', async () => {
     mount();
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     await act(() => composer.onMachineChange!({ remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode', dir: '/other/repo' }));
     expect(navigate).toHaveBeenCalledWith('/session/new?dir=%2Fother%2Frepo&remoteId=box&platform=r-box%3Aopencode');
     expect(mocks.start).not.toHaveBeenCalled();
@@ -309,7 +314,7 @@ describe('NewConversation', () => {
     mocks.start.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }))
       .mockReturnValueOnce(new Promise((resolve) => { finishNew = resolve; }));
     const view = mount({ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'old' });
-    await waitFor(() => expect(composer.disabled).toBe(false));
+    await ready();
     let oldRequest!: void | Promise<void>;
     act(() => { oldRequest = composer.onSend!('old prompt'); });
     view.rerender(<NewConversation params={{ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'new' }}

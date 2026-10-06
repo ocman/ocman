@@ -115,37 +115,40 @@ describe('new-conversation submission lifecycle', () => {
     expect(api.uploadComposerAttachment).toHaveBeenCalledWith('child', file, 'r-box:opencode');
     expect(api.sendMessage).toHaveBeenCalledWith('child', expect.stringContaining('/box-cache/note.txt'), undefined, '', undefined, undefined, 'r-box:opencode');
   });
-  it('waits for the catalog even when workspace eligibility resolves first', async () => {
+  it('accepts input before the catalog loads and submits once it arrives', async () => {
     const catalog = deferred<typeof prepared & { defaultAgent: string; defaultModel: string }>();
     vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
     saveDraft('new', 'start in plan mode');
     render(<Flow />);
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session target' })).toHaveTextContent('New worktree'));
     const input = screen.getByRole('textbox');
-    expect(input).toBeDisabled();
+    expect(input).not.toBeDisabled();
     fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => {});
     expect(api.startSession).not.toHaveBeenCalled();
     await act(async () => catalog.resolve({ ...prepared, defaultAgent: 'plan', defaultModel: 'p/model' }));
-    await waitFor(() => expect(input).not.toBeDisabled());
-    fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(api.startSession).toHaveBeenCalledWith(expect.objectContaining({
       send: expect.objectContaining({ message: 'start in plan mode', agent: 'plan', model: 'p/model' }),
     })));
+    expect(api.startSession).toHaveBeenCalledTimes(1);
   });
 
-  it('offers a prepare retry while leaving the draft intact and submission disabled', async () => {
-    vi.mocked(api.prepareSession).mockRejectedValueOnce(new Error('prepare offline'));
+  it('fails a waiting submission on a prepare error and keeps the draft for retry', async () => {
+    const catalog = deferred<typeof prepared>();
+    vi.mocked(api.prepareSession).mockReturnValueOnce(catalog.promise);
     saveDraft('new', 'keep my draft');
     render(<Flow />);
-    expect(await screen.findByRole('alert')).toHaveTextContent('prepare offline');
     const input = screen.getByRole('textbox');
-    expect(input).toBeDisabled();
-    expect(input).toHaveValue('keep my draft');
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(input).not.toBeDisabled());
-    expect(input).toHaveValue('keep my draft');
-    expect(api.prepareSession).toHaveBeenCalledTimes(2);
+    expect(input).not.toBeDisabled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => catalog.reject(new Error('prepare offline')));
+    expect((await screen.findAllByRole('alert'))[0]).toHaveTextContent('prepare offline');
+    await waitFor(() => expect(input).toHaveValue('keep my draft'));
     expect(api.startSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
+    await waitFor(() => expect(api.prepareSession).toHaveBeenCalledTimes(2));
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
   });
 
   it('does not let a follow-up overtake a pending first upload', async () => {
@@ -271,7 +274,8 @@ describe('new-conversation submission lifecycle', () => {
       whisperAvailable: false, navigate: vi.fn(), navigateToSession: navigate };
     const view = render(<NewConversation {...props} />);
     const oldInput = screen.getByRole('textbox');
-    await waitFor(() => expect(oldInput).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session target' })).toHaveTextContent('New worktree'));
+    await act(async () => {});
     fireEvent.input(oldInput, { target: { value: 'old prompt' } });
     fireEvent.keyDown(oldInput, { key: 'Enter' });
     view.rerender(<NewConversation {...props} params={{ ...props.params, title: 'new' }} />);
