@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -104,16 +105,46 @@ func TestKnownAgentOptionsStopsAfterStalledCatalog(t *testing.T) {
 		}
 		return targets
 	}
-	calls := 0
+	var calls atomic.Int32
 	defaultAgentCatalog = func(ctx context.Context, _, _ string) []string {
-		calls++
+		calls.Add(1)
 		<-ctx.Done()
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if got := knownAgentOptions(ctx, nil); !reflect.DeepEqual(got, []string{"build", "plan"}) || calls != 1 {
-		t.Fatalf("fallback = %v, catalog calls = %d, want one call", got, calls)
+	if got := knownAgentOptions(ctx, nil); !reflect.DeepEqual(got, []string{"build", "plan"}) || calls.Load() > 8 {
+		t.Fatalf("fallback = %v, catalog calls = %d, want at most eight calls", got, calls.Load())
+	}
+}
+
+func TestKnownAgentOptionsIncludesHealthyCatalogBesideStalledTarget(t *testing.T) {
+	ports, catalog := defaultAgentPorts, defaultAgentCatalog
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	defaultAgentPorts = func(context.Context) map[string]string {
+		return map[string]string{"/healthy": "1001", "/stalled": "1002"}
+	}
+	var started atomic.Int32
+	bothStarted := make(chan struct{})
+	defaultAgentCatalog = func(ctx context.Context, port, _ string) []string {
+		if started.Add(1) == 2 {
+			close(bothStarted)
+		}
+		select {
+		case <-bothStarted:
+			if port == "1001" {
+				return []string{"healthy-agent"}
+			}
+		case <-ctx.Done():
+			return nil
+		}
+		<-ctx.Done()
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if got := knownAgentOptions(ctx, nil); !reflect.DeepEqual(got, []string{"build", "healthy-agent", "plan"}) {
+		t.Fatalf("stalled target hid a healthy catalog: %v", got)
 	}
 }
 

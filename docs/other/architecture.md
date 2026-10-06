@@ -498,9 +498,10 @@ flowchart TD
   single machine server without launching an instance. Hidden helpers and
   subagent-only agents are excluded. With no reachable instance, `build`, `plan`,
   and the saved preference remain selectable; remote-only catalogs are not read.
-  Catalog discovery has a two-second overall deadline and stops reading more
-  directories on cancellation, so an unresponsive instance still leaves fallback
-  choices available. Shared port scans have an independent ten-second deadline;
+  Catalog discovery uses up to eight concurrent reads within a two-second overall
+  deadline and stops scheduling directories on cancellation. A stalled target
+  does not block healthy catalogs or fallback choices. Shared port scans have an
+  independent ten-second deadline;
   canceling a caller only cancels its wait, preserving other clients' live status.
   Settings-owned shared agent fetches also use an independent ten-second deadline,
   so leaving Settings cannot cancel a composer's joined catalog read.

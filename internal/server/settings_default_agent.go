@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -36,14 +37,37 @@ func knownAgentOptions(ctx context.Context, directories []string) []string {
 			targets[directory] = port
 		}
 	}
-	for directory, port := range targets {
+	jobs := make(chan string)
+	var mu sync.Mutex
+	var workers sync.WaitGroup
+	// ponytail: eight workers bound local catalog fan-out without letting one
+	// stalled target consume the whole lookup budget for healthy instances.
+	for range min(8, len(targets)) {
+		workers.Go(func() {
+			for directory := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				agents := defaultAgentCatalog(ctx, targets[directory], directory)
+				mu.Lock()
+				for _, agent := range agents {
+					known[agent] = true
+				}
+				mu.Unlock()
+			}
+		})
+	}
+	for directory := range targets {
 		if ctx.Err() != nil {
 			break
 		}
-		for _, agent := range defaultAgentCatalog(ctx, port, directory) {
-			known[agent] = true
+		select {
+		case jobs <- directory:
+		case <-ctx.Done():
 		}
 	}
+	close(jobs)
+	workers.Wait()
 	agents := make([]string, 0, len(known))
 	for agent := range known {
 		agents = append(agents, agent)
