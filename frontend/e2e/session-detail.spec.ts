@@ -20,6 +20,31 @@ import { test, expect, MOCK_SESSION, MOCK_SESSION_2, mockSessionWithLiveConnecti
 const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 
 for (const width of [1280, 390]) {
+  test(`composer notice row reserves space at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 720 });
+    let notice: Record<string, unknown> | undefined = undefined;
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
+      route.fulfill({ json: {
+        session: { ...mockSessionWithLiveConnection(), notice },
+        ...buildSyntheticHistoricalThread(MOCK_SESSION.id),
+      } }),
+    );
+    await page.goto(SESSION_URL);
+    const composer = page.getByTestId('conversation-composer');
+    const notices = composer.getByRole('region', { name: 'Conversation status' });
+    await expect(composer.getByRole('textbox')).toBeVisible();
+    const before = (await composer.boundingBox())!;
+    const reservedHeight = (await notices.boundingBox())!.height;
+    expect(reservedHeight).toBeGreaterThan(0);
+    notice = { kind: 'rate_limit', message: 'Provider quota exceeded. '.repeat(30), retryAt: 0, attempt: 2 };
+    await page.reload();
+    await expect(composer.getByRole('textbox')).toBeVisible();
+    await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
+    expect((await notices.boundingBox())!.height).toBe(reservedHeight);
+    expect((await composer.boundingBox())!.y).toBe(before.y);
+    await expect(notices.getByRole('button', { name: 'Change model' })).toBeAttached();
+  });
+
   test(`conversation scrolling stays above the composer at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 720 });
     const historical = buildSyntheticHistoricalThread(MOCK_SESSION.id);

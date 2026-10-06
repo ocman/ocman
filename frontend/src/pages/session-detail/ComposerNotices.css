@@ -1,0 +1,19 @@
+.oc-composer-notices {
+  height: 2.5rem;
+  flex-shrink: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  padding-inline: 1rem;
+  color: var(--text-dim);
+}
+
+.oc-composer-notices .oc-sse-indicator {
+  margin: 0;
+  padding: 0.25rem 0;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+.oc-composer-notices button {
+  flex-shrink: 0;
+}

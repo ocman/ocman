@@ -112,8 +112,7 @@ describe('RateLimitBanner', () => {
 
     expect(screen.getByText(/1m 5s/)).toBeInTheDocument();
 
-    // Advance 9 seconds (below the 10 s toast auto-hide) → 56s
-    // remaining (below 60s → "56s" format)
+    // Advance 9 seconds to 56s remaining.
     act(() => { vi.advanceTimersByTime(9_000); });
     expect(screen.getByText(/56s/)).toBeInTheDocument();
   });
@@ -137,11 +136,19 @@ describe('RateLimitBanner', () => {
     expect(screen.queryByText(/Retrying in/)).not.toBeInTheDocument();
   });
 
-  it('auto-hides after 10 seconds', () => {
+  it('updates the countdown immediately when the notice changes', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<RateLimitBanner notice={makeNotice({ retryAt: Date.now() + 60_000 })} />);
+    expect(screen.getByText(/~1m/)).toBeInTheDocument();
+    rerender(<RateLimitBanner notice={makeNotice({ retryAt: 0 })} />);
+    expect(screen.queryByText(/Retrying in/)).toBeNull();
+  });
+
+  it('keeps the notice inline until the session clears it', () => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
     renderBanner(makeNotice({ message: 'slow down' }));
     expect(screen.getByTestId('rate-limit-banner')).toBeInTheDocument();
     act(() => { vi.advanceTimersByTime(10_500); });
-    expect(screen.queryByTestId('rate-limit-banner')).toBeNull();
+    expect(screen.getByTestId('rate-limit-banner')).toBeInTheDocument();
   });
 });

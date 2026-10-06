@@ -32,6 +32,7 @@ import { RightPanel } from '../../components/RightPanel';
 import { SessionTerminalDock } from '../../components/SessionTerminalDock';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
+import './ComposerNotices.css';
 import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
@@ -771,7 +772,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   );
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
-  const showSync = view.refreshing || !!view.refreshError;
 
   useEffect(() => {
     setAwaitingAssistantResponse(false);
@@ -969,6 +969,30 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   scrollToToolCall={commitSourceJump?.sessionId === session.id && commitSourceJump.platformId === session.platform ? commitSourceJump : null}
                   empty={startHandoff && <StartProgress prompt={startHandoff.prompt} steps={startHandoff.steps} />}
                   composer={(
+                    <>
+                    <div className="oc-composer-notices" data-testid="composer-notices" tabIndex={0} role="region" aria-label="Conversation status">
+                      <SessionSyncIndicator
+                        refreshing={view.refreshing}
+                        refreshError={view.refreshError}
+                        onRetry={() => { void view.refresh(); }}
+                      />
+                      {showSseNotice && (
+                        <SseStatusIndicator
+                          active={sseActive}
+                          reconnecting={sseReconnecting}
+                          attempt={sseReconnectAttempt}
+                          nextRetryAt={sseNextRetryAt}
+                          onRetryNow={sseRetryNow}
+                        />
+                      )}
+                      {session.notice && (
+                        <RateLimitBanner
+                          key={session.id}
+                          notice={session.notice}
+                          onChangeModel={caps.composer && !hasPendingPrompt ? openModelPicker : undefined}
+                        />
+                      )}
+                    </div>
                     <SessionComposerSlot
                       sessionId={session.id}
                       platformId={session.platform}
@@ -1049,25 +1073,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         permissionControl,
                       } : null}
                     />
+                    </>
                   )}
-                  footer={showSync || showSseNotice || showSseDebug ? (
+                  footer={showSseDebug ? (
                     <>
-                      {showSync && (
-                        <SessionSyncIndicator
-                          refreshing={view.refreshing}
-                          refreshError={view.refreshError}
-                          onRetry={() => { void view.refresh(); }}
-                        />
-                      )}
-                      {showSseNotice && (
-                        <SseStatusIndicator
-                          active={sseActive}
-                          reconnecting={sseReconnecting}
-                          attempt={sseReconnectAttempt}
-                          nextRetryAt={sseNextRetryAt}
-                          onRetryNow={sseRetryNow}
-                        />
-                      )}
                       {showSseDebug && (
                         <details className="oc-sse-debug">
                           <summary>SSE debug ({sseDebugEvents.length})</summary>
@@ -1148,13 +1157,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 onDismiss={() => dismissSessionWarning(warning)}
               />
             ))}
-            {session.notice && (
-              <RateLimitBanner
-                key={session.id}
-                notice={session.notice}
-                onChangeModel={caps.composer && !hasPendingPrompt ? openModelPicker : undefined}
-              />
-            )}
             <McpAuthBanner sessionId={session.id} platformId={session.platform} />
           </>
         )}
