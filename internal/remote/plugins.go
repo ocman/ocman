@@ -39,7 +39,7 @@ type PluginRequest struct {
 	Input     PluginInput           `json:"input,omitempty"`
 	Action    plugins.ActionRequest `json:"action,omitempty"`
 	Handle    string                `json:"handle,omitempty"`
-	Pane      plugins.PaneRequest   `json:"pane,omitempty"`
+	Pane      plugins.PaneRequest   `json:"pane,omitzero"`
 }
 
 type PluginResponse struct {
