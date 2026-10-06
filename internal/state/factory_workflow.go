@@ -121,6 +121,10 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 	if err := reopenStaleFactoryVerificationsTx(ctx, tx, epicID); err != nil {
 		return true, err
 	}
+	var pendingGraph bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, epicID).Scan(&pendingGraph); err != nil {
+		return true, err
+	}
 	issues, err := listFactoryIssues(ctx, tx, epicID)
 	if err != nil {
 		return true, err
@@ -131,7 +135,7 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 		if participating && issue.Workflow != nil && issue.Workflow.Kind == "implementation" && (issue.Kind == "implementation" || issue.Kind == "task") {
 			projects[issue.Project] = true
 		}
-		if issue.Kind != "phase" {
+		if issue.Kind != "phase" || pendingGraph {
 			continue
 		}
 		status, outcome := "closed", "succeeded"
@@ -166,10 +170,6 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
-	var pendingGraph bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, epicID).Scan(&pendingGraph); err != nil {
-		return true, err
-	}
 	// Optional work that never runs must not leave a mandatory PR for an unchanged project.
 	// Pending removals cannot retire Delivery or release another Epic's merge gate.
 	for _, issue := range issues {
