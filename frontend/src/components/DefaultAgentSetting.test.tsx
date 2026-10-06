@@ -33,7 +33,13 @@ it('does not invalidate caches after a rejected save', async () => {
   fireEvent.change(input, { target: { value: '' } });
   fireEvent.blur(input);
   await screen.findByTitle('Save failed');
+  expect(screen.getByRole('alert')).toHaveTextContent('invalid agent');
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   expect(clearSettingsCache).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: 'plan' } });
+  fireEvent.blur(input);
+  await waitFor(() => expect(clearSettingsCache).toHaveBeenCalledOnce());
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
 it('shows a failed load and lets the user retry before editing', async () => {
