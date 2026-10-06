@@ -254,7 +254,8 @@ export const useApiStore = create<ApiStore>((set, get) => ({
         totalOutputTokens: 0,
         totalCost: 0,
         status: 'waiting',
-        liveConnection: false,
+        // Seeding follows a successful launch; the first detail fetch reconciles it.
+        liveConnection: true,
         pendingPermission: false,
         pendingQuestion: false,
         archived: false,

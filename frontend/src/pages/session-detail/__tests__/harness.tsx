@@ -147,6 +147,7 @@ const mockState: {
   assistantThreadCrashCount: number;
   sessionInfo: SessionInfo | null;
   tmuxAvailable: boolean;
+  realAssistantThread: boolean;
 } = {
   caps: fullCaps(),
   apiStub: makeApiStub(),
@@ -154,6 +155,7 @@ const mockState: {
   assistantThreadCrashCount: 0,
   sessionInfo: null,
   tmuxAvailable: false,
+  realAssistantThread: false,
 };
 
 /**
@@ -284,39 +286,30 @@ vi.mock('../../../lib/useToastNotify', () => ({
   notifyPromptDismissed: vi.fn(),
 }));
 
-vi.mock('../../../components/AssistantThread', () => ({
-  AssistantThread: ({
-    composer,
-    footer,
-    hasMore,
-    scrollToMessageId,
-    scrollToMessageTick,
-    scrollToToolCall,
-  }: {
-    composer?: React.ReactNode;
-    footer?: React.ReactNode;
-    hasMore?: boolean;
-    scrollToMessageId?: string | null;
-    scrollToMessageTick?: number;
-    scrollToToolCall?: { messageId: string; toolCallId: string; tick: number } | null;
-  }) => {
-    if (mockState.assistantThreadCrashCount > 0) {
-      mockState.assistantThreadCrashCount -= 1;
-      throw new Error(mockState.assistantThreadCrashMessage ?? 'mock AssistantThread crash');
-    }
+vi.mock('../../../components/AssistantThread', async () => {
+  const real = await vi.importActual<typeof import('../../../components/AssistantThread')>('../../../components/AssistantThread');
+  return {
+    AssistantThread: (props: React.ComponentProps<typeof real.AssistantThread>) => {
+      if (mockState.realAssistantThread) return <real.AssistantThread {...props} />;
+      const { composer, footer, hasMore, scrollToMessageId, scrollToMessageTick, scrollToToolCall } = props;
+      if (mockState.assistantThreadCrashCount > 0) {
+        mockState.assistantThreadCrashCount -= 1;
+        throw new Error(mockState.assistantThreadCrashMessage ?? 'mock AssistantThread crash');
+      }
 
-    return (
-      <div data-testid="assistant-thread">
-        <div data-testid="assistant-thread-has-more">{String(hasMore)}</div>
-        <div data-testid="assistant-thread-scroll-target">{scrollToMessageId || ''}</div>
-        <div data-testid="assistant-thread-scroll-tick">{scrollToMessageTick || 0}</div>
-        <div data-testid="assistant-thread-tool-target">{scrollToToolCall ? `${scrollToToolCall.messageId}:${scrollToToolCall.toolCallId}:${scrollToToolCall.tick}` : ''}</div>
-        <div data-testid="assistant-thread-composer">{composer}</div>
-        <div data-testid="assistant-thread-footer">{footer}</div>
-      </div>
-    );
-  },
-}));
+      return (
+        <div data-testid="assistant-thread">
+          <div data-testid="assistant-thread-has-more">{String(hasMore)}</div>
+          <div data-testid="assistant-thread-scroll-target">{scrollToMessageId || ''}</div>
+          <div data-testid="assistant-thread-scroll-tick">{scrollToMessageTick || 0}</div>
+          <div data-testid="assistant-thread-tool-target">{scrollToToolCall ? `${scrollToToolCall.messageId}:${scrollToToolCall.toolCallId}:${scrollToToolCall.tick}` : ''}</div>
+          <div data-testid="assistant-thread-composer">{composer}</div>
+          <div data-testid="assistant-thread-footer">{footer}</div>
+        </div>
+      );
+    },
+  };
+});
 
 // Eagerly import the page + apiStore once. Subsequent test calls
 // reuse the cached modules instead of paying re-import cost.
@@ -415,6 +408,7 @@ export interface RenderOptions {
   sessionInfo?: SessionInfo | null;
   /** Report tmux as available so the real terminal dock renders. */
   tmuxAvailable?: boolean;
+  realAssistantThread?: boolean;
   /** Override apiStore actions individually. */
   storeOverrides?: Record<string, unknown>;
   /** Override module-level api.* functions (e.g. `session`). The
@@ -470,6 +464,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   mockState.assistantThreadCrashCount = opts.assistantThreadCrashCount ?? 0;
   mockState.sessionInfo = opts.sessionInfo ?? null;
   mockState.tmuxAvailable = opts.tmuxAvailable ?? false;
+  mockState.realAssistantThread = opts.realAssistantThread ?? false;
 
   const detail =
     opts.detail ?? makeSessionDetail(makeSession({ id: opts.sessionId ?? 'sess_1' }));

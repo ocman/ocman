@@ -202,6 +202,8 @@ describe('seedNewSession', () => {
     expect(recent[0].id).toBe('new-1');
     expect(recent[0].title).toBe('pr #7');
     expect(recent[0].remoteId).toBe('box');
+    expect(recent[0].liveConnection).toBe(true);
+    expect(useApiStore.getState().sessionCache.get('new-1')?.session.liveConnection).toBe(true);
     expect(recent.map((s) => s.id)).toEqual(['new-1', 'existing']);
     // Hash is recomputed so the next poll's dedup check stays accurate.
     expect(useApiStore.getState().recentSessionsHash).not.toBe('');

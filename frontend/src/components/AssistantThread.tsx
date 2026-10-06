@@ -544,7 +544,7 @@ export function AssistantThread({
   onLoadMore?: () => void;
   composer?: React.ReactNode;
   footer?: React.ReactNode;
-  /** Replaces the "No messages yet." placeholder. */
+  /** Handoff content shown even when message headers arrive before their parts. */
   empty?: React.ReactNode;
   bookmarkedMessageIds?: Set<string>;
   onToggleMessageBookmark?: (messageId: string) => void;
@@ -841,9 +841,9 @@ export function AssistantThread({
               <span className="oc-spinner" /> Loading older messages...
             </div>
           )}
-          <ThreadPrimitive.Empty>
-            {empty ?? <div className="oc-empty">No messages yet.</div>}
-          </ThreadPrimitive.Empty>
+          {empty || <ThreadPrimitive.Empty>
+            <div className="oc-empty">No messages yet.</div>
+          </ThreadPrimitive.Empty>}
           <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
           {speech.error && <div role="status" className="oc-thread-error-note">{speech.error}</div>}
           {footer && <div className="oc-thread-footer">{footer}</div>}

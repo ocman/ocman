@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import type { Message, Part } from '../../lib/api';
+import { isImageMime, parsePart } from '../../lib/convertMessages';
 import type { StartSteps } from './StartProgress';
 
 export interface StartHandoff { prompt: string; steps: StartSteps }
@@ -9,14 +11,21 @@ export interface StartHandoff { prompt: string; steps: StartSteps }
 export const startHandoffs = new Map<string, StartHandoff>();
 
 /**
- * The session's handoff while it has no messages; the first message ends it.
- * `viewSessionId` owns `messageCount`: right after a route change the view
+ * Keep the handoff until the user prompt has visible content, not just a header.
+ * `viewSessionId` owns the messages: right after a route change the view
  * still holds the previous session's messages, which must not end it.
  */
-export function useStartHandoff(sessionId: string | undefined, viewSessionId: string | undefined, messageCount: number): StartHandoff | undefined {
-  const done = viewSessionId === sessionId && messageCount > 0;
+export function useStartHandoff(sessionId: string | undefined, viewSessionId: string | undefined, messages: Message[], parts: Part[]): StartHandoff | undefined {
+  const handoff = sessionId ? startHandoffs.get(sessionId) : undefined;
+  const done = !!handoff && viewSessionId === sessionId && messages.some((message) => message.data?.role === 'user'
+    && parts.some((part) => {
+      if (part.messageId !== message.id) return false;
+      const data = parsePart(part);
+      return (data.type === 'text' && typeof data.text === 'string' && !!data.text.trim())
+        || (data.type === 'file' && !!data.url && (isImageMime(data.mime) || !!data.filename));
+    }));
   useEffect(() => {
     if (sessionId && done) startHandoffs.delete(sessionId);
   }, [sessionId, done]);
-  return sessionId && !done ? startHandoffs.get(sessionId) : undefined;
+  return done ? undefined : handoff;
 }
