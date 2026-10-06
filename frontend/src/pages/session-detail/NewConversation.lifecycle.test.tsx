@@ -133,6 +133,33 @@ describe('new-conversation submission lifecycle', () => {
     expect(api.startSession).toHaveBeenCalledTimes(1);
   });
 
+  it('applies the catalog defaults to a file sent before the catalog loads', async () => {
+    const catalog = deferred<typeof prepared & { defaultAgent: string; defaultModel: string }>();
+    vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
+    vi.mocked(api.uploadComposerAttachment).mockResolvedValue({ path: '/child/note.txt', name: 'note.txt', mime: 'text/plain', size: 4 });
+    render(<Flow />);
+    const input = screen.getByRole('textbox');
+    fireEvent.drop(input, { dataTransfer: { files: [new File(['note'], 'note.txt', { type: 'text/plain' })] } });
+    await screen.findByText('note.txt');
+    fireEvent.input(input, { target: { value: 'read early' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => catalog.resolve({ ...prepared, defaultAgent: 'plan', defaultModel: 'p/model' }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    const [, , , model, agent] = vi.mocked(api.sendMessage).mock.calls[0];
+    expect({ model, agent }).toEqual({ model: 'p/model', agent: 'plan' });
+  });
+
+  it('restores the draft when the page is left while a submission waits', async () => {
+    vi.mocked(api.prepareSession).mockReturnValue(new Promise(() => {}));
+    render(<Flow />);
+    const input = screen.getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'do not lose me' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.click(screen.getByText('Leave draft'));
+    await waitFor(() => expect(getDraft('new')).toBe('do not lose me'));
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
   it('fails a waiting submission on a prepare error and keeps the draft for retry', async () => {
     const catalog = deferred<typeof prepared>();
     vi.mocked(api.prepareSession).mockReturnValueOnce(catalog.promise);

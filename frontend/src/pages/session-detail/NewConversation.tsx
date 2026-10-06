@@ -38,6 +38,14 @@ export interface NewConversationProps {
   navigateToSession: (id: string) => void;
 }
 
+/** What a submission needs before it can start: the catalog and the resolved target. */
+interface Ready { catalog: PrepareSessionResponse; canWorktree: boolean; platform?: string; model: string }
+/** A server-delivered prompt, or work the client runs on the new session. */
+interface Submission {
+  send?: StartSessionRequest['send'];
+  execute?: (sessionId: string, platform: string) => Promise<void>;
+}
+
 export function NewConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
   const { directory, title } = params;
   const remoteId = params.remoteId || 'local';
@@ -92,10 +100,16 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const inFlight = useRef<number | undefined>(undefined);
   const active = useRef(false);
   const generation = useRef(0);
+  const readyWaiters = useRef<{ resolve: (value: Ready) => void; reject: (err: Error) => void }[]>([]);
   useEffect(() => {
     generation.current++;
     active.current = true;
-    return () => { active.current = false; };
+    const waiters = readyWaiters.current;
+    return () => {
+      active.current = false;
+      // A submission still waiting for this route fails, so the composer restores its draft.
+      waiters.splice(0).forEach((w) => w.reject(new Error('The session target changed before it was ready')));
+    };
   }, [directory, remoteId, params.platform, title]);
 
   // Same precedence as an existing empty session: project setting, then
@@ -137,14 +151,12 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   }, [platform]);
 
   const canWorktree = worktreesCapable && (eligibility.resolved?.canCreate ?? false);
-  const effectiveAgent = selectedAgent || catalog?.defaultAgent || '';
 
   // The composer stays usable while the catalog and target resolve; a
   // submission made before then waits here (or fails with the prepare error).
-  const ready = eligibility.resolved && catalog ? { catalog, canWorktree, platform, model: activeModel } : undefined;
+  const ready: Ready | undefined = eligibility.resolved && catalog ? { catalog, canWorktree, platform, model: activeModel } : undefined;
   const readyError = catalogError || eligibility.error || '';
   const readyRef = useRef(ready);
-  const readyWaiters = useRef<{ resolve: (value: NonNullable<typeof ready>) => void; reject: (err: Error) => void }[]>([]);
   useEffect(() => {
     readyRef.current = ready;
     if (ready) readyWaiters.current.splice(0).forEach((w) => w.resolve(ready));
@@ -152,16 +164,15 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   });
   const waitReady = () => readyRef.current ? Promise.resolve(readyRef.current)
     : readyError ? Promise.reject(new Error(readyError))
-    : new Promise<NonNullable<typeof ready>>((resolve, reject) => { readyWaiters.current.push({ resolve, reject }); });
+    : new Promise<Ready>((resolve, reject) => { readyWaiters.current.push({ resolve, reject }); });
+  // Selections are resolved after readiness: a pick made before the catalog
+  // arrived wins, otherwise the catalog's defaults apply.
+  const pick = (r: Ready) => ({ model: selectedModel || r.model, agent: selectedAgent || r.catalog.defaultAgent || '', reasoning: selectedReasoning });
 
   // Create the session at the target, then either the server has sent the
   // prompt or the client runs `execute` on the new session. Failures stay
   // retryable on that session, independently of the next composer draft.
-  const start = useCallback(async (
-    text: string,
-    send: StartSessionRequest['send'] | undefined,
-    execute?: (sessionId: string, platform: string) => Promise<void>,
-  ) => {
+  const start = useCallback(async (text: string, build: (ready: Ready) => Submission) => {
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
@@ -182,8 +193,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
         ready = await waitReady();
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
-      // A prompt sent before the catalog arrived falls back to its defaults.
-      if (send) send = { ...send, model: send.model || ready.model, agent: send.agent || ready.catalog.defaultAgent || undefined };
+      const { send, execute } = build(ready);
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
         platform: ready.platform, remoteId, title, prompt: text, send, startId,
@@ -222,10 +232,11 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [directory, remoteId, title, routeKey, target, seedNewSession, navigateToSession]);
 
-  const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
-    const send = { message: text, images, model: selectedModel, agent: effectiveAgent || undefined, reasoning: selectedReasoning || undefined };
-    return files?.length ? start(text, undefined, sendFirstFiles(send, files)) : start(text, send);
-  };
+  const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => start(text, (r) => {
+    const { model, agent, reasoning } = pick(r);
+    const send = { message: text, images, model, agent: agent || undefined, reasoning: reasoning || undefined };
+    return files?.length ? { execute: sendFirstFiles(send, files) } : { send };
+  });
 
   const onCommand = (command: string, args: string) => {
     if (command === 'wt' || command === 'worktree') {
@@ -236,14 +247,14 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       setError(`/${command} needs an existing conversation.`);
       return;
     }
-    return start(`/${command}${args ? ` ${args}` : ''}`, undefined, (id, sessionPlatform) =>
+    return start(`/${command}${args ? ` ${args}` : ''}`, (r) => ({ execute: (id, sessionPlatform) =>
       postJSON<void>(`/api/session/${encodeURIComponent(id)}/command?platform=${encodeURIComponent(sessionPlatform)}`,
-        { command, arguments: args, model: selectedModel, agent: effectiveAgent, reasoning: selectedReasoning }, { parseJSON: false }));
+        { command, arguments: args, ...pick(r) }, { parseJSON: false }) }));
   };
 
-  const onShell = (command: string) => start(`!${command}`, undefined, (id, sessionPlatform) =>
+  const onShell = (command: string) => start(`!${command}`, (r) => ({ execute: (id, sessionPlatform) =>
     postJSON<void>(`/api/session/${encodeURIComponent(id)}/shell?platform=${encodeURIComponent(sessionPlatform)}`,
-      { command, agent: effectiveAgent }, { parseJSON: false }));
+      { command, agent: pick(r).agent }, { parseJSON: false }) }));
 
   // Switching machines only re-points the route; the shared draft survives.
   const onMachineChange = async (machine: TargetCandidate) => {
