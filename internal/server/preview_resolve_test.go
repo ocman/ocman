@@ -132,6 +132,33 @@ func TestPreviewResolveChecksTarget(t *testing.T) {
 	}
 }
 
+func TestPreviewChecksRefreshBypassesSettledServerCache(t *testing.T) {
+	state := "success"
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/status") {
+			fmt.Fprintf(w, `{"total_count":1,"statuses":[{"context":"build","state":%q}]}`, state)
+		} else {
+			fmt.Fprint(w, `{"total_count":0,"check_runs":[]}`)
+		}
+	}))
+	defer api.Close()
+	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
+	s.previewAuth.client = api.Client()
+	b := newBrowser()
+	request := `{"text":"https://github.com/o/r/pull/1","checksSha":"abc123"}`
+	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", request); !strings.Contains(rr.Body.String(), `"state":"success"`) {
+		t.Fatal(rr.Body.String())
+	}
+	state = "pending"
+	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", request); !strings.Contains(rr.Body.String(), `"state":"success"`) {
+		t.Fatal("cache not warmed")
+	}
+	rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", `{"text":"https://github.com/o/r/pull/1","checksSha":"abc123","refreshChecks":true}`)
+	if !strings.Contains(rr.Body.String(), `"state":"pending"`) {
+		t.Fatalf("refresh re-used stale success: %s", rr.Body.String())
+	}
+}
+
 func TestLinkPreviewRules_RejectsInvalidProvider(t *testing.T) {
 	err := validateLinkPreviewRules(linkPreviewRules{Rules: []linkPreviewRule{{Pattern: `A-\d+`, Replacement: "https://x.example/$&", Provider: "Bad/../x"}}})
 	if err == nil {

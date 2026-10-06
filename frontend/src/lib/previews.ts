@@ -203,8 +203,8 @@ export async function resolvePreviews(text: string, remoteId = 'local', signal?:
   return previews;
 }
 
-export async function fetchPreviewChecks(url: string, sha: string, remoteId: string, signal: AbortSignal): Promise<PRChecks> {
-  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, checksSha: sha }, { signal });
+export async function fetchPreviewChecks(url: string, sha: string, remoteId: string, signal: AbortSignal, refresh = false): Promise<PRChecks> {
+  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, checksSha: sha, ...(refresh ? { refreshChecks: true } : {}) }, { signal });
   const preview = previews[0];
   if (preview?.state !== 'ok' || preview.stale || !preview.checks) throw new Error('Checks unavailable');
   return preview.checks;

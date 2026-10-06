@@ -56,10 +56,11 @@ function PreviewCI({ preview }: { preview: PreviewResult }) {
   const sha = preview.headSha!;
   const repo = preview.id.split('#')[0];
   const key = prChecksCacheKey(new URL(url).host, repo, sha);
-  const loadChecks = useCallback((signal: AbortSignal) => fetchPreviewChecks(url, sha, owner, signal), [url, sha, owner]);
+  const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewChecks(url, sha, owner, signal, refresh), [url, sha, owner]);
   const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible, loadChecks);
-  return <span ref={ref} className="gh-preview__meta" aria-label={CI_LABEL[checks.state]}>
-    <i className={`bi ${checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {CI_LABEL[checks.state]}
+  const label = checks.error ? 'Failed to load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
+  return <span ref={ref} className="gh-preview__meta" aria-label={label}>
+    <i className={`bi ${checks.error ? 'bi-exclamation-circle' : checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {label}
   </span>;
 }
 

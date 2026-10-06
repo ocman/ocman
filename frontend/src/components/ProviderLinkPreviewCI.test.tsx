@@ -55,6 +55,7 @@ it('does not settle rate-limited stale checks and retries errors', async () => {
   render(<ProviderPreview providers={[]} preview={preview} />);
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   expect(getCachedPRChecks(key)).toBeUndefined();
+  expect(screen.getByLabelText('Failed to load checks')).toBeInTheDocument();
   await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
   expect(getCachedPRChecks(key)).toBeUndefined();
   await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
@@ -101,4 +102,35 @@ it('refreshes a mounted conversation card when the sidebar clears the cache', as
   await act(async () => clearPRChecksCache());
   expect(await screen.findByLabelText('Some checks failed')).toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(fetch.mock.calls[0][1].body).refreshChecks).toBe(true);
+});
+
+it('shows loading and a failed refresh instead of retained success', async () => {
+  let reject: (error: Error) => void = () => {};
+  const fetch = vi.fn().mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
+  vi.stubGlobal('fetch', fetch);
+  const { unmount } = render(<ProviderPreview providers={[]} preview={preview} />);
+  expect(await screen.findByLabelText('Loading checks…')).toBeInTheDocument();
+  await act(async () => reject(new Error('offline')));
+  expect(screen.getByLabelText('Failed to load checks')).toBeInTheDocument();
+  unmount();
+  cachePRChecks(key, { state: 'success', checks: [{ name: 'build', state: 'success' }] });
+  render(<ProviderPreview providers={[]} preview={preview} />);
+  await screen.findByLabelText('All checks passed');
+  await act(async () => clearPRChecksCache());
+  await act(async () => reject(new Error('offline')));
+  expect(screen.getByLabelText('Failed to load checks')).toBeInTheDocument();
+  expect(screen.queryByLabelText('All checks passed')).toBeNull();
+});
+
+it('sends the server refresh flag only on the first fetch of a refresh cycle', async () => {
+  vi.useFakeTimers();
+  cachePRChecks(key, { state: 'success', checks: [{ name: 'build', state: 'success' }] });
+  const fetch = vi.fn().mockResolvedValue(response({ state: 'pending', checks: [{ name: 'build', state: 'pending' }] }));
+  vi.stubGlobal('fetch', fetch);
+  render(<ProviderPreview providers={[]} preview={preview} />);
+  await act(async () => clearPRChecksCache());
+  expect(JSON.parse(fetch.mock.calls[0][1].body).refreshChecks).toBe(true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+  expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBeUndefined();
 });

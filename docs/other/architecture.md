@@ -394,6 +394,9 @@ flowchart TD
   use the clients' 8 MiB response bound instead of `linkpreview.API`'s 1 MiB.
   The preview service caches checks for 15 seconds and retains its per-grant
   budget, concurrency limit and rate-limit backoff.
+  Explicit refresh bypasses that checks snapshot while retaining grant and
+  rate controls. Checks HTTP 401/403 retain their status for token revocation
+  and denial classification, and provider retry deadlines reach the backoff.
 - **Slack previews** (`linkpreview.Slack`, opt-in via
   `OCMAN_SLACK_PREVIEW_CLIENT_ID/_SECRET`). A dedicated OAuth app yields a
   machine-wide *user* token (`user_scope`, bot tokens refused); conversation.v1

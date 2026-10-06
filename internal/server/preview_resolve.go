@@ -47,8 +47,9 @@ func (s *Server) previewIdentifierRules(ctx context.Context) []linkpreview.Ident
 // and resolves them with this machine's credentials.
 func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text      string `json:"text"`
-		ChecksSHA string `json:"checksSha"`
+		Text          string `json:"text"`
+		ChecksSHA     string `json:"checksSha"`
+		RefreshChecks bool   `json:"refreshChecks"`
 	}
 	if !readAndUnmarshal(w, r, maxPreviewResolveBody, &req) {
 		return
@@ -76,6 +77,9 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		refs[0].Kind = "checks"
 		repo, _, _ := strings.Cut(refs[0].ID, "#")
 		refs[0].ID = repo + "@" + req.ChecksSHA
+		if req.RefreshChecks {
+			ctx = linkpreview.WithChecksRefresh(ctx)
+		}
 	}
 	previews := svc.Resolve(ctx, viewerID, home, refs)
 	if previews == nil {

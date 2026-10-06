@@ -198,7 +198,7 @@ func forgeIdentify(f Forge, workspace, name string) func(context.Context, *http.
 
 // GitHubOAuth is the viewer-consent app for GitHub previews. Register a
 // GitHub App (recommended: read-only Metadata, Pull requests, Issues and
-// Contents permissions, expiring user tokens) and use its client ID and
+// Contents and Checks permissions, expiring user tokens) and use its client ID and
 // secret. Its user tokens carry the app's permissions, not OAuth scopes,
 // so no scope is requested. apiBase "" is production.
 func GitHubOAuth(clientID, clientSecret, apiBase string) previewauth.Provider {
@@ -221,7 +221,7 @@ func GitHubOAuth(clientID, clientSecret, apiBase string) previewauth.Provider {
 			return raw, nil
 		},
 		Identify:  forgeIdentify(f, "github.com", "GitHub"),
-		TokenHelp: "Create a fine-grained personal access token at https://github.com/settings/personal-access-tokens/new with read-only Contents, Issues and Pull requests access.",
+		TokenHelp: "Create a fine-grained personal access token at https://github.com/settings/personal-access-tokens/new with read-only Contents, Issues, Pull requests and Checks access.",
 	}
 }
 

@@ -32,6 +32,9 @@ until every check finishes. Rate-limited results never become final cached
 results. The sidebar's refresh button clears this shared cache and refreshes
 visible conversation cards too.
 
+GitHub tokens and Apps need read-only Checks access to fetch check runs.
+Cards distinguish unavailable checks from a commit with no CI status.
+
 ## Supported links
 
 | Provider | Links | Ticket IDs via a link rule |
