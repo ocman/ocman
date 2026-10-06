@@ -1158,6 +1158,10 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 	}
 	launcher := &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	// Drive dispatch synchronously: startup's background dispatcher can claim
+	// the second Issue before this test's explicit Dispatch finishes launching it.
+	svc.startOnce.Do(func() {})
+	t.Cleanup(svc.Close)
 	first := createPouredWorkEpic(t, svc, "First")
 	second := createPouredWorkEpic(t, svc, "Second")
 	for _, epic := range []WorkEpic{first, second} {

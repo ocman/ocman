@@ -23,7 +23,9 @@ func writeDiscoveryPlugin(t *testing.T, dir, name, id, version string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n/bin/cat <<EOF\n"+string(data)+"\nEOF\n"), 0700); err != nil {
+	// Both read and printf are shell built-ins: discovery should not spend its
+	// production deadline starting a second process just to emit one JSON line.
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nIFS= read -r hello <<EOF\n"+string(data)+"\nEOF\nprintf '%s\\n' \"$hello\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	return path
