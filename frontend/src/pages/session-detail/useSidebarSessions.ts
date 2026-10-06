@@ -214,6 +214,7 @@ export function useSidebarSessions({
             row.lastTurnCompletedAt ?? 0, current?.lastTurnCompletedAt ?? 0,
           ) }, owner);
         }).catch((err) => remoteLog.error('Failed to refresh completed session', err));
+        return;
       }
       refresh();
     });

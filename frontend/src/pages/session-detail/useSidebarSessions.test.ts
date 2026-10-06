@@ -137,7 +137,7 @@ describe('useSidebarSessions live refresh', () => {
   const getSessions = vi.fn().mockResolvedValue([]);
 
   beforeEach(() => {
-    getSessions.mockClear();
+    getSessions.mockReset().mockResolvedValue([]);
     sessionChanged = undefined;
     sseConnect = undefined;
     useApiStore.setState({
@@ -271,10 +271,11 @@ describe('useSidebarSessions live refresh', () => {
       abortSignalRef, navigate: vi.fn(),
     }));
     await act(async () => { sessionChanged?.('background', undefined, { status }); });
-    expect(getSessions).toHaveBeenCalledOnce();
+    expect(getSessions).not.toHaveBeenCalled();
     expect(peekSession).toHaveBeenCalledWith('background', expect.anything(), background.platform);
     expect(useApiStore.getState().recentSessions.map(s => s.id)).toEqual(['background', 'first']);
     expect(useApiStore.getState().recentSessions[0].lastTurnCompletedAt).toBe(180_000);
+    expect(useApiStore.getState().recentSessions[0].status).toBe(status);
   });
 
   it('qualifies completion fetches and patches when owners share a session ID', async () => {
@@ -293,7 +294,7 @@ describe('useSidebarSessions live refresh', () => {
     expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)).toMatchObject({
       status: 'busy', lastTurnCompletedAt: 120_000,
     });
-    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ platform: remote.platform, lastTurnCompletedAt: 180_000 });
+    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ platform: remote.platform, status: 'waiting', lastTurnCompletedAt: 180_000 });
   });
 
   it('only refetches ambiguous unqualified events instead of guessing an owner', async () => {
@@ -327,6 +328,25 @@ describe('useSidebarSessions live refresh', () => {
       expect(useApiStore.getState().recentSessions[0].lastTurnCompletedAt).toBe(100);
     },
   );
+
+  it('does not let a delayed completion response hide the next running turn', async () => {
+    const row = { id: 'session', platform: 'r-owner:opencode', status: 'busy', timeCreated: 1,
+      timeUpdated: 1, lastTurnCompletedAt: 100 } as Session;
+    let finish!: (result: { session: Session }) => void;
+    const peekSession = vi.fn(() => new Promise<{ session: Session }>(resolve => { finish = resolve; }));
+    getSessions.mockResolvedValueOnce([{ ...row, status: 'waiting' }]);
+    useApiStore.setState({ recentSessions: [row], recentSessionsHash: '', peekSession: peekSession as never });
+    const abortSignalRef = { current: new AbortController() };
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
+    }));
+    await act(async () => { sessionChanged?.(row.id, undefined, { status: 'waiting' }, row.platform); });
+    act(() => { sessionChanged?.(row.id, undefined, { status: 'busy' }, row.platform); });
+    await act(async () => { finish({ session: { ...row, status: 'waiting', lastTurnCompletedAt: 200 } }); });
+    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ status: 'busy', lastTurnCompletedAt: 200 });
+    expect(peekSession).toHaveBeenCalledOnce();
+    expect(getSessions).not.toHaveBeenCalled();
+  });
 
   it.each(['(auto-approve subagent)', 'Research (@explore subagent)'])(
     'keeps hidden internal session %s out when SSE announces activity', async (title) => {
