@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
-import type { CIState, Check, PR, PRChecks } from '../../lib/upstreamApi';
+import { useCallback, useState } from 'react';
+import type { CIState, PR } from '../../lib/upstreamApi';
 import { fetchPRChecks } from '../../lib/upstreamApi';
-import { CI_POLL_MS, cachePRChecks, getCachedPRChecks, isSettled, prChecksCacheKey } from '../../lib/prChecksCache';
+import { prChecksCacheKey } from '../../lib/prChecksCache';
+import { CI_LABEL, usePRChecks } from '../../lib/usePRChecks';
+import type { ChecksState } from '../../lib/usePRChecks';
 import { ExpandableRow } from './ExpandableRow';
 
 interface PRRowProps {
@@ -36,7 +38,9 @@ interface PRRowProps {
  */
 export function PRRow({ pr, directory, checksDirectory = directory ?? '', remoteId, remote, currentBranch }: PRRowProps) {
   const [visible, setVisible] = useState(false);
-  const checks = usePRChecks(pr, checksDirectory, remoteId, remote, visible);
+  const sha = pr.headSha ?? '';
+  const loadChecks = useCallback((signal: AbortSignal) => fetchPRChecks({ dir: checksDirectory, remoteId, remote, sha, signal }), [checksDirectory, remoteId, remote, sha]);
+  const checks = usePRChecks(prChecksCacheKey(pr.host, pr.repo, sha), `${remoteId}\0${checksDirectory}\0${remote}\0${sha}`, visible && !!sha, loadChecks);
 
   // Cross-fork PRs share their head branch name with the user's
   // local tree by coincidence at best (different repo entirely), so
@@ -89,81 +93,6 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
     />
   );
 }
-
-interface ChecksState {
-  state: CIState;
-  checks: Check[];
-  loading: boolean;
-  loaded: boolean;
-  error: boolean;
-}
-
-interface ChecksResult {
-  key: string;
-  data: PRChecks | null;
-  loading: boolean;
-  error: boolean;
-}
-
-/**
- * usePRChecks fetches a PR's CI/build status while its row is visible.
- * A settled status (every check finished) is cached per repository + head
- * SHA, so it is fetched once; anything else is re-fetched every CI_POLL_MS
- * until it settles or the row scrolls out of view.
- */
-function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string, visible: boolean): ChecksState {
-  const sha = pr.headSha ?? '';
-  const requestKey = `${remoteId}\0${directory}\0${remote}\0${sha}`;
-  const cacheKey = prChecksCacheKey(pr.host, pr.repo, sha);
-  const [result, setResult] = useState<ChecksResult>({ key: requestKey, data: null, loading: false, error: false });
-
-  useEffect(() => {
-    if (!sha || !visible) return;
-    const ctrl = new AbortController();
-    let timer: number | undefined;
-    const run = () => {
-      const cached = getCachedPRChecks(cacheKey);
-      if (cached) {
-        setResult({ key: requestKey, data: cached, loading: false, error: false });
-        return;
-      }
-      setResult((prev) => ({ key: requestKey, data: prev.key === requestKey ? prev.data : null, loading: true, error: false }));
-      fetchPRChecks({ dir: directory, remoteId, remote, sha, signal: ctrl.signal })
-        .then((res) => {
-          if (ctrl.signal.aborted) return;
-          cachePRChecks(cacheKey, res);
-          setResult({ key: requestKey, data: res, loading: false, error: false });
-          if (!isSettled(res)) timer = window.setTimeout(run, CI_POLL_MS);
-        })
-        .catch(() => {
-          if (ctrl.signal.aborted) return;
-          setResult((prev) => ({ ...prev, key: requestKey, loading: false, error: true }));
-          timer = window.setTimeout(run, CI_POLL_MS);
-        });
-    };
-    run();
-    return () => {
-      ctrl.abort();
-      window.clearTimeout(timer);
-    };
-  }, [sha, directory, remoteId, remote, visible, requestKey, cacheKey]);
-
-  const current = result.key === requestKey;
-  return {
-    state: current ? result.data?.state ?? 'unknown' : 'unknown',
-    checks: current ? result.data?.checks ?? [] : [],
-    loading: current && result.loading,
-    loaded: current && result.data !== null,
-    error: current && result.error,
-  };
-}
-
-const CI_LABEL: Record<CIState, string> = {
-  unknown: 'No CI status',
-  pending: 'Checks running',
-  success: 'All checks passed',
-  failure: 'Some checks failed',
-};
 
 function CIDot({ state, prNumber }: { state: CIState; prNumber: number }) {
   return (

@@ -366,7 +366,7 @@ flowchart TD
   `frontend/src/lib/previews.ts`). Only *configured* providers register a
   `Resolver`; resolvers recognize known direct URLs and custom link rules
   carrying a `provider` (the rule's replacement link stays the client-side
-  fallback), deduped by resource and capped at 20 per text. Fetches go only
+  fallback), deduped by resource and capped at 20 per text. Metadata fetches go
   through `linkpreview.API`: the resolver's fixed API hosts, validated path
   segments, the stored token, no redirects, 1 MiB bodies, 10 s timeouts.
   Results are cached per owner/provider/workspace/resource with in-flight
@@ -387,6 +387,13 @@ flowchart TD
   (anonymous for GitLab), which previews private repositories for any
   request with app access (`WithOwnerAccess`) and public ones otherwise
   (repository visibility is checked before the resource is read).
+  GitHub/Forgejo PR metadata includes `headSha`. A resolve request with
+  `checksSha` accepts exactly one recognized PR URL and a validated SHA,
+  then uses the same forge checks clients as the sidebar with the preview's
+  selected credential and redirect-disabled HTTP client. These checks calls
+  use the clients' 8 MiB response bound instead of `linkpreview.API`'s 1 MiB.
+  The preview service caches checks for 15 seconds and retains its per-grant
+  budget, concurrency limit and rate-limit backoff.
 - **Slack previews** (`linkpreview.Slack`, opt-in via
   `OCMAN_SLACK_PREVIEW_CLIENT_ID/_SECRET`). A dedicated OAuth app yields a
   machine-wide *user* token (`user_scope`, bot tokens refused); conversation.v1
@@ -441,7 +448,7 @@ within stable one-minute buckets, with reduced-motion-aware reorder animation.
 flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
-    Comp --> Stores
+    Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
     Stores --> API[lib/ API client]
@@ -476,6 +483,12 @@ flowchart TD
   loading, stale-data, error, and empty-state decisions.
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
+- **PR checks.** `lib/usePRChecks` polls only visible rows/cards until every
+  check settles. Both views use `lib/prChecksCache`'s bounded localStorage
+  cache, keyed by host/repository/SHA. Sidebar refresh also restarts checks
+  on mounted conversation cards. Preview checks use the existing preview
+  resolver endpoint so the conversation owner and preview credentials remain
+  authoritative, including PR links outside the active project's repository.
 - **New session target.** A new conversation is a client-only route,
   `/session/new?dir=…&remoteId=…&platform=…`, until its first prompt: no
   session, worktree or placeholder exists before that. `NewConversation`

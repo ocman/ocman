@@ -25,6 +25,13 @@ A recognized link renders in one of two ways:
 A custom link rule without a provider always produces a fallback-style card
 that points at its replacement URL.
 
+GitHub and Forgejo PR cards also show CI status for the PR's head commit.
+They share the sidebar's repository-and-SHA cache, so either view can reuse a
+finished result fetched by the other. Visible cards check every 15 seconds
+until every check finishes. Rate-limited results never become final cached
+results. The sidebar's refresh button clears this shared cache and refreshes
+visible conversation cards too.
+
 ## Supported links
 
 | Provider | Links | Ticket IDs via a link rule |

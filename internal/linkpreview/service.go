@@ -274,6 +274,9 @@ func (s *Service) fetch(ctx context.Context, r Resolver, api *API, grant bool, v
 	if p.State == StateOK {
 		ttl = okTTL
 	}
+	if ref.Kind == "checks" {
+		ttl = errorTTL
+	}
 	s.mu.Lock()
 	if len(s.cache) >= maxEntries {
 		// ponytail: wholesale reset at the cap; LRU if hit rates matter.
@@ -331,6 +334,10 @@ func sanitize(p Preview, ref Ref) Preview {
 	if u := safeURL(p.URL); u != "" {
 		out.URL = u
 	}
+	if forgeSHA.MatchString(p.HeadSHA) {
+		out.HeadSHA = p.HeadSHA
+	}
+	out.Checks = p.Checks
 	for _, c := range p.Choices {
 		if u := safeURL(c.URL); u != "" && len(out.Choices) < maxChoices {
 			out.Choices = append(out.Choices, Choice{Title: short(c.Title, 120), URL: u})

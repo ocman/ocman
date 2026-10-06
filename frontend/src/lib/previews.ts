@@ -1,5 +1,6 @@
 import { createContext } from 'react';
 import { fetchJSON, postJSON } from './api';
+import type { PRChecks } from './upstreamApi';
 
 /** Owner (`remoteId`) of the conversation whose links are previewed. */
 export const PreviewOwnerContext = createContext('local');
@@ -20,6 +21,8 @@ export interface PreviewRef {
 
 /** Normalized preview result (internal/linkpreview.Preview). */
 export interface PreviewResult extends PreviewRef {
+  headSha?: string;
+  checks?: PRChecks;
   title?: string;
   status?: string;
   /** Bootstrap icon class, e.g. `bi-kanban`. */
@@ -198,4 +201,11 @@ export async function removePreviewApp(id: string): Promise<PreviewApps> {
 export async function resolvePreviews(text: string, remoteId = 'local', signal?: AbortSignal): Promise<PreviewResult[]> {
   const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text }, { signal });
   return previews;
+}
+
+export async function fetchPreviewChecks(url: string, sha: string, remoteId: string, signal: AbortSignal): Promise<PRChecks> {
+  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, checksSha: sha }, { signal });
+  const preview = previews[0];
+  if (preview?.state !== 'ok' || preview.stale || !preview.checks) throw new Error('Checks unavailable');
+  return preview.checks;
 }

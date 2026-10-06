@@ -85,6 +85,9 @@ type forgeItem struct {
 	User     struct {
 		Login string `json:"login"`
 	} `json:"user"`
+	Head struct {
+		SHA string `json:"sha"`
+	} `json:"head"`
 	// commit
 	Author struct {
 		Login string `json:"login"`
@@ -111,6 +114,9 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 		return Preview{}, ErrUnsafeRequest
 	}
 	owner, repo, id := m[1], m[2], m[4]
+	if ref.Kind == "checks" && (m[3] != "@" || !forgeSHA.MatchString(id)) {
+		return Preview{}, ErrUnsafeRequest
+	}
 	if api.PublicOnly() {
 		// Checked before the resource is read, so no private data is fetched.
 		var r struct {
@@ -130,6 +136,9 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 			return Preview{}, f.needGrant()
 		}
 	}
+	if ref.Kind == "checks" {
+		return f.fetchChecks(ctx, api, owner+"/"+repo, id)
+	}
 	path := map[string][]string{
 		"pr":     {"repos", owner, repo, "pulls", id},
 		"issue":  {"repos", owner, repo, "issues", id},
@@ -146,6 +155,9 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 		return Preview{}, err
 	}
 	p := Preview{Ref: Ref{URL: ref.URL}, Title: it.Title, Meta: []string{it.User.Login}}
+	if ref.Kind == "pr" && forgeSHA.MatchString(it.Head.SHA) {
+		p.HeadSHA = it.Head.SHA
+	}
 	updated := it.Updated
 	switch {
 	case ref.Kind == "commit":

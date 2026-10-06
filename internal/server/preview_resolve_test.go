@@ -105,6 +105,33 @@ func TestPreviewResolve_RejectsOversizedAndRemote(t *testing.T) {
 	}
 }
 
+func TestPreviewResolveChecksTarget(t *testing.T) {
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/status") {
+			fmt.Fprint(w, `{"total_count":1,"statuses":[{"context":"build","state":"success"}]}`)
+		} else {
+			fmt.Fprint(w, `{"total_count":0,"check_runs":[]}`)
+		}
+	}))
+	defer api.Close()
+	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
+	s.previewAuth.client = api.Client()
+	b := newBrowser()
+	for _, text := range []string{"https://github.com/o/r/issues/1", "https://evil.example/o/r/pull/1", "https://github.com/o/r/pull/1 https://github.com/o/r/pull/2"} {
+		body, _ := json.Marshal(map[string]string{"text": text, "checksSha": "abc123"})
+		if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", string(body)); rr.Code != http.StatusBadRequest {
+			t.Fatalf("invalid target accepted: %s", rr.Body.String())
+		}
+	}
+	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", `{"text":"https://github.com/o/r/pull/1","checksSha":"../bad"}`); rr.Code != http.StatusBadRequest {
+		t.Fatal("invalid SHA accepted")
+	}
+	rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", `{"text":"https://github.com/o/r/pull/1","checksSha":"abc123"}`)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"state":"success"`) {
+		t.Fatalf("checks: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestLinkPreviewRules_RejectsInvalidProvider(t *testing.T) {
 	err := validateLinkPreviewRules(linkPreviewRules{Rules: []linkPreviewRule{{Pattern: `A-\d+`, Replacement: "https://x.example/$&", Provider: "Bad/../x"}}})
 	if err == nil {

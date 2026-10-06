@@ -1,4 +1,8 @@
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
+import { PreviewOwnerContext, fetchPreviewChecks } from '../lib/previews';
+import { prChecksCacheKey } from '../lib/prChecksCache';
+import { CI_LABEL, usePRChecks } from '../lib/usePRChecks';
 import { hasRichPreview } from '../lib/useProviderPreviews';
 import type { PreviewProvider, PreviewResult } from '../lib/previews';
 import { RelativeTime } from './RelativeTime';
@@ -24,6 +28,7 @@ const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
         {preview.updatedAt && <> · <RelativeTime iso={preview.updatedAt} /></>}
         {preview.stale && ' · cached'}
       </span>
+      {preview.kind === 'pr' && preview.headSha && preview.url && <PreviewCI preview={preview} />}
     </span>
   </>;
   return preview.url
@@ -32,6 +37,31 @@ const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
       </a>
     : <div className={cls} data-testid="provider-preview-card">{body}</div>;
 };
+
+function PreviewCI({ preview }: { preview: PreviewResult }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (!ref.current) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry) setVisible(entry.isIntersecting);
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+  const owner = useContext(PreviewOwnerContext);
+  const url = preview.url!;
+  const sha = preview.headSha!;
+  const repo = preview.id.split('#')[0];
+  const key = prChecksCacheKey(new URL(url).host, repo, sha);
+  const loadChecks = useCallback((signal: AbortSignal) => fetchPreviewChecks(url, sha, owner, signal), [url, sha, owner]);
+  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible, loadChecks);
+  return <span ref={ref} className="gh-preview__meta" aria-label={CI_LABEL[checks.state]}>
+    <i className={`bi ${checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {CI_LABEL[checks.state]}
+  </span>;
+}
 
 const NOTICE: Partial<Record<PreviewResult['state'], string>> = {
   connect: 'Private. Add a token under Settings → Link previews to preview it.',

@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/linkpreview"
 )
 
 // maxPreviewResolveBody bounds the transcript text one request may scan.
 const maxPreviewResolveBody = 1 << 20
+
+var previewChecksSHA = regexp.MustCompile(`^[0-9a-fA-F]{5,40}$`)
 
 // WithPreviewResolvers registers the providers that turn discovered links
 // into previews. Must be called before Start.
@@ -43,7 +47,8 @@ func (s *Server) previewIdentifierRules(ctx context.Context) []linkpreview.Ident
 // and resolves them with this machine's credentials.
 func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text string `json:"text"`
+		Text      string `json:"text"`
+		ChecksSHA string `json:"checksSha"`
 	}
 	if !readAndUnmarshal(w, r, maxPreviewResolveBody, &req) {
 		return
@@ -62,6 +67,16 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	}
 	svc := s.linkPreviews()
 	refs := svc.Discover(req.Text, s.previewIdentifierRules(r.Context()))
+	if req.ChecksSHA != "" {
+		if !previewChecksSHA.MatchString(req.ChecksSHA) || len(refs) != 1 || refs[0].Kind != "pr" ||
+			(refs[0].Provider != "github" && !strings.HasPrefix(refs[0].Provider, "forgejo:")) {
+			http.Error(w, "invalid checks target", http.StatusBadRequest)
+			return
+		}
+		refs[0].Kind = "checks"
+		repo, _, _ := strings.Cut(refs[0].ID, "#")
+		refs[0].ID = repo + "@" + req.ChecksSHA
+	}
 	previews := svc.Resolve(ctx, viewerID, home, refs)
 	if previews == nil {
 		previews = []linkpreview.Preview{}

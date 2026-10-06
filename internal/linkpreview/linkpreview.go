@@ -16,6 +16,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/forge"
 )
 
 // State is the connect/error state of one preview.
@@ -51,13 +53,15 @@ func (r Ref) key() string {
 // Preview is the normalized preview result.
 type Preview struct {
 	Ref
-	Title     string    `json:"title,omitempty"`
-	Status    string    `json:"status,omitempty"`
-	Icon      string    `json:"icon,omitempty"` // Bootstrap icon class, e.g. bi-kanban
-	Meta      []string  `json:"meta,omitempty"` // short, display-safe facts
-	UpdatedAt time.Time `json:"updatedAt,omitzero"`
-	State     State     `json:"state"`
-	Stale     bool      `json:"stale,omitempty"` // cached data served while rate limited
+	Title     string          `json:"title,omitempty"`
+	Status    string          `json:"status,omitempty"`
+	Icon      string          `json:"icon,omitempty"` // Bootstrap icon class, e.g. bi-kanban
+	Meta      []string        `json:"meta,omitempty"` // short, display-safe facts
+	UpdatedAt time.Time       `json:"updatedAt,omitzero"`
+	State     State           `json:"state"`
+	Stale     bool            `json:"stale,omitempty"` // cached data served while rate limited
+	HeadSHA   string          `json:"headSha,omitempty"`
+	Checks    *forge.CIStatus `json:"checks,omitempty"`
 	// Choices are the candidates for an ambiguous ticket identifier; a
 	// resolver returning them makes the preview StateAmbiguous.
 	Choices []Choice `json:"choices,omitempty"`
