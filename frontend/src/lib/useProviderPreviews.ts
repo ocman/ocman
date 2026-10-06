@@ -26,12 +26,17 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
   const [pending, setPending] = useState(false);
   const [generation, setGeneration] = useState(0);
   const refreshPending = useRef(false);
+  // Keep matching identity while display state is cleared for a refresh.
+  const lastResolved = useRef<Resolved | null>(null);
 
   useEffect(() => {
     const reset = () => { setResolved(null); setGeneration((g) => g + 1); };
     const refresh = (event: Event) => {
       const repositories = (event as CustomEvent<string[]>).detail;
-      if (repositories && !resolved?.previews.some((preview) => {
+      const previous = lastResolved.current;
+      const known = previous?.text === text && previous.owner === owner ? previous.previews : [];
+      // Raw canonical links also match before the first lookup has finished.
+      if (repositories && !repositories.some((repo) => text.includes(`https://${repo}/`)) && !known.some((preview) => {
         if (preview.kind !== 'pr' || !preview.url) return false;
         try {
           return repositories.includes(`${new URL(preview.url).host}/${preview.id.split('#')[0]}`);
@@ -42,7 +47,7 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
     window.addEventListener(PREVIEW_AUTH_EVENT, reset);
     window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
     return () => { window.removeEventListener(PREVIEW_AUTH_EVENT, reset); window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh); };
-  }, [resolved]);
+  }, [text, owner]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -57,7 +62,11 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
         const refresh = refreshPending.current;
         refreshPending.current = false;
         const previews = await resolvePreviews(text, owner, abort.signal, refresh);
-        if (!abort.signal.aborted) setResolved({ text, owner, previews, providers: config?.providers ?? [], refreshChecks: refresh });
+        if (!abort.signal.aborted) {
+          const result = { text, owner, previews, providers: config?.providers ?? [], refreshChecks: refresh };
+          lastResolved.current = result;
+          setResolved(result);
+        }
       }).catch(() => {
         // Safe fallback: plain links and custom rule cards still render.
         if (!abort.signal.aborted) setResolved(null);
