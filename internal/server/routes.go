@@ -110,7 +110,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// as the per-session archive endpoint.
 	mux.HandleFunc("/api/project/archive", s.post(s.handleProjectArchive))
 	// Per-project model list (own state.db setting row), same posture.
-	mux.HandleFunc("/api/project/settings", s.requireAuth(s.handleProjectSettings))
+	mux.HandleFunc("/api/project/settings", s.settingsHandler(s.requireAuth(s.handleProjectSettings)))
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
@@ -172,23 +172,24 @@ func (s *Server) routes() (*http.ServeMux, error) {
 
 	// Settings endpoints — user preferences that must be shared with the
 	// backend (e.g. judge prompt sections used by headless auto-approve).
-	mux.HandleFunc("/api/settings/prompt-sections", s.requireAuth(s.handlePromptSections))
-	mux.HandleFunc("/api/settings/judge-delay", s.requireAuth(s.handleJudgeDelay))
-	mux.HandleFunc("/api/settings/judge-model", s.requireAuth(s.handleJudgeModel))
+	mux.HandleFunc("/api/settings/default-agent", s.settingsHandler(s.requireAuth(s.handleDefaultAgent)))
+	mux.HandleFunc("/api/settings/prompt-sections", s.settingsHandler(s.requireAuth(s.handlePromptSections)))
+	mux.HandleFunc("/api/settings/judge-delay", s.settingsHandler(s.requireAuth(s.handleJudgeDelay)))
+	mux.HandleFunc("/api/settings/judge-model", s.settingsHandler(s.requireAuth(s.handleJudgeModel)))
 	mux.HandleFunc("/api/settings/judge-model/options", s.requireAuth(s.get(s.handleJudgeModelOptions)))
 	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
 	// action. Stored in state.db's generic `setting` table (schema v12).
-	mux.HandleFunc("/api/settings/prompt-templates", s.requireAuth(s.handlePromptTemplates))
-	mux.HandleFunc("/api/settings/link-preview-rules", s.requireAuth(s.handleLinkPreviewRules))
+	mux.HandleFunc("/api/settings/prompt-templates", s.settingsHandler(s.requireAuth(s.handlePromptTemplates)))
+	mux.HandleFunc("/api/settings/link-preview-rules", s.settingsHandler(s.requireAuth(s.handleLinkPreviewRules)))
 	// Master toggle for public session sharing (on by default).
-	mux.HandleFunc("/api/settings/sharing", s.requireAuth(s.handleSharingSetting))
-	mux.HandleFunc("/api/settings/webhook-relay", s.requireLocalhost(s.handleWebhookRelaySetting))
+	mux.HandleFunc("/api/settings/sharing", s.settingsHandler(s.requireAuth(s.handleSharingSetting)))
+	mux.HandleFunc("/api/settings/webhook-relay", s.settingsHandler(s.requireLocalhost(s.handleWebhookRelaySetting)))
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
-	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.requireAuth(s.handleWorktreeInheritPermissions))
-	mux.HandleFunc("/api/settings/auto-archive", s.requireAuth(s.handleAutoArchiveSettings))
-	mux.HandleFunc("/api/settings/archive-resurface", s.requireAuth(s.handleArchiveResurface))
-	mux.HandleFunc("/api/settings/model-fallthrough", s.requireAuth(s.handleModelFallthroughSettings))
+	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.settingsHandler(s.requireAuth(s.handleWorktreeInheritPermissions)))
+	mux.HandleFunc("/api/settings/auto-archive", s.settingsHandler(s.requireAuth(s.handleAutoArchiveSettings)))
+	mux.HandleFunc("/api/settings/archive-resurface", s.settingsHandler(s.requireAuth(s.handleArchiveResurface)))
+	mux.HandleFunc("/api/settings/model-fallthrough", s.settingsHandler(s.requireAuth(s.handleModelFallthroughSettings)))
 	// OpenCode database maintenance: stops opencode and rewrites its
 	// database, so every action is localhost-only.
 	mux.HandleFunc("/api/maintenance/opencode-db", s.get(s.handleMaintenanceStatus))

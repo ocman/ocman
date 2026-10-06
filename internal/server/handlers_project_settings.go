@@ -43,7 +43,15 @@ func (s *Server) getProjectSettings(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "reading project settings", err)
 		return
 	}
-	writeJSON(w, ps)
+	agent, err := s.defaultAgent(r.Context())
+	if err != nil {
+		serverError(w, "reading default agent", err)
+		return
+	}
+	writeJSON(w, struct {
+		state.ProjectSettings
+		DefaultAgent string `json:"defaultAgent"`
+	}{ps, agent})
 }
 
 func (s *Server) postProjectSettings(w http.ResponseWriter, r *http.Request) {

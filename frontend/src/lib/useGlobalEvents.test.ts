@@ -7,6 +7,8 @@ import { act, renderHook } from '@testing-library/react';
 // the module captures the mocked references.
 const notifyPromptDismissed = vi.fn();
 const recheckNotifyData = vi.fn();
+const clearSettingsCache = vi.fn();
+vi.mock('./projectSettingsCache', () => ({ clearSettingsCache: () => clearSettingsCache() }));
 
 vi.mock('./useToastNotify', () => ({
   notifyPromptDismissed: (...args: unknown[]) => notifyPromptDismissed(...args),
@@ -66,6 +68,16 @@ async function awayFor(ms: number) {
 }
 
 describe('useGlobalEvents connection', () => {
+  it('clears settings on SSE invalidation and reconnect', () => {
+    const { unmount } = renderHook(() => useGlobalEvents());
+    clearSettingsCache.mockClear();
+    const source = FakeEventSource.instances.at(-1)!;
+    act(() => source.listeners.get('ocman.settings.changed')!());
+    expect(clearSettingsCache).toHaveBeenCalledTimes(1);
+    act(() => source.open());
+    expect(clearSettingsCache).toHaveBeenCalledTimes(2);
+    unmount();
+  });
   it('delivers session start progress and ignores malformed payloads', () => {
     const progress = vi.fn();
     const unsubscribe = onSessionStartProgress(progress);

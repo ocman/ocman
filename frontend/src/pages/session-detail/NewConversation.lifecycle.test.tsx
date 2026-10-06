@@ -114,7 +114,7 @@ describe('new-conversation submission lifecycle', () => {
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     expect(api.startSession).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'box', platform: 'r-box:opencode', send: undefined }));
     expect(api.uploadComposerAttachment).toHaveBeenCalledWith('child', file, 'r-box:opencode');
-    expect(api.sendMessage).toHaveBeenCalledWith('child', expect.stringContaining('/box-cache/note.txt'), undefined, '', undefined, undefined, 'r-box:opencode');
+    expect(api.sendMessage).toHaveBeenCalledWith('child', expect.stringContaining('/box-cache/note.txt'), undefined, '', 'build', undefined, 'r-box:opencode');
   });
   it('accepts input before the catalog loads and submits once it arrives', async () => {
     const catalog = deferred<typeof prepared & { defaultAgent: string; defaultModel: string }>();
@@ -129,7 +129,7 @@ describe('new-conversation submission lifecycle', () => {
     expect(api.startSession).not.toHaveBeenCalled();
     await act(async () => catalog.resolve({ ...prepared, defaultAgent: 'plan', defaultModel: 'p/model' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledWith(expect.objectContaining({
-      send: expect.objectContaining({ message: 'start in plan mode', agent: 'plan', model: 'p/model' }),
+      send: expect.objectContaining({ message: 'start in plan mode', agent: 'build', model: 'p/model' }),
     })));
     expect(api.startSession).toHaveBeenCalledTimes(1);
   });
@@ -147,7 +147,7 @@ describe('new-conversation submission lifecycle', () => {
     await act(async () => catalog.resolve({ ...prepared, defaultAgent: 'plan', defaultModel: 'p/model' }));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     const [, , , model, agent] = vi.mocked(api.sendMessage).mock.calls[0];
-    expect({ model, agent }).toEqual({ model: 'p/model', agent: 'plan' });
+    expect({ model, agent }).toEqual({ model: 'p/model', agent: 'build' });
   });
 
   it('restores the draft when the page is left while a submission waits', async () => {
@@ -235,7 +235,7 @@ describe('new-conversation submission lifecycle', () => {
     await act(async () => launch.resolve(created));
     await waitFor(() => expect(api.uploadComposerAttachment).toHaveBeenCalledWith('child', file, 'opencode'));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('child', expect.stringContaining('/child/note.txt'), undefined,
-      '', undefined, undefined, 'opencode'));
+      '', 'build', undefined, 'opencode'));
   });
 
   it('retains an image-only failed send and its exact selections before navigation', async () => {
@@ -248,12 +248,12 @@ describe('new-conversation submission lifecycle', () => {
     await screen.findByAltText('Attachment 1');
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('child'));
-    expect(listFailedSends('child')).toEqual([expect.objectContaining({ text: '', error: 'upstream failed', model: 'p/m', agent: 'plan',
+    expect(listFailedSends('child')).toEqual([expect.objectContaining({ text: '', error: 'upstream failed', model: 'p/m', agent: 'build',
       images: [expect.objectContaining({ mime: 'image/png', url: expect.stringContaining('data:image/png') })] })]);
     expect(await screen.findByRole('alert')).toHaveTextContent('upstream failed');
     fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('child', '',
-      [expect.objectContaining({ mime: 'image/png' })], 'p/m', 'plan', undefined, 'opencode', undefined));
+      [expect.objectContaining({ mime: 'image/png' })], 'p/m', 'build', undefined, 'opencode', undefined));
     await waitFor(() => expect(listFailedSends('child')).toEqual([]));
   });
 
@@ -331,7 +331,7 @@ describe('new-conversation submission lifecycle', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('upstream failed');
       fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
       await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('child', 'unsent prompt', undefined,
-        '', undefined, undefined, 'opencode', undefined));
+        '', 'build', undefined, 'opencode', undefined));
       await waitFor(() => expect(listFailedSends('child')).toEqual([]));
     } finally {
       write.mockRestore();

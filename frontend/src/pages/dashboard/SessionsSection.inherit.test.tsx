@@ -19,6 +19,8 @@ import { useUiStore } from '../../lib/uiStore';
 
 // Mock the server-backed settings so these rows load and save known values.
 vi.mock('../../lib/api', () => ({
+  fetchJSON: vi.fn().mockResolvedValue({ defaultAgent: 'build' }),
+  postJSON: vi.fn(),
   api: {
     getWorktreeInheritPermissions: vi.fn(),
     setWorktreeInheritPermissions: vi.fn(),

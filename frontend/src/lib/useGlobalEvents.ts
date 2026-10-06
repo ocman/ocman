@@ -4,6 +4,7 @@ import { recheckNotifyData } from './useNotifyData';
 import { markBackendReachable, markBackendUnreachable } from './backendStatus';
 import { onPageResume } from './pageResume';
 import type { QueuedMessage, Session } from './api';
+import { clearSettingsCache } from './projectSettingsCache';
 
 /**
  * App-wide SSE subscriber for `/api/events`.
@@ -220,10 +221,12 @@ function open(): void {
   if (source) return;
   const next = new EventSource('/api/events');
   source = next;
+  next.addEventListener('ocman.settings.changed', clearSettingsCache);
   next.addEventListener('ocman.inbox.changed', () => {
     for (const cb of inboxChangedListeners) cb();
   });
   next.onopen = () => {
+    clearSettingsCache();
     reconnectAttempt = 0;
     markBackendReachable();
     // Reconcile consumers after the first open and every replacement stream.

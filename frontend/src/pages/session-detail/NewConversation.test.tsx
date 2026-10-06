@@ -7,10 +7,11 @@ import { useLaunchProgressStore } from '../../lib/launchProgressStore';
 import { listFailedSends, clearFailedSends } from '../../lib/failedSends';
 import { useFirstSubmission } from './firstSubmission';
 import { HeaderContext } from '../../lib/headerContext';
+import { clearSettingsCache } from '../../lib/projectSettingsCache';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
-  openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), caps: { shellExec: true },
+  openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), settings: vi.fn(), caps: { shellExec: true },
   progress: new Set<(id: string, step: string, state: string) => void>(),
 }));
 vi.mock('../../lib/useGlobalEvents', () => ({
@@ -21,7 +22,7 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 }));
 vi.mock('../../lib/api', () => ({
   api: { prepareSession: mocks.prepare, startSession: mocks.start, addFavorite: mocks.addFavorite, removeFavorite: mocks.removeFavorite },
-  fetchJSON: (url: string, signal?: AbortSignal) => url.startsWith('/api/worktree/list') ? mocks.worktrees(url, signal) : mocks.info(url, signal),
+  fetchJSON: (url: string, signal?: AbortSignal) => url.startsWith('/api/project/settings') ? mocks.settings(url) : url.startsWith('/api/worktree/list') ? mocks.worktrees(url, signal) : mocks.info(url, signal),
   postJSON: mocks.post,
 }));
 vi.mock('../../lib/apiStore', () => ({
@@ -56,6 +57,8 @@ const ready = () => waitFor(() => {
 describe('NewConversation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    clearSettingsCache();
+    mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'build' });
     mocks.progress.clear();
     clearDraft('new');
     clearDraft('child');
@@ -137,7 +140,7 @@ describe('NewConversation', () => {
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
     expect(composer.target).toBe('worktree');
     expect(composer.worktreesSupported).toBe(true);
-    expect(composer.activeAgent).toBe('plan');
+    expect(composer.activeAgent).toBe('build');
     expect(composer.selectedModel).toBe('prov/default');
     expect(composer.models).toEqual(['prov/default', 'prov/big']);
     expect(composer.commands).toEqual([{ name: 'review', description: 'Review', source: 'command' }]);
@@ -155,6 +158,19 @@ describe('NewConversation', () => {
     await act(async () => finish({ platform: 'r-machine:opencode', agents: [], commands: [], models: { models: [] }, projectDefaultModel: 'p/configured' }));
     expect(composer.selectedModel).toBe('p/manual');
     expect(composer.selectedAgent).toBe('plan');
+  });
+
+  it('uses the configured agent, refreshes on invalidation, and preserves an explicit pick', async () => {
+    mocks.settings.mockResolvedValue({ defaultAgent: 'custom' });
+    mount();
+    await ready();
+    expect(composer.activeAgent).toBe('custom');
+    mocks.settings.mockResolvedValue({ defaultAgent: 'plan' });
+    act(() => clearSettingsCache());
+    await waitFor(() => expect(composer.activeAgent).toBe('plan'));
+    act(() => composer.onAgentChange!('build'));
+    await act(() => composer.onSend!('implement'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ send: expect.objectContaining({ agent: 'build' }) }));
   });
 
   it('creates the session at the target with the first prompt and moves there', async () => {
@@ -224,7 +240,7 @@ describe('NewConversation', () => {
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/session/child/command?platform=r-machine%3Aopencode',
       expect.objectContaining({ command: 'review', arguments: 'main' }), { parseJSON: false }));
     await act(() => composer.onShell!('ls'));
-    expect(mocks.post).toHaveBeenCalledWith('/api/session/child/shell?platform=r-machine%3Aopencode', { command: 'ls', agent: 'plan' }, { parseJSON: false });
+    expect(mocks.post).toHaveBeenCalledWith('/api/session/child/shell?platform=r-machine%3Aopencode', { command: 'ls', agent: 'build' }, { parseJSON: false });
 
     mocks.start.mockRejectedValueOnce(new Error('worktree create/launch failed'));
     let failure: unknown;

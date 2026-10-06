@@ -464,6 +464,7 @@ flowchart TD
     Reporter --> API
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
+    Hub -->|ocman.settings.changed: clear settings cache| Stores
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
@@ -474,6 +475,14 @@ flowchart TD
   `CopyButton` add action feedback; copying is confirmed only after success.
   `Pagination` shares previous/next controls while callers own indexing, page
   boundaries, totals, and requests.
+- **New-conversation settings.** Settings → Sessions → Default agent starts at
+  `build` and accepts a project agent name. An explicit composer selection wins.
+  `projectSettingsCache` shares the project settings fetch across conversations
+  and sibling worktrees, keyed by owner and project root. Successful global or
+  project setting saves broadcast `ocman.settings.changed`, which clears every
+  cached project setting and refreshes mounted composers. Reconnecting SSE also
+  clears the cache to recover missed saves; in-flight reads cannot restore stale
+  settings after invalidation. The preference is stored in the hub's `state.db`.
 - **Selection and overlays.** `SegmentedControl` uses native radios for filters.
   `Tabs` and `DropdownMenu` wrap Radix UI for keyboard navigation, focus, and
   accessible associations, styled with the app's CSS. Tabs activate on click,

@@ -10,6 +10,7 @@ import { useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { api, type ModelFallthroughSettings } from '../../lib/api';
 import { SpeechSettings } from '../../components/SpeechSettings';
+import { DefaultAgentSetting } from '../../components/DefaultAgentSetting';
 import {
   notificationsSupported,
   requestNotificationPermission,
@@ -147,6 +148,7 @@ export function SessionsSection() {
 
   return (
     <>
+      <DefaultAgentSetting />
       <SettingRow setting="start-screen-time-range">
         <SettingNumber
           ariaLabel="Start screen time range in days"

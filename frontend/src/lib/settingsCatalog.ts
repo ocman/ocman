@@ -29,6 +29,13 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'default-agent': {
+    group: 'sessions',
+    title: 'Default agent',
+    description: 'Agent used for new conversations unless you choose another agent in the composer. Defaults to build. Enter an agent name available in your project.',
+    example: 'Set plan to start new conversations in planning mode, or build to start implementing immediately.',
+    keywords: 'new session option alt t role',
+  },
   'system-notifications': {
     group: 'notifications',
     title: 'System notifications',

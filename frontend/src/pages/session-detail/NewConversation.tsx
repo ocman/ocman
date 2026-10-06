@@ -14,6 +14,7 @@ import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
+import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSettingsCache';
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
@@ -58,6 +59,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const [catalog, setCatalog] = useState<PrepareSessionResponse>();
   const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const settingsRevision = useSettingsRevision();
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
 
@@ -79,15 +81,18 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     const controller = new AbortController();
     setCatalog(undefined);
     setCatalogError('');
-    api.prepareSession({ directory, remoteId, platform: params.platform }, controller.signal).then((result) => {
+    Promise.all([
+      api.prepareSession({ directory, remoteId, platform: params.platform }, controller.signal),
+      loadProjectSettings(directory, remoteId),
+    ]).then(([result, settings]) => {
       if (controller.signal.aborted) return;
-      setCatalog(result);
+      setCatalog({ ...result, defaultAgent: settings.defaultAgent || 'build' });
     }).catch((err) => {
       if (controller.signal.aborted) return;
       setCatalogError(err instanceof Error ? err.message : String(err));
     });
     return () => controller.abort();
-  }, [directory, remoteId, params.platform, catalogAttempt]);
+  }, [directory, remoteId, params.platform, catalogAttempt, settingsRevision]);
 
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');

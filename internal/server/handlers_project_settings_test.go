@@ -27,13 +27,13 @@ func TestHandleProjectSettings(t *testing.T) {
 		}
 	}
 
-	expect(do(http.MethodGet, "/src/foo", ""), 200, `{"models":[],"off":false}`)
+	expect(do(http.MethodGet, "/src/foo", ""), 200, `{"models":[],"off":false,"defaultAgent":"build"}`)
 	if got := srv.projectDefaultModel(t.Context(), "/src/foo"); got != "" {
 		t.Fatalf("unconfigured default = %q", got)
 	}
 
 	expect(do(http.MethodPost, "", `{"directory":"/src/.worktrees/foo/wt","models":["a/b","c/d"],"off":true}`), 200, "")
-	expect(do(http.MethodGet, "/src/foo", ""), 200, `{"models":["a/b","c/d"],"off":true}`)
+	expect(do(http.MethodGet, "/src/foo", ""), 200, `{"models":["a/b","c/d"],"off":true,"defaultAgent":"build"}`)
 	// The save must drop the cached empty list for the whole project.
 	if got := srv.projectDefaultModel(t.Context(), "/src/.worktrees/foo/x"); got != "a/b" {
 		t.Fatalf("default after save = %q, want a/b", got)
@@ -43,7 +43,7 @@ func TestHandleProjectSettings(t *testing.T) {
 	}
 
 	expect(do(http.MethodPost, "", `{"directory":"/src/foo","models":["a/b","a/b"]}`), 400, "")
-	expect(do(http.MethodGet, "/src/.worktrees/foo/other", ""), 200, `{"models":["a/b","c/d"],"off":true}`)
+	expect(do(http.MethodGet, "/src/.worktrees/foo/other", ""), 200, `{"models":["a/b","c/d"],"off":true,"defaultAgent":"build"}`)
 
 	expect(do(http.MethodPost, "", `{"directory":"/src/foo","models":[]}`), 200, "")
 	if _, ok, _ := srv.stateDB.GetSetting(t.Context(), "project:/src/foo"); ok {
