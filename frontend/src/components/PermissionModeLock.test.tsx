@@ -87,6 +87,18 @@ describe('PermissionModeLock', () => {
     expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument();
   });
 
+  it('focuses Confirm so Enter applies yolo', async () => {
+    getPermissionRules.mockResolvedValue({ rules: [] });
+    setPermissionRules.mockResolvedValue(undefined);
+    render(<PermissionModeLock sessionId="s1" />);
+    await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
+
+    await userEvent.click(screen.getByText('YOLO'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus());
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument());
+  });
+
   it('keeps the confirmation open and busy until yolo is saved', async () => {
     let finish!: () => void;
     getPermissionRules.mockResolvedValue({ rules: [] });

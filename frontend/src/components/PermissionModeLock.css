@@ -28,6 +28,7 @@
 .oc-permission-mode-plan { color: color-mix(in srgb, var(--mauve) 55%, var(--text-dim)); }
 .oc-permission-mode-auto-edit { color: color-mix(in srgb, var(--green) 55%, var(--text-dim)); }
 .oc-permission-mode-yolo { color: color-mix(in srgb, var(--yellow) 55%, var(--text-dim)); }
+.oc-cmd-backdrop.oc-permission-confirm-backdrop { align-items: center; padding-top: 0; }
 .oc-permission-confirm { width: 380px; }
 .oc-permission-confirm-body { display: flex; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
 .oc-permission-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; }

@@ -112,7 +112,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       {confirmMode && (
         <Modal
           label="Confirm permission mode"
-          backdropClassName="oc-cmd-backdrop"
+          backdropClassName="oc-cmd-backdrop oc-permission-confirm-backdrop"
           dialogClassName="oc-cmd-palette oc-permission-confirm"
           onClose={() => setConfirmMode(null)}
           canClose={!saving}
@@ -126,7 +126,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
           </div>
           <div className="oc-permission-confirm-actions">
             <Button size="small" disabled={saving} onClick={() => setConfirmMode(null)}>Cancel</Button>
-            <SubmitButton size="small" variant="danger" pendingLabel="Applying…" onClick={() => apply(confirmMode.id)}>Confirm</SubmitButton>
+            <SubmitButton size="small" variant="danger" data-autofocus pendingLabel="Applying…" onClick={() => apply(confirmMode.id)}>Confirm</SubmitButton>
           </div>
         </Modal>
       )}

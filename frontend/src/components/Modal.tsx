@@ -69,7 +69,9 @@ export function Modal({
     }
 
     if (!dialog.contains(document.activeElement)) {
-      (dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus();
+      // `data-autofocus` marks the default control. React's autoFocus is
+      // not enough: a closing sibling modal can restore focus after it.
+      (dialog.querySelector<HTMLElement>('[data-autofocus]') ?? dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus();
     }
 
     return () => {
