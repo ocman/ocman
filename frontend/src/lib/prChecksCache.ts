@@ -3,7 +3,8 @@ import type { CIState, PRChecks } from './upstreamApi';
 // Settled CI results keyed by `host/repo@sha`, so a commit's status is fetched
 // once per repository; unsettled results are never stored (callers poll). A
 // rerun on the same SHA is picked up by the refresh button, which clears it.
-const STORAGE_KEY = 'ocman.prChecks.v2';
+// v3 discards snapshots written before GitHub check pagination was complete.
+const STORAGE_KEY = 'ocman.prChecks.v3';
 const MAX_ENTRIES = 1000;
 
 /** How often a visible row re-asks for a non-final (pending/unknown) status. */

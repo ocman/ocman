@@ -48,82 +48,98 @@ func (c *Client) Checks(ctx context.Context, repo, sha string) (forge.CIStatus, 
 // commitStatuses fetches the legacy combined commit status. Returns an
 // empty slice (not an error) when the commit has no statuses.
 func (c *Client) commitStatuses(ctx context.Context, repo, sha string) ([]forge.Check, forge.RateLimit, error) {
-	path := fmt.Sprintf("/repos/%s/commits/%s/status", repo, sha)
-	body, rl, status, err := c.fetch(ctx, path)
-	if err != nil {
-		return nil, rl, err
-	}
-	if status == http.StatusTooManyRequests {
-		return nil, rl, nil
-	}
-	if status == http.StatusNotFound {
-		// No commit / no statuses — treat as "no checks".
-		return nil, rl, nil
-	}
-	if status != http.StatusOK {
-		return nil, rl, fmt.Errorf("github api %s: status %d", path, status)
-	}
+	var out []forge.Check
+	for page := 1; ; page++ {
+		path := fmt.Sprintf("/repos/%s/commits/%s/status?per_page=100&page=%d", repo, sha, page)
+		body, rl, status, err := c.fetch(ctx, path)
+		if err != nil {
+			return nil, rl, err
+		}
+		if status == http.StatusTooManyRequests {
+			return nil, rl, nil
+		}
+		if status == http.StatusNotFound && page == 1 {
+			// No commit / no statuses — treat as "no checks".
+			return nil, rl, nil
+		}
+		if status != http.StatusOK {
+			return nil, rl, fmt.Errorf("github api %s: status %d", path, status)
+		}
 
-	var raw struct {
-		Statuses []struct {
-			State     string `json:"state"` // success | pending | failure | error
-			Context   string `json:"context"`
-			TargetURL string `json:"target_url"`
-		} `json:"statuses"`
-	}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, rl, fmt.Errorf("decoding commit status: %w", err)
-	}
+		var raw struct {
+			TotalCount int `json:"total_count"`
+			Statuses   []struct {
+				State     string `json:"state"` // success | pending | failure | error
+				Context   string `json:"context"`
+				TargetURL string `json:"target_url"`
+			} `json:"statuses"`
+		}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			return nil, rl, fmt.Errorf("decoding commit status: %w", err)
+		}
 
-	out := make([]forge.Check, 0, len(raw.Statuses))
-	for _, s := range raw.Statuses {
-		out = append(out, forge.Check{
-			Name:  s.Context,
-			State: ghStatusState(s.State),
-			URL:   s.TargetURL,
-		})
+		for _, s := range raw.Statuses {
+			out = append(out, forge.Check{
+				Name:  s.Context,
+				State: ghStatusState(s.State),
+				URL:   s.TargetURL,
+			})
+		}
+		if len(out) >= raw.TotalCount {
+			return out, rl, nil
+		}
+		if len(raw.Statuses) == 0 {
+			return nil, rl, fmt.Errorf("github api %s: incomplete commit statuses", path)
+		}
 	}
-	return out, rl, nil
 }
 
 // checkRuns fetches check runs (GitHub Actions etc.) for the commit.
 func (c *Client) checkRuns(ctx context.Context, repo, sha string) ([]forge.Check, forge.RateLimit, error) {
-	path := fmt.Sprintf("/repos/%s/commits/%s/check-runs", repo, sha)
-	body, rl, status, err := c.fetch(ctx, path)
-	if err != nil {
-		return nil, rl, err
-	}
-	if status == http.StatusTooManyRequests {
-		return nil, rl, nil
-	}
-	if status == http.StatusNotFound {
-		return nil, rl, nil
-	}
-	if status != http.StatusOK {
-		return nil, rl, fmt.Errorf("github api %s: status %d", path, status)
-	}
+	var out []forge.Check
+	for page := 1; ; page++ {
+		path := fmt.Sprintf("/repos/%s/commits/%s/check-runs?per_page=100&page=%d", repo, sha, page)
+		body, rl, status, err := c.fetch(ctx, path)
+		if err != nil {
+			return nil, rl, err
+		}
+		if status == http.StatusTooManyRequests {
+			return nil, rl, nil
+		}
+		if status == http.StatusNotFound && page == 1 {
+			return nil, rl, nil
+		}
+		if status != http.StatusOK {
+			return nil, rl, fmt.Errorf("github api %s: status %d", path, status)
+		}
 
-	var raw struct {
-		CheckRuns []struct {
-			Name       string `json:"name"`
-			Status     string `json:"status"`     // queued | in_progress | completed
-			Conclusion string `json:"conclusion"` // success | failure | neutral | cancelled | timed_out | action_required | stale | skipped
-			HTMLURL    string `json:"html_url"`
-		} `json:"check_runs"`
-	}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, rl, fmt.Errorf("decoding check-runs: %w", err)
-	}
+		var raw struct {
+			TotalCount int `json:"total_count"`
+			CheckRuns  []struct {
+				Name       string `json:"name"`
+				Status     string `json:"status"`     // queued | in_progress | completed
+				Conclusion string `json:"conclusion"` // success | failure | neutral | cancelled | timed_out | action_required | stale | skipped
+				HTMLURL    string `json:"html_url"`
+			} `json:"check_runs"`
+		}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			return nil, rl, fmt.Errorf("decoding check-runs: %w", err)
+		}
 
-	out := make([]forge.Check, 0, len(raw.CheckRuns))
-	for _, cr := range raw.CheckRuns {
-		out = append(out, forge.Check{
-			Name:  cr.Name,
-			State: ghCheckRunState(cr.Status, cr.Conclusion),
-			URL:   cr.HTMLURL,
-		})
+		for _, cr := range raw.CheckRuns {
+			out = append(out, forge.Check{
+				Name:  cr.Name,
+				State: ghCheckRunState(cr.Status, cr.Conclusion),
+				URL:   cr.HTMLURL,
+			})
+		}
+		if len(out) >= raw.TotalCount {
+			return out, rl, nil
+		}
+		if len(raw.CheckRuns) == 0 {
+			return nil, rl, fmt.Errorf("github api %s: incomplete check runs", path)
+		}
 	}
-	return out, rl, nil
 }
 
 // ghStatusState maps a legacy commit-status state to a CIState.

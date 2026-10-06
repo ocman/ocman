@@ -55,11 +55,12 @@ describe('prChecksCache', () => {
     expect(getCachedPRChecks('a')).toBeUndefined();
   });
 
-  it('ignores the old SHA-only storage and survives corrupt storage', () => {
+  it('ignores old SHA-only and potentially incomplete storage and survives corrupt storage', () => {
     localStorage.setItem('ocman.prChecks.v1', JSON.stringify([['a', ok]]));
+    localStorage.setItem('ocman.prChecks.v2', JSON.stringify([['a', ok]]));
     resetPRChecksMemoryForTest();
     expect(getCachedPRChecks('a')).toBeUndefined();
-    localStorage.setItem('ocman.prChecks.v2', '{not json');
+    localStorage.setItem('ocman.prChecks.v3', '{not json');
     resetPRChecksMemoryForTest();
     expect(getCachedPRChecks('a')).toBeUndefined();
     cachePRChecks('a', ok);
