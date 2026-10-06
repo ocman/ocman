@@ -13,6 +13,7 @@ const lastTurnCompletedAtSQL = `COALESCE((
 			(json_extract(m.data, '$.time.completed') > 0
 				AND json_extract(m.data, '$.finish') NOT IN ('', 'tool-calls', 'unknown'))
 			OR json_extract(m.data, '$.error') IS NOT NULL
+			OR json_extract(m.data, '$.finish') = 'error'
 		)
 	ORDER BY m.time_created DESC, m.id DESC
 	LIMIT 1

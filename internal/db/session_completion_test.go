@@ -65,6 +65,10 @@ func TestSessionCompletionTimestamp(t *testing.T) {
 		"role": "assistant", "error": map[string]any{"name": "APIError"},
 	})
 	check(80)
+	insertMessage(t, d, "error-finish-only", "session", 85, map[string]any{
+		"role": "assistant", "finish": "error",
+	})
+	check(85)
 	insertMessage(t, d, "next-final", "session", 90, map[string]any{
 		"role": "assistant", "finish": "length", "time": map[string]any{"completed": 100},
 	})
