@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { fetchJSON, postJSON } from '../lib/api';
 import { clearSettingsCache, useSettingsRevision } from '../lib/projectSettingsCache';
 import { useSettingSave } from '../lib/useSaveStatus';
-import { SettingRow, SettingText } from './SettingRow';
+import { SettingRow, SettingSelect } from './SettingRow';
 import { InlineAlert } from './InlineAlert';
 
 export function DefaultAgentSetting() {
   const [agent, setAgent] = useState('build');
+  const [agents, setAgents] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -15,10 +16,11 @@ export function DefaultAgentSetting() {
   const save = useSettingSave();
   useEffect(() => {
     const controller = new AbortController();
-    fetchJSON<{ defaultAgent: string }>('/api/settings/default-agent', controller.signal).then((value) => {
+    fetchJSON<{ defaultAgent: string; agents?: string[] }>('/api/settings/default-agent', controller.signal).then((value) => {
       if (controller.signal.aborted) return;
       setError('');
       setAgent(value.defaultAgent);
+      setAgents(value.agents ?? ['build', 'plan']);
       setLoaded(true);
     }).catch((error) => {
       if (!controller.signal.aborted) {
@@ -33,7 +35,9 @@ export function DefaultAgentSetting() {
       {error && <InlineAlert onRetry={() => setAttempt((value) => value + 1)}>{error}</InlineAlert>}
       {saveError && <InlineAlert>{saveError}</InlineAlert>}
     </>}>
-      <SettingText value={agent} ariaLabel="Default agent" disabled={!loaded || save.state === 'saving'} save={save}
+      <SettingSelect value={agent} options={agents.map((value) => ({ value, label: value }))}
+        ariaLabel="Default agent" placeholder="Choose an agent" searchLabel="Search agents"
+        disabled={!loaded || save.state === 'saving'} save={save}
         onSave={async (defaultAgent) => {
           setSaveError('');
           try {

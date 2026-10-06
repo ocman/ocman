@@ -32,7 +32,7 @@ export const SETTINGS = {
   'default-agent': {
     group: 'sessions',
     title: 'Default agent',
-    description: 'Agent used for new conversations unless you choose another agent in the composer. Defaults to build. Enter an agent name available in your project.',
+    description: 'Agent used for new conversations unless you choose another agent in the composer. Defaults to build. Choose from the known agents on this machine.',
     example: 'Set plan to start new conversations in planning mode, or build to start implementing immediately.',
     keywords: 'new session option alt t role',
   },

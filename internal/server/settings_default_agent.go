@@ -3,11 +3,36 @@ package server
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 const defaultAgentKey = "session.default_agent"
+
+var defaultAgentOptions = knownAgentOptions
+var defaultAgentPorts = opencode.DiscoverOpenCodePorts
+var defaultAgentCatalog = opencode.ProjectCatalog
+
+func knownAgentOptions(ctx context.Context) []string {
+	known := map[string]bool{"build": true, "plan": true}
+	for _, port := range defaultAgentPorts() {
+		agents, _, err := defaultAgentCatalog(ctx, "http://127.0.0.1:"+port, "")
+		if err == nil {
+			for _, agent := range agents {
+				known[agent] = true
+			}
+		}
+	}
+	agents := make([]string, 0, len(known))
+	for agent := range known {
+		agents = append(agents, agent)
+	}
+	sort.Strings(agents)
+	return agents
+}
 
 func (s *Server) defaultAgent(ctx context.Context) (string, error) {
 	value, _, err := s.stateDB.GetSetting(ctx, defaultAgentKey)
@@ -29,7 +54,7 @@ func (s *Server) handleDefaultAgent(w http.ResponseWriter, r *http.Request) {
 			serverError(w, "reading default agent", err)
 			return
 		}
-		writeJSON(w, map[string]string{"defaultAgent": agent})
+		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context())})
 	case http.MethodPost:
 		var body struct {
 			DefaultAgent string `json:"defaultAgent"`

@@ -1,12 +1,41 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestKnownAgentOptions(t *testing.T) {
+	ports, catalog := defaultAgentPorts, defaultAgentCatalog
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	defaultAgentPorts = func() map[string]string { return map[string]string{"/a": "1001", "/b": "1002", "/c": "1003"} }
+	defaultAgentCatalog = func(_ context.Context, endpoint, directory string) ([]string, []string, error) {
+		if directory != "" {
+			t.Fatal(directory)
+		}
+		switch endpoint {
+		case "http://127.0.0.1:1001":
+			return []string{"build", "review"}, nil, nil
+		case "http://127.0.0.1:1002":
+			return []string{"review", "custom"}, nil, nil
+		default:
+			return nil, nil, errors.New("offline")
+		}
+	}
+	if got := knownAgentOptions(context.Background()); !reflect.DeepEqual(got, []string{"build", "custom", "plan", "review"}) {
+		t.Fatal(got)
+	}
+	defaultAgentPorts = func() map[string]string { return nil }
+	if got := knownAgentOptions(context.Background()); !reflect.DeepEqual(got, []string{"build", "plan"}) {
+		t.Fatal(got)
+	}
+}
 
 func TestProjectSettingsDefaultAgent(t *testing.T) {
 	srv := &Server{stateDB: openTestStateDB(t)}
@@ -18,6 +47,9 @@ func TestProjectSettingsDefaultAgent(t *testing.T) {
 }
 
 func TestDefaultAgentSetting(t *testing.T) {
+	previous := defaultAgentOptions
+	t.Cleanup(func() { defaultAgentOptions = previous })
+	defaultAgentOptions = func(context.Context) []string { return []string{"build", "plan", "custom-agent"} }
 	srv := &Server{stateDB: openTestStateDB(t)}
 	for _, tc := range []struct {
 		method, body, want string
@@ -37,6 +69,9 @@ func TestDefaultAgentSetting(t *testing.T) {
 		srv.handleDefaultAgent(rec, httptest.NewRequest(tc.method, "/", strings.NewReader(tc.body)))
 		if rec.Code != tc.status || !strings.Contains(rec.Body.String(), tc.want) {
 			t.Fatalf("%s %s: %d %s", tc.method, tc.body, rec.Code, rec.Body)
+		}
+		if tc.method == "GET" && !strings.Contains(rec.Body.String(), `"agents":["build","plan","custom-agent"]`) {
+			t.Fatal(rec.Body)
 		}
 	}
 	rec := httptest.NewRecorder()
