@@ -198,14 +198,14 @@ export function Pane({
               {upstreamError} <button type="button" onClick={refreshUpstreams}>Retry</button>
             </div>
           )}
-          {tab === 'upstream' && !upstreamLoading && !upstreamError && (
+          {tab === 'upstream' && (
             <UpstreamPane
               directory={upstreamTarget.directory}
               currentDirectory={directory}
               actionsEnabled={session?.id === sessionId && !!directory}
               remoteId={upstreamTarget.remoteId}
               upstreams={upstreams}
-              embedded
+              upstreamsReady={!upstreamLoading && !upstreamError}
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}

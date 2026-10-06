@@ -7,6 +7,7 @@ import * as upstreamApi from '../../lib/upstreamApi';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { _resetForgeUserCacheForTests } from '../../lib/useForgeUser';
 import { cachePRChecks, getCachedPRChecks } from '../../lib/prChecksCache';
+import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 
 const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], page: 1, hasMore: false, setPage: vi.fn() }));
 
@@ -28,6 +29,8 @@ const upstreams = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  useUpstreamPreferences.setState(useUpstreamPreferences.getInitialState());
   _resetForgeUserCacheForTests();
   upstreamListMock.items = [];
   upstreamListMock.page = 1;
@@ -36,6 +39,38 @@ beforeEach(() => {
 });
 
 describe('UpstreamPane owner-scoped resources', () => {
+  it('keeps the selected tab and independent filters across projects and pane reopening', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
+    await user.click(screen.getByTestId('upstream-filter-closed'));
+    await user.click(screen.getByTestId('upstream-filter-mine'));
+    await user.click(screen.getByRole('tab', { name: 'Issues' }));
+    await user.click(screen.getByTestId('upstream-filter-all'));
+    unmount();
+
+    render(<UpstreamPane directory="/other" remoteId="other-box" upstreams={upstreams} />);
+    expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('upstream-filter-all')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Mine' })).not.toBeChecked();
+    await user.click(screen.getByRole('tab', { name: 'PRs' }));
+    expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Mine' })).toBeChecked();
+  });
+
+  it('hides unsupported-project controls without forgetting preferences', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
+    await user.click(screen.getByRole('tab', { name: 'Issues' }));
+    await user.click(screen.getByTestId('upstream-filter-closed'));
+
+    rerender(<UpstreamPane directory="/unsupported" remoteId="box" upstreams={[]} />);
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
+    rerender(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
+    expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('hides pagination on the only page', () => {
     render(<UpstreamPane directory="/repo" remoteId="box" upstreams={[upstreams[0]]} />);
     expect(screen.queryByRole('group', { name: 'Pagination' })).not.toBeInTheDocument();

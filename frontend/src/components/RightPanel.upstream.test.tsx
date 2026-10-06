@@ -8,6 +8,7 @@ import { useUiStore } from '../lib/uiStore';
 import * as upstreamApi from '../lib/upstreamApi';
 import { useGitInfo } from '../lib/useGitInfo';
 import type { Session } from '../lib/api';
+import { useUpstreamPreferences } from '../lib/upstreamPreferences';
 
 vi.mock('../lib/useGitInfo', () => ({
   useGitInfo: vi.fn(() => ({ infos: {}, loading: false, error: null })),
@@ -40,6 +41,7 @@ const panel = (s: Session | undefined, id = s?.id ?? 'pending') => (
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  useUpstreamPreferences.setState(useUpstreamPreferences.getInitialState());
   useUiStore.persist.setOptions({
     storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   });
@@ -92,6 +94,31 @@ it('reloads for a session of a different project', async () => {
 
   await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(2));
   expect(vi.mocked(upstreamApi.fetchUpstreams).mock.calls[1][0]).toBe('/other');
+});
+
+it('keeps upstream controls during detection and hides them only for an unsupported project', async () => {
+  vi.spyOn(upstreamApi, 'fetchIssues').mockResolvedValue({
+    issues: [], pagination: { page: 1, hasMore: false }, rateLimit: { limited: false },
+  });
+  const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
+  await screen.findByText('PR 1');
+  await userEvent.click(screen.getByRole('tab', { name: 'Issues' }));
+  await userEvent.click(screen.getByTestId('upstream-filter-closed'));
+  let resolve!: (upstreams: upstreamApi.Upstream[]) => void;
+  vi.mocked(upstreamApi.fetchUpstreams).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+
+  rerender(panel(session('s2', '/other', 'other-proj')));
+  expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.queryByText('No supported upstream detected')).not.toBeInTheDocument();
+  await act(async () => resolve([]));
+  expect(screen.getByText('No supported upstream detected')).toBeInTheDocument();
+  expect(screen.queryByRole('tab', { name: 'Issues' })).not.toBeInTheDocument();
+
+  rerender(panel(session('s3', '/third', 'third-proj')));
+  await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(3));
+  expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
 });
 
 it('does not flash upstream detection during a fast project switch', async () => {

@@ -6,6 +6,7 @@ import { useGitInfo } from '../../lib/useGitInfo';
 import { ProjectLabel } from '../ProjectLabel';
 import { UpstreamRemoteGroup } from './UpstreamRemoteGroup';
 import { clearPRChecksCache } from '../../lib/prChecksCache';
+import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 
 interface UpstreamPaneProps {
@@ -25,6 +26,8 @@ interface UpstreamPaneProps {
   actionsEnabled?: boolean;
   remoteId: string;
   upstreams: Upstream[];
+  /** Hide controls only after detection confirms there are no supported upstreams. */
+  upstreamsReady?: boolean;
   embedded?: boolean;
   // RightPanel API parity. PaneSummary isn't meaningful for the
   // upstream view (no +/- diff counts) so we emit zeros once on
@@ -58,6 +61,7 @@ export function UpstreamPane({
   actionsEnabled = true,
   remoteId,
   upstreams,
+  upstreamsReady = true,
   onRefresh,
   onLoadingChange,
   onSummaryChange,
@@ -66,11 +70,8 @@ export function UpstreamPane({
   const currentBranch = currentDirectory ? gitInfos[currentDirectory]?.branch : undefined;
   const launchDirectory = actionsEnabled ? currentDirectory : undefined;
 
-  // Independent filter state per tab.
-  const [prState, setPRState] = useState<StateFilter>('open');
-  const [issueState, setIssueState] = useState<StateFilter>('open');
-  const [prMine, setPRMine] = useState(false);
-  const [issueMine, setIssueMine] = useState(false);
+  const { tab, prState, issueState, prMine, issueMine } = useUpstreamPreferences((state) => state.preferences);
+  const setPreferences = useUpstreamPreferences((state) => state.setPreferences);
 
   // Tell the parent we have no diff summary to contribute. Done once
   // because the value never changes.
@@ -81,7 +82,7 @@ export function UpstreamPane({
   // No remote → explain instead of rendering tabs / filters / lists.
   // The pane stays available in the strip so users can discover the
   // feature even on unsupported projects.
-  if (upstreams.length === 0) {
+  if (upstreamsReady && upstreams.length === 0) {
     return (
       <div className="oc-upstream-pane" data-testid="upstream-pane">
         <NoUpstreamMessage directory={directory} />
@@ -90,7 +91,7 @@ export function UpstreamPane({
   }
 
   return (
-    <Tabs defaultValue="prs" className="oc-upstream-pane" data-testid="upstream-pane">
+    <Tabs value={tab} onValueChange={(value) => setPreferences({ tab: value === 'issues' ? 'issues' : 'prs' })} className="oc-upstream-pane" data-testid="upstream-pane">
       <TabsList aria-label="Pull requests and issues">
         <TabsTrigger value="prs" data-testid="upstream-tab-prs">PRs</TabsTrigger>
         <TabsTrigger value="issues" data-testid="upstream-tab-issues">Issues</TabsTrigger>
@@ -105,9 +106,9 @@ export function UpstreamPane({
           remoteId={remoteId}
           upstreams={upstreams}
           state={prState}
-          onStateChange={setPRState}
+          onStateChange={(prState) => setPreferences({ prState })}
           mine={prMine}
-          onMineChange={setPRMine}
+          onMineChange={(prMine) => setPreferences({ prMine })}
           onRefresh={onRefresh}
           onLoadingChange={onLoadingChange}
           currentBranch={currentBranch}
@@ -122,9 +123,9 @@ export function UpstreamPane({
           remoteId={remoteId}
           upstreams={upstreams}
           state={issueState}
-          onStateChange={setIssueState}
+          onStateChange={(issueState) => setPreferences({ issueState })}
           mine={issueMine}
-          onMineChange={setIssueMine}
+          onMineChange={(issueMine) => setPreferences({ issueMine })}
           onRefresh={onRefresh}
           onLoadingChange={onLoadingChange}
           currentBranch={currentBranch}

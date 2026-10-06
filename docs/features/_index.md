@@ -63,6 +63,11 @@ in a sidebar pane. Expand a row to read the body, then launch a session in
 the project, or check the PR branch out into a fresh worktree. The prompt
 comes from a template you control in **Settings**.
 
+The selected PRs/Issues tab and each tab's state and Mine filters are saved
+in your browser across projects, pane reopening, and page reloads. Controls
+stay visible during upstream detection and hide when no supported upstream
+is found, without clearing your preferences.
+
 Each PR shows its CI status as soon as its row is visible. A running build is
 re-checked every 15 seconds while the row stays on screen. Once every check
 has finished, the result is remembered for that commit (also across reloads)
