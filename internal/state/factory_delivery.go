@@ -66,6 +66,17 @@ func (d *DB) FactoryAttemptHasRecoveryResponse(ctx context.Context, attemptID, r
 // Recheck the live graph under the claim transaction. Cached delivery edges are
 // for display, not authority to skip work committed after their last refresh.
 func validateFactoryDeliveryOrder(ctx context.Context, tx *sql.Tx, epicID, project, kind string) error {
+	if kind == "delivery" {
+		// An old active validator can finish after approval. Fence that second
+		// window inside the claim transaction, without trusting reconciliation.
+		var stale bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(`+staleFactoryVerificationsSQL+`)`, epicID).Scan(&stale); err != nil {
+			return err
+		}
+		if stale {
+			return errors.New("factory delivery requires verification of the approved graph revision")
+		}
+	}
 	issues, err := listFactoryIssues(ctx, tx, epicID)
 	if err != nil {
 		return err

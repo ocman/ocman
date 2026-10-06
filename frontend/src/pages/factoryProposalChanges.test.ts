@@ -6,6 +6,14 @@ import { factoryGraphModel, proposalIssues } from './factoryGraph';
 const issue = (id: string, overrides: Partial<FactoryIssue> = {}): FactoryIssue => ({ id, epicId: 'epic', project: '/repo', kind: 'task', title: id, status: 'open', ...overrides });
 const manifest = (issues: FactoryIssue[]): FactoryProposal['manifest'] => ({ epicId: 'epic', molId: 'mol', project: '/repo', nodes: [], issues });
 
+it.each(['snapshot', 'initial plan'])('counts a link-only amendment against %s as a connection, not new work', (format) => {
+  const old: FactoryProposal['manifest'] = format === 'snapshot' ? manifest([issue('work')]) : { epicId: 'epic', molId: 'mol', project: '/repo', nodes: [{ key: 'work', type: 'implementation', requirement: 'required' }] };
+  const next = { ...manifest([issue('work', { manifestKey: 'work', dependsOn: [{ id: 'external', type: 'blocks' }] })]), externalIssues: [issue('external', { epicId: 'other', requirement: 'reference' })] };
+  expect(proposalChanges(next, old).addedIssues.size).toBe(0);
+  expect(proposalChanges(next, old).addedEdges).toEqual(new Set(['blocks:external->work']));
+  expect(proposalIssues(next).some((item) => item.id === 'external')).toBe(true);
+});
+
 it('shows a second dependency type and dependencies overlapping hierarchy', () => {
   const old = manifest([issue('parent'), issue('work', { dependsOn: [{ id: 'parent', type: 'blocks' }] })]);
   const next = manifest([issue('parent'), issue('work', { parentId: 'parent', dependsOn: [{ id: 'parent', type: 'blocks' }, { id: 'parent', type: 'on_failure' }] })]);

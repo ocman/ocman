@@ -112,6 +112,17 @@ it('renders all dependency types on a shared pair in a readable approval label',
   expect(preview.getByLabelText('Proposal additions')).toHaveTextContent('0 added issues · 2 added connections');
 });
 
+it('shows a link-only amendment as one added connection without new Issue badges', async () => {
+  const old = { ...original, manifest: { ...original.manifest, issues: [pending.manifest.issues![0]] } };
+  const next = { ...pending, manifest: { ...pending.manifest, issues: [{ ...pending.manifest.issues![0], dependsOn: [{ id: 'other.1', type: 'blocks' }] }], externalIssues: [{ id: 'other.1', epicId: 'other', project: '/other', kind: 'task', title: 'Existing external blocker', status: 'open', requirement: 'reference' }] } };
+  vi.mocked(api.factoryProposals).mockResolvedValue([old, next]);
+  mount();
+  const preview = within(await screen.findByLabelText('Proposed plan'));
+  expect(await preview.findByText('other: Existing external blocker')).toBeInTheDocument();
+  expect(preview.getByLabelText('Proposal additions')).toHaveTextContent('0 added issues · 1 added connections');
+  expect(preview.queryByText('Added', { exact: true })).not.toBeInTheDocument();
+});
+
 it.each(['p/terra', 'Runtime default'])('submits an explicit replacement %s on a reopened gate', async (choice) => {
   vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { ...epic.planGate!, implementationModel: 'p/sol' }, attempts: [{ id: 'attempt', workId: 'work', phase: 'terminal', session: { id: 'session', platform: 'opencode' } }] });
   vi.mocked(api.sessionModels).mockResolvedValue({ models: [{ provider: 'p', model: 'sol' }, { provider: 'p', model: 'terra' }], hasProviders: true });

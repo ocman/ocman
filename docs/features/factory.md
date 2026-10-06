@@ -359,8 +359,8 @@ proposal history survive a restart. Agents cannot approve their own changes.
 Approving a graph revision does not complete any active scope-planning session.
 Agent graph edits are available only after initial planning and materialization;
 before the first proposal, submit that proposal rather than editing live work.
-Proposed blocker removals stay effective for dependent work in other Epics until
-the source amendment is approved. Previously approved removals remain applied
+Blockers proposed for removal remain effective for dependent work in other Epics
+until the source amendment is approved. Previously approved removals remain applied
 when later amendments are proposed.
 
 An implementation agent that discovers another required repository can request

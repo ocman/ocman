@@ -317,6 +317,8 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 			if err := closePlanOnApprovalTx(ctx, tx, epicID, time.Now().UnixMilli()); err != nil {
 				return model.NativePlanGate{}, err
 			}
+		} else if err := reopenStaleFactoryVerificationsTx(ctx, tx, epicID); err != nil {
+			return model.NativePlanGate{}, err
 		}
 		if err := closeHandBuiltMaterializationTx(ctx, tx, epicID); err != nil {
 			return model.NativePlanGate{}, err

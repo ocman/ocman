@@ -118,17 +118,7 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 	if err != nil || len(steps) == 0 {
 		return false, err
 	}
-	// A validator may finish its old scope while an amendment awaits approval.
-	// Its recorded revision prevents that success from delivering a newer graph,
-	// even when the added work does not change the commit checkpoint.
-	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome = '', outcome_reason = 'Graph revision requires fresh verification'
-		WHERE epic_id = ? AND kind = 'task' AND status = 'closed' AND outcome = 'succeeded'
-		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)
-		AND EXISTS (SELECT 1 FROM factory_workflow_step w WHERE w.issue_id = factory_issue.id AND json_extract(w.definition_json, '$.kind') = 'verification')
-		AND EXISTS (SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision
-			WHERE g.epic_id = factory_issue.epic_id AND g.resolution = 'approved' AND json_type(p.manifest_json, '$.issues') = 'array'
-			AND g.proposal_revision <> COALESCE((SELECT json_extract(a.frozen_policy_json, '$.planRevision') FROM factory_attempt a
-				WHERE a.work_item_id = factory_issue.id AND a.terminal_outcome = 'succeeded' ORDER BY a.sequence DESC LIMIT 1), 0))`, epicID); err != nil {
+	if err := reopenStaleFactoryVerificationsTx(ctx, tx, epicID); err != nil {
 		return true, err
 	}
 	issues, err := listFactoryIssues(ctx, tx, epicID)
