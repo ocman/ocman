@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+// @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
+import { readFileSync } from 'node:fs';
 import { ProviderPreview } from './ProviderLinkPreview';
 import { CI_POLL_MS, cachePRChecks, clearPRChecksCache, getCachedPRChecks, prChecksCacheKey } from '../lib/prChecksCache';
 import { PreviewOwnerContext } from '../lib/previews';
@@ -28,6 +30,45 @@ const preview = {
 const key = prChecksCacheKey('code.example', 'o/r', 'abc123');
 const done = { state: 'success', checks: [{ name: 'build', state: 'success' }] };
 const response = (checks: unknown, stale = false) => ({ ok: true, json: async () => ({ previews: [{ state: 'ok', stale, checks }] }) });
+
+it.each([
+  ['Open', 'pending', false, 'rgb(255, 165, 0)', 'Checks running'],
+  ['Open', 'failure', false, 'rgb(255, 0, 0)', 'Some checks failed'],
+  ['Open', 'unknown', false, 'rgb(128, 128, 128)', 'No CI status'],
+  ['Open', 'success', true, 'rgb(128, 128, 128)', 'Failed to load checks'],
+  ['Merged', 'pending', false, 'rgb(128, 0, 128)', 'Checks running'],
+  ['Closed', 'pending', false, 'rgb(255, 0, 0)', 'Checks running'],
+] as const)('colors a %s PR with %s checks and error=%s', async (status, state, error, color, label) => {
+  vi.useFakeTimers();
+  const style = document.createElement('style');
+  const previewCSS: string = readFileSync('src/components/GitHubLinkPreview.css', 'utf8');
+  const colors: Record<string, string> = { '--gh-green': 'green', '--yellow': 'orange', '--gh-red': 'red', '--text-dim': 'gray', '--mauve': 'purple' };
+  style.textContent = previewCSS.replace(/var\((--[\w-]+)\)/g, (_value, token: string) => colors[token] ?? 'black');
+  document.head.append(style);
+  const fetch = vi.fn();
+  if (error) fetch.mockRejectedValueOnce(new Error('offline'));
+  else fetch.mockResolvedValueOnce(response({ state, checks: [{ name: 'build', state }] }));
+  fetch.mockResolvedValue(response(done));
+  vi.stubGlobal('fetch', fetch);
+  try {
+    render(<ProviderPreview providers={[]} preview={{ ...preview, status }} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByLabelText(label)).toBeInTheDocument();
+    const card = screen.getByTestId('provider-preview-card');
+    const icon = card.querySelector('.gh-preview__icon')!;
+    expect(getComputedStyle(card).borderLeftColor).toBe(color);
+    expect(getComputedStyle(icon).color).toBe(color);
+    if (state === 'pending' || error) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+      expect(screen.getByLabelText('All checks passed')).toBeInTheDocument();
+      const settledColor = status === 'Open' ? 'rgb(0, 128, 0)' : color;
+      expect(getComputedStyle(card).borderLeftColor).toBe(settledColor);
+      expect(getComputedStyle(icon).color).toBe(settledColor);
+    }
+  } finally {
+    style.remove();
+  }
+});
 
 it('polls unfinished checks on the conversation owner and fills the sidebar cache once settled', async () => {
   vi.useFakeTimers();

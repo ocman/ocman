@@ -62,7 +62,7 @@ function PreviewCI({ preview, refreshChecks }: { preview: PreviewResult; refresh
   const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewChecks(url, sha, owner, signal, refresh), [url, sha, owner]);
   const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible, loadChecks, refreshChecks);
   const label = checks.error ? 'Failed to load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
-  return <span ref={ref} className="gh-preview__meta" aria-label={label}>
+  return <span ref={ref} className="gh-preview__meta" aria-label={label} data-ci-state={checks.error ? 'unknown' : checks.state}>
     <i className={`bi ${checks.error ? 'bi-exclamation-circle' : checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {label}
   </span>;
 }

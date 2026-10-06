@@ -55,6 +55,14 @@
 .gh-preview--closed .gh-preview__icon { color: var(--gh-red); }
 .gh-preview--commit .gh-preview__icon { color: var(--gh-blue); }
 
+/* Open PR cards follow CI; the OPEN label still describes the PR lifecycle. */
+.gh-preview--open:has([data-ci-state="pending"]) { border-left-color: var(--yellow); }
+.gh-preview--open:has([data-ci-state="pending"]) .gh-preview__icon { color: var(--yellow); }
+.gh-preview--open:has([data-ci-state="failure"]) { border-left-color: var(--gh-red); }
+.gh-preview--open:has([data-ci-state="failure"]) .gh-preview__icon { color: var(--gh-red); }
+.gh-preview--open:has([data-ci-state="unknown"]) { border-left-color: var(--text-dim); }
+.gh-preview--open:has([data-ci-state="unknown"]) .gh-preview__icon { color: var(--text-dim); }
+
 /* Body */
 .gh-preview__body {
   display: flex;
