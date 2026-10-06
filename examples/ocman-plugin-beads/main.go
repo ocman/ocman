@@ -7,6 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/NoUseFreak/ocman/sdk/plugin"
 )
@@ -43,12 +46,33 @@ func readTree(ctx context.Context, reader *beadsReader, request plugin.PaneRead)
 	}
 	tree := plugin.PaneTree{Available: status.Available, Warning: status.Error != ""}
 	for _, ticket := range status.Tickets {
+		title := displayText(ticket.Title, 4096)
+		if title == "" {
+			title = "Untitled ticket"
+		}
 		tree.Nodes = append(tree.Nodes, plugin.TreeNode{
-			ID: ticket.ID, Title: ticket.Title, ParentID: ticket.ParentID, Status: ticket.Status,
-			Badge: "P" + strconv.Itoa(ticket.Priority), Kind: ticket.IssueType,
+			ID: ticket.ID, Title: title, ParentID: ticket.ParentID, Status: ticket.Status,
+			Badge: "P" + strconv.Itoa(ticket.Priority), Kind: displayText(ticket.IssueType, 128),
 		})
 	}
 	return tree, nil
+}
+
+// Display strings can be multiline upstream; pane data is bounded plain text.
+func displayText(value string, limit int) string {
+	text := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, value))
+	if len(text) > limit {
+		text = text[:limit]
+		for !utf8.ValidString(text) {
+			text = text[:len(text)-1]
+		}
+	}
+	return text
 }
 
 func main() {

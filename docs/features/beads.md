@@ -45,6 +45,12 @@ you open the pane. A refresh failure keeps the last tree with a retry control.
 The tab remains available while the plugin is enabled, so workspace discovery
 does not need to run in the background.
 
+Malformed ticket or dependency output after workspace discovery is a refresh
+warning, so the last tree remains visible and polling continues. The adapter
+flattens control characters in display text and bounds titles and issue types
+to the pane protocol's UTF-8 limits. Catalog failures show a retry control in
+the sidebar; retrying declarations does not read tickets in a closed pane.
+
 Commands use fixed arguments, a five-second deadline per command, and bounded
 output. Ticket data stays in Beads; ocman does not persist it. Commands use
 `--readonly` where supported, with the same best-effort semantics as the CLI.

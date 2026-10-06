@@ -103,7 +103,7 @@ func (h *beadsReader) readBeadsStatus(ctx context.Context, dir string) (beadsSta
 	}
 	tickets, ok := parseBeadsTickets(out)
 	if !ok {
-		return beadsStatus{}, nil
+		return beadsStatus{Available: true, Error: "status_unavailable"}, nil
 	}
 	result := beadsStatus{Available: true, Tickets: tickets}
 	if len(tickets) < 2 {
@@ -121,7 +121,7 @@ func (h *beadsReader) readBeadsStatus(ctx context.Context, dir string) (beadsSta
 		return result, nil
 	}
 	if !applyBeadsParents(result.Tickets, deps) {
-		return beadsStatus{}, nil
+		result.Error = "status_unavailable"
 	}
 	return result, nil
 }

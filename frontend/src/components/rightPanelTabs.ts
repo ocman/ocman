@@ -63,6 +63,13 @@ export function reconcileTabOrder(persisted: ChangesSidebarTab[], pluginTabs: Ch
   return result;
 }
 
+export function mergeVisibleTabOrder(persisted: ChangesSidebarTab[], visible: ChangesSidebarTab[]): ChangesSidebarTab[] {
+  const shown = new Set(visible);
+  let next = 0;
+  const merged = [...new Set(persisted)].map((tab) => shown.has(tab) ? visible[next++] : tab);
+  return [...merged, ...visible.slice(next)];
+}
+
 // normaliseSizes returns one fraction per openTab in order. Stored
 // values are honoured when present (after clamping to MIN_PANE_FRACTION);
 // remaining tabs get an even share of whatever's left so the result

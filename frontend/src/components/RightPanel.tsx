@@ -10,7 +10,9 @@ import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookma
 import { pluginPaneTab, usePluginPanes } from '../lib/pluginPanes';
 import { Pane } from './RightPanelPane';
 import { trackRender } from '../lib/renderRateMonitor';
-import { TAB_ICONS, TAB_LABELS, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
+import { Button } from './Control';
+import { EmptyState } from './EmptyState';
+import { TAB_ICONS, TAB_LABELS, mergeVisibleTabOrder, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
 import {
   DndContext,
   DragOverlay,
@@ -124,7 +126,7 @@ export function RightPanel({
     () => stripOrder.filter((t) => openTabs.includes(t)),
     [stripOrder, openTabs],
   );
-  const collapsed = orderedOpenTabs.length === 0;
+  const collapsed = orderedOpenTabs.length === 0 && !pluginPanesResult.isError;
 
   // Normalise the size fractions so they sum to 1 across the ordered
   // open tabs. Tabs without a stored size get an even share of
@@ -169,9 +171,9 @@ export function RightPanel({
       const from = allTabOrder.indexOf(active.id as ChangesSidebarTab);
       const to = allTabOrder.indexOf(over.id as ChangesSidebarTab);
       if (from === -1 || to === -1) return;
-      setTabOrder(arrayMove(allTabOrder, from, to));
+      setTabOrder(mergeVisibleTabOrder(persistedOrder, arrayMove(allTabOrder, from, to)));
     },
-    [allTabOrder, setTabOrder],
+    [allTabOrder, persistedOrder, setTabOrder],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -233,6 +235,12 @@ export function RightPanel({
     >
       <ChangesSidebarResizer />
       <div className="oc-changes-sidebar-content">
+        {pluginPanesResult.isError && (
+          <EmptyState role="alert">
+            Could not load plugin panes.
+            <Button variant="ghost" onClick={() => void pluginPanesResult.refetch()}>Retry plugin panes</Button>
+          </EmptyState>
+        )}
         {orderedOpenTabs.map((tab, idx) => (
           <Pane
             key={tab}

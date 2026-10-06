@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { uiStorePersistence } from './uiStoreConfig';
-import { reconcileTabOrder } from '../components/rightPanelTabs';
+import { mergeVisibleTabOrder, reconcileTabOrder } from '../components/rightPanelTabs';
 
 describe('plugin pane layout', () => {
   const pluginTab = 'plugin:org.example.tree/items' as const;
@@ -20,5 +20,16 @@ describe('plugin pane layout', () => {
     expect(order.slice(0, 2)).toEqual([pluginTab, 'session']);
     expect(order.filter((tab) => tab === pluginTab)).toHaveLength(1);
     expect(reconcileTabOrder(order)).not.toContain(pluginTab);
+  });
+  it('keeps another owner’s hidden plugin position while reordering visible tabs', () => {
+    const hidden = 'plugin:org.example.other/items' as const;
+    const persisted = [hidden, 'session', pluginTab, 'info'] as const;
+    const reordered = mergeVisibleTabOrder([...persisted], ['info', pluginTab, 'session']);
+    expect(reordered).toEqual([hidden, 'info', pluginTab, 'session']);
+    expect(reconcileTabOrder(reordered, [hidden]).slice(0, 2)).toEqual([hidden, 'info']);
+  });
+  it('appends newly visible tabs and drops duplicate stored entries', () => {
+    expect(mergeVisibleTabOrder([], ['info', pluginTab])).toEqual(['info', pluginTab]);
+    expect(mergeVisibleTabOrder(['session', 'session', pluginTab], ['info', 'session'])).toEqual(['info', pluginTab, 'session']);
   });
 });

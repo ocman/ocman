@@ -93,3 +93,35 @@ it('shows an unavailable workspace and supports retry after an initial error', a
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByText('This pane is unavailable for this project.')).toBeInTheDocument();
 });
+
+it('offers catalog retry when the panel was collapsed', async () => {
+  const fetch = vi.spyOn(globalThis, 'fetch')
+    .mockRejectedValueOnce(new Error('catalog offline'))
+    .mockResolvedValue(new Response(JSON.stringify([pane])));
+  renderPanel();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plugin panes');
+  expect(screen.queryByRole('tab', { name: 'Tree' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Retry plugin panes' }));
+  expect(await screen.findByRole('tab', { name: 'Tree' })).toHaveAttribute('aria-selected', 'false');
+  expect(fetch.mock.calls.every(([url]) => !String(url).includes('/panes/read'))).toBe(true);
+});
+
+it('fails closed on a catalog refresh error and restores the open pane on retry', async () => {
+  useUiStore.setState({ changesSidebarOpenTabs: [pluginPaneTab(pane)] });
+  let failCatalog = false;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+    if (String(url).includes('/panes/read')) return new Response(JSON.stringify(tree));
+    if (failCatalog) throw new Error('catalog offline');
+    return new Response(JSON.stringify([pane]));
+  });
+  const { client } = renderPanel();
+  expect(await screen.findByText('item-1')).toBeInTheDocument();
+  failCatalog = true;
+  act(() => { void client.invalidateQueries({ queryKey: ['plugin-panes', 'local'] }); });
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plugin panes');
+  expect(screen.queryByRole('tab', { name: 'Tree' })).not.toBeInTheDocument();
+  expect(screen.queryByText('item-1')).not.toBeInTheDocument();
+  failCatalog = false;
+  await userEvent.click(screen.getByRole('button', { name: 'Retry plugin panes' }));
+  expect(await screen.findByText('item-1')).toBeInTheDocument();
+});
