@@ -71,7 +71,8 @@ func TestConversationReplyReplayedAcrossCrashBoundaries(t *testing.T) {
 		t.Fatalf("a recorded reply must not be posted by the append: %q", f.replies())
 	}
 	// A host with no memory of the reply still delivers it.
-	f.pump(t, f.restart(t))
+	restarted := f.restart(t)
+	f.pump(t, restarted)
 	first := fmt.Sprintf("reply\t%s\t%s\trecorded before the crash\n", conversationTestThread, conversationOutboxOperation(id))
 	if f.replies() != first {
 		t.Fatalf("replay after a crash: %q, want %q", f.replies(), first)
@@ -83,13 +84,15 @@ func TestConversationReplyReplayedAcrossCrashBoundaries(t *testing.T) {
 	// Crash after the send, before the acknowledgment: the delivery is still
 	// pending, so it is replayed.
 	lost := f.appendReply(t, conversationTestThread, "ses-chat:m3", "acknowledgment lost")
-	if err := f.s.conversations().Reply(t.Context(), conversationPluginDescription().ID,
+	if err := restarted.conversations().Reply(t.Context(), conversationPluginDescription().ID,
 		conversationOutboxOperation(lost), plugins.ConversationReply{
 			AccountID: conversationTestAccount, ThreadID: conversationTestThread, Text: "acknowledgment lost",
 		}); err != nil {
 		t.Fatal(err)
 	}
-	f.pump(t, f.s)
+	// Continue on the restarted host. The crashed host must not compete
+	// with its replacement's acknowledgment-triggered pump.
+	f.pump(t, restarted)
 	repeated := fmt.Sprintf("reply\t%s\t%s\tacknowledgment lost\n", conversationTestThread, conversationOutboxOperation(lost))
 	if got := f.replies(); got != first+repeated+repeated {
 		t.Fatalf("an unacknowledged reply must be replayed with a stable identity: %q", got)
