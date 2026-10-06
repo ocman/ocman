@@ -253,6 +253,12 @@ The 30 minutes count from the attempt start, or from the last time a human
 resumed it. Sessions waiting on a permission or question prompt, and validators
 waiting on Formula checks, are not counted as idle.
 
+Recovery gates link to the stuck attempt's conversation through **Inspect
+recovery session**. The same question, choices or text input, and resume,
+retry, and cancel controls appear above that session's composer, so you can
+inspect the conversation and decide there. A failed resume keeps the saved
+response available for retry.
+
 Implementation sessions run in the Issue's target project workspace. They may
 read other projects admitted to the Epic, but path-specific permission rules
 deny edits there. Shell access remains enabled, so these rules enforce agent

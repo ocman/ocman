@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
+vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
 vi.mock('../../components/session/PermissionPrompt', () => ({ PermissionPrompt: ({ disabled, onReply }: { disabled?: boolean; onReply?: () => void }) =>
   <button disabled={disabled} onClick={() => onReply?.()}>permission-prompt</button> }));
 vi.mock('../../components/session/QuestionPrompt', () => ({ QuestionPrompt: () => <div>question-prompt</div> }));

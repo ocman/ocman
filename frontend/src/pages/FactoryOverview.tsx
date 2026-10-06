@@ -4,7 +4,8 @@ import { Button, SelectField } from '../components/Control';
 import { StatusBadge } from '../components/StatusBadge';
 import { EmptyState } from '../components/EmptyState';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
-import { useClaimFactoryPlan, useFactoryCapacityPolicy, useFactoryGraphIssues, useFactoryQueue, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useSessions, useWorkEpics } from '../lib/queries';
+import { useClaimFactoryPlan, useFactoryCapacityPolicy, useFactoryGraphIssues, useFactoryQueue, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useSessions, useWorkEpics } from '../lib/queries';
+import { FactoryRecoveryActions } from '../components/FactoryRecoveryActions';
 import type { FactoryEpic, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
 import { EpicCell, IssueDrawer, ProjectCell, type EpicRef } from './FactoryIssues';
@@ -12,15 +13,9 @@ import { OpenIssueContext } from './factoryHelpers';
 import { FactoryEpicCards } from './FactoryEpicCards';
 import { DispatchExplanation, FactoryDataRow, FactoryPage, InventoryToolbar, QueryError } from './FactoryLayout';
 
-function RecoveryGateItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }) {
-	const resolve = useResolveFactoryRecoveryGate();
+function RecoveryGateItem({ issue, epic }: { issue: FactoryIssue; epic?: FactoryEpic }) {
 	const gate = issue.recovery!;
-	const pending = gate.resolution === 'resume_pending';
-	const [response, setResponse] = useState(gate.response ?? gate.choices?.[0] ?? '');
-	const act = (action: 'resume' | 'retry' | 'cancel') => resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? response : '' });
-	// Only the clicked button reports the in-flight request; the others share the mutation.
-	const busy = (action: string) => resolve.isPending && resolve.variables?.action === action;
-	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<><strong>{gate.question || issue.title}</strong>{gate.reason && <span>{gate.reason}</span>}</>} actions={<div className="factory-inbox-control">{gate.choices?.length ? <label>Response<select aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label> : <label>Response<input aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)} /></label>}<div className="factory-inbox-actions">{pending ? <Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>{busy('resume') ? 'Resuming…' : 'Retry resume'}</Button> : <><Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>{busy('resume') ? 'Resuming…' : 'Resume'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('retry')}>{busy('retry') ? 'Retrying…' : 'Retry'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('cancel')}>{busy('cancel') ? 'Cancelling…' : 'Cancel work'}</Button></>}</div>{resolve.isError && <p role="alert">{resolve.error instanceof Error ? resolve.error.message : 'Could not resolve recovery gate.'}</p>}</div>} />;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<><strong>{gate.question || issue.title}</strong>{gate.reason && <span>{gate.reason}</span>}</>} actions={<FactoryRecoveryActions key={gate.issueId} gate={gate} attempts={epic?.attempts} inbox />} />;
 }
 
 function AuthorityGateItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }) {

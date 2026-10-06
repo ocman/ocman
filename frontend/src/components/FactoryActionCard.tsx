@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useMemo, useState, type ReactNode } from 'react';
-import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryProjectRequestGate, FactoryRecoveryGate } from '../lib/api';
-import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useFactoryProposals, useMaterializeFactoryPlan, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
-import { Button, SelectField, TextField } from './Control';
+import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryProjectRequestGate } from '../lib/api';
+import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useFactoryProposals, useMaterializeFactoryPlan, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useWorkEpic } from '../lib/queries';
+import { Button, TextField } from './Control';
+import { FactoryRecoveryActions } from './FactoryRecoveryActions';
 import { FactoryImplementationModel } from './FactoryImplementationModel';
 import { FactoryPlanGraph } from './FactoryPlanGraph';
 import { proposalIssues } from '../pages/factoryGraph';
@@ -27,20 +28,6 @@ function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate 
     {decide.isPending && <span role="status">Saving decision…</span>}
     {decide.isSuccess && <span role="status">Plan decision saved.</span>}
     {decide.isError && <span role="alert">{decide.error.message}</span>}
-  </span>;
-}
-
-function RecoveryActions({ gate }: { gate: FactoryRecoveryGate }) {
-  const resolve = useResolveFactoryRecoveryGate();
-  const [response, setResponse] = useState(gate.response ?? gate.choices?.[0] ?? '');
-  const actions = gate.resolution === 'resume_pending' ? ['resume'] as const : ['resume', 'retry', 'cancel'] as const;
-  return <span className="oc-factory-action-issue">
-    <strong>{gate.question}</strong><span>{gate.reason}</span>
-    <label>Recovery response{gate.choices?.length ? <SelectField value={response} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice}>{choice}</option>)}</SelectField> : <TextField value={response} onChange={(event) => setResponse(event.target.value)} />}</label>
-    <span className="oc-factory-action-buttons">{actions.map((action) => <Button key={action} type="button" disabled={resolve.isPending || resolve.isSuccess} onClick={() => resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? response : '' })}>{action === 'resume' ? 'Resume work' : action === 'retry' ? 'Retry work' : 'Cancel work'}</Button>)}</span>
-    {resolve.isPending && <span role="status">Saving recovery decision…</span>}
-    {resolve.isSuccess && <span role="status">Recovery decision saved.</span>}
-    {resolve.isError && <span role="alert">{resolve.error.message}</span>}
   </span>;
 }
 
@@ -86,15 +73,15 @@ function requiresHumanAction(epic: FactoryEpic, issues: FactoryIssue[], issueID:
 
 const WORK_REQUESTS: Record<string, string[]> = { reopen: ['reopen_issue', 'reopen'], plan: ['claim_plan'], materialization: ['materialize_plan'] };
 
-function IssueDecisions({ issue }: { issue: FactoryIssue }) {
+function IssueDecisions({ issue, epic }: { issue: FactoryIssue; epic: FactoryEpic }) {
   return <>
-    {issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && <RecoveryActions key={`${issue.recovery.issueId}/${issue.recovery.resolution}`} gate={issue.recovery} />}
+    {issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && <FactoryRecoveryActions key={issue.recovery.issueId} gate={issue.recovery} attempts={epic.attempts} />}
     {issue.authority && !['approve', 'reject'].includes(issue.authority.resolution) && <AuthorityActions key={`${issue.authority.issueId}/${issue.authority.resolution}`} gate={issue.authority} />}
 		{issue.projectRequest && !['approved', 'rejected'].includes(issue.projectRequest.resolution) && <ProjectActions key={`${issue.projectRequest.issueId}/${issue.projectRequest.resolution}`} gate={issue.projectRequest} />}
   </>;
 }
 
-function IssueActions({ issue, enabled }: { issue: FactoryIssue; enabled: boolean }) {
+function IssueActions({ issue, epic }: { issue: FactoryIssue; epic: FactoryEpic }) {
   const reopen = useReopenFactoryIssue();
   const claim = useClaimFactoryPlan(issue.epicId);
   const materialize = useMaterializeFactoryPlan();
@@ -103,7 +90,7 @@ function IssueActions({ issue, enabled }: { issue: FactoryIssue; enabled: boolea
   const error = mutations.find((mutation) => mutation.isError)?.error;
   const reopened = reopen.isSuccess;
   const target = { epicId: issue.epicId, issueId: issue.id };
-  const action = enabled ? availableWorkAction(issue) : undefined;
+  const action = epic.status === 'open' ? availableWorkAction(issue) : undefined;
   return <span className="oc-factory-action-issue">
     <Link to={`/factory/issues/${encodeURIComponent(issue.id)}`}>{issue.title}</Link>
     {issue.outcomeReason && <span>{issue.outcomeReason}</span>}
@@ -115,7 +102,7 @@ function IssueActions({ issue, enabled }: { issue: FactoryIssue; enabled: boolea
     {reopened && <span role="status">Issue reopened.</span>}
     {materialize.isSuccess && <span role="status">Plan materialized.</span>}
     {claim.isSuccess && <Link to={`/session/${encodeURIComponent(claim.data.session.id)}`}>Open planning session</Link>}
-    <IssueDecisions issue={issue} />
+    <IssueDecisions issue={issue} epic={epic} />
     {error && <span role="alert">{error.message}</span>}
   </span>;
 }
@@ -124,7 +111,7 @@ function EpicActions({ epic, issues, issueID }: { epic: FactoryEpic; issues: Fac
   const selected = issues.filter((issue) => !issueID || issue.id === issueID);
   const gate = epic.planGate;
   return <>
-    {selected.filter((issue) => requiresIssueAction(epic, issue)).map((issue) => <IssueActions key={issue.id} issue={issue} enabled={epic.status === 'open'} />)}
+    {selected.filter((issue) => requiresIssueAction(epic, issue)).map((issue) => <IssueActions key={issue.id} issue={issue} epic={epic} />)}
     {gate?.resolution === 'open' && <><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link><PlanActions key={`${gate.proposalRevision}/${gate.proposalHash}`} epic={epic} gate={gate} /></>}
     {issueID && !selected.length && <span role="status">Issue {issueID} is no longer available.</span>}
   </>;

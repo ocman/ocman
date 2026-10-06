@@ -324,6 +324,13 @@ describe('Factory interactions', () => {
     await waitFor(() => expect(api.resolveFactoryAuthorityGate).toHaveBeenCalledWith('epic-1.6', 'reject'));
   });
 
+	it('links a recovery gate to its original stuck session', async () => {
+		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', attempts: [{ id: 'a1', workId: 'work', session: { platform: 'r-owner:opencode', id: 'stuck-session' } }, { id: 'a2', workId: 'work', session: { platform: 'r-owner:opencode', id: 'new-session' } }] }] as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'gate', epicId: 'epic-1', kind: 'gate', title: 'Recovery', status: 'open', recovery: { issueId: 'gate', epicId: 'epic-1', attemptId: 'a1', workId: 'work', question: 'Which API?', choices: ['A'], resolution: 'open' } }] as never);
+		renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+		expect(await screen.findByRole('link', { name: 'Inspect recovery session' })).toHaveAttribute('href', '/session/stuck-session?factoryEpic=epic-1');
+	});
+
 	it('keeps a failed recovery delivery actionable and removes it after success', async () => {
 		const user = userEvent.setup();
 		let resolution = 'open';

@@ -21,6 +21,7 @@ vi.mock('../../lib/useCapabilities', () => ({
   usePlatformCapabilities: () => ({ shellExec: true }),
 }));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
+vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 vi.mock('../../lib/api', async (original) => {
   const actual = await original<typeof import('../../lib/api')>();

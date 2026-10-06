@@ -3,6 +3,7 @@ import { Composer } from '../../components/assistant/Composer';
 import { PermissionPrompt } from '../../components/session/PermissionPrompt';
 import { QuestionPrompt } from '../../components/session/QuestionPrompt';
 import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
+import { FactorySessionRecovery } from '../../components/FactorySessionRecovery';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { FirstSubmissionNotice } from './FirstSubmissionNotice';
 import { LaunchProgressCard } from '../../components/LaunchProgressCard';
@@ -47,6 +48,7 @@ export function SessionComposerSlot({
   return (
     <ErrorBoundary name="session:composer" inline resetKey={sessionId}>
       <FactoryPlanApproval epicID={factoryEpicID} platformID={platformId} sessionID={sessionId} />
+      <FactorySessionRecovery key={`${platformId}/${sessionId}`} platformID={platformId} sessionID={sessionId} />
       {firstUnreadMessageId && unreadMessageCount > 0 && (
         <button
           type="button"
