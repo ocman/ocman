@@ -969,6 +969,9 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakeImplementationLauncher{err: errors.New("unavailable")}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
+	// Recovery is driven by explicit Dispatch below, not a competing background
+	// pass that may leave a claimed attempt prepared while these assertions run.
+	svc.startOnce.Do(func() {})
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", FormulaID: "ocman/tracer", FormulaRevision: 2, AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
 	if err != nil {
 		t.Fatal(err)
