@@ -159,6 +159,28 @@ func TestPreviewChecksRefreshBypassesSettledServerCache(t *testing.T) {
 	}
 }
 
+func TestPreviewRefreshFollowsChangedHead(t *testing.T) {
+	sha := "abc123"
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"title":"PR","head":{"sha":%q}}`, sha)
+	}))
+	defer api.Close()
+	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
+	s.previewAuth.client = api.Client()
+	b := newBrowser()
+	request := `{"text":"https://github.com/o/r/pull/1"}`
+	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", request); !strings.Contains(rr.Body.String(), "abc123") {
+		t.Fatal(rr.Body.String())
+	}
+	sha = "def456"
+	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", request); !strings.Contains(rr.Body.String(), "abc123") {
+		t.Fatal("metadata cache not warmed")
+	}
+	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", `{"text":"https://github.com/o/r/pull/1","refresh":true}`); !strings.Contains(rr.Body.String(), "def456") {
+		t.Fatalf("refresh retained old head: %s", rr.Body.String())
+	}
+}
+
 func TestLinkPreviewRules_RejectsInvalidProvider(t *testing.T) {
 	err := validateLinkPreviewRules(linkPreviewRules{Rules: []linkPreviewRule{{Pattern: `A-\d+`, Replacement: "https://x.example/$&", Provider: "Bad/../x"}}})
 	if err == nil {

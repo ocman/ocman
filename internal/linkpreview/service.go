@@ -175,7 +175,7 @@ func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOn
 	s.mu.Lock()
 	cached, hit := s.cache[key]
 	fresh := hit && now.Before(cached.expires)
-	if ref.Kind == "checks" && ctx.Value(checksRefreshKey{}) == true {
+	if ctx.Value(previewRefreshKey{}) == true {
 		fresh = false
 	}
 	limited := !fresh && (now.Before(s.backoff[gk]) || !s.spend(gk, now))

@@ -198,8 +198,8 @@ export async function removePreviewApp(id: string): Promise<PreviewApps> {
 }
 
 /** Discovers and resolves previews in `text`; the server owns discovery and credentials. */
-export async function resolvePreviews(text: string, remoteId = 'local', signal?: AbortSignal): Promise<PreviewResult[]> {
-  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text }, { signal });
+export async function resolvePreviews(text: string, remoteId = 'local', signal?: AbortSignal, refresh = false): Promise<PreviewResult[]> {
+  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text, ...(refresh ? { refresh: true } : {}) }, { signal });
   return previews;
 }
 

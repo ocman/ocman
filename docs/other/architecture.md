@@ -394,7 +394,8 @@ flowchart TD
   use the clients' 8 MiB response bound instead of `linkpreview.API`'s 1 MiB.
   The preview service caches checks for 15 seconds and retains its per-grant
   budget, concurrency limit and rate-limit backoff.
-  Explicit refresh bypasses that checks snapshot while retaining grant and
+  Explicit refresh reloads PR metadata and bypasses the checks snapshot for
+  its current head while retaining grant and
   rate controls. Checks HTTP 401 and ordinary 403 retain their status for token revocation
   and denial classification, and provider retry deadlines reach the backoff.
   Quota/secondary-limit 403 responses are classified as rate limits instead.

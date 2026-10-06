@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi, afterEach, beforeEach } from 'vitest';
 import type { PreviewResult } from '../lib/previews';
 
@@ -96,4 +96,30 @@ it('shows configured text matches as link cards', async () => {
   render(<LinkPreviewStrip text="Look at ABC-42 and ABC-42" />);
   expect(await screen.findByRole('link', { name: /ABC-42/ })).toHaveAttribute('href', 'https://tracker.example.com/issues/ABC-42');
   expect(screen.getAllByRole('link')).toHaveLength(1);
+});
+
+it('refreshes the PR head before fetching fresh checks for the new commit', async () => {
+  let head = 'abc123';
+  const originalFetch = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+  fetchMock.mockImplementation((url: string, init?: { body?: string }) => {
+    if (!url.startsWith('/api/previews/resolve')) return originalFetch(url);
+    const body = JSON.parse(init?.body ?? '{}');
+    if (body.checksSha) {
+      const state = body.checksSha === 'def456' && body.refreshChecks ? 'failure' : 'success';
+      return Promise.resolve(jsonResponse({ previews: [{ state: 'ok', checks: { state, checks: [{ name: 'build', state }] } }] }));
+    }
+    return Promise.resolve(jsonResponse({ previews: [{ ...pr, headSha: body.refresh ? head : 'abc123' }] }));
+  });
+  const { clearPRChecksCache } = await import('../lib/prChecksCache');
+  clearPRChecksCache();
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text="https://github.com/o/r/pull/1" />);
+  await screen.findByLabelText('All checks passed');
+  head = 'def456';
+  await act(async () => clearPRChecksCache());
+  expect(await screen.findByLabelText('Some checks failed')).toBeInTheDocument();
+  expect(resolveCalls().some(([, init]) => {
+    const body = JSON.parse(init.body);
+    return body.checksSha === 'def456' && body.refreshChecks === true;
+  })).toBe(true);
 });

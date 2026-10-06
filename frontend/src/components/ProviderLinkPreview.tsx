@@ -17,7 +17,7 @@ const FallbackLink: FC<{ preview: PreviewResult }> = ({ preview }) => preview.ur
 // Forge statuses keep their old card colours.
 const STATUS_CLASS: Record<string, string> = { Open: 'open', Merged: 'merged', Closed: 'closed' };
 
-const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
+const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean }> = ({ preview, refreshChecks }) => {
   const cls = `gh-preview gh-preview--${STATUS_CLASS[preview.status ?? ''] ?? 'commit'}`;
   const body = <>
     <span className="gh-preview__icon"><i className={`bi ${preview.icon || 'bi-link-45deg'}`} aria-hidden="true" /></span>
@@ -28,7 +28,7 @@ const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
         {preview.updatedAt && <> · <RelativeTime iso={preview.updatedAt} /></>}
         {preview.stale && ' · cached'}
       </span>
-      {preview.kind === 'pr' && preview.headSha && preview.url && <PreviewCI preview={preview} />}
+      {preview.kind === 'pr' && preview.headSha && preview.url && <PreviewCI preview={preview} refreshChecks={refreshChecks} />}
     </span>
   </>;
   return preview.url
@@ -38,7 +38,7 @@ const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
     : <div className={cls} data-testid="provider-preview-card">{body}</div>;
 };
 
-function PreviewCI({ preview }: { preview: PreviewResult }) {
+function PreviewCI({ preview, refreshChecks }: { preview: PreviewResult; refreshChecks?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
   useEffect(() => {
@@ -57,7 +57,7 @@ function PreviewCI({ preview }: { preview: PreviewResult }) {
   const repo = preview.id.split('#')[0];
   const key = prChecksCacheKey(new URL(url).host, repo, sha);
   const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewChecks(url, sha, owner, signal, refresh), [url, sha, owner]);
-  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible, loadChecks);
+  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible, loadChecks, refreshChecks);
   const label = checks.error ? 'Failed to load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
   return <span ref={ref} className="gh-preview__meta" aria-label={label}>
     <i className={`bi ${checks.error ? 'bi-exclamation-circle' : checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {label}
@@ -71,8 +71,8 @@ const NOTICE: Partial<Record<PreviewResult['state'], string>> = {
 };
 
 /** One provider preview: a rich card, or a plain link saying why there is none. */
-export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewProvider[] }> = ({ preview, providers }) => {
-  if (hasRichPreview(preview)) return <RichCard preview={preview} />;
+export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewProvider[]; refreshChecks?: boolean }> = ({ preview, providers, refreshChecks }) => {
+  if (hasRichPreview(preview)) return <RichCard preview={preview} refreshChecks={refreshChecks} />;
   if (preview.choices?.length) return (
     <div className="gh-preview" data-testid="provider-preview-choices">
       <span className="gh-preview__icon"><i className="bi bi-files" aria-hidden="true" /></span>

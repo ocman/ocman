@@ -1,4 +1,5 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
 import type { PreviewConfig, PreviewProvider, PreviewResult } from './previews';
 
@@ -9,6 +10,7 @@ interface Resolved {
   owner: string;
   previews: PreviewResult[];
   providers: PreviewProvider[];
+  refreshChecks: boolean;
 }
 
 
@@ -18,16 +20,19 @@ interface Resolved {
  * which link hosts they preview, so text that cannot produce a preview is
  * never sent.
  */
-export function useProviderPreviews(text: string): { previews: PreviewResult[]; providers: PreviewProvider[]; loading: boolean } {
+export function useProviderPreviews(text: string): { previews: PreviewResult[]; providers: PreviewProvider[]; loading: boolean; refreshChecks: boolean } {
   const owner = useContext(PreviewOwnerContext);
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const [pending, setPending] = useState(false);
   const [generation, setGeneration] = useState(0);
+  const refreshPending = useRef(false);
 
   useEffect(() => {
     const reset = () => { setResolved(null); setGeneration((g) => g + 1); };
+    const refresh = () => { refreshPending.current = true; reset(); };
     window.addEventListener(PREVIEW_AUTH_EVENT, reset);
-    return () => window.removeEventListener(PREVIEW_AUTH_EVENT, reset);
+    window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
+    return () => { window.removeEventListener(PREVIEW_AUTH_EVENT, reset); window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh); };
   }, []);
 
   useEffect(() => {
@@ -40,8 +45,10 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
         if (!worth || abort.signal.aborted) return;
         // Public forge links resolve silently, as their cards always did.
         if (config?.providers.some((p) => p.accounts.length)) setPending(true);
-        const previews = await resolvePreviews(text, owner, abort.signal);
-        if (!abort.signal.aborted) setResolved({ text, owner, previews, providers: config?.providers ?? [] });
+        const refresh = refreshPending.current;
+        refreshPending.current = false;
+        const previews = await resolvePreviews(text, owner, abort.signal, refresh);
+        if (!abort.signal.aborted) setResolved({ text, owner, previews, providers: config?.providers ?? [], refreshChecks: refresh });
       }).catch(() => {
         // Safe fallback: plain links and custom rule cards still render.
         if (!abort.signal.aborted) setResolved(null);
@@ -54,7 +61,7 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
 
   // Never show results for other text or another owner while reloading.
   const current = resolved && resolved.text === text && resolved.owner === owner ? resolved : null;
-  return { previews: current?.previews ?? [], providers: current?.providers ?? [], loading: pending && !current };
+  return { previews: current?.previews ?? [], providers: current?.providers ?? [], loading: pending && !current, refreshChecks: current?.refreshChecks ?? false };
 }
 
 export const hasRichPreview = (p: PreviewResult) => !!p.title && (p.state === 'ok' || p.stale);

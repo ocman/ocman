@@ -50,6 +50,7 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		Text          string `json:"text"`
 		ChecksSHA     string `json:"checksSha"`
 		RefreshChecks bool   `json:"refreshChecks"`
+		Refresh       bool   `json:"refresh"`
 	}
 	if !readAndUnmarshal(w, r, maxPreviewResolveBody, &req) {
 		return
@@ -78,8 +79,11 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		repo, _, _ := strings.Cut(refs[0].ID, "#")
 		refs[0].ID = repo + "@" + req.ChecksSHA
 		if req.RefreshChecks {
-			ctx = linkpreview.WithChecksRefresh(ctx)
+			ctx = linkpreview.WithPreviewRefresh(ctx)
 		}
+	}
+	if req.Refresh {
+		ctx = linkpreview.WithPreviewRefresh(ctx)
 	}
 	previews := svc.Resolve(ctx, viewerID, home, refs)
 	if previews == nil {

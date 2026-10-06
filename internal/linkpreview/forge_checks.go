@@ -12,11 +12,11 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
 
-type checksRefreshKey struct{}
+type previewRefreshKey struct{}
 
-// WithChecksRefresh bypasses only the checks snapshot, retaining grant/rate controls.
-func WithChecksRefresh(ctx context.Context) context.Context {
-	return context.WithValue(ctx, checksRefreshKey{}, true)
+// WithPreviewRefresh bypasses the requested snapshot, retaining grant/rate controls.
+func WithPreviewRefresh(ctx context.Context) context.Context {
+	return context.WithValue(ctx, previewRefreshKey{}, true)
 }
 
 // Checks clients normally format 401/403 as strings. Preserve their status at

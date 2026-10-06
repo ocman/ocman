@@ -39,7 +39,7 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
   return (
     <div className="gh-preview-strip" data-testid="gh-preview-strip">
       {providerPreviews.map((p) => (
-        <ProviderPreview key={[p.provider, p.workspace, p.kind, p.id].join('\u0000')} preview={p} providers={provider.providers} />
+        <ProviderPreview key={[p.provider, p.workspace, p.kind, p.id].join('\u0000')} preview={p} providers={provider.providers} refreshChecks={provider.refreshChecks} />
       ))}
       {loading && <span className="gh-preview__meta" role="status">Loading previews…</span>}
       {customLinks.map(({ url, label }) => (

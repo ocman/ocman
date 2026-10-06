@@ -11,8 +11,8 @@ export interface ChecksState {
 }
 
 /** Both PR rows and conversation previews share the repository + SHA cache. */
-export function usePRChecks(cacheKey: string, requestKey: string, visible: boolean, fetchChecks: (signal: AbortSignal, refresh: boolean) => Promise<PRChecks>): ChecksState {
-  const [generation, setGeneration] = useState(0);
+export function usePRChecks(cacheKey: string, requestKey: string, visible: boolean, fetchChecks: (signal: AbortSignal, refresh: boolean) => Promise<PRChecks>, refreshOnMount = false): ChecksState {
+  const [generation, setGeneration] = useState(refreshOnMount ? 1 : 0);
   const consumedRefresh = useRef(0);
   useEffect(() => {
     const refresh = () => setGeneration((g) => g + 1);

@@ -58,7 +58,7 @@ func TestChecksProviderBackoff(t *testing.T) {
 			svc.resolve(ctx, "", "local", ref)
 			count := calls
 			now = now.Add(90 * time.Second)
-			svc.resolve(WithChecksRefresh(ctx), "", "local", ref)
+			svc.resolve(WithPreviewRefresh(ctx), "", "local", ref)
 			if calls != count {
 				t.Fatal("provider backoff was shortened to one minute")
 			}
