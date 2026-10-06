@@ -344,10 +344,11 @@ test('log tabs navigate without activating until Enter or Space', async ({ mocke
 
 test('overview renders summary and scoped date filters', async ({ mockedPage: page }) => {
   await page.goto('/analytics/overview');
-  const selects = page.locator('.metrics-filter .oc-search-select');
-  await expect(selects).toHaveCount(2);
-  await expect(page.locator('.label', { hasText: 'Total Cost' })).toBeVisible();
-  await expect(page.locator('.label', { hasText: 'Factory attempts' })).toBeVisible();
+  await expect(page.getByRole('combobox')).toHaveCount(2);
+  await expect(page.getByRole('combobox', { name: 'Project scope' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Last' })).toBeVisible();
+  await expect(page.getByText('Total Cost', { exact: true })).toBeVisible();
+  await expect(page.getByText('Factory attempts', { exact: true })).toBeVisible();
 });
 
 test('analytics tabs keep their height when the page overflows', async ({ mockedPage: page }) => {

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { buildScopeTree, flattenForOptions } from '../lib/projectTree';
 import { shortPath } from '../lib/format';
 import { SearchSelect } from './SearchSelect';
-import './ProjectScopePicker.css';
+import { FilterField } from './FilterField';
 
 /**
  * ProjectScopePicker — a single dropdown that lets the user scope the
@@ -35,7 +35,7 @@ export interface ProjectScopePickerProps {
   label?: string;
   /**
    * When true, render `label` as a visible caption above the select so
-   * the control lines up with the other captioned `.metrics-filter`
+   * the control lines up with the other captioned filter
    * controls (Stats / Usage). Off by default: most callers (Dashboard,
    * standalone pages) show the picker bare.
    */
@@ -61,8 +61,7 @@ export function ProjectScopePicker({
   const disabled = options.length === 0;
 
   return (
-    <div className="metrics-filter">
-      {showLabel && <span>{label}</span>}
+    <FilterField label={showLabel ? label : undefined}>
       <SearchSelect
         value={value}
         disabled={disabled}
@@ -78,6 +77,6 @@ export function ProjectScopePicker({
           })),
         ]}
       />
-    </div>
+    </FilterField>
   );
 }

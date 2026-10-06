@@ -14,7 +14,8 @@ import { useProjects, useSessions } from '../lib/queries';
 import { projectIdentityIndex } from '../lib/projectIdentity';
 import { remoteLog } from '../lib/remoteLog';
 import type { TmuxClient } from '../lib/api';
-import './dashboard/DashboardToolbar.css';
+import { SearchField } from '../components/Control';
+import styles from './ProjectDetail.module.css';
 
 const DEFAULT_TIME_RANGE = 168; // 7d
 
@@ -201,17 +202,15 @@ export function ProjectDetail() {
           </button>
         )}
       </HeaderPortal>
-      <div className="metrics-filters oc-projects-toolbar">
-        <input
-          type="search"
-          className="oc-project-search"
+      <div className={styles.searchBar}>
+        <SearchField className={styles.search}
           placeholder="Search sessions…"
           aria-label="Search sessions"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      <div className="oc-time-range">
+      <div className={styles.range}>
         <TimeRangeControl value={timeRange} onChange={setTimeRange} />
         <button
           className={`oc-time-range-btn${excludeArchived ? ' active' : ''}`}

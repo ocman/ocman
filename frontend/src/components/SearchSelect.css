@@ -5,20 +5,9 @@
 }
 .oc-search-select > button {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 8px;
   width: 100%;
-  min-height: 38px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  color: var(--text);
-  background: var(--bg);
   text-align: left;
-}
-.oc-search-select > button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 /* The closed field shows just the value; badges belong in the list. */
 .oc-search-select > button .oc-model-picker-badge {
@@ -77,7 +66,7 @@
 }
 .oc-search-select-menu small {
   padding: 8px;
-  color: var(--text-muted);
+  color: var(--text-dim);
 }
 .oc-search-select-header {
   display: block;

@@ -1,0 +1,3 @@
+.searchBar { display: flex; gap: 12px; margin-bottom: 20px; }
+.search { flex: 1; min-width: 0; }
+.range { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }

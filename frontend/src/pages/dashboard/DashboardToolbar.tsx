@@ -1,6 +1,7 @@
 import type { Project } from '../../lib/api';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
-import './DashboardToolbar.css';
+import { Button, SearchField } from '../../components/Control';
+import styles from './DashboardToolbar.module.css';
 
 // ---------------------------------------------------------------------------
 // Shared dashboard toolbar: project scope picker + fuzzy search + a
@@ -31,25 +32,24 @@ export function DashboardToolbar({
   onAction: () => void;
 }) {
   return (
-    <div className="metrics-filters oc-projects-toolbar">
+    <div className={styles.toolbar}>
       <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
-      <input
-        type="search"
-        className="oc-project-search"
+      <SearchField className={styles.search}
         placeholder={`${searchLabel}\u2026`}
         aria-label={searchLabel}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      <button
+      <Button
         type="button"
-        className="vscode-btn oc-dashboard-primary-action"
+        variant="accent"
+        className={styles.action}
         onClick={onAction}
         title={actionTitle}
       >
         <i className={`bi ${actionIcon}`} aria-hidden="true" />
         {actionLabel}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,0 +1,4 @@
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 180px; color: var(--text-dim); font-size: 12px; }
+.caption { text-transform: uppercase; letter-spacing: .5px; }
+.compact { min-width: 140px; }
+@media (max-width: 640px) { .field, .compact { min-width: 100%; } }

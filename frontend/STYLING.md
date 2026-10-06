@@ -14,6 +14,8 @@
   interaction states. Avoid parent selectors that restyle child controls:
   CSS Modules scopes class names, but descendant selectors still cross component
   boundaries. Do not use another feature's classes as shared helpers.
+- Use `FilterField` for picker captions and sizing. Reuse `SearchSelect` for the
+  picker itself instead of overriding its appearance from a page stylesheet.
 - Use `SecretField` for secret inputs. `allowReveal` controls the eye button;
   `protect` marks a stored secret whose blank replacement means no change.
   `onReset` enables the trash button and `resetPending` marks an explicit clear

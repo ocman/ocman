@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import { SearchSelect } from '../../components/SearchSelect';
+import { FilterField } from '../../components/FilterField';
 import { useDashboard } from './context';
 import './AnalyticsFilters.css';
 
@@ -30,19 +31,16 @@ export function AnalyticsFilters({
     <div className="analytics-filters">
       <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} showLabel />
       {onAgentChange && (
-        <label className="metrics-filter">
-          <span>Agent</span>
+        <FilterField label="Agent">
           <SearchSelect value={agent ?? ''} ariaLabel="Agent" placeholder="All agents" searchLabel="Search agents" onChange={onAgentChange} options={agentOptions ?? [{ value: '', label: 'All agents' }]} />
-        </label>
+        </FilterField>
       )}
       {onModelChange && (
-        <label className="metrics-filter">
-          <span>Model</span>
+        <FilterField label="Model">
           <SearchSelect value={model ?? ''} ariaLabel="Model" placeholder="All models" searchLabel="Search models" onChange={onModelChange} options={modelOptions ?? [{ value: '', label: 'All models' }]} />
-        </label>
+        </FilterField>
       )}
-      <label className="metrics-filter metrics-filter-small">
-        <span>Last</span>
+      <FilterField label="Last" compact>
         <SearchSelect
           value={String(days)}
           ariaLabel="Last"
@@ -56,7 +54,7 @@ export function AnalyticsFilters({
             { value: '0', label: 'All time' },
           ]}
         />
-      </label>
+      </FilterField>
     </div>
   );
 }

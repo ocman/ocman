@@ -1,0 +1,4 @@
+.toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.search { flex: 1; min-width: 160px; align-self: flex-end; }
+.action { align-self: flex-end; }
+@media (max-width: 640px) { .action { align-self: flex-start; } }

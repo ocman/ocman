@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useClickOutside } from '../lib/useClickOutside';
 import { fuzzyMatch } from '../lib/format';
-import './Control.css';
+import { Button } from './Control';
 import './SearchSelect.css';
 
 export interface SearchSelectOption {
@@ -67,7 +67,7 @@ export function SearchSelect({
 
   return (
     <span className={className ? `oc-search-select ${className}` : 'oc-search-select'} ref={root} onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}>
-      <button
+      <Button
         type="button"
         role="combobox"
         aria-label={ariaLabel}
@@ -82,7 +82,7 @@ export function SearchSelect({
       >
         <span className="oc-search-select-label">{selected?.icon}{selected?.displayLabel ?? selected?.label ?? (value || placeholder)}</span>
         <i className="bi bi-chevron-down" aria-hidden="true" />
-      </button>
+      </Button>
       {open && (
         <span className="oc-search-select-menu">
           <input
