@@ -225,6 +225,9 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 			}
 			created := template
 			created.ID, created.Kind, created.Project = id, kind, path
+			if id != template.ID {
+				created.DependsOn = nil // The template's edges belong to its existing ID.
+			}
 			issues = append(issues, created)
 			steps[id] = step
 		}

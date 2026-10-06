@@ -270,8 +270,8 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 	}
 	if action == "retry" {
 		_ = s.Dispatch(ctx)
-		s.wakeDispatch()
 	}
+	s.wakeDispatch()
 	return gate, nil
 }
 
