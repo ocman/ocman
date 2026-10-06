@@ -65,6 +65,16 @@ function Harness({ children }: { children?: React.ReactNode }) {
 }
 
 describe('Modal focus management', () => {
+  it('skips controls disabled by a fieldset and cycles to an expandable-group summary', () => {
+    render(<Modal label="Saving" onClose={() => {}}><fieldset disabled><input aria-label="Disabled name" data-autofocus /></fieldset><details><summary>Options</summary></details><button type="button">Cancel</button></Modal>);
+    const summary = screen.getByText('Options');
+    expect(summary).toHaveFocus();
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    cancel.focus();
+    fireEvent.keyDown(cancel, { key: 'Tab' });
+    expect(summary).toHaveFocus();
+  });
+
   it('keeps notifications interactive above the modal', async () => {
     const user = userEvent.setup();
     render(<><div><div className="oc-prompt-toast-viewport"><button type="button">Dismiss notification</button></div></div><Harness /></>);

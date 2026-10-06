@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from '../components/Control';
+import { Button, ButtonGroup } from '../components/Control';
 import { EmptyState } from '../components/EmptyState';
 import { NoticeToast } from '../components/FactoryStartedToast';
 import { RefreshButton } from '../components/RefreshButton';
 import { Spinner } from '../components/Spinner';
+import { RoutineStateBadge } from '../components/RoutineStateBadge';
 import { api } from '../lib/api';
 import type { WebhookDelivery } from '../lib/api.types';
 import { formatDateTimeShort } from '../lib/format';
 import { deliveryHint, outcomes } from '../lib/webhookFilters';
+import styles from './WebhookDeliveryLog.module.css';
 
 function pretty(json: string) {
   try { return JSON.stringify(JSON.parse(json), null, 2); } catch { return json; }
@@ -43,25 +45,25 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
   };
 
   return (
-    <section className="webhook-deliveries" aria-labelledby="webhook-deliveries-heading">
+    <section className={styles.deliveries} aria-labelledby="webhook-deliveries-heading">
       <header><h3 id="webhook-deliveries-heading">Recent deliveries</h3><RefreshButton loading={loading} label="Refresh deliveries" onClick={() => void load()} /></header>
-      {error && <p role="alert" className="routine-error">{error}</p>}
+      {error && <p role="alert" className={styles.error}>{error}</p>}
       {deliveries?.length === 0 && <EmptyState>No deliveries received yet.</EmptyState>}
       {deliveries?.map((d) => {
         const hint = deliveryHint(d);
         const errors = d.dispatches.filter((x) => x.error).map((x) => `${routineName(x.routineId)}: ${x.error}`);
         if (d.lastError) errors.unshift(`${d.lastError} (attempt ${d.attempts})`);
         return (
-          <details key={d.deliveryId} className="webhook-delivery">
+          <details key={d.deliveryId} className={styles.delivery}>
             <summary>
               <span>{formatDateTimeShort(d.acceptedAt)}</span>
               {hint && <code>{hint}</code>}
-              <span className="webhook-delivery-outcomes">{outcomes(d, routineName).map((o) => o.href
-                ? <Link key={o.label} to={o.href} className={`routine-state ${o.tone}`} title="Open session" onClick={(e) => e.stopPropagation()}>{o.label} <i className="bi bi-box-arrow-up-right" aria-hidden="true" /></Link>
-                : <span key={o.label} className={`routine-state ${o.tone}`}>{o.label}</span>)}</span>
+              <span className={styles.outcomes}>{outcomes(d, routineName).map((o) => <RoutineStateBadge key={o.label} state={o.tone}>{o.href
+                ? <Link to={o.href} title="Open session" onClick={(e) => e.stopPropagation()}>{o.label} <i className="bi bi-box-arrow-up-right" aria-hidden="true" /></Link>
+                : o.label}</RoutineStateBadge>)}</span>
             </summary>
-            {errors.map((message) => <p key={message} className="routine-error">{message}</p>)}
-            {d.accepted && <div className="routine-actions"><Button type="button" size="small" disabled={loading || !!redelivering} aria-busy={redelivering === d.deliveryId} onClick={() => void redeliver(d.deliveryId)}>{redelivering === d.deliveryId && <Spinner />}Redeliver</Button></div>}
+            {errors.map((message) => <p key={message} className={styles.error}>{message}</p>)}
+            {d.accepted && <ButtonGroup label="Delivery actions"><Button type="button" size="small" disabled={loading || !!redelivering} aria-busy={redelivering === d.deliveryId} onClick={() => void redeliver(d.deliveryId)}>{redelivering === d.deliveryId && <Spinner />}Redeliver</Button></ButtonGroup>}
             <h4>Headers</h4>
             <pre>{pretty(d.headers)}</pre>
             <h4>Body</h4>

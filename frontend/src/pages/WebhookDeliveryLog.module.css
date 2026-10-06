@@ -1,0 +1,11 @@
+.deliveries { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.deliveries > header { display: flex; align-items: center; justify-content: space-between; }
+.deliveries h3 { margin: 0; }
+.delivery { border: 1px solid var(--border); }
+.delivery > summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; cursor: pointer; font-size: 12px; }
+.delivery > summary code { font-family: var(--font-conversation-mono); color: var(--text); }
+.outcomes { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.delivery > :not(summary) { margin: 0 10px 8px; }
+.delivery h4 { margin-top: 8px; color: var(--text-dim); font-size: 11px; text-transform: uppercase; }
+.delivery pre { max-height: 240px; overflow: auto; padding: 8px; background: var(--bg); font: 11px/1.4 var(--font-conversation-mono); white-space: pre-wrap; word-break: break-all; }
+.error { color: var(--danger); }
