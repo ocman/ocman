@@ -85,6 +85,19 @@ it.each(['epics', 'issues'])('lets the user retry failed %s loading', (source) =
   else vi.mocked(useFactoryGraphIssues).mockReturnValue([{ isError: true, refetch }] as never);
   show();
   expect(screen.getByRole('alert')).toHaveTextContent('Could not load Factory recovery.');
+  expect(screen.getByRole('alert')).toHaveClass('oc-error-banner', 'oc-error-banner--compact');
+  expect(screen.getByRole('alert')).not.toHaveClass('factory-plan-approval');
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(refetch).toHaveBeenCalled();
+});
+
+it.each(['epics', 'issues'])('disables retry while failed %s loading is being retried', (source) => {
+  if (source === 'epics') {
+    vi.mocked(useWorkEpics).mockReturnValue({ isError: true, isFetching: true, refetch: vi.fn() } as never);
+    vi.mocked(useFactoryGraphIssues).mockReturnValue([]);
+  }
+  else vi.mocked(useFactoryGraphIssues).mockReturnValue([{ isError: true, isFetching: true, refetch: vi.fn() }] as never);
+  show();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Retry' })).toHaveAttribute('aria-busy', 'true');
 });

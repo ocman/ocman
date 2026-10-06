@@ -133,6 +133,19 @@ tr.no-port { opacity: 0.4; }
 }
 .oc-error-banner button:hover { background: rgba(243, 139, 168, 0.15); }
 
+.oc-error-banner--compact {
+  padding: 4px 16px;
+  margin: 0;
+  background: transparent;
+  border: 0;
+}
+.oc-error-banner--compact button {
+  padding: 0;
+  border: 0;
+  text-decoration: underline;
+}
+.oc-error-banner--compact button:hover { background: transparent; }
+
 /* VS Code open button */
 .vscode-btn {
   display: inline-flex;
