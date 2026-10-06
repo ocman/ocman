@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -51,6 +52,45 @@ func TestKnownAgentOptionsScopesDirectoriesSharingPort(t *testing.T) {
 	}
 	if got := knownAgentOptions(context.Background(), []string{"/alpha", "/beta", "/offline"}); !reflect.DeepEqual(got, []string{"alpha-agent", "beta-agent", "build", "plan"}) {
 		t.Fatal(got)
+	}
+}
+
+func TestKnownAgentOptionsStopsAfterStalledCatalog(t *testing.T) {
+	ports, catalog := defaultAgentPorts, defaultAgentCatalog
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	defaultAgentPorts = func() map[string]string {
+		targets := make(map[string]string)
+		for i := range 500 {
+			targets[fmt.Sprintf("/project-%d", i)] = "1001"
+		}
+		return targets
+	}
+	calls := 0
+	defaultAgentCatalog = func(ctx context.Context, _, _ string) []string {
+		calls++
+		<-ctx.Done()
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if got := knownAgentOptions(ctx, nil); !reflect.DeepEqual(got, []string{"build", "plan"}) || calls != 1 {
+		t.Fatalf("fallback = %v, catalog calls = %d, want one call", got, calls)
+	}
+}
+
+func TestKnownAgentOptionsSetsOverallDeadline(t *testing.T) {
+	ports, catalog := defaultAgentPorts, defaultAgentCatalog
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	defaultAgentPorts = func() map[string]string { return map[string]string{"/repo": "1001"} }
+	bounded := false
+	defaultAgentCatalog = func(ctx context.Context, _, _ string) []string {
+		deadline, ok := ctx.Deadline()
+		bounded = ok && time.Until(deadline) <= 2*time.Second
+		return []string{"custom"}
+	}
+	knownAgentOptions(context.Background(), nil)
+	if !bounded {
+		t.Fatal("agent discovery has no overall deadline")
 	}
 }
 

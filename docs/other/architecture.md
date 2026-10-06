@@ -498,6 +498,9 @@ flowchart TD
   single machine server without launching an instance. Hidden helpers and
   subagent-only agents are excluded. With no reachable instance, `build`, `plan`,
   and the saved preference remain selectable; remote-only catalogs are not read.
+  Catalog discovery has a two-second overall deadline and stops reading more
+  directories on cancellation, so an unresponsive instance still leaves fallback
+  choices available.
   An explicit composer selection wins.
   `projectSettingsCache` shares the project settings fetch across conversations
   and sibling worktrees, keyed by owner and project root. Successful global or

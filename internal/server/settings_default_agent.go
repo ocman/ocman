@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -19,17 +20,25 @@ var defaultAgentCatalog = opencode.AgentNames
 var defaultAgentPort = opencode.DiscoverOpenCodePort
 
 func knownAgentOptions(ctx context.Context, directories []string) []string {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	known := map[string]bool{"build": true, "plan": true}
 	targets := defaultAgentPorts()
 	if targets == nil {
 		targets = make(map[string]string)
 	}
 	for _, directory := range directories {
+		if ctx.Err() != nil {
+			break
+		}
 		if port := defaultAgentPort(directory); port != "" {
 			targets[directory] = port
 		}
 	}
 	for directory, port := range targets {
+		if ctx.Err() != nil {
+			break
+		}
 		for _, agent := range defaultAgentCatalog(ctx, port, directory) {
 			known[agent] = true
 		}

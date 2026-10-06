@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
@@ -46,5 +47,33 @@ func TestAgentNamesScopesV2ProjectsOnSharedServer(t *testing.T) {
 		if got := AgentNames(context.Background(), f.Port(), directory); !reflect.DeepEqual(got, []string{name}) {
 			t.Fatalf("%s: got %v, want %s", directory, got, name)
 		}
+	}
+}
+
+func TestAgentNamesCancellationWhileCacheFetchIsInFlight(t *testing.T) {
+	started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	const port = "agent-cancel-test"
+	t.Cleanup(func() { catalogCache.invalidatePort(port) })
+	go func() {
+		catalogCache.getOrFetch(port, "/agent", func() ([]byte, bool) {
+			close(started)
+			<-release
+			return []byte(`[{"name":"custom","mode":"primary"}]`), true
+		})
+		close(finished)
+	}()
+	<-started
+	defer func() { close(release); <-finished }()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	result := make(chan []string, 1)
+	go func() { result <- AgentNames(ctx, port, "/repo") }()
+	select {
+	case names := <-result:
+		if len(names) != 0 {
+			t.Fatal(names)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("agent read ignored cancellation while waiting on the shared cache")
 	}
 }
