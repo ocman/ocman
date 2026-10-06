@@ -252,7 +252,7 @@ for the full step-by-step guide, security notes, and troubleshooting.
 ## OpenTelemetry (optional)
 
 Pass `--otel=<endpoint>` (or set `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces and metrics to
-an OTLP collector. Empty or unset disables telemetry with zero overhead.
+an OTLP collector. Empty or unset disables telemetry export.
 
 The URL scheme selects the transport:
 - `http(s)://...` → OTLP/HTTP
@@ -264,3 +264,19 @@ All other configuration uses standard `OTEL_*` env vars (`OTEL_SERVICE_NAME`,
 For local dev, `make otel-up` starts a bundled Grafana LGTM stack on `:3000`, `:4317` and
 `:4318`. The `make dev*` targets export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
 and `OTEL_SERVICE_NAME=ocman-dev` for you. See `observability/` for dashboard provisioning.
+
+The dashboard's Database section shows query rate and p95 latency by SQL fingerprint.
+All SQLite handles are instrumented: OpenCode, ocman state, the analytics cache, and
+maintenance. Direct and prepared executions are counted, including queries inside
+transactions. Preparation, row iteration, and commit/rollback are excluded from query rates.
+The rate uses the count of `db_sql_latency_milliseconds`; no separate counter is needed.
+Latency measures the driver's execution call, not the subsequent row scan.
+
+`db_query_fingerprint` identifies a normalized query shape; `db_query_summary` gives
+its first 160 characters. Literal values and comments are removed, parameter names
+are replaced, and variable-length `IN` lists are collapsed before hashing. Bound
+arguments are never included. Quoted identifiers remain distinct. Both labels are
+also trace attributes, so search Tempo with
+`{ resource.service.name="ocman" && span.db.query.fingerprint="<fingerprint>" }`
+to locate the query's SQL and calling request. Use your configured service name.
+New series appear after running a build containing this instrumentation with telemetry enabled.

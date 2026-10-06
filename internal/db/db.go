@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 // DB wraps the SQLite connection.
@@ -122,16 +123,9 @@ func Open(path string) (*DB, error) {
 	}
 	// otelsql.Open wraps the underlying sqlite3 driver so every
 	// database/sql operation produces a span and increments the
-	// standard db.client.* metrics. When telemetry is disabled the
-	// global TracerProvider/MeterProvider are no-ops, so this adds
-	// only the minimal driver-wrapper overhead (a few nanoseconds
-	// per call).
-	db, err := otelsql.Open("sqlite", dsn,
-		otelsql.WithAttributes(
-			semconv.DBSystemSqlite,
-			attribute.String("db.name", "opencode"),
-		),
-	)
+	// latency histogram with query fingerprints. When telemetry is
+	// disabled the global TracerProvider/MeterProvider are no-ops.
+	db, err := telemetry.OpenSQL(dsn, "opencode")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -164,12 +158,7 @@ func (d *DB) V2() bool { return d.v2 }
 // test setup where schema creation must happen before read-only access.
 func OpenReadWrite(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL", path)
-	db, err := otelsql.Open("sqlite", dsn,
-		otelsql.WithAttributes(
-			semconv.DBSystemSqlite,
-			attribute.String("db.name", "opencode-rw"),
-		),
-	)
+	db, err := telemetry.OpenSQL(dsn, "opencode-rw")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}

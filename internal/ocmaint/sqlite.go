@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 	_ "modernc.org/sqlite"
 )
 
@@ -32,7 +33,7 @@ const oldSessions = `SELECT id FROM session WHERE time_updated < ?`
 // openWritable opens one pinned read-write connection to the OpenCode
 // database. ATTACH is per connection, so every step runs on this one.
 func openWritable(ctx context.Context, path string) (*sql.DB, *sql.Conn, error) {
-	db, err := sql.Open("sqlite", "file:"+path)
+	db, err := telemetry.OpenSQL("file:"+path, "opencode-maintenance")
 	if err != nil {
 		return nil, nil, err
 	}

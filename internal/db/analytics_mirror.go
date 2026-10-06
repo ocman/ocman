@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -97,7 +98,7 @@ func (m *analyticsMirror) fullDue() bool {
 // identifies the OpenCode database; a mirror built from another source is
 // wiped. Until the first build completes, analytics read OpenCode directly.
 func (d *DB) EnableAnalyticsMirror(path, source string) error {
-	mdb, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	mdb, err := telemetry.OpenSQL("file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", "analytics-cache")
 	if err != nil {
 		return fmt.Errorf("opening analytics mirror: %w", err)
 	}

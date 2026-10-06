@@ -517,7 +517,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (db_name, method) (rate(db_sql_latency_milliseconds_count{service_name=\"$service\",method=~\"sql.conn.query|sql.conn.exec\"}[5m]))",
+          "expr": "sum by (db_name, method) (rate(db_sql_latency_milliseconds_count{service_name=\"$service\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m]))",
           "legendFormat": "{{db_name}} / {{method}}"
         }
       ],
@@ -532,7 +532,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, db_name) (rate(db_sql_latency_milliseconds_bucket{service_name=\"$service\",method=~\"sql.conn.query|sql.conn.exec\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, db_name) (rate(db_sql_latency_milliseconds_bucket{service_name=\"$service\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m])))",
           "legendFormat": "{{db_name}}"
         }
       ],
@@ -574,12 +574,45 @@
       "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Background work", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 83 }, "collapsed": false, "panels": [] },
+    {
+      "type": "timeseries",
+      "title": "Query rate by SQL fingerprint",
+      "description": "Top 20 SQL query shapes by executions/sec, including prepared statements and transaction queries. Values, comments and IN-list sizes are normalized. Match db.query.fingerprint in Tempo to find the full SQL.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 83 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(20, sum by (db_name, db_query_fingerprint, db_query_summary) (rate(db_sql_latency_milliseconds_count{service_name=\"$service\",db_query_fingerprint!=\"\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m])))",
+          "legendFormat": "{{db_name}} / {{db_query_fingerprint}} / {{db_query_summary}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Query latency p95 by SQL fingerprint",
+      "description": "Top 20 SQL query shapes by p95 driver execution latency. Excludes prepare, row iteration and transaction bookkeeping, so executions are counted once.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 83 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(20, histogram_quantile(0.95, sum by (le, db_name, db_query_fingerprint, db_query_summary) (rate(db_sql_latency_milliseconds_bucket{service_name=\"$service\",db_query_fingerprint!=\"\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m]))))",
+          "legendFormat": "{{db_name}} / {{db_query_fingerprint}} / {{db_query_summary}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } }
+    },
+
+    { "type": "row", "title": "Background work", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Auto-archive sessions/run",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 84 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 92 },
       "targets": [
         {
           "refId": "A",
@@ -599,7 +632,7 @@
       "title": "Projects-index refresh latency",
       "description": "p50/p95 of the periodic projects index rebuild.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 84 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 92 },
       "targets": [
         {
           "refId": "A",
@@ -615,13 +648,13 @@
       "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Caches", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Caches", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 99 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Cache entries",
       "description": "Current entry count per in-memory cache. A monotonic climb on an unbounded cache is the signature of a key-cardinality leak (see the opencode.sessions_list investigation). Bounded caches should stay flat near their cap once warm.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 92 },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 100 },
       "targets": [
         {
           "refId": "A",
@@ -636,7 +669,7 @@
       "title": "Cache hit rate",
       "description": "Fraction of lookups served from cache, per cache, over the last 5 min. A consistently low hit rate on a TTL'd cache usually means the key includes a high-cardinality field that varies between callers (e.g. a per-poll timestamp).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 92 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 100 },
       "targets": [
         {
           "refId": "A",
@@ -659,7 +692,7 @@
       "title": "Lookup rate (hits vs misses)",
       "description": "Lookups/sec per cache, split by hit/miss. Total height = traffic against the cache. A flat hit-only series for a cache that's supposed to expire (e.g. opencode.sessions_list with a 3 s TTL) suggests miss handling has degraded; a flat miss-only series suggests the cache is permanently cold (key cardinality issue).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 92 },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 100 },
       "targets": [
         {
           "refId": "A",
@@ -675,12 +708,12 @@
       }
     },
 
-    { "type": "row", "title": "Runtime", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 99 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Runtime", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 107 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Memory",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 100 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 108 },
       "targets": [
         { "refId": "A", "expr": "go_memory_used_bytes{service_name=\"$service\"}", "legendFormat": "in use" },
         { "refId": "B", "expr": "go_memory_gc_goal_bytes{service_name=\"$service\"}", "legendFormat": "GC goal" }
@@ -691,7 +724,7 @@
       "type": "timeseries",
       "title": "Allocations",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 100 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 108 },
       "targets": [
         {
           "refId": "A",
@@ -707,13 +740,13 @@
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Traces", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 107 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Traces", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 115 }, "collapsed": false, "panels": [] },
     {
       "type": "table",
       "title": "Recent traces",
       "description": "Recent ocman traces. Click a Trace ID to drill into Tempo.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 108 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 116 },
       "targets": [
         {
           "refId": "A",
@@ -731,7 +764,7 @@
       "title": "Slow API calls (>500ms)",
       "description": "Recent ocman traces with span duration over 500ms.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 118 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 126 },
       "targets": [
         {
           "refId": "A",
@@ -749,7 +782,7 @@
       "title": "Trace errors",
       "description": "Recent ocman traces containing at least one span with status=error.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 128 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 136 },
       "targets": [
         {
           "refId": "A",
@@ -767,7 +800,7 @@
       "title": "Slowest phases",
       "description": "Internal phases (srvtiming spans) ranked by duration. Use to find which phase under a slow request is the bottleneck (e.g. lsof_miss, http_messages, db_get_sessions).",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 138 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 146 },
       "targets": [
         {
           "refId": "A",
@@ -781,12 +814,12 @@
       "options": { "showHeader": true }
     },
 
-    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 148 }, "collapsed": true, "panels": [
+    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 156 }, "collapsed": true, "panels": [
       {
         "type": "logs",
         "title": "Errors and warnings",
         "datasource": { "type": "loki", "uid": "loki" },
-        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 149 },
+        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 157 },
         "targets": [
           {
             "refId": "A",
