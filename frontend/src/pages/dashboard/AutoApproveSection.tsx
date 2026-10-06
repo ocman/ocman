@@ -8,8 +8,10 @@ import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../c
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
-import { Button, CheckboxField, TextareaField, TextField } from '../../components/Control';
+import { Button, TextareaField, TextField } from '../../components/Control';
 import { IconButton } from '../../components/IconButton';
+import { ToggleField } from '../../components/ToggleField';
+import './AutoApproveSection.css';
 
 type PromptSection = { title: string; content: string; enabled?: boolean };
 // ---------------------------------------------------------------------------
@@ -32,14 +34,11 @@ function PromptSectionEditor({
   return (
     <div className="settings-prompt-section">
       <div className="settings-prompt-section-header">
-        <label className="settings-toggle">
-          <CheckboxField
-            checked={enabled}
-            aria-label="Enable rule"
-            onChange={(e) => onChange({ ...section, enabled: e.target.checked })}
-          />
-          <span className="settings-toggle-track" aria-hidden="true" />
-        </label>
+        <ToggleField
+          checked={enabled}
+          label="Enable rule"
+          onChange={(e) => onChange({ ...section, enabled: e.target.checked })}
+        />
         <TextField
           type="text"
           className="settings-prompt-section-title"

@@ -14,7 +14,6 @@ import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { RefreshButton } from '../components/RefreshButton';
 import { HeaderPortal } from './session-detail/MobileHeaderControls';
-import './Dashboard.css';
 import './WorktreesView.css';
 
 export function WorktreesView() {

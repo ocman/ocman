@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import './Dashboard.css';
 import { Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import type { Project, Session } from '../lib/api';

@@ -51,28 +51,21 @@ test('clicking Settings navigates to /settings', async ({ mockedPage: page }) =>
 
 test('settings tab shows bell sound toggle', async ({ mockedPage: page }) => {
   await page.goto('/settings');
-  // Scope to the Bell sound row — there are now multiple toggle rows
-  // in the Notifications section (system notifications + bell sound).
-  const bellRow = page.locator('.settings-row', { has: page.locator('.settings-row-label', { hasText: 'Bell sound' }) });
-  await expect(bellRow.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeVisible();
-  // The <input> is visually hidden for styling (see .settings-toggle input in
-  // Dashboard.css); assert on the label (which IS visible) and that the
-  // checkbox is attached to the DOM.
-  await expect(bellRow.locator('.settings-toggle')).toBeVisible();
-  await expect(bellRow.locator('.settings-toggle input[type="checkbox"]')).toBeAttached();
+  await expect(page.getByText('Bell sound', { exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Bell sound', exact: true })).toBeVisible();
 });
 
 test('settings sidebar switches the visible group', async ({ mockedPage: page }) => {
   await page.goto('/settings');
   // Notifications is the default group: its Bell sound row is visible,
   // while the Auto-approve group's content is hidden.
-  await expect(page.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeVisible();
-  await expect(page.locator('.settings-row-label', { hasText: 'Human review window' })).toBeHidden();
+  await expect(page.getByText('Bell sound', { exact: true })).toBeVisible();
+  await expect(page.getByText('Human review window', { exact: true })).toBeHidden();
 
   // Selecting the Auto-approve sidebar item reveals it and hides Notifications.
   await page.getByRole('button', { name: 'Auto-approve' }).click();
-  await expect(page.locator('.settings-row-label', { hasText: 'Human review window' })).toBeVisible();
-  await expect(page.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeHidden();
+  await expect(page.getByText('Human review window', { exact: true })).toBeVisible();
+  await expect(page.getByText('Bell sound', { exact: true })).toBeHidden();
 });
 
 test('settings sidebar uses a stable sticky offset', async ({ mockedPage: page }) => {

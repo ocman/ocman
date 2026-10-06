@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import './LogsTab.css';
 import type { MetricsLogKind } from '../../lib/api';
 import { renderModel } from '../../lib/format';
 import { useMetricLogs } from '../../lib/queries';

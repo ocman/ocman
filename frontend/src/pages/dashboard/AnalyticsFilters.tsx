@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import { SearchSelect } from '../../components/SearchSelect';
 import { useDashboard } from './context';
+import './AnalyticsFilters.css';
 
 type Option = { value: string; label: string; icon?: ReactNode };
 
@@ -26,7 +27,7 @@ export function AnalyticsFilters({
 }) {
   const { projects, dirScope, setDirScope } = useDashboard();
   return (
-    <div className="metrics-filters">
+    <div className="analytics-filters">
       <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} showLabel />
       {onAgentChange && (
         <label className="metrics-filter">

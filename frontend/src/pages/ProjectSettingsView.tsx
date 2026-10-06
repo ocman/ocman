@@ -9,7 +9,7 @@ import { SaveStatus } from '../components/SaveStatus';
 import type { SearchSelectOption } from '../components/SearchSelect';
 import { Button } from '../components/Control';
 import { IconButton } from '../components/IconButton';
-import './Dashboard.css';
+import styles from './ProjectSettingsView.module.css';
 
 /** Model choices: the catalogue of any session in the project, else the
  *  models the project has historically used. */
@@ -94,9 +94,9 @@ export function ProjectSettingsView() {
             No models configured. Sessions use OpenCode's own default model and never switch provider when one runs out of tokens.
           </div>
         ) : (
-          <ol className="settings-prompt-sections" aria-label="Project models">
+          <ol className={styles.models} aria-label="Project models">
             {models.map((m, i) => (
-              <li key={m} className="settings-prompt-section">
+              <li key={m} className={styles.model}>
                 <span className="mono">{m}</span>
                 {i === 0 && <small data-testid="project-default-badge">Project default</small>}
                 <div>

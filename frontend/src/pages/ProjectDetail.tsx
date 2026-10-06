@@ -14,10 +14,7 @@ import { useProjects, useSessions } from '../lib/queries';
 import { projectIdentityIndex } from '../lib/projectIdentity';
 import { remoteLog } from '../lib/remoteLog';
 import type { TmuxClient } from '../lib/api';
-// ProjectDetail is mounted outside DashboardLayout, so we need to pull in
-// Dashboard.css explicitly to get the .oc-time-range / .oc-time-range-btn
-// styles used by the filter bar below.
-import './Dashboard.css';
+import './dashboard/DashboardToolbar.css';
 
 const DEFAULT_TIME_RANGE = 168; // 7d
 

@@ -1,6 +1,6 @@
 import { EmptyState } from './EmptyState';
-import { Button } from './Control';
 import { searchSettings, type SettingId, type SettingsGroupId } from '../lib/settingsCatalog';
+import styles from './SettingsSearch.module.css';
 
 /** Results for a Settings search; picking one jumps to its row. */
 export function SettingsSearchResults({
@@ -17,15 +17,15 @@ export function SettingsSearchResults({
     return <EmptyState role="status">No settings match “{query.trim()}”.</EmptyState>;
   }
   return (
-    <ul className="settings-search-results" aria-label="Matching settings">
+    <ul className={styles.results} aria-label="Matching settings">
       {results.map((r) => (
         <li key={r.id}>
-          <Button type="button" variant="ghost" className="settings-search-result" onClick={() => onPick(r.id)}>
-            <span className="settings-search-result-group">{groupLabels[r.group]}</span>
-            <span className="settings-row-label">{r.title}</span>
-            <span className="settings-row-desc">{r.description}</span>
-            {r.requires && <span className="settings-row-desc">{r.requires}</span>}
-          </Button>
+          <button type="button" className={styles.result} onClick={() => onPick(r.id)}>
+            <span className={styles.group}>{groupLabels[r.group]}</span>
+            <span className={styles.title}>{r.title}</span>
+            <span className={styles.description}>{r.description}</span>
+            {r.requires && <span className={styles.description}>{r.requires}</span>}
+          </button>
         </li>
       ))}
     </ul>

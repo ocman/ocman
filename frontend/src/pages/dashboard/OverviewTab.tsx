@@ -105,3 +105,4 @@ export function OverviewTab() {
     </div>
   );
 }
+import './OverviewTab.css';

@@ -4,6 +4,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Skeleton } from '../../components/Skeleton';
 import { Pagination } from '../../components/Pagination';
+import './shared.css';
 
 // ---------------------------------------------------------------------------
 // MetricCard

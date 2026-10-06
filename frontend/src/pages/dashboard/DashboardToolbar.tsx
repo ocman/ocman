@@ -1,5 +1,6 @@
 import type { Project } from '../../lib/api';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
+import './DashboardToolbar.css';
 
 // ---------------------------------------------------------------------------
 // Shared dashboard toolbar: project scope picker + fuzzy search + a

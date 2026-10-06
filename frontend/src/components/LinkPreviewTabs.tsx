@@ -1,7 +1,7 @@
 import { LinkPreviewSettings } from './LinkPreviewSettings';
 import { PreviewAppSettings } from './PreviewAppSettings';
 import { PreviewProviderSettings } from './PreviewProviderSettings';
-import { SettingRow } from './SettingRow';
+import { SettingRow, SettingDescription } from './SettingRow';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './Tabs';
 
 /** Settings → Link previews, split into accounts, sign-in apps and link rules. */
@@ -14,11 +14,11 @@ export function LinkPreviewTabs({ tab = 'accounts' }: { tab?: 'accounts' | 'apps
         <TabsTrigger value="rules">Link rules</TabsTrigger>
       </TabsList>
       <TabsContent value="accounts">
-        <p className="settings-row-desc">Previews are fetched on this machine with its tokens. Only links on set-up providers are looked up.</p>
+        <SettingDescription>Previews are fetched on this machine with its tokens. Only links on set-up providers are looked up.</SettingDescription>
         <PreviewProviderSettings />
       </TabsContent>
       <TabsContent value="apps">
-        <p className="settings-row-desc">Optional. Needed only for Slack and Jira, which have no personal tokens. Saved apps override the environment.</p>
+        <SettingDescription>Optional. Needed only for Slack and Jira, which have no personal tokens. Saved apps override the environment.</SettingDescription>
         <PreviewAppSettings />
       </TabsContent>
       <TabsContent value="rules">

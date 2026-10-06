@@ -6,6 +6,7 @@ import { ModelsTab } from './ModelsTab';
 import { OverviewTab } from './OverviewTab';
 import { PerformanceTab } from './PerformanceTab';
 import { PermissionsTab } from './PermissionsTab';
+import './AnalyticsTab.css';
 
 const sections = [
   ['overview', 'Overview'],

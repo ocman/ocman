@@ -78,7 +78,7 @@ export function ImportSharedConversation() {
   };
 
   return (
-    <main className="settings-page" data-testid="import-shared-conversation">
+    <main className={styles.page} data-testid="import-shared-conversation">
       <h1>Fork shared conversation</h1>
       <p>Choose a local project. The conversation will be placed in the composer for review and will not be sent automatically.</p>
       {error && <div role="alert">{error}</div>}
@@ -103,3 +103,4 @@ export function ImportSharedConversation() {
     </main>
   );
 }
+import styles from './ImportSharedConversation.module.css';

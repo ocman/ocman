@@ -10,7 +10,7 @@ import { useAuthStore } from '../../lib/authStore';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
-import { SettingRow, SettingToggle } from '../../components/SettingRow';
+import { SettingRow, SettingToggle, SettingDescription } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
 import { getOpenInChrome, isIOS, setOpenInChrome } from '../../lib/externalLinks';
 import { Button, SearchField } from '../../components/Control';
@@ -20,6 +20,7 @@ import { settingEntry, type SettingId, type SettingsGroupId } from '../../lib/se
 import { LinkPreviewTabs } from '../../components/LinkPreviewTabs';
 import { NotificationsSection, SessionsSection } from './SettingsSections';
 import { AutoApproveSection } from './AutoApproveSection';
+import './SettingsTab.css';
 
 export function SettingsTab() {
   usePageTitle('Settings');
@@ -110,9 +111,9 @@ export function SettingsTab() {
         {searching && <SettingsSearchResults query={query} groupLabels={groupLabels} onPick={pick} />}
         <div hidden={searching}>
         {missing?.requires && (
-          <p className="settings-row-desc" role="status">
+          <SettingDescription role="status">
             <strong>{missing.title}</strong> is not shown right now. {missing.requires}
-          </p>
+          </SettingDescription>
         )}
         {active === 'plugins' && <div className="settings-section">
           <h2 className="settings-section-title">Plugins</h2>

@@ -1,0 +1,8 @@
+.metrics-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.oc-projects-toolbar { align-items: flex-end; justify-content: space-between; }
+.oc-projects-toolbar .oc-project-search, .oc-projects-toolbar .metrics-filter .oc-search-select > button, .oc-projects-toolbar .oc-dashboard-primary-action { height: 38px; box-sizing: border-box; border-radius: 0; font-size: 13px; }
+.oc-project-search { flex: 1; min-width: 160px; align-self: flex-end; padding: 0 10px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+.oc-project-search::placeholder { color: var(--text-dim); }
+.oc-projects-toolbar .metrics-filter .oc-search-select > button { padding: 0 12px; }
+.oc-dashboard-primary-action { align-self: flex-end; gap: 6px; padding: 0 12px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+@media (max-width: 640px) { .oc-dashboard-primary-action { align-self: flex-start; } }

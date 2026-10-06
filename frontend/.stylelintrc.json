@@ -29,6 +29,12 @@
   },
   "overrides": [
     {
+      "files": ["src/**/*.module.css"],
+      "rules": {
+        "selector-pseudo-class-no-unknown": [true, { "ignorePseudoClasses": ["global", "local"] }]
+      }
+    },
+    {
       "files": ["src/tokens.css"],
       "rules": {
         "color-no-hex": null

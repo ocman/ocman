@@ -79,4 +79,9 @@
   --oc-text: #e0e0e0;
   --oc-text-muted: #888;
   --oc-danger: #e06c75;
+  --heatmap-0-bg: #2a2b3d;
+  --heatmap-1: rgba(203, 166, 247, 0.25);
+  --heatmap-2: rgba(203, 166, 247, 0.50);
+  --heatmap-3: rgba(203, 166, 247, 0.75);
+  --heatmap-4: rgba(203, 166, 247, 1.00);
 }

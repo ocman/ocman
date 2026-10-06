@@ -1,0 +1,11 @@
+.nav-tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.nav-tabs::-webkit-scrollbar { display: none; }
+.analytics-section-select { display: none; }
+.nav-tab { position: relative; padding: 10px 20px; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: var(--text-dim); cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; letter-spacing: .2px; transition: color .15s; text-decoration: none; display: inline-block; white-space: nowrap; flex-shrink: 0; }
+.nav-tab:hover { color: var(--text); text-decoration: none; }
+.nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+@media (max-width: 640px) {
+  .analytics-tabs { display: none; }
+  .analytics-section-select { display: grid; gap: 4px; margin: 0 0 20px; color: var(--text-dim); font-size: 12px; }
+  .analytics-section-select select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font: inherit; }
+}

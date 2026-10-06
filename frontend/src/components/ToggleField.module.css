@@ -1,0 +1,10 @@
+.toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0; }
+.input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.track { display: inline-block; width: 36px; height: 20px; background: var(--border); border-radius: 10px; transition: background .2s; position: relative; }
+.track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-dim); transition: transform .2s, background .2s; }
+.input:checked + .track { background: var(--accent); }
+.input:checked + .track::after { transform: translateX(16px); background: var(--white); }
+.input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 3px; }
+.toggle:has(.input:disabled) { opacity: .5; cursor: not-allowed; }
+.input:disabled { cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .track, .track::after { transition: none; } }

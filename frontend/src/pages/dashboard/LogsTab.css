@@ -1,0 +1,4 @@
+.metrics-log-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 4px; }
+.metrics-log-tabs { margin-bottom: 0; border-bottom: none; }
+.metrics-log-range { color: var(--text-dim); font-size: 12px; font-weight: 400; }
+.metrics-table-wrap { overflow-x: auto; }

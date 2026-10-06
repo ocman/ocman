@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import './ActivityTab.css';
 import { Bar } from 'react-chartjs-2';
 import type { ActivityDay } from '../../lib/api';
 import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS } from '../../lib/chartConfig';

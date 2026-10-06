@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { buildScopeTree, flattenForOptions } from '../lib/projectTree';
 import { shortPath } from '../lib/format';
 import { SearchSelect } from './SearchSelect';
+import './ProjectScopePicker.css';
 
 /**
  * ProjectScopePicker — a single dropdown that lets the user scope the
