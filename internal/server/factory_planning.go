@@ -137,7 +137,7 @@ func (s *Server) launchFactoryUnblockSession(ctx context.Context, epicID, issueI
 	prompt := fmt.Sprintf("Investigate why Factory Issue %s in Work Epic %s is blocked. The current evidence is:\n\n```json\n%s\n```\n\nInspect the admitted repositories without modifying files:\n- %s\n\nInspect Factory state too. Propose the smallest safe fix, explain it in the conversation, then invoke the factory_unblock MCP tool with that exact action and unblock_token %s. Its permission prompt supplies the user-facing Allow and Reject buttons, and the action cannot run before approval. Supported actions are reopen with epic_id and issue_id, or mutate_graph with epic_id and a strict GraphMutation JSON payload. After execution, explain what changed.", issue.ID, epic.ID, evidence, strings.Join(projects, "\n- "), token)
 	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt}); err != nil {
 		s.factoryUnblockTokens.Delete(token)
-		_ = s.sessions.Dispose(ctx, session.Platform, platforms.DisposeSessionRequest{SessionID: session.ID})
+		_ = launcher.StopPlanningSession(context.WithoutCancel(ctx), session)
 		return session, fmt.Errorf("prompt unblock session: %w", err)
 	}
 	return session, nil
@@ -313,7 +313,8 @@ func factoryStrongModel(models []platforms.SessionModel) string {
 }
 
 func (l factoryPlanningLauncher) StopPlanningSession(ctx context.Context, session factory.PlanningSession) error {
-	return l.server.sessions.Dispose(ctx, session.Platform, platforms.DisposeSessionRequest{SessionID: session.ID})
+	// Stop the turn, preserving the session and its complete transcript.
+	return l.server.sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
 }
 
 func (l factoryPlanningLauncher) ProbePlanningSession(ctx context.Context, session factory.PlanningSession) (bool, error) {

@@ -1196,6 +1196,8 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 		}
 	}
 	launcher.dead = true
+	// Dispatch is driven explicitly below; startup's worker would race these assertions.
+	svc.startOnce.Do(func() {})
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}

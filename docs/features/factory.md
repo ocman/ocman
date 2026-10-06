@@ -261,6 +261,10 @@ Ocman checks that the branch still matches that checkpoint. Missing branches,
 dirty worktrees, or unexpected commits require reconciliation rather than a
 silent reset. Checkpoints survive an ocman restart.
 
+Factory preserves session history when stopping, retrying, or cancelling work,
+including failed prompt delivery. Stopping a session aborts its running turn
+without deleting the session or its transcript.
+
 Factory archives its sessions once their work is finished: an implementation
 or delivery session when its Attempt completes, a planning session when its
 plan is approved or applied as a scope replan, and every remaining Factory

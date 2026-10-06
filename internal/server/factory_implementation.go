@@ -365,7 +365,7 @@ func (l factoryImplementationLauncher) ResumeImplementationSession(ctx context.C
 }
 
 func (l factoryImplementationLauncher) StopImplementationSession(ctx context.Context, session factory.PlanningSession) error {
-	return l.server.sessions.Dispose(ctx, session.Platform, platforms.DisposeSessionRequest{SessionID: session.ID})
+	return l.server.sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
 }
 
 func (l factoryImplementationLauncher) RespondImplementationPermission(ctx context.Context, session factory.PlanningSession, permissionID, reply string) error {
