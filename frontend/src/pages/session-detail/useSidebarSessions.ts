@@ -220,7 +220,8 @@ export function useSidebarSessions({
           const current = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
           const readState = mergeSidebarSessions([row], current ? [current] : [], undefined, statusRow ? [statusRow] : [],
             { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads })[0];
-          patchRecentSession(sessionID, { ...(row.status === 'interrupted' ? { seen: readState.seen, seenTimeUpdated: readState.seenTimeUpdated } : {}), lastTurnCompletedAt: Math.max(
+          const sameInterruption = row.status === 'interrupted' && current?.status === 'interrupted' && current.timeUpdated <= row.timeUpdated;
+          patchRecentSession(sessionID, { ...(sameInterruption ? { seen: readState.seen, seenTimeUpdated: readState.seenTimeUpdated } : {}), lastTurnCompletedAt: Math.max(
             row.lastTurnCompletedAt ?? 0, current?.lastTurnCompletedAt ?? 0,
           ) }, owner);
         }).catch((err) => remoteLog.error('Failed to refresh completed session', err));

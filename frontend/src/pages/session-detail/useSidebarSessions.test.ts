@@ -177,6 +177,26 @@ describe('useSidebarSessions live refresh', () => {
     expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
   });
 
+  it.each([
+    ['busy', true, false],
+    ['interrupted', true, false],
+    ['interrupted', false, true],
+  ] as const)('ignores an old interruption peek after newer %s activity with seen=%s', async (status, seen, oldSeen) => {
+    const row = { id: 'crashed', platform: 'opencode', status: 'busy', seen: true, timeUpdated: 100, seenTimeUpdated: 100, lastTurnCompletedAt: 50 } as Session;
+    let finish!: (value: SessionDetail) => void;
+    const peekSession = vi.fn(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+    useApiStore.setState({ recentSessions: [row], peekSession });
+    const abortSignalRef = { current: new AbortController() };
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    act(() => sessionChanged?.(row.id, undefined, { status: 'interrupted' }, row.platform));
+    act(() => useApiStore.getState().patchRecentSession(row.id, { status, timeUpdated: 200, seen, seenTimeUpdated: 200 }, row.platform));
+    await act(async () => finish({ session: { ...row, status: 'interrupted', seen: oldSeen, lastTurnCompletedAt: 100 }, messages: [], parts: [] }));
+    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ status, timeUpdated: 200, seen, seenTimeUpdated: 200, lastTurnCompletedAt: 100 });
+  });
+
   it('preserves viewing an interruption after a list refresh starts', async () => {
     const row = { id: 'crashed', platform: 'r-box:opencode', status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
     let finish!: (value: Session[]) => void;
