@@ -36,6 +36,8 @@ import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
 import { checkoutKey } from '../../lib/projectIdentity';
 import { trackRender } from '../../lib/renderRateMonitor';
+import { SidebarConversationDrafts } from './SidebarConversationDrafts';
+import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
 
 export interface SidebarProjectGroup {
   key?: string;
@@ -128,6 +130,7 @@ export function SessionSidebar({
   const [showRoutines, setShowRoutines] = useSidebarFilter('routines', false);
   const [searchQuery, setSearchQuery] = useState('');
   const draftSessionIds = useDraftSessionIds();
+  const hasPreparedDrafts = useNewConversationDrafts((state) => state.drafts.length > 0);
   const { data: workEpics } = useWorkEpics();
   // Sessions hidden by the Factory/routine filters, including descendants.
   const hiddenSessions = useMemo(() => {
@@ -369,14 +372,15 @@ export function SessionSidebar({
         <TmuxClientPopover pickerRef={pickerRef} pos={pickerPos} clients={tmux.clients} onSelect={onClientSelect} />
       )}
       <div className="session-sidebar-list" ref={sidebarListRef}>
+        <SidebarConversationDrafts searchQuery={searchQuery} />
         {loadingRecentSessions ? (
           <SessionSidebarListSkeleton rows={5} />
         ) : sidebarView === 'recent' && recentSessions.length === 0 ? (
-          <GettingStartedEmpty compact />
+          !hasPreparedDrafts && <GettingStartedEmpty compact />
         ) : sidebarView === 'recent' ? (
           renderFlatView()
         ) : sidebarProjectGroups.length === 0 ? (
-          <GettingStartedEmpty compact />
+          !hasPreparedDrafts && <GettingStartedEmpty compact />
         ) : (
           renderProjectsView()
         )}

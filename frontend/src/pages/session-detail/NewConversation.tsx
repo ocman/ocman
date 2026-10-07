@@ -8,7 +8,7 @@ import { api, postJSON, type PrepareSessionResponse, type StartSessionRequest } 
 import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { clearDraft } from '../../lib/composerDraft';
+import { forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
@@ -52,7 +52,14 @@ interface Submission {
 }
 
 export function NewConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
+  return <PreparedConversation key={params.draftId || NEW_SESSION_ID} params={params} whisperAvailable={whisperAvailable}
+    composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />;
+}
+
+function PreparedConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
   const { directory, title } = params;
+  const draftId = params.draftId || NEW_SESSION_ID;
+  const saved = useRef(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId)).current;
   const remoteId = params.remoteId || 'local';
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
@@ -105,10 +112,14 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     return () => controller.abort();
   }, [directory, remoteId, params.platform, catalogKey, catalogRequest]);
 
-  const [selectedModel, setSelectedModel] = useState('');
-  const [selectedAgent, setSelectedAgent] = useState('');
-  const [selectedReasoning, setSelectedReasoning] = useState('');
-  const [target, setTarget] = useState<SessionTarget>('worktree');
+  const [selectedModel, setSelectedModel] = useState(saved?.model || '');
+  const [selectedAgent, setSelectedAgent] = useState(saved?.agent || '');
+  const [selectedReasoning, setSelectedReasoning] = useState(saved?.reasoning || '');
+  const [target, setTarget] = useState<SessionTarget>((saved?.target as SessionTarget) || 'worktree');
+  useEffect(() => {
+    rememberConversationDraft({ directory, remoteId, platform: params.platform, title, draftId,
+      model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target });
+  }, [directory, remoteId, params.platform, title, draftId, selectedModel, selectedAgent, selectedReasoning, target]);
   const [error, setError] = useState('');
   // The submitted prompt, shown as the conversation's first message while
   // the session starts. Keyed by route so a machine switch mid-start hides it.
@@ -132,7 +143,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   // Same precedence as an existing empty session: project setting, then
   // the last pick in this project, then the directory's most recent model.
   const activeModel = catalog?.projectDefaultModel || getProjectModel(directory) || catalog?.defaultModel || '';
-  const seeded = useRef<string>('');
+  const seeded = useRef<string>(saved?.model ? directory : '');
   useEffect(() => {
     if (!catalogReady || !catalog || !activeModel || seeded.current === directory) return;
     seeded.current = directory;
@@ -236,7 +247,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       if (stillCurrent()) {
         navigateToSession(res.sessionId);
         // Only the initiating draft may be cleared, never a newer route's draft.
-        clearDraft(NEW_SESSION_ID);
+        forgetConversationDraft(draftId);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -252,7 +263,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, target, seedNewSession, navigateToSession]);
+  }, [directory, remoteId, title, routeKey, target, seedNewSession, navigateToSession, draftId]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => start(text, (r) => {
     const { model, agent, reasoning } = pick(r);
@@ -278,9 +289,9 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     postJSON<void>(`/api/session/${encodeURIComponent(id)}/shell?platform=${encodeURIComponent(sessionPlatform)}`,
       { command, agent: pick(r).agent }, { parseJSON: false }) }));
 
-  // Switching machines only re-points the route; the shared draft survives.
+  // Switching machines re-points this draft, without touching other drafts.
   const onMachineChange = async (machine: TargetCandidate) => {
-    navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title }));
+    navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title, draftId }));
   };
 
   return (
@@ -326,7 +337,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
           onTargetChange={setTarget}
           remoteId={remoteId}
           onMachineChange={onMachineChange}
-          draftKey={NEW_SESSION_ID}
+          draftKey={draftId}
         />
       </div>
     </div>

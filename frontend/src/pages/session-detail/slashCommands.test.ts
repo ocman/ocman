@@ -41,13 +41,13 @@ describe('runSlashCommand', () => {
     const c = ctx({ session: { id: 's1', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo', timeUpdated: 1 } });
     await runSlashCommand(c, 'clear', 'Next task');
     expect(c.archiveSession).toHaveBeenCalledWith('r-box:opencode', 's1', 1, true);
-    expect(c.navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo&remoteId=box&platform=r-box%3Aopencode&title=Next+task');
+    expect(c.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/new\?dir=%2Frepo&remoteId=box&platform=r-box%3Aopencode&title=Next\+task&draftId=.+$/));
   });
 
   it('/clear still opens the draft when archival fails', async () => {
     const c = ctx({ archiveSession: vi.fn().mockRejectedValue(new Error('offline')) });
     await runSlashCommand(c, 'clear', '');
-    expect(c.navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo&platform=opencode');
+    expect(c.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/session\/new\?dir=%2Frepo&platform=opencode&draftId=.+$/));
   });
 
   it.each([

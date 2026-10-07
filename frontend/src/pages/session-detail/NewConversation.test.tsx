@@ -13,6 +13,7 @@ import { describeModel } from '../../components/assistant/composerModel';
 import { useComposerModel } from './useComposerModel';
 import type { Message } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
+import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), baseRef: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -51,7 +52,7 @@ import { startHandoffs, startModels } from './startHandoffs';
 const navigate = vi.fn();
 const navigateToSession = vi.fn();
 function mount(params = { directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode' } as Record<string, string | undefined>) {
-  return render(<NewConversation params={{ directory: params.directory!, remoteId: params.remoteId, platform: params.platform, title: params.title }}
+  return render(<NewConversation params={{ directory: params.directory!, remoteId: params.remoteId, platform: params.platform, title: params.title, draftId: params.draftId }}
     whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
 }
 const ready = () => waitFor(() => {
@@ -64,6 +65,7 @@ describe('NewConversation', () => {
     vi.resetAllMocks();
     startModels.clear();
     window.localStorage.removeItem('ocman.newSessionCatalogs.v1');
+    useNewConversationDrafts.setState({ drafts: [] });
     clearSettingsCache();
     mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'build' });
     mocks.progress.clear();
@@ -152,6 +154,36 @@ describe('NewConversation', () => {
     expect(composer.agentsLoaded).toBe(true);
     expect(composer.models).toContain('prov/big');
     expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it('restores each prepared draft selection and replaces only the draft that starts', async () => {
+    const first = mount({ directory: '/repo', draftId: 'first' });
+    await ready();
+    act(() => {
+      composer.onAgentChange!('plan');
+      composer.onReasoningChange!('high');
+      composer.onTargetChange!('current');
+    });
+    saveDraft('first', 'first prompt');
+    first.unmount();
+    const second = mount({ directory: '/repo', draftId: 'second' });
+    await ready();
+    expect(composer.selectedAgent).toBe('');
+    act(() => composer.onModelChange!('prov/big'));
+    saveDraft('second', 'second prompt');
+    second.unmount();
+    mount({ directory: '/repo', draftId: 'first' });
+    await ready();
+    expect(composer.selectedAgent).toBe('plan');
+    expect(composer.selectedModel).toBe('prov/plan-model');
+    expect(composer.selectedReasoning).toBe('high');
+    expect(composer.target).toBe('current');
+    expect(composer.draftKey).toBe('first');
+    await act(async () => { await composer.onSend!('first prompt'); });
+    expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
+    expect(getDraft('second')).toBe('second prompt');
+    expect(getDraft('first')).toBe('');
+    expect(navigateToSession).toHaveBeenCalledWith('child');
   });
 
   it('refreshes the owner catalog after changing favorites and preserves manual model selection', async () => {
@@ -453,7 +485,7 @@ describe('NewConversation', () => {
     mount();
     await ready();
     await act(() => composer.onMachineChange!({ remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode', dir: '/other/repo' }));
-    expect(navigate).toHaveBeenCalledWith('/session/new?dir=%2Fother%2Frepo&remoteId=box&platform=r-box%3Aopencode');
+    expect(navigate).toHaveBeenCalledWith('/session/new?dir=%2Fother%2Frepo&remoteId=box&platform=r-box%3Aopencode&draftId=new');
     expect(mocks.start).not.toHaveBeenCalled();
   });
 

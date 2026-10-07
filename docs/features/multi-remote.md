@@ -120,6 +120,13 @@ list with its host badge.
   instance is relaunched on the machine that owns the session, never on
   another machine that happens to have the same directory.
 
+New conversations appear in the sidebar's **Drafts** section immediately. You
+can prepare several, switch between them, and discard one with its close button.
+Their text, machine, target, model and agent selections are saved separately in
+this browser and survive a reload. Preparing a draft does not start an agent or
+create a worktree. Sending its first prompt creates the real session and removes
+that draft from the section.
+
 Before its first prompt, a new conversation's composer shows a machine
 selector when a remote is connected. It defaults to the machine the
 conversation was opened for. Choosing another machine re-points the

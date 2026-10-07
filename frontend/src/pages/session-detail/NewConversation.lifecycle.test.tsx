@@ -15,6 +15,10 @@ import { usePendingSend } from './usePendingSend';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { useFirstSubmission } from './firstSubmission';
 import type { NewSessionParams } from '../../lib/newSessionPath';
+import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { SidebarConversationDrafts } from './SidebarConversationDrafts';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath';
 
 vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
@@ -88,6 +92,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useFirstSubmission.setState({ entries: {} });
   window.localStorage.clear();
+  useNewConversationDrafts.setState({ drafts: [] });
   clearFailedSends('child');
   clearDraft('new');
   vi.spyOn(useApiStore.getState(), 'seedNewSession').mockImplementation(() => {});
@@ -98,6 +103,35 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('keeps multiple unstarted sidebar conversations and their text independent', async () => {
+    const first = newSessionPath({ directory: '/repo', title: 'First' });
+    const second = newSessionPath({ directory: '/repo', title: 'Second' });
+    function DraftWorkspace() {
+      const location = useLocation();
+      const navigate = useNavigate();
+      const params = parseNewSessionParams(new URLSearchParams(location.search))!;
+      return <>
+        <button onClick={() => navigate(second)}>Prepare another</button>
+        <SidebarConversationDrafts searchQuery="" />
+        <NewConversation params={params} composerRef={null} whisperAvailable={false}
+          navigate={navigate} navigateToSession={(id) => navigate(`/session/${id}`)} />
+      </>;
+    }
+    render(<MemoryRouter initialEntries={[first]}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'first prompt' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare another' }));
+    expect(screen.getByRole('textbox')).toHaveValue('');
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'second prompt' } });
+    fireEvent.click(screen.getByRole('button', { name: /First/ }));
+    expect(screen.getByRole('textbox')).toHaveValue('first prompt');
+    fireEvent.click(screen.getByRole('button', { name: /Second/ }));
+    expect(screen.getByRole('textbox')).toHaveValue('second prompt');
+    expect(screen.getAllByRole('button', { name: 'Discard draft' })).toHaveLength(2);
+    expect(api.startSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Discard draft' })[0]);
+    expect(screen.queryByRole('button', { name: /First/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveValue('second prompt');
+  });
   it('preserves an explicit remote owner with no platform and references its uploaded path', async () => {
     vi.mocked(api.prepareSession).mockResolvedValue({ ...prepared, platform: 'r-box:opencode' });
     vi.mocked(api.startSession).mockResolvedValue({ ...created, platform: 'r-box:opencode', remoteId: 'box' });

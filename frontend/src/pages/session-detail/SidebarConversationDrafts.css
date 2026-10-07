@@ -1,0 +1,8 @@
+.session-sidebar-item .session-sidebar-draft-open {
+  align-items: stretch;
+  gap: 2px;
+  height: auto;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+}

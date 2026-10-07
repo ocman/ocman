@@ -542,10 +542,9 @@ flowchart TD
   resolver endpoint so the conversation owner and preview credentials remain
   authoritative, including PR links outside the active project's repository.
 - **New session target.** A new conversation is a client-only route,
-  `/session/new?dir=…&remoteId=…&platform=…`, until its first prompt: no
+  `/session/new?dir=…&remoteId=…&platform=…&draftId=…`, until its first prompt: no
   session, worktree or placeholder exists before that. `NewConversation`
-  calls `POST /api/sessions/prepare`, which ensures the project's instance on
-  the owning machine and returns the directory's agent, command and model
+  calls `POST /api/sessions/prepare`, which reads the directory's agent, command and model
   catalogs (`Platform.DirectoryCatalog`, routed over gRPC for remotes), and
   `useWorktreeEligibility` reads the git-info branch, the owner's worktree
   list, and its verified default base ref to decide whether "New worktree"
@@ -559,7 +558,12 @@ flowchart TD
   uses the same preparation path.
   The machine selector
   re-points the route; the target selector changes client state. Neither
-  creates a session, and the draft survives under the shared `new` key.
+  creates a session. `lib/newConversationDrafts` stores each draft's target and
+  selections in browser localStorage, while `lib/composerDraft` stores its text
+  under its unique `draftId`. `SidebarConversationDrafts` lists these prepared
+  conversations in both sidebar views, including empty drafts, and lets the user
+  reopen or discard one. Opening another new conversation allocates another
+  draft id; switching machines retains the current id.
   The first submission calls
   `POST /api/sessions/start`, which creates the session at the chosen target
   (an automatically named `session-<suffix>` worktree, or the current
