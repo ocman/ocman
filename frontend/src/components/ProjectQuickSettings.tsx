@@ -35,7 +35,12 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const mounted = useRef(false);
   const id = useId();
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
     setError('');
@@ -57,9 +62,9 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
     try {
       await postJSON('/api/project/settings', { directory, remoteId, defaults });
       clearSettingsCache();
-      onClose();
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setSaving(false); }
+      if (mounted.current) onClose();
+    } catch (err) { if (mounted.current) setError(err instanceof Error ? err.message : String(err)); }
+    finally { if (mounted.current) setSaving(false); }
   }}>
     <h2>Project defaults</h2>
     <p>Used for new conversations on this machine. Individual composer choices take precedence.</p>

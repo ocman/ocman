@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { api, fetchJSON, postJSON } from '../lib/api';
-import { clearSettingsCache } from '../lib/projectSettingsCache';
+import { clearSettingsCache, loadProjectSettings } from '../lib/projectSettingsCache';
 import { ProjectQuickSettings } from './ProjectQuickSettings';
 
 vi.mock('../lib/api', () => ({ api: { prepareSession: vi.fn() }, fetchJSON: vi.fn(), postJSON: vi.fn() }));
@@ -95,4 +95,25 @@ it.each([10, 1000])('keeps the popover in the viewport when its header anchor is
   expect(dialog).toHaveStyle({ top: '58px', left: `${Math.max(12, Math.min(left, window.innerWidth - 352))}px` });
   act(() => window.dispatchEvent(new Event('resize')));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it.each([true, false])('keeps a reopened form and its edits when an earlier dismissed save completes: success=%s', async (success) => {
+  let finish!: () => void;
+  vi.mocked(postJSON).mockReturnValueOnce(new Promise((resolve, reject) => {
+    finish = () => success ? resolve({ ok: true }) : reject(new Error('Old save failed'));
+  }));
+  render(<ProjectQuickSettings directory="/repo">repo</ProjectQuickSettings>);
+  await open();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await userEvent.keyboard('{Escape}');
+  await open();
+  await userEvent.click(screen.getByRole('combobox', { name: 'Default model' }));
+  await userEvent.click(screen.getByRole('option', { name: 'p / m' }));
+  await act(async () => finish());
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'Default model' })).toHaveTextContent('p / m');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  // The persisted mutation still invalidates cached preferences after dismissal.
+  await loadProjectSettings('/repo');
+  expect(fetchJSON).toHaveBeenCalledTimes(success ? 2 : 1);
 });
