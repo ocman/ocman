@@ -1,6 +1,8 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { remoteLog } from '../lib/remoteLog';
+import { Button } from './Control';
+import { ErrorState } from './ErrorState';
 
 // FallbackRender lets callers render a custom fallback while still getting
 // access to the captured error and a way to clear it. Returning a node from
@@ -114,15 +116,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return this.props.fallback;
     }
 
-    const className = this.props.inline
-      ? 'oc-error-boundary inline'
-      : 'oc-error-boundary';
     return (
-      <div className={className} role="alert">
-        <h2>Something went wrong</h2>
-        <p>{error.message || 'An unexpected error occurred while rendering this view.'}</p>
-        <button type="button" onClick={this.reset}>Try again</button>
-      </div>
+      <ErrorState title="Something went wrong" inline={this.props.inline}
+        description={error.message || 'An unexpected error occurred while rendering this view.'}>
+        <Button type="button" size={this.props.inline ? 'small' : 'normal'} onClick={this.reset}>Try again</Button>
+      </ErrorState>
     );
   }
 }

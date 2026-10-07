@@ -1,0 +1,6 @@
+.root { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; gap: 12px; padding: 24px; color: var(--text-dim); font-family: var(--font-conversation-mono); overflow-wrap: anywhere; }
+.heading { color: var(--danger); font-size: 18px; margin: 0; text-align: center; }
+.description { font-size: 13px; margin: 0; max-width: 400px; text-align: center; }
+.inline { min-height: 0; padding: 16px; gap: 8px; }
+.inline .heading { font-size: 14px; }
+.inline .description { font-size: 12px; max-width: none; }

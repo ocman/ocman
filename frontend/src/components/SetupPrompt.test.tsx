@@ -56,9 +56,16 @@ describe('SetupPrompt', () => {
     expect(panel.textContent).toContain('Run OpenCode once');
     expect(panel.textContent).toContain('/tmp/ocman.log');
     expect(panel.textContent).not.toContain('tmux');
+    expect(screen.getByTestId('setup-recheck')).toHaveClass('oc-button');
 
-    mocks.getDoctor.mockResolvedValueOnce(report(check('opencode-db', { required: true })));
+    let resolveCheck!: (value: DoctorReport) => void;
+    mocks.getDoctor.mockImplementationOnce(() => new Promise<DoctorReport>(resolve => { resolveCheck = resolve; }));
     fireEvent.click(screen.getByTestId('setup-recheck'));
+    await waitFor(() => expect(screen.getByTestId('setup-recheck')).toBeDisabled());
+    expect(screen.getByTestId('setup-recheck')).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(screen.getByTestId('setup-recheck'));
+    expect(mocks.getDoctor).toHaveBeenCalledTimes(2);
+    resolveCheck(report(check('opencode-db', { required: true })));
     await waitFor(() => expect(screen.queryByTestId('setup-panel')).toBeNull());
     expect(mocks.getDoctor).toHaveBeenCalledTimes(2);
   });
@@ -75,6 +82,7 @@ describe('SetupPrompt', () => {
     expect(banner.textContent).toContain('minimal PATH');
     expect(banner.textContent).toContain('timed out after 10s');
     expect(screen.queryByTestId('setup-panel')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toHaveClass('oc-icon-button');
   });
 
   it('persists dismissal per failing set and re-shows for a newly missing tool', async () => {

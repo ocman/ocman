@@ -49,6 +49,7 @@ describe('ThreadBoundaryFallback', () => {
       />, 
     );
 
+    expect(screen.getByRole('button', { name: 'Reload thread' })).toHaveClass('oc-button');
     await user.click(screen.getByRole('button', { name: 'Reload thread' }));
     await user.click(screen.getByRole('button', { name: 'Try again' }));
 

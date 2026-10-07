@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { Button, ButtonGroup } from '../../components/Control';
+import { ErrorState } from '../../components/ErrorState';
 
 export function ThreadBoundaryFallback({
   error,
@@ -21,21 +23,16 @@ export function ThreadBoundaryFallback({
 
   if (autoRecover) {
     return (
-      <div className="oc-error-boundary" role="alert">
-        <h2>Recovering session thread…</h2>
-        <p>{error.message}</p>
-      </div>
+      <ErrorState title="Recovering session thread…" description={error.message} />
     );
   }
 
   return (
-    <div className="oc-error-boundary" role="alert">
-      <h2>Something went wrong</h2>
-      <p>{error.message || 'An unexpected error occurred while rendering this view.'}</p>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-        <button type="button" onClick={onReload}>Reload thread</button>
-        <button type="button" onClick={reset}>Try again</button>
-      </div>
-    </div>
+    <ErrorState title="Something went wrong" description={error.message || 'An unexpected error occurred while rendering this view.'}>
+      <ButtonGroup label="Thread recovery">
+        <Button type="button" onClick={onReload}>Reload thread</Button>
+        <Button type="button" onClick={reset}>Try again</Button>
+      </ButtonGroup>
+    </ErrorState>
   );
 }
