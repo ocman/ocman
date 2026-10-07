@@ -11,18 +11,6 @@
 .artifact-table .artifact-title:hover { color: var(--accent); }
 .artifact-muted { color: var(--text-dim); }
 .artifact-error { color: var(--danger); }
-.artifact-description { max-width: 80ch; }
-.artifact-section { display: grid; gap: 10px; }
-.artifact-section h3 { margin: 0; color: var(--text-dim); font: 600 11px var(--font-conversation-mono); letter-spacing: .4px; text-transform: uppercase; }
-.artifact-links { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.artifact-file { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); background: var(--bg-card); }
-.artifact-file > header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.artifact-file > header .oc-button-group { margin-left: auto; }
-.artifact-preview-image { max-width: 100%; max-height: 70vh; object-fit: contain; justify-self: start; }
-.artifact-preview-html { width: 100%; height: 70vh; border: 1px solid var(--border); background: var(--white); }
-.artifact-preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.artifact-preview-text { margin: 0; max-height: 70vh; overflow: auto; padding: 10px; border: 1px solid var(--border); background: var(--bg); font: 12px/1.5 var(--font-conversation-mono); white-space: pre; }
-.artifact-preview-markdown { max-height: 70vh; overflow: auto; }
 .artifact-share-section { display: grid; gap: 6px; }
 .artifact-share-section strong { font-size: 12px; }
 .artifact-share-section ul { margin: 0; padding-left: 18px; color: var(--text-dim); }

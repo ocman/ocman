@@ -1,0 +1,8 @@
+.description { max-width: 80ch; }
+.section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.heading { margin: 0; color: var(--text-dim); font: 600 11px var(--font-conversation-mono); letter-spacing: .4px; text-transform: uppercase; }
+.links { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
+.file { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); background: var(--bg-card); }
+.header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; overflow-wrap: anywhere; }
+.metadata { color: var(--text-dim); }
+.actions { margin-left: auto; }

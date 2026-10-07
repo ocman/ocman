@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { previewKind, type ArtifactItem } from '../lib/artifactsApi';
 import { Button } from './Control';
 import { MarkdownContent } from './assistant/MarkdownText';
+import { InlineAlert } from './InlineAlert';
+import { LoadingState } from './LoadingState';
+import styles from './ArtifactPreview.module.css';
 
 /**
  * Inline preview of one artifact file; renders nothing for unsupported types.
@@ -26,12 +29,12 @@ export function ArtifactPreview({ item, interactiveUrl }: { item: ArtifactItem; 
   }, [item.url, kind]);
 
   if (!item.url || kind === 'none') return null;
-  if (kind === 'image') return <img className="artifact-preview-image" src={item.url} alt={item.name ?? ''} data-testid="artifact-preview-image" />;
+  if (kind === 'image') return <img className={styles.image} src={item.url} alt={item.name ?? ''} data-testid="artifact-preview-image" />;
   if (kind === 'html') return <HtmlPreview url={item.url} interactiveUrl={interactiveUrl} title={item.name ?? 'HTML preview'} />;
-  if (error) return <p className="artifact-error">Preview unavailable.</p>;
-  if (text === undefined) return <p className="artifact-muted">Loading preview...</p>;
-  if (kind === 'markdown') return <div className="artifact-preview-markdown oc-md" data-testid="artifact-preview-markdown"><MarkdownContent text={text} /></div>;
-  return <pre className="artifact-preview-text" data-testid="artifact-preview-text">{text}</pre>;
+  if (error) return <InlineAlert>Preview unavailable.</InlineAlert>;
+  if (text === undefined) return <LoadingState>Loading preview…</LoadingState>;
+  if (kind === 'markdown') return <div className={`${styles.markdown} oc-md`} data-testid="artifact-preview-markdown"><MarkdownContent text={text} /></div>;
+  return <pre className={styles.text} data-testid="artifact-preview-text">{text}</pre>;
 }
 
 /**
@@ -46,15 +49,15 @@ function HtmlPreview({ url, interactiveUrl, title }: { url: string; interactiveU
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const live = !!interactiveUrl && (chosen[interactiveUrl] ?? scriptsAllowed(interactiveUrl));
   return <>
-    <div className="artifact-preview-toolbar">
-      <span className="artifact-muted">{live ? `Scripts are running in a sandbox with no access to ocman. ${SELF_NAVIGATION}`
+    <div className={styles.toolbar}>
+      <span className={styles.muted}>{live ? `Scripts are running in a sandbox with no access to ocman. ${SELF_NAVIGATION}`
         : interactiveUrl ? 'Scripts are disabled in this preview. Running them keeps the page away from ocman, but it can still navigate itself to another site.'
           : 'Scripts are disabled in this preview. Download the file to use it interactively.'}</span>
       {interactiveUrl && <Button type="button" size="small" variant="ghost" onClick={() => { allowScripts(interactiveUrl, !live); setChosen({ ...chosen, [interactiveUrl]: !live }); }}>
         <i className={`bi ${live ? 'bi-stop-circle' : 'bi-play-circle'}`} aria-hidden="true" />{live ? 'Stop scripts' : 'Run scripts'}
       </Button>}
     </div>
-    <iframe key={live ? 'live' : 'static'} className="artifact-preview-html" src={live ? interactiveUrl : url}
+    <iframe key={live ? 'live' : 'static'} className={styles.html} src={live ? interactiveUrl : url}
       sandbox={live ? 'allow-scripts' : ''} title={title} data-testid="artifact-preview-html" />
   </>;
 }
