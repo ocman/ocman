@@ -117,3 +117,20 @@ it.each([true, false])('keeps a reopened form and its edits when an earlier dism
   await loadProjectSettings('/repo');
   expect(fetchJSON).toHaveBeenCalledTimes(success ? 2 : 1);
 });
+
+it.each([
+  ['Default model', 'Search models', 'p'],
+  ['Default agent', 'Search agents', 'plan'],
+])('does not submit on Enter in %s search, but lets Enter activate Save', async (picker, search, query) => {
+  render(<ProjectQuickSettings directory="/repo">repo</ProjectQuickSettings>);
+  await open();
+  await userEvent.click(screen.getByRole('combobox', { name: picker }));
+  await userEvent.type(screen.getByRole('textbox', { name: search }), query);
+  await userEvent.keyboard('{Enter}');
+  expect(postJSON).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('combobox', { name: picker }));
+  screen.getByRole('button', { name: 'Save' }).focus();
+  await userEvent.keyboard('{Enter}');
+  expect(postJSON).toHaveBeenCalledOnce();
+});

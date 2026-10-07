@@ -55,7 +55,9 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
   }, [directory, remoteId, attempt]);
   const inherited = { value: '', label: 'Use inherited default' };
   const options = (choices: SearchSelectOption[], current: string) => [inherited, ...(current && !choices.some((o) => o.value === current) ? [{ value: current, label: current }] : []), ...choices];
-  return <form onSubmit={async (event) => {
+  return <form onKeyDown={(event) => {
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault();
+  }} onSubmit={async (event) => {
     event.preventDefault();
     if (!defaults || saving) return;
     setSaving(true); setError('');
