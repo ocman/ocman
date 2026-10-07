@@ -115,6 +115,24 @@ func TestFactoryWorkspaceRemoteOnlyDefault(t *testing.T) {
 	}
 }
 
+func TestFactoryWorkspaceDetachedDefault(t *testing.T) {
+	for _, branch := range []string{"main", "master", "no-named-target"} {
+		t.Run(branch, func(t *testing.T) {
+			repo := initTestRepo(t)
+			gitRun(t, repo, "branch", "-m", branch)
+			gitRun(t, repo, "checkout", "--detach")
+			target, base, err := PrepareFactoryWorkspace(t.Context(), repo, "factory/new", "", "")
+			if branch == "no-named-target" {
+				if err == nil || !strings.Contains(err.Error(), "specify a named Factory target") {
+					t.Fatalf("missing named target error = %v", err)
+				}
+			} else if err != nil || target != branch || base != "refs/heads/"+branch {
+				t.Fatalf("detached target = %s/%s, %v", target, base, err)
+			}
+		})
+	}
+}
+
 func TestFactoryWorkspaceAmbiguousDefault(t *testing.T) {
 	repo := initTestRepo(t)
 	gitRun(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")

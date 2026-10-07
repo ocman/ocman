@@ -45,7 +45,10 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 
 	baseRef := req.BaseRef
 	if req.NewBranch && baseRef == "" {
-		baseRef = git.ResolveBaseRef(ctx, repoRoot)
+		baseRef, err = git.ResolveBaseRef(ctx, repoRoot)
+		if err != nil {
+			return nil, err
+		}
 		if baseRef == "" {
 			return nil, fmt.Errorf("worktree: repository has no usable commit; use the current checkout or create an initial commit")
 		}

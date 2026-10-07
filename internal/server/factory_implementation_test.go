@@ -133,6 +133,9 @@ func (h *factoryImplementationHost) ValidateFactoryHandoff(_ context.Context, re
 }
 
 func (h *factoryImplementationHost) PrepareFactoryWorkspace(_ context.Context, _, _, _, target string) (string, string, error) {
+	if target == "" && (h.target != "" || h.targetErr != nil) {
+		return git.BaseRefBranch(h.target), "", h.targetErr
+	}
 	return target, "", h.handoffErr
 }
 

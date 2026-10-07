@@ -551,8 +551,12 @@ flowchart TD
   list, and its verified default base ref to decide whether "New worktree"
   is offered. A repository without a usable base commit uses the current
   checkout, and automatic creation rejects it before launching OpenCode.
-  Named bases use fully qualified refs to avoid branch/tag name collisions;
+  Named bases use fully qualified refs to avoid branch/tag name collisions.
+  Git probe failures propagate to the eligibility retry controls.
   Factory removes the exact namespace when recording a forge target branch.
+  A detached default uses verified local `main` or `master` for delivery,
+  otherwise preparation requires an explicit named target. Legacy recovery
+  uses the same preparation path.
   The machine selector
   re-points the route; the target selector changes client state. Neither
   creates a session, and the draft survives under the shared `new` key.

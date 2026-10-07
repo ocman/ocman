@@ -155,7 +155,7 @@ func (h *Host) WorktreeDefaultBaseRef(ctx context.Context, dir string) (string, 
 	if err != nil {
 		return "", err
 	}
-	return git.ResolveBaseRef(ctx, repoRoot), nil
+	return git.ResolveBaseRef(ctx, repoRoot)
 }
 func (h *Host) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {
 	repoRoot, err := git.ResolveRepoRoot(ctx, req.Dir)

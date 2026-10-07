@@ -347,48 +347,10 @@ func classifyAddError(err error, output string) error {
 	}
 }
 
-// ResolveBaseRef returns a verified base for new branches: the local default
-// branch, its remote-tracking ref, the current branch, then detached HEAD.
-// Empty means no usable commit is available (including an unborn repository).
-// Named refs are fully qualified so branch/tag collisions cannot change identity.
-func ResolveBaseRef(ctx context.Context, repoRoot string) string {
-	valid := func(ref string) bool {
-		return ref != "" && runGitOutput(ctx, repoRoot, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}") != ""
-	}
-	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "refs/remotes/origin/HEAD"); ref != "" {
-		local := "refs/heads/" + strings.TrimPrefix(ref, "refs/remotes/origin/")
-		if valid(local) {
-			return local
-		}
-		if valid(ref) {
-			return ref
-		}
-	}
-	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "HEAD"); valid(ref) {
-		return ref
-	}
-	if valid("HEAD") {
-		return "HEAD"
-	}
-	return ""
-}
-
 // BaseRefBranch removes exactly one namespace from a resolved base ref.
 func BaseRefBranch(ref string) string {
 	if branch, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
 		return branch
 	}
 	return strings.TrimPrefix(ref, "refs/remotes/origin/")
-}
-
-// runGitOutput is a small helper around exec.CommandContext that
-// returns trimmed stdout on success and an empty string on any error.
-func runGitOutput(ctx context.Context, repoRoot string, args ...string) string {
-	cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
-	defer cancel()
-	out, err := gitexec.Output(cctx, repoRoot, args...)
-	if err != nil {
-		return ""
-	}
-	return out
 }

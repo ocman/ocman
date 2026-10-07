@@ -15,7 +15,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -52,11 +51,10 @@ func (l factoryImplementationLauncher) ResolveImplementationWorkspace(ctx contex
 	}
 	for _, worktree := range worktrees {
 		if filepath.Clean(worktree.Path) == filepath.Clean(detail.Session.Directory) && validFactoryBranch(branch, worktree.Branch) {
-			target, err := owner.WorktreeDefaultBaseRef(ctx, repo)
+			target, _, err := l.PrepareImplementationWorkspace(ctx, repo, worktree.Branch, "", "")
 			if err != nil {
 				return "", "", err
 			}
-			target = git.BaseRefBranch(target)
 			return worktree.Branch, target, nil
 		}
 	}

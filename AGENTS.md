@@ -53,6 +53,10 @@ base commit uses the current checkout. Base resolution keeps a remote-tracking
 default when its local branch is absent, then falls back to the current branch
 or detached HEAD; it never assumes `main` exists. Named bases use fully qualified
 refs to distinguish local branches from remote-tracking branches and tags.
+Git probe failures propagate as errors so eligibility remains retryable rather
+than treating them as missing commits. Factory requires a named delivery target:
+a detached default falls back to verified local `main` or `master`, otherwise
+preparation asks for an explicit target. Legacy recovery uses the same preparation.
 The composer's machine selector only
 re-points the route; the draft lives under the shared `new` key (`draftKey`
 prop) and survives. The first submission calls `POST /api/sessions/start`

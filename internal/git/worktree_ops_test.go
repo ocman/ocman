@@ -294,16 +294,19 @@ func TestResolveBaseRef(t *testing.T) {
 
 	// No origin/HEAD, no upstream, current branch is "main" — so
 	// resolver should return its fully qualified branch ref.
-	got := ResolveBaseRef(context.Background(), repo)
+	got, err := ResolveBaseRef(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got != "refs/heads/main" {
 		t.Errorf("ResolveBaseRef = %q, want refs/heads/main", got)
 	}
 }
 
 func TestResolveBaseRef_NonRepository(t *testing.T) {
-	got := ResolveBaseRef(context.Background(), t.TempDir())
-	if got != "" {
-		t.Errorf("ResolveBaseRef on non-repo = %q, want empty", got)
+	got, err := ResolveBaseRef(context.Background(), t.TempDir())
+	if got != "" || err == nil {
+		t.Errorf("ResolveBaseRef on non-repo = %q, %v, want error", got, err)
 	}
 }
 

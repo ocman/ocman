@@ -63,8 +63,11 @@ func ValidateFactoryHandoff(ctx context.Context, repoRoot, branch string) (strin
 // touches the branch. A missing branch needs explicit recovery, not a silent reset.
 func PrepareFactoryWorkspace(ctx context.Context, repoRoot, branch, checkpoint, target string) (string, string, error) {
 	if target == "" {
-		target = ResolveBaseRef(ctx, repoRoot)
-		target = BaseRefBranch(target)
+		var err error
+		target, err = resolveFactoryTarget(ctx, repoRoot)
+		if err != nil {
+			return "", "", err
+		}
 	}
 	if _, err := gitexec.Output(ctx, repoRoot, "check-ref-format", "--branch", branch); err != nil {
 		return "", "", errors.New("invalid Factory branch")
