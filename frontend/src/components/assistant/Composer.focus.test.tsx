@@ -12,6 +12,18 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks());
 
+it('shows one spinner instead of empty selectors until the new conversation has a catalog', () => {
+  const { rerender } = render(<Composer isRunning={false} newConversation agentsLoaded={false} models={['p/model']} />);
+  expect(screen.getByRole('status', { name: 'Loading agents and models' })).toBeInTheDocument();
+  expect(screen.queryByTitle('Agent (click to change)')).not.toBeInTheDocument();
+  expect(screen.queryByTitle('Model (click to change)')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox')).toBeEnabled();
+  rerender(<Composer isRunning={false} newConversation agentsLoaded activeAgent="build" models={['p/model']} />);
+  expect(screen.queryByRole('status', { name: 'Loading agents and models' })).not.toBeInTheDocument();
+  expect(screen.getByTitle('Agent (click to change)')).toHaveTextContent('build');
+  expect(screen.getByTitle('Model (click to change)')).toBeInTheDocument();
+});
+
 it('returns focus to the composer after filtering and selecting a model with Enter', async () => {
   const user = userEvent.setup();
   const onModelChange = vi.fn();

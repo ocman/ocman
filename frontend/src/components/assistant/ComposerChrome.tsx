@@ -164,6 +164,7 @@ export function ComposerFooter({
 }
 
 interface ComposerToolbarProps {
+  selectorsLoading?: boolean;
   isBashMode: boolean;
   uiDisabled: boolean;
   disabled?: boolean;
@@ -202,13 +203,15 @@ export function ComposerToolbar({
   modelButtonLabel, effectiveModel, hasReasoning, openReasoningPicker,
   selectedReasoning, permissionControl, onLaunchRequest, launching, fileInputRef,
   addFiles, isDictationSupported, micRef, handleMicClick, micError, clearMicError,
-  isRunning, onAbort, sending, submit,
+  isRunning, onAbort, sending, submit, selectorsLoading,
 }: ComposerToolbarProps) {
   return (
     <div className="oc-composer-bar">
       <div className="oc-composer-bar-left">
         {isBashMode ? (
           <span className="oc-bar-shell">shell</span>
+        ) : selectorsLoading ? (
+          <span className="oc-spinner" role="status" aria-label="Loading agents and models" />
         ) : (
           <>
             <button type="button" className="oc-bar-select" disabled={uiDisabled} onClick={openAgentPicker} title="Agent (click to change)">

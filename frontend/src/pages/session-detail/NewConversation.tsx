@@ -13,6 +13,7 @@ import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
+import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSettingsCache';
 import { remoteLog } from '../../lib/remoteLog';
@@ -58,10 +59,15 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const worktreesCapable = useOpencodeLaunch(remoteId);
   const eligibility = useWorktreeEligibility(directory, remoteId);
 
-  const [catalog, setCatalog] = useState<PrepareSessionResponse>();
+  const catalogKey = JSON.stringify([remoteId, directory, params.platform]);
+  const cachedCatalog = useMemo(() => getNewSessionCatalog(catalogKey), [catalogKey]);
+  const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: PrepareSessionResponse }>();
   const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const settingsRevision = useSettingsRevision();
+  const catalogRequest = JSON.stringify([catalogKey, catalogAttempt, settingsRevision]);
+  const catalog = prepared?.key === catalogKey ? prepared.catalog : cachedCatalog;
+  const catalogReady = prepared?.request === catalogRequest;
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
 
@@ -81,22 +87,23 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   // never launches OpenCode, so picking a machine starts nothing there.
   useEffect(() => {
     const controller = new AbortController();
-    setCatalog(undefined);
     setCatalogError('');
     Promise.all([
       api.prepareSession({ directory, remoteId, platform: params.platform }, controller.signal),
       loadProjectSettings(directory, remoteId),
     ]).then(([result, settings]) => {
       if (controller.signal.aborted) return;
-      setCatalog({ ...result, defaultAgent: settings.defaultAgent || 'build',
+      const catalog = { ...result, defaultAgent: settings.defaultAgent || 'build',
         models: { ...result.models, models: result.models.hasProviders ? result.models.models : availabilityUnknown(result.models.models) },
-      });
+      };
+      cacheNewSessionCatalog(catalogKey, catalog);
+      setPrepared({ key: catalogKey, request: catalogRequest, catalog });
     }).catch((err) => {
       if (controller.signal.aborted) return;
       setCatalogError(err instanceof Error ? err.message : String(err));
     });
     return () => controller.abort();
-  }, [directory, remoteId, params.platform, catalogAttempt, settingsRevision]);
+  }, [directory, remoteId, params.platform, catalogKey, catalogRequest]);
 
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
@@ -127,10 +134,10 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const activeModel = catalog?.projectDefaultModel || getProjectModel(directory) || catalog?.defaultModel || '';
   const seeded = useRef<string>('');
   useEffect(() => {
-    if (!catalog || !activeModel || seeded.current === directory) return;
+    if (!catalogReady || !catalog || !activeModel || seeded.current === directory) return;
     seeded.current = directory;
     setSelectedModel(activeModel);
-  }, [activeModel, directory, catalog]);
+  }, [activeModel, directory, catalog, catalogReady]);
 
   const models = useMemo(() => {
     const entries = catalog?.models.models ?? [];
@@ -164,7 +171,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
 
   // The composer stays usable while the catalog and target resolve; a
   // submission made before then waits here (or fails with the prepare error).
-  const ready: Ready | undefined = eligibility.resolved && catalog ? { catalog, canWorktree, platform, model: activeModel } : undefined;
+  const ready: Ready | undefined = eligibility.resolved && catalogReady && catalog ? { catalog, canWorktree, platform, model: activeModel } : undefined;
   const readyError = catalogError || eligibility.error || '';
   const readyRef = useRef(ready);
   useEffect(() => {
@@ -298,7 +305,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
           whisperAvailable={whisperAvailable}
           models={models}
           modelEntries={catalog?.models.models ?? []}
-          selectedModel={selectedModel}
+          selectedModel={selectedModel || activeModel}
           onModelChange={handleModelChange}
           onToggleFavorite={handleToggleFavorite}
           onRefreshModels={() => setCatalogAttempt((value) => value + 1)}

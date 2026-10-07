@@ -63,6 +63,7 @@ describe('NewConversation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     startModels.clear();
+    window.localStorage.removeItem('ocman.newSessionCatalogs.v1');
     clearSettingsCache();
     mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'build' });
     mocks.progress.clear();
@@ -101,6 +102,56 @@ describe('NewConversation', () => {
     await act(async () => screen.getByRole('button', { name: 'Retry' }).click());
     await ready();
     expect(composer.worktreesSupported).toBe(true);
+  });
+
+  it('shows the cached catalog immediately, refreshes it, and preserves picks made during refresh', async () => {
+    const first = mount();
+    await ready();
+    first.unmount();
+    let finish!: (catalog: unknown) => void;
+    mocks.prepare.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    mount();
+    expect(composer.agentsLoaded).toBe(true);
+    expect(composer.models).toContain('prov/big');
+    expect(composer.selectedModel).toBe('prov/default');
+    act(() => composer.onModelChange!('prov/manual'));
+    act(() => composer.onAgentChange!('build'));
+    await act(async () => finish({ platform: 'r-machine:opencode', agents: [{ name: 'fresh' }], commands: [],
+      models: { models: [{ provider: 'prov', model: 'fresh' }] }, defaultModel: 'prov/fresh' }));
+    expect(composer.models).toContain('prov/fresh');
+    expect(composer.selectedModel).toBe('prov/manual');
+    expect(composer.selectedAgent).toBe('build');
+  });
+
+  it('does not reuse another machine or directory catalog', async () => {
+    const first = mount();
+    await ready();
+    first.unmount();
+    mocks.prepare.mockReturnValue(new Promise(() => {}));
+    const otherMachine = mount({ directory: '/repo', remoteId: 'other' });
+    expect(composer.agentsLoaded).toBe(false);
+    expect(composer.models).not.toContain('prov/big');
+    otherMachine.unmount();
+    mount({ directory: '/other', remoteId: 'machine', platform: 'r-machine:opencode' });
+    expect(composer.agentsLoaded).toBe(false);
+  });
+
+  it('keeps cached choices visible on refresh failure but waits for fresh preparation before sending', async () => {
+    const first = mount();
+    await ready();
+    first.unmount();
+    let fail!: (error: Error) => void;
+    mocks.prepare.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    mount();
+    let submission!: Promise<void>;
+    act(() => { submission = composer.onSend!('hello') as Promise<void>; });
+    expect(mocks.start).not.toHaveBeenCalled();
+    const rejected = expect(submission).rejects.toThrow('offline');
+    await act(async () => { fail(new Error('offline')); });
+    await rejected;
+    expect(composer.agentsLoaded).toBe(true);
+    expect(composer.models).toContain('prov/big');
+    expect(mocks.start).not.toHaveBeenCalled();
   });
 
   it('refreshes the owner catalog after changing favorites and preserves manual model selection', async () => {

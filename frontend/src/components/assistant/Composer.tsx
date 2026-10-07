@@ -334,6 +334,7 @@ export function Composer({
             data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
           <ComposerToolbar isBashMode={isBashMode} uiDisabled={uiDisabled} disabled={disabled} disabledHint={disabledHint}
             effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded} agents={agents}
+            selectorsLoading={newConversation && !agentsLoaded}
             openAgentPicker={() => { if (!uiDisabled) openAgentPicker(); }} hasModels={hasModels} modelUnavailable={modelUnavailable}
             openModelPicker={() => { if (!uiDisabled) openModelPicker(); }} modelButtonLabel={modelButtonLabel} effectiveModel={effectiveModel}
             hasReasoning={hasReasoning} openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}
