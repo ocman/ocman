@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	ReadyTimeout       = 15 * time.Second
 	MaxStderrBytes     = 64 << 10
 	MaxCallOutputBytes = 8 << 20
 	maxBufferedFrames  = 16
@@ -63,7 +64,7 @@ type processPolicy struct {
 }
 
 // Allow loaded hosts time to start the executable and acknowledge cancellation.
-var defaultProcessPolicy = processPolicy{15 * time.Second, 3 * time.Second, 100 * time.Millisecond, 5 * time.Second, 5}
+var defaultProcessPolicy = processPolicy{ReadyTimeout, 3 * time.Second, 100 * time.Millisecond, 5 * time.Second, 5}
 
 // Process owns one plugin's lifecycle. Its owner must serialize enable/disable
 // and keep only one Process per plugin ID. Failures never replay calls.
