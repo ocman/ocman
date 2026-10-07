@@ -125,7 +125,10 @@ can prepare several, switch between them, and discard one with its close button.
 Their text, machine, target, model and agent selections are saved separately in
 this browser and survive a reload. Preparing a draft does not start an agent or
 create a worktree. Sending its first prompt creates the real session and removes
-that draft from the section.
+that draft from the section, even if you have switched to another draft while
+it starts. Reopening a pending draft shows its submitted prompt and keeps the
+composer locked until that start finishes. Discarding a draft in another tab
+replaces its open composer with a fresh, empty draft identity.
 
 Before its first prompt, a new conversation's composer shows a machine
 selector when a remote is connected. It defaults to the machine the

@@ -35,6 +35,9 @@ test('prepares multiple sidebar drafts without starting sessions', async ({ mock
   await page.setViewportSize({ width: 390, height: 844 });
   const toggle = page.getByTestId('mobile-sessions-toggle');
   await toggle.click();
+  await drafts.getByRole('button', { name: /Prepare the UI/ }).click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
   await drafts.getByRole('button', { name: /Plan the API/ }).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByRole('textbox')).toHaveValue('Design the API before implementation.');

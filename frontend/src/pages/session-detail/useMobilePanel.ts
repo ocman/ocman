@@ -19,7 +19,7 @@ export interface UseMobilePanelResult {
  * SessionDetail.css). Escape closes; any route change closes.
  */
 export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
-  const { pathname, search } = useLocation();
+  const { pathname, search, key } = useLocation();
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const toggleMobileSidebar = useCallback(() => {
     setMobilePanel((p) => (p === 'sidebar' ? null : 'sidebar'));
@@ -52,6 +52,6 @@ export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- closing a phone overlay in response to navigation, including draft-to-draft query changes.
     setMobilePanel(null);
-  }, [id, pathname, search]);
+  }, [id, pathname, search, key]);
   return { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel };
 }

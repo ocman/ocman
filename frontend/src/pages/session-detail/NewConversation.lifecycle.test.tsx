@@ -52,6 +52,19 @@ function deferred<T>() {
 const prepared = { platform: 'opencode', agents: [], commands: [], models: { hasProviders: true, models: [] }, liveConnection: true };
 const created = { sessionId: 'child', platform: 'opencode', remoteId: 'local', directory: '/repo', firstMessageSent: true, firstMessageError: '' };
 
+function DraftWorkspace() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = parseNewSessionParams(new URLSearchParams(location.search));
+  return <>
+    <output data-testid="draft-route">{location.pathname}{location.search}</output>
+    <button onClick={() => navigate('/session/new?dir=%2Frepo&draftId=second&title=Second')}>Another draft</button>
+    <SidebarConversationDrafts searchQuery="" />
+    {params && <NewConversation params={params} composerRef={null} whisperAvailable={false}
+      navigate={navigate} navigateToSession={(id) => navigate(`/session/${id}`)} />}
+  </>;
+}
+
 function Child() {
   const pending = usePendingSend('child');
   const { failedSends, setFailedSends } = useFailedSendRehydrate({ id: 'child', sessionLoaded: true, messages: [], parts: [], pending });
@@ -92,7 +105,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useFirstSubmission.setState({ entries: {} });
   window.localStorage.clear();
-  useNewConversationDrafts.setState({ drafts: [] });
+  useNewConversationDrafts.setState({ drafts: [], starts: {} });
   clearFailedSends('child');
   clearDraft('new');
   vi.spyOn(useApiStore.getState(), 'seedNewSession').mockImplementation(() => {});
@@ -103,6 +116,59 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('moves a mounted composer to a fresh identity after another tab discards it', async () => {
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'old text' } });
+    act(() => {
+      localStorage.setItem('ocman.newConversationDrafts.v1', '[]');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1' }));
+    });
+    await waitFor(() => expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first'));
+    expect(screen.getByRole('textbox')).toHaveValue('');
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'new text' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
+    fireEvent.click(screen.getByRole('button', { name: /First/ }));
+    expect(screen.getByRole('textbox')).toHaveValue('new text');
+    expect(getDraft('first')).toBe('');
+    expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).not.toContain('first');
+  });
+
+  it('keeps a pending draft locked across reopen and retires it after a background start', async () => {
+    const request = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValue(request.promise);
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'start first' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'prepare second' } });
+    fireEvent.click(screen.getByRole('button', { name: /First/ }));
+    expect(screen.getByRole('textbox')).toBeDisabled();
+    expect(screen.getByTestId('pending-prompt')).toHaveTextContent('start first');
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(api.startSession).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /Second/ }));
+    await act(async () => request.resolve(created));
+    expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId=second');
+    expect(screen.getByRole('textbox')).toHaveValue('prepare second');
+    expect(screen.queryByRole('button', { name: /First/ })).not.toBeInTheDocument();
+    expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
+  });
+
+  it('restores a reopened pending draft when its background start fails', async () => {
+    const request = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValue(request.promise);
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'retry first' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
+    fireEvent.click(screen.getByRole('button', { name: /First/ }));
+    await act(async () => request.reject(new Error('start failed')));
+    expect(screen.getByRole('textbox')).toHaveValue('retry first');
+    expect(screen.getByRole('textbox')).not.toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('start failed');
+  });
   it('does not restore immediately discarded text during unmount or a delayed start failure', async () => {
     const props = { params: { directory: '/repo', draftId: 'discarded' }, composerRef: null, whisperAvailable: false,
       navigate: vi.fn(), navigateToSession: vi.fn() };
@@ -346,7 +412,7 @@ describe('new-conversation submission lifecycle', () => {
     expect(getDraft('new')).toBe('new task');
   });
 
-  it('accepts a re-pointed draft while the previous generation is still starting', async () => {
+  it('accepts an independent draft while the previous draft is still starting', async () => {
     const oldStart = deferred<typeof created>();
     const newStart = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValueOnce(oldStart.promise).mockReturnValueOnce(newStart.promise);
@@ -359,7 +425,7 @@ describe('new-conversation submission lifecycle', () => {
     await act(async () => {});
     fireEvent.input(oldInput, { target: { value: 'old prompt' } });
     fireEvent.keyDown(oldInput, { key: 'Enter' });
-    view.rerender(<NewConversation {...props} params={{ ...props.params, title: 'new' }} />);
+    view.rerender(<NewConversation {...props} params={{ ...props.params, title: 'new', draftId: 'second' }} />);
     const newInput = screen.getByRole('textbox');
     fireEvent.input(newInput, { target: { value: 'new prompt' } });
     fireEvent.keyDown(newInput, { key: 'Enter' });

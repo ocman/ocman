@@ -8,7 +8,8 @@ import { api, postJSON, type PrepareSessionResponse, type StartSessionRequest } 
 import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, getConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { getDraft, getDraftVersion, saveDraft } from '../../lib/composerDraft';
 import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
@@ -33,6 +34,7 @@ import { startFirstSubmission } from './firstSubmission';
 import { sendFirstFiles } from './sendFirstFiles';
 import { StartProgress, type StartSteps } from './StartProgress';
 import { startHandoffs, startModels } from './startHandoffs';
+import { PreparedDraftLifecycle } from './PreparedDraftLifecycle';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -56,13 +58,17 @@ function resolveTarget(target: SessionTarget, canWorktree: boolean, worktrees: {
 }
 
 export function NewConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
-  return <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params} whisperAvailable={whisperAvailable}
-    composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />;
+  return <PreparedDraftLifecycle params={params} navigate={navigate} navigateToSession={navigateToSession}>
+    <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params} whisperAvailable={whisperAvailable}
+      composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />
+  </PreparedDraftLifecycle>;
 }
 
-function PreparedConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
+function PreparedConversation({ params, whisperAvailable, composerRef, navigate }: NewConversationProps) {
   const { directory, title } = params;
   const draftId = params.draftId || NEW_SESSION_ID;
+  const draftStart = useNewConversationDrafts((state) => state.starts[draftId]);
+  const openedWhilePending = useRef(!!draftStart && !draftStart.error && !draftStart.sessionId).current;
   const saved = useRef(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId)).current;
   const remoteId = params.remoteId || 'local';
   const seedNewSession = useApiStore((state) => state.seedNewSession);
@@ -208,6 +214,13 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
   const start = useCallback(async (text: string, build: (ready: Ready) => Submission) => {
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
+    const revision = beginConversationStart(draftId, text);
+    if (revision === null) throw new Error('Session creation is already in progress');
+    const ownsDraft = () => {
+      const draft = getConversationDraft(draftId);
+      return draft && `${draft.remoteId || 'local'}:${draft.directory}:${draft.platform}:${draft.title}` === routeKey &&
+        getDraftVersion(draftId) === revision && (!getDraft(draftId) || getDraft(draftId) === text);
+    };
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
     inFlight.current = sourceGeneration;
     setError('');
@@ -250,13 +263,15 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
         startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
       if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, steps });
-      if (stillCurrent()) {
-        navigateToSession(res.sessionId);
-        // Only the initiating draft may be cleared, never a newer route's draft.
-        forgetConversationDraft(draftId);
+      if (ownsDraft()) {
+        completeConversationStart(draftId, res.sessionId);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (ownsDraft()) {
+        saveDraft(draftId, text, revision);
+        failConversationStart(draftId, message);
+      }
       // Only this request's prompt: a newer start may be pending already.
       setPending((p) => p?.startId === startId ? undefined : p);
       if (stillCurrent()) setError(message);
@@ -265,11 +280,12 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
       throw new Error(message);
     } finally {
       unsubscribe();
+      endConversationStart(draftId);
       if (inFlight.current === sourceGeneration) inFlight.current = undefined;
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, target, seedNewSession, navigateToSession, draftId]);
+  }, [directory, remoteId, title, routeKey, target, seedNewSession, draftId]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => start(text, (r) => {
     const { model, agent, reasoning } = pick(r);
@@ -310,19 +326,21 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
     <div className="oc-thread" data-testid="new-conversation">
       <div className="oc-thread-viewport">
         {pending?.key === routeKey && <StartProgress prompt={pending.text} steps={pending.steps} />}
+        {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress prompt={draftStart.text} steps={{}} />}
       </div>
       <div className="oc-viewport-footer" data-testid="conversation-composer">
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
-        {error && <InlineAlert>{error}</InlineAlert>}
+        {(error || draftStart?.error) && <InlineAlert>{error || draftStart?.error}</InlineAlert>}
         <Composer
-          key={routeKey}
+          key={`${routeKey}:${openedWhilePending && !!draftStart?.error}`}
           composerRef={composerRef}
           onSend={onSend}
           onCommand={onCommand}
           onShell={caps.shellExec ? onShell : undefined}
           shellExec={caps.shellExec}
           isRunning={false}
+          disabled={!!draftStart && !draftStart.sessionId && !draftStart.error}
           whisperAvailable={whisperAvailable}
           models={models}
           modelEntries={catalog?.models.models ?? []}

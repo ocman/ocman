@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { getDraft, saveDraft } from './composerDraft';
-import { forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
+import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
 
 beforeEach(() => {
   localStorage.clear();
-  useNewConversationDrafts.setState({ drafts: [] });
+  useNewConversationDrafts.setState({ drafts: [], starts: {} });
 });
 
 it('persists independent targets and selections and only discards the selected draft', async () => {
@@ -31,6 +31,19 @@ it('keeps live drafts when storage refuses writes', () => {
   rememberConversationDraft({ draftId: 'first', directory: '/repo' });
   expect(useNewConversationDrafts.getState().drafts).toHaveLength(1);
   write.mockRestore();
+});
+
+it('holds the start guard by draft identity, releases failures and remembers completed sessions', () => {
+  rememberConversationDraft({ draftId: 'pending', directory: '/repo' });
+  expect(beginConversationStart('pending', 'prompt')).toEqual(expect.any(Number));
+  expect(beginConversationStart('pending', 'duplicate')).toBeNull();
+  endConversationStart('pending');
+  expect(beginConversationStart('pending', 'retry')).toEqual(expect.any(Number));
+  completeConversationStart('pending', 'session');
+  endConversationStart('pending');
+  expect(useNewConversationDrafts.getState().drafts).toEqual([]);
+  expect(useNewConversationDrafts.getState().starts.pending.sessionId).toBe('session');
+  expect(beginConversationStart('pending', 'duplicate')).toBeNull();
 });
 
 it('merges another tab before writing and observes cross-tab discards', async () => {

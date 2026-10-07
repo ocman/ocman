@@ -564,6 +564,11 @@ flowchart TD
   conversations in both sidebar views, including empty drafts, and lets the user
   reopen or discard one. Opening another new conversation allocates another
   draft id; switching machines retains the current id.
+  Start reservations are browser-memory state keyed by draft id and discard
+  revision, so remounting a pending draft cannot submit a duplicate. Successful
+  starts retire their submitted revision independently of active navigation.
+  `PreparedDraftLifecycle` follows completed starts to their session and replaces
+  an externally discarded identity before it can accept unsavable edits.
   The first submission calls
   `POST /api/sessions/start`, which creates the session at the chosen target
   (an automatically named `session-<suffix>` worktree, or the current

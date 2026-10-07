@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { discardDraft } from './composerDraft';
+import { discardDraft, getDraftVersion } from './composerDraft';
 
 const STORAGE_KEY = 'ocman.newConversationDrafts.v1';
 
@@ -24,11 +24,43 @@ function load(): ConversationDraft[] | null {
   }
 }
 
-export const useNewConversationDrafts = create<{ drafts: ConversationDraft[] }>(() => ({ drafts: load() || [] }));
+export const useNewConversationDrafts = create<{
+  drafts: ConversationDraft[];
+  starts: Record<string, { version: number; text: string; sessionId?: string; error?: string }>;
+}>(() => ({ drafts: load() || [], starts: {} }));
 let storageUnavailable = false;
 
 function currentDrafts() {
   return storageUnavailable ? useNewConversationDrafts.getState().drafts : load() || useNewConversationDrafts.getState().drafts;
+}
+
+export const getConversationDraft = (draftId: string) => currentDrafts().find((draft) => draft.draftId === draftId);
+
+export function beginConversationStart(draftId: string, text: string): number | null {
+  const { starts } = useNewConversationDrafts.getState();
+  if (starts[draftId] && !starts[draftId].error) return null;
+  const version = getDraftVersion(draftId);
+  useNewConversationDrafts.setState({ starts: { ...starts, [draftId]: { version, text } } });
+  return version;
+}
+
+export function completeConversationStart(draftId: string, sessionId: string) {
+  const { starts } = useNewConversationDrafts.getState();
+  useNewConversationDrafts.setState({ starts: { ...starts, [draftId]: { ...starts[draftId], sessionId } } });
+  forgetConversationDraft(draftId);
+}
+
+export function failConversationStart(draftId: string, error: string) {
+  const { starts } = useNewConversationDrafts.getState();
+  useNewConversationDrafts.setState({ starts: { ...starts, [draftId]: { ...starts[draftId], error } } });
+}
+
+export function endConversationStart(draftId: string) {
+  const { starts } = useNewConversationDrafts.getState();
+  if (starts[draftId]?.sessionId || starts[draftId]?.error) return;
+  const next = { ...starts };
+  delete next[draftId];
+  useNewConversationDrafts.setState({ starts: next });
 }
 
 function save(drafts: ConversationDraft[]) {

@@ -65,7 +65,7 @@ describe('NewConversation', () => {
     vi.resetAllMocks();
     startModels.clear();
     window.localStorage.removeItem('ocman.newSessionCatalogs.v1');
-    useNewConversationDrafts.setState({ drafts: [] });
+    useNewConversationDrafts.setState({ drafts: [], starts: {} });
     clearSettingsCache();
     mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'build' });
     mocks.progress.clear();
@@ -409,17 +409,23 @@ describe('NewConversation', () => {
 
   it('runs a platform command on the new session itself, and surfaces start failures', async () => {
     mocks.post.mockResolvedValue(undefined);
-    mount();
+    const first = mount();
     await ready();
     await act(() => composer.onCommand!('review', 'main'));
     expect(startModels.get('child')).toBe('prov/default');
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ prompt: '/review main', send: undefined }));
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/session/child/command?platform=r-machine%3Aopencode',
       expect.objectContaining({ command: 'review', arguments: 'main' }), { parseJSON: false }));
+    first.unmount();
+    const shell = mount({ directory: '/repo', draftId: 'shell' });
+    await ready();
     await act(() => composer.onShell!('ls'));
     expect(startModels.get('child')).toBe('prov/default');
     expect(mocks.post).toHaveBeenCalledWith('/api/session/child/shell?platform=r-machine%3Aopencode', { command: 'ls', agent: 'build' }, { parseJSON: false });
 
+    shell.unmount();
+    mount({ directory: '/repo', draftId: 'failure' });
+    await ready();
     mocks.start.mockRejectedValueOnce(new Error('worktree create/launch failed'));
     let failure: unknown;
     await act(async () => { await Promise.resolve(composer.onSend!('again')).catch((err: unknown) => { failure = err; }); });
@@ -451,8 +457,8 @@ describe('NewConversation', () => {
     let old!: Promise<void>;
     act(() => { old = Promise.resolve(composer.onSend!('first')).catch(() => {}); });
     await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
-    // Re-point the same mounted page (new title), then start again.
-    view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'B' }}
+    // Open an independent draft on the same mounted page, then start again.
+    view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'B', draftId: 'second' }}
       whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await ready();
     act(() => { void Promise.resolve(composer.onSend!('second')).catch(() => {}); });
@@ -520,7 +526,7 @@ describe('NewConversation', () => {
     let oldRequest!: void | Promise<void>;
     act(() => { oldRequest = composer.onSend!('old prompt'); });
     await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
-    view.rerender(<NewConversation params={{ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'new' }}
+    view.rerender(<NewConversation params={{ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'new', draftId: 'second' }}
       whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await ready();
     let newRequest!: void | Promise<void>;

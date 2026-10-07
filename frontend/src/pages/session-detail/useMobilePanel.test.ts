@@ -40,5 +40,8 @@ describe('useMobilePanel', () => {
     act(() => result.current.panel.toggleMobileSidebar());
     act(() => result.current.navigate('/session/new?dir=%2Frepo&draftId=second'));
     expect(result.current.panel.mobilePanel).toBeNull();
+    act(() => result.current.panel.toggleMobileSidebar());
+    act(() => result.current.navigate('/session/new?dir=%2Frepo&draftId=second'));
+    expect(result.current.panel.mobilePanel).toBeNull();
   });
 });
