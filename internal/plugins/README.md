@@ -114,7 +114,7 @@ files, symlinks, directories, nested files, and non-executables are ignored.
 
 Each candidate runs with only `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, and a fresh
 `OCMAN_PLUGIN_TOKEN`. Its working directory is `/`, stdin reads EOF, and describe
-must exit within three seconds. Stdout is bounded to one 1 MiB frame plus its
+must exit within fifteen seconds. Stdout is bounded to one 1 MiB frame plus its
 terminator; stderr is discarded with a 64 KiB limit. Either overflow kills the
 process group. Extra frames, malformed output, nonzero exits, invalid tokens, and
 incompatible process versions reject the candidate without exposing its output.
@@ -192,7 +192,7 @@ the registration's private `0700` data directory, and passes only the same three
 environment variables as discovery. No repository path, inherited environment,
 ocman credential or secret-store path is passed. The serve offer must match the
 approved description. Readiness requires the token-bound offer and a successfully
-written host acknowledgment within three seconds. The host's supported capability
+written host acknowledgment within fifteen seconds. The host's supported capability
 list is explicit; capability brokers supply it rather than trusting the offer.
 
 Serve launches also inherit fd 3, an unlinked `0600` file containing one JSON
@@ -207,7 +207,7 @@ configuration descriptor.
 ID. Calls beyond advertised concurrency fail with `ErrBusy`. Each call requires
 an absolute deadline; either that deadline or context cancellation settles its
 caller and sends a cancel frame. The slot stays occupied until a result arrives.
-A plugin ignoring cancellation for one second is terminated. Crashes, malformed
+A plugin ignoring cancellation for three seconds is terminated. Crashes, malformed
 stdout, unknown IDs and invalid stream ordering settle outstanding callers with
 fixed local errors. Calls are never replayed automatically.
 
@@ -231,7 +231,7 @@ budget. Exhaustion leaves the registration terminally unhealthy, including acros
 server restarts, until an explicit restart, retry, or enable. Health updates are
 durable and cannot overwrite a concurrent
 disable or discovery conflict. Shutdown settles callers, sends a shutdown frame,
-allows one second for exit, then kills the process group and reaps the child.
+allows three seconds for exit, then kills the process group and reaps the child.
 
 ## Management HTTP API
 

@@ -90,10 +90,10 @@ echo. Never log or persist it. The remaining environment is
 `PATH=/usr/bin:/bin` and `LANG=C.UTF-8`; package runtime dependencies accordingly.
 
 - `describe` runs in `/` with stdin at EOF, emits one token-bound hello containing
-  the description, and exits successfully within three seconds.
+  the description, and exits successfully within fifteen seconds.
 - `serve` runs in the plugin's private data directory. It reads configuration,
   emits the same approved description in a token-bound hello, then waits for the
-  host's hello acknowledgment before handling calls. Readiness has a three-second
+  host's hello acknowledgment before handling calls. Readiness has a fifteen-second
   deadline.
 - The description includes a reverse-domain ID, release version, process version,
   capability versions, execution scope, concurrency, grants, settings, and actions.
@@ -112,8 +112,8 @@ that budget. Exhaustion leaves durable unhealthy state across ocman restarts;
 **Retry**, **Restart**, or explicit enablement resets it.
 
 Calls respect advertised concurrency, at most 256. Deadlines or cancellation send
-a cancel frame; a plugin that fails to finish within the one-second cancellation
-grace is terminated. Shutdown sends a shutdown frame, allows one second to exit,
+a cancel frame; a plugin that fails to finish within the three-second cancellation
+grace is terminated. Shutdown sends a shutdown frame, allows three seconds to exit,
 then kills and reaps the process group. Frames are limited to 1 MiB, general call
 output to 8 MiB, and chunk/event queues are bounded. Invalid framing, stream
 ordering, or slow-consumer overflow terminates the process.

@@ -105,7 +105,7 @@ flowchart LR
   provider tokens and account identifiers never reach the browser.
 - **Native plugin executables.** Startup and explicit rescans describe direct
   executables from the local plugin directory. Each describe has a fresh token,
-  minimal environment, bounded output, and a three-second deadline. Duplicate
+  minimal environment, bounded output, and a fifteen-second deadline. Duplicate
   identities conflict; changed binaries lose approval. Discovery itself executes
   trusted code. Grants minimize brokered context, not operating-system access.
   See [Plugins](../features/plugins.md) for installation and operations.

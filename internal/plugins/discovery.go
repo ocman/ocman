@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DescribeTimeout        = 3 * time.Second
+	DescribeTimeout        = 15 * time.Second
 	MaxDescribeStderrBytes = 64 << 10
 )
 

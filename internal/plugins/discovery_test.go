@@ -29,8 +29,10 @@ func TestDescribeHelper(t *testing.T) {
 	e := hello(ModeDescribe)
 	e.Hello.Token = os.Getenv("OCMAN_PLUGIN_TOKEN")
 	switch os.Args[3] {
+	case "slow":
+		time.Sleep(4 * time.Second)
 	case "timeout":
-		time.Sleep(10 * time.Second)
+		time.Sleep(30 * time.Second)
 	case "malformed":
 		fmt.Println("not json")
 		os.Exit(0)
@@ -76,6 +78,15 @@ func TestDescribeHelper(t *testing.T) {
 
 var warmDescribeHelper sync.Once
 var warmDescribeHelperErr error
+
+func TestScanToleratesSlowDescribe(t *testing.T) {
+	dir := t.TempDir()
+	helperExecutable(t, dir, "ocman-plugin-test", "slow")
+	got, err := Scan(context.Background(), dir, nil)
+	if err != nil || len(got) != 1 || got[0].Err != nil {
+		t.Fatalf("slow describe rejected: %+v %v", got, err)
+	}
+}
 
 func helperExecutable(t *testing.T, dir, name, mode string) string {
 	t.Helper()
@@ -123,7 +134,7 @@ func TestScanDescribe(t *testing.T) {
 			if !errors.Is(got[0].Err, tt.want) {
 				t.Fatalf("got %v, want %v", got[0].Err, tt.want)
 			}
-			if time.Since(start) > 5*time.Second {
+			if time.Since(start) > DescribeTimeout+15*time.Second {
 				t.Fatal("describe exceeded deadline")
 			}
 			if tt.want == nil && (got[0].Description.ID != "org.example.test" || len(got[0].Checksum) != 64) {
