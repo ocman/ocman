@@ -11,7 +11,13 @@ function load(): Map<string, PrepareSessionResponse> {
 }
 
 export function getNewSessionCatalog(key: string): PrepareSessionResponse | undefined {
-  return load().get(key);
+  const catalog = load().get(key);
+  if (!catalog || typeof catalog.platform !== 'string' ||
+    !Array.isArray(catalog.agents) || !catalog.agents.every((agent) => typeof agent?.name === 'string') ||
+    !Array.isArray(catalog.commands) || !catalog.commands.every((command) => typeof command?.name === 'string') ||
+    !Array.isArray(catalog.models?.models) || !catalog.models.models.every((model) =>
+      typeof model?.provider === 'string' && typeof model?.model === 'string')) return undefined;
+  return catalog;
 }
 
 export function cacheNewSessionCatalog(key: string, catalog: PrepareSessionResponse): void {

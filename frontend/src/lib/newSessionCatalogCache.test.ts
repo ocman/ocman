@@ -30,3 +30,11 @@ it('recovers from malformed or unavailable storage', () => {
   expect(getNewSessionCatalog('target')).toBeUndefined();
   expect(() => cacheNewSessionCatalog('target', catalog)).not.toThrow();
 });
+
+it.each([{}, null, { ...catalog, models: {} }, { ...catalog, agents: {} },
+  { ...catalog, commands: null }, { ...catalog, agents: [null] },
+  { ...catalog, commands: [{}] }, { ...catalog, models: { models: [{}] } },
+])('treats structurally invalid persisted catalogs as cache misses: %j', (invalid) => {
+  localStorage.setItem(storageKey, JSON.stringify([['target', invalid]]));
+  expect(getNewSessionCatalog('target')).toBeUndefined();
+});
