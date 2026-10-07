@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { GitStatus, GitStatusEntry } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
 import type { FullscreenDiffFile } from './DiffFullscreenModal';
+import styles from './ChangedFilesTree.module.css';
 
 const GIT_STATUSES = new Set<string>(['added', 'deleted', 'ignored', 'modified', 'renamed', 'untracked']);
 
@@ -75,7 +76,7 @@ export function ChangedFilesTree({ files, selectedKey, onSelect }: ChangedFilesT
   return (
     <FileTree
       model={model}
-      className="oc-diff-fs-files"
+      className={styles.tree}
       aria-label="Changed files"
       data-testid="changed-files-tree"
     />

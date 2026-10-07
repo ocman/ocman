@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import './DiffFullscreenModal.css';
-import { Modal } from './Modal';
+import { FileBrowserModal } from './FileBrowserModal';
 import { IconButton } from './IconButton';
 import { ChangedFilesTree } from './ChangedFilesTree';
+import { EmptyState } from './EmptyState';
 
 // One entry in the fullscreen diff browser. `body` is the already-
 // built diff element for the file; React only renders the selected
@@ -35,8 +35,7 @@ interface DiffFullscreenModalProps {
 }
 
 // DiffFullscreenModal shows the same per-file diffs as the sidebar
-// panes, but in a 95vw/95vh two-column layout: a file tree on the
-// left, the selected file's diff on the right.
+// panes, with a file tree beside the selected diff (above it on phones).
 export function DiffFullscreenModal({ title, files, initialKey, onClose }: DiffFullscreenModalProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(initialKey || (files[0]?.key ?? null));
   // Selecting by key (not index) keeps the selection stable across a
@@ -45,41 +44,15 @@ export function DiffFullscreenModal({ title, files, initialKey, onClose }: DiffF
   const current = files.find((f) => f.key === selectedKey) ?? files[0];
 
   return (
-    <Modal
+    <FileBrowserModal
       onClose={onClose}
-      label={title}
-      backdropClassName="oc-diff-fs-backdrop"
-      dialogClassName="oc-diff-fs-modal"
+      title={title}
+      description={`${files.length} ${files.length === 1 ? 'file' : 'files'}`}
       dialogTestId="diff-fullscreen"
+      sidebar={<ChangedFilesTree files={files} selectedKey={current?.key ?? null} onSelect={setSelectedKey} />}
     >
-      <header className="oc-diff-fs-header">
-        <h2>{title}</h2>
-        <span className="oc-diff-fs-header-count">
-          {files.length} {files.length === 1 ? 'file' : 'files'}
-        </span>
-        <button
-          type="button"
-          className="oc-diff-fs-close"
-          onClick={onClose}
-          aria-label="Close"
-          title="Close"
-        >
-          <i className="bi bi-x-lg" aria-hidden="true" />
-        </button>
-      </header>
-      <div className="oc-diff-fs-cols">
-        <ChangedFilesTree
-          files={files}
-          selectedKey={current?.key ?? null}
-          onSelect={setSelectedKey}
-        />
-        <div className="oc-diff-fs-diff">
-          {current ? current.body : (
-            <div className="oc-diff-empty">No changes to show.</div>
-          )}
-        </div>
-      </div>
-    </Modal>
+      {current ? current.body : <EmptyState>No changes to show.</EmptyState>}
+    </FileBrowserModal>
   );
 }
 

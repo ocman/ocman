@@ -87,6 +87,8 @@ describe('DiffFullscreenModal', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<DiffFullscreenModal title="Working tree" files={files} onClose={onClose} />);
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveClass('oc-icon-button');
+    expect(screen.getByTestId('modal-header')).toHaveTextContent('2 files');
     await user.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalled();
   });

@@ -4,12 +4,12 @@ import { FileTree, useFileTree } from '@pierre/trees/react';
 import { api } from '../lib/api';
 import type { RepoFileContent, RepoFileList } from '../lib/api.types';
 import { shortPath } from '../lib/format';
-import { Modal } from './Modal';
-import { IconButton } from './IconButton';
+import { FileBrowserModal } from './FileBrowserModal';
+import { CheckboxField } from './CheckboxField';
 import { EmptyState } from './EmptyState';
 import { LoadingState } from './LoadingState';
 import { FILE_OPTIONS } from './diffOptions';
-import './DiffFullscreenModal.css';
+import styles from './ExploreModal.module.css';
 
 type Load<T> = { data?: T; error?: string };
 
@@ -45,7 +45,7 @@ function RepoTree({ files, onSelect }: { files: string[]; onSelect: (path: strin
       if (file) onSelectRef.current(file);
     },
   });
-  return <FileTree model={model} className="oc-explore-tree" aria-label="Project files" data-testid="explore-tree" />;
+  return <FileTree model={model} className={styles.tree} aria-label="Project files" data-testid="explore-tree" />;
 }
 
 function FileBody({ file }: { file: RepoFileContent }) {
@@ -53,7 +53,7 @@ function FileBody({ file }: { file: RepoFileContent }) {
   if (file.mimeType?.startsWith('image/')) {
     if (file.truncated) return <EmptyState>Image exceeds the 10 MiB preview limit.</EmptyState>;
     if (imageError) return <EmptyState>Unable to display this image.</EmptyState>;
-    return <div className="oc-explore-image"><img src={`data:${file.mimeType};base64,${file.content}`} alt={file.path} onError={() => setImageError(true)} /></div>;
+    return <div className={styles.image}><img src={`data:${file.mimeType};base64,${file.content}`} alt={file.path} onError={() => setImageError(true)} /></div>;
   }
   if (file.binary) return <EmptyState>Binary file, not shown.</EmptyState>;
   return (
@@ -75,33 +75,22 @@ export function ExploreModal({ dir, remoteId, onClose }: { dir: string; remoteId
   const toggleIgnored = () => { setIgnored((v) => !v); setSelected(null); };
 
   return (
-    <Modal onClose={onClose} label="Explore" backdropClassName="oc-diff-fs-backdrop" dialogClassName="oc-diff-fs-modal" dialogTestId="explore-modal">
-      <header className="oc-diff-fs-header">
-        <h2>Explore</h2>
-        <span className="oc-diff-fs-header-count" title={list.data?.root}>
-          {list.data && `${shortPath(list.data.root)} · ${list.data.files.length}${list.data.truncated ? '+' : ''} files`}
-        </span>
-        <IconButton icon="bi-x-lg" label="Close" variant="ghost" size="compact" onClick={onClose} />
-      </header>
-      <div className="oc-diff-fs-cols">
-        <div className="oc-diff-fs-files oc-explore-side">
-          <div className="oc-explore-options">
-            <label>
-              <input type="checkbox" checked={ignored} onChange={toggleIgnored} />
-              Show ignored files
-            </label>
+    <FileBrowserModal title="Explore" onClose={onClose} dialogTestId="explore-modal"
+      description={list.data && <span title={list.data.root}>{`${shortPath(list.data.root)} · ${list.data.files.length}${list.data.truncated ? '+' : ''} files`}</span>}
+      sidebar={
+        <div className={styles.side}>
+          <div className={styles.options}>
+            <CheckboxField label="Show ignored files" checked={ignored} onChange={toggleIgnored} />
           </div>
           {list.data ? <RepoTree key={String(ignored)} files={list.data.files} onSelect={setSelected} />
-            : list.error ? <EmptyState className="oc-explore-tree">{list.error}</EmptyState>
-            : <LoadingState className="oc-explore-tree">Loading files…</LoadingState>}
+            : list.error ? <EmptyState className={styles.tree}>{list.error}</EmptyState>
+            : <LoadingState className={styles.tree}>Loading files…</LoadingState>}
         </div>
-        <div className="oc-diff-fs-diff">
-          {file.data ? <FileBody key={file.data.path} file={file.data} />
-            : file.error ? <EmptyState>{file.error}</EmptyState>
-            : file.loading ? <LoadingState>Loading…</LoadingState>
-            : <EmptyState>Select a file to view it.</EmptyState>}
-        </div>
-      </div>
-    </Modal>
+      }>
+      {file.data ? <FileBody key={file.data.path} file={file.data} />
+        : file.error ? <EmptyState>{file.error}</EmptyState>
+        : file.loading ? <LoadingState>Loading…</LoadingState>
+        : <EmptyState>Select a file to view it.</EmptyState>}
+    </FileBrowserModal>
   );
 }
