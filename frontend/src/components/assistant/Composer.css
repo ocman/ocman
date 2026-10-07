@@ -274,6 +274,16 @@
 .oc-bar-select--warn:hover { color: var(--yellow); }
 .oc-bar-select option { background: var(--bg-card); color: var(--text); }
 
+.oc-bar-model {
+  max-width: none;
+  min-width: 0;
+}
+.oc-bar-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Reasoning level button — dimmer than model/agent to read as a suffix */
 .oc-bar-reasoning {
   color: var(--subtext0);
@@ -415,11 +425,16 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+.oc-composer-bar-left > :not(.oc-bar-model) {
+  flex-shrink: 0;
 }
 .oc-composer-bar-right {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 .oc-bar-running {
   display: flex;

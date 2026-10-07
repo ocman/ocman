@@ -221,13 +221,13 @@ export function ComposerToolbar({
             {hasModels && (
               <button
                 type="button"
-                className={`oc-bar-select${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
+                className={`oc-bar-select oc-bar-model${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
                 disabled={uiDisabled}
                 onClick={openModelPicker}
                 title={modelUnavailable ? 'Provider is not connected on this session\'s machine. Connect it or choose another provider.' : 'Model (click to change)'}
               >
                 {modelUnavailable && <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />}
-                {modelButtonLabel ? <ModelLabel model={effectiveModel}>{modelButtonLabel}</ModelLabel> : 'Model'}
+                {modelButtonLabel ? <ModelLabel model={effectiveModel}><span className="oc-bar-model-name">{modelButtonLabel}</span></ModelLabel> : 'Model'}
               </button>
             )}
             {hasReasoning && (
