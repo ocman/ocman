@@ -67,6 +67,7 @@ function currentDrafts() {
 }
 
 export const getConversationDraft = (draftId: string) => currentDrafts().find((draft) => draft.draftId === draftId);
+const retirementSnapshot = (id: string) => JSON.stringify([getConversationDraft(id), getDraft(id), getDraftVersion(id)]);
 
 function publishStart(draftId: string, start: DraftStart) {
   try { localStorage.setItem(START_PREFIX + draftId, JSON.stringify(start)); } catch { /* Retain the live receipt. */ }
@@ -90,6 +91,10 @@ export async function reconcileConversationStart(draftId: string, hint?: DraftSt
   }
   if (start?.error && start.version === getDraftVersion(draftId) && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
   if (start?.replacementDraftId) transferDraftAttachments(draftId, start.replacementDraftId);
+  if (start?.createdSession && start.retirement && !start.relocationError && getConversationDraft(draftId)) {
+    if (retirementSnapshot(draftId) === start.retirement) forgetConversationDraft(draftId);
+    else { await completeConversationStart(draftId, start.createdSession, false); return; }
+  }
   if (JSON.stringify(start) === JSON.stringify(before)) return;
   useNewConversationDrafts.setState((state) => {
     const starts = { ...state.starts };
@@ -114,7 +119,7 @@ export async function beginConversationStart(draftId: string, text: string, rout
 
 export async function completeConversationStart(draftId: string, createdSession: NonNullable<DraftStart['createdSession']>, retire = true) {
   const { starts } = useNewConversationDrafts.getState();
-  const snapshot = () => JSON.stringify([getConversationDraft(draftId), getDraft(draftId), getDraftVersion(draftId)]);
+  const snapshot = () => retirementSnapshot(draftId);
   let before = snapshot();
   let replacementDraftId: string | undefined;
   const saved = getConversationDraft(draftId);
@@ -127,7 +132,7 @@ export async function completeConversationStart(draftId: string, createdSession:
     }
     before = snapshot();
   }
-  const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '' };
+  const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '', retirement: before };
   // A known created session must never become a retryable creation if saving its receipt fails.
   await saveTerminalStart(draftId, start);
   // No await may separate the final snapshot/copy from deleting its identity.
@@ -252,3 +257,10 @@ if (typeof window !== 'undefined') window.addEventListener('storage', (event) =>
   }
   useNewConversationDrafts.setState({ drafts: currentDrafts() });
 });
+
+// Resume interrupted retirements on reload even when their composer is not open.
+for (const draft of useNewConversationDrafts.getState().drafts) {
+  if (useNewConversationDrafts.getState().starts[draft.draftId]?.retirement) {
+    void reconcileConversationStart(draft.draftId).catch(() => undefined);
+  }
+}

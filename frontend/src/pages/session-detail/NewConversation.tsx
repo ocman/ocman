@@ -35,7 +35,7 @@ import { sendFirstFiles } from './sendFirstFiles';
 import { StartProgress, type StartSteps } from './StartProgress';
 import { startHandoffs, startModels } from './startHandoffs';
 import { PreparedDraftLifecycle } from './PreparedDraftLifecycle';
-import { getPendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
+import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -163,12 +163,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   // Same precedence as an existing empty session: project setting, then
   // the last pick in this project, then the directory's most recent model.
   const activeModel = catalog?.projectDefaultModel || getProjectModel(directory) || catalog?.defaultModel || '';
-  const seeded = useRef<string>(saved?.model ? directory : '');
-  useEffect(() => {
-    if (!catalogReady || !catalog || !activeModel || seeded.current === directory) return;
-    seeded.current = directory;
-    setSelectedModel(activeModel);
-  }, [activeModel, directory, catalog, catalogReady]);
+  const attachmentPayload = usePendingDraftPayload(draftId);
 
   const models = useMemo(() => {
     const entries = catalog?.models.models ?? [];
@@ -177,13 +172,11 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const agents = useMemo(() => catalog?.agents ?? [], [catalog]);
 
   const handleModelChange = useCallback((model: string) => {
-    seeded.current = directory;
     setSelectedModel(model);
     setSelectedReasoning('');
     saveProjectModel(directory, model);
   }, [directory]);
   const handleAgentChange = useCallback((agent: string) => {
-    seeded.current = directory;
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) { setSelectedModel(agentModel); setSelectedReasoning(''); }
@@ -357,7 +350,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         <Composer
           key={`${routeKey}:${recoveryKey}`}
           composerRef={composerRef}
-          initialAttachments={getPendingDraftPayload(draftId)}
+          initialAttachments={attachmentPayload}
           onAttachmentProcessing={() => pendingAttachmentWriter(draftId)}
           onAttachmentsChange={(payload) => { if (getConversationDraft(draftId)) updateDraftAttachments(draftId, payload); }}
           onSend={onSend}

@@ -560,8 +560,10 @@ flowchart TD
   The machine selector
   re-points the route; the target selector changes client state. Neither
   creates a session. `lib/newConversationDrafts` stores each draft's target and
-  selections in per-draft browser localStorage keys, while `lib/composerDraft` stores its text
-  under its unique `draftId`. `SidebarConversationDrafts` lists these prepared
+  selections in per-draft browser localStorage keys, while `lib/composerDraft` stores text
+  in independent keys under each `draftId`. The former shared text map remains
+  read-only fallback; empty per-draft overrides keep cleared legacy text empty.
+  `SidebarConversationDrafts` lists these prepared
   conversations in both sidebar views, including empty drafts, and lets the user
   reopen or discard one. Opening another new conversation allocates another
   draft id; switching machines retains the current id.
@@ -584,14 +586,19 @@ flowchart TD
   once, keeping attachments on later retries.
   Fresh user edits adopt an externally changed text revision while stale
   callbacks remain fenced. Pending images and browser Files live in a shared
-  draft-keyed memory snapshot, restored after navigation and a failed start.
+  draft-keyed Zustand snapshot, restored after navigation and a failed start.
+  Mounted composers read this snapshot directly, including late image conversions
+  that finish after reopening the draft; local arrays cannot overwrite it.
   Attachment processing captures the initiating draft revision before asynchronous
   image reads, so accepted batches survive navigation without reviving discarded
   payloads. Relocation transfers that snapshot, including owner-local browser
   Files in peer tabs, before clearing the retired identity.
   Retirement rechecks metadata/text after terminal persistence and copies late
-  edits before deleting the old identity. Legacy text migration is one checked
-  rename write; a quota error leaves the original available with an explicit retry.
+  edits before deleting the old identity. The completion receipt records a
+  retirement snapshot. Reload reconciliation deletes an unchanged source or
+  relocates newer edits, including drafts whose composer is not open.
+  Legacy text migration copies to a checked destination key before clearing
+  the source; a quota error leaves the original available with an explicit retry.
   Replacement owner/selections must persist before checked text relocation;
   a failed relocation keeps
   the completed claim and original draft with a safe retry. Validated terminal
@@ -600,6 +607,7 @@ flowchart TD
   retirement ownership, so changed selections are retained under a new identity.
   The comparison captures the initiating composer's selections rather than
   metadata changed by a peer before submission.
+  Catalog defaults are derived for display and submission, not saved as user edits.
   Explicit metadata deletion invalidates autosave and recovery;
   unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.

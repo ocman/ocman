@@ -9,12 +9,27 @@ vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 
 import { api } from '../../lib/api';
 import { useComposerAttachments } from './useComposerAttachments';
+import { pendingAttachmentWriter, updateDraftAttachments, usePendingDraftPayload } from '../../lib/pendingDraftPayloads';
 
 const img = new File(['x'], 'shot.png', { type: 'image/png' });
 const doc = new File(['y'], 'notes.txt', { type: 'text/plain' });
 
 describe('useComposerAttachments', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('removes controlled attachments from the authoritative draft without restoring old snapshots', async () => {
+    const id = 'controlled-attachments';
+    const { result, rerender } = renderHook(() => useComposerAttachments({ current: undefined }, false, undefined,
+      usePendingDraftPayload(id), () => pendingAttachmentWriter(id), (payload) => updateDraftAttachments(id, payload)));
+    await act(() => result.current.addFiles([img, doc]));
+    expect(result.current.images).toHaveLength(1);
+    expect(result.current.files).toHaveLength(1);
+    act(() => result.current.removeImage(0));
+    act(() => result.current.removeFile(0));
+    rerender();
+    expect(result.current.images).toEqual([]);
+    expect(result.current.files).toEqual([]);
+  });
 
   it('inlines images, uploads other files, and builds the reference text', async () => {
     const { result } = renderHook(() => useComposerAttachments({ current: 's1' }, false));

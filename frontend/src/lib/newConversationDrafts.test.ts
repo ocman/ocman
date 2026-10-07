@@ -2,7 +2,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { getPendingDraftPayload, updateDraftAttachments } from './pendingDraftPayloads';
-import { getDraft, saveDraft } from './composerDraft';
+import { getDraft, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
 import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
 vi.mock('./draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
@@ -14,6 +14,49 @@ beforeEach(() => {
   localStorage.clear();
   window.dispatchEvent(new StorageEvent('storage', { key: null }));
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
+});
+
+it('does not overwrite another draft during an interleaved text relocation', () => {
+  saveDraft('moving-text', 'move me');
+  const original = Storage.prototype.setItem;
+  let interleaved = false;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (!interleaved && key.startsWith('ocman.composerDrafts.v1')) {
+      interleaved = true;
+      saveDraft('other-text', 'independent edit');
+    }
+    original.call(this, key, value);
+  });
+  try {
+    expect(migrateDraft('moving-text', 'moved-text')).toBe(true);
+    expect(getDraft('other-text')).toBe('independent edit');
+  } finally { write.mockRestore(); }
+});
+
+it.each([false, true])('finalizes interrupted retirement while preserving newer edits: %s', async (edited) => {
+  rememberConversationDraft({ draftId: 'interrupted-retirement', directory: '/repo' });
+  saveDraft('interrupted-retirement', 'submitted');
+  const draft = useNewConversationDrafts.getState().drafts[0];
+  const retirement = JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId)]);
+  const createdSession = { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' };
+  useNewConversationDrafts.setState({ starts: { [draft.draftId]: { version: 0, text: '', sessionId: 'created', createdSession, retirement } } });
+  if (edited) saveDraft(draft.draftId, 'newer edit');
+  await reconcileConversationStart(draft.draftId);
+  expect(useNewConversationDrafts.getState().drafts.some((item) => item.draftId === draft.draftId)).toBe(false);
+  if (edited) expect(getDraft(useNewConversationDrafts.getState().starts[draft.draftId].replacementDraftId!)).toBe('newer edit');
+});
+
+it('replays a saved retirement at startup without opening its composer', async () => {
+  rememberConversationDraft({ draftId: 'startup-retirement', directory: '/repo' });
+  const draft = useNewConversationDrafts.getState().drafts[0];
+  const start = { version: getDraftVersion(draft.draftId), text: '', sessionId: 'created',
+    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
+    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId)]) };
+  useNewConversationDrafts.setState({ starts: { [draft.draftId]: start } });
+  localStorage.setItem(`ocman.newConversationStarts.v1:${draft.draftId}`, JSON.stringify(start));
+  vi.resetModules();
+  const restored = await import('./newConversationDrafts');
+  await waitFor(() => expect(restored.useNewConversationDrafts.getState().drafts).toHaveLength(0));
 });
 
 it('transfers peer-local attachments when another tab retires a replaced draft', async () => {
@@ -208,7 +251,7 @@ it('retains the source when replacement relocation fails at quota', async () => 
   useNewConversationDrafts.setState({ starts: { 'quota-copy': { version: 0, text: 'submitted' } } });
   const original = Storage.prototype.setItem;
   const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (key === 'ocman.composerDrafts.v1' && Object.keys(JSON.parse(value)).some((id) => id !== 'quota-copy')) throw new Error('quota');
+    if (key.startsWith('ocman.composerDrafts.v1:') && key !== 'ocman.composerDrafts.v1:quota-copy') throw new Error('quota');
     original.call(this, key, value);
   });
   try {

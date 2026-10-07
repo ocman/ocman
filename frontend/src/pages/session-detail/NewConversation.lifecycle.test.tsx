@@ -122,6 +122,45 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('retires a pre-prepare submission when its model is automatically seeded', async () => {
+    const catalog = deferred<typeof prepared & { defaultModel: string }>();
+    vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submitted' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await act(async () => catalog.resolve({ ...prepared, defaultModel: 'provider/default' }));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByTestId('draft-route')).toHaveTextContent('/session/child'));
+    expect(useNewConversationDrafts.getState().drafts).toHaveLength(0);
+  });
+
+  it('shows and submits late attachments when reopened before image conversion completes', async () => {
+    const callbacks: (() => void)[] = [];
+    const original = globalThis.FileReader;
+    class DelayedReader {
+      result = 'data:image/png;base64,bm90ZQ==';
+      onload: (() => void) | null = null;
+      readAsDataURL() { callbacks.push(() => this.onload?.()); }
+    }
+    const file = new File(['note'], 'late-reopened.txt', { type: 'text/plain' });
+    vi.stubGlobal('FileReader', DelayedReader);
+    vi.mocked(api.uploadComposerAttachment).mockResolvedValue({ path: '/tmp/late-reopened.txt', name: file.name, mime: file.type, size: file.size });
+    try {
+      render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+      fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['image'], 'late.png', { type: 'image/png' }), file] } });
+      fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
+      fireEvent.click(screen.getByRole('button', { name: /First/ }));
+      await act(async () => callbacks.forEach((finish) => finish()));
+      expect(await screen.findByText(file.name)).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: 'Attachment 1' })).toBeInTheDocument();
+      fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submit attachments' } });
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      await waitFor(() => expect(api.uploadComposerAttachment).toHaveBeenCalledWith('child', file, 'opencode'));
+      await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+      expect(vi.mocked(api.sendMessage).mock.calls.at(-1)?.[2]).toEqual([expect.objectContaining({ url: 'data:image/png;base64,bm90ZQ==' })]);
+    } finally { vi.stubGlobal('FileReader', original); }
+  });
+
   it('retains peer selections changed before this composer submits its own selections', async () => {
     render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
     await waitFor(() => expect(api.prepareSession).toHaveBeenCalled());
@@ -282,7 +321,7 @@ describe('new-conversation submission lifecycle', () => {
     saveDraft('new', 'only legacy copy');
     const original = Storage.prototype.setItem;
     const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-      if (key === 'ocman.composerDrafts.v1' && Object.keys(JSON.parse(value)).some((id) => id !== 'new')) throw new Error('quota');
+      if (key.startsWith('ocman.composerDrafts.v1:') && key !== 'ocman.composerDrafts.v1:new') throw new Error('quota');
       original.call(this, key, value);
     });
     try {

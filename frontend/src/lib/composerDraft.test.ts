@@ -11,6 +11,8 @@ describe('composerDraft', () => {
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
       value: {
+        get length() { return data.size; },
+        key: (index: number) => [...data.keys()][index] ?? null,
         getItem: (k: string) => (data.has(k) ? data.get(k)! : null),
         setItem: (k: string, v: string) => { data.set(k, String(v)); },
         removeItem: (k: string) => { data.delete(k); },
@@ -25,6 +27,22 @@ describe('composerDraft', () => {
     expect(getDraft('s1')).toBe('hello');
     saveDraft('s1', '');
     expect(getDraft('s1')).toBe('');
+  });
+
+  it('reads legacy text without rewriting the shared map and keeps explicit clears empty', () => {
+    const legacy = JSON.stringify({ legacy: 'old text', other: 'untouched' });
+    localStorage.setItem('ocman.composerDrafts.v1', legacy);
+    expect(getDraft('legacy')).toBe('old text');
+    clearDraft('legacy');
+    expect(getDraft('legacy')).toBe('');
+    saveDraft('new', 'independent text');
+    expect(localStorage.getItem('ocman.composerDrafts.v1')).toBe(legacy);
+    expect(getDraft('other')).toBe('untouched');
+  });
+
+  it.each(['null', 'invalid'])('ignores malformed legacy text maps: %s', (raw) => {
+    localStorage.setItem('ocman.composerDrafts.v1', raw);
+    expect(getDraft('missing')).toBe('');
   });
 
   it('tracks which sessions hold a draft', () => {

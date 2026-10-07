@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 
 const DRAFTS_KEY = 'ocman.composerDrafts.v1';
+const TEXT_PREFIX = DRAFTS_KEY + ':';
 
 type Drafts = Record<string, string>;
 const draftVersions = new Map<string, number>();
@@ -33,49 +34,31 @@ function loadDrafts(): Drafts {
   }
 }
 
-function saveDrafts(data: Drafts) {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(data));
-  } catch {
-    // Ignore storage errors (private mode, quotas, etc.)
-  }
-}
-
 export function getDraft(sessionId: string): string {
-  const drafts = loadDrafts();
-  return drafts[sessionId] || '';
+  try { return window.localStorage.getItem(TEXT_PREFIX + sessionId) ?? loadDrafts()[sessionId] ?? ''; }
+  catch { return ''; }
 }
 
 export function saveDraft(sessionId: string, text: string, version = getDraftVersion(sessionId)) {
   if (version !== getDraftVersion(sessionId)) return;
   if (!text) { discardDraft(sessionId); return; }
-  const drafts = loadDrafts();
-  if (text) {
-    drafts[sessionId] = text;
-  } else {
-    delete drafts[sessionId];
-  }
-  saveDrafts(drafts);
+  try { window.localStorage.setItem(TEXT_PREFIX + sessionId, text); } catch { /* Best-effort autosave. */ }
   emit();
 }
 
 export function clearDraft(sessionId: string) {
-  const drafts = loadDrafts();
-  delete drafts[sessionId];
-  saveDrafts(drafts);
+  // Empty overrides prevent the read-only legacy map from resurrecting cleared text.
+  try { window.localStorage.setItem(TEXT_PREFIX + sessionId, ''); } catch { /* Best-effort clear. */ }
   emit();
 }
 
-/** Rename in one checked write: quota failure must leave the original intact. */
+/** Copy before clearing: a failed write must leave the original recoverable. */
 export function migrateDraft(from: string, to: string): boolean {
-  const drafts = loadDrafts();
-  if (!drafts[from]) return true;
-  drafts[to] = drafts[from];
-  delete drafts[from];
+  const text = getDraft(from);
+  if (!text) return true;
   try {
-    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+    window.localStorage.setItem(TEXT_PREFIX + to, text);
+    window.localStorage.setItem(TEXT_PREFIX + from, '');
     emit();
     return true;
   } catch { return false; }
@@ -89,7 +72,14 @@ const listeners = new Set<() => void>();
 let snapshot: string | null = null;
 
 function computeSnapshot() {
-  return Object.keys(loadDrafts()).sort().join('\n');
+  const ids = new Set(Object.keys(loadDrafts()));
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(TEXT_PREFIX)) ids.add(key.slice(TEXT_PREFIX.length));
+    }
+  } catch { /* Legacy reads remain available when storage is blocked. */ }
+  return [...ids].filter((id) => getDraft(id)).sort().join('\n');
 }
 
 function emit() {
@@ -102,7 +92,7 @@ function emit() {
 function subscribe(cb: () => void) {
   listeners.add(cb);
   // Another tab wrote drafts for the same user.
-  const onStorage = (e: StorageEvent) => { if (e.key === DRAFTS_KEY) emit(); };
+  const onStorage = (e: StorageEvent) => { if (e.key === null || e.key === DRAFTS_KEY || e.key.startsWith(TEXT_PREFIX)) emit(); };
   window.addEventListener('storage', onStorage);
   return () => {
     listeners.delete(cb);

@@ -13,6 +13,7 @@ export interface DraftStart {
   committed?: boolean;
   relocationError?: string;
   pendingReplacementId?: string;
+  retirement?: string;
 }
 
 // IndexedDB readwrite transactions serialize claims across tabs, including plain HTTP.

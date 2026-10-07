@@ -51,9 +51,8 @@ export function Composer({
   const inFlightRef = useRef<string | null>(null);
   const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, inFlightRef);
   const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
-  const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine, platform, initialAttachments, onAttachmentProcessing);
+  const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine, platform, initialAttachments, onAttachmentProcessing, onAttachmentsChange);
   const { images, files } = attachments;
-  useEffect(() => { onAttachmentsChange?.({ images, files }); }, [images, files, onAttachmentsChange]);
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { draftKeyRef.current = draftKey; }, [draftKey]);

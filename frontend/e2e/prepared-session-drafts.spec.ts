@@ -204,7 +204,7 @@ test('a rejected competing prompt cannot leave the winning failed claim pending'
   await Promise.all([first.getByRole('button', { name: 'Send message' }).dispatchEvent('click'), second.getByRole('button', { name: 'Send message' }).dispatchEvent('click')]);
   await expect.poll(() => starts).toBe(1);
   const losingText = owner === first ? 'Other prompt' : 'First prompt';
-  await expect.poll(() => first.evaluate(() => JSON.parse(localStorage.getItem('ocman.composerDrafts.v1') || '{}').competing)).toBe(losingText);
+  await expect.poll(() => first.evaluate(() => localStorage.getItem('ocman.composerDrafts.v1:competing'))).toBe(losingText);
   finish();
   await expect(owner!.getByRole('alert')).toContainText('First creation failed');
   await Promise.all([first.reload(), second.reload()]);
@@ -240,7 +240,7 @@ test('prepares multiple sidebar drafts without starting sessions', async ({ mock
   await prepareDraft(page);
   await page.goto('/session/new?dir=%2Frepo&draftId=first&title=Plan+the+API');
   await page.getByRole('textbox').fill('Design the API before implementation.');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('ocman.composerDrafts.v1')))
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('ocman.composerDrafts.v1:first')))
     .toContain('Design the API');
   await page.goto('/session/new?dir=%2Frepo&draftId=second&title=Prepare+the+UI');
   await expect(page.getByRole('textbox')).toHaveValue('');
@@ -250,7 +250,7 @@ test('prepares multiple sidebar drafts without starting sessions', async ({ mock
   await expect(page.getByRole('textbox')).toHaveValue('Design the API before implementation.');
   await drafts.getByRole('button', { name: /Prepare the UI/ }).click();
   await expect(page.getByRole('textbox')).toHaveValue('Prepare the sidebar UI.');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('ocman.composerDrafts.v1')))
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('ocman.composerDrafts.v1:second')))
     .toContain('Prepare the sidebar UI.');
   await page.reload();
   await expect(drafts.getByRole('button', { name: /Plan the API/ })).toBeVisible();

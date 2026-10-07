@@ -61,7 +61,11 @@ The composer's machine selector only
 re-points the route; each draft has its own `draftId` query parameter (`draftKey`
 prop) and survives. Browser-local prepared conversations appear in the sidebar's
 Drafts section before any session exists. `lib/newConversationDrafts` persists
-their targets and selections, while `lib/composerDraft` persists their text.
+their targets and selections, while `lib/composerDraft` persists text in independent
+per-draft keys, with a read-only fallback for the former shared map. Completion
+receipts store a retirement snapshot so reload reconciliation finishes interrupted
+retirement without deleting newer edits. Attachment snapshots use Zustand so a
+composer reopened before an image read completes sees its eventual result.
 The first submission calls `POST /api/sessions/start`
 `{directory, remoteId, platform, worktree, title, prompt, send}`: an explicit
 owner is authoritative, an omitted platform is derived from it, and a mismatch

@@ -32,9 +32,13 @@ function readFileAsDataURL(file: File): Promise<string> {
  */
 export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined, platform?: string,
   initial?: { images: AttachedImage[]; files: AttachedFileRef[] },
-  onProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void) {
-  const [images, setImages] = useState<AttachedImage[]>(initial?.images || []);
-  const [files, setFiles] = useState<AttachedFileRef[]>(initial?.files || []);
+  onProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void,
+  onChange?: (payload: { images: AttachedImage[]; files: AttachedFileRef[] }) => void) {
+  const [localImages, setImages] = useState<AttachedImage[]>(initial?.images || []);
+  const [localFiles, setFiles] = useState<AttachedFileRef[]>(initial?.files || []);
+  const controlled = !!onProcessing && !!onChange;
+  const images = controlled ? initial?.images || [] : localImages;
+  const files = controlled ? initial?.files || [] : localFiles;
   const [pending, setPending] = useState(0);
 
   const addFiles = useCallback(async (all: File[]) => {
@@ -52,7 +56,7 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
           remoteLog.error('Failed to read image', err);
         }
       }
-      if (newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
+      if (!controlled && newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
 
       const otherFiles = all.filter((f) => !f.type.startsWith('image/'));
       if (otherFiles.length === 0) { publish?.({ images: newImages, files: [] }); return; }
@@ -60,7 +64,7 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
       if (!sid) {
         const deferred = otherFiles.map((file) => ({ path: '', name: file.name, mime: file.type || 'application/octet-stream', file }));
         publish?.({ images: newImages, files: deferred });
-        setFiles((prev) => [...prev, ...deferred]);
+        if (!controlled) setFiles((prev) => [...prev, ...deferred]);
         return;
       }
       const newFiles: AttachedFileRef[] = [];
@@ -76,23 +80,25 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
           remoteLog.error('Failed to save attachment', err);
         }
       }
-      if (newFiles.length > 0) setFiles((prev) => [...prev, ...newFiles]);
+      if (!controlled && newFiles.length > 0) setFiles((prev) => [...prev, ...newFiles]);
       publish?.({ images: newImages, files: newFiles });
     } finally {
       setPending((count) => count - 1);
     }
-  }, [sessionIdRef, disabled, platform, onProcessing]);
+  }, [sessionIdRef, disabled, platform, onProcessing, controlled]);
 
   const removeImage = useCallback((index: number) => {
-    setImages((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+    if (controlled) onChange!({ images: images.filter((_, i) => i !== index), files });
+    else setImages((prev) => prev.filter((_, i) => i !== index));
+  }, [controlled, images, files, onChange]);
   const removeFile = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+    if (controlled) onChange!({ images, files: files.filter((_, i) => i !== index) });
+    else setFiles((prev) => prev.filter((_, i) => i !== index));
+  }, [controlled, images, files, onChange]);
   const clear = useCallback(() => {
-    setImages([]);
-    setFiles([]);
-  }, []);
+    if (controlled) onChange!({ images: [], files: [] });
+    else { setImages([]); setFiles([]); }
+  }, [controlled, onChange]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (disabled) return;
