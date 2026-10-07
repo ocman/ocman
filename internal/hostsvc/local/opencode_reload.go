@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -15,22 +16,26 @@ func (h *Host) ReloadOpencode(ctx context.Context) error {
 	if !ocv2.InstalledV2() {
 		return fmt.Errorf("configuration reload requires OpenCode v2: %w", platforms.ErrUnsupported)
 	}
-	endpoint := ""
-	if inst := h.currentInstance(machineRoot()); inst != nil {
-		endpoint = inst.Endpoint
-	} else if h.store != nil {
-		inst, ok, err := h.store.Get(ctx, machineRoot())
+	root := machineRoot()
+	candidate := h.currentInstance(root)
+	if candidate == nil && h.store != nil {
+		inst, ok, err := h.store.Get(ctx, root)
 		if err != nil {
 			return err
 		}
 		if ok {
-			endpoint = inst.Endpoint
+			candidate = &ocruntime.Instance{Endpoint: inst.Endpoint, Kind: inst.Kind, ID: inst.RuntimeID, PID: inst.PID}
 		}
 	}
-	if endpoint == "" {
+	if candidate == nil || candidate.Endpoint == "" {
 		return fmt.Errorf("no managed OpenCode v2 server found")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/location/reload", nil)
+	inst := *candidate
+	inst.RepoRoot = root
+	if err := h.runtime.Probe(ctx, &inst); err != nil {
+		return fmt.Errorf("verifying managed OpenCode before reload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inst.Endpoint+"/api/location/reload", nil)
 	if err != nil {
 		return err
 	}

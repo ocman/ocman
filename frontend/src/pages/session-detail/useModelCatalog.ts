@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import type { SessionModelEntry, SessionModelsResponse } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
@@ -12,6 +12,13 @@ const refsOf = (entries: SessionModelEntry[]) => Array.from(new Set(entries.map(
 /** The session's model picker contents: the project's cached catalog first,
  *  replaced by the server's list, with favorites toggled in place. */
 export function useModelCatalog(id: string | undefined, platform: string | undefined, directory: string | undefined, sessionLoaded: boolean) {
+  const scope = useMemo(() => ({ id, platform, directory }), [id, platform, directory]);
+  const activeScope = useRef<typeof scope | null>(scope);
+  const requestGeneration = useRef(0);
+  useLayoutEffect(() => {
+    activeScope.current = scope;
+    return () => { activeScope.current = null; };
+  }, [scope]);
   const getModels = useApiStore((s) => s.getModels);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelEntries, setModelEntries] = useState<SessionModelEntry[]>([]);
@@ -51,11 +58,13 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
   }, [platform, directory, applyModels]);
 
   const refreshModels = useCallback((signal?: AbortSignal) => {
-    if (!id) return;
-    api.sessionModels(id).then((resp) => {
-      if (!signal?.aborted) receiveModels(resp);
+    if (!id || activeScope.current !== scope) return;
+    const generation = ++requestGeneration.current;
+    const isCurrent = () => activeScope.current === scope && requestGeneration.current === generation && !signal?.aborted;
+    api.sessionModels(id, platform).then((resp) => {
+      if (isCurrent()) receiveModels(resp);
     }).catch(() => {
-      if (signal?.aborted) return;
+      if (!isCurrent()) return;
       // Fallback: the cached catalog, else the historical-only list.
       const cached = readModelCatalog(platform, directory) ?? readModelShortlist(platform);
       if (cached) {
@@ -64,18 +73,20 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
       }
       getModels()
         .then((models) => {
-          if (signal?.aborted) return;
+          if (!isCurrent()) return;
           const ordered = [...models].sort((a, b) => b.count - a.count);
           seedModels(availabilityUnknown(ordered.map(({ provider, model }) => ({ provider, model }))));
         })
         .catch(() => { /* keep existing data on failure */ });
     });
-  }, [id, platform, directory, getModels, receiveModels, seedModels]);
+  }, [id, platform, directory, getModels, receiveModels, seedModels, scope]);
 
   // Toggle a favorite model. Optimistic flip in the picker first,
   // then re-fetch for authoritative ordering. On error revert.
   const handleToggleFavorite = useCallback(async (provider: string, model: string, nextFavorite: boolean) => {
-    if (!platform || !id) return;
+    if (!platform || !id || activeScope.current !== scope) return;
+    const generation = ++requestGeneration.current;
+    const isCurrent = () => activeScope.current === scope && requestGeneration.current === generation;
     const flip = (favorite: boolean) => setModelEntries((prev) => prev.map((e) =>
       e.provider === provider && e.model === model ? { ...e, isFavorite: favorite } : e,
     ));
@@ -86,11 +97,13 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
       } else {
         await api.removeFavorite(platform, provider, model);
       }
-      receiveModels(await api.sessionModels(id));
+      if (!isCurrent()) return;
+      const models = await api.sessionModels(id, platform);
+      if (isCurrent()) receiveModels(models);
     } catch {
-      flip(!nextFavorite);
+      if (isCurrent()) flip(!nextFavorite);
     }
-  }, [platform, id, receiveModels]);
+  }, [platform, id, receiveModels, scope]);
 
   return { modelOptions, setModelOptions, modelEntries, setModelEntries, refreshModels, handleToggleFavorite };
 }

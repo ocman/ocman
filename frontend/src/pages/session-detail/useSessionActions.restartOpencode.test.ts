@@ -74,6 +74,55 @@ beforeEach(() => {
 });
 
 describe('useSessionActions — /reload-opencode', () => {
+  it.each(['resolve', 'reject'])('ignores a late reload %s after navigating to another session', async (outcome) => {
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    vi.mocked(api.reloadOpencode).mockImplementationOnce(() => new Promise<void>((ok, fail) => { resolve = ok; reject = fail; }));
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ reloadCapabilities });
+    const { result, rerender } = renderHook((options) => useSessionActions(options), { initialProps: opts });
+    let delivery!: Promise<void>;
+    act(() => { delivery = result.current.handleCommand('reload-opencode', ''); });
+    rerender(makeOptions({ session: { id: 'sess-2', platform: 'r-owner:opencode', directory: '/other', timeUpdated: 0 } }));
+    await act(async () => {
+      if (outcome === 'resolve') resolve(); else reject(new Error('old reload failed'));
+      await delivery;
+    });
+    expect(reloadCapabilities).not.toHaveBeenCalled();
+    expect(opts.pending.clear).not.toHaveBeenCalled();
+    expect(opts.pending.fail).not.toHaveBeenCalled();
+    expect(opts.setRestartToastMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('only applies the latest overlapping reload completion', async () => {
+    let finishOld!: () => void;
+    vi.mocked(api.reloadOpencode).mockImplementationOnce(() => new Promise<void>((resolve) => { finishOld = resolve; }));
+    vi.mocked(api.reloadOpencode).mockResolvedValue(undefined);
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ reloadCapabilities });
+    const { result } = renderHook(() => useSessionActions(opts));
+    let old!: Promise<void>;
+    act(() => { old = result.current.handleCommand('reload-opencode', ''); });
+    await act(async () => { await result.current.handleCommand('reload-opencode', ''); });
+    await act(async () => { finishOld(); await old; });
+    expect(reloadCapabilities).toHaveBeenCalledTimes(1);
+    expect(opts.pending.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores reload completion when the route changes before the new session loads', async () => {
+    let finish!: () => void;
+    vi.mocked(api.reloadOpencode).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ routeSessionId: 'sess-1', reloadCapabilities });
+    const { result, rerender } = renderHook((options) => useSessionActions(options), { initialProps: opts });
+    let reload!: Promise<void>;
+    act(() => { reload = result.current.handleCommand('reload-opencode', ''); });
+    rerender({ ...opts, routeSessionId: 'sess-2' });
+    await act(async () => { finish(); await reload; });
+    expect(reloadCapabilities).not.toHaveBeenCalled();
+    expect(opts.pending.clear).not.toHaveBeenCalled();
+  });
+
   it('reloads configuration and refreshes the catalog while a turn is running', async () => {
     vi.mocked(api.reloadOpencode).mockResolvedValue(undefined);
     vi.mocked(api.commands).mockResolvedValueOnce([{ name: 'old-skill', source: 'skill' }]);

@@ -51,6 +51,7 @@ export interface CommandContext {
   setCopyToastMessage: (message: string | null) => void;
   reloadCapabilities?: () => void;
   refreshThread?: () => Promise<void>;
+  isCurrent?: () => boolean;
 }
 
 export interface SlashCommand {
@@ -140,7 +141,7 @@ const restartOpencode: SlashCommand = {
 };
 
 const reloadOpencode: SlashCommand = {
-  run: async ({ session, pending, setRestartToastMessage, reloadCapabilities }, args) => {
+  run: async ({ session, pending, setRestartToastMessage, reloadCapabilities, isCurrent }, args) => {
     if (args.trim()) {
       pending.fail('Usage: /reload-opencode');
       return;
@@ -149,11 +150,13 @@ const reloadOpencode: SlashCommand = {
     setRestartToastMessage('Reloading OpenCode configuration...');
     try {
       await api.reloadOpencode(session.id, session.platform);
+      if (isCurrent && !isCurrent()) return;
       pending.clear();
       setRestartToastMessage('Reloaded OpenCode configuration');
       reloadCapabilities?.();
       reloadSlashCommands(session.id);
     } catch (e) {
+      if (isCurrent && !isCurrent()) return;
       setRestartToastMessage(null);
       remoteLog.error('Failed to reload OpenCode', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');

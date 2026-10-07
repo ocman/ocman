@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +49,55 @@ func TestReloadOpencodeRefreshesExistingMachineServer(t *testing.T) {
 			}
 			if reloaded == "" {
 				t.Fatal("successful reload did not invalidate catalogs")
+			}
+		})
+	}
+}
+
+func TestReloadOpencodeVerifiesCandidateIdentity(t *testing.T) {
+	for _, persisted := range []bool{false, true} {
+		t.Run(map[bool]string{false: "memory", true: "persisted"}[persisted], func(t *testing.T) {
+			h, _, store, _, root := v2Host(t)
+			auth := ocapi.New("shared-password")
+			h.runtime = ocruntime.NewNativeRuntimeWithAuth(auth)
+			h.deps.OpenCodeAuth = func() ocapi.Auth { return auth }
+			servingRoot := root + "-different-database"
+			reloads := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, password, ok := r.BasicAuth()
+				if !ok || password != "shared-password" {
+					t.Error("missing owner authentication")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/info":
+					_ = json.NewEncoder(w).Encode(map[string]any{"version": "2.0.0"})
+				case "/api/config":
+					_ = json.NewEncoder(w).Encode([]any{})
+				case "/api/location":
+					_ = json.NewEncoder(w).Encode(map[string]any{"directory": servingRoot, "project": map[string]any{"directory": servingRoot}})
+				case "/api/location/reload":
+					reloads++
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					t.Errorf("unexpected route %s", r.URL.Path)
+				}
+			}))
+			defer upstream.Close()
+			t.Cleanup(func() { ocv2.ForgetHost(strings.TrimPrefix(upstream.URL, "http://")) })
+			if persisted {
+				if err := store.Upsert(t.Context(), root, ManagedInstance{Endpoint: upstream.URL}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				h.setInstance(root, &ocruntime.Instance{Endpoint: upstream.URL})
+			}
+			if err := h.ReloadOpencode(t.Context()); !errors.Is(err, ocruntime.ErrProbeUnreachable) || reloads != 0 {
+				t.Fatalf("mismatched candidate: error=%v reloads=%d; want failed probe without POST", err, reloads)
+			}
+			servingRoot = root
+			if err := h.ReloadOpencode(t.Context()); err != nil || reloads != 1 {
+				t.Fatalf("matching candidate: error=%v reloads=%d", err, reloads)
 			}
 		})
 	}
