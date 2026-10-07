@@ -95,6 +95,9 @@ func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]git.Workt
 	b, _ := marshalJSON(map[string]any{"dir": dir})
 	resp, err := client.ListWorktrees(ctx, &pb.JsonReq{Payload: b})
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, errors.Join(git.ErrNotARepo, err)
+		}
 		return nil, err
 	}
 	var out []git.Worktree

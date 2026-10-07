@@ -128,7 +128,11 @@ func (s *Server) ListWorktrees(ctx context.Context, req *pb.JsonReq) (*pb.JsonRe
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
-	return jsonResp(s.host.ListWorktrees(ctx, args.Dir))
+	trees, err := s.host.ListWorktrees(ctx, args.Dir)
+	if errors.Is(err, git.ErrNotARepo) {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return jsonResp(trees, err)
 }
 func (s *Server) WorktreeDefaultBaseRef(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var args struct {
