@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { SESSION_CACHE_MAX, resetWhisperStatusCache, useApiStore } from './apiStore';
 import { api, type SessionDetail, type Session } from './api';
+import { computeSidebarHash } from './sidebarHelpers';
 
 function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): SessionDetail {
   const session: Session = {
@@ -46,9 +47,44 @@ function resetCache() {
 }
 
 describe('interruption read acknowledgement', () => {
-  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); useApiStore.setState({ pendingInterruptionReads: {} }); });
+
+  it('publishes a confirmed cold read before dropping its owner-qualified marker', async () => {
+    vi.spyOn(api, 'markSessionSeen').mockResolvedValue({ ok: true });
+    useApiStore.setState({ recentSessions: [], pendingInterruptionReads: {}, recentSessionsHash: '' });
+    await useApiStore.getState().markSessionSeen('r-box:opencode', 's', 100, true);
+    const local = { ...makeSessionDetail('s').session, status: 'interrupted' as const, timeUpdated: 100, seen: false };
+    const remote = { ...local, platform: 'r-box:opencode' };
+    useApiStore.getState().setRecentSessions([local], computeSidebarHash([local]));
+    expect(useApiStore.getState().recentSessions[0].seen).toBe(false);
+    expect(useApiStore.getState().pendingInterruptionReads['r-box:opencode:s']).toMatchObject({ confirmed: true });
+    useApiStore.getState().setRecentSessions([local, remote], computeSidebarHash([local, remote]));
+    expect(useApiStore.getState().recentSessions[1]).toMatchObject({ seen: true, seenTimeUpdated: 100 });
+    expect(useApiStore.getState().pendingInterruptionReads).toEqual({});
+    expect(useApiStore.getState().recentSessionsHash).toBe(computeSidebarHash(useApiStore.getState().recentSessions));
+  });
+
+  it.each([
+    ['interrupted', 100, true],
+    ['interrupted', 200, false],
+    ['busy', 100, false],
+  ] as const)('reconciles a successful cold read only for the same interruption: %s/%i', async (status, updated, seen) => {
+    let finish!: (value: { ok: boolean }) => void;
+    vi.spyOn(api, 'markSessionSeen').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    useApiStore.setState({ recentSessions: [], pendingInterruptionReads: {} });
+    const reading = useApiStore.getState().markSessionSeen('r-box:opencode', 's', 100, true);
+    const row = { ...makeSessionDetail('s').session, platform: 'r-box:opencode', status, timeUpdated: updated, seenTimeUpdated: 0, seen: false };
+    const local = { ...row, platform: 'opencode' };
+    useApiStore.setState({ recentSessions: [local, row] });
+    finish({ ok: true });
+    await reading;
+    expect(useApiStore.getState().recentSessions.find(s => s.platform === row.platform)?.seen).toBe(seen);
+    expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)?.seen).toBe(false);
+  });
 
   it('keeps newer and other-owner reads pending when an older request completes', async () => {
+    const row = { ...makeSessionDetail('s').session, status: 'interrupted' as const, timeUpdated: 100 };
+    useApiStore.setState({ recentSessions: [row, { ...row, platform: 'r-box:opencode' }], pendingInterruptionReads: {} });
     let finishOld!: (value: { ok: boolean }) => void;
     let finishNew!: (value: { ok: boolean }) => void;
     let failOther!: (error: Error) => void;

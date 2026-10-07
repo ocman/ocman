@@ -270,6 +270,37 @@ describe('useSidebarSessions live refresh', () => {
     }
   });
 
+  it.each([true, false])('preserves a detail-first cold-load read, POST finishes first: %s', async (postFinishesFirst) => {
+    const row = { id: 'cold', platform: 'r-box:opencode', status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 0 } as Session;
+    let finishGet!: (value: Session[]) => void;
+    let finishPost!: (value: { ok: boolean }) => void;
+    getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finishGet = resolve; }));
+    const post = vi.spyOn(api, 'markSessionSeen').mockImplementation(() => new Promise<{ ok: boolean }>((resolve) => { finishPost = resolve; }));
+    useApiStore.setState({ recentSessions: [], pendingInterruptionReads: {} });
+    const abortSignalRef = { current: new AbortController() };
+    const { result } = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
+    }));
+    try {
+      let loading!: Promise<void>;
+      let reading!: Promise<{ ok: boolean }>;
+      act(() => { loading = result.current.loadRecentSessions(); });
+      act(() => {
+        useApiStore.getState().patchRecentSession(row.id, { seen: true, seenTimeUpdated: 100 }, row.platform);
+        reading = useApiStore.getState().markSessionSeen(row.platform, row.id, 100, true);
+      });
+      expect(useApiStore.getState().recentSessions).toEqual([]);
+      if (postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
+      await act(async () => { finishGet([row]); await loading; });
+      expect(useApiStore.getState().recentSessions[0]).toMatchObject({ seen: true, seenTimeUpdated: 100 });
+      if (!postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
+      expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+      expect(useApiStore.getState().pendingInterruptionReads).toEqual({});
+    } finally {
+      post.mockRestore();
+    }
+  });
+
   it('does not preserve a pre-crash busy read across an in-flight list refresh', async () => {
     const row = { id: 'crashed', platform: 'opencode', status: 'busy', seen: true, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
     let finish!: (value: Session[]) => void;

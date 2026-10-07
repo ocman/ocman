@@ -121,8 +121,10 @@ export function mergeSidebarSessions(
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id && ls.platform === s.platform);
-    if (!live) return unarchived;
     const pending = pendingReads?.[`${s.platform}:${s.id}`];
+    if (!live) return s.status === 'interrupted' && pending && pending.timeUpdated >= s.timeUpdated
+      ? { ...unarchived, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, pending.timeUpdated) }
+      : unarchived;
     const readDuringRequest = live.status === 'interrupted' && (
       (pending !== undefined && pending.timeUpdated >= s.timeUpdated)
       || (!!requestStart && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform))

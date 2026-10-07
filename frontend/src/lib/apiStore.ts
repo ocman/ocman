@@ -58,7 +58,7 @@ export function resetWhisperStatusCache() {
 
 type ApiStore = {
   requests: Record<string, RequestStatus>;
-  pendingInterruptionReads: Record<string, { timeUpdated: number }>;
+  pendingInterruptionReads: Record<string, { timeUpdated: number; confirmed?: boolean }>;
   // Cached list of all sessions (no directory filter). `null` means never
   // fetched; components can render immediately from this value while
   // `refreshCachedSessions` updates it in the background.
@@ -161,9 +161,19 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   recentSessions: [],
   recentSessionsHash: '',
   setRecentSessions: (sessions, hash) => {
+    const reads = get().pendingInterruptionReads;
+    const rows = sessions.map(s => {
+      const read = reads[`${s.platform}:${s.id}`];
+      if (!read || s.status !== 'interrupted' || s.timeUpdated > read.timeUpdated || (s.seen && s.seenTimeUpdated >= read.timeUpdated)) return s;
+      return { ...s, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, read.timeUpdated) };
+    });
+    if (rows.some((s, i) => s !== sessions[i])) hash = computeSidebarHash(rows);
     // Skip when hash unchanged — same guard previously in the hook.
     if (get().recentSessionsHash === hash) return;
-    set({ recentSessions: sessions, recentSessionsHash: hash });
+    // A completed cold-load read stays pending until its sidebar row exists.
+    const pendingInterruptionReads = Object.fromEntries(Object.entries(get().pendingInterruptionReads)
+      .filter(([key, read]) => !read.confirmed || !sessions.some(s => `${s.platform}:${s.id}` === key)));
+    set({ recentSessions: rows, recentSessionsHash: hash, pendingInterruptionReads });
   },
   patchRecentSession: (id, patch, platform) => {
     set((state) => {
@@ -358,12 +368,22 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   markSessionSeen: async (platform, sessionId, timeUpdated, interrupted) => {
     const key = `${platform}:${sessionId}`;
     const pending = { timeUpdated };
+    let succeeded = false;
     if (interrupted) set(state => ({ pendingInterruptionReads: { ...state.pendingInterruptionReads, [key]: pending } }));
     try {
-      return await get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated, interrupted));
+      const result = await get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated, interrupted));
+      succeeded = true;
+      const row = get().recentSessions.find(s => s.platform === platform && s.id === sessionId);
+      if (interrupted && row?.status === 'interrupted' && row.timeUpdated <= timeUpdated) {
+        get().patchRecentSession(sessionId, { seen: true, seenTimeUpdated: Math.max(row.seenTimeUpdated, timeUpdated) }, platform);
+      }
+      return result;
     } finally {
       if (interrupted) set(state => {
         if (state.pendingInterruptionReads[key] !== pending) return state;
+        if (succeeded && !state.recentSessions.some(s => s.platform === platform && s.id === sessionId)) {
+          return { pendingInterruptionReads: { ...state.pendingInterruptionReads, [key]: { timeUpdated, confirmed: true } } };
+        }
         const next = { ...state.pendingInterruptionReads };
         delete next[key];
         return { pendingInterruptionReads: next };
