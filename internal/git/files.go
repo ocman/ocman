@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -26,7 +29,8 @@ var (
 	MaxListedFiles = 100_000
 	MaxListedBytes = 8 << 20
 	// MaxFileBytes caps how much of one file is returned.
-	MaxFileBytes int64 = 1 << 20
+	MaxFileBytes  int64 = 1 << 20
+	MaxImageBytes int64 = 10 << 20
 )
 
 // FileList is every tracked or untracked-but-not-ignored file of the
@@ -38,10 +42,12 @@ type FileList struct {
 	Truncated bool     `json:"truncated,omitempty"`
 }
 
-// FileContent is one file of a repository, capped at MaxFileBytes.
+// FileContent is one file of a repository. Image content is base64 encoded
+// with MimeType set, capped at MaxImageBytes; other content uses MaxFileBytes.
 type FileContent struct {
 	Path      string `json:"path"`
 	Content   string `json:"content"`
+	MimeType  string `json:"mimeType,omitempty"`
 	Size      int64  `json:"size"`
 	Binary    bool   `json:"binary,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
@@ -177,11 +183,33 @@ func ReadFile(ctx context.Context, dir, path string, ignored bool) (*FileContent
 	if !info.Mode().IsRegular() {
 		return nil, ErrFileNotFound
 	}
-	data, err := io.ReadAll(io.LimitReader(f, MaxFileBytes))
+	reader := bufio.NewReader(f)
+	header, err := reader.Peek(512)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	mime := http.DetectContentType(header)
+	if strings.EqualFold(filepath.Ext(path), ".svg") {
+		mime = "image/svg+xml"
+	}
+	limit := MaxFileBytes
+	if strings.HasPrefix(mime, "image/") {
+		limit = MaxImageBytes
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	out := &FileContent{Path: path, Size: info.Size(), Truncated: info.Size() > MaxFileBytes}
+	out := &FileContent{Path: path, Size: info.Size(), Truncated: info.Size() > limit || int64(len(data)) > limit}
+	if strings.HasPrefix(mime, "image/") {
+		out.MimeType = mime
+		out.Binary = true
+		if !out.Truncated {
+			out.Content = base64.StdEncoding.EncodeToString(data)
+		}
+		return out, nil
+	}
+	data = data[:min(int64(len(data)), limit)]
 	if bytes.IndexByte(data[:min(len(data), 8000)], 0) >= 0 {
 		out.Binary = true
 		return out, nil

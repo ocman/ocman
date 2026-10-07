@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -49,6 +50,9 @@ func (bigFilesHost) ListRepoFiles(context.Context, string, bool) (*git.FileList,
 }
 
 func (bigFilesHost) ReadRepoFile(_ context.Context, _, path string, _ bool) (*git.FileContent, error) {
+	if path == "image.png" {
+		return &git.FileContent{Path: path, Content: base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", int(git.MaxImageBytes)))), MimeType: "image/png", Binary: true, Size: git.MaxImageBytes}, nil
+	}
 	// '<' marshals as \u003c: 1 MiB of it is 6 MiB of JSON.
 	return &git.FileContent{Path: path, Content: strings.Repeat("<", int(git.MaxFileBytes)), Size: git.MaxFileBytes}, nil
 }
@@ -62,5 +66,13 @@ func TestRemoteHostRepoFilesLargeResponses(t *testing.T) {
 	}
 	if file, err := host.ReadRepoFile(ctx, "/r", "a", false); err != nil || len(file.Content) != int(git.MaxFileBytes) {
 		t.Fatalf("escape-heavy file: %v", err)
+	}
+	file, err := host.ReadRepoFile(ctx, "/r", "image.png", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := base64.StdEncoding.DecodeString(file.Content)
+	if err != nil || len(data) != int(git.MaxImageBytes) || file.MimeType != "image/png" || !file.Binary || file.Truncated {
+		t.Fatalf("remote image metadata/bytes lost: size=%d, mime=%q, err=%v", len(data), file.MimeType, err)
 	}
 }

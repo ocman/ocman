@@ -504,10 +504,11 @@ export interface RepoFileList {
   truncated?: boolean;
 }
 
-/** GET /api/git/file — one file, capped at 1 MiB. */
+/** GET /api/git/file — text capped at 1 MiB, base64 images at 10 MiB. */
 export interface RepoFileContent {
   path: string;
   content: string;
+  mimeType?: string;
   size: number;
   binary?: boolean;
   truncated?: boolean;
