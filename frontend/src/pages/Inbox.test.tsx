@@ -237,6 +237,10 @@ describe('Inbox', () => {
     renderInbox();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load inbox.');
     expect(screen.queryByText('Your inbox is empty.')).not.toBeInTheDocument();
+    vi.mocked(api.inbox).mockResolvedValue({ items: [], unreadTotal: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('Your inbox is empty.');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('reports read and archive failures while keeping the message open', async () => {

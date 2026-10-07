@@ -98,9 +98,10 @@ describe('WorktreesView', () => {
 
     rejectRefresh(new Error('Refresh failed'));
     expect(await screen.findByText('Refresh failed')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Refresh failed');
     expect(button).toBeEnabled();
     expect(button).toHaveAttribute('aria-busy', 'false');
-    fireEvent.click(button);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('feature')).toBeInTheDocument();
     expect(api.worktree.list).toHaveBeenCalledTimes(2);
   });
@@ -126,6 +127,13 @@ describe('WorktreesView', () => {
     await screen.findByText('feature');
     // Exactly one Delete button — for the non-main worktree.
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1);
+  });
+
+  it('shows the shared empty state without a wide empty table', async () => {
+    vi.mocked(api.worktree.list).mockResolvedValue({ worktrees: [] });
+    renderView();
+    expect(await screen.findByText('No worktrees found')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
   it('Delete arms a confirm, then removes and reloads on success', async () => {
@@ -183,7 +191,7 @@ describe('WorktreesView', () => {
 
     // Non-dirty error is surfaced; the dirty-only Force delete is not armed.
     await waitFor(() =>
-      expect(document.querySelector('.oc-list-error')?.textContent).toBe('boom'),
+      expect(screen.getByRole('alert')).toHaveTextContent('boom'),
     );
     expect(screen.queryByRole('button', { name: 'Force delete' })).not.toBeInTheDocument();
   });
@@ -192,6 +200,14 @@ describe('WorktreesView', () => {
   // must act only on its owner: no request, count, or link may leak to
   // the other machine through directory inference.
   describe('machine ownership', () => {
+    it('retries a failed read on the same explicit owner', async () => {
+      vi.mocked(api.worktree.list).mockRejectedValueOnce(new Error('Owner read failed'));
+      renderView('/project/%2Frepo/worktrees?remoteId=B');
+      expect(await screen.findByRole('alert')).toHaveTextContent('Owner read failed');
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      expect(await screen.findByText('feature')).toBeInTheDocument();
+      expect(api.worktree.list).toHaveBeenLastCalledWith('/repo', 'B');
+    });
     beforeEach(() => {
       store.cachedSessions = [
         session('ses_local', 'local', 'opencode', 300),

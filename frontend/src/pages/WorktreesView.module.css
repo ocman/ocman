@@ -4,4 +4,3 @@
 .chip { font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); color: var(--text-dim); background: var(--bg-card); }
 .path { display: flex; flex-direction: column; gap: 4px; }
 .project { color: var(--accent); font-weight: 500; }
-.empty { text-align: center; color: var(--text-dim); padding: 24px; }

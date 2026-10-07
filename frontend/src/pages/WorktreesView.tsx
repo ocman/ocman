@@ -12,6 +12,8 @@ import { WorktreesTableSkeleton } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { RefreshButton } from '../components/RefreshButton';
+import { InlineAlert } from '../components/InlineAlert';
+import { EmptyState } from '../components/EmptyState';
 import { Button, ButtonGroup, RouteButton } from '../components/Control';
 import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import styles from './WorktreesView.module.css';
@@ -118,7 +120,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
   if (!allowed) {
     return (
       <div>
-        <div className="oc-list-error">Worktree sessions are unavailable on this host.</div>
+        <InlineAlert>Worktree sessions are unavailable on this host.</InlineAlert>
       </div>
     );
   }
@@ -143,7 +145,9 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
       {loading ? (
         <WorktreesTableSkeleton rows={3} />
       ) : error ? (
-        <div className="oc-list-error">{error}</div>
+        <InlineAlert onRetry={() => { void load(); }} retrying={loading}>{error}</InlineAlert>
+      ) : rows.length === 0 ? (
+        <EmptyState>No worktrees found</EmptyState>
       ) : (
         <DataTable framed className={styles.table}>
           <thead>
@@ -156,14 +160,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} className={styles.empty}>
-                  No worktrees found
-                </td>
-              </tr>
-            ) : (
-              rows.map(({ wt, stats }) => (
+            {rows.map(({ wt, stats }) => (
                 <tr key={wt.path}>
                   <td>
                     <div className={styles.branch}>
@@ -227,8 +224,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
                     </ButtonGroup>
                   </td>
                 </tr>
-              ))
-            )}
+              ))}
           </tbody>
         </DataTable>
       )}
