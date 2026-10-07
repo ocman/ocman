@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ProjectSettingsView } from './ProjectSettingsView';
+import styles from './ProjectSettingsView.module.css';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../lib/api', () => ({
@@ -44,7 +45,7 @@ function renderUI() {
 }
 
 const items = () => within(screen.getByRole('list', { name: 'Project models' }))
-  .getAllByRole('listitem').map((li) => li.querySelector('.mono')?.textContent);
+  .getAllByRole('listitem').map((li) => li.querySelector(`.${styles.name}`)?.textContent);
 
 describe('ProjectSettingsView', () => {
   it('explains the empty state and adds a model from the session catalogue', async () => {
@@ -71,10 +72,28 @@ describe('ProjectSettingsView', () => {
   it('reorders, moving the project default label with the first entry', async () => {
     seed(['a/one', 'b/two']);
     renderUI();
-    fireEvent.click(await screen.findByRole('button', { name: 'Move b/two up' }));
+    const up = await screen.findByRole('button', { name: 'Move b/two up' });
+    expect(up).toHaveClass('oc-icon-button');
+    fireEvent.click(up);
     await waitFor(() => expect(m.setProjectSettings).toHaveBeenCalledWith(DIR, ['b/two', 'a/one'], false));
     expect(items()).toEqual(['b/two', 'a/one']);
     expect(within(screen.getAllByRole('listitem')[0]).getByTestId('project-default-badge')).toBeInTheDocument();
+  });
+
+  it('blocks overlapping model edits while a save is pending', async () => {
+    seed(['a/one', 'b/two']);
+    let finish!: () => void;
+    m.setProjectSettings.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    renderUI();
+    fireEvent.click(await screen.findByRole('button', { name: 'Move b/two up' }));
+    expect(screen.getByRole('button', { name: 'Clear list' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove a/one' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Add model' })).toBeDisabled();
+    expect(screen.getByTestId('project-fallthrough-off')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear list' }));
+    expect(m.setProjectSettings).toHaveBeenCalledOnce();
+    finish();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Clear list' })).toBeEnabled());
   });
 
   it('clears the list', async () => {
