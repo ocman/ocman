@@ -190,8 +190,9 @@ export function SettingsTab() {
                 ? 'ocman is installed as an app on this device. Launch it from your dock or app launcher to use it in its own window.'
                 : undefined}
             >
-              <Button size="small"
+              <Button
                 type="button"
+                size="small"
                 disabled={installed || !canInstall}
                 onClick={() => { void promptInstall(); }}
               >
@@ -205,8 +206,9 @@ export function SettingsTab() {
           <div className="settings-section" hidden={active !== 'account'}>
             <h2 className="settings-section-title">Account</h2>
             <SettingRow setting="sign-out">
-              <Button size="small"
+              <Button
                 type="button"
+                size="small"
                 onClick={() => { void logout(); }}
               >
                 Sign out

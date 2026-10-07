@@ -1,0 +1,7 @@
+.root { display: flex; flex-direction: column; gap: 10px; padding: 24px; color: var(--text-dim); text-align: center; align-items: center; max-width: 520px; margin: 0 auto; line-height: 1.5; }
+.compact { padding: 20px 16px; text-align: left; align-items: stretch; max-width: none; margin: 0; }
+.heading { color: var(--text); }
+.copy { margin: 0; }
+.tip { margin: 0; font-size: 12px; }
+.action { align-self: center; }
+.compact .action { align-self: flex-start; }

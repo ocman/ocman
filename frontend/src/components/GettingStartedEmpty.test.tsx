@@ -12,13 +12,14 @@ vi.mock('../lib/uiStore', () => ({
 }));
 
 import { GettingStartedEmpty } from './GettingStartedEmpty';
+import styles from './GettingStartedEmpty.module.css';
 
 describe('GettingStartedEmpty', () => {
   it('renders the empty-state guidance and new-session button', () => {
     render(<GettingStartedEmpty />);
     expect(screen.getByTestId('getting-started-empty')).toBeInTheDocument();
     expect(screen.getByText('No sessions yet')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '+ New project' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New project' })).toHaveClass('oc-button', 'oc-button--accent');
   });
 
   it('opens the project palette when the button is clicked', () => {
@@ -29,11 +30,11 @@ describe('GettingStartedEmpty', () => {
 
   it('left-aligns content in the compact variant', () => {
     render(<GettingStartedEmpty compact />);
-    expect(screen.getByTestId('getting-started-empty')).toHaveStyle({ textAlign: 'left' });
+    expect(screen.getByTestId('getting-started-empty')).toHaveClass(styles.compact);
   });
 
   it('centers content in the full variant', () => {
     render(<GettingStartedEmpty />);
-    expect(screen.getByTestId('getting-started-empty')).toHaveStyle({ textAlign: 'center' });
+    expect(screen.getByTestId('getting-started-empty')).not.toHaveClass(styles.compact);
   });
 });

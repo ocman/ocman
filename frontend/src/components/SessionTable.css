@@ -253,30 +253,6 @@ div.session-row-actions {
   margin-left: 0;
 }
 
-/* Tmux switch button in tables */
-.tmux-switch-btn {
-  padding: 2px 8px;
-  border-radius: 0;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-  text-decoration: none;
-  line-height: 1.4;
-  display: inline-flex;
-  align-items: center;
-}
-.tmux-switch-btn:hover {
-  background: var(--accent);
-  color: var(--white);
-  border-color: var(--accent);
-  text-decoration: none;
-}
-
 .session-action-cell {
   text-align: right;
 }
