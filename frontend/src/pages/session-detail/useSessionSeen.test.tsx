@@ -31,7 +31,10 @@ import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { HeaderContext, type HeaderInfo } from '../../lib/headerContext';
 import type { SessionMetadata } from '../../lib/sessionReducer';
+import type { Session } from '../../lib/api';
 import { useSessionSeen } from './useSessionSeen';
+
+const ownerQualifiedPatch = useApiStore.getState().patchRecentSession;
 
 const session = {
   id: 's1', platform: 'opencode', directory: '/home/u/repo', title: 'Fix bug', timeUpdated: 42, remoteId: 'r1',
@@ -47,20 +50,38 @@ describe('useSessionSeen', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useApiStore.setState({ markSessionSeen, patchRecentSession });
+    useApiStore.setState({ markSessionSeen, patchRecentSession, recentSessions: [] });
     useUiStore.setState({ lastOpenedSessionId: undefined });
   });
 
   afterEach(() => vi.useRealTimers());
 
-  it('acknowledges an interruption while visible even when its timestamp is unchanged', () => {
+  it('acknowledges only the viewed owner when session IDs match', () => {
+    const local = { ...session, platform: 'opencode', status: 'interrupted', seen: false, seenTimeUpdated: 0 } as Session;
+    const remote = { ...local, platform: 'r-box:opencode', status: 'busy' as const };
+    useApiStore.setState({ recentSessions: [local, remote], patchRecentSession: ownerQualifiedPatch });
+    const patchSession = vi.fn();
     const { rerender } = renderHook(
-      ({ value }) => useSessionSeen({ session: value, patchSession: vi.fn() }),
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
+      { wrapper, initialProps: { value: remote as SessionMetadata } },
+    );
+    rerender({ value: { ...remote, status: 'interrupted' } });
+    expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)?.seen).toBe(false);
+    expect(useApiStore.getState().recentSessions.find(s => s.platform === remote.platform)?.seen).toBe(true);
+    expect(markSessionSeen).toHaveBeenLastCalledWith(remote.platform, remote.id, remote.timeUpdated, true);
+  });
+
+  it('acknowledges an interruption while visible even when its timestamp is unchanged', () => {
+    const patchSession = vi.fn();
+    const { rerender } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
       { wrapper, initialProps: { value: { ...session, status: 'busy' } as SessionMetadata } },
     );
-    rerender({ value: { ...session, status: 'interrupted' } });
+    rerender({ value: { ...session, status: 'interrupted', archived: true } });
     expect(markSessionSeen).toHaveBeenCalledTimes(2);
     expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 42, true);
+    expect(patchSession).toHaveBeenLastCalledWith({ seen: true });
+    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, seenTimeUpdated: 42 }, 'opencode');
   });
 
   it('does not acknowledge content while hidden, and marks the latest content when visible', async () => {
@@ -128,7 +149,7 @@ describe('useSessionSeen', () => {
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
 
     expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false });
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false });
+    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false }, 'opencode');
     expect(markSessionSeen).toHaveBeenCalledWith('opencode', 's1', 42);
     await waitFor(() => expect(recheckFaviconNotify).toHaveBeenCalled());
     expect(useUiStore.getState().lastOpenedSessionId).toBe('s1');
@@ -256,7 +277,7 @@ describe('useSessionSeen', () => {
     await act(async () => vi.advanceTimersByTime(1));
     expect(markSessionSeen).toHaveBeenCalledTimes(2);
     expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 200);
-    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, seenTimeUpdated: 200 });
+    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, seenTimeUpdated: 200 }, 'opencode');
     expect(recheckFaviconNotify).toHaveBeenCalledTimes(2);
     rerender({ value: { ...session, timeUpdated: 200 } });
     await act(async () => vi.advanceTimersByTime(1000));

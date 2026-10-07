@@ -44,7 +44,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
     if (document.hidden) return;
     lastMarked.current = updated;
-    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false } : {}) });
+    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false } : {}) }, platform);
     const request = sessionSeenInterrupted
       ? markSessionSeen(platform, id, updated, true)
       : markSessionSeen(platform, id, updated);
