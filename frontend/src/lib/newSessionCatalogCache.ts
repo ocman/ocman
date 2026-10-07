@@ -12,7 +12,7 @@ function load(): Map<string, PrepareSessionResponse> {
 
 export function getNewSessionCatalog(key: string): PrepareSessionResponse | undefined {
   const catalog = load().get(key);
-  if (!catalog || typeof catalog.platform !== 'string' ||
+  if (!catalog || typeof catalog.platform !== 'string' || // ocman:allow-platform-branch: validates the field type, not platform identity
     !Array.isArray(catalog.agents) || !catalog.agents.every((agent) => typeof agent?.name === 'string') ||
     !Array.isArray(catalog.commands) || !catalog.commands.every((command) => typeof command?.name === 'string') ||
     !Array.isArray(catalog.models?.models) || !catalog.models.models.every((model) =>
