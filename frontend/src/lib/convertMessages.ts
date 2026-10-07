@@ -611,7 +611,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             const duration = start !== undefined
               ? ` · ${formatSeconds(Math.max(0, (end ?? now) - start) / 1000)}`
               : '';
-            textPieces.push(`> **${end !== undefined ? 'Thought' : 'Thinking'}:** ${pd.text}${duration}`);
+            textPieces.push(`> **${end !== undefined ? 'Thought' : 'Thinking'}:** ${pd.text.replace(/\n/g, '\n> ')}${duration}`);
           }
           break;
         }
