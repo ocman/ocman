@@ -1,0 +1,8 @@
+.root { background: var(--bg-card); border: 1px solid var(--border); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.header { display: flex; align-items: center; gap: 8px; }
+.title { flex: 1; min-width: 0; }
+.content { width: 100%; min-height: 80px; font-family: var(--font-conversation-mono); }
+@media (max-width: 640px) {
+  .header { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .title { grid-column: 1 / -1; grid-row: 2; }
+}
