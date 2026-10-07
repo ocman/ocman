@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { claimDraftStart, persistDraftStart, type DraftStart } from './draftStartClaims';
+import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -76,6 +76,8 @@ it('preserves a standing claim, permits an explicit failed-start retry and retai
   expect((await claimDraftStart('draft', original)).claimed).toBe(true);
   await persistDraftStart('draft', { ...original, sessionId: 'session' });
   expect((await claimDraftStart('draft', original)).start.sessionId).toBe('session');
+  expect((await readDraftStart('draft'))?.sessionId).toBe('session');
+  expect(await readDraftStart('missing')).toBeUndefined();
 });
 
 it('fails closed without IndexedDB', async () => {

@@ -94,6 +94,58 @@ test('a failed start preserves its prompt and releases the atomic claim for an e
   expect(starts).toBe(2);
 });
 
+test('reload reconciles a stale pending mirror after a terminal receipt exceeds localStorage quota', async ({ mockedPage: page }) => {
+  await prepareDraft(page);
+  await page.addInitScript(() => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith('ocman.newConversationStarts.v1:') && JSON.parse(value).error) throw new Error('quota');
+      set.call(this, key, value);
+    };
+  });
+  let starts = 0;
+  await page.route('**/api/sessions/start', (route) => { starts++; return route.fulfill({ status: 500, json: { error: 'Retryable start failure' } }); });
+  await page.goto('/session/new?dir=%2Frepo&draftId=quota');
+  await page.getByRole('textbox').fill('Restore this prompt.');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByRole('alert')).toContainText('Retryable start failure');
+  await page.reload();
+  await expect(page.getByRole('textbox')).not.toBeDisabled();
+  await expect(page.getByRole('textbox')).toHaveValue('Restore this prompt.');
+  await expect(page.getByRole('alert')).toContainText('Retryable start failure');
+  expect(starts).toBe(1);
+});
+
+test('a rejected competing prompt cannot leave the winning failed claim pending', async ({ mockedPage: first }) => {
+  const second = await first.context().newPage();
+  await installDefaultRoutes(second);
+  let owner: typeof first | undefined;
+  let finish!: () => void;
+  const waiting = new Promise<void>((resolve) => { finish = resolve; });
+  let starts = 0;
+  for (const [page, text] of [[first, 'First prompt'], [second, 'Other prompt']] as const) {
+    await prepareDraft(page);
+    await page.route('**/api/sessions/start', async (route) => {
+      starts++;
+      owner = page;
+      await waiting;
+      await route.fulfill({ status: 500, json: { error: 'First creation failed' } });
+    });
+    await page.goto('/session/new?dir=%2Frepo&draftId=competing');
+    await page.getByRole('textbox').fill(text);
+  }
+  await Promise.all([first.getByRole('button', { name: 'Send message' }).dispatchEvent('click'), second.getByRole('button', { name: 'Send message' }).dispatchEvent('click')]);
+  await expect.poll(() => starts).toBe(1);
+  const losingText = owner === first ? 'Other prompt' : 'First prompt';
+  await expect.poll(() => first.evaluate(() => JSON.parse(localStorage.getItem('ocman.composerDrafts.v1') || '{}').competing)).toBe(losingText);
+  finish();
+  await expect(owner!.getByRole('alert')).toContainText('First creation failed');
+  await Promise.all([first.reload(), second.reload()]);
+  await expect(first.getByRole('textbox')).not.toBeDisabled();
+  await expect(second.getByRole('textbox')).not.toBeDisabled();
+  expect(starts).toBe(1);
+});
+
 test('prepares multiple sidebar drafts without starting sessions', async ({ mockedPage: page }, testInfo) => {
   let starts = 0;
   await page.route('**/api/sessions/start', async (route) => {

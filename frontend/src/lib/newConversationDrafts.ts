@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { discardDraft, getDraftVersion } from './composerDraft';
-import { claimDraftStart, persistDraftStart, type DraftStart } from './draftStartClaims';
+import { discardDraft, getDraft, getDraftVersion, saveDraft } from './composerDraft';
+import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
 
 const STORAGE_PREFIX = 'ocman.newConversationDrafts.v1:';
 const START_PREFIX = 'ocman.newConversationStarts.v1:';
@@ -70,6 +70,21 @@ function publishStart(draftId: string, start: DraftStart) {
   useNewConversationDrafts.setState((state) => ({ starts: { ...state.starts, [draftId]: start } }));
 }
 
+/** Mirrors are hints: a dropped terminal write must not become an indefinite lock. */
+export async function reconcileConversationStart(draftId: string) {
+  const before = useNewConversationDrafts.getState().starts[draftId];
+  const start = await readDraftStart(draftId);
+  if (useNewConversationDrafts.getState().starts[draftId] !== before) return;
+  if (start?.error && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
+  if (JSON.stringify(start) === JSON.stringify(before)) return;
+  useNewConversationDrafts.setState((state) => {
+    const starts = { ...state.starts };
+    if (start) starts[draftId] = start;
+    else delete starts[draftId];
+    return { starts };
+  });
+}
+
 export async function beginConversationStart(draftId: string, text: string, routeKey?: string): Promise<number | null> {
   const { starts } = useNewConversationDrafts.getState();
   if (starts[draftId] && !starts[draftId].error) return null;
@@ -128,7 +143,7 @@ export function forgetConversationDraft(draftId: string) {
 
 if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
   if (event.key?.startsWith(START_PREFIX)) {
-    useNewConversationDrafts.setState({ starts: { ...useNewConversationDrafts.getState().starts, ...loadStarts() } });
+    void reconcileConversationStart(event.key.slice(START_PREFIX.length)).catch(() => undefined);
     return;
   }
   if (event.key !== null && !event.key.startsWith(STORAGE_PREFIX)) return;

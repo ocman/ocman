@@ -568,7 +568,12 @@ flowchart TD
   `lib/draftStartClaims` reserves starts with an atomic IndexedDB readwrite
   transaction, so two tabs cannot create sessions for the same draft. Per-draft
   localStorage receipts share pending, failure and completion state across tabs
-  and reloads. Explicit metadata deletion invalidates autosave and recovery;
+  and reloads. The active receipt is reconciled from IndexedDB, so a failed mirror
+  write cannot leave a retryable failure locked after reload. Acquired claims
+  always receive their terminal result; draft-text ownership only controls text
+  restoration and retirement. Identity-less bookmarked URLs get a fresh canonical
+  draft id before mounting, with deliberate migration of the legacy `new` text.
+  Explicit metadata deletion invalidates autosave and recovery;
   unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.
   `PreparedDraftLifecycle` follows completed starts to their session and replaces

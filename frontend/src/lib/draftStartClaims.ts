@@ -10,7 +10,7 @@ export interface DraftStart {
 }
 
 // IndexedDB readwrite transactions serialize claims across tabs, including plain HTTP.
-function mutate(draftId: string, change: (current: DraftStart | undefined) => DraftStart): Promise<DraftStart> {
+function transact(draftId: string, change?: (current: DraftStart | undefined) => DraftStart): Promise<DraftStart | undefined> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('This browser cannot coordinate session starts.'));
@@ -28,15 +28,15 @@ function mutate(draftId: string, change: (current: DraftStart | undefined) => Dr
       const db = open.result;
       if (blocked) { db.close(); return; }
       let transaction: IDBTransaction;
-      try { transaction = db.transaction('starts', 'readwrite'); }
+      try { transaction = db.transaction('starts', change ? 'readwrite' : 'readonly'); }
       catch (error) { db.close(); reject(error); return; }
       const store = transaction.objectStore('starts');
       const read = store.get(draftId);
-      let result: DraftStart;
+      let result: DraftStart | undefined;
       read.onsuccess = () => {
         const current = read.result as DraftStart | undefined;
-        result = change(current);
-        if (result !== current) store.put(result, draftId);
+        result = change ? change(current) : current;
+        if (change && result !== current) store.put(result, draftId);
       };
       transaction.oncomplete = () => { db.close(); resolve(result); };
       transaction.onabort = () => { db.close(); reject(transaction.error || new Error('Could not save the draft start claim')); };
@@ -46,12 +46,13 @@ function mutate(draftId: string, change: (current: DraftStart | undefined) => Dr
 
 export async function claimDraftStart(draftId: string, next: DraftStart) {
   let claimed = false;
-  const start = await mutate(draftId, (current) => {
+  const start = await transact(draftId, (current) => {
     if (current && !current.error) return current;
     claimed = true;
     return next;
   });
-  return { claimed, start };
+  return { claimed, start: start! };
 }
 
-export const persistDraftStart = (draftId: string, start: DraftStart) => mutate(draftId, () => start);
+export const persistDraftStart = (draftId: string, start: DraftStart) => transact(draftId, () => start);
+export const readDraftStart = (draftId: string) => transact(draftId);

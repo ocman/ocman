@@ -129,8 +129,10 @@ that draft from the section, even if you have switched to another draft while
 it starts. Reopening a pending draft shows its submitted prompt and keeps the
 composer and machine/target controls locked until that start finishes. Two tabs
 opening the same draft share one start and its completion, including after a
-reload. A start interrupted before its result is known stays locked rather than
-automatically submitting again. Discarding a draft in another tab
+reload. Reload never replays a first submission. A pending claim left by an
+interrupted tab stays locked. Request errors allow an explicit retry, which can
+create another session if the server accepted the first request but its response
+was lost. Discarding a draft in another tab
 replaces its open composer with a fresh, empty draft identity.
 
 Before its first prompt, a new conversation's composer shows a machine

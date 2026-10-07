@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { getDraft, saveDraft } from './composerDraft';
-import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
+import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
 vi.mock('./draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
   persistDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => start,
+  readDraftStart: async (id: string) => useNewConversationDrafts.getState().starts[id],
 }));
 
 beforeEach(() => {
@@ -85,6 +86,35 @@ it('keeps both drafts when two tabs interleave their metadata writes', async () 
     const restored = await import('./newConversationDrafts');
     expect(restored.useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId).sort()).toEqual(['first', 'second']);
   } finally { write.mockRestore(); }
+});
+
+it('reconciles a stale mirror from the authoritative failure and restores missing text', async () => {
+  rememberConversationDraft({ draftId: 'reload', directory: '/repo' });
+  useNewConversationDrafts.setState({ starts: { reload: { version: 0, text: 'prompt' } } });
+  const claims = await import('./draftStartClaims');
+  const read = vi.spyOn(claims, 'readDraftStart').mockResolvedValue({ version: 0, text: 'prompt', error: 'failed' });
+  try {
+    await reconcileConversationStart('reload');
+    expect(useNewConversationDrafts.getState().starts.reload.error).toBe('failed');
+    expect(getDraft('reload')).toBe('prompt');
+    read.mockResolvedValue(undefined);
+    await reconcileConversationStart('reload');
+    expect(useNewConversationDrafts.getState().starts.reload).toBeUndefined();
+  } finally { read.mockRestore(); }
+});
+
+it('does not replace a newer local receipt with an outstanding read', async () => {
+  const claims = await import('./draftStartClaims');
+  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
+  const read = vi.spyOn(claims, 'readDraftStart').mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  try {
+    const pending = reconcileConversationStart('draft');
+    const completed = { version: 0, text: '', sessionId: 'session' };
+    useNewConversationDrafts.setState({ starts: { draft: completed } });
+    finish({ version: 0, text: 'old prompt' });
+    await pending;
+    expect(useNewConversationDrafts.getState().starts.draft).toBe(completed);
+  } finally { read.mockRestore(); }
 });
 
 it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {

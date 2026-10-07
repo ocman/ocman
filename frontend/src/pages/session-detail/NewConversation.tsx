@@ -270,8 +270,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       const message = err instanceof Error ? err.message : String(err);
       if (ownsDraft()) {
         saveDraft(draftId, text, revision!);
-        await failConversationStart(draftId, message);
       }
+      if (revision !== null) await failConversationStart(draftId, message);
       // Only this request's prompt: a newer start may be pending already.
       setPending((p) => p?.startId === startId ? undefined : p);
       if (stillCurrent()) setError(message);

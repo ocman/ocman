@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../lib/draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => ({ claimed: true, start }),
   persistDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => start,
+  readDraftStart: async (id: string) => useNewConversationDrafts.getState().starts[id],
 }));
 vi.mock('../../lib/useGlobalEvents', () => ({
   onSessionStartProgress: (cb: (id: string, step: string, state: string) => void) => {
@@ -58,7 +59,7 @@ import { startHandoffs, startModels } from './startHandoffs';
 const navigate = vi.fn();
 const navigateToSession = vi.fn();
 function mount(params = { directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode' } as Record<string, string | undefined>) {
-  return render(<NewConversation params={{ directory: params.directory!, remoteId: params.remoteId, platform: params.platform, title: params.title, draftId: params.draftId }}
+  return render(<NewConversation params={{ directory: params.directory!, remoteId: params.remoteId, platform: params.platform, title: params.title, draftId: params.draftId || 'new' }}
     whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
 }
 const ready = () => waitFor(() => {
@@ -260,7 +261,7 @@ describe('NewConversation', () => {
     const setInfo = vi.fn();
     const { unmount } = render(
       <HeaderContext.Provider value={{ info: {}, setInfo }}>
-        <NewConversation params={{ directory: '/src/.worktrees/repo/feat', remoteId: 'machine' }}
+        <NewConversation params={{ directory: '/src/.worktrees/repo/feat', remoteId: 'machine', draftId: 'new' }}
           whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />
       </HeaderContext.Provider>,
     );

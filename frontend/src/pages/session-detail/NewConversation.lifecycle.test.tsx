@@ -27,6 +27,7 @@ vi.mock('../../lib/useCapabilities', () => ({
 vi.mock('../../lib/draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => ({ claimed: true, start }),
   persistDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => start,
+  readDraftStart: async (id: string) => useNewConversationDrafts.getState().starts[id],
 }));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
 vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
@@ -99,7 +100,7 @@ function Flow({ params = { directory: '/repo', platform: 'opencode' } }: { param
   return <>
     <output data-testid="route">{route}</output>
     <button onClick={() => setRoute('other')}>Leave draft</button>
-    {route === 'new' ? <NewConversation params={params} composerRef={null}
+    {route === 'new' ? <NewConversation params={{ draftId: 'new', ...params }} composerRef={null}
       whisperAvailable={false} navigate={setRoute} navigateToSession={setRoute} /> : route === 'child' ? <Child />
       : <Composer draftKey="new" isRunning={false} />}
   </>;
@@ -121,6 +122,17 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('canonicalizes a legacy bookmarked target and migrates its text without reusing the permanent new claim', async () => {
+    saveDraft('new', 'legacy prompt');
+    useNewConversationDrafts.setState({ starts: { new: { version: 0, text: '', sessionId: 'old-session' } } });
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Fother']}><DraftWorkspace /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId='));
+    expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=new');
+    expect(screen.getByRole('textbox')).toHaveValue('legacy prompt');
+    expect(getDraft('new')).toBe('');
+    expect(useNewConversationDrafts.getState().drafts).toHaveLength(1);
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
   it('moves a mounted composer to a fresh identity after another tab discards it', async () => {
     render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'old text' } });
@@ -403,7 +415,7 @@ describe('new-conversation submission lifecycle', () => {
     const launch = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValue(launch.promise);
     const navigate = vi.fn();
-    const props = { params: { directory: '/repo', platform: 'opencode', title: 'old' }, composerRef: null,
+    const props = { params: { directory: '/repo', platform: 'opencode', title: 'old', draftId: 'new' }, composerRef: null,
       whisperAvailable: false, navigate: vi.fn(), navigateToSession: navigate };
     const view = render(<NewConversation {...props} />);
     const input = screen.getByRole('textbox');
@@ -422,7 +434,7 @@ describe('new-conversation submission lifecycle', () => {
     const newStart = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValueOnce(oldStart.promise).mockReturnValueOnce(newStart.promise);
     const navigate = vi.fn();
-    const props = { params: { directory: '/repo', platform: 'opencode', title: 'old' }, composerRef: null,
+    const props = { params: { directory: '/repo', platform: 'opencode', title: 'old', draftId: 'new' }, composerRef: null,
       whisperAvailable: false, navigate: vi.fn(), navigateToSession: navigate };
     const view = render(<NewConversation {...props} />);
     const oldInput = screen.getByRole('textbox');
