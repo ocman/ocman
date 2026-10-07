@@ -267,10 +267,11 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/platforms/` — `Platform` interface, `Registry`, common
   types/errors.
 - `internal/plugins/` — native executable discovery, versioned NDJSON protocol,
-  process supervision, and the `action.v1` / `conversation.v1` brokers. Trusted
+  process supervision, `action.v1` / `conversation.v1` brokers, and `pane.v1`
+  read-only sidebar trees. Trusted
   executables live in
   `~/.local/share/ocman/plugins` or `OCMAN_PLUGIN_DIR`; even discovery runs code.
-  Build the bundled ones with `make install-plugin PLUGIN=slack|fixture`
+  Build the bundled ones with `make install-plugin PLUGIN=slack|beads|fixture`
   (`-trimpath`, so the checksum an operator approves is reproducible).
   Settings manages owner-local enablement, grants, configuration, and diagnostics.
   Remote projection uses authenticated `PluginOperation` RPCs; each owner keeps
@@ -279,6 +280,15 @@ handlers don't bypass the `Host` seam). User-facing docs:
   `internal/plugins/README.md`. Platform-provider, iframe UI,
   relay inbox capability, registry/updates, signatures, sandboxing, and Codex
   are future work.
+
+  `pane.v1` uses owner-local declarations and the `pane.project` grant.
+  `/api/plugins/panes` lists enabled declarations without invoking plugins;
+  `/api/plugins/panes/read` sends the directory through the owner's existing
+  `PluginOperation` RPC after authorization. Core validates bounded acyclic
+  tree data and renders it without plugin HTML, scripts or CSS. The query is
+  mounted only while its pane is open, consuming AbortSignal for cancellation.
+  The Beads executable and CLI parsers live in `examples/ocman-plugin-beads`,
+  no longer on `hostsvc.Host`. See `docs/features/beads.md`.
 
   **conversation.v1** is the chat-provider seam (`internal/plugins/conversation.go`,
   `conversation_broker.go`, wired in `internal/server/plugin_conversation.go`).

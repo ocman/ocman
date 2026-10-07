@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -513,9 +513,9 @@ describe('Factory interactions', () => {
     await waitFor(() => expect(within(inbox).getByRole('button', { name: 'Materialize plan' })).toBeEnabled());
   });
 
-  it('shows running implementation and planning work with live session status', async () => {
+  it.each(['open', 'paused'])('shows running implementation and planning work in an %s epic with live session status', async (status) => {
     vi.mocked(api.factoryEpics).mockResolvedValue([
-      { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', attempts: [{ id: 'plan-attempt', workId: 'epic-1.1', phase: 'active', session: { platform: 'opencode', id: 'plan-session' } }, { id: 'old-attempt', workId: 'epic-1.1', phase: 'terminal', session: { platform: 'opencode', id: 'old-session' } }] },
+      { id: 'epic-1', goal: 'Ship Factory', status, initialProject: '/repo', attempts: [{ id: 'plan-attempt', workId: 'epic-1.1', phase: 'active', session: { platform: 'opencode', id: 'plan-session' } }, { id: 'old-attempt', workId: 'epic-1.1', phase: 'terminal', session: { platform: 'opencode', id: 'old-session' } }] },
     ] as never);
     vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan', status: 'open', dispatchState: 'ready' }] as never);
     vi.mocked(api.factoryQueue).mockResolvedValue([
@@ -542,6 +542,59 @@ describe('Factory interactions', () => {
     expect(within(live).getByText('Finish handoff').closest('[role="listitem"]')).toHaveTextContent('running');
     expect(within(live).queryByText('Done')).not.toBeInTheDocument();
     expect(screen.getByText('Nothing needs your attention.')).toBeInTheDocument();
+  });
+
+  it('keeps paused epic permission and question prompts actionable', async () => {
+    vi.mocked(api.factoryEpics).mockResolvedValue([
+      { id: 'paused-epic', goal: 'Paused goal', status: 'paused', initialProject: '/repo', attempts: [{ id: 'paused-plan', workId: 'paused-epic.1', phase: 'active', session: { platform: 'opencode', id: 'paused-plan-session' } }] },
+    ] as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([]);
+    vi.mocked(api.factoryQueue).mockResolvedValue([
+      { id: 'paused-epic.2', epicId: 'paused-epic', title: 'Paused implementation', project: '/repo', state: 'running', attemptId: 'paused-impl', session: { platform: 'opencode', id: 'paused-impl-session' } },
+    ] as never);
+    vi.mocked(api.sessions).mockResolvedValue([
+      { id: 'paused-plan-session', title: 'Paused planner', status: 'waiting', pendingQuestion: true },
+      { id: 'paused-impl-session', title: 'Paused implementer', status: 'waiting', pendingPermission: true },
+    ] as never);
+    renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+
+    const inbox = await screen.findByRole('region', { name: 'Needs attention actions' });
+    expect(within(inbox).getByText('Agent is waiting for you: Paused planner')).toBeInTheDocument();
+    expect(within(inbox).getByText('Agent is waiting for you: Paused implementer')).toBeInTheDocument();
+    expect(within(inbox).getAllByRole('link', { name: 'Answer in session' }).map((link) => link.getAttribute('href'))).toEqual(['/session/paused-impl-session', '/session/paused-plan-session']);
+  });
+
+  it.each(['prepared', 'active', 'stopping'])('hides closed epic work with a %s attempt from live work and agent prompts', async (phase) => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([]);
+    vi.mocked(api.factoryEpics).mockResolvedValue([
+      { id: 'closed-epic', goal: 'Closed goal', status: 'closed', initialProject: '/repo', attempts: [{ id: 'closed-plan', workId: 'closed-epic.1', phase, session: { platform: 'opencode', id: 'closed-plan-session' } }] },
+      { id: 'open-epic', goal: 'Open goal', status: 'open', initialProject: '/repo' },
+    ] as never);
+    vi.mocked(api.factoryQueue).mockResolvedValue([
+      { id: 'closed-epic.2', epicId: 'closed-epic', title: 'Closed implementation', project: '/repo', state: 'running', attemptId: 'closed-impl', session: { platform: 'opencode', id: 'closed-impl-session' } },
+      { id: 'open-epic.1', epicId: 'open-epic', title: 'Open implementation', project: '/repo', state: 'running', attemptId: 'open-impl', session: { platform: 'opencode', id: 'open-impl-session' } },
+    ] as never);
+    vi.mocked(api.sessions).mockResolvedValue([
+      { id: 'closed-plan-session', title: 'Closed planner', status: 'waiting', pendingQuestion: true },
+      { id: 'closed-impl-session', title: 'Closed implementer', status: 'waiting', pendingPermission: true },
+    ] as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter><FactoryOverview /></MemoryRouter></QueryClientProvider>);
+
+    const live = await screen.findByRole('region', { name: 'In progress work items' });
+    expect(within(live).getByText('Open implementation')).toBeInTheDocument();
+    expect(within(live).queryByText('Closed implementation')).not.toBeInTheDocument();
+    expect(within(live).queryByText('Planning')).not.toBeInTheDocument();
+    expect(within(live).getAllByRole('link', { name: /Open session/ })).toHaveLength(1);
+    await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+    expect(screen.queryByRole('link', { name: 'Answer in session' })).not.toBeInTheDocument();
+
+    act(() => client.setQueryData(['factory-epics'], [
+      { id: 'closed-epic', goal: 'Closed goal', status: 'closed', initialProject: '/repo' },
+      { id: 'open-epic', goal: 'Open goal', status: 'closed', initialProject: '/repo' },
+    ]));
+    expect(await screen.findByText('No agents are working right now.')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'In progress work items' })).not.toBeInTheDocument();
   });
 
   it('opens the issue drawer from action inbox and live work rows', async () => {

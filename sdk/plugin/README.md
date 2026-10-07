@@ -6,7 +6,10 @@ It adds no dependencies. Go 1.26.1 or newer is required by the ocman module.
 
 The SDK is optional. Any language can read and write NDJSON according to the
 [protocol contract](../../internal/plugins/README.md). `action.v1` is unary;
-streaming is available to separately negotiated capabilities.
+streaming is available to separately negotiated capabilities. `pane.v1` is also
+unary: declare owner-local `Panes`, request `PaneProjectGrant`, and use
+`PaneHandler` to return a validated `PaneTree`. The bundled
+[Beads plugin](../../examples/ocman-plugin-beads/main.go) is a working example.
 
 ## Executable lifecycle
 

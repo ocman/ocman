@@ -68,6 +68,7 @@ type Description struct {
 	RequestedGrants []string           `json:"requestedGrants,omitempty"`
 	Settings        []Setting          `json:"settings,omitempty"`
 	Actions         []ActionDescriptor `json:"actions,omitempty"`
+	Panes           []PaneDescriptor   `json:"panes,omitempty"`
 }
 
 type MessageType string
@@ -203,6 +204,9 @@ func (d Description) Validate() error {
 		return err
 	}
 	if err := d.validateActions(); err != nil {
+		return err
+	}
+	if err := d.validatePanes(); err != nil {
 		return err
 	}
 	return d.validateConversation()

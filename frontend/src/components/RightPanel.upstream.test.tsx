@@ -13,8 +13,9 @@ import { useUpstreamPreferences } from '../lib/upstreamPreferences';
 vi.mock('../lib/useGitInfo', () => ({
   useGitInfo: vi.fn(() => ({ infos: {}, loading: false, error: null })),
 }));
-vi.mock('../lib/useBeadsStatus', () => ({
-  useBeadsStatus: () => ({ data: undefined, error: null, isFetching: false, refetch: vi.fn() }),
+vi.mock('../lib/pluginPanes', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/pluginPanes')>(),
+  usePluginPanes: () => ({ data: [] }),
 }));
 
 const pr = (number: number, branch: string): upstreamApi.PR => ({
@@ -47,7 +48,7 @@ beforeEach(() => {
   });
   useUiStore.setState({
     changesSidebarOpenTabs: ['upstream'],
-    changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'beads'],
+    changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
     changesSidebarTabSizes: {},
   });
   vi.spyOn(upstreamApi, 'fetchUpstreams').mockResolvedValue([

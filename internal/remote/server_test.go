@@ -192,9 +192,6 @@ func (localStubHost) Doctor(context.Context) []hostsvc.DoctorCheck { return nil 
 func (localStubHost) Capabilities() hostsvc.HostCaps {
 	return hostsvc.HostCaps{GitDiff: true, Worktrees: true, Tmux: true, Projects: true, Whisper: true}
 }
-func (localStubHost) BeadsStatus(context.Context, string) (hostsvc.BeadsStatus, error) {
-	return hostsvc.BeadsStatus{}, nil
-}
 func (localStubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
 	return map[string]git.Info{}, nil
 }
@@ -328,7 +325,6 @@ func TestRemoteHostRemainingMutationsRoundTrip(t *testing.T) {
 		t.Fatalf("offline managed opencodes: %v", err)
 	}
 	for name, call := range map[string]func() error{
-		"beads":          func() error { _, err := offline.BeadsStatus(t.Context(), "/repo"); return err },
 		"git info":       func() error { _, err := offline.GitInfo(t.Context(), []string{"/repo"}); return err },
 		"git diff":       func() error { _, err := offline.GitDiff(t.Context(), "/repo", hostsvc.GitDiffOptions{}); return err },
 		"upstreams":      func() error { _, err := offline.ProjectUpstreams(t.Context(), "/repo"); return err },

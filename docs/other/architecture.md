@@ -49,14 +49,15 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] -->|core APIs + brokered plugin actions| Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>REST + SSE] -->|core APIs + plugin actions and panes| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
-    Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
+    Ocman -->|exec| Shell[git / tmux / lsof<br/>host tools]
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
+    PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage APIs]
     Ocman <-->|gRPC + token: sessions, upstream identities, hosts, plugins| Remotes[Remote ocman<br/>instances]
     Ocman -->|encrypted webhook poll| Relay[ocman-relay<br/>ciphertext persistence]
@@ -172,7 +173,7 @@ flowchart TD
     Inbox -.->|remote RPC| Router
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
     State -.->|registration types| Plugins[internal/plugins<br/>protocol, supervision, action broker]
-    Server -->|management + authenticated actions| Plugins
+    Server -->|management + actions + pane reads| Plugins
     Plugins -->|token-bound NDJSON + private configuration fd| PluginExec[External plugin process]
     Server -->|owner-routed PluginOperation RPC| RP
     PluginSDK[sdk/plugin<br/>optional public Go SDK] -->|canonical DTO aliases + validators| Plugins
@@ -278,7 +279,7 @@ flowchart TD
 - **platforms.Registry.** The session-scoped seam. One adapter per platform;
   remotes register as compound-ID platforms so handlers can't tell local from
   remote.
-- **hostsvc.Router.** The directory-scoped seam (git, worktrees, tmux, Beads,
+- **hostsvc.Router.** The directory-scoped seam (git, worktrees, tmux,
   projects and forge-repository detection/fetch). It resolves the owning host
   and delegates, the same transparency
   trick as the registry. Worktree sessions run in-app on the project's single
@@ -584,10 +585,13 @@ flowchart TD
   to skip view-serving session, project and metrics refreshes
   when every tab is hidden or gone. Scheduled routines and auto-approve do not
   consult these leases.
-- **Beads status.** The right panel queries the repository owner's
-  `hostsvc.Host` through `/api/project/beads-status`; remote owners proxy the
-  same operation over gRPC. Ticket data stays in the repository and is polled
-  only while the available pane is open.
+- **Plugin panes.** The right panel lists the active owner's enabled `pane.v1`
+  declarations through `/api/plugins/panes`. Catalog reads never invoke the
+  plugin. An open pane mounts its data query, calling `/api/plugins/panes/read`
+  through the owner-routed `PluginOperation` RPC and the owner's grant checks.
+  Closing it unmounts the query and cancels an outstanding read. Core renders
+  bounded tree nodes as plain text. The optional Beads plugin owns all `bd`
+  execution and parsing; no Beads operation remains on `hostsvc.Host`.
 - **Factory.** `/factory` presents actionable approval Gates, Epics, Issues,
    Queue, and Configuration through TanStack Query. Browser mutations create
    native Epics, pour Mols, decide exact Plan revisions, and explicitly close
@@ -605,7 +609,7 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    participant B as Browser palette / Settings
+    participant B as Browser palette / Settings / sidebar
     participant H as Hub HTTP handlers
     participant O as Installation owner
     participant A as internal/plugins action broker
@@ -634,6 +638,16 @@ sequenceDiagram
     B->>H: Download artifact with installation ownerId
     H->>O: Recheck grants and read owner-local artifact
     O-->>B: Via hub: attachment bytes
+    B->>H: List enabled pane declarations with ownerId
+    H->>O: Read approved pane metadata, no plugin invocation
+    O-->>B: Via hub: owner-qualified pane declarations
+    opt Sidebar pane open
+        B->>H: Read pane with ownerId and directory
+        H->>O: Route read, verify enablement and pane.project grant
+        O->>P: NDJSON pane.v1 read
+        P-->>O: Typed tree, no markup
+        O-->>B: Via hub: validated and reauthorized tree
+    end
 ```
 
 - The installation owner supervises the process and owns its configuration,

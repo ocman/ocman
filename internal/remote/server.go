@@ -7,31 +7,22 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 
-	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/webhook"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// Server is the remote-side gRPC service. It is a thin translation layer
-// over the local platforms.Registry and hostsvc.Host: reads resolve the
-// local adapter from the base platform id (or the local Host) and call
-// the matching method, marshalling rich results as JSON (AD-3, AD-11).
-// Session mutations delegate to the shared sessionsvc.Service so they
-// take the same validated code path as the REST handlers.
+// Server translates authenticated owner-local RPCs into platform and host
+// operations. Mutations use the same sessionsvc service as REST handlers.
 type Server struct {
 	pb.UnimplementedOcmanServer
-
 	registry          *platforms.Registry
 	sessions          *sessionsvc.Service
 	host              hostsvc.Host
@@ -44,53 +35,23 @@ type Server struct {
 	plugins           PluginHandler
 }
 
-// UseInboxStore installs the state store authoritative for this instance's Inbox.
-func (s *Server) UseInboxStore(store *state.DB) *Server {
-	s.inboxStore = store
-	return s
-}
-
+func (s *Server) UseInboxStore(store *state.DB) *Server { s.inboxStore = store; return s }
 func (s *Server) UseWebhookDispatcher(dispatcher webhook.RoutineDispatcher) *Server {
 	s.webhookDispatcher = dispatcher
 	return s
 }
-
-// NewServer builds the remote-side gRPC service over the given local
-// registry and host. instanceID is this ocman's stable random ID;
-// version is the ocman build version reported in Hello.
 func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, version string) *Server {
-	return &Server{
-		registry:   registry,
-		sessions:   sessionsvc.New(registry, sessionsvc.Hooks{}),
-		host:       host,
-		instanceID: instanceID,
-		version:    version,
-	}
+	return &Server{registry: registry, sessions: sessionsvc.New(registry, sessionsvc.Hooks{}), host: host, instanceID: instanceID, version: version}
 }
-
-// UseSessions swaps in a shared session service. main.go passes the
-// HTTP server's, so host-local hooks (auto-approve judge cancellation,
-// projects-index refresh) also fire for gRPC-executed mutations.
-func (s *Server) UseSessions(svc *sessionsvc.Service) *Server {
-	s.sessions = svc
-	return s
-}
-
-// UseSessionEnricher installs owner-local SessionDetail enrichment before
-// the detail is marshalled for the hub.
+func (s *Server) UseSessions(svc *sessionsvc.Service) *Server { s.sessions = svc; return s }
 func (s *Server) UseSessionEnricher(fn func(context.Context, string, string, *platforms.SessionDetail)) *Server {
 	s.enrichSession = fn
 	return s
 }
-
-// UseEventProxy installs the owner-local event pipeline used to tee raw
-// platform events and emit synthetic events into the same stream.
 func (s *Server) UseEventProxy(fn func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error) *Server {
 	s.proxyEvents = fn
 	return s
 }
-
-// svcErr maps sessionsvc errors to gRPC status codes.
 func svcErr(err error) error {
 	if err == nil {
 		return nil
@@ -110,8 +71,6 @@ func svcErr(err error) error {
 	}
 	return err
 }
-
-// platformFor resolves the local adapter for a base platform id.
 func (s *Server) platformFor(id string) (platforms.Platform, error) {
 	p, ok := s.registry.Get(platforms.ID(id))
 	if !ok {
@@ -119,8 +78,6 @@ func (s *Server) platformFor(id string) (platforms.Platform, error) {
 	}
 	return p, nil
 }
-
-// jsonResp wraps a value into a *pb.JsonResp, or an error.
 func jsonResp(v any, err error) (*pb.JsonResp, error) {
 	if err != nil {
 		if errors.Is(err, platforms.ErrPlatformUnreachable) {
@@ -134,322 +91,10 @@ func jsonResp(v any, err error) (*pb.JsonResp, error) {
 	}
 	return &pb.JsonResp{Payload: b}, nil
 }
-
-// --- Hello ---
-
 func (s *Server) Hello(_ context.Context, _ *pb.HelloReq) (*pb.HelloResp, error) {
 	hostname, _ := os.Hostname()
-	return &pb.HelloResp{
-		ProtocolVersion: ProtocolVersion,
-		InstanceId:      s.instanceID,
-		Hostname:        hostname,
-		OcmanVersion:    s.version,
-	}, nil
+	return &pb.HelloResp{ProtocolVersion: ProtocolVersion, InstanceId: s.instanceID, Hostname: hostname, OcmanVersion: s.version}, nil
 }
-
-// --- Session reads ---
-
-func (s *Server) Sessions(ctx context.Context, req *pb.SessionsReq) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.Sessions(ctx, req.Dir, req.Since))
-}
-
-func (s *Server) Session(ctx context.Context, req *pb.SessionReq) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	detail, err := p.Session(ctx, req.SessionId, int(req.Limit), int(req.Offset))
-	if err == nil && detail != nil && s.enrichSession != nil {
-		s.enrichSession(ctx, req.Platform, req.SessionId, detail)
-	}
-	return jsonResp(detail, err)
-}
-
-func (s *Server) SessionsInactiveBefore(ctx context.Context, req *pb.CutoffReq) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.SessionsInactiveBefore(ctx, req.Cutoff))
-}
-
-func (s *Server) SessionChanges(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.SessionChanges(ctx, req.SessionId))
-}
-
-func (s *Server) SessionInfo(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	info, err := p.SessionInfo(ctx, req.SessionId)
-	if err != nil || info == nil || s.inboxStore == nil {
-		return jsonResp(info, err)
-	}
-	commits, err := s.inboxStore.ListSessionCommits(ctx, req.Platform, req.SessionId)
-	if err != nil {
-		return nil, err
-	}
-	info.CommitCaptureSupported = true
-	info.Commits = make([]platforms.SessionCommit, 0, len(commits))
-	for _, commit := range commits {
-		info.Commits = append(info.Commits, platforms.SessionCommit{
-			Order: commit.Order, SHA: commit.SHA, Branch: commit.Branch,
-			Subject: commit.Subject, SourceMessageID: commit.SourceMessageID,
-			ToolPartID: commit.ToolPartID, ToolCallID: commit.ToolCallID,
-			ObservedAt: commit.ObservedAt,
-		})
-	}
-	return jsonResp(info, nil)
-}
-
-func (s *Server) AgentCatalog(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.AgentCatalog(ctx, req.SessionId))
-}
-
-func (s *Server) SlashCommands(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.SlashCommands(ctx, req.SessionId))
-}
-
-func (s *Server) SessionModels(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.SessionModels(ctx, req.SessionId))
-}
-
-func (s *Server) DirectoryCatalog(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	var in platforms.DirectoryCatalogRequest
-	if err := unmarshalJSON(req.Payload, &in); err != nil {
-		return nil, err
-	}
-	return jsonResp(p.DirectoryCatalog(ctx, in))
-}
-
-func (s *Server) ListPermissions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.ListPermissions(ctx, req.SessionId))
-}
-
-// RefreshPermissions serves an authoritative permission list. A platform
-// without one fails rather than falling back to the observed cache, whose
-// absence would not mean resolved.
-func (s *Server) RefreshPermissions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	live, ok := p.(platforms.PermissionRefresher)
-	if !ok {
-		return nil, status.Error(codes.Unimplemented, "platform has no authoritative permission list")
-	}
-	return jsonResp(live.RefreshPermissions(ctx, req.SessionId))
-}
-
-func (s *Server) ListQuestions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.ListQuestions(ctx, req.SessionId))
-}
-
-func (s *Server) Capabilities(_ context.Context, req *pb.PlatformRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.Capabilities(), nil)
-}
-
-func (s *Server) Owns(ctx context.Context, req *pb.SessionRef) (*pb.OwnsResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return &pb.OwnsResp{Owns: p.Owns(ctx, req.SessionId)}, nil
-}
-
-// --- Session mutations ---
-
-func (s *Server) SendMessage(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var mr platforms.SendMessageRequest
-	if err := unmarshalJSON(req.Payload, &mr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.SendMessage(ctx, req.Platform, mr))
-}
-
-func (s *Server) ExecuteCommand(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var cr platforms.ExecuteCommandRequest
-	if err := unmarshalJSON(req.Payload, &cr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.ExecuteCommand(ctx, req.Platform, cr))
-}
-
-func (s *Server) RunShell(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var sr platforms.RunShellRequest
-	if err := unmarshalJSON(req.Payload, &sr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.RunShell(ctx, req.Platform, sr))
-}
-
-func (s *Server) RespondPermission(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var rr platforms.RespondPermissionRequest
-	if err := unmarshalJSON(req.Payload, &rr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.RespondPermission(ctx, req.Platform, rr))
-}
-
-func (s *Server) RespondQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var rr platforms.RespondQuestionRequest
-	if err := unmarshalJSON(req.Payload, &rr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.RespondQuestion(ctx, req.Platform, rr))
-}
-
-func (s *Server) RejectQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var rr platforms.RejectQuestionRequest
-	if err := unmarshalJSON(req.Payload, &rr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.RejectQuestion(ctx, req.Platform, rr))
-}
-
-func (s *Server) NativeQueued(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	nq, ok := p.(platforms.NativeQueue)
-	if !ok {
-		return nil, svcErr(platforms.ErrUnsupported)
-	}
-	msgs, err := nq.NativeQueued(ctx, req.SessionId)
-	if err != nil {
-		return nil, svcErr(err)
-	}
-	return jsonResp(msgs, nil)
-}
-
-func (s *Server) CancelNativeQueued(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var cr platforms.CancelNativeQueuedRequest
-	if err := unmarshalJSON(req.Payload, &cr); err != nil {
-		return nil, err
-	}
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	nq, ok := p.(platforms.NativeQueue)
-	if !ok {
-		return nil, svcErr(platforms.ErrUnsupported)
-	}
-	return &pb.Empty{}, svcErr(nq.CancelNativeQueued(ctx, cr))
-}
-
-func (s *Server) Abort(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var ar platforms.AbortRequest
-	if err := unmarshalJSON(req.Payload, &ar); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.Abort(ctx, req.Platform, ar))
-}
-
-func (s *Server) RenameSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var rr platforms.RenameSessionRequest
-	if err := unmarshalJSON(req.Payload, &rr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.Rename(ctx, req.Platform, rr))
-}
-
-func (s *Server) PermissionRules(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
-	return jsonResp(p.PermissionRules(ctx, req.SessionId))
-}
-
-func (s *Server) SetPermissionRules(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var sr platforms.SetPermissionRulesRequest
-	if err := unmarshalJSON(req.Payload, &sr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.SetPermissionRules(ctx, req.Platform, sr))
-}
-
-func (s *Server) Compact(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var cr platforms.CompactRequest
-	if err := unmarshalJSON(req.Payload, &cr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.Compact(ctx, req.Platform, cr))
-}
-
-func (s *Server) ForkSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
-	var fr platforms.ForkSessionRequest
-	if err := unmarshalJSON(req.Payload, &fr); err != nil {
-		return nil, err
-	}
-	resp, err := s.sessions.Fork(ctx, req.Platform, fr)
-	return jsonResp(resp, svcErr(err))
-}
-
-func (s *Server) MoveSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	var mr platforms.MoveSessionRequest
-	if err := unmarshalJSON(req.Payload, &mr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, svcErr(s.sessions.Move(ctx, req.Platform, mr))
-}
-
-func (s *Server) CreateSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
-	var cr platforms.CreateSessionRequest
-	if err := unmarshalJSON(req.Payload, &cr); err != nil {
-		return nil, err
-	}
-	log.WithFields(log.Fields{
-		"platform":  req.Platform,
-		"directory": cr.Directory,
-	}).Info("remote: create session request from hub")
-	resp, err := s.sessions.Create(ctx, req.Platform, cr)
-	if err != nil {
-		log.WithError(err).WithField("directory", cr.Directory).Warn("remote: create session failed")
-	}
-	return jsonResp(resp, svcErr(err))
-}
-
-// --- Streaming events ---
 
 func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsServer) error {
 	p, err := s.platformFor(req.Platform)
@@ -464,9 +109,6 @@ func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsSe
 	return p.ProxyEvents(stream.Context(), req.SessionId, raw, func() {})
 }
 
-// eventStreamWriter adapts a gRPC server-stream to the io.Writer+flush
-// shape ProxyEvents expects: each Write frames the bytes into an
-// EventChunk message tunneled to the hub (AD-14).
 type eventStreamWriter struct {
 	stream pb.Ocman_StreamEventsServer
 	mu     sync.Mutex
@@ -475,8 +117,7 @@ type eventStreamWriter struct {
 func (w *eventStreamWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	// Copy because the underlying SSE buffer may be reused after Write
-	// returns; the gRPC send is asynchronous w.r.t. the caller's buffer.
+	// The upstream buffer may be reused after Write returns.
 	chunk := make([]byte, len(p))
 	copy(chunk, p)
 	if err := w.stream.Send(&pb.EventChunk{Data: chunk}); err != nil {
@@ -485,8 +126,7 @@ func (w *eventStreamWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// sseFrameWriter holds partial upstream writes until a complete SSE frame is
-// available. Synthetic events bypass it and share dst's serialization lock.
+// Hold partial upstream writes until a complete SSE frame is available.
 type sseFrameWriter struct {
 	dst     io.Writer
 	mu      sync.Mutex
@@ -498,7 +138,6 @@ const maxSSEFrameBytes = 4 << 20
 func (w *sseFrameWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
 	w.pending = append(w.pending, p...)
 	if len(w.pending) > maxSSEFrameBytes && sseFrameEnd(w.pending) < 0 {
 		w.pending = nil
@@ -518,10 +157,8 @@ func (w *sseFrameWriter) Write(p []byte) (int, error) {
 		}
 	}
 }
-
 func sseFrameEnd(p []byte) int {
-	lf := bytes.Index(p, []byte("\n\n"))
-	crlf := bytes.Index(p, []byte("\n\r\n"))
+	lf, crlf := bytes.Index(p, []byte("\n\n")), bytes.Index(p, []byte("\n\r\n"))
 	if lf >= 0 && (crlf < 0 || lf < crlf) {
 		return lf + 2
 	}
@@ -529,213 +166,6 @@ func sseFrameEnd(p []byte) int {
 		return crlf + 3
 	}
 	return -1
-}
-
-// --- Host services ---
-
-func (s *Server) GitInfo(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var dirs []string
-	if err := unmarshalJSON(req.Payload, &dirs); err != nil {
-		return nil, err
-	}
-	for _, dir := range dirs {
-		if err := requireAbsoluteHostPath(dir, "git info directory"); err != nil {
-			return nil, err
-		}
-	}
-	return jsonResp(s.host.GitInfo(ctx, dirs))
-}
-
-func (s *Server) GitDiff(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir   string `json:"dir"`
-		Force bool   `json:"force"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	return jsonResp(s.host.GitDiff(ctx, args.Dir, hostsvc.GitDiffOptions{Force: args.Force}))
-}
-
-func (s *Server) GitBranches(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir string `json:"dir"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	return jsonResp(s.host.GitBranches(ctx, args.Dir))
-}
-
-func (s *Server) ListRepoFiles(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir     string `json:"dir"`
-		Ignored bool   `json:"ignored"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	return jsonResp(notFoundStatus(s.host.ListRepoFiles(ctx, args.Dir, args.Ignored)))
-}
-
-func (s *Server) ReadRepoFile(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir     string `json:"dir"`
-		Path    string `json:"path"`
-		Ignored bool   `json:"ignored"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	return jsonResp(notFoundStatus(s.host.ReadRepoFile(ctx, args.Dir, args.Path, args.Ignored)))
-}
-
-// notFoundStatus carries the git not-found sentinels across gRPC.
-func notFoundStatus[T any](v T, err error) (T, error) {
-	if errors.Is(err, git.ErrNotARepo) || errors.Is(err, git.ErrFileNotFound) {
-		return v, status.Error(codes.NotFound, err.Error())
-	}
-	return v, err
-}
-
-func (s *Server) GitCheckout(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
-	var args struct {
-		Dir    string `json:"dir"`
-		Branch string `json:"branch"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	// ponytail: git.ErrDirtyCheckout does not survive gRPC as a typed
-	// sentinel; the message string is preserved and the HTTP handler
-	// re-matches it. Upgrade to a status code detail if callers need it.
-	return &pb.Empty{}, s.host.GitCheckout(ctx, args.Dir, args.Branch)
-}
-
-func (s *Server) ProjectUpstreams(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir string `json:"dir"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	if err := requireAbsoluteHostPath(args.Dir, "project directory"); err != nil {
-		return nil, err
-	}
-	upstreams, err := s.host.ProjectUpstreams(ctx, args.Dir)
-	if errors.Is(err, git.ErrNotARepo) {
-		return nil, status.Error(codes.NotFound, err.Error())
-	}
-	if err == nil && upstreams != nil {
-		for i := range upstreams.Remotes {
-			upstreams.Remotes[i].URL = ""
-		}
-	}
-	return jsonResp(upstreams, err)
-}
-
-func (s *Server) FetchPRHead(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args hostsvc.FetchPRHeadRequest
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	if err := requireAbsoluteHostPath(args.RepoRoot, "repository root"); err != nil {
-		return nil, err
-	}
-	branch, err := s.host.FetchPRHead(ctx, args)
-	return jsonResp(map[string]string{"branch": branch}, err)
-}
-
-func requireAbsoluteHostPath(path, label string) error {
-	if !filepath.IsAbs(path) {
-		return status.Errorf(codes.InvalidArgument, "%s must be absolute", label)
-	}
-	return nil
-}
-
-func (s *Server) ListWorktrees(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir string `json:"dir"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	return jsonResp(s.host.ListWorktrees(ctx, args.Dir))
-}
-
-func (s *Server) WorktreeDefaultBaseRef(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir string `json:"dir"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	ref, err := s.host.WorktreeDefaultBaseRef(ctx, args.Dir)
-	return jsonResp(map[string]string{"baseRef": ref}, err)
-}
-
-func (s *Server) CreateWorktreeSession(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var wr hostsvc.WorktreeSessionRequest
-	if err := unmarshalJSON(req.Payload, &wr); err != nil {
-		return nil, err
-	}
-	return jsonResp(s.host.CreateWorktreeSession(ctx, wr))
-}
-
-func (s *Server) RemoveWorktree(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
-	var wr hostsvc.RemoveWorktreeRequest
-	if err := unmarshalJSON(req.Payload, &wr); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, s.host.RemoveWorktree(ctx, wr)
-}
-
-func (s *Server) LaunchTmux(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var lr hostsvc.LaunchTmuxRequest
-	if err := unmarshalJSON(req.Payload, &lr); err != nil {
-		return nil, err
-	}
-	log.WithField("directory", lr.Directory).Info("remote: launch-tmux request from hub")
-	return jsonResp(s.host.LaunchTmux(ctx, lr))
-}
-
-func (s *Server) EnsureProjectOpencode(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var er hostsvc.EnsureProjectOpencodeRequest
-	if err := unmarshalJSON(req.Payload, &er); err != nil {
-		return nil, err
-	}
-	log.WithField("projectDir", er.ProjectDir).Info("remote: ensure-project-opencode request from hub")
-	return jsonResp(s.host.EnsureProjectOpencode(ctx, er))
-}
-
-func (s *Server) StopProjectOpencode(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
-	var er hostsvc.EnsureProjectOpencodeRequest
-	if err := unmarshalJSON(req.Payload, &er); err != nil {
-		return nil, err
-	}
-	log.WithField("projectDir", er.ProjectDir).Info("remote: stop-project-opencode request from hub")
-	return &pb.Empty{}, s.host.StopProjectOpencode(ctx, er)
-}
-
-func (s *Server) RestartProjectOpencode(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var er hostsvc.EnsureProjectOpencodeRequest
-	if err := unmarshalJSON(req.Payload, &er); err != nil {
-		return nil, err
-	}
-	log.WithField("projectDir", er.ProjectDir).Info("remote: restart-project-opencode request from hub")
-	return jsonResp(s.host.RestartProjectOpencode(ctx, er))
-}
-
-func (s *Server) ManagedOpencodes(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
-	return jsonResp(s.host.ManagedOpencodes(ctx))
-}
-
-func (s *Server) TmuxSessions(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
-	return jsonResp(s.host.TmuxSessions(ctx))
-}
-
-func (s *Server) HostCapabilities(_ context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
-	return jsonResp(s.host.Capabilities(), nil)
 }
 
 func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
@@ -755,7 +185,6 @@ func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb
 	inbox, err := webhook.RegisterWithSecret(ctx, s.inboxStore, input.RoutineID, input.RelayURL, input.EnrollmentToken, input.Secret, input.SecretHeader, nil)
 	return jsonResp(inbox, err)
 }
-
 func (s *Server) PollWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "webhook state is unavailable")
@@ -773,18 +202,6 @@ func (s *Server) PollWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.Emp
 	return &pb.Empty{}, (&webhook.Poller{Store: s.inboxStore, Inbox: inbox, Routines: s.webhookDispatcher}).Poll(ctx)
 }
 
-func (s *Server) BeadsStatus(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	var args struct {
-		Dir string `json:"dir"`
-	}
-	if err := unmarshalJSON(req.Payload, &args); err != nil {
-		return nil, err
-	}
-	return jsonResp(s.host.BeadsStatus(ctx, args.Dir))
-}
-
-// --- Terminal ---
-
 func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var args struct {
 		Dir string `json:"dir"`
@@ -801,7 +218,6 @@ func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp
 	}
 	return jsonResp(wins, nil)
 }
-
 func (s *Server) TermCreateWindow(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var args struct {
 		Dir string `json:"dir"`
@@ -812,7 +228,6 @@ func (s *Server) TermCreateWindow(ctx context.Context, req *pb.JsonReq) (*pb.Jso
 	name, err := s.host.TermCreateWindow(ctx, args.Dir)
 	return jsonResp(map[string]string{"window": name}, err)
 }
-
 func (s *Server) TermKillWindow(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
 	var args struct {
 		Dir    string `json:"dir"`
@@ -823,11 +238,6 @@ func (s *Server) TermKillWindow(ctx context.Context, req *pb.JsonReq) (*pb.Empty
 	}
 	return &pb.Empty{}, s.host.TermKillWindow(ctx, args.Dir, args.Window)
 }
-
-// TerminalStream bridges the hub's TerminalStream to the remote's local
-// PTY: the first client message selects the window, then the local
-// Host's TermAttach runs the PTY loop against a streamTermConn that
-// tunnels frames over this gRPC stream. The shell runs on this machine.
 func (s *Server) TerminalStream(stream pb.Ocman_TerminalStreamServer) error {
 	first, err := stream.Recv()
 	if err != nil {
@@ -837,19 +247,10 @@ func (s *Server) TerminalStream(stream pb.Ocman_TerminalStreamServer) error {
 		return status.Error(codes.InvalidArgument, "first terminal message must carry open")
 	}
 	conn := &streamTermConn{stream: stream}
-	return s.host.TermAttach(stream.Context(), hostsvc.TermAttachRequest{
-		Dir:      first.Open.Dir,
-		Window:   first.Open.Window,
-		Readonly: first.Open.Readonly,
-	}, conn)
+	return s.host.TermAttach(stream.Context(), hostsvc.TermAttachRequest{Dir: first.Open.Dir, Window: first.Open.Window, Readonly: first.Open.Readonly}, conn)
 }
 
-// streamTermConn adapts the remote-side gRPC stream to hostsvc.TermConn
-// so the remote's local Host drives its PTY as if the browser were
-// attached directly.
-type streamTermConn struct {
-	stream pb.Ocman_TerminalStreamServer
-}
+type streamTermConn struct{ stream pb.Ocman_TerminalStreamServer }
 
 func (c *streamTermConn) Recv() (hostsvc.TermFrame, error) {
 	for {
@@ -858,27 +259,19 @@ func (c *streamTermConn) Recv() (hostsvc.TermFrame, error) {
 			return hostsvc.TermFrame{}, err
 		}
 		if msg.Resize != nil {
-			return hostsvc.TermFrame{Resize: &hostsvc.TermSize{
-				Cols: uint16(msg.Resize.Cols), Rows: uint16(msg.Resize.Rows),
-			}}, nil
+			return hostsvc.TermFrame{Resize: &hostsvc.TermSize{Cols: uint16(msg.Resize.Cols), Rows: uint16(msg.Resize.Rows)}}, nil
 		}
 		if len(msg.Data) > 0 {
 			return hostsvc.TermFrame{Data: msg.Data}, nil
 		}
-		// Ignore empty/open-only frames after the first.
 	}
 }
-
 func (c *streamTermConn) Write(p []byte) error {
 	chunk := make([]byte, len(p))
 	copy(chunk, p)
 	return c.stream.Send(&pb.TermServerMsg{Data: chunk})
 }
-
 func (c *streamTermConn) Close() error { return nil }
-
-// --- Project inventory ---
-
 func (s *Server) Projects(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
 	projects, err := s.host.Projects(ctx)
 	if err != nil {

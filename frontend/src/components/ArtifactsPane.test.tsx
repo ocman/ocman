@@ -9,7 +9,10 @@ import { RightPanel } from './RightPanel';
 
 const created: Array<() => void> = [];
 vi.mock('../lib/useGlobalEvents', () => ({ onArtifactCreated: (cb: () => void) => { created.push(cb); return () => undefined; } }));
-vi.mock('../lib/useBeadsStatus', () => ({ useBeadsStatus: () => ({ data: undefined, error: null, isFetching: false, refetch: vi.fn() }) }));
+vi.mock('../lib/pluginPanes', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/pluginPanes')>(),
+  usePluginPanes: () => ({ data: [] }),
+}));
 vi.mock('../lib/useUpstreams', () => ({ useUpstreams: () => ({ upstreams: [] }) }));
 
 const artifact = (id: string): Artifact => ({

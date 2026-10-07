@@ -23,8 +23,9 @@ vi.mock('./SessionChangesSidebar', () => ({
     return null;
   },
 }));
-vi.mock('../lib/useBeadsStatus', () => ({
-  useBeadsStatus: () => ({ data: undefined, error: null, isFetching: false, refetch: vi.fn() }),
+vi.mock('../lib/pluginPanes', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/pluginPanes')>(),
+  usePluginPanes: () => ({ data: [] }),
 }));
 vi.mock('../lib/useUpstreams', () => ({
   useUpstreams: () => ({ upstreams: [] }),
@@ -38,7 +39,7 @@ beforeEach(() => {
   });
   useUiStore.setState({
     changesSidebarOpenTabs: ['session'],
-    changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'beads'],
+    changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
     changesSidebarTabSizes: {},
   });
 });

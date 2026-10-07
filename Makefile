@@ -148,7 +148,7 @@ build-backend:
 PLUGIN ?= slack
 PLUGIN_DIR ?= $(HOME)/.local/share/ocman/plugins
 
-install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|fixture)
+install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|fixture)
 	@mkdir -p "$(PLUGIN_DIR)"
 	go build -trimpath -o "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" ./examples/ocman-plugin-$(PLUGIN)
 	@shasum -a 256 "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" 2>/dev/null || sha256sum "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)"

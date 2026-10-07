@@ -7,6 +7,7 @@ import { MIN_PANE_FRACTION, TAB_ICONS, TAB_LABELS } from './rightPanelTabs';
 
 interface PaneHeaderProps {
   tab: ChangesSidebarTab;
+  tabLabels?: Record<string, string>;
   divider: boolean;
   summary: PaneSummary;
   hasRefresh: boolean;
@@ -30,6 +31,7 @@ interface PaneHeaderProps {
 // in when the user mouse-downs on the header background.
 export function PaneHeader({
   tab,
+  tabLabels = TAB_LABELS,
   divider,
   summary,
   hasRefresh,
@@ -147,12 +149,12 @@ export function PaneHeader({
       aria-valuenow={ariaValueNow}
       aria-valuemin={isResizable ? Math.round(MIN_PANE_FRACTION * 100) : undefined}
       aria-valuemax={isResizable ? Math.round((1 - MIN_PANE_FRACTION) * 100) : undefined}
-      aria-label={isResizable ? `Resize ${TAB_LABELS[openTabs[resizeAboveIdx]]} / ${TAB_LABELS[tab]}` : undefined}
+      aria-label={isResizable ? `Resize ${tabLabels[openTabs[resizeAboveIdx]]} / ${tabLabels[tab]}` : undefined}
       tabIndex={isResizable ? 0 : undefined}
     >
       <span className="oc-right-panel-pane-title">
-        <i className={`bi ${TAB_ICONS[tab]}`} aria-hidden="true" />
-        {TAB_LABELS[tab]}
+        <i className={`bi ${TAB_ICONS[tab] ?? 'bi-diagram-3'}`} aria-hidden="true" />
+        {tabLabels[tab]}
       </span>
       <span className="oc-right-panel-pane-summary">
         {summary.files > 0 && (

@@ -1,5 +1,15 @@
 # Beads Ticket Sidebar
 
+## Plugin migration
+
+The native integration described below is superseded by `pane.v1` and the
+optional `org.ocman.beads` executable. The enabled plugin contributes the sidebar
+tab without probing projects. Only an open pane reads tickets. Core renders a
+typed tree and routes reads to the plugin owner, subject to `pane.project`.
+An unavailable workspace shows a message inside the open pane rather than hiding
+the tab through background discovery. The default CLI list and ticket geometry
+remain unchanged. See `docs/features/beads.md` and `internal/plugins/README.md`.
+
 ## Problem Statement
 
 Ocman users working in repositories managed with Beads cannot see the repository's current ticket hierarchy without leaving ocman and running `bd list`. Users whose repositories do not use Beads should not see irrelevant controls or discover that ocman contains a Beads integration.

@@ -357,8 +357,11 @@ func TestProcessMalformedOutputAndLimits(t *testing.T) {
 
 func TestProcessCrashIsolationAndNoReplay(t *testing.T) {
 	p, config := testProcess(t, "success", 1)
+	// Isolation concerns the crash, not simultaneous startup of two large
+	// coverage-instrumented helpers on a saturated CI runner.
+	await(t, func() bool { return p.Health().Status == "ready" })
 	other, _ := testProcess(t, "success", 0)
-	await(t, func() bool { return p.Health().Status == "ready" && other.Health().Status == "ready" })
+	await(t, func() bool { return other.Health().Status == "ready" })
 	crashed := processCall(t, p, context.Background(), "crash", "never-replay", time.Second)
 	if r := nextReply(t, crashed); !errors.Is(r.Err, ErrUnavailable) {
 		t.Fatalf("crash: %+v", r)

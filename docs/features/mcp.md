@@ -235,7 +235,7 @@ chart, an SVG diagram, a generated PDF. `embed_file` closes that gap.
 
 1. The agent writes the file to disk as usual.
 2. It calls `embed_file` with the absolute `path`.
-3. Ocman returns a URL under `/api/file/{token}` plus a `markdown`
+3. Ocman returns a domain-free URL under `/api/file/{token}` plus a `markdown`
    snippet, which the agent includes in its reply.
 4. The ocman UI renders that markdown: images and SVGs appear inline in
    the conversation, other types become a link the browser opens or

@@ -7,10 +7,12 @@ import { useUpstreams } from '../lib/useUpstreams';
 import { useProjectTarget } from '../lib/useProjectTarget';
 import type { Session, SessionInfoCommit } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
-import { useBeadsStatus } from '../lib/useBeadsStatus';
+import { pluginPaneTab, usePluginPanes } from '../lib/pluginPanes';
 import { Pane } from './RightPanelPane';
 import { trackRender } from '../lib/renderRateMonitor';
-import { TAB_ICONS, TAB_LABELS, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
+import { Button } from './Control';
+import { EmptyState } from './EmptyState';
+import { TAB_ICONS, TAB_LABELS, mergeVisibleTabOrder, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
 import {
   DndContext,
   DragOverlay,
@@ -104,23 +106,17 @@ export function RightPanel({
   // no upstream.
   const upstreamTarget = useProjectTarget(directory, session);
   const upstreamsResult = useUpstreams(openTabs.includes('upstream') ? upstreamTarget.directory : undefined, upstreamTarget.remoteId);
-  const beadsResult = useBeadsStatus(
-    directory,
-    session ? session.remoteId || 'local' : undefined,
-    openTabs.includes('beads'),
-  );
-  const beadsAvailable = beadsResult.data?.available === true;
+  const pluginPanesResult = usePluginPanes(session ? session.remoteId || 'local' : undefined);
+  const pluginPanes = useMemo(() => pluginPanesResult.isError ? [] : pluginPanesResult.data ?? [], [pluginPanesResult.data, pluginPanesResult.isError]);
+  const tabLabels = useMemo(() => ({ ...TAB_LABELS, ...Object.fromEntries(pluginPanes.map((pane) => [pluginPaneTab(pane), pane.pane.label])) }), [pluginPanes]);
 
   // Reconcile the persisted order against the known tab set: this
   // tolerates older persisted state that's missing newer tabs.
   const allTabOrder = useMemo(
-    () => reconcileTabOrder(persistedOrder),
-    [persistedOrder],
+    () => reconcileTabOrder(persistedOrder, pluginPanes.map(pluginPaneTab)),
+    [persistedOrder, pluginPanes],
   );
-  const stripOrder = useMemo(
-    () => allTabOrder.filter((tab) => tab !== 'beads' || beadsAvailable),
-    [allTabOrder, beadsAvailable],
-  );
+  const stripOrder = allTabOrder;
 
   // Render panes in the user-defined strip order (stripOrder),
   // filtered down to the panes currently open. Sorting follows the
@@ -130,7 +126,7 @@ export function RightPanel({
     () => stripOrder.filter((t) => openTabs.includes(t)),
     [stripOrder, openTabs],
   );
-  const collapsed = orderedOpenTabs.length === 0;
+  const collapsed = orderedOpenTabs.length === 0 && !pluginPanesResult.isError;
 
   // Normalise the size fractions so they sum to 1 across the ordered
   // open tabs. Tabs without a stored size get an even share of
@@ -175,9 +171,9 @@ export function RightPanel({
       const from = allTabOrder.indexOf(active.id as ChangesSidebarTab);
       const to = allTabOrder.indexOf(over.id as ChangesSidebarTab);
       if (from === -1 || to === -1) return;
-      setTabOrder(arrayMove(allTabOrder, from, to));
+      setTabOrder(mergeVisibleTabOrder(persistedOrder, arrayMove(allTabOrder, from, to)));
     },
-    [allTabOrder, setTabOrder],
+    [allTabOrder, persistedOrder, setTabOrder],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -203,6 +199,7 @@ export function RightPanel({
             <SortableStripIcon
               key={t}
               tab={t}
+              label={tabLabels[t]}
               active={orderedOpenTabs.includes(t)}
               onToggle={() => toggleTab(t)}
             />
@@ -215,7 +212,7 @@ export function RightPanel({
             className={`oc-changes-strip-icon active dragging-overlay`}
             aria-hidden="true"
           >
-            <i className={`bi ${TAB_ICONS[draggingTab]}`} aria-hidden="true" />
+            <i className={`bi ${TAB_ICONS[draggingTab] ?? 'bi-diagram-3'}`} aria-hidden="true" />
           </div>
         ) : null}
       </DragOverlay>
@@ -238,6 +235,12 @@ export function RightPanel({
     >
       <ChangesSidebarResizer />
       <div className="oc-changes-sidebar-content">
+        {pluginPanesResult.isError && (
+          <EmptyState role="alert">
+            Could not load plugin panes.
+            <Button variant="ghost" onClick={() => void pluginPanesResult.refetch()}>Retry plugin panes</Button>
+          </EmptyState>
+        )}
         {orderedOpenTabs.map((tab, idx) => (
           <Pane
             key={tab}
@@ -258,7 +261,8 @@ export function RightPanel({
             upstreamLoading={upstreamsResult.loading}
             upstreamError={upstreamsResult.error}
             refreshUpstreams={upstreamsResult.refresh}
-            beadsResult={beadsResult}
+            pluginPane={pluginPanes.find((pane) => pluginPaneTab(pane) === tab)}
+            tabLabels={tabLabels}
             // First pane has no top divider; subsequent panes do
             // and their header doubles as a resize handle for the
             // boundary above.
@@ -285,10 +289,12 @@ export function RightPanel({
 // the user moves the pointer past that threshold.
 function SortableStripIcon({
   tab,
+  label,
   active,
   onToggle,
 }: {
   tab: ChangesSidebarTab;
+  label: string;
   active: boolean;
   onToggle: () => void;
 }) {
@@ -318,17 +324,16 @@ function SortableStripIcon({
       type="button"
       className={`oc-changes-strip-icon${active ? ' active' : ''}${isDragging ? ' dragging' : ''}`}
       onClick={onToggle}
-      title={TAB_LABELS[tab]}
+      title={label}
       style={style}
       {...attributes}
       {...listeners}
       role="tab"
       data-perf="panel-tab"
       aria-selected={active}
-      aria-label={TAB_LABELS[tab]}
+      aria-label={label}
     >
-      <i className={`bi ${TAB_ICONS[tab]}`} aria-hidden="true" />
+      <i className={`bi ${TAB_ICONS[tab] ?? 'bi-diagram-3'}`} aria-hidden="true" />
     </button>
   );
 }
-

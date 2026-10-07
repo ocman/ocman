@@ -207,21 +207,6 @@ type TmuxSession struct {
 	Attached bool   `json:"attached,omitempty"`
 }
 
-type BeadsTicket struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Status    string `json:"status"`
-	Priority  int    `json:"priority"`
-	IssueType string `json:"issueType,omitempty"`
-	ParentID  string `json:"parentId,omitempty"`
-}
-
-type BeadsStatus struct {
-	Available bool          `json:"available"`
-	Tickets   []BeadsTicket `json:"tickets,omitempty"`
-	Error     string        `json:"error,omitempty"`
-}
-
 // Host is the contract for directory-scoped host operations. The owner
 // of a path (local machine or a remote) implements it; handlers resolve
 // the owner via Router and delegate.
@@ -240,10 +225,6 @@ type Host interface {
 	// Doctor reports the host's prerequisite checks (tools on PATH,
 	// writable state dir, ...). A remote host may return none.
 	Doctor(ctx context.Context) []DoctorCheck
-
-	// BeadsStatus returns the read-only Beads ticket tree for dir. An
-	// unavailable installation or workspace is represented by Available=false.
-	BeadsStatus(ctx context.Context, dir string) (BeadsStatus, error)
 
 	// GitInfo returns per-directory git status for each dir.
 	GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error)

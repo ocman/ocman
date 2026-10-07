@@ -43,7 +43,7 @@ func newPluginManagementTest(t *testing.T) *pluginManagementTest {
 			{Key: "token", Label: "Token", Type: "string", Secret: true, Required: true},
 		}}
 	hello, _ := json.Marshal(plugins.Envelope{Type: plugins.TypeHello, Hello: &plugins.Hello{Mode: "$1", Token: "$OCMAN_PLUGIN_TOKEN", Description: &d}})
-	script := "#!/bin/sh\nif [ \"$1\" = serve ]; then\nIFS= read -r config <&3\nprintf '%s\\n' \"$config\" >&2\ncase \"$config\" in *'\"bad\"'*) exit 1;; *'\"hang\"'*) /bin/sleep 10; exit 1;; esac\nfi\n/bin/cat <<EOF\n" + string(hello) + "\nEOF\nif [ \"$1\" = serve ]; then\nread -r ack\necho started >> starts\nread -r shutdown\nfi\n"
+	script := "#!/bin/sh\nif [ \"$1\" = serve ]; then\nIFS= read -r config <&3\nprintf '%s\\n' \"$config\" >&2\ncase \"$config\" in *'\"bad\"'*) exit 1;; *'\"hang\"'*) /bin/sleep 10; exit 1;; esac\nfi\nIFS= read -r hello <<EOF\n" + string(hello) + "\nEOF\nprintf '%s\\n' \"$hello\"\nif [ \"$1\" = serve ]; then\nread -r ack\necho started >> starts\nread -r shutdown\nfi\n"
 	if err := os.WriteFile(filepath.Join(dir, "ocman-plugin-management"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}

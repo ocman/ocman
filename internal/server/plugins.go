@@ -125,7 +125,7 @@ func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
 		}
 		process, err := plugins.StartProcess(s.pluginCtx, plugins.LaunchConfig{
 			Candidate:     plugins.Discovery{Path: registration.ExecutablePath, Checksum: registration.Checksum, Description: registration.Description},
-			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability},
+			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.PaneCapability},
 			DataDir:       dir,
 			Configuration: configuration,
 			OnHealth: func(h plugins.Health) {

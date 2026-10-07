@@ -87,9 +87,10 @@ export function FactoryOverview() {
 	const allAuthorityGates = issues.filter((issue) => issue.authority && issue.authority.resolution !== 'approve' && issue.authority.resolution !== 'reject');
 	const allProjectGates = issues.filter((issue) => issue.projectRequest && !['approved', 'rejected'].includes(issue.projectRequest.resolution));
 	const openEpics = new Set(epics.data?.filter((epic) => epic.status === 'open').map((epic) => epic.id));
-	const running = queue.data?.filter((item) => item.state === 'running') ?? [];
+	const liveEpics = new Set(epics.data?.filter((epic) => epic.status !== 'closed').map((epic) => epic.id));
+	const running = queue.data?.filter((item) => liveEpics.has(item.epicId) && item.state === 'running') ?? [];
 	const runningAttemptIDs = new Set(running.map((item) => item.attemptId));
-	const planning = epics.data?.flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
+	const planning = epics.data?.filter((epic) => liveEpics.has(epic.id)).flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
 	const allReadyPlans = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'plan' && issue.dispatchState === 'ready' && !planning.some(({ attempt }) => attempt.workId === issue.id));
 	const allFailedWork = issues.filter((issue) => openEpics.has(issue.epicId) && ['task', 'implementation', 'delivery'].includes(issue.kind) && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
 	const allBlockedWork = issues.filter((issue) => openEpics.has(issue.epicId) && issue.dispatchState === 'terminally_blocked' && !allFailedWork.some((failed) => failed.epicId === issue.epicId));

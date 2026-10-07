@@ -52,11 +52,15 @@ func TestPluginManagementOwnerCapabilities(t *testing.T) {
 }
 
 func connectPluginOwner(t *testing.T, hub, owner *Server) func() {
+	return connectPluginOwnerHandler(t, hub, owner.RemotePluginOperation)
+}
+
+func connectPluginOwnerHandler(t *testing.T, hub *Server, handler remote.PluginHandler) func() {
 	t.Helper()
 	registry := platforms.NewRegistry()
 	registry.Register(&fakePlatform{id: "opencode"})
 	host := local.New(local.Deps{})
-	service := remote.NewServer(registry, host, "machine", "test").UsePlugins(owner.RemotePluginOperation)
+	service := remote.NewServer(registry, host, "machine", "test").UsePlugins(handler)
 	listener, err := remote.NewListener(remote.ListenConfig{Addr: "127.0.0.1:0", Token: "token", TrustedOverlay: true}, service)
 	if err != nil {
 		t.Fatal(err)

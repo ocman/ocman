@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-const css = readFileSync(new URL('../src/components/RightPanel.css', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/components/PluginTreePane.css', import.meta.url), 'utf8');
 
 type TicketOptions = {
+  status?: 'open' | 'closed';
   depth?: number;
   isLast?: boolean;
   ancestorContinues?: boolean[];
@@ -12,21 +13,21 @@ type TicketOptions = {
 
 const ticket = (
   id: string,
-  { depth = 0, isLast = true, ancestorContinues = [], children = '' }: TicketOptions = {},
+  { status = 'open', depth = 0, isLast = true, ancestorContinues = [], children = '' }: TicketOptions = {},
 ) => {
   const trunk = depth * 12;
   return `
     <li data-testid="ticket-${id}">
-      <div class="oc-beads-ticket" data-testid="ticket-row-${id}" style="--oc-beads-marker-width:${trunk + 17}px">
-        <span class="oc-beads-marker" data-testid="marker-${id}">
-          ${ancestorContinues.map((continues, level) => continues ? `<span class="oc-beads-guide" style="left:${level * 12}px"></span>` : '').join('')}
-          <span class="oc-beads-branch${isLast ? '' : ' continues'}" data-testid="branch-${id}" style="left:${trunk}px"></span>
-          ${children ? `<span class="oc-beads-child-bridge" data-testid="child-bridge-${id}" style="left:${trunk + 12}px"></span>` : ''}
-          <span class="oc-beads-status open" data-testid="status-${id}" style="left:${trunk + 7}px" aria-label="open"></span>
+      <div class="oc-plugin-tree-node" data-testid="ticket-row-${id}" style="--oc-plugin-tree-marker-width:${trunk + 17}px">
+        <span class="oc-plugin-tree-marker" data-testid="marker-${id}">
+          ${ancestorContinues.map((continues, level) => continues ? `<span class="oc-plugin-tree-guide" style="left:${level * 12}px"></span>` : '').join('')}
+          <span class="oc-plugin-tree-branch${isLast ? '' : ' continues'}" data-testid="branch-${id}" style="left:${trunk}px"></span>
+          ${children ? `<span class="oc-plugin-tree-child-bridge" data-testid="child-bridge-${id}" style="left:${trunk + 12}px"></span>` : ''}
+          <span class="oc-plugin-tree-status ${status}" data-testid="status-${id}" style="left:${trunk + 7}px" aria-label="${status}"></span>
         </span>
-        <div class="oc-beads-content">
-          <div class="oc-beads-main"><span>P1</span><span class="oc-beads-title">Ticket ${id}</span></div>
-          <div class="oc-beads-details"><span>[task]</span><code>${id}</code></div>
+        <div class="oc-plugin-tree-content">
+          <div class="oc-plugin-tree-main"><span>P1</span><span class="oc-plugin-tree-title">Item ${id}</span></div>
+          <div class="oc-plugin-tree-details"><span>[task]</span><code>${id}</code></div>
         </div>
       </div>
       ${children}
@@ -37,8 +38,8 @@ test('tree connectors meet circle borders and stop at final branches', async ({ 
   const children = `<ul>${ticket('first', { depth: 1, isLast: false, ancestorContinues: [true] })}${ticket('last', { depth: 1, ancestorContinues: [true] })}</ul>`;
   await page.setContent(`
     <style>:root { --border: #666; --accent2: #0f0; --text-dim: #999; } ${css}</style>
-    <div class="oc-beads-pane" data-testid="beads-pane">
-      <ul class="oc-beads-tree" aria-label="Beads tickets">
+    <div class="oc-plugin-tree-pane" data-testid="plugin-tree-pane">
+      <ul class="oc-plugin-tree-list" aria-label="Plugin items">
         ${ticket('parent', { isLast: false, children })}
         ${ticket('final-root')}
       </ul>
@@ -63,7 +64,7 @@ test('tree connectors meet circle borders and stop at final branches', async ({ 
     const circleRect = document.querySelector<HTMLElement>('[data-testid="status-parent"]')!.getBoundingClientRect();
     const bridgeRect = document.querySelector<HTMLElement>('[data-testid="child-bridge-parent"]')!.getBoundingClientRect();
     return {
-      fontSize: getComputedStyle(document.querySelector<HTMLElement>('[data-testid="beads-pane"]')!).fontSize,
+      fontSize: getComputedStyle(document.querySelector<HTMLElement>('[data-testid="plugin-tree-pane"]')!).fontSize,
       parent: measure('parent'),
       first: measure('first'),
       last: measure('last'),
@@ -87,4 +88,20 @@ test('tree connectors meet circle borders and stop at final branches', async ({ 
   expect(geometry.first.continues).toBe(true);
   expect(geometry.last.continues).toBe(false);
   expect(geometry.finalRoot.continues).toBe(false);
+});
+
+test('closed tree items have a distinct muted marker', async ({ page }) => {
+  await page.setContent(`<style>:root { --border: #666; --accent2: #0f0; --text-dim: #999; } ${css}</style>
+    <ul class="oc-plugin-tree-list">${ticket('active')}${ticket('done', { status: 'closed' })}</ul>`);
+  const closed = await page.getByLabel('closed').evaluate((node) => ({
+    color: getComputedStyle(node).color,
+    background: getComputedStyle(node).backgroundColor,
+  }));
+  const open = await page.getByLabel('open').evaluate((node) => ({
+    color: getComputedStyle(node).color,
+    background: getComputedStyle(node).backgroundColor,
+  }));
+  expect(closed.color).toBe('rgb(153, 153, 153)');
+  expect(closed.background).toBe(closed.color);
+  expect(closed).not.toEqual(open);
 });

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -50,12 +49,10 @@ func TestCanceledRPCResponses(t *testing.T) {
 	if !ok {
 		t.Fatal("remote platform not registered")
 	}
-	for _, name := range []string{"host beads", "host git", "platform"} {
+	for _, name := range []string{"host git", "platform"} {
 		t.Run(name, func(t *testing.T) {
 			var rpcErr error
 			switch name {
-			case "host beads":
-				_, rpcErr = owner.BeadsStatus(ctx, "/remote/repo")
 			case "host git":
 				_, rpcErr = owner.GitDiff(ctx, "/remote/repo", hostsvc.GitDiffOptions{})
 			default:
@@ -65,11 +62,7 @@ func TestCanceledRPCResponses(t *testing.T) {
 				t.Fatalf("RPC error = %v, want codes.Canceled", rpcErr)
 			}
 			w := httptest.NewRecorder()
-			if name == "host beads" {
-				hub.handleProjectBeadsStatus(w, httptest.NewRequest(http.MethodGet, "/api/project/beads-status?dir=/remote/repo&remoteId=machine", nil).WithContext(ctx))
-			} else {
-				writePlatformError(w, "remote read", rpcErr)
-			}
+			writePlatformError(w, "remote read", rpcErr)
 			if w.Code != 499 {
 				t.Fatalf("status = %d, want 499; body=%s", w.Code, w.Body)
 			}

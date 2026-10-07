@@ -1,4 +1,4 @@
-package local
+package main
 
 import (
 	"bytes"
@@ -14,21 +14,13 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
 const (
 	beadsTimeout   = 5 * time.Second
-	beadsCacheTTL  = 10 * time.Second
 	beadsStdoutCap = 1 << 20
 	beadsStderrCap = 8 << 10
 )
-
-type beadsCacheEntry struct {
-	status    hostsvc.BeadsStatus
-	expiresAt time.Time
-}
 
 type beadsRunner interface {
 	LookPath(string) (string, error)
@@ -43,6 +35,7 @@ func (execBeadsRunner) Run(ctx context.Context, path, dir string, args, env []st
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
+	cmd.WaitDelay = 100 * time.Millisecond
 	var stdout, stderr limitedBuffer
 	stdout.remaining = beadsStdoutCap
 	stderr.remaining = beadsStderrCap
@@ -73,62 +66,22 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (h *Host) BeadsStatus(ctx context.Context, dir string) (hostsvc.BeadsStatus, error) {
-	if cached, ok := h.cachedBeadsStatus(dir); ok {
-		return cached, nil
-	}
-	result := h.beadsSF.DoChan(dir, func() (any, error) {
-		if cached, ok := h.cachedBeadsStatus(dir); ok {
-			return cached, nil
-		}
-		status, err := h.readBeadsStatus(context.WithoutCancel(ctx), dir)
-		if err != nil {
-			return status, err
-		}
-		now := time.Now()
-		h.beadsMu.Lock()
-		for key, cached := range h.beadsCache {
-			if !now.Before(cached.expiresAt) {
-				delete(h.beadsCache, key)
-			}
-		}
-		h.beadsCache[dir] = beadsCacheEntry{status: status, expiresAt: now.Add(beadsCacheTTL)}
-		h.beadsMu.Unlock()
-		return status, nil
-	})
-	select {
-	case value := <-result:
-		if value.Err != nil {
-			return hostsvc.BeadsStatus{}, value.Err
-		}
-		return value.Val.(hostsvc.BeadsStatus), nil
-	case <-ctx.Done():
-		return hostsvc.BeadsStatus{}, ctx.Err()
-	}
+type beadsReader struct {
+	beadsRunner beadsRunner
+	executable  string
 }
 
-func (h *Host) cachedBeadsStatus(dir string) (hostsvc.BeadsStatus, bool) {
-	h.beadsMu.Lock()
-	defer h.beadsMu.Unlock()
-	cached, ok := h.beadsCache[dir]
-	if !ok || !time.Now().Before(cached.expiresAt) {
-		delete(h.beadsCache, dir)
-		return hostsvc.BeadsStatus{}, false
-	}
-	return cached.status, true
-}
-
-func (h *Host) readBeadsStatus(ctx context.Context, dir string) (hostsvc.BeadsStatus, error) {
-	path, err := h.beadsRunner.LookPath("bd")
+func (h *beadsReader) readBeadsStatus(ctx context.Context, dir string) (beadsStatus, error) {
+	path, err := h.beadsRunner.LookPath(h.executable)
 	if err != nil {
-		return hostsvc.BeadsStatus{}, nil
+		return beadsStatus{}, nil
 	}
 	version, err := h.runBeads(ctx, path, dir, []string{"version", "--json"}, []string{"BD_JSON_ENVELOPE=0"})
 	if err != nil {
-		return hostsvc.BeadsStatus{}, err
+		return beadsStatus{}, err
 	}
 	if !supportedBeadsVersion(version) {
-		return hostsvc.BeadsStatus{}, nil
+		return beadsStatus{}, nil
 	}
 
 	where, err := h.runBeads(ctx, path, dir, []string{"--readonly", "where", "--json"}, []string{
@@ -136,23 +89,23 @@ func (h *Host) readBeadsStatus(ctx context.Context, dir string) (hostsvc.BeadsSt
 	})
 	if err != nil {
 		if beadsWorkspaceMissing(where) {
-			return hostsvc.BeadsStatus{}, nil
+			return beadsStatus{}, nil
 		}
-		return hostsvc.BeadsStatus{}, err
+		return beadsStatus{}, err
 	}
 	if !validBeadsWorkspace(where) {
-		return hostsvc.BeadsStatus{}, nil
+		return beadsStatus{}, nil
 	}
 
 	out, err := h.runBeads(ctx, path, dir, []string{"-C", dir, "--readonly", "list", "--json"}, []string{"BD_JSON_ENVELOPE=0"})
 	if err != nil {
-		return hostsvc.BeadsStatus{Available: true, Error: "status_unavailable"}, nil
+		return beadsStatus{Available: true, Error: "status_unavailable"}, nil
 	}
 	tickets, ok := parseBeadsTickets(out)
 	if !ok {
-		return hostsvc.BeadsStatus{}, nil
+		return beadsStatus{Available: true, Error: "status_unavailable"}, nil
 	}
-	result := hostsvc.BeadsStatus{Available: true, Tickets: tickets}
+	result := beadsStatus{Available: true, Tickets: tickets}
 	if len(tickets) < 2 {
 		return result, nil
 	}
@@ -168,7 +121,10 @@ func (h *Host) readBeadsStatus(ctx context.Context, dir string) (hostsvc.BeadsSt
 		return result, nil
 	}
 	if !applyBeadsParents(result.Tickets, deps) {
-		return hostsvc.BeadsStatus{}, nil
+		result.Error = "status_unavailable"
+		for i := range result.Tickets {
+			result.Tickets[i].ParentID = ""
+		}
 	}
 	return result, nil
 }
@@ -196,12 +152,12 @@ func supportedBeadsVersion(data []byte) bool {
 	return err == nil && (major > 1 || major == 1 && minor >= 1)
 }
 
-func (h *Host) runBeads(parent context.Context, path, dir string, args, env []string) ([]byte, error) {
+func (h *beadsReader) runBeads(parent context.Context, path, dir string, args, env []string) ([]byte, error) {
 	out, _, err := h.runBeadsOutput(parent, path, dir, args, env)
 	return out, err
 }
 
-func (h *Host) runBeadsOutput(parent context.Context, path, dir string, args, env []string) ([]byte, []byte, error) {
+func (h *beadsReader) runBeadsOutput(parent context.Context, path, dir string, args, env []string) ([]byte, []byte, error) {
 	ctx, cancel := context.WithTimeout(parent, beadsTimeout)
 	defer cancel()
 	out, stderr, err := h.beadsRunner.Run(ctx, path, dir, args, env)
@@ -231,7 +187,7 @@ func validBeadsWorkspace(data []byte) bool {
 	return decodeBeadsJSON(data, &envelope) && envelope.SchemaVersion == 1 && envelope.Data.Path != ""
 }
 
-func parseBeadsTickets(data []byte) ([]hostsvc.BeadsTicket, bool) {
+func parseBeadsTickets(data []byte) ([]beadsTicket, bool) {
 	var rows []struct {
 		ID        *string `json:"id"`
 		Title     *string `json:"title"`
@@ -242,19 +198,19 @@ func parseBeadsTickets(data []byte) ([]hostsvc.BeadsTicket, bool) {
 	if !decodeBeadsJSON(data, &rows) || rows == nil {
 		return nil, false
 	}
-	tickets := make([]hostsvc.BeadsTicket, 0, len(rows))
+	tickets := make([]beadsTicket, 0, len(rows))
 	for _, row := range rows {
 		if row.ID == nil || *row.ID == "" || row.Title == nil || *row.Title == "" || row.Status == nil || row.Priority == nil ||
 			*row.Priority < 0 || *row.Priority > 4 ||
 			!slices.Contains([]string{"open", "in_progress", "blocked", "deferred"}, *row.Status) {
 			return nil, false
 		}
-		tickets = append(tickets, hostsvc.BeadsTicket{ID: *row.ID, Title: *row.Title, Status: *row.Status, Priority: *row.Priority, IssueType: row.IssueType})
+		tickets = append(tickets, beadsTicket{ID: *row.ID, Title: *row.Title, Status: *row.Status, Priority: *row.Priority, IssueType: row.IssueType})
 	}
 	return tickets, true
 }
 
-func applyBeadsParents(tickets []hostsvc.BeadsTicket, data []byte) bool {
+func applyBeadsParents(tickets []beadsTicket, data []byte) bool {
 	var deps []struct {
 		IssueID     *string `json:"issue_id"`
 		DependsOnID *string `json:"depends_on_id"`

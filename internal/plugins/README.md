@@ -510,3 +510,75 @@ pending and unattempted, keeping its mapping and its text, and the next pump
 tick after re-enablement delivers exactly the work that was already owed.
 Session-starting work runs outside that section because it launches processes.
 Permission prompts remain in ocman and are never exposed to the provider.
+
+## pane.v1
+
+The `pane` capability, major 1 minor 0, contributes read-only project trees to
+the session sidebar. It requires `scope: "owner"`, the requested and approved
+`pane.project` grant, and 1–16 unique declarations in `Description.panes`:
+
+```json
+{"panes":[{"id":"tickets","label":"Beads"}]}
+```
+
+IDs use the normal capability identifier grammar and labels are plain text,
+at most 128 bytes. Listing declarations never calls the plugin, probes a
+workspace, or runs a tool. Disabled, removed, conflicted, incompatible and
+ungranted panes are omitted.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/plugins/panes?ownerId=<owner>` | Enabled and granted pane declarations |
+| GET | `/api/plugins/panes/read?ownerId=<owner>&pluginId=<id>&paneId=<pane>&directory=<absolute>` | Read one project tree |
+
+Both endpoints require normal authentication. An explicit owner is required;
+disconnected owners fail closed. Remote projection uses the existing closed
+`PluginOperation` RPC. The receiver requires the claimed owner to match its
+instance ID and never forwards pane operations to another machine. Pane listing
+returns `{pluginId, ownerId, pane: {id, label}}`, with owner identity qualified
+by the hub.
+
+Discovery projects pane declarations from the owner's existing `catalog`
+operation. Older protocol-7 owners therefore contribute no panes without
+breaking plugin management or displaying a false owner-disconnection error.
+
+Read authorization is checked against the current registration while admitting
+the call under the lifecycle lock, and checked again before returning results.
+The `pane.project` grant authorizes sending the selected directory to the
+owner-local trusted process; it is not a filesystem sandbox or a write grant.
+Unlike actions, reads create no durable operation receipt or result handle.
+Each read gets a fresh operation ID and a maximum 30-second deadline, shortened
+by request cancellation. The wire call is unary; chunks are rejected:
+
+```json
+{"capability":"pane","version":{"major":1,"minor":0},"method":"read",
+ "params":{"paneId":"tickets","directory":"/srv/repo"}}
+```
+
+The result is a host-rendered tree:
+
+```json
+{"available":true,"nodes":[
+  {"id":"bd-1","title":"Parent","status":"open","badge":"P1","kind":"epic"},
+  {"id":"bd-2","title":"Child","parentId":"bd-1","status":"blocked","badge":"P2"}
+],"warning":false}
+```
+
+Only these fields are accepted. Results are capped at 1 MiB and 2000 nodes, with
+unique nonempty IDs, no cycles, and maximum ancestry depth 64. Titles are at
+most 4096 bytes; IDs, parent IDs, badges and kinds are at most 128 bytes. All
+strings must be valid UTF-8 without control characters. Status is optional or
+one of `open`, `in_progress`, `blocked`, `deferred`, `closed`; absent parents
+produce roots. `available: false` permits neither nodes nor warnings.
+
+Ocman renders text and fixed host styling, never plugin HTML, JavaScript, URLs,
+or CSS. `warning: true` preserves the client's last successful tree while
+showing a retryable refresh warning. Initial errors also offer retry.
+An open pane refreshes every 30 seconds when available; unavailable projects
+do not poll. Closing the pane unmounts the query and cancels the HTTP/plugin
+read through its AbortSignal. Sidebar catalog reads continue to be metadata-only.
+
+The SDK aliases the canonical types and exposes `PaneHandler`, which validates
+read input and tree output. `examples/ocman-plugin-beads` implements this contract
+with an explicitly configured absolute `bd` executable. See
+[Beads setup](../../docs/features/beads.md).

@@ -1,12 +1,11 @@
 import type { ChangesSidebarTab } from '../lib/uiStore';
 
-export const TAB_LABELS: Record<ChangesSidebarTab, string> = {
+export const TAB_LABELS: Record<string, string> = {
   info: 'Session info',
   session: 'Session changes',
   'working-tree': 'Working tree',
   bookmarks: 'Bookmarks',
   upstream: 'PRs & Issues',
-  beads: 'Beads',
   artifacts: 'Artifacts',
 };
 
@@ -16,13 +15,12 @@ export const TAB_LABELS: Record<ChangesSidebarTab, string> = {
 // Bootstrap Icons doesn't ship a pull-request glyph, so inbox is
 // the closest semantic neighbour). Same icon family used everywhere
 // else in the app.
-export const TAB_ICONS: Record<ChangesSidebarTab, string> = {
+export const TAB_ICONS: Record<string, string> = {
   info: 'bi-info-circle',
   session: 'bi-pencil-square',
   'working-tree': 'bi-git',
   bookmarks: 'bi-bookmarks',
   upstream: 'bi-inbox',
-  beads: 'bi-diagram-3',
   artifacts: 'bi-box-seam',
 };
 
@@ -35,7 +33,6 @@ export const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
   'working-tree',
   'bookmarks',
   'upstream',
-  'beads',
   'artifacts',
 ];
 
@@ -49,8 +46,9 @@ export const MIN_PANE_FRACTION = 0.1;
 // that have been introduced since (or removing any that no longer
 // exist). The result always contains exactly DEFAULT_TAB_ORDER's
 // entries, in the user's preferred sequence where specified.
-export function reconcileTabOrder(persisted: ChangesSidebarTab[]): ChangesSidebarTab[] {
-  const known = new Set<ChangesSidebarTab>(DEFAULT_TAB_ORDER);
+export function reconcileTabOrder(persisted: ChangesSidebarTab[], pluginTabs: ChangesSidebarTab[] = []): ChangesSidebarTab[] {
+  const available = [...DEFAULT_TAB_ORDER, ...pluginTabs];
+  const known = new Set<ChangesSidebarTab>(available);
   const seen = new Set<ChangesSidebarTab>();
   const result: ChangesSidebarTab[] = [];
   for (const t of persisted) {
@@ -59,10 +57,17 @@ export function reconcileTabOrder(persisted: ChangesSidebarTab[]): ChangesSideba
       seen.add(t);
     }
   }
-  for (const t of DEFAULT_TAB_ORDER) {
+  for (const t of available) {
     if (!seen.has(t)) result.push(t);
   }
   return result;
+}
+
+export function mergeVisibleTabOrder(persisted: ChangesSidebarTab[], visible: ChangesSidebarTab[]): ChangesSidebarTab[] {
+  const shown = new Set(visible);
+  let next = 0;
+  const merged = [...new Set(persisted)].map((tab) => shown.has(tab) ? visible[next++] : tab);
+  return [...merged, ...visible.slice(next)];
 }
 
 // normaliseSizes returns one fraction per openTab in order. Stored

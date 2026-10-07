@@ -4,9 +4,10 @@ weight: 18
 ---
 
 Ocman runs native plugin executables on the machine where they are installed.
-Two capabilities are supported: `action.v1`, which adds commands to the command
+The supported capabilities are `action.v1`, which adds commands to the command
 palette and returns results rendered by ocman, and `conversation.v1`, which lets
-a chat provider start an ocman session and receive its completed reply. Manage
+a chat provider start an ocman session and receive its completed reply, and
+`pane.v1`, which adds a read-only project tree to the session sidebar. Manage
 installations in **Settings → Plugins**, selecting the plugin owner before making
 changes.
 
@@ -30,7 +31,7 @@ the directory, builds reproducibly and prints the checksum you are about to
 approve:
 
 ```sh
-make install-plugin PLUGIN=slack      # or PLUGIN=fixture
+make install-plugin PLUGIN=slack      # or PLUGIN=beads / PLUGIN=fixture
 make install-plugin PLUGIN=slack PLUGIN_DIR=/custom/plugins
 ```
 

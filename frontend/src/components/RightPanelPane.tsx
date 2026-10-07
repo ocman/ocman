@@ -8,9 +8,9 @@ import { ErrorBoundary } from './ErrorBoundary';
 import type { Session, SessionInfoCommit } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
 import { MessageBookmarksPane } from './MessageBookmarksPane';
-import { BeadsPane } from './BeadsPane';
+import { PluginPane } from './PluginPane';
 import { ArtifactsPane } from './ArtifactsPane';
-import type { useBeadsStatus } from '../lib/useBeadsStatus';
+import type { PluginPane as PluginPaneDescriptor } from '../lib/pluginPanes';
 import type { ProjectTarget } from '../lib/useProjectTarget';
 import { PaneHeader } from './RightPanelPaneHeader';
 
@@ -49,7 +49,8 @@ export interface PaneProps {
   upstreamLoading: boolean;
   upstreamError: string | null;
   refreshUpstreams: () => void;
-  beadsResult: ReturnType<typeof useBeadsStatus>;
+  pluginPane?: PluginPaneDescriptor;
+  tabLabels?: Record<string, string>;
   divider: boolean;
   size: number;
   // When non-null, the pane header doubles as a resize handle for
@@ -78,7 +79,8 @@ export function Pane({
   upstreamLoading,
   upstreamError,
   refreshUpstreams,
-  beadsResult,
+  pluginPane,
+  tabLabels,
   divider,
   size,
   resizeAboveIdx,
@@ -129,6 +131,7 @@ export function Pane({
     <>
       <PaneHeader
         tab={tab}
+        tabLabels={tabLabels}
         divider={divider}
         summary={summary}
         hasRefresh={hasRefresh}
@@ -212,12 +215,10 @@ export function Pane({
               onLoadingChange={handleLoadingChange}
             />
           )}
-          {tab === 'beads' && beadsResult.data?.available && (
-            <BeadsPane
-              status={beadsResult.data}
-              loading={beadsResult.isFetching}
-              error={beadsResult.error}
-              refresh={beadsResult.refetch}
+          {pluginPane && (
+            <PluginPane
+              pane={pluginPane}
+              directory={directory}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
             />

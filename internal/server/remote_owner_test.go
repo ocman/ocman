@@ -59,11 +59,6 @@ func (h *ownerSpy) TermAttach(context.Context, hostsvc.TermAttachRequest, hostsv
 	return nil
 }
 
-func (h *ownerSpy) BeadsStatus(context.Context, string) (hostsvc.BeadsStatus, error) {
-	h.hit()
-	return hostsvc.BeadsStatus{}, nil
-}
-
 // newOwnerTestServer builds the minimal Server these owner-routing tests
 // need. s.sessions is stubbed over an empty registry rather than left
 // nil: handleCreateSession dereferences it once owner resolution lets the
@@ -128,12 +123,6 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 			invoke: func(s *Server, w http.ResponseWriter) {
 				body := `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"gone"}`
 				s.handleTermWindows(w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
-			},
-		},
-		{
-			name: "beads status",
-			invoke: func(s *Server, w http.ResponseWriter) {
-				s.handleProjectBeadsStatus(w, httptest.NewRequest(http.MethodGet, "/api/project/beads-status?dir="+dir+"&remoteId=gone", nil))
 			},
 		},
 		{
@@ -255,13 +244,6 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				body := `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"` + rid + `"}`
 				s.handleTermWindows(w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
-			},
-		},
-		{
-			name:         "beads status",
-			wantHostCall: true,
-			invoke: func(s *Server, w http.ResponseWriter, rid string) {
-				s.handleProjectBeadsStatus(w, httptest.NewRequest(http.MethodGet, "/api/project/beads-status?dir="+dir+"&remoteId="+rid, nil))
 			},
 		},
 		{

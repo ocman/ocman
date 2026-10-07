@@ -95,8 +95,8 @@ async function installDefaultRoutes(page: Page) {
   await page.route('/api/client-activity', (route: Route) =>
     route.fulfill({ status: 204, body: '' }),
   );
-  await page.route('/api/project/beads-status*', (route: Route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false }) }),
+  await page.route('/api/plugins/panes*', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
 
   // Sessions list
