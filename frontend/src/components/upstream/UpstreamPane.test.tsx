@@ -11,7 +11,7 @@ import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import type { GitCommandHint } from '../../lib/useGlobalEvents';
 import { useProjectTarget } from '../../lib/useProjectTarget';
 
-const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], page: 1, hasMore: false, setPage: vi.fn(), refresh: vi.fn() }));
+const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], error: null as Error | null, page: 1, hasMore: false, setPage: vi.fn(), refresh: vi.fn() }));
 const gitHints = vi.hoisted(() => new Set<(hint: GitCommandHint) => void>());
 vi.mock('../../lib/useGlobalEvents', () => ({
   onGitCommand: (cb: (hint: GitCommandHint) => void) => {
@@ -25,7 +25,7 @@ vi.mock('../../lib/useGitInfo', () => ({
 }));
 vi.mock('../../lib/useUpstreamList', () => ({
   useUpstreamList: () => ({
-    items: upstreamListMock.items, loading: false, error: null, page: upstreamListMock.page,
+    items: upstreamListMock.items, loading: false, error: upstreamListMock.error, page: upstreamListMock.page,
     pagination: { page: upstreamListMock.page, hasMore: upstreamListMock.hasMore }, rateLimit: { limited: false },
     refresh: upstreamListMock.refresh, setPage: upstreamListMock.setPage,
   }),
@@ -42,12 +42,28 @@ beforeEach(() => {
   useUpstreamPreferences.setState(useUpstreamPreferences.getInitialState());
   _resetForgeUserCacheForTests();
   upstreamListMock.items = [];
+  upstreamListMock.error = null;
   upstreamListMock.page = 1;
   upstreamListMock.hasMore = false;
   vi.spyOn(upstreamApi, 'fetchForgeUser').mockResolvedValue({ login: 'alice', host: 'github.com' });
 });
 
 describe('UpstreamPane owner-scoped resources', () => {
+  it.each(['PRs', 'Issues'])('shows a muted access hint for a Forgejo 404 in %s', async (tab) => {
+    upstreamListMock.error = new upstreamApi.UpstreamApiError({ error: {
+      code: 'upstream_status',
+      message: 'forgejo /api/v1/repos/dries/bouwbuddy/pulls?limit=30&page=1&sort=newest&state=open: status 404',
+    } }, 502);
+    render(<UpstreamPane directory="/repo" remoteId="local" upstreams={[upstreams[1]]} />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: tab }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveClass('oc-upstream-empty');
+    expect(screen.getByRole('status')).toHaveTextContent('Repository or list unavailable. It may be empty, missing, or private. Check your forge credentials and repository access.');
+    expect(screen.queryByText(/\/api\/v1\/repos/)).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry' }));
+    expect(upstreamListMock.refresh).toHaveBeenCalledOnce();
+  });
+
   it('accepts newly arriving sibling hints during an unresolved session transition', async () => {
     function PinnedPane({ current, session }: { current?: string; session?: { projectId: string; remoteId: string } }) {
       const target = useProjectTarget(current, session);

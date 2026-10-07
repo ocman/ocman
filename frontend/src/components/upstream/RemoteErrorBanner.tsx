@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { UpstreamApiError } from '../../lib/upstreamApi';
+import { UpstreamApiError } from '../../lib/upstreamApi';
+import { Button } from '../Control';
 
 interface RemoteErrorBannerProps {
   error: UpstreamApiError | Error;
@@ -18,6 +19,21 @@ interface RemoteErrorBannerProps {
 export function RemoteErrorBanner({ error, onRetry }: RemoteErrorBannerProps) {
   const env = 'envelope' in error ? error.envelope : null;
   const code = env?.error.code;
+
+  // List endpoints wrap forge HTTP failures in a 502 upstream_status message.
+  if (error instanceof UpstreamApiError && (
+    error.status === 404 || env?.error.status === 404 ||
+    (code === 'upstream_status' && /: status 404$/.test(error.message))
+  )) {
+    return (
+      <div className="oc-upstream-empty" role="status">
+        <p>Repository or list unavailable. It may be empty, missing, or private. Check your forge credentials and repository access.</p>
+        <Button type="button" variant="ghost" size="compact" onClick={onRetry} data-testid="remote-error-retry">
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   if (code === 'rate_limited') {
     return <RateLimitBanner resetAt={env?.error.retryAfter} onRetry={onRetry} />;
