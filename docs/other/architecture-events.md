@@ -17,6 +17,8 @@ sequenceDiagram
     participant E as SSE broadcast
     participant I as state.db
 
+    B->>S: navigation: GET /api/session/id
+    S->>I: clear local session and project archive markers
     B->>S: GET /api/sessions
     S->>R: resolve platform/host
     R->>A: ListSessions()
@@ -70,6 +72,11 @@ sequenceDiagram
   remote worktree start the hub reports OpenCode and the worktree around the
   whole call.
 
+- Only the first successful session-detail fetch after navigation opens a local
+  session and clears its archive markers. Reconnects, refreshes, pagination and
+  background inspections use `peek=1`, preserving archives made in another tab
+  unless newer activity meets the configured resurfacing policy. Read-watermark
+  updates and tab visibility changes do not clear the browser's archived flag.
 - The local watcher broadcasts activity for identified message/part mutations
   on the shared `/api/events` stream. The sidebar updates known rows directly,
   fetching a single session only when it is missing. This avoids list refetches

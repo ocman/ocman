@@ -32,19 +32,18 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const { setInfo } = useHeaderInfo();
   usePageTitle(cleanTitle(session?.title) || 'Session');
 
-  // Mark session as seen on entry. Opening a session also unarchives it
-  // server-side (handleSession), so optimistically clear the archived flag
-  // in the sidebar row too — otherwise the row stays hidden/greyed until
-  // the next /api/sessions poll catches up.
+  // Only navigation clears the archive. Visibility and read-watermark
+  // updates must preserve an archive made in another tab.
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
   const lastMarked = useRef(0);
+  const openedIdentity = useRef('');
   const pendingMark = useRef<(() => void) | null>(null);
-  const markSeen = useCallback((platform: string, id: string, updated: number) => {
+  const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
     if (document.hidden) return;
     lastMarked.current = updated;
-    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, archived: false });
+    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false } : {}) });
     void markSessionSeen(platform, id, updated)
       .then(() => {
         recheckFaviconNotify();
@@ -54,9 +53,12 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
 
   useEffect(() => {
     if (!visible || !sessionSeenId || !sessionSeenPlatform) return;
+    const identity = `${sessionSeenPlatform}\0${sessionSeenId}`;
+    const opening = openedIdentity.current !== identity;
+    openedIdentity.current = identity;
     recordOpenedSession(sessionSeenId);
-    patchSession({ seen: true, archived: false });
-    markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated);
+    patchSession({ seen: true, ...(opening ? { archived: false } : {}) });
+    markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated, opening);
     return () => {
       // A quick departure still acknowledges the latest content actually shown.
       pendingMark.current?.();
@@ -78,7 +80,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     const timer = setTimeout(() => {
       if (document.hidden) return;
       mark();
-      patchSession({ seen: true, archived: false });
+      patchSession({ seen: true });
     }, 500);
     return () => clearTimeout(timer);
   }, [sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, markSeen, patchSession, visible]);

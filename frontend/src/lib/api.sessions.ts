@@ -9,8 +9,8 @@ export const sessionApi = {
     fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
   sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) =>
     fetchJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
-  // peek avoids unarchiving a session merely to inspect it.
-  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = false) => {
+  // Reads preserve archives; only a navigation fetch explicitly opens a session.
+  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = true) => {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (platform) query.set('platform', platform);
     if (peek) query.set('peek', '1');

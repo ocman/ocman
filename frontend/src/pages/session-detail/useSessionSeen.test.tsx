@@ -90,6 +90,29 @@ describe('useSessionSeen', () => {
     hidden.mockRestore();
   });
 
+  it('does not clear an archive again when an existing tab becomes visible or gets updates', async () => {
+    vi.useFakeTimers();
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    const patchSession = vi.fn();
+    const { rerender, unmount } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
+      { wrapper, initialProps: { value: session } },
+    );
+    patchSession.mockClear();
+    patchRecentSession.mockClear();
+    hidden.mockReturnValue(true);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    rerender({ value: { ...session, archived: true } });
+    hidden.mockReturnValue(false);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    rerender({ value: { ...session, archived: true, timeUpdated: 200 } });
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(patchSession.mock.calls.some(([patch]) => patch.archived === false)).toBe(false);
+    expect(patchRecentSession.mock.calls.some(([, patch]) => patch.archived === false)).toBe(false);
+    unmount();
+    hidden.mockRestore();
+  });
+
   it('marks seen everywhere, records the open, and publishes header info', async () => {
     const patchSession = vi.fn();
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
@@ -223,7 +246,7 @@ describe('useSessionSeen', () => {
     await act(async () => vi.advanceTimersByTime(1));
     expect(markSessionSeen).toHaveBeenCalledTimes(2);
     expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 200);
-    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, seenTimeUpdated: 200, archived: false });
+    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, seenTimeUpdated: 200 });
     expect(recheckFaviconNotify).toHaveBeenCalledTimes(2);
     rerender({ value: { ...session, timeUpdated: 200 } });
     await act(async () => vi.advanceTimersByTime(1000));
