@@ -24,10 +24,11 @@ vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => ({ shellExec: true }),
 }));
+const deliveryRecords = vi.hoisted(() => new Map<string, import('../../lib/draftStartClaims').DraftStart>());
 vi.mock('../../lib/draftStartClaims', () => ({
-  claimDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => ({ claimed: true, start }),
-  persistDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => start,
-  readDraftStart: async (id: string) => useNewConversationDrafts.getState().starts[id],
+  claimDraftStart: async (id: string, start: import('../../lib/draftStartClaims').DraftStart) => { if (id.startsWith('first-delivery:')) deliveryRecords.set(id, start); return { claimed: true, start }; },
+  persistDraftStart: async (id: string, start: import('../../lib/draftStartClaims').DraftStart) => { if (id.startsWith('first-delivery:')) deliveryRecords.set(id, start); return start; },
+  readDraftStart: async (id: string) => id.startsWith('first-delivery:') ? deliveryRecords.get(id) : useNewConversationDrafts.getState().starts[id],
 }));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
 vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
@@ -101,12 +102,13 @@ function Flow({ params = { directory: '/repo', platform: 'opencode' } }: { param
     <output data-testid="route">{route}</output>
     <button onClick={() => setRoute('other')}>Leave draft</button>
     {route === 'new' ? <NewConversation params={{ draftId: 'new', ...params }} composerRef={null}
-      whisperAvailable={false} navigate={setRoute} navigateToSession={setRoute} /> : route === 'child' ? <Child />
+      whisperAvailable={false} navigate={(path) => setRoute(path.startsWith('/session/') && !path.startsWith('/session/new') ? path.slice('/session/'.length) : path)} navigateToSession={setRoute} /> : route === 'child' ? <Child />
       : <Composer draftKey="new" isRunning={false} />}
   </>;
 }
 
 beforeEach(() => {
+  deliveryRecords.clear();
   vi.clearAllMocks();
   useFirstSubmission.setState({ entries: {} });
   window.localStorage.clear();
@@ -191,14 +193,14 @@ describe('new-conversation submission lifecycle', () => {
     expect(screen.getByText('retained.txt')).toBeInTheDocument();
   });
 
-  it('redirects again when Back revisits a replaced draft', async () => {
+  it('replaces a retired draft history entry so Back reaches the preceding page', async () => {
     const request = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValue(request.promise);
     function History() {
       const navigate = useNavigate();
       return <><button onClick={() => navigate(-1)}>Back</button><DraftWorkspace /></>;
     }
-    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><History /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={['/before', '/session/new?dir=%2Frepo&draftId=first&title=First']}><History /></MemoryRouter>);
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submitted' } });
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
@@ -206,7 +208,7 @@ describe('new-conversation submission lifecycle', () => {
     await act(async () => request.resolve(created));
     await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('retained task'));
     fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
-    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('retained task'));
+    await waitFor(() => expect(screen.getByTestId('draft-route')).toHaveTextContent('/before'));
   });
 
   it('retains a mixed drop when image reading finishes after navigation', async () => {
@@ -617,12 +619,12 @@ describe('new-conversation submission lifecycle', () => {
     expect(getDraft(useNewConversationDrafts.getState().starts.new.replacementDraftId!)).toBe('newer task');
   });
 
-  it('does not navigate when the same draft component is re-pointed during creation', async () => {
+  it('does not navigate to the created session when the draft is re-pointed during creation', async () => {
     const launch = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValue(launch.promise);
     const navigate = vi.fn();
     const props = { params: { directory: '/repo', platform: 'opencode', title: 'old', draftId: 'new' }, composerRef: null,
-      whisperAvailable: false, navigate: vi.fn(), navigateToSession: navigate };
+      whisperAvailable: false, navigate, navigateToSession: vi.fn() };
     const view = render(<NewConversation {...props} />);
     const input = screen.getByRole('textbox');
     await waitFor(() => expect(input).not.toBeDisabled());
@@ -631,7 +633,7 @@ describe('new-conversation submission lifecycle', () => {
     view.rerender(<NewConversation {...props} params={{ ...props.params, title: 'new' }} />);
     saveDraft('new', 'new task');
     await act(async () => launch.resolve(created));
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalledWith('/session/child', { replace: true });
     expect(getDraft(useNewConversationDrafts.getState().starts.new.replacementDraftId!)).toBe('new task');
   });
 
@@ -641,7 +643,7 @@ describe('new-conversation submission lifecycle', () => {
     vi.mocked(api.startSession).mockReturnValueOnce(oldStart.promise).mockReturnValueOnce(newStart.promise);
     const navigate = vi.fn();
     const props = { params: { directory: '/repo', platform: 'opencode', title: 'old', draftId: 'new' }, composerRef: null,
-      whisperAvailable: false, navigate: vi.fn(), navigateToSession: navigate };
+      whisperAvailable: false, navigate, navigateToSession: vi.fn() };
     const view = render(<NewConversation {...props} />);
     const oldInput = screen.getByRole('textbox');
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session target' })).toHaveTextContent('New worktree'));
@@ -658,7 +660,7 @@ describe('new-conversation submission lifecycle', () => {
     });
     expect(api.startSession).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api.startSession).mock.calls[1][0]).toMatchObject({ title: 'new', send: { message: 'new prompt' } });
-    expect(navigate).toHaveBeenCalledExactlyOnceWith('new-child');
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('/session/new-child', { replace: true });
   });
 
   it('keeps a failed first prompt visible and retryable when localStorage is full', async () => {

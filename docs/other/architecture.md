@@ -469,7 +469,7 @@ the owning project's PR/Issue pane.
 flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
-    Stores --> Persistence[Browser persistence<br/>per-draft localStorage + IndexedDB start claims]
+    Stores --> Persistence[Browser persistence<br/>per-draft localStorage + IndexedDB lifecycle records]
     Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
@@ -591,9 +591,11 @@ flowchart TD
   that finish after reopening the draft; local arrays cannot overwrite it.
   Outstanding attachment processing belongs to the same snapshot, so remounting
   cannot unlock submission before accepted files are ready.
-  Attachment processing captures the initiating draft revision before asynchronous
+  Attachment processing captures its attachment owner before asynchronous
   image reads, so accepted batches survive navigation without reviving discarded
-  payloads. Relocation transfers that snapshot, including owner-local browser
+  payloads. Attachment cancellation has its own identity; empty-text autosaves
+  never cancel accepted files or strand their processing counts.
+  Relocation transfers that snapshot and its pending batch owner, including owner-local browser
   Files in peer tabs, before clearing the retired identity.
   Retirement rechecks metadata/text after terminal persistence and copies late
   edits before deleting the old identity. The completion receipt records a
@@ -617,7 +619,8 @@ flowchart TD
   starts retire their submitted revision independently of active navigation.
   `PreparedDraftLifecycle` follows completed starts to their session and replaces
   an externally discarded identity before it can accept unsavable edits.
-  Its navigation guard remounts per draft identity, including browser Back visits.
+  Its navigation guard remounts per draft identity. Lifecycle redirects replace
+  history entries, so browser Back reaches the page before the retired draft.
   The first submission calls
   `POST /api/sessions/start`, which creates the session at the chosen target
   (an automatically named `session-<suffix>` worktree, or the current
@@ -636,9 +639,15 @@ flowchart TD
   until creation, uploaded to
   the real session, then sent; file/command/shell execution lives in
   child-keyed retry state, independently of the child's draft. First-delivery
-  pending/error state is mirrored to per-child localStorage before completion
-  publication, blocking peer-tab follow-ups until delivery settles. Retry execution
-  remains in the originating tab, which owns the browser Files or command closure.
+  lifecycle is owned by `firstSubmission`: an atomic IndexedDB reservation must
+  succeed before upload/command execution or completion publication. Child composers
+  remain locked until they read that record. localStorage and BroadcastChannel are
+  notification hints, never authorities; failed mirror writes cannot unlock peers.
+  Known live terminal outcomes override stale pending records and reconciliation
+  repairs their persistence. Retry execution remains in the originating tab, which
+  owns the browser Files or command closure. An owner-presence probe detects a
+  closed/reloaded tab. The unknown outcome remains blocked until the user explicitly
+  releases the first-delivery lock; neither reload nor recovery resends the payload.
   Uncertain
   creation is never automatically replayed, and a late completion cannot
   override a newer route or clear its draft. Prepare/start preserve the

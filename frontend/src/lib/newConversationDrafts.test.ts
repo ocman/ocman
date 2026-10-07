@@ -114,6 +114,17 @@ it('keeps live drafts when storage refuses writes', () => {
   expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['first', 'second']);
 });
 
+it('keeps live draft owners and selections when browser storage cannot be enumerated', () => {
+  rememberConversationDraft({ draftId: 'read-blocked', directory: '/repo', remoteId: 'box', agent: 'plan' });
+  const read = vi.spyOn(Storage.prototype, 'key').mockImplementation(() => { throw new Error('storage unavailable'); });
+  try {
+    rememberConversationDraft({ draftId: 'read-blocked', directory: '/repo', reasoning: 'high' });
+    expect(useNewConversationDrafts.getState().drafts).toEqual([expect.objectContaining({
+      draftId: 'read-blocked', remoteId: 'box', agent: 'plan', reasoning: 'high',
+    })]);
+  } finally { read.mockRestore(); }
+});
+
 it('holds the start guard by draft identity, releases failures and remembers completed sessions', async () => {
   rememberConversationDraft({ draftId: 'pending', directory: '/repo' });
   expect(await beginConversationStart('pending', 'prompt')).toEqual(expect.any(Number));
@@ -280,6 +291,37 @@ it('retains the source when replacement relocation fails at quota', async () => 
     expect(getDraft(target)).toBe('only retained copy');
     expect(getDraft('quota-copy')).toBe('');
   } finally { write.mockRestore(); }
+});
+
+it('retains late edits when their relocation fails after the completion receipt commits', async () => {
+  const id = 'late-quota';
+  rememberConversationDraft({ draftId: id, directory: '/repo', agent: 'plan' });
+  useNewConversationDrafts.setState({ starts: { [id]: { version: 0, text: 'submitted' } } });
+  const claims = await import('./draftStartClaims');
+  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
+  let terminal!: import('./draftStartClaims').DraftStart;
+  const persist = vi.spyOn(claims, 'persistDraftStart').mockImplementationOnce((_id, value) => {
+    terminal = value;
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  const original = Storage.prototype.setItem;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (key.startsWith('ocman.newConversationDrafts.v1:') && key !== `ocman.newConversationDrafts.v1:${id}`) throw new Error('metadata quota');
+    original.call(this, key, value);
+  });
+  try {
+    const completion = completeConversationStart(id, { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
+    saveDraft(id, 'late retained text');
+    finish(terminal);
+    await completion;
+    expect(getDraft(id)).toBe('late retained text');
+    expect(useNewConversationDrafts.getState().starts[id]).toMatchObject({ sessionId: 'created', relocationError: expect.any(String) });
+    write.mockRestore();
+    await retryDraftRelocation(id);
+    const replacement = useNewConversationDrafts.getState().starts[id].replacementDraftId!;
+    expect(getDraft(replacement)).toBe('late retained text');
+    expect(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === replacement)?.agent).toBe('plan');
+  } finally { persist.mockRestore(); write.mockRestore(); }
 });
 
 it('does not retire the source when replacement metadata cannot be persisted', async () => {

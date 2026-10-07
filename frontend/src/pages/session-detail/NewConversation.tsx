@@ -41,7 +41,7 @@ export interface NewConversationProps {
   params: NewSessionParams;
   whisperAvailable: boolean;
   composerRef: React.Ref<ComposerHandle>;
-  navigate: (path: string) => void;
+  navigate: (path: string, options?: { replace?: boolean }) => void;
   navigateToSession: (id: string) => void;
 }
 
@@ -272,7 +272,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         });
       }
       if (execute) {
-        startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
+        await startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
       if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, steps });
       await completeConversationStart(draftId, { sessionId: res.sessionId, platform: res.platform, remoteId: res.remoteId, directory: res.directory }, !!ownsDraft());

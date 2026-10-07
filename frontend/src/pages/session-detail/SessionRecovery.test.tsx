@@ -7,6 +7,7 @@ import { useFactoryGraphIssues, useResolveFactoryRecoveryGate, useWorkEpics } fr
 import { FactoryRecoveryActions } from '../../components/FactoryRecoveryActions';
 
 vi.mock('../../lib/queries', () => ({ useFactoryGraphIssues: vi.fn(), useResolveFactoryRecoveryGate: vi.fn(), useWorkEpics: vi.fn() }));
+vi.mock('../../lib/draftStartClaims', () => ({ readDraftStart: async () => undefined }));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
 vi.mock('../../components/assistant/Composer', () => ({ Composer: () => <div>Conversation composer</div> }));
 vi.mock('../../components/LaunchProgressCard', () => ({ LaunchProgressCard: () => null }));

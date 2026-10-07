@@ -14,6 +14,8 @@ export interface DraftStart {
   relocationError?: string;
   pendingReplacementId?: string;
   retirement?: string;
+  deliveryState?: 'pending' | 'failed' | 'interrupted' | 'done';
+  deliveryOwner?: string;
 }
 
 // IndexedDB readwrite transactions serialize claims across tabs, including plain HTTP.
@@ -62,5 +64,5 @@ export async function claimDraftStart(draftId: string, next: DraftStart) {
 }
 
 export const persistDraftStart = (draftId: string, start: DraftStart) => transact(draftId, (current) =>
-  current && current.attemptId !== start.attemptId ? current : start);
+  current && (current.attemptId !== start.attemptId || current.deliveryState === 'done') ? current : start);
 export const readDraftStart = (draftId: string) => transact(draftId);

@@ -93,6 +93,15 @@ it('does not overwrite a newer attempt with an older terminal outcome', async ()
   expect(await readDraftStart('draft')).toEqual(current);
 });
 
+it('does not restore a first-delivery failure after explicit release completed its record', async () => {
+  database();
+  const current = { version: 0, text: 'payload', attemptId: 'delivery', deliveryState: 'pending' as const };
+  await claimDraftStart('first-delivery:child', current);
+  await persistDraftStart('first-delivery:child', { ...current, text: '', deliveryState: 'done' });
+  await persistDraftStart('first-delivery:child', { ...current, deliveryState: 'failed', error: 'late error' });
+  expect(await readDraftStart('first-delivery:child')).toMatchObject({ deliveryState: 'done', text: '' });
+});
+
 it.each([
   [{ openError: new Error('open failed') }, 'open failed'],
   [{ blocked: true }, 'Close other ocman tabs'],

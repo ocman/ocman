@@ -1,10 +1,10 @@
 import type { AttachedImage, AttachedFileRef } from '../components/assistant/useComposerAttachments';
-import { getDraftVersion } from './composerDraft';
 import { create } from 'zustand';
 
 type Payload = { images: AttachedImage[]; files: AttachedFileRef[]; pending?: number };
 const usePayloads = create<{ payloads: Map<string, Payload> }>(() => ({ payloads: new Map() }));
 const empty: Payload = { images: [], files: [] };
+const owners = new Map<string, { draftId: string; cancelled: boolean }>();
 export const usePendingDraftPayload = (id: string) => usePayloads((state) => state.payloads.get(id) || empty);
 
 export function rememberPendingDraftPayload(draftId: string, images: AttachedImage[] = [], files: File[] = []) {
@@ -18,6 +18,9 @@ export function getPendingDraftPayload(draftId: string) {
 
 export const updateDraftAttachments = (draftId: string, payload: Payload) => usePayloads.setState((state) => ({ payloads: new Map(state.payloads).set(draftId, { ...state.payloads.get(draftId), ...payload }) }));
 export const forgetDraftAttachments = (draftId: string) => usePayloads.setState((state) => {
+  const owner = owners.get(draftId);
+  if (owner?.draftId === draftId) owner.cancelled = true;
+  owners.delete(draftId);
   const payloads = new Map(state.payloads);
   payloads.delete(draftId);
   return { payloads };
@@ -26,16 +29,19 @@ export const forgetDraftAttachments = (draftId: string) => usePayloads.setState(
 export function transferDraftAttachments(from: string, to: string) {
   const payload = getPendingDraftPayload(from);
   if (payload) updateDraftAttachments(to, payload);
+  const owner = owners.get(from);
+  if (owner) { owner.draftId = to; owners.set(to, owner); }
 }
 
-/** Capture the initiating identity before FileReader yields, merge accepted batches later. */
+/** Only attachment discard cancels accepted batches; clearing text does not. */
 export function pendingAttachmentWriter(draftId: string) {
-  const version = getDraftVersion(draftId);
+  const owner = owners.get(draftId) || { draftId, cancelled: false };
+  owners.set(draftId, owner);
   const accepted = getPendingDraftPayload(draftId) || empty;
   updateDraftAttachments(draftId, { ...accepted, pending: (accepted.pending || 0) + 1 });
   return (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => {
-    if (getDraftVersion(draftId) !== version) return;
-    const current = getPendingDraftPayload(draftId) || empty;
-    updateDraftAttachments(draftId, { images: [...current.images, ...batch.images], files: [...current.files, ...batch.files], pending: Math.max(0, (current.pending || 0) - 1) });
+    if (owner.cancelled) return;
+    const current = getPendingDraftPayload(owner.draftId) || empty;
+    updateDraftAttachments(owner.draftId, { images: [...current.images, ...batch.images], files: [...current.files, ...batch.files], pending: Math.max(0, (current.pending || 0) - 1) });
   };
 }

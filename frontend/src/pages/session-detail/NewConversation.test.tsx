@@ -191,7 +191,7 @@ describe('NewConversation', () => {
     expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
     expect(getDraft('second')).toBe('second prompt');
     expect(getDraft('first')).toBe('');
-    expect(navigateToSession).toHaveBeenCalledWith('child');
+    expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
   });
 
   it('submits the current checkout when a restored worktree is no longer available', async () => {
@@ -235,7 +235,7 @@ describe('NewConversation', () => {
       createdSession: { sessionId: 'remote-child', platform: 'r-box:opencode', remoteId: 'box', directory: '/box/worktree' } } } });
     mount({ draftId: 'peer', directory: '/repo', remoteId: 'box', platform: 'r-box:opencode' });
     expect(mocks.seed).toHaveBeenCalledWith('remote-child', '/box/worktree', 'r-box:opencode', undefined, 'box');
-    expect(navigateToSession).toHaveBeenCalledWith('remote-child');
+    expect(navigate).toHaveBeenCalledWith('/session/remote-child', { replace: true });
   });
 
   it('refreshes the owner catalog after changing favorites and preserves manual model selection', async () => {
@@ -305,7 +305,7 @@ describe('NewConversation', () => {
     await ready();
     await act(() => composer.onCommand!('review', 'main'));
     await waitFor(() => expect(useFirstSubmission.getState().entries.child).toMatchObject({ text: '/review main', error: 'command offline' }));
-    expect(navigateToSession).toHaveBeenCalledWith('child');
+    expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
   });
 
   it('prepares the directory on its owner and offers its catalog before any session exists', async () => {
@@ -366,7 +366,7 @@ describe('NewConversation', () => {
     });
     expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'Login', 'machine');
     expect(startModels.get('child')).toBe('prov/plan-model');
-    expect(navigateToSession).toHaveBeenCalledWith('child');
+    expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
     // The shared new-conversation draft now belongs to the session.
     expect(getDraft('new')).toBe('');
     expect(getDraft('child')).toBe('');
@@ -409,7 +409,7 @@ describe('NewConversation', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
     expect(listFailedSends('s2')).toEqual([expect.objectContaining({ text: 'Fix login', error: 'boom', reasoning: 'high' })]);
     expect(startModels.get('s2')).toBe('prov/default');
-    expect(navigateToSession).toHaveBeenCalledWith('s2');
+    expect(navigate).toHaveBeenCalledWith('/session/s2', { replace: true });
     // Failed-send recovery owns the prompt; a handoff would resurrect it on Dismiss.
     expect(startHandoffs.has('s2')).toBe(false);
   });
@@ -473,7 +473,7 @@ describe('NewConversation', () => {
       await ready();
       await act(() => composer.onSend!('Fix login'));
       expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ startId: '00000001'.repeat(4) }));
-      expect(navigateToSession).toHaveBeenCalledWith('child');
+      expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -523,7 +523,7 @@ describe('NewConversation', () => {
     expect(screen.getByTestId('start-step-worktree')).toHaveTextContent('Worktree ready');
     expect(screen.queryByTestId('start-step-session')).not.toBeInTheDocument();
     await act(async () => { finish({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/wt', firstMessageSent: true }); await sent; });
-    expect(navigateToSession).toHaveBeenCalledWith('child');
+    expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
     expect(mocks.progress.size).toBe(0);
     // The session view keeps showing them until the first message arrives.
     expect(startHandoffs.get('child')).toEqual({ prompt: 'Fix login', steps: { opencode: 'active', worktree: 'done' } });

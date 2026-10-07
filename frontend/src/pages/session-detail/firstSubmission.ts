@@ -1,4 +1,7 @@
+import { useEffect } from 'react';
 import { create } from 'zustand';
+import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from '../../lib/draftStartClaims';
+import { randomId } from '../../lib/randomId';
 
 interface Submission {
   text: string;
@@ -8,69 +11,146 @@ interface Submission {
 }
 
 const PREFIX = 'ocman.firstSubmission.v1:';
-function read(sessionId: string): Submission | undefined {
-  try {
-    const entry = JSON.parse(localStorage.getItem(PREFIX + sessionId) || 'null');
-    if (entry && typeof entry.text === 'string' && typeof entry.pending === 'boolean' &&
-      (entry.error === undefined || typeof entry.error === 'string')) return entry;
-  } catch { /* Keep this tab's live delivery state if browser storage is unavailable. */ }
-}
+const key = (id: string) => `first-delivery:${id}`;
+const owner = randomId();
+const records = new Map<string, DraftStart>();
+const executions = new Map<string, () => Promise<void>>();
+const probes = new Map<string, ReturnType<typeof setTimeout>>();
+const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('ocman.first-delivery');
 
-function load() {
-  const entries: Record<string, Submission> = {};
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key?.startsWith(PREFIX)) continue;
-      const id = key.slice(PREFIX.length);
-      const entry = read(id);
-      if (entry) entries[id] = entry;
-    }
-  } catch { /* Browser-local state remains usable. */ }
-  return entries;
-}
+// One lifecycle owns execution, persistence and recovery. Mirrors only notify;
+// IndexedDB reserves a delivery before any upload/command or completion publication.
+export const useFirstSubmission = create<{ entries: Record<string, Submission>; ready: Record<string, boolean> }>(() => ({ entries: {}, ready: {} }));
+export const getFirstSubmission = (id: string) => useFirstSubmission.getState().entries[id];
 
-// First command/shell/file delivery can outlive the draft composer. Keep
-// its exact execution and error on the real child, independently of drafts.
-export const useFirstSubmission = create<{ entries: Record<string, Submission> }>(() => ({ entries: load() }));
-export const getFirstSubmission = (id: string) => read(id) || useFirstSubmission.getState().entries[id];
-
-function publish(sessionId: string, submission: Submission) {
-  try { localStorage.setItem(PREFIX + sessionId, JSON.stringify(submission)); } catch { /* Keep the originating tab's live retry. */ }
-  useFirstSubmission.setState(({ entries }) => ({ entries: { ...entries, [sessionId]: submission } }));
-}
-
-function clear(sessionId: string) {
-  try { localStorage.removeItem(PREFIX + sessionId); } catch { /* Retain the live completion. */ }
-  useFirstSubmission.setState(({ entries }) => {
+function adopt(id: string, record: DraftStart | undefined) {
+  if (record) records.set(id, record);
+  useFirstSubmission.setState(({ entries, ready }) => {
     const next = { ...entries };
-    delete next[sessionId];
-    return { entries: next };
+    if (!record || record.deliveryState === 'done') delete next[id];
+    else next[id] = { text: record.text, pending: record.deliveryState !== 'failed',
+      error: record.error, execute: executions.get(id) };
+    return { entries: next, ready: { ...ready, [id]: true } };
   });
 }
 
-export function startFirstSubmission(sessionId: string, text: string, execute: () => Promise<void>) {
-  if (useFirstSubmission.getState().entries[sessionId]?.pending) return;
-  const submission: Submission = { text, pending: true, execute };
-  publish(sessionId, submission);
+function notify(id: string, record: DraftStart) {
+  try { localStorage.setItem(PREFIX + id, JSON.stringify(record)); } catch { /* Hints are optional; the durable record already exists. */ }
+  channel?.postMessage({ id, record });
+}
+
+async function settle(id: string, record: DraftStart) {
+  adopt(id, record); // A known live terminal outcome cannot be downgraded by an old pending record.
+  try {
+    const persisted = await persistDraftStart(key(id), record);
+    if (persisted) { record = persisted; adopt(id, record); }
+  }
+  catch { /* Keep and publish the terminal outcome; reconciliation retries its persistence. */ }
+  notify(id, record);
+}
+
+function probeOwner(id: string, record: DraftStart) {
+  if (executions.has(id) || probes.has(id)) return;
+  // Lack of an owner response means an unknown outcome, never permission to replay.
+  const timer = setTimeout(() => {
+    probes.delete(id);
+    if (records.get(id)?.deliveryState === 'pending') {
+      adopt(id, { ...record, deliveryState: 'interrupted', error: 'The originating tab is unavailable. First-delivery outcome is unknown.' });
+    }
+  }, 1500);
+  probes.set(id, timer);
+  channel?.postMessage({ id, probe: record.deliveryOwner });
+}
+
+export async function reconcileFirstSubmission(id: string, hint?: DraftStart) {
+  if (!hint) {
+    try { hint = JSON.parse(localStorage.getItem(PREFIX + id) || 'null') || undefined; } catch { /* The durable record remains readable. */ }
+  }
+  const stored = await readDraftStart(key(id));
+  let live = records.get(id);
+  if (stored?.deliveryState === 'done') { adopt(id, stored); return; }
+  if (live?.deliveryState !== 'done' && hint?.attemptId === stored?.attemptId && hint?.deliveryState &&
+    ['failed', 'done'].includes(hint.deliveryState)) live = hint;
+  const terminal = live?.deliveryState && live.deliveryState !== 'pending' && live.deliveryState !== 'interrupted';
+  const interrupted = live?.deliveryState === 'interrupted' && live.attemptId === stored?.attemptId && stored?.deliveryState === 'pending';
+  const record = (terminal && (!stored || live?.attemptId === stored.attemptId)) || interrupted ? live : stored;
+  if (record && terminal && record !== stored) await persistDraftStart(key(id), record);
+  adopt(id, record);
+  if (record?.deliveryState === 'pending' || record?.deliveryState === 'interrupted') probeOwner(id, record);
+}
+
+export function useSessionFirstSubmission(id: string) {
+  const entry = useFirstSubmission((state) => state.entries[id]);
+  const ready = useFirstSubmission((state) => state.ready[id]);
+  useEffect(() => {
+    const reconcile = () => void reconcileFirstSubmission(id).catch((error: unknown) => {
+      useFirstSubmission.setState(({ entries }) => ({ entries: { ...entries, [id]: {
+        text: '', pending: true, error: error instanceof Error ? error.message : String(error),
+      } } }));
+    });
+    reconcile();
+    const timer = setInterval(() => { if (getFirstSubmission(id)?.pending) reconcile(); }, 5000);
+    return () => clearInterval(timer);
+  }, [id]);
+  return entry || (ready ? undefined : { text: '', pending: true });
+}
+
+export async function startFirstSubmission(id: string, text: string, execute: () => Promise<void>) {
+  if (getFirstSubmission(id)?.pending) return;
+  executions.set(id, execute);
+  const next: DraftStart = { version: 0, text, attemptId: randomId(), deliveryOwner: owner, deliveryState: 'pending' };
+  adopt(id, next);
+  try {
+    const result = await claimDraftStart(key(id), next);
+    if (!result.claimed) { executions.delete(id); adopt(id, result.start); return; }
+    adopt(id, next);
+    notify(id, next);
+  } catch (error) {
+    // Fail closed: no execution starts without a durable reservation. Retry keeps the exact payload.
+    adopt(id, { ...next, deliveryState: 'failed', error: `Could not reserve first delivery: ${error instanceof Error ? error.message : String(error)}` });
+    return;
+  }
   void (async () => {
     try {
       await execute();
-      clear(sessionId);
+      await settle(id, { ...next, deliveryState: 'done', text: '' });
+      executions.delete(id);
     } catch (error) {
-      publish(sessionId, { ...submission, pending: false, error: error instanceof Error ? error.message : String(error) });
+      await settle(id, { ...next, deliveryState: 'failed', error: error instanceof Error ? error.message : String(error) });
     }
   })();
 }
 
+/** Explicitly release an uncertain delivery; never reconstruct or automatically resend its payload. */
+export async function discardFirstSubmission(id: string) {
+  const record = records.get(id) || await readDraftStart(key(id));
+  if (!record) { await reconcileFirstSubmission(id); return; }
+  await persistDraftStart(key(id), { ...record, deliveryState: 'done', text: '' });
+  executions.delete(id);
+  adopt(id, { ...record, deliveryState: 'done', text: '' });
+  notify(id, { ...record, deliveryState: 'done', text: '' });
+}
+
+if (channel) channel.onmessage = (event: MessageEvent) => {
+  const { id, record, probe, alive } = event.data || {};
+  if (typeof id !== 'string') return;
+  if (probe === owner && executions.has(id)) { channel.postMessage({ id, alive: owner }); return; }
+  if (alive && alive === records.get(id)?.deliveryOwner) {
+    clearTimeout(probes.get(id));
+    probes.delete(id);
+    const current = records.get(id)!;
+    if (current.deliveryState === 'interrupted') adopt(id, { ...current, deliveryState: 'pending', error: undefined });
+    return;
+  }
+  if (record && typeof record.text === 'string' && typeof record.version === 'number' && typeof record.attemptId === 'string') {
+    void reconcileFirstSubmission(id, record).catch(() => undefined);
+  }
+};
+
 if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
   if (!event.key?.startsWith(PREFIX)) return;
   const id = event.key.slice(PREFIX.length);
-  const entry = read(id);
-  useFirstSubmission.setState(({ entries }) => {
-    const next = { ...entries };
-    if (entry) next[id] = { ...entry, execute: entries[id]?.execute };
-    else delete next[id];
-    return { entries: next };
-  });
+  let hint: DraftStart | undefined;
+  try { hint = JSON.parse(event.newValue || 'null') || undefined; } catch { /* Read the authoritative record. */ }
+  void reconcileFirstSubmission(id, hint).catch(() => undefined);
 });

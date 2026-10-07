@@ -16,6 +16,7 @@
 // async-util timeout.
 
 import { vi } from 'vitest';
+vi.mock('../../../lib/draftStartClaims', () => ({ readDraftStart: async () => undefined }));
 import { useEffect } from 'react';
 import { render, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

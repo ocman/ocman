@@ -13,7 +13,28 @@ async function prepareDraft(page: Page) {
   await page.route('**/api/sessions/resolve-targets', (route) => route.fulfill({ json: { candidates: [local, remote], remotes: [remote] } }));
 }
 
-test('peer follow-ups wait for the initiating tab to finish first file delivery', async ({ mockedPage: first }) => {
+test('Back skips a completed draft and reaches the preceding page', async ({ mockedPage: page }) => {
+  await prepareDraft(page);
+  await page.route('**/api/sessions/start', (route) => route.fulfill({ json: {
+    sessionId: MOCK_SESSION.id, directory: '/repo', platform: 'opencode', remoteId: 'local', firstMessageSent: true,
+  } }));
+  await page.goto('/settings');
+  await page.goto('/session/new?dir=%2Frepo&draftId=history-replacement');
+  await page.getByRole('textbox').fill('Create this session');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  await page.goBack();
+  await expect(page).toHaveURL(/\/settings$/);
+});
+
+for (const failMirror of [false, true]) test(`peer first-delivery ordering and owner recovery with mirror failure: ${failMirror}`, async ({ mockedPage: first }) => {
+  if (failMirror) await first.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith('ocman.firstSubmission.v1:')) throw new Error('first-delivery mirror quota');
+      original.call(this, key, value);
+    };
+  });
   const peer = await first.context().newPage();
   await installDefaultRoutes(peer);
   let finish!: () => void;
@@ -31,7 +52,7 @@ test('peer follow-ups wait for the initiating tab to finish first file delivery'
     await page.route('**/api/session/*/attachment?*', async (route) => {
       uploads++;
       await waiting;
-      await route.fulfill({ json: { path: '/tmp/first.txt', name: 'first.txt', mime: 'text/plain', size: 4 } });
+      if (!page.isClosed()) await route.fulfill({ json: { path: '/tmp/first.txt', name: 'first.txt', mime: 'text/plain', size: 4 } });
     });
     await page.route('**/api/session/*/message*', async (route) => {
       messages.push(route.request().postDataJSON().message);
@@ -47,6 +68,18 @@ test('peer follow-ups wait for the initiating tab to finish first file delivery'
   await expect(peer).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
   await expect(peer.getByRole('textbox')).toBeDisabled();
   expect(messages).toEqual([]);
+  if (failMirror) {
+    await first.close();
+    finish();
+    await expect(peer.getByRole('alert').filter({ hasText: 'outcome is unknown' })).toBeVisible({ timeout: 12000 });
+    expect(messages).toEqual([]);
+    peer.once('dialog', (dialog) => dialog.accept());
+    await peer.getByRole('button', { name: 'Release first-delivery lock' }).click();
+    await expect(peer.getByRole('textbox')).toBeEnabled();
+    expect(uploads).toBe(1);
+    expect(messages).toEqual([]);
+    return;
+  }
   finish();
   await expect(peer.getByRole('textbox')).toBeEnabled();
   await peer.getByRole('textbox').fill('Follow-up');

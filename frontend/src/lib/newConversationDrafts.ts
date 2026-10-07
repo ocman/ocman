@@ -57,8 +57,8 @@ export const useNewConversationDrafts = create<{
 }>(() => ({ drafts: load() || [], starts: loadStarts() }));
 const pendingWrites = new Map<string, ConversationDraft | null>();
 
-function currentDrafts() {
-  const drafts = new Map((load() || useNewConversationDrafts.getState().drafts).map((draft) => [draft.draftId, draft]));
+function currentDrafts(fallback = useNewConversationDrafts.getState().drafts) {
+  const drafts = new Map((load() || fallback).map((draft) => [draft.draftId, draft]));
   for (const [id, draft] of pendingWrites) {
     if (draft) drafts.set(id, draft);
     else drafts.delete(id);
@@ -200,6 +200,7 @@ export function endConversationStart(draftId: string) {
 
 function save(draftId: string, draft?: ConversationDraft) {
   pendingWrites.set(draftId, draft || null);
+  const liveDrafts = currentDrafts();
   for (const [id, pending] of pendingWrites) {
     try {
       if (pending) localStorage.setItem(STORAGE_PREFIX + id, JSON.stringify(pending));
@@ -207,7 +208,7 @@ function save(draftId: string, draft?: ConversationDraft) {
       pendingWrites.delete(id);
     } catch { /* Keep live metadata and retry writes on the next mutation. */ }
   }
-  useNewConversationDrafts.setState({ drafts: currentDrafts() });
+  useNewConversationDrafts.setState({ drafts: currentDrafts(liveDrafts) });
   return !pendingWrites.has(draftId);
 }
 

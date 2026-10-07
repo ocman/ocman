@@ -135,6 +135,13 @@ create another session if the server accepted the first request but its response
 was lost. Discarding a draft in another tab
 replaces its open composer with a fresh, empty draft identity.
 
+The created session also holds follow-ups while its first file upload, command,
+or shell submission is running, including in another tab. If the originating tab
+closes or reloads during that delivery, the session reports an unknown outcome.
+You can explicitly release its first-delivery lock without resending anything.
+Retry execution remains available in the originating tab while it still retains
+the browser Files or command payload. Closing that tab loses those retry payloads.
+
 Before its first prompt, a new conversation's composer shows a machine
 selector when a remote is connected. It defaults to the machine the
 conversation was opened for. Choosing another machine re-points the

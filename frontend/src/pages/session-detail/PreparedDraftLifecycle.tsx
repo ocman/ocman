@@ -8,7 +8,7 @@ import { InlineAlert } from '../../components/InlineAlert';
 import type { NewConversationProps } from './NewConversation';
 
 /** Retire completed drafts and stop editing identities discarded by another tab. */
-export function PreparedDraftLifecycle({ params, navigate, navigateToSession, children }:
+export function PreparedDraftLifecycle({ params, navigate, children }:
   Pick<NewConversationProps, 'params' | 'navigate' | 'navigateToSession'> & { children: ReactNode }) {
   const { directory, remoteId, platform, title, draftId: routeDraftId } = params;
   const [legacyId] = useState(randomId);
@@ -34,7 +34,7 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
         setReceiptError('Could not migrate the saved draft. Free browser storage and retry.');
         return;
       }
-      navigate(newSessionPath({ directory, remoteId, platform, title, draftId: legacyId }));
+      navigate(newSessionPath({ directory, remoteId, platform, title, draftId: legacyId }), { replace: true });
       return;
     }
     let active = true;
@@ -48,7 +48,7 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
     if (receipt?.relocationError) return;
     if (replacement) {
       const target = `${draftId}:${replacement.draftId}`;
-      if (navigated.current !== target) { navigated.current = target; navigate(newSessionPath(replacement)); }
+      if (navigated.current !== target) { navigated.current = target; navigate(newSessionPath(replacement), { replace: true }); }
     }
     else if (sessionId) {
       const target = `${draftId}:${sessionId}`;
@@ -58,7 +58,7 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
       if (createdSession && store.getCachedSession(sessionId)?.session.platform !== createdSession.platform) {
         store.seedNewSession(sessionId, createdSession.directory, createdSession.platform, params.title, createdSession.remoteId);
       }
-      navigateToSession(sessionId);
+      navigate(`/session/${sessionId}`, { replace: true });
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- remember which route has registered its client-only draft.
     else if (exists) setObserved(draftId);
@@ -69,13 +69,13 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
         if (!active) return;
         const start = useNewConversationDrafts.getState().starts[draftId];
         if (start?.sessionId && (!start.routeKey || start.routeKey === routeKey)) return;
-        navigate(newSessionPath({ ...params, draftId: undefined }));
+        navigate(newSessionPath({ ...params, draftId: undefined }), { replace: true });
       }).catch((error: unknown) => {
         if (active) setReceiptError(error instanceof Error ? error.message : String(error));
       });
     }
     return () => { active = false; };
-  }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receipt?.relocationError, receiptRetry, navigate, navigateToSession]);
+  }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receipt?.relocationError, receiptRetry, navigate]);
   const retry = () => {
     setReceiptError('');
     if (receipt?.relocationError) void retryDraftRelocation(draftId).catch((error: unknown) => setReceiptError(error instanceof Error ? error.message : String(error)));
