@@ -134,3 +134,19 @@ it.each([
   await userEvent.keyboard('{Enter}');
   expect(postJSON).toHaveBeenCalledOnce();
 });
+
+it.each([false, true])('offers startup agents for an empty catalog and retains custom choices: saved=%s', async (saved) => {
+  vi.mocked(api.prepareSession).mockResolvedValue({ platform: 'opencode', agents: [], commands: [], models: { models: [] } } as never);
+  vi.mocked(fetchJSON).mockResolvedValue({ models: [], off: false, defaultAgent: 'default-custom',
+    ...(saved ? { defaults: { model: '', agent: 'saved-custom', worktree: '' } } : {}),
+  });
+  render(<ProjectQuickSettings directory="/repo">repo</ProjectQuickSettings>);
+  await open();
+  await userEvent.click(screen.getByRole('combobox', { name: 'Default agent' }));
+  expect(screen.getByRole('option', { name: 'build' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'default-custom' })).toBeInTheDocument();
+  if (saved) expect(screen.getByRole('option', { name: 'saved-custom' })).toHaveAttribute('aria-selected', 'true');
+  await userEvent.click(screen.getByRole('option', { name: 'plan' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(postJSON).toHaveBeenCalledWith('/api/project/settings', { directory: '/repo', remoteId: 'local', defaults: { model: '', agent: 'plan', worktree: '' } });
+});

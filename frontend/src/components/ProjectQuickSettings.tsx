@@ -49,7 +49,9 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
         if (controller.signal.aborted) return;
         setDefaults(settings.defaults || { model: '', agent: '', worktree: '' });
         setModels(catalog.models.models.map((m) => ({ value: `${m.provider}/${m.model}`, label: `${m.providerName || m.provider} / ${m.modelName || m.model}` })));
-        setAgents(catalog.agents.filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => ({ value: a.name, label: a.name })));
+        const primaryAgents = catalog.agents.filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => a.name);
+        const names = primaryAgents.length ? primaryAgents : [...new Set(['build', 'plan', settings.defaultAgent].filter(Boolean))];
+        setAgents(names.map((name) => ({ value: name, label: name })));
       }).catch((err: unknown) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err)); });
     return () => controller.abort();
   }, [directory, remoteId, attempt]);
