@@ -124,13 +124,13 @@
   }
 }
 
-/* A new conversation's start steps sit in the thread: muted and sized like
-   tool-call headers (.oc-tool-header / .oc-tool-label). */
+/* A new conversation's start steps use the composer notification text size. */
 .oc-start-steps {
-  gap: 4px;
+  gap: 1px;
   margin: 8px 0;
   font-family: var(--font-conversation-mono);
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1.25;
   color: var(--text-dim);
 }
 
@@ -143,7 +143,21 @@
 }
 
 .oc-start-steps .oc-launch-icon {
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  font-size: 9px;
   opacity: 0.6;
+  color: var(--text-dim);
+}
+
+.oc-start-steps .oc-launch-icon.spinner {
+  border-width: 1px;
+  border-top-color: var(--text-dim);
+}
+
+.oc-start-steps .oc-launch-icon.error {
+  color: var(--danger);
 }
 
 .oc-launch-error {
