@@ -142,6 +142,11 @@ export function useSidebarSessions({
       const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
       // When the open session is older than the recent window, fetch it once
       // by id so it is always present in the sidebar.
+      const fallback = openSessionFallbackRef.current;
+      const liveFallback = fallback && useApiStore.getState().recentSessions.find(s => s.id === fallback.id && s.platform === fallback.platform);
+      if (fallback && liveFallback) {
+        openSessionFallbackRef.current = { ...fallback, seen: liveFallback.seen, seenTimeUpdated: liveFallback.seenTimeUpdated };
+      }
       const resolved = await resolveOpenSession({
         id,
         fetched: result,

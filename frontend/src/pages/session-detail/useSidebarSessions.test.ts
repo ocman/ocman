@@ -44,6 +44,32 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('keeps an acknowledged old interruption read when reusing the open-session fallback', async () => {
+    const row = { id: 'old', platform: 'r-box:opencode', directory: '/repo/old', status: 'interrupted', seen: false,
+      timeUpdated: Date.now() - 96 * 60 * 60 * 1000, seenTimeUpdated: 0, unreadCount: 0 } as Session;
+    const getSession = vi.fn().mockResolvedValue({ session: row, messages: [], parts: [] });
+    const post = vi.spyOn(api, 'markSessionSeen').mockResolvedValue({ ok: true });
+    useApiStore.setState({ getSessions: vi.fn().mockResolvedValue([]), getSession, recentSessions: [], recentSessionsHash: '' });
+    const abortSignalRef = { current: new AbortController() };
+    const { result } = renderHook(() => useSidebarSessions({
+      id: row.id, sessionId: row.id, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
+    }));
+    try {
+      await waitFor(() => expect(result.current.recentSessions[0]?.id).toBe(row.id));
+      await act(async () => {
+        useApiStore.getState().patchRecentSession(row.id, { seen: true, seenTimeUpdated: row.timeUpdated }, row.platform);
+        await useApiStore.getState().markSessionSeen(row.platform, row.id, row.timeUpdated, true);
+      });
+      for (let i = 0; i < 2; i++) {
+        await act(async () => result.current.loadRecentSessions());
+        expect(result.current.recentSessions[0]).toMatchObject({ seen: true, seenTimeUpdated: row.timeUpdated });
+      }
+      expect(getSession).toHaveBeenCalledTimes(1);
+    } finally {
+      post.mockRestore();
+    }
+  });
+
   it('keeps pinned archived sessions and completed children while excluding unpinned rows', async () => {
     const fixtures: Partial<Session>[] = [
       { id: 'open', archived: true },
