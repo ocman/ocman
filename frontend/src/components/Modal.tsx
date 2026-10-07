@@ -38,6 +38,8 @@ export function Modal({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      const focusedDialog = document.activeElement?.closest('[role="dialog"]');
+      if (focusedDialog && focusedDialog !== dialogRef.current) return;
       if (event.key === 'Escape' && canClose) onClose();
     }
     window.addEventListener('keydown', onKey);

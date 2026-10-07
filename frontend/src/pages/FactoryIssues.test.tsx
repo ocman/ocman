@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useWorkEpics } from '../lib/queries';
-import { FactoryIssues } from './FactoryIssues';
+import { FactoryIssues, IssueDrawer } from './FactoryIssues';
 
 vi.mock('../lib/queries', () => ({
   useWorkEpics: vi.fn(),
@@ -14,6 +14,7 @@ vi.mock('../lib/queries', () => ({
 }));
 
 beforeEach(() => {
+	vi.clearAllMocks();
 	vi.mocked(useFactoryIssueComments).mockReturnValue({ data: [{ id: 1, issueId: 'fac-42', actor: 'mcp', body: 'Ready for review.', createdAt: 1000 }], isLoading: false, isError: false } as never);
 	vi.mocked(useAddFactoryIssueComment).mockReturnValue({ mutate: vi.fn((_body, options) => options?.onSuccess?.(undefined as never, '' as never, undefined as never, undefined)), isPending: false, isError: false } as never);
   vi.mocked(useWorkEpics).mockReturnValue({
@@ -31,6 +32,16 @@ beforeEach(() => {
     isError: false,
     refetch: vi.fn(),
   }] as never);
+});
+
+it('inspects proposed tasks without querying or adding comments for uncreated issues', () => {
+  render(<MemoryRouter><IssueDrawer preview issue={{ id: 'task-key', epicId: 'epic-1', project: '/repo', kind: 'implementation', title: 'Proposed task', description: 'What this task should do.', status: 'open', dependsOn: [{ id: 'plan-key', type: 'blocks' }] }} onClose={() => {}} /></MemoryRouter>);
+  expect(screen.getByRole('dialog')).toHaveTextContent('What this task should do.');
+  expect(screen.getByRole('dialog')).toHaveTextContent('Blocked byplan-key');
+  expect(screen.queryByRole('link', { name: 'plan-key' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Issue comments')).not.toBeInTheDocument();
+  expect(useFactoryIssueComments).not.toHaveBeenCalled();
+  expect(useAddFactoryIssueComment).not.toHaveBeenCalled();
 });
 
 it('shows a ticket list and opens issue details in a drawer', async () => {
