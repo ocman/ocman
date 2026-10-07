@@ -136,6 +136,26 @@ it('refetches agents for a different owner even when the session ID is identical
   expect(api.agents).toHaveBeenLastCalledWith('duplicate', expect.any(AbortSignal), 'r-owner:opencode');
 });
 
+it.each([
+  { platform: 'r-owner:opencode', directory: '/initial' },
+  { platform: 'opencode', directory: '/moved' },
+])('replaces pending model reads when the same session changes scope to $platform:$directory', async (next) => {
+  clearModelCatalogCache();
+  let resolveOld!: (value: { hasProviders: boolean; models: { provider: string; model: string }[] }) => void;
+  vi.mocked(api.sessionModels).mockClear();
+  vi.mocked(api.sessionModels).mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
+  vi.mocked(api.sessionModels).mockResolvedValueOnce({ hasProviders: true, models: [{ provider: 'p', model: 'fresh' }] });
+  const { result, rerender } = renderHook((props) => useSessionCapabilities({
+    id: 'duplicate', ...props, liveConnection: true, sessionLoaded: true,
+  }), { initialProps: { platform: 'opencode', directory: '/initial' } });
+  rerender(next);
+  await waitFor(() => expect(result.current.modelOptions).toEqual(['p/fresh']));
+  expect(api.sessionModels).toHaveBeenCalledTimes(2);
+  expect(api.sessionModels).toHaveBeenLastCalledWith('duplicate', next.platform);
+  await act(async () => { resolveOld({ hasProviders: true, models: [{ provider: 'p', model: 'old' }] }); });
+  expect(result.current.modelOptions).toEqual(['p/fresh']);
+});
+
 describe('useSessionCapabilities model catalog cache', () => {
   const live = {
     hasProviders: true,

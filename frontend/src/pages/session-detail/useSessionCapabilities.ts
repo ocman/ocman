@@ -157,23 +157,23 @@ export function useSessionCapabilities({
   // still hold the previous session's bit for a render, and only ever
   // turns true when `liveConnection` is.
   const live = liveConnection;
-  const modelsFetchRef = useRef<{ id: string; live: boolean; controller: AbortController } | null>(null);
-  // A route change cancels the outgoing request at once, even while the
+  const modelsFetchRef = useRef<{ id: string; platform: string | undefined; directory: string | undefined; live: boolean; controller: AbortController } | null>(null);
+  // A session, owner or directory change cancels the outgoing request at once, even while the
   // next session is still loading, so its response cannot reach the
   // next session's picker.
   useEffect(() => () => {
     modelsFetchRef.current?.controller.abort();
     modelsFetchRef.current = null;
-  }, [id]);
+  }, [id, platform, directory]);
   useEffect(() => {
     if (!id || id === NEW_SESSION_ID || !sessionLoaded) return;
     const last = modelsFetchRef.current;
-    if (last?.id === id && (last.live || !live)) return;
+    if (last?.id === id && last.platform === platform && last.directory === directory && (last.live || !live)) return;
     last?.controller.abort();
     const controller = new AbortController();
-    modelsFetchRef.current = { id, live, controller };
+    modelsFetchRef.current = { id, platform, directory, live, controller };
     refreshModels(controller.signal);
-  }, [id, live, sessionLoaded, refreshModels]);
+  }, [id, platform, directory, live, sessionLoaded, refreshModels]);
 
   const reloadCapabilities = useCallback(() => {
     setReloadNonce((n) => n + 1);
