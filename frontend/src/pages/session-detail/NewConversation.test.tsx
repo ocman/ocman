@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
   openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), settings: vi.fn(), caps: { shellExec: true },
   progress: new Set<(id: string, step: string, state: string) => void>(),
 }));
+vi.mock('../../lib/draftStartClaims', () => ({
+  claimDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => ({ claimed: true, start }),
+  persistDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => start,
+}));
 vi.mock('../../lib/useGlobalEvents', () => ({
   onSessionStartProgress: (cb: (id: string, step: string, state: string) => void) => {
     mocks.progress.add(cb);
@@ -32,7 +36,9 @@ vi.mock('../../lib/api', () => ({
   postJSON: mocks.post,
 }));
 vi.mock('../../lib/apiStore', () => ({
-  useApiStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ seedNewSession: mocks.seed }),
+  useApiStore: Object.assign((selector: (s: Record<string, unknown>) => unknown) => selector({ seedNewSession: mocks.seed }), {
+    getState: () => ({ seedNewSession: mocks.seed, getCachedSession: () => null }),
+  }),
 }));
 vi.mock('../../lib/uiStore', () => ({
   useUiStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ openWorktreeForm: mocks.openWorktreeForm }),
@@ -64,7 +70,8 @@ describe('NewConversation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     startModels.clear();
-    window.localStorage.removeItem('ocman.newSessionCatalogs.v1');
+    window.localStorage.clear();
+    window.dispatchEvent(new StorageEvent('storage', { key: null }));
     useNewConversationDrafts.setState({ drafts: [], starts: {} });
     clearSettingsCache();
     mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'build' });
@@ -205,6 +212,29 @@ describe('NewConversation', () => {
       whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await ready();
     expect(composer.target).toBe('current');
+  });
+
+  it('rejects a machine change when a pending draft is reopened', async () => {
+    mocks.start.mockReturnValue(new Promise(() => {}));
+    const first = mount({ directory: '/repo', draftId: 'pending' });
+    await ready();
+    act(() => { void composer.onSend!('start once'); });
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
+    first.unmount();
+    mount({ directory: '/repo', draftId: 'pending' });
+    await ready();
+    await expect(composer.onMachineChange!({ dir: '/repo', remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode' }))
+      .rejects.toThrow('already in progress');
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('seeds a completion received from another tab with its authoritative remote owner', () => {
+    rememberConversationDraft({ draftId: 'peer', directory: '/repo', remoteId: 'box', platform: 'r-box:opencode' });
+    useNewConversationDrafts.setState({ starts: { peer: { version: 0, text: '', sessionId: 'remote-child',
+      createdSession: { sessionId: 'remote-child', platform: 'r-box:opencode', remoteId: 'box', directory: '/box/worktree' } } } });
+    mount({ draftId: 'peer', directory: '/repo', remoteId: 'box', platform: 'r-box:opencode' });
+    expect(mocks.seed).toHaveBeenCalledWith('remote-child', '/box/worktree', 'r-box:opencode', undefined, 'box');
+    expect(navigateToSession).toHaveBeenCalledWith('remote-child');
   });
 
   it('refreshes the owner catalog after changing favorites and preserves manual model selection', async () => {

@@ -67,7 +67,7 @@ export const MOCK_PROJECT = {
 // Default API stubs — applied to every test page
 // ---------------------------------------------------------------------------
 
-async function installDefaultRoutes(page: Page) {
+export async function installDefaultRoutes(page: Page) {
   // Keep unmocked API calls out of Vite's absent-backend proxy. Specific routes below take priority.
   await page.route('/api/**', (route: Route) =>
     route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }),

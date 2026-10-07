@@ -1,4 +1,98 @@
-import { test, expect } from './fixtures';
+import { test, expect, installDefaultRoutes, MOCK_SESSION } from './fixtures';
+import type { Page } from '@playwright/test';
+
+async function prepareDraft(page: Page) {
+  await page.route('**/api/sessions/prepare', (route) => route.fulfill({ json: {
+    platform: 'opencode', agents: [{ name: 'build' }, { name: 'plan' }], commands: [],
+    models: { hasProviders: true, models: [] }, liveConnection: false,
+  } }));
+  await page.route('**/api/worktree/list?*', (route) => route.fulfill({ json: { worktrees: [] } }));
+  await page.route('**/api/git/info?*', (route) => route.fulfill({ json: {} }));
+  const local = { remoteId: 'local', remoteName: 'This machine', platform: 'opencode', dir: '/repo' };
+  const remote = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/repo' };
+  await page.route('**/api/sessions/resolve-targets', (route) => route.fulfill({ json: { candidates: [local, remote], remotes: [remote] } }));
+}
+
+test('two tabs starting the same draft create only one session and share completion', async ({ mockedPage: first }) => {
+  const second = await first.context().newPage();
+  await installDefaultRoutes(second);
+  let starts = 0;
+  let owner: typeof first | undefined;
+  let finish!: () => void;
+  const waiting = new Promise<void>((resolve) => { finish = resolve; });
+  for (const page of [first, second]) {
+    await prepareDraft(page);
+    await page.route('**/api/sessions/start', async (route) => {
+      starts++;
+      owner = page;
+      await waiting;
+      await route.fulfill({ json: { sessionId: MOCK_SESSION.id, directory: '/repo', platform: 'opencode', remoteId: 'local', firstMessageSent: true } });
+    });
+    await page.goto('/session/new?dir=%2Frepo&draftId=shared&title=Shared');
+    await page.getByRole('textbox').fill('Start only once.');
+  }
+  // Dispatch together: actionability waiting must not serialize away the race or wait on the shared lock.
+  await Promise.all([first.getByRole('button', { name: 'Send message' }).dispatchEvent('click'), second.getByRole('button', { name: 'Send message' }).dispatchEvent('click')]);
+  await expect.poll(() => starts).toBeGreaterThan(0);
+  const waitingTab = owner === first ? second : first;
+  await waitingTab.reload();
+  await expect(waitingTab.getByRole('textbox')).toBeDisabled();
+  await expect(waitingTab.getByRole('combobox', { name: 'Session machine' })).toBeDisabled();
+  finish();
+  await expect(first).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  await expect(second).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  expect(starts).toBe(1);
+});
+
+test('unavailable atomic storage fails visibly without starting a session', async ({ mockedPage: page }) => {
+  await page.addInitScript(() => Object.defineProperty(window, 'indexedDB', { value: undefined }));
+  let starts = 0;
+  await page.route('**/api/sessions/start', (route) => { starts++; return route.fulfill({ json: {} }); });
+  await prepareDraft(page);
+  await page.goto('/session/new?dir=%2Frepo&draftId=unavailable');
+  await page.getByRole('textbox').fill('Keep this prompt.');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByRole('alert')).toHaveText('This browser cannot coordinate session starts.');
+  await expect(page.getByRole('textbox')).toHaveValue('Keep this prompt.');
+  expect(starts).toBe(0);
+});
+
+test('an unusable atomic-store schema surfaces an error and keeps the prompt', async ({ mockedPage: page }) => {
+  await prepareDraft(page);
+  await page.goto('/session/new');
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open('ocman.preparedDraftStarts.v1', 1);
+    open.onsuccess = () => { open.result.close(); resolve(); };
+    open.onerror = () => reject(open.error);
+  }));
+  let starts = 0;
+  await page.route('**/api/sessions/start', (route) => { starts++; return route.fulfill({ json: {} }); });
+  await page.goto('/session/new?dir=%2Frepo&draftId=broken');
+  await page.getByRole('textbox').fill('Keep this prompt.');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('textbox')).toHaveValue('Keep this prompt.');
+  expect(starts).toBe(0);
+});
+
+test('a failed start preserves its prompt and releases the atomic claim for an explicit retry', async ({ mockedPage: page }) => {
+  await prepareDraft(page);
+  let starts = 0;
+  await page.route('**/api/sessions/start', (route) => {
+    starts++;
+    return starts === 1 ? route.fulfill({ status: 500, json: { error: 'First start failed' } })
+      : route.fulfill({ json: { sessionId: MOCK_SESSION.id, directory: '/repo', platform: 'opencode', remoteId: 'local', firstMessageSent: true } });
+  });
+  await page.goto('/session/new?dir=%2Frepo&draftId=retry');
+  await page.getByRole('textbox').fill('Keep this prompt for retry.');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByRole('alert')).toContainText('First start failed');
+  await expect(page.getByRole('textbox')).toHaveValue('Keep this prompt for retry.');
+  await expect(page.getByRole('textbox')).not.toBeDisabled();
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  expect(starts).toBe(2);
+});
 
 test('prepares multiple sidebar drafts without starting sessions', async ({ mockedPage: page }, testInfo) => {
   let starts = 0;
@@ -6,12 +100,7 @@ test('prepares multiple sidebar drafts without starting sessions', async ({ mock
     starts++;
     await route.fulfill({ json: {} });
   });
-  await page.route('**/api/sessions/prepare', (route) => route.fulfill({ json: {
-    platform: 'opencode', agents: [{ name: 'build' }, { name: 'plan' }], commands: [],
-    models: { hasProviders: true, models: [] }, liveConnection: false,
-  } }));
-  await page.route('**/api/worktree/list?*', (route) => route.fulfill({ json: { worktrees: [] } }));
-  await page.route('**/api/git/info?*', (route) => route.fulfill({ json: {} }));
+  await prepareDraft(page);
   await page.goto('/session/new?dir=%2Frepo&draftId=first&title=Plan+the+API');
   await page.getByRole('textbox').fill('Design the API before implementation.');
   await expect.poll(() => page.evaluate(() => localStorage.getItem('ocman.composerDrafts.v1')))

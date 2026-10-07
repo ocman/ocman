@@ -17,6 +17,12 @@ async function pickMachine(name: string) {
 }
 const target = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/remote/project' };
 
+it('locks machine selection when the composer is disabled by a shared pending start', async () => {
+  vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
+  render(<Composer isRunning={false} disabled newConversation directory="/repo" onMachineChange={vi.fn()} />);
+  expect(await screen.findByRole('combobox', { name: 'Session machine' })).toBeDisabled();
+});
+
 it('switches a new conversation, keeping its typed draft, and locks sending during the switch', async () => {
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });

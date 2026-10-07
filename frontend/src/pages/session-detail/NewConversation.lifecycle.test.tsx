@@ -24,6 +24,10 @@ vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => ({ shellExec: true }),
 }));
+vi.mock('../../lib/draftStartClaims', () => ({
+  claimDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => ({ claimed: true, start }),
+  persistDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => start,
+}));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
 vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
@@ -105,6 +109,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useFirstSubmission.setState({ entries: {} });
   window.localStorage.clear();
+  window.dispatchEvent(new StorageEvent('storage', { key: null }));
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
   clearFailedSends('child');
   clearDraft('new');
@@ -120,8 +125,8 @@ describe('new-conversation submission lifecycle', () => {
     render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'old text' } });
     act(() => {
-      localStorage.setItem('ocman.newConversationDrafts.v1', '[]');
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1' }));
+      localStorage.removeItem('ocman.newConversationDrafts.v1:first');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:first' }));
     });
     await waitFor(() => expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first'));
     expect(screen.getByRole('textbox')).toHaveValue('');

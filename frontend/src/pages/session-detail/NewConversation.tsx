@@ -214,8 +214,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const start = useCallback(async (text: string, build: (ready: Ready) => Submission) => {
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
-    const revision = beginConversationStart(draftId, text);
-    if (revision === null) throw new Error('Session creation is already in progress');
+    let revision: number | null = null;
     const ownsDraft = () => {
       const draft = getConversationDraft(draftId);
       return draft && `${draft.remoteId || 'local'}:${draft.directory}:${draft.platform}:${draft.title}` === routeKey &&
@@ -236,9 +235,12 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       setPending((p) => p?.startId === id ? { ...p, steps } : p);
     });
     try {
+      revision = await beginConversationStart(draftId, text, routeKey);
+      if (revision === null) throw new Error('Session creation is already in progress');
       // Synchronous when ready, so a re-point right after submit cannot drop it.
       let ready = readyRef.current;
       if (!ready) {
+        if (!stillCurrent()) throw new Error('The session target changed before it was ready');
         ready = await waitReady();
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
@@ -263,14 +265,12 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
       if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, steps });
-      if (ownsDraft()) {
-        completeConversationStart(draftId, res.sessionId);
-      }
+      await completeConversationStart(draftId, { sessionId: res.sessionId, platform: res.platform, remoteId: res.remoteId, directory: res.directory }, !!ownsDraft());
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (ownsDraft()) {
-        saveDraft(draftId, text, revision);
-        failConversationStart(draftId, message);
+        saveDraft(draftId, text, revision!);
+        await failConversationStart(draftId, message);
       }
       // Only this request's prompt: a newer start may be pending already.
       setPending((p) => p?.startId === startId ? undefined : p);
@@ -280,7 +280,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       throw new Error(message);
     } finally {
       unsubscribe();
-      endConversationStart(draftId);
+      if (revision !== null) endConversationStart(draftId);
       if (inFlight.current === sourceGeneration) inFlight.current = undefined;
     }
   // waitReady only reads refs.
@@ -313,6 +313,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
 
   // Switching machines re-points this draft, without touching other drafts.
   const onMachineChange = async (machine: TargetCandidate) => {
+    const start = useNewConversationDrafts.getState().starts[draftId];
+    if (inFlight.current !== undefined || start && !start.error && !start.sessionId) throw new Error('Session creation is already in progress');
     if (target.startsWith('dir:')) {
       rememberConversationDraft({ ...params, draftId, target: 'current' });
       setTarget('current');

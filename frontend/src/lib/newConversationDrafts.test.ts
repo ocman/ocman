@@ -2,9 +2,14 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { getDraft, saveDraft } from './composerDraft';
 import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
+vi.mock('./draftStartClaims', () => ({
+  claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
+  persistDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => start,
+}));
 
 beforeEach(() => {
   localStorage.clear();
+  window.dispatchEvent(new StorageEvent('storage', { key: null }));
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
 });
 
@@ -15,7 +20,7 @@ it('persists independent targets and selections and only discards the selected d
   saveDraft('first', 'one');
   saveDraft('second', 'two');
   expect(useNewConversationDrafts.getState().drafts[0]).toEqual({
-    draftId: 'first', directory: '/other', model: 'p/m', agent: 'plan', reasoning: 'high', target: 'current',
+    draftId: 'first', directory: '/other', model: 'p/m', agent: 'plan', reasoning: 'high', target: 'current', createdAt: expect.any(Number),
   });
   vi.resetModules();
   const restored = await import('./newConversationDrafts');
@@ -31,19 +36,21 @@ it('keeps live drafts when storage refuses writes', () => {
   rememberConversationDraft({ draftId: 'first', directory: '/repo' });
   expect(useNewConversationDrafts.getState().drafts).toHaveLength(1);
   write.mockRestore();
+  rememberConversationDraft({ draftId: 'second', directory: '/repo' });
+  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['first', 'second']);
 });
 
-it('holds the start guard by draft identity, releases failures and remembers completed sessions', () => {
+it('holds the start guard by draft identity, releases failures and remembers completed sessions', async () => {
   rememberConversationDraft({ draftId: 'pending', directory: '/repo' });
-  expect(beginConversationStart('pending', 'prompt')).toEqual(expect.any(Number));
-  expect(beginConversationStart('pending', 'duplicate')).toBeNull();
+  expect(await beginConversationStart('pending', 'prompt')).toEqual(expect.any(Number));
+  expect(await beginConversationStart('pending', 'duplicate')).toBeNull();
   endConversationStart('pending');
-  expect(beginConversationStart('pending', 'retry')).toEqual(expect.any(Number));
-  completeConversationStart('pending', 'session');
+  expect(await beginConversationStart('pending', 'retry')).toEqual(expect.any(Number));
+  await completeConversationStart('pending', { sessionId: 'session', platform: 'opencode', remoteId: 'local', directory: '/repo' });
   endConversationStart('pending');
   expect(useNewConversationDrafts.getState().drafts).toEqual([]);
   expect(useNewConversationDrafts.getState().starts.pending.sessionId).toBe('session');
-  expect(beginConversationStart('pending', 'duplicate')).toBeNull();
+  expect(await beginConversationStart('pending', 'duplicate')).toBeNull();
 });
 
 it('merges another tab before writing and observes cross-tab discards', async () => {
@@ -54,14 +61,34 @@ it('merges another tab before writing and observes cross-tab discards', async ()
   rememberConversationDraft({ draftId: 'first', directory: '/updated' });
   expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['first', 'second']);
   otherTab.forgetConversationDraft('first');
-  window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1' }));
+  window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:first' }));
   expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
   rememberConversationDraft({ draftId: 'third', directory: '/repo' });
   expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second', 'third']);
 });
 
+it('keeps both drafts when two tabs interleave their metadata writes', async () => {
+  vi.resetModules();
+  const otherTab = await import('./newConversationDrafts');
+  const original = Storage.prototype.setItem;
+  let interleaved = false;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (key.startsWith('ocman.newConversationDrafts') && !interleaved) {
+      interleaved = true;
+      otherTab.rememberConversationDraft({ draftId: 'second', directory: '/repo' });
+    }
+    original.call(this, key, value);
+  });
+  try {
+    rememberConversationDraft({ draftId: 'first', directory: '/repo' });
+    vi.resetModules();
+    const restored = await import('./newConversationDrafts');
+    expect(restored.useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId).sort()).toEqual(['first', 'second']);
+  } finally { write.mockRestore(); }
+});
+
 it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {
-  localStorage.setItem('ocman.newConversationDrafts.v1', raw);
+  localStorage.setItem('ocman.newConversationDrafts.v1:invalid', raw);
   vi.resetModules();
   const restored = await import('./newConversationDrafts');
   expect(restored.useNewConversationDrafts.getState().drafts).toEqual([]);

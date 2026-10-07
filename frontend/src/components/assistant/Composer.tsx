@@ -350,7 +350,7 @@ export function Composer({
               key={`${sessionId}:${directory}:${remoteId}`}
               directory={directory}
               remoteId={remoteId}
-              disabled={sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0}
+              disabled={disabled || sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0}
               onSelect={async (machine) => {
                 setSwitchingMachine(true);
                 try {

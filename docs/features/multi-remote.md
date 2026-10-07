@@ -127,7 +127,10 @@ this browser and survive a reload. Preparing a draft does not start an agent or
 create a worktree. Sending its first prompt creates the real session and removes
 that draft from the section, even if you have switched to another draft while
 it starts. Reopening a pending draft shows its submitted prompt and keeps the
-composer locked until that start finishes. Discarding a draft in another tab
+composer and machine/target controls locked until that start finishes. Two tabs
+opening the same draft share one start and its completion, including after a
+reload. A start interrupted before its result is known stays locked rather than
+automatically submitting again. Discarding a draft in another tab
 replaces its open composer with a fresh, empty draft identity.
 
 Before its first prompt, a new conversation's composer shows a machine

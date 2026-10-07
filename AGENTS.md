@@ -84,8 +84,14 @@ command/shell failures live in child-keyed `firstSubmission` state with a
 visible retry, without overwriting the child's draft. While first delivery is
 pending, the child composer blocks further submissions so follow-ups cannot
 overtake it; permission and question controls remain available. Start transport failures
-are never automatically replayed, and completion only navigates/clears the
-initiating draft while that route generation is still active. The owner then
+are never automatically replayed. Completion retires only the unchanged
+submitted draft revision, including background starts, and only the currently
+open initiating draft navigates to the created session. Metadata uses per-draft
+localStorage keys so concurrent tabs cannot erase unrelated entries. An atomic
+IndexedDB claim prevents duplicate first submissions across tabs and reloads;
+per-draft localStorage receipts share pending, failure and completion state.
+The composer and its machine/target controls stay locked while a start is pending.
+The owner then
 names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) titles the
 bare prompt and the title is slugged into the branch (`git branch -m`, the path
 stays). The session keeps OpenCode's default title so OpenCode titles it from

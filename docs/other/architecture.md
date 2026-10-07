@@ -469,6 +469,7 @@ the owning project's PR/Issue pane.
 flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
+    Stores --> Persistence[Browser persistence<br/>per-draft localStorage + IndexedDB start claims]
     Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
@@ -559,13 +560,16 @@ flowchart TD
   The machine selector
   re-points the route; the target selector changes client state. Neither
   creates a session. `lib/newConversationDrafts` stores each draft's target and
-  selections in browser localStorage, while `lib/composerDraft` stores its text
+  selections in per-draft browser localStorage keys, while `lib/composerDraft` stores its text
   under its unique `draftId`. `SidebarConversationDrafts` lists these prepared
   conversations in both sidebar views, including empty drafts, and lets the user
   reopen or discard one. Opening another new conversation allocates another
   draft id; switching machines retains the current id.
-  Start reservations are browser-memory state keyed by draft id and discard
-  revision, so remounting a pending draft cannot submit a duplicate. Successful
+  `lib/draftStartClaims` reserves starts with an atomic IndexedDB readwrite
+  transaction, so two tabs cannot create sessions for the same draft. Per-draft
+  localStorage receipts share pending, failure and completion state across tabs
+  and reloads. Explicit metadata deletion invalidates autosave and recovery;
+  unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.
   `PreparedDraftLifecycle` follows completed starts to their session and replaces
   an externally discarded identity before it can accept unsavable edits.
