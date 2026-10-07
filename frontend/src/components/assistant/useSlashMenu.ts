@@ -10,6 +10,10 @@ export interface SlashMenuVisibility {
   hasVariants: boolean;
 }
 
+export function reloadSlashCommands(sessionId: string) {
+  window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: sessionId }));
+}
+
 /**
  * The `/` autocomplete menu: fetches the session's command catalog
  * (built-ins merged with what the platform reports), tracks the open/
@@ -25,13 +29,24 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
 
   useEffect(() => {
     if (!sessionId) return;
-    let cancelled = false;
-    api.commands(sessionId).then((cmds) => {
-      if (!cancelled) setFetched(cmds || []);
-    }).catch(() => {
-      setFetched([]);
-    });
-    return () => { cancelled = true; };
+    let generation = 0;
+    const load = () => {
+      const current = ++generation;
+      api.commands(sessionId).then((cmds) => {
+        if (current === generation) setFetched(cmds || []);
+      }).catch(() => {
+        if (current === generation) setFetched([]);
+      });
+    };
+    const reload = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === sessionId) load();
+    };
+    load();
+    window.addEventListener('oc-slash-commands-reload', reload);
+    return () => {
+      generation++;
+      window.removeEventListener('oc-slash-commands-reload', reload);
+    };
   }, [sessionId]);
 
   // Platform commands come from the session's catalog, or from the caller

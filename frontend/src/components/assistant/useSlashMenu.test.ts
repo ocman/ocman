@@ -11,6 +11,20 @@ import { useSlashMenu } from './useSlashMenu';
 const vis = { hasModels: true, hasAgents: true, activeAgent: 'build', hasVariants: false };
 
 describe('useSlashMenu', () => {
+  it('refreshes skills and commands after reload without changing the session', async () => {
+    commands.mockResolvedValue([{ name: 'old-skill', source: 'skill' } as SlashCommand]);
+    const { result } = renderHook(() => useSlashMenu('s1', vis));
+    await waitFor(() => expect(result.current.commands.some((c) => c.name === 'old-skill')).toBe(true));
+    commands.mockResolvedValue([
+      { name: 'new-skill', source: 'skill' } as SlashCommand,
+      { name: 'new-command', source: 'command' } as SlashCommand,
+    ]);
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 's1' })));
+    await waitFor(() => expect(result.current.commands.some((c) => c.name === 'new-skill')).toBe(true));
+    expect(result.current.commands.some((c) => c.name === 'new-command')).toBe(true);
+    expect(result.current.commands.some((c) => c.name === 'old-skill')).toBe(false);
+  });
+
   it('merges platform commands over built-ins and filters on input', async () => {
     commands.mockResolvedValue([
       { name: 'model', description: 'platform model' } as SlashCommand,
@@ -38,6 +52,29 @@ describe('useSlashMenu', () => {
     act(() => result.current.close());
     expect(result.current.open).toBe(false);
     expect(result.current.index).toBe(0);
+  });
+
+  it.each(['resolve', 'reject'])('ignores an older catalog %s after reload and ignores other sessions', async (outcome) => {
+    let resolve!: (value: SlashCommand[]) => void;
+    let reject!: (error: Error) => void;
+    commands.mockImplementationOnce(() => new Promise<SlashCommand[]>((ok, fail) => { resolve = ok; reject = fail; }));
+    commands.mockResolvedValue([{ name: 'fresh-skill', source: 'skill' }]);
+    const { result, unmount } = renderHook(() => useSlashMenu('s1', vis));
+    const count = commands.mock.calls.length;
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 'other' })));
+    expect(commands).toHaveBeenCalledTimes(count);
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 's1' })));
+    await waitFor(() => expect(result.current.commands.some((c) => c.name === 'fresh-skill')).toBe(true));
+    await act(async () => {
+      if (outcome === 'resolve') resolve([{ name: 'stale-skill', source: 'skill' }]);
+      else reject(new Error('old request failed'));
+    });
+    expect(result.current.commands.some((c) => c.name === 'fresh-skill')).toBe(true);
+    expect(result.current.commands.some((c) => c.name === 'stale-skill')).toBe(false);
+    unmount();
+    const finalCount = commands.mock.calls.length;
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 's1' })));
+    expect(commands).toHaveBeenCalledTimes(finalCount);
   });
 
   it('ranks name matches first, then description hits, and wires aria to the highlighted option', async () => {

@@ -6,12 +6,13 @@
 // reports the error via pending.fail.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Session } from '../../lib/api';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { api } from '../../lib/api';
+import { useSlashMenu } from '../../components/assistant/useSlashMenu';
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign(
@@ -26,7 +27,7 @@ vi.mock('../../lib/apiStore', () => ({
 }));
 
 vi.mock('../../lib/api', () => ({
-  api: { restartOpencode: vi.fn(), reloadOpencode: vi.fn(), debugLog: vi.fn().mockResolvedValue(undefined) },
+  api: { restartOpencode: vi.fn(), reloadOpencode: vi.fn(), commands: vi.fn(), debugLog: vi.fn().mockResolvedValue(undefined) },
 }));
 
 const restartOpencode = vi.mocked(api.restartOpencode);
@@ -75,6 +76,10 @@ beforeEach(() => {
 describe('useSessionActions — /reload-opencode', () => {
   it('reloads configuration and refreshes the catalog while a turn is running', async () => {
     vi.mocked(api.reloadOpencode).mockResolvedValue(undefined);
+    vi.mocked(api.commands).mockResolvedValueOnce([{ name: 'old-skill', source: 'skill' }]);
+    const menu = renderHook(() => useSlashMenu('sess-1', { hasAgents: true, hasModels: true, activeAgent: 'build', hasVariants: false }));
+    await waitFor(() => expect(menu.result.current.commands.some((c) => c.name === 'old-skill')).toBe(true));
+    vi.mocked(api.commands).mockResolvedValue([{ name: 'new-skill', source: 'skill' }]);
     const reloadCapabilities = vi.fn();
     const opts = makeOptions({ isRunningRef: { current: true }, reloadCapabilities });
     const { result } = renderHook(() => useSessionActions(opts));
@@ -84,6 +89,8 @@ describe('useSessionActions — /reload-opencode', () => {
     expect(opts.setRestartToastMessage).toHaveBeenLastCalledWith('Reloaded OpenCode configuration');
     expect(opts.pending.clear).toHaveBeenCalled();
     expect(reloadCapabilities).toHaveBeenCalledOnce();
+    await waitFor(() => expect(menu.result.current.commands.some((c) => c.name === 'new-skill')).toBe(true));
+    expect(menu.result.current.commands.some((c) => c.name === 'old-skill')).toBe(false);
   });
 
   it('reports reload failures without restarting or refreshing the catalog', async () => {

@@ -204,8 +204,8 @@ Use `/reload-opencode` in an existing conversation to refresh the owning machine
 OpenCode v2 skills and configuration without restarting its server. Running turns
 continue with fresh services at the next step boundary. Pending permission and
 question prompts are cancelled during the reload. The command refreshes the
-composer's agent and model catalogs after completion; it does not launch a server
-if none is managed, and is unavailable on v1.
+composer's agent, model, command and skill catalogs after completion. It does not
+launch a server if none is managed, and is unavailable on v1.
 
 Keep `/restart-opencode` for an unhealthy server, a binary upgrade, changed process
 environment or launch settings, or unwatched plugin dependencies. On v2 it

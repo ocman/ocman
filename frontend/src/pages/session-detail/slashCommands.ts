@@ -15,6 +15,7 @@ import { copyTextToClipboard, copyToClipboard } from '../../lib/clipboard';
 import { remoteLog } from '../../lib/remoteLog';
 import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
 import type { UsePendingSendResult } from './usePendingSend';
+import { reloadSlashCommands } from '../../components/assistant/useSlashMenu';
 
 export interface CommandSession {
   id: string;
@@ -151,6 +152,7 @@ const reloadOpencode: SlashCommand = {
       pending.clear();
       setRestartToastMessage('Reloaded OpenCode configuration');
       reloadCapabilities?.();
+      reloadSlashCommands(session.id);
     } catch (e) {
       setRestartToastMessage(null);
       remoteLog.error('Failed to reload OpenCode', e);
