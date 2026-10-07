@@ -48,6 +48,7 @@ export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
         onClick={() => void handleCreate()}
         disabled={busy}
         aria-busy={busy}
+        data-autofocus
         data-testid="share-create-link"
       >
         {busy ? 'Working…' : 'Create share link'}

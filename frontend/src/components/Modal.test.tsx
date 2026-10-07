@@ -77,7 +77,7 @@ describe('Modal focus management', () => {
 
   it('keeps notifications interactive above the modal', async () => {
     const user = userEvent.setup();
-    render(<><div><div className="oc-prompt-toast-viewport"><button type="button">Dismiss notification</button></div></div><Harness /></>);
+    render(<><div><div data-prompt-toast-viewport=""><button type="button">Dismiss notification</button></div></div><Harness /></>);
 
     await user.click(screen.getByRole('button', { name: 'Open' }));
 

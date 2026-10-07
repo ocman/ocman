@@ -1,7 +1,8 @@
 import * as Toast from '@radix-ui/react-toast';
 import { api } from '../lib/api';
 import { useBackendStatus } from '../lib/backendStatus';
-import './PromptToastNotify.css';
+import { Button } from './Control';
+import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastViewport } from './PromptToast';
 
 // Probe that clears the flag on success (apiFetch does the clearing).
 function probe() {
@@ -24,19 +25,19 @@ export function BackendStatusBanner({ force = false, onRetry = probe }: Props) {
   if (!force && !unreachable) return null;
   return (
     <Toast.Provider swipeDirection="right" duration={Infinity}>
-      <Toast.Root className="oc-prompt-toast" data-kind="error" data-testid="backend-status-banner" open duration={Infinity}>
-        <Toast.Title className="oc-prompt-toast-heading">Backend unreachable</Toast.Title>
-        <Toast.Description className="oc-prompt-toast-body">
+      <PromptToast data-kind="error" data-testid="backend-status-banner" open duration={Infinity}>
+        <PromptToastHeading>Backend unreachable</PromptToastHeading>
+        <PromptToastBody>
           Backend is not responding.
           {error && !error.startsWith('Backend is not responding') && <span> ({error})</span>}
-        </Toast.Description>
-        <div className="oc-prompt-toast-actions">
+        </PromptToastBody>
+        <PromptToastActions label="Backend connection actions">
           <Toast.Action asChild altText="Retry connecting to the backend" onClick={(e) => { e.preventDefault(); onRetry(); }}>
-            <button type="button" className="oc-prompt-toast-open">Retry</button>
+            <Button type="button" size="small" variant="accent">Retry</Button>
           </Toast.Action>
-        </div>
-      </Toast.Root>
-      <Toast.Viewport className="oc-prompt-toast-viewport" />
+        </PromptToastActions>
+      </PromptToast>
+      <PromptToastViewport />
     </Toast.Provider>
   );
 }
