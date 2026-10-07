@@ -26,7 +26,7 @@ export interface ComposerProps {
   isRunning: boolean;
   disabled?: boolean;
   disabledHint?: string;
-  initialAttachments?: { images: AttachedImage[]; files: AttachedFileRef[] };
+  initialAttachments?: { images: AttachedImage[]; files: AttachedFileRef[]; pending?: number };
   onAttachmentsChange?: (payload: { images: AttachedImage[]; files: AttachedFileRef[] }) => void;
   onAttachmentProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void;
   whisperAvailable?: boolean;

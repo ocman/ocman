@@ -13,6 +13,49 @@ async function prepareDraft(page: Page) {
   await page.route('**/api/sessions/resolve-targets', (route) => route.fulfill({ json: { candidates: [local, remote], remotes: [remote] } }));
 }
 
+test('peer follow-ups wait for the initiating tab to finish first file delivery', async ({ mockedPage: first }) => {
+  const peer = await first.context().newPage();
+  await installDefaultRoutes(peer);
+  let finish!: () => void;
+  const waiting = new Promise<void>((resolve) => { finish = resolve; });
+  let uploads = 0;
+  const messages: string[] = [];
+  for (const page of [first, peer]) {
+    await prepareDraft(page);
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(?:\\?|$)`), (route) => route.fulfill({ json: {
+      session: { ...MOCK_SESSION, liveConnection: true }, messages: [], parts: [], totalMessages: 0,
+    } }));
+    await page.route('**/api/sessions/start', (route) => route.fulfill({ json: {
+      sessionId: MOCK_SESSION.id, directory: '/repo', platform: 'opencode', remoteId: 'local', firstMessageSent: false,
+    } }));
+    await page.route('**/api/session/*/attachment?*', async (route) => {
+      uploads++;
+      await waiting;
+      await route.fulfill({ json: { path: '/tmp/first.txt', name: 'first.txt', mime: 'text/plain', size: 4 } });
+    });
+    await page.route('**/api/session/*/message*', async (route) => {
+      messages.push(route.request().postDataJSON().message);
+      await route.fulfill({ json: {} });
+    });
+    await page.goto('/session/new?dir=%2Frepo&draftId=first-delivery');
+  }
+  await first.locator('input[type="file"]').setInputFiles({ name: 'first.txt', mimeType: 'text/plain', buffer: Buffer.from('note') });
+  await expect(first.getByText('first.txt')).toBeVisible();
+  await first.getByRole('textbox').fill('First delivery');
+  await first.getByRole('button', { name: 'Send message' }).click();
+  await expect.poll(() => uploads).toBe(1);
+  await expect(peer).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  await expect(peer.getByRole('textbox')).toBeDisabled();
+  expect(messages).toEqual([]);
+  finish();
+  await expect(peer.getByRole('textbox')).toBeEnabled();
+  await peer.getByRole('textbox').fill('Follow-up');
+  await peer.getByRole('button', { name: 'Send message' }).click();
+  await expect.poll(() => messages.length).toBe(2);
+  expect(messages[0]).toContain('First delivery');
+  expect(messages[1]).toBe('Follow-up');
+});
+
 test('two tabs starting the same draft create only one session and share completion', async ({ mockedPage: first }) => {
   const second = await first.context().newPage();
   await installDefaultRoutes(second);

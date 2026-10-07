@@ -93,7 +93,7 @@ export async function reconcileConversationStart(draftId: string, hint?: DraftSt
   if (start?.replacementDraftId) transferDraftAttachments(draftId, start.replacementDraftId);
   if (start?.createdSession && start.retirement && !start.relocationError && getConversationDraft(draftId)) {
     if (retirementSnapshot(draftId) === start.retirement) forgetConversationDraft(draftId);
-    else { await completeConversationStart(draftId, start.createdSession, false); return; }
+    else { publishStart(draftId, start); await completeConversationStart(draftId, start.createdSession, false); return; }
   }
   if (JSON.stringify(start) === JSON.stringify(before)) return;
   useNewConversationDrafts.setState((state) => {

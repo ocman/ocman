@@ -589,6 +589,8 @@ flowchart TD
   draft-keyed Zustand snapshot, restored after navigation and a failed start.
   Mounted composers read this snapshot directly, including late image conversions
   that finish after reopening the draft; local arrays cannot overwrite it.
+  Outstanding attachment processing belongs to the same snapshot, so remounting
+  cannot unlock submission before accepted files are ready.
   Attachment processing captures the initiating draft revision before asynchronous
   image reads, so accepted batches survive navigation without reviving discarded
   payloads. Relocation transfers that snapshot, including owner-local browser
@@ -597,6 +599,8 @@ flowchart TD
   edits before deleting the old identity. The completion receipt records a
   retirement snapshot. Reload reconciliation deletes an unchanged source or
   relocates newer edits, including drafts whose composer is not open.
+  It adopts the authoritative attempt receipt before replaying relocation, even
+  when the localStorage mirror was never saved.
   Legacy text migration copies to a checked destination key before clearing
   the source; a quota error leaves the original available with an explicit retry.
   Replacement owner/selections must persist before checked text relocation;
@@ -631,7 +635,11 @@ flowchart TD
   discard or unlock a newer draft's submission. Non-image files are retained
   until creation, uploaded to
   the real session, then sent; file/command/shell execution lives in
-  child-keyed retry state, independently of the child's draft. Uncertain
+  child-keyed retry state, independently of the child's draft. First-delivery
+  pending/error state is mirrored to per-child localStorage before completion
+  publication, blocking peer-tab follow-ups until delivery settles. Retry execution
+  remains in the originating tab, which owns the browser Files or command closure.
+  Uncertain
   creation is never automatically replayed, and a late completion cannot
   override a newer route or clear its draft. Prepare/start preserve the
   localhost host-control guard. Afterwards the host has the

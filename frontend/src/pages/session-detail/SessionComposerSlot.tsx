@@ -7,7 +7,7 @@ import { FactorySessionRecovery } from '../../components/FactorySessionRecovery'
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { FirstSubmissionNotice } from './FirstSubmissionNotice';
 import { LaunchProgressCard } from '../../components/LaunchProgressCard';
-import { useFirstSubmission } from './firstSubmission';
+import { getFirstSubmission, useFirstSubmission } from './firstSubmission';
 
 export interface SessionComposerSlotProps {
   sessionId: string;
@@ -44,7 +44,8 @@ export function SessionComposerSlot({
   question,
   composer,
 }: SessionComposerSlotProps) {
-  const firstPending = useFirstSubmission((state) => !!state.entries[sessionId]?.pending);
+  const livePending = useFirstSubmission((state) => !!state.entries[sessionId]?.pending);
+  const firstPending = getFirstSubmission(sessionId)?.pending || livePending;
   return (
     <ErrorBoundary name="session:composer" inline resetKey={sessionId}>
       <FactoryPlanApproval epicID={factoryEpicID} platformID={platformId} sessionID={sessionId} />

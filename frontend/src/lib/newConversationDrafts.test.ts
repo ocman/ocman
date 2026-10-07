@@ -2,18 +2,34 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { getPendingDraftPayload, updateDraftAttachments } from './pendingDraftPayloads';
+import { readDraftStart } from './draftStartClaims';
 import { getDraft, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
 import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
 vi.mock('./draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
   persistDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => start,
-  readDraftStart: async (id: string) => useNewConversationDrafts.getState().starts[id],
+  readDraftStart: vi.fn(async (id: string) => useNewConversationDrafts.getState().starts[id]),
 }));
 
 beforeEach(() => {
+  vi.mocked(readDraftStart).mockImplementation(async (id) => useNewConversationDrafts.getState().starts[id]);
   localStorage.clear();
   window.dispatchEvent(new StorageEvent('storage', { key: null }));
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
+});
+
+it('adopts the authoritative attempt before relocating a completed start with no mirror', async () => {
+  rememberConversationDraft({ draftId: 'missing-mirror', directory: '/repo' });
+  const draft = useNewConversationDrafts.getState().drafts[0];
+  const start = { version: getDraftVersion(draft.draftId), text: '', attemptId: 'authoritative-attempt', sessionId: 'created',
+    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
+    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId)]) };
+  saveDraft(draft.draftId, 'newer text');
+  vi.mocked(readDraftStart).mockResolvedValue(start);
+  await reconcileConversationStart(draft.draftId);
+  const completed = useNewConversationDrafts.getState().starts[draft.draftId];
+  expect(completed.attemptId).toBe('authoritative-attempt');
+  expect(getDraft(completed.replacementDraftId!)).toBe('newer text');
 });
 
 it('does not overwrite another draft during an interleaved text relocation', () => {

@@ -31,7 +31,7 @@ function readFileAsDataURL(file: File): Promise<string> {
  * and referenced by path in the prompt text.
  */
 export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined, platform?: string,
-  initial?: { images: AttachedImage[]; files: AttachedFileRef[] },
+  initial?: { images: AttachedImage[]; files: AttachedFileRef[]; pending?: number },
   onProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void,
   onChange?: (payload: { images: AttachedImage[]; files: AttachedFileRef[] }) => void) {
   const [localImages, setImages] = useState<AttachedImage[]>(initial?.images || []);
@@ -39,7 +39,8 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
   const controlled = !!onProcessing && !!onChange;
   const images = controlled ? initial?.images || [] : localImages;
   const files = controlled ? initial?.files || [] : localFiles;
-  const [pending, setPending] = useState(0);
+  const [localPending, setPending] = useState(0);
+  const pending = controlled ? initial?.pending || 0 : localPending;
 
   const addFiles = useCallback(async (all: File[]) => {
     if (disabled) return;

@@ -141,6 +141,7 @@ export function Composer({
   };
 
   const runSubmit = async (execute: () => void | Promise<void>, retryBackend = false) => {
+    if (disabled || sendingRef.current || attachments.pending > 0) return;
     const el = inputRef.current;
     if (!el) return;
     const hadFocus = document.activeElement === el;

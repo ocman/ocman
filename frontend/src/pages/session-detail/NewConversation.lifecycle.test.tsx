@@ -150,6 +150,10 @@ describe('new-conversation submission lifecycle', () => {
       fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['image'], 'late.png', { type: 'image/png' }), file] } });
       fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
       fireEvent.click(screen.getByRole('button', { name: /First/ }));
+      fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submit attachments' } });
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(api.startSession).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
       await act(async () => callbacks.forEach((finish) => finish()));
       expect(await screen.findByText(file.name)).toBeInTheDocument();
       expect(screen.getByRole('img', { name: 'Attachment 1' })).toBeInTheDocument();
