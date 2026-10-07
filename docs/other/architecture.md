@@ -521,7 +521,17 @@ flowchart TD
   cached project setting and refreshes mounted composers. Reconnecting SSE also
   clears the cache to recover missed saves; in-flight reads cannot restore stale
   settings after invalidation. The preference is stored in the hub's `state.db`.
+  The header's project button opens `ProjectQuickSettings`, which reads the
+  directory catalog without launching an instance and saves model, agent, and
+  worktree defaults through `/api/project/settings`. These defaults use a
+  separate owner-and-project-root setting key, preserving the ordered model
+  fallback list. New conversations apply them after preparation; explicit
+  composer selections win, including selections made while preparation waits.
 - **Selection and overlays.** `SegmentedControl` uses native radios for filters.
+  `Popover` shares the usage popover's compact, square-cornered shell with
+  project quick settings. It portals to the document body, focuses the panel,
+  handles outside-click and Escape dismissal, and restores trigger focus on
+  Escape. Each caller positions the shell beside its trigger.
   `Tabs` and `DropdownMenu` wrap Radix UI for keyboard navigation, focus, and
   accessible associations, styled with the app's CSS. Tabs activate on click,
   Enter, or Space and unmount inactive content by default. Menu actions that open

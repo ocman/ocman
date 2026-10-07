@@ -107,12 +107,16 @@ describe('MainNav', () => {
     const usage = screen.getByRole('button', { name: 'Usage' });
     await user.click(usage);
 
-    expect(screen.getByRole('dialog', { name: 'Subscription usage' })).toBeInTheDocument();
+    const popover = screen.getByRole('dialog', { name: 'Subscription usage' });
+    expect(popover).toHaveClass('oc-popover');
+    expect(popover.parentElement).toBe(document.body);
+    expect(popover).toHaveFocus();
     expect(screen.getByTestId('location')).toHaveTextContent('/projects');
     expect(usage).toHaveAttribute('aria-expanded', 'true');
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Subscription usage' })).not.toBeInTheDocument();
+    expect(usage).toHaveFocus();
   });
 
   it('marks Home active on a session detail route', () => {

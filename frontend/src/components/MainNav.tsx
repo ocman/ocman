@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useClickOutside } from '../lib/useClickOutside';
 import { useInbox } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
+import { Popover } from './Popover';
 import './MainNav.css';
 
 // activePrefix: sub-pages living outside the link's own path (singular routes, sibling tabs).
@@ -28,13 +28,11 @@ export function MainNav({
   const collapsed = useUiStore((state) => state.mainNavCollapsed);
   const toggleCollapsed = useUiStore((state) => state.toggleMainNav);
   const inbox = useInbox();
-  const usageRoot = useRef<HTMLDivElement>(null);
+  const usageTrigger = useRef<HTMLButtonElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const toggleLabel = mobileOpen
     ? 'Close navigation'
     : collapsed ? 'Expand navigation' : 'Collapse navigation';
-
-  useClickOutside(usageRoot, usageOpen, () => setUsageOpen(false));
 
   const navLink = (item: (typeof NAV_ITEMS)[number], className?: string) => (
     <NavLink
@@ -84,12 +82,14 @@ export function MainNav({
             <span>Inbox</span>
             {inbox.data?.unreadTotal ? <b className="nav-unread-badge">{inbox.data.unreadTotal > 99 ? '99+' : inbox.data.unreadTotal}</b> : null}
           </NavLink>
-          <div className="main-nav-usage-root" ref={usageRoot} onKeyDown={(event) => event.key === 'Escape' && setUsageOpen(false)}>
+          <div className="main-nav-usage-root">
             <button
+              ref={usageTrigger}
               type="button"
               className={usageOpen || location.pathname === '/subscription-usage' ? 'main-nav-usage active' : 'main-nav-usage'}
               aria-label="Usage"
               aria-expanded={usageOpen}
+              aria-haspopup="dialog"
               aria-controls="subscription-usage-popover"
               title={collapsed ? 'Usage' : undefined}
               onClick={() => setUsageOpen((open) => !open)}
@@ -97,16 +97,11 @@ export function MainNav({
               <i className="bi bi-speedometer2" aria-hidden="true" />
               <span>Usage</span>
             </button>
-            {usageOpen && (
-              <div
-                id="subscription-usage-popover"
-                className="subscription-usage-popover"
-                role="dialog"
-                aria-label="Subscription usage"
-              >
-                <SubscriptionUsageContent compact />
-              </div>
-            )}
+            <Popover open={usageOpen} onClose={() => setUsageOpen(false)} triggerRef={usageTrigger}
+              id="subscription-usage-popover" label="Subscription usage"
+              className={`subscription-usage-popover${collapsed ? ' subscription-usage-popover--collapsed' : ''}`}>
+              <SubscriptionUsageContent compact />
+            </Popover>
           </div>
           {navLink({ to: '/settings', label: 'Settings', icon: 'bi-gear' })}
         </nav>

@@ -1,0 +1,10 @@
+.project-quick-settings { display: inline-flex; min-width: 0; }
+.project-quick-settings-popover { max-height: min(560px, calc(100vh - var(--header-height) - 24px)); }
+.project-quick-settings-popover h2 { margin: 0; font-size: 14px; }
+.project-quick-settings-popover p { color: var(--text-dim); margin: 8px 0 10px; font-size: 12px; }
+.project-quick-settings-popover fieldset { display: grid; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.project-quick-settings-popover .settings-row { padding: 8px 0; gap: 6px; }
+.project-quick-settings-popover .settings-row-label { font-size: 12px; }
+.project-quick-settings-popover .oc-search-select,
+.project-quick-settings-popover .oc-field { width: 100%; }
+.project-quick-settings-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }

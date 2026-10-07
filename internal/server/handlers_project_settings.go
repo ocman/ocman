@@ -48,15 +48,26 @@ func (s *Server) getProjectSettings(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "reading default agent", err)
 		return
 	}
+	defaults, err := s.getProjectDefaults(r.Context(), dir, r.URL.Query().Get("remoteId"))
+	if err != nil {
+		serverError(w, "reading project defaults", err)
+		return
+	}
+	if defaults != nil && defaults.Agent != "" {
+		agent = defaults.Agent
+	}
 	writeJSON(w, struct {
 		state.ProjectSettings
-		DefaultAgent string `json:"defaultAgent"`
-	}{ps, agent})
+		DefaultAgent string           `json:"defaultAgent"`
+		Defaults     *projectDefaults `json:"defaults,omitempty"`
+	}{ps, agent, defaults})
 }
 
 func (s *Server) postProjectSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Directory string `json:"directory"`
+		Directory string           `json:"directory"`
+		RemoteID  string           `json:"remoteId"`
+		Defaults  *projectDefaults `json:"defaults"`
 		state.ProjectSettings
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
@@ -65,6 +76,19 @@ func (s *Server) postProjectSettings(w http.ResponseWriter, r *http.Request) {
 	dir := strings.TrimSpace(req.Directory)
 	if dir == "" {
 		http.Error(w, "directory is required", http.StatusBadRequest)
+		return
+	}
+	if req.Defaults != nil {
+		if err := req.Defaults.validate(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		raw, _ := json.Marshal(req.Defaults)
+		if err := s.stateDB.SetSetting(r.Context(), projectDefaultsKey(dir, req.RemoteID), string(raw)); err != nil {
+			serverError(w, "saving project defaults", err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
 		return
 	}
 	if err := s.stateDB.SetProjectSettings(r.Context(), dir, req.ProjectSettings); err != nil {

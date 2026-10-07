@@ -52,6 +52,14 @@ graphs, system stats.
 **Model picker.** Per-platform favourites and a refreshable catalog, so new
 models appear without a restart.
 
+Click the project name in the header to open **Project defaults**. Choose a
+default model, agent, and whether new conversations use a new worktree or the
+current checkout, then Save. These preferences belong to that project on that
+machine and are shared by its sibling worktrees. A composer choice overrides
+the default for that conversation. **Use inherited default** clears an override.
+Worktrees are used only when the project supports them. The startup model
+preference does not change the project's model fallback list.
+
 ## Worktrees and parallel work
 
 `/wt` creates a git worktree under `<repo-parent>/.worktrees/<repo>/<slug>/`

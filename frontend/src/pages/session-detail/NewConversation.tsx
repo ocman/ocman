@@ -15,7 +15,7 @@ import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
-import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSettingsCache';
+import { loadProjectSettings, useSettingsRevision, type ProjectDefaults } from '../../lib/projectSettingsCache';
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
@@ -43,7 +43,8 @@ export interface NewConversationProps {
 }
 
 /** What a submission needs before it can start: the catalog and the resolved target. */
-interface Ready { catalog: PrepareSessionResponse; canWorktree: boolean; platform?: string; model: string }
+type DraftCatalog = PrepareSessionResponse & { defaults?: ProjectDefaults };
+interface Ready { catalog: DraftCatalog; canWorktree: boolean; platform?: string; model: string }
 /** A server-delivered prompt, or work the client runs on the new session. */
 interface Submission {
   model: string;
@@ -61,12 +62,12 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
 
   const catalogKey = JSON.stringify([remoteId, directory, params.platform]);
   const cachedCatalog = useMemo(() => getNewSessionCatalog(catalogKey), [catalogKey]);
-  const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: PrepareSessionResponse }>();
+  const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: DraftCatalog }>();
   const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const settingsRevision = useSettingsRevision();
   const catalogRequest = JSON.stringify([catalogKey, catalogAttempt, settingsRevision]);
-  const catalog = prepared?.key === catalogKey ? prepared.catalog : cachedCatalog;
+  const catalog: DraftCatalog | undefined = prepared?.key === catalogKey ? prepared.catalog : cachedCatalog;
   const catalogReady = prepared?.request === catalogRequest;
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
@@ -94,6 +95,8 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     ]).then(([result, settings]) => {
       if (controller.signal.aborted) return;
       const catalog = { ...result, defaultAgent: settings.defaultAgent || 'build',
+        defaults: settings.defaults,
+        projectDefaultModel: settings.defaults?.model || result.projectDefaultModel,
         models: { ...result.models, models: result.models.hasProviders ? result.models.models : availabilityUnknown(result.models.models) },
       };
       cacheNewSessionCatalog(catalogKey, catalog);
@@ -108,7 +111,8 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedReasoning, setSelectedReasoning] = useState('');
-  const [target, setTarget] = useState<SessionTarget>('worktree');
+  const [targetPick, setTarget] = useState<{ key: string; value: SessionTarget }>();
+  const target = targetPick?.key === catalogKey ? targetPick.value : catalog?.defaults?.worktree || 'worktree';
   const [error, setError] = useState('');
   // The submitted prompt, shown as the conversation's first message while
   // the session starts. Keyed by route so a machine switch mid-start hides it.
@@ -132,12 +136,6 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   // Same precedence as an existing empty session: project setting, then
   // the last pick in this project, then the directory's most recent model.
   const activeModel = catalog?.projectDefaultModel || getProjectModel(directory) || catalog?.defaultModel || '';
-  const seeded = useRef<string>('');
-  useEffect(() => {
-    if (!catalogReady || !catalog || !activeModel || seeded.current === directory) return;
-    seeded.current = directory;
-    setSelectedModel(activeModel);
-  }, [activeModel, directory, catalog, catalogReady]);
 
   const models = useMemo(() => {
     const entries = catalog?.models.models ?? [];
@@ -146,17 +144,15 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const agents = useMemo(() => catalog?.agents ?? [], [catalog]);
 
   const handleModelChange = useCallback((model: string) => {
-    seeded.current = directory;
     setSelectedModel(model);
     setSelectedReasoning('');
     saveProjectModel(directory, model);
   }, [directory]);
   const handleAgentChange = useCallback((agent: string) => {
-    seeded.current = directory;
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) { setSelectedModel(agentModel); setSelectedReasoning(''); }
-  }, [agents, directory]);
+  }, [agents]);
   const handleToggleFavorite = useCallback(async (provider: string, model: string, next: boolean) => {
     if (!platform) return;
     try {
@@ -214,10 +210,11 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
       const { send, execute, model } = build(ready);
+      const chosenTarget = targetPick?.key === catalogKey ? targetPick.value : ready.catalog.defaults?.worktree || 'worktree';
       const res = await api.startSession({
-        directory: target.startsWith('dir:') ? target.slice(4) : directory,
+        directory: chosenTarget.startsWith('dir:') ? chosenTarget.slice(4) : directory,
         platform: ready.platform, remoteId, title, prompt: text, send, startId,
-        worktree: ready.canWorktree && target === 'worktree',
+        worktree: ready.canWorktree && chosenTarget === 'worktree',
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
       if (model) startModels.set(res.sessionId, model);
@@ -252,7 +249,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, target, seedNewSession, navigateToSession]);
+  }, [directory, remoteId, title, routeKey, targetPick, catalogKey, seedNewSession, navigateToSession]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => start(text, (r) => {
     const { model, agent, reasoning } = pick(r);
@@ -323,7 +320,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
           worktreesSupported={canWorktree}
           worktrees={eligibility.resolved?.worktrees}
           target={canWorktree ? target : 'current'}
-          onTargetChange={setTarget}
+          onTargetChange={(value) => setTarget({ key: catalogKey, value })}
           remoteId={remoteId}
           onMachineChange={onMachineChange}
           draftKey={NEW_SESSION_ID}
