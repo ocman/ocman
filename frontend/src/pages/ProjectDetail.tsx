@@ -13,49 +13,11 @@ import { useShortcut } from '../lib/shortcutRegistry';
 import { useProjects, useSessions } from '../lib/queries';
 import { projectIdentityIndex } from '../lib/projectIdentity';
 import { remoteLog } from '../lib/remoteLog';
-import type { TmuxClient } from '../lib/api';
+import { TmuxClientPopover } from '../components/TmuxClientPopover';
 import { Button, ButtonGroup, SearchField } from '../components/Control';
 import styles from './ProjectDetail.module.css';
 
 const DEFAULT_TIME_RANGE = 168; // 7d
-
-// Popover shown when a non-local tmux has multiple attached clients and
-// the user must pick which one to switch. Extracted from ProjectDetail
-// to keep that component within the size budget.
-function TmuxClientPicker({
-  pickerRef,
-  pos,
-  clients,
-  onSelect,
-}: {
-  pickerRef: React.RefObject<HTMLDivElement | null>;
-  pos: { top: number; left: number };
-  clients: TmuxClient[];
-  onSelect: (tty: string) => void;
-}) {
-  return (
-    <div
-      ref={pickerRef}
-      className="tmux-client-popover"
-      style={{ top: pos.top, left: pos.left }}
-    >
-      <div className="tmux-client-picker-header">
-        <span>Select tmux client</span>
-      </div>
-      {clients.map((c) => (
-        <div
-          key={c.tty}
-          className="tmux-client-picker-item"
-          onClick={() => onSelect(c.tty)}
-        >
-          <span className="tmux-client-tty">{c.tty}</span>
-          <span className="tmux-client-session">{shortPath(c.session)}</span>
-          <span className="tmux-client-size">{c.width}&times;{c.height}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function ProjectDetail() {
   const { dir } = useParams();
@@ -162,7 +124,7 @@ export function ProjectDetail() {
   return (
     <div>
       {pendingTmuxSession && pickerPos && (
-        <TmuxClientPicker
+        <TmuxClientPopover
           pickerRef={pickerRef}
           pos={pickerPos}
           clients={tmux.clients}
