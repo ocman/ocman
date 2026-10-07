@@ -6,18 +6,50 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+type mcpCreateHost struct {
+	*ensureHost
+	capable      bool
+	branch, base string
+	trees        []git.Worktree
+	err          error
+	treesErr     error
+	baseErr      error
+	worktreeErr  error
+	request      hostsvc.WorktreeSessionRequest
+}
+
+func (h *mcpCreateHost) Capabilities() hostsvc.HostCaps {
+	return hostsvc.HostCaps{OpencodeLaunch: h.capable}
+}
+func (h *mcpCreateHost) GitInfo(_ context.Context, dirs []string) (map[string]git.Info, error) {
+	return map[string]git.Info{dirs[0]: {Branch: h.branch}}, h.err
+}
+func (h *mcpCreateHost) ListWorktrees(context.Context, string) ([]git.Worktree, error) {
+	return h.trees, h.treesErr
+}
+func (h *mcpCreateHost) WorktreeDefaultBaseRef(context.Context, string) (string, error) {
+	return h.base, h.baseErr
+}
+func (h *mcpCreateHost) CreateWorktreeSession(_ context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
+	h.request = req
+	return &hostsvc.WorktreeSessionResult{SessionID: "ses-new", WorktreePath: "/src/.worktrees/ocman/new"}, h.worktreeErr
+}
 
 func TestMCPCreateSession(t *testing.T) {
 	srv := testServer(t)
 	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	host := &mcpCreateHost{ensureHost: &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		ensured = req.ProjectDir
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6620", RepoRoot: req.ProjectDir}, nil
-	}})
+	}}}
+	srv.hostRouter = hostsvc.NewRouter(host)
 	var created platforms.CreateSessionRequest
 	var sent platforms.SendMessageRequest
 	sendErr := error(nil)
@@ -37,6 +69,34 @@ func TestMCPCreateSession(t *testing.T) {
 	})
 	srv.registry = reg
 	svc := sessionMCPService{srv}
+	if err := srv.stateDB.SetProjectSettings(t.Context(), "/src/ocman", state.ProjectSettings{Models: []string{"p/default"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.stateDB.SetSetting(t.Context(), defaultAgentKey, "custom"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "defaults", Directory: "/src/ocman"}); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Model != "p/default" || sent.Agent != "custom" {
+		t.Fatalf("defaults = %#v", sent)
+	}
+	host.capable, host.branch, host.base = true, "main", "main"
+	gotDefault, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "defaults", Directory: "/src/ocman"})
+	if err != nil || gotDefault.Directory != "/src/.worktrees/ocman/new" || !host.request.AutoName || host.request.Prompt != "defaults" || sent.Model != "p/default" {
+		t.Fatalf("worktree default = %#v, %v, request %#v, sent %#v", gotDefault, err, host.request, sent)
+	}
+	useWorktree := false
+	gotOverride, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "override", Directory: "/src/ocman", Worktree: &useWorktree, Model: "p/override", Agent: "plan"})
+	if err != nil || gotOverride.Directory != "/src/ocman" || sent.Model != "p/override" || sent.Agent != "plan" {
+		t.Fatalf("override = %#v, %v, sent %#v", gotOverride, err, sent)
+	}
+	useWorktree = true
+	host.worktreeErr = errors.New("worktree failed")
+	if _, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "go", Directory: "/src/ocman", Worktree: &useWorktree}); !errors.Is(err, host.worktreeErr) {
+		t.Fatalf("worktree error = %v", err)
+	}
+	host.capable = false
 
 	// No directory: the caller's worktree folds to its project root.
 	got, err := svc.CreateSession(context.Background(), internalmcp.CreateSessionRequest{Prompt: "go", Model: "p/m", Agent: "plan", Platform: "opencode", SessionID: "ses-caller"})
@@ -68,5 +128,62 @@ func TestMCPCreateSession(t *testing.T) {
 	sendErr = errors.New("send failed")
 	if got, err := svc.CreateSession(context.Background(), internalmcp.CreateSessionRequest{Prompt: "go", Directory: "/repo"}); err == nil || got.SessionID != "ses-new" {
 		t.Fatalf("send failure = %#v, %v", got, err)
+	}
+}
+
+func TestMCPCreateSessionRemote(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	owner := &autoWorktreeOwner{}
+	srv.hostRouter = hostsvc.NewRouter(nil)
+	srv.hostRouter.RegisterRemote("machine", owner)
+	var sent platforms.SendMessageRequest
+	reg.Register(&fakePlatform{id: "r-machine:opencode", sendMessageFn: func(req platforms.SendMessageRequest) error {
+		sent = req
+		return nil
+	}})
+	if err := srv.stateDB.SetProjectSettings(t.Context(), "/remote/repo", state.ProjectSettings{Models: []string{"p/project"}}); err != nil {
+		t.Fatal(err)
+	}
+	useWorktree := true
+	got, err := (sessionMCPService{srv}).CreateSession(t.Context(), internalmcp.CreateSessionRequest{
+		Prompt: "fix it", Title: "Fix", Directory: "/remote/repo", Platform: "r-machine:opencode", Worktree: &useWorktree,
+	})
+	if err != nil || got.Platform != "r-machine:opencode" || got.Directory != "/remote/worktree" || got.SessionID != "child" {
+		t.Fatalf("remote create = %#v, %v", got, err)
+	}
+	if owner.request.ProjectDir != "/remote/repo" || owner.request.Title != "Fix" || sent.Model != "p/project" || sent.Agent != "build" || sent.SessionID != "child" {
+		t.Fatalf("remote request = %#v, sent %#v", owner.request, sent)
+	}
+}
+
+func TestMCPWorktreeEligibility(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		host mcpCreateHost
+		want bool
+	}{
+		{name: "unsupported"},
+		{name: "non repo", host: mcpCreateHost{capable: true}},
+		{name: "no base", host: mcpCreateHost{capable: true, branch: "main"}},
+		{name: "eligible", host: mcpCreateHost{capable: true, branch: "main", base: "main"}, want: true},
+		{name: "linked", host: mcpCreateHost{capable: true, branch: "fix", base: "main", trees: []git.Worktree{{Path: "/repo"}}}},
+		{name: "main", host: mcpCreateHost{capable: true, branch: "main", base: "main", trees: []git.Worktree{{Path: "/repo", Main: true}}}, want: true},
+		{name: "probe error", host: mcpCreateHost{capable: true, err: errors.New("probe failed")}},
+		{name: "list error", host: mcpCreateHost{capable: true, branch: "main", treesErr: errors.New("list failed")}},
+		{name: "base error", host: mcpCreateHost{capable: true, branch: "main", baseErr: errors.New("base failed")}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := mcpWorktreeEligible(t.Context(), &test.host, "/repo/sub")
+			wantErr := test.host.err
+			if test.host.treesErr != nil {
+				wantErr = test.host.treesErr
+			}
+			if test.host.baseErr != nil {
+				wantErr = test.host.baseErr
+			}
+			if got != test.want || !errors.Is(err, wantErr) {
+				t.Fatalf("eligible = %v, %v", got, err)
+			}
+		})
 	}
 }

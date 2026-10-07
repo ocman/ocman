@@ -49,7 +49,7 @@ var sessionActions = []sessionAction{
 	{name: "list", description: "Lists recent sessions, optionally scoped to one directory.", example: `{"action":"list","directory":"/repo","limit":50}`, optional: []string{"directory", "limit"}, output: "Session[]"},
 	{name: "search", description: "Searches recent session IDs, titles, directories, platforms, and host names. With content true, also searches user and assistant message text (not tool output) of sessions updated in the last since_days; this is slow (tens of seconds).", example: `{"action":"search","query":"weave-cli","content":true,"since_days":7}`, required: []string{"query"}, optional: []string{"directory", "limit", "content", "since_days"}, output: "(Session & {matches?: {partId, messageId, role, snippet}[]})[]"},
 	{name: "get", description: "Gets one session with its latest messages and parts. Without platform, every platform is searched.", example: `{"action":"get","session_id":"ses_1","message_limit":20}`, required: []string{"session_id"}, optional: []string{"platform", "message_limit"}, output: "SessionDetail"},
-	{name: "create", description: "Starts a new top-level session and sends it prompt. Pass your own platform and session_id to default directory to your project root and run on your machine, or pass an absolute directory.", example: `{"action":"create","prompt":"Review the open PR","model":"anthropic/claude-sonnet-4","agent":"plan","platform":"opencode","session_id":"ses_caller"}`, required: []string{"prompt"}, optional: []string{"model", "agent", "title", "directory", "platform", "session_id"}, output: "{platform, session_id, directory}"},
+	{name: "create", description: "Starts a new top-level session and sends it prompt. Omitted model and agent use project and session defaults. Omitted worktree creates a fresh worktree when the directory is eligible, otherwise uses the current checkout; set worktree false to use the given directory. Pass your own platform and session_id to default directory to your project root and run on your machine, or pass an absolute directory.", example: `{"action":"create","prompt":"Review the open PR","platform":"opencode","session_id":"ses_caller"}`, required: []string{"prompt"}, optional: []string{"model", "agent", "worktree", "title", "directory", "platform", "session_id"}, output: "{platform, session_id, directory}"},
 }
 
 func sessionServerTools(tools *sessionTools) []server.ServerTool {
@@ -61,6 +61,7 @@ func sessionServerTools(tools *sessionTools) []server.ServerTool {
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("session_id"), mcplib.WithString("platform"),
 		mcplib.WithString("directory"), mcplib.WithString("query"), mcplib.WithNumber("limit"), mcplib.WithNumber("message_limit"),
 		mcplib.WithString("prompt"), mcplib.WithString("model", mcplib.Description("provider/model")), mcplib.WithString("agent"), mcplib.WithString("title"),
+		mcplib.WithBoolean("worktree", mcplib.Description("Override automatic worktree selection; false uses the current checkout.")),
 		mcplib.WithBoolean("content"), mcplib.WithNumber("since_days")), Handler: tools.handle}}
 }
 

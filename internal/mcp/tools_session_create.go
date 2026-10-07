@@ -21,6 +21,7 @@ type CreateSessionRequest struct {
 	Prompt, Model, Agent, Title string
 	Directory                   string
 	Platform, SessionID         string
+	Worktree                    *bool
 }
 
 // CreatedSession is the sessions create result.
@@ -44,6 +45,13 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 		Agent: strings.TrimSpace(req.GetString("agent", "")), Title: strings.TrimSpace(req.GetString("title", "")),
 		Directory: strings.TrimSpace(req.GetString("directory", "")),
 		Platform:  strings.TrimSpace(req.GetString("platform", "")), SessionID: strings.TrimSpace(req.GetString("session_id", "")),
+	}
+	if value, exists := req.GetArguments()["worktree"]; exists {
+		worktree, ok := value.(bool)
+		if !ok {
+			return mcplib.NewToolResultError("worktree must be a boolean")
+		}
+		in.Worktree = &worktree
 	}
 	switch {
 	case in.Prompt == "":

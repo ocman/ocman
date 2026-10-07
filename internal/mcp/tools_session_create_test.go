@@ -37,6 +37,12 @@ func TestCreateSessionTool(t *testing.T) {
 	if result.IsError || svc.got != want || !strings.Contains(resultText(result), `"session_id": "ses-new"`) {
 		t.Fatalf("result = %q, request = %#v", resultText(result), svc.got)
 	}
+	for _, value := range []bool{false, true} {
+		result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "worktree": value})
+		if result.IsError || svc.got.Worktree == nil || *svc.got.Worktree != value {
+			t.Fatalf("worktree override = %#v, %q", svc.got, resultText(result))
+		}
+	}
 
 	for _, test := range []struct {
 		args map[string]any
@@ -47,6 +53,7 @@ func TestCreateSessionTool(t *testing.T) {
 		{args: map[string]any{"prompt": "x", "directory": "repo"}, want: "directory must be absolute"},
 		{args: map[string]any{"prompt": "x", "session_id": "ses-1"}, want: "platform and session_id must be provided together"},
 		{args: map[string]any{"prompt": "x"}, want: "directory or the calling session's platform and session_id is required"},
+		{args: map[string]any{"prompt": "x", "directory": "/repo", "worktree": "false"}, want: "worktree must be a boolean"},
 	} {
 		if result := callTool(t, srv, "sessions", withCreate(test.args)); !result.IsError || resultText(result) != test.want {
 			t.Fatalf("args %#v: result = %q", test.args, resultText(result))
