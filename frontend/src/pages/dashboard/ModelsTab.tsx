@@ -4,6 +4,7 @@ import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKEN
 import { formatCompactNumber, formatCurrency, formatNumber, formatPercent, renderModel } from '../../lib/format';
 import { useHourlyTokens, useMetrics, useModels } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
+import { InlineAlert } from '../../components/InlineAlert';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
@@ -29,7 +30,7 @@ export function ModelsTab() {
   return (
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} model={model} onModelChange={setModel} modelOptions={modelOptions} />
-      {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
+      {errors.map((error) => <InlineAlert key={error.message}>{error.message}</InlineAlert>)}
       <div className="analytics-chart-pair">
         <ChartSlot isLoading={modelsQ.isLoading} label="Loading model usage"><ChartCard title="Model Usage">
               <Doughnut data={{ labels: top.map((item) => item.model), datasets: [{ data: top.map((item) => item.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={DOUGHNUT_OPTIONS} />

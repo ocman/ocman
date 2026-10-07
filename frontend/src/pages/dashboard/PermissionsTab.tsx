@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { InlineAlert } from '../../components/InlineAlert';
 import { usePermissionStats } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
@@ -12,7 +13,7 @@ export function PermissionsTab() {
   return (
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} />
-      {statsQ.error instanceof Error && <div className="oc-error-banner">{statsQ.error.message}</div>}
+      {statsQ.error instanceof Error && <InlineAlert>{statsQ.error.message}</InlineAlert>}
       {statsQ.isLoading && !statsQ.data && <ChartSkeletons labels={['Loading permission approvals', 'Loading observed user wait']} />}
       {statsQ.data && <PermissionStatsSection stats={statsQ.data} />}
     </div>

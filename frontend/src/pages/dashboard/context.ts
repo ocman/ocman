@@ -11,6 +11,7 @@ export interface DashboardCtx {
   sessionsLoading: boolean;
   sessionsError: string | null;
   projectsLoading: boolean;
+  projectsFetching: boolean;
   /**
    * Error message from the projects query, or null. Distinct from
    * "loaded and empty": consumers must render this instead of an

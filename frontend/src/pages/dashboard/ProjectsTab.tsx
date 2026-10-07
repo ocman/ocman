@@ -11,6 +11,7 @@ import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
 import { DataTable } from '../../components/DataTable';
 import { LoadingState } from '../../components/LoadingState';
+import { InlineAlert } from '../../components/InlineAlert';
 
 // ---------------------------------------------------------------------------
 // Projects tab
@@ -19,7 +20,7 @@ import { LoadingState } from '../../components/LoadingState';
 export function ProjectsTab() {
   usePageTitle('Projects');
   const {
-    projects, projectsLoading, projectsError, refetchProjects, dirScope, setDirScope,
+    projects, projectsLoading, projectsFetching, projectsError, refetchProjects, dirScope, setDirScope,
   } = useDashboardCtx();
   const navigate = useNavigate();
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
@@ -46,20 +47,18 @@ export function ProjectsTab() {
   // and tell a user with dozens of projects that they have none.
   if (projectsError && projects.length === 0) {
     return (
-      <div className="oc-error-banner">
+      <InlineAlert onRetry={() => refetchProjects()} retrying={projectsFetching}>
         {projectsError}
-        <button type="button" onClick={() => refetchProjects()}>Retry</button>
-      </div>
+      </InlineAlert>
     );
   }
 
   return (
     <div>
       {projectsError && (
-        <div className="oc-error-banner">
+        <InlineAlert onRetry={() => refetchProjects()} retrying={projectsFetching}>
           {projectsError}
-          <button type="button" onClick={() => refetchProjects()}>Retry</button>
-        </div>
+        </InlineAlert>
       )}
       <DashboardToolbar
         projects={projects}

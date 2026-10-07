@@ -77,7 +77,7 @@ export function DashboardLayout() {
 
   const sessionsError = sessionsQ.error instanceof Error ? sessionsQ.error.message : null;
   const { isLoading: sessionsLoading, refetch: refetchSessions } = sessionsQ;
-  const { isLoading: projectsLoading, refetch: refetchProjectsQ } = projectsQ;
+  const { isLoading: projectsLoading, isFetching: projectsFetching, refetch: refetchProjectsQ } = projectsQ;
   // Surfaced so tabs can tell a failed query from a successfully empty
   // one; discarding it made every failure look like first-run.
   const projectsError = projectsQ.isError
@@ -93,6 +93,7 @@ export function DashboardLayout() {
     sessionsLoading,
     sessionsError,
     projectsLoading,
+    projectsFetching,
     projectsError,
     loadSessions,
     refetchProjects,
@@ -108,6 +109,7 @@ export function DashboardLayout() {
     sessionsLoading,
     sessionsError,
     projectsLoading,
+    projectsFetching,
     projectsError,
     loadSessions,
     refetchProjects,
