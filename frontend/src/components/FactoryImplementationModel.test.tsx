@@ -46,6 +46,14 @@ describe('implementation model choice', () => {
 		await waitFor(() => expect(picker()).toHaveTextContent('p/terra'));
 	});
 
+	it('keeps historical models when provider availability is unknown', async () => {
+		vi.mocked(api.sessionModels).mockResolvedValue({ models: [{ provider: 'p', model: 'sol', isAvailable: false }], hasProviders: false });
+		mount();
+		await waitFor(() => expect(picker()).toHaveTextContent('p/sol'));
+		await userEvent.setup().click(picker());
+		expect(screen.getByRole('option', { name: /sol/ })).toBeInTheDocument();
+	});
+
 	it('keeps approval usable when the catalog fails', async () => {
 		vi.mocked(api.sessionModels).mockRejectedValue(new Error('offline'));
 		mount();

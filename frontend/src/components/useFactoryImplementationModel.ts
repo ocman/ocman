@@ -20,7 +20,7 @@ export function useFactoryImplementationModel(epic?: FactoryEpic) {
 		staleTime: 60_000,
 		retry: false,
 	});
-	const entries = (catalog.data?.models ?? []).filter((model) => model.isAvailable !== false);
+	const entries = (catalog.data?.models ?? []).filter((model) => !catalog.data?.hasProviders || model.isAvailable !== false);
 	const models = entries.map((model) => `${model.provider}/${model.model}`);
 	const suggested = models.find((model) => implementationModelTier(model) === 'Balanced') ?? models.find((model) => implementationModelTier(model) === 'Fast') ?? '';
 	const [selection, setSelection] = useState<{ gate: string; model: string }>();

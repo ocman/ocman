@@ -109,6 +109,23 @@ describe('Routines', () => {
     expect(api.sessionModels).toHaveBeenCalledWith('chosen', 'r-box:opencode');
   }, 15_000);
 
+  it.each([false, true])('filters disconnected models only with live provider data: %s', async (hasProviders) => {
+    vi.mocked(api.sessionModels).mockResolvedValue({ hasProviders, models: [{ provider: 'p', model: 'sol', isAvailable: false }] });
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'New routine' }));
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    await user.click(screen.getByRole('option', { name: '/repo' }));
+    await user.click(screen.getByText('Session and model'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Agent' })).toBeEnabled());
+    await user.click(screen.getByRole('combobox', { name: 'Model' }));
+    if (hasProviders) {
+      expect(screen.queryByRole('option', { name: 'p/sol' })).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByRole('option', { name: 'p/sol' })).toBeInTheDocument();
+    }
+  });
+
   it('uses the shared controls and empty state', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([]);
     const user = userEvent.setup();
