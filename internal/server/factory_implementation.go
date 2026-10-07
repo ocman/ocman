@@ -15,6 +15,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -55,7 +56,7 @@ func (l factoryImplementationLauncher) ResolveImplementationWorkspace(ctx contex
 			if err != nil {
 				return "", "", err
 			}
-			target = strings.TrimPrefix(strings.TrimPrefix(target, "refs/heads/"), "refs/remotes/origin/")
+			target = git.BaseRefBranch(target)
 			return worktree.Branch, target, nil
 		}
 	}

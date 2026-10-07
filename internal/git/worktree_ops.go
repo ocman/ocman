@@ -373,6 +373,14 @@ func ResolveBaseRef(ctx context.Context, repoRoot string) string {
 	return ""
 }
 
+// BaseRefBranch removes exactly one namespace from a resolved base ref.
+func BaseRefBranch(ref string) string {
+	if branch, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+		return branch
+	}
+	return strings.TrimPrefix(ref, "refs/remotes/origin/")
+}
+
 // runGitOutput is a small helper around exec.CommandContext that
 // returns trimmed stdout on success and an empty string on any error.
 func runGitOutput(ctx context.Context, repoRoot string, args ...string) string {

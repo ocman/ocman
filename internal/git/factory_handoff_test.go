@@ -125,3 +125,13 @@ func TestFactoryWorkspaceAmbiguousDefault(t *testing.T) {
 		t.Fatalf("ambiguous default = %s/%s, %v", target, base, err)
 	}
 }
+
+func TestFactoryWorkspaceLocalNamespaceName(t *testing.T) {
+	repo := initTestRepo(t)
+	gitRun(t, repo, "branch", "release")
+	gitRun(t, repo, "branch", "-m", "refs/remotes/origin/release")
+	target, base, err := PrepareFactoryWorkspace(t.Context(), repo, "factory/new", "", "")
+	if err != nil || target != "refs/remotes/origin/release" || base != "refs/heads/refs/remotes/origin/release" {
+		t.Fatalf("local namespace target = %s/%s, %v", target, base, err)
+	}
+}

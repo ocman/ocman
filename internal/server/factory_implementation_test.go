@@ -50,12 +50,15 @@ func (h *factoryImplementationHost) WorktreeDefaultBaseRef(context.Context, stri
 }
 
 func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
-	for _, name := range []string{"shared", "successor", "local default", "remote-only default", "local origin branch", "unrelated branch", "different worktree", "missing detail", "missing session", "missing directory", "session error", "missing platform", "worktree error", "target error"} {
+	for _, name := range []string{"shared", "successor", "local default", "remote-only default", "local origin branch", "local namespace branch", "unrelated branch", "different worktree", "missing detail", "missing session", "missing directory", "session error", "missing platform", "worktree error", "target error"} {
 		t.Run(name, func(t *testing.T) {
 			detail := &platforms.SessionDetail{Session: &db.Session{Directory: "/worktree"}}
 			var sessionErr error
 			host := &factoryImplementationHost{target: "main", worktrees: []git.Worktree{{Path: "/worktree", Branch: "factory/epic"}}}
 			switch name {
+			case "local namespace branch":
+				host.target = "refs/heads/refs/remotes/origin/release"
+				host.branches = []string{"refs/remotes/origin/release", "release"}
 			case "local default":
 				host.target = "refs/heads/main"
 			case "remote-only default":
@@ -89,10 +92,13 @@ func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
 			srv := New(nil, nil, "", registry, nil)
 			srv.hostRouter = hostsvc.NewRouter(host)
 			branch, target, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationWorkspace(t.Context(), "/repo", "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
-			if name == "shared" || name == "successor" || name == "local default" || name == "remote-only default" || name == "local origin branch" {
+			if name == "shared" || name == "successor" || name == "local default" || name == "remote-only default" || name == "local origin branch" || name == "local namespace branch" {
 				wantTarget := "main"
 				if name == "local origin branch" {
 					wantTarget = "origin/main"
+				}
+				if name == "local namespace branch" {
+					wantTarget = "refs/remotes/origin/release"
 				}
 				if err != nil || branch != host.worktrees[0].Branch || target != wantTarget {
 					t.Fatalf("workspace = %q/%q, %v", branch, target, err)

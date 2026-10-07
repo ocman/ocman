@@ -64,7 +64,7 @@ func ValidateFactoryHandoff(ctx context.Context, repoRoot, branch string) (strin
 func PrepareFactoryWorkspace(ctx context.Context, repoRoot, branch, checkpoint, target string) (string, string, error) {
 	if target == "" {
 		target = ResolveBaseRef(ctx, repoRoot)
-		target = strings.TrimPrefix(strings.TrimPrefix(target, "refs/heads/"), "refs/remotes/origin/")
+		target = BaseRefBranch(target)
 	}
 	if _, err := gitexec.Output(ctx, repoRoot, "check-ref-format", "--branch", branch); err != nil {
 		return "", "", errors.New("invalid Factory branch")

@@ -49,3 +49,17 @@ func TestResolveBaseRefNoCommits(t *testing.T) {
 		t.Fatalf("empty repository base = %q, want no usable base", ref)
 	}
 }
+
+func TestBaseRefBranch(t *testing.T) {
+	for _, tc := range []struct{ ref, want string }{
+		{"refs/heads/main", "main"},
+		{"refs/remotes/origin/main", "main"},
+		{"refs/heads/refs/remotes/origin/release", "refs/remotes/origin/release"},
+		{"refs/remotes/origin/refs/heads/release", "refs/heads/release"},
+		{"main", "main"},
+	} {
+		if got := BaseRefBranch(tc.ref); got != tc.want {
+			t.Errorf("BaseRefBranch(%q) = %q, want %q", tc.ref, got, tc.want)
+		}
+	}
+}
