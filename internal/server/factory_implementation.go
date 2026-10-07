@@ -55,7 +55,8 @@ func (l factoryImplementationLauncher) ResolveImplementationWorkspace(ctx contex
 			if err != nil {
 				return "", "", err
 			}
-			return worktree.Branch, target, nil
+			target, err = legacyFactoryTarget(ctx, owner, repo, target)
+			return worktree.Branch, target, err
 		}
 	}
 	return "", "", errors.New("factory shared branch worktree was not found")

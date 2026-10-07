@@ -547,8 +547,11 @@ flowchart TD
   calls `POST /api/sessions/prepare`, which ensures the project's instance on
   the owning machine and returns the directory's agent, command and model
   catalogs (`Platform.DirectoryCatalog`, routed over gRPC for remotes), and
-  `useWorktreeEligibility` reads the git-info branch and the owner's worktree
-  list to decide whether "New worktree" is offered. The machine selector
+  `useWorktreeEligibility` reads the git-info branch, the owner's worktree
+  list, and its verified default base ref to decide whether "New worktree"
+  is offered. A repository without a usable base commit uses the current
+  checkout, and automatic creation rejects it before launching OpenCode.
+  The machine selector
   re-points the route; the target selector changes client state. Neither
   creates a session, and the draft survives under the shared `new` key.
   The first submission calls

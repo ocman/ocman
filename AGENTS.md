@@ -46,9 +46,12 @@ with the server's steps beneath it (OpenCode, worktree, session, prompt; paralle
 ones together), sent as `ocman.session.start.progress` SSE events tagged with the
 request's `startId` and reported through `hostsvc.WithProgress` on the context
 (which does not cross gRPC, so the hub reports a remote's worktree start around the call). Submission waits for that catalog, with visible retry on a
-prepare failure; `useWorktreeEligibility` reads the git-info branch and the
-owner's worktree list, so a directory already inside a linked worktree, or a
-non-repository, uses the current checkout. The composer's machine selector only
+prepare failure; `useWorktreeEligibility` reads the git-info branch, the
+owner's worktree list, and its verified default base ref. A directory already
+inside a linked worktree, a non-repository, or a repository without a usable
+base commit uses the current checkout. Base resolution keeps a remote-tracking
+default when its local branch is absent, then falls back to the current branch
+or detached HEAD; it never assumes `main` exists. The composer's machine selector only
 re-points the route; the draft lives under the shared `new` key (`draftKey`
 prop) and survives. The first submission calls `POST /api/sessions/start`
 `{directory, remoteId, platform, worktree, title, prompt, send}`: an explicit

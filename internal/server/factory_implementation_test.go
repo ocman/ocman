@@ -35,6 +35,7 @@ type factoryImplementationHost struct {
 	handoffHead   string
 	upstreams     hostsvc.ProjectUpstreams
 	branches      []string
+	branchesErr   error
 	worktrees     []git.Worktree
 	worktreeErr   error
 	target        string
@@ -50,12 +51,20 @@ func (h *factoryImplementationHost) WorktreeDefaultBaseRef(context.Context, stri
 }
 
 func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
-	for _, name := range []string{"shared", "successor", "unrelated branch", "different worktree", "missing detail", "missing session", "missing directory", "session error", "missing platform", "worktree error", "target error"} {
+	for _, name := range []string{"shared", "successor", "remote-only default", "local origin branch", "branch lookup error", "unrelated branch", "different worktree", "missing detail", "missing session", "missing directory", "session error", "missing platform", "worktree error", "target error"} {
 		t.Run(name, func(t *testing.T) {
 			detail := &platforms.SessionDetail{Session: &db.Session{Directory: "/worktree"}}
 			var sessionErr error
 			host := &factoryImplementationHost{target: "main", worktrees: []git.Worktree{{Path: "/worktree", Branch: "factory/epic"}}}
 			switch name {
+			case "remote-only default":
+				host.target = "origin/main"
+			case "branch lookup error":
+				host.target = "origin/main"
+				host.branchesErr = errors.New("branches unavailable")
+			case "local origin branch":
+				host.target = "origin/main"
+				host.branches = []string{"origin/main"}
 			case "successor":
 				host.worktrees[0].Branch = "factory/epic-2"
 			case "unrelated branch":
@@ -82,8 +91,12 @@ func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
 			srv := New(nil, nil, "", registry, nil)
 			srv.hostRouter = hostsvc.NewRouter(host)
 			branch, target, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationWorkspace(t.Context(), "/repo", "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
-			if name == "shared" || name == "successor" {
-				if err != nil || branch != host.worktrees[0].Branch || target != "main" {
+			if name == "shared" || name == "successor" || name == "remote-only default" || name == "local origin branch" {
+				wantTarget := "main"
+				if name == "local origin branch" {
+					wantTarget = "origin/main"
+				}
+				if err != nil || branch != host.worktrees[0].Branch || target != wantTarget {
 					t.Fatalf("workspace = %q/%q, %v", branch, target, err)
 				}
 			} else if err == nil {
@@ -198,7 +211,7 @@ func (h *factoryImplementationHost) ProjectUpstreams(context.Context, string) (*
 }
 
 func (h *factoryImplementationHost) GitBranches(context.Context, string) ([]string, error) {
-	return h.branches, nil
+	return h.branches, h.branchesErr
 }
 
 func (h *factoryImplementationHost) RemoteID() string {
