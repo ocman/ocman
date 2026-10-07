@@ -280,7 +280,7 @@ test('a rejected competing prompt cannot leave the winning failed claim pending'
   await Promise.all([first.getByRole('button', { name: 'Send message' }).dispatchEvent('click'), second.getByRole('button', { name: 'Send message' }).dispatchEvent('click')]);
   await expect.poll(() => starts).toBe(1);
   const losingText = owner === first ? 'Other prompt' : 'First prompt';
-  await expect.poll(() => first.evaluate(() => localStorage.getItem('ocman.composerDrafts.v1:competing'))).toBe(losingText);
+  await expect.poll(() => first.evaluate(() => JSON.parse(localStorage.getItem('ocman.composerDrafts.v1:competing') || '{}').text)).toBe(losingText);
   finish();
   await expect(owner!.getByRole('alert')).toContainText('First creation failed');
   await Promise.all([first.reload(), second.reload()]);

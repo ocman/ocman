@@ -1,7 +1,10 @@
 import { useMemo, useSyncExternalStore } from 'react';
+import { randomId } from './randomId';
 
 const DRAFTS_KEY = 'ocman.composerDrafts.v1';
 const TEXT_PREFIX = DRAFTS_KEY + ':';
+const CLEAR_PREFIX = 'ocman.composerDraftClear.v1:';
+type TextEntry = { kind: 'ocman/composer-text'; id: string; text: string };
 
 type Drafts = Record<string, string>;
 const draftVersions = new Map<string, number>();
@@ -13,10 +16,10 @@ export function getDraftVersion(sessionId: string) {
 }
 
 /** Invalidate outstanding autosaves and failed-send recovery before clearing. */
-export function discardDraft(sessionId: string) {
+export function discardDraft(sessionId: string, entryId = getDraftEntryId(sessionId)) {
   const version = getDraftVersion(sessionId) + 1;
   draftVersions.set(sessionId, version);
-  clearDraft(sessionId);
+  clearDraft(sessionId, entryId);
   try { window.localStorage.setItem(VERSION_PREFIX + sessionId, String(version)); } catch { /* Keep the live tombstone. */ }
 }
 
@@ -34,33 +37,46 @@ function loadDrafts(): Drafts {
   }
 }
 
+function readEntry(sessionId: string): TextEntry {
+  const raw = window.localStorage.getItem(TEXT_PREFIX + sessionId) ?? loadDrafts()[sessionId] ?? '';
+  try {
+    const entry = JSON.parse(raw);
+    if (entry?.kind === 'ocman/composer-text' && typeof entry.id === 'string' && typeof entry.text === 'string') return entry;
+  } catch { /* The earlier per-draft values contain plain text. */ }
+  return { kind: 'ocman/composer-text', id: 'legacy', text: typeof raw === 'string' ? raw : '' };
+}
+
+export const getDraftEntryId = (id: string) => { try { return readEntry(id).id; } catch { return 'legacy'; } };
+export const getDraftClearId = (id: string) => { try { return localStorage.getItem(CLEAR_PREFIX + id); } catch { return null; } };
+
 export function getDraft(sessionId: string): string {
-  try { return window.localStorage.getItem(TEXT_PREFIX + sessionId) ?? loadDrafts()[sessionId] ?? ''; }
+  try { const entry = readEntry(sessionId); return getDraftClearId(sessionId) === entry.id ? '' : entry.text; }
   catch { return ''; }
 }
 
 export function saveDraft(sessionId: string, text: string, version = getDraftVersion(sessionId)) {
   if (version !== getDraftVersion(sessionId)) return;
   if (!text) { discardDraft(sessionId); return; }
-  try { window.localStorage.setItem(TEXT_PREFIX + sessionId, text); } catch { /* Best-effort autosave. */ }
+  try { window.localStorage.setItem(TEXT_PREFIX + sessionId, JSON.stringify({ kind: 'ocman/composer-text', id: randomId(), text })); } catch { /* Best-effort autosave. */ }
   emit();
 }
 
-export function clearDraft(sessionId: string) {
-  // Empty overrides prevent the read-only legacy map from resurrecting cleared text.
-  try { window.localStorage.setItem(TEXT_PREFIX + sessionId, ''); } catch { /* Best-effort clear. */ }
+export function clearDraft(sessionId: string, entryId = getDraftEntryId(sessionId)) {
+  // A clear owns one immutable edit identity. It cannot erase an intervening source save.
+  try { window.localStorage.setItem(CLEAR_PREFIX + sessionId, entryId); } catch { /* Best-effort clear. */ }
   emit();
 }
 
 /** Copy before clearing: a failed write must leave the original recoverable. */
 export function migrateDraft(from: string, to: string): boolean {
+  const entryId = getDraftEntryId(from);
   const text = getDraft(from);
   if (!text) return true;
   try {
-    window.localStorage.setItem(TEXT_PREFIX + to, text);
-    window.localStorage.setItem(TEXT_PREFIX + from, '');
+    window.localStorage.setItem(TEXT_PREFIX + to, JSON.stringify({ kind: 'ocman/composer-text', id: randomId(), text }));
+    window.localStorage.setItem(CLEAR_PREFIX + from, entryId);
     emit();
-    return true;
+    return getDraftEntryId(from) === entryId;
   } catch { return false; }
 }
 
@@ -89,10 +105,10 @@ function emit() {
   for (const l of listeners) l();
 }
 
-function subscribe(cb: () => void) {
+export function subscribeDraftSessionIds(cb: () => void) {
   listeners.add(cb);
   // Another tab wrote drafts for the same user.
-  const onStorage = (e: StorageEvent) => { if (e.key === null || e.key === DRAFTS_KEY || e.key.startsWith(TEXT_PREFIX)) emit(); };
+  const onStorage = (e: StorageEvent) => { if (e.key === null || e.key === DRAFTS_KEY || e.key.startsWith(TEXT_PREFIX) || e.key.startsWith(CLEAR_PREFIX)) emit(); };
   window.addEventListener('storage', onStorage);
   return () => {
     listeners.delete(cb);
@@ -107,6 +123,6 @@ function getSnapshot() {
 
 /** Session ids that currently hold an unsent composer draft. */
 export function useDraftSessionIds(): Set<string> {
-  const key = useSyncExternalStore(subscribe, getSnapshot, () => '');
+  const key = useSyncExternalStore(subscribeDraftSessionIds, getSnapshot, () => '');
   return useMemo(() => new Set(key ? key.split('\n') : []), [key]);
 }

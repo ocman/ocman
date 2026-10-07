@@ -29,7 +29,7 @@ function adopt(id: string, record: DraftStart | undefined) {
     const next = { ...entries };
     if (!record || record.deliveryState === 'done') delete next[id];
     else next[id] = { text: record.text, pending: record.deliveryState !== 'failed',
-      error: record.error, execute: executions.get(id) };
+      error: record.error, execute: executions.get(record.attemptId || '') };
     return { entries: next, ready: { ...ready, [id]: true } };
   });
 }
@@ -39,34 +39,41 @@ function notify(id: string, record: DraftStart) {
   channel?.postMessage({ id, record });
 }
 
+async function persistOutcome(id: string, record: DraftStart) {
+  const before = records.get(id);
+  const persisted = await persistDraftStart(key(id), record);
+  if (records.get(id) !== before) return;
+  adopt(id, persisted);
+  if (persisted) notify(id, persisted);
+  return persisted;
+}
+
 async function settle(id: string, record: DraftStart) {
-  adopt(id, record); // A known live terminal outcome cannot be downgraded by an old pending record.
-  try {
-    const persisted = await persistDraftStart(key(id), record);
-    if (persisted) { record = persisted; adopt(id, record); }
-  }
-  catch { /* Keep and publish the terminal outcome; reconciliation retries its persistence. */ }
-  notify(id, record);
+  adopt(id, record);
+  try { await persistOutcome(id, record); }
+  catch { if (records.get(id) === record) notify(id, record); }
 }
 
 function probeOwner(id: string, record: DraftStart) {
-  if (executions.has(id) || probes.has(id)) return;
+  if (executions.has(record.attemptId || '') || probes.has(id)) return;
   // Lack of an owner response means an unknown outcome, never permission to replay.
   const timer = setTimeout(() => {
     probes.delete(id);
-    if (records.get(id)?.deliveryState === 'pending') {
+    if (records.get(id)?.attemptId === record.attemptId && records.get(id)?.deliveryState === 'pending') {
       adopt(id, { ...record, deliveryState: 'interrupted', error: 'The originating tab is unavailable. First-delivery outcome is unknown.' });
     }
   }, 1500);
   probes.set(id, timer);
-  channel?.postMessage({ id, probe: record.deliveryOwner });
+  channel?.postMessage({ id, probe: record.deliveryOwner, attemptId: record.attemptId });
 }
 
 export async function reconcileFirstSubmission(id: string, hint?: DraftStart) {
+  const before = records.get(id);
   if (!hint) {
     try { hint = JSON.parse(localStorage.getItem(PREFIX + id) || 'null') || undefined; } catch { /* The durable record remains readable. */ }
   }
   const stored = await readDraftStart(key(id));
+  if (records.get(id) !== before) return;
   let live = records.get(id);
   if (stored?.deliveryState === 'done') { adopt(id, stored); return; }
   if (live?.deliveryState !== 'done' && hint?.attemptId === stored?.attemptId && hint?.deliveryState &&
@@ -74,7 +81,11 @@ export async function reconcileFirstSubmission(id: string, hint?: DraftStart) {
   const terminal = live?.deliveryState && live.deliveryState !== 'pending' && live.deliveryState !== 'interrupted';
   const interrupted = live?.deliveryState === 'interrupted' && live.attemptId === stored?.attemptId && stored?.deliveryState === 'pending';
   const record = (terminal && (!stored || live?.attemptId === stored.attemptId)) || interrupted ? live : stored;
-  if (record && terminal && record !== stored) await persistDraftStart(key(id), record);
+  if (record && terminal && record !== stored) {
+    const actual = await persistOutcome(id, record);
+    if (actual?.deliveryState === 'pending') probeOwner(id, actual);
+    return;
+  }
   adopt(id, record);
   if (record?.deliveryState === 'pending' || record?.deliveryState === 'interrupted') probeOwner(id, record);
 }
@@ -97,12 +108,19 @@ export function useSessionFirstSubmission(id: string) {
 
 export async function startFirstSubmission(id: string, text: string, execute: () => Promise<void>) {
   if (getFirstSubmission(id)?.pending) return;
-  executions.set(id, execute);
+  if (records.get(id)?.deliveryState === 'failed') {
+    try { await reconcileFirstSubmission(id); }
+    catch { return; } // Preserve the original execution until its known failure is durable.
+    if (getFirstSubmission(id)?.pending || records.get(id)?.deliveryState === 'done') return;
+  }
+  const previousAttempt = records.get(id)?.attemptId;
   const next: DraftStart = { version: 0, text, attemptId: randomId(), deliveryOwner: owner, deliveryState: 'pending' };
+  executions.set(next.attemptId!, execute);
   adopt(id, next);
   try {
     const result = await claimDraftStart(key(id), next);
-    if (!result.claimed) { executions.delete(id); adopt(id, result.start); return; }
+    if (!result.claimed) { executions.delete(next.attemptId!); adopt(id, result.start); return; }
+    if (previousAttempt) executions.delete(previousAttempt);
     adopt(id, next);
     notify(id, next);
   } catch (error) {
@@ -114,7 +132,7 @@ export async function startFirstSubmission(id: string, text: string, execute: ()
     try {
       await execute();
       await settle(id, { ...next, deliveryState: 'done', text: '' });
-      executions.delete(id);
+      executions.delete(next.attemptId!);
     } catch (error) {
       await settle(id, { ...next, deliveryState: 'failed', error: error instanceof Error ? error.message : String(error) });
     }
@@ -123,19 +141,19 @@ export async function startFirstSubmission(id: string, text: string, execute: ()
 
 /** Explicitly release an uncertain delivery; never reconstruct or automatically resend its payload. */
 export async function discardFirstSubmission(id: string) {
-  const record = records.get(id) || await readDraftStart(key(id));
+  const before = records.get(id);
+  const record = before || await readDraftStart(key(id));
+  if (records.get(id) !== before) return;
   if (!record) { await reconcileFirstSubmission(id); return; }
-  await persistDraftStart(key(id), { ...record, deliveryState: 'done', text: '' });
-  executions.delete(id);
-  adopt(id, { ...record, deliveryState: 'done', text: '' });
-  notify(id, { ...record, deliveryState: 'done', text: '' });
+  const actual = await persistOutcome(id, { ...record, deliveryState: 'done', text: '' });
+  if (actual?.deliveryState === 'done') executions.delete(actual.attemptId || '');
 }
 
 if (channel) channel.onmessage = (event: MessageEvent) => {
-  const { id, record, probe, alive } = event.data || {};
+  const { id, record, probe, alive, attemptId } = event.data || {};
   if (typeof id !== 'string') return;
-  if (probe === owner && executions.has(id)) { channel.postMessage({ id, alive: owner }); return; }
-  if (alive && alive === records.get(id)?.deliveryOwner) {
+  if (probe === owner && attemptId === records.get(id)?.attemptId && executions.has(attemptId)) { channel.postMessage({ id, alive: owner, attemptId }); return; }
+  if (alive && alive === records.get(id)?.deliveryOwner && attemptId === records.get(id)?.attemptId) {
     clearTimeout(probes.get(id));
     probes.delete(id);
     const current = records.get(id)!;

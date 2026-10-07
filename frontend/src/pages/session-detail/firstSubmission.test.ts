@@ -6,7 +6,12 @@ import { claimDraftStart, persistDraftStart, readDraftStart } from '../../lib/dr
 const stored = vi.hoisted(() => new Map<string, import('../../lib/draftStartClaims').DraftStart>());
 vi.mock('../../lib/draftStartClaims', () => ({
   readDraftStart: vi.fn(async (id: string) => stored.get(id)),
-  persistDraftStart: vi.fn(async (id: string, record: import('../../lib/draftStartClaims').DraftStart) => { stored.set(id, record); return record; }),
+  persistDraftStart: vi.fn(async (id: string, record: import('../../lib/draftStartClaims').DraftStart) => {
+    const current = stored.get(id);
+    if (current && (current.attemptId !== record.attemptId || current.deliveryState === 'done')) return current;
+    stored.set(id, record);
+    return record;
+  }),
   claimDraftStart: vi.fn(async (id: string, record: import('../../lib/draftStartClaims').DraftStart) => {
     const current = stored.get(id);
     if (current && !current.error) return { claimed: false, start: current };
@@ -33,6 +38,52 @@ it('retains a live failed outcome over a stale pending durable record and repair
   await waitFor(() => expect(getFirstSubmission('failed-terminal')?.error).toBe('upload failed'));
   await reconcileFirstSubmission('failed-terminal');
   expect(stored.get('first-delivery:failed-terminal')).toMatchObject({ deliveryState: 'failed', error: 'upload failed' });
+});
+
+it('immediately retries a known failure without discarding its retained execution after a failed terminal write', async () => {
+  const execute = vi.fn().mockRejectedValueOnce(new Error('delivery failed')).mockResolvedValueOnce(undefined);
+  vi.mocked(persistDraftStart).mockRejectedValueOnce(new Error('terminal write failed'));
+  await startFirstSubmission('immediate-retry', 'payload', execute);
+  await waitFor(() => expect(getFirstSubmission('immediate-retry')?.error).toBe('delivery failed'));
+  expect(stored.get('first-delivery:immediate-retry')?.deliveryState).toBe('pending');
+  await startFirstSubmission('immediate-retry', 'payload', execute);
+  await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(getFirstSubmission('immediate-retry')).toBeUndefined());
+});
+
+it('adopts a newer attempt returned when a stale explicit release is rejected', async () => {
+  const old = { version: 0, text: 'old', attemptId: 'old-release', deliveryState: 'pending' as const };
+  stored.set('first-delivery:stale-release', old);
+  await reconcileFirstSubmission('stale-release');
+  const newer = { ...old, attemptId: 'new-release', text: 'new' };
+  vi.mocked(persistDraftStart).mockImplementationOnce(async (id) => { stored.set(id, newer); return newer; });
+  await discardFirstSubmission('stale-release');
+  expect(getFirstSubmission('stale-release')).toMatchObject({ pending: true, text: 'new' });
+});
+
+it('does not adopt an old failure when terminal repair returns a newer pending attempt', async () => {
+  const old = { version: 0, text: 'old', attemptId: 'old-repair', deliveryState: 'pending' as const };
+  stored.set('first-delivery:stale-repair', old);
+  const newer = { ...old, attemptId: 'new-repair', text: 'new' };
+  vi.mocked(persistDraftStart).mockImplementationOnce(async (id) => { stored.set(id, newer); return newer; });
+  await reconcileFirstSubmission('stale-repair', { ...old, deliveryState: 'failed', error: 'old failure' });
+  expect(getFirstSubmission('stale-repair')).toMatchObject({ pending: true, text: 'new' });
+});
+
+it('does not let a delayed old read replace a newly claimed live attempt', async () => {
+  const old = { version: 0, text: 'old', attemptId: 'delayed-old', deliveryState: 'failed' as const, error: 'old failure' };
+  stored.set('first-delivery:delayed-read', old);
+  let finishRead!: (record: typeof old) => void;
+  vi.mocked(readDraftStart).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+  const reconciliation = reconcileFirstSubmission('delayed-read');
+  let finishDelivery!: () => void;
+  const delivery = new Promise<void>((resolve) => { finishDelivery = resolve; });
+  await startFirstSubmission('delayed-read', 'new', () => delivery);
+  finishRead(old);
+  await reconciliation;
+  expect(getFirstSubmission('delayed-read')).toMatchObject({ pending: true, text: 'new' });
+  finishDelivery();
+  await waitFor(() => expect(getFirstSubmission('delayed-read')).toBeUndefined());
 });
 
 it('keeps an orphaned pending delivery blocked until explicit release without replay', async () => {

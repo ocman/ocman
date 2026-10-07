@@ -562,7 +562,9 @@ flowchart TD
   creates a session. `lib/newConversationDrafts` stores each draft's target and
   selections in per-draft browser localStorage keys, while `lib/composerDraft` stores text
   in independent keys under each `draftId`. The former shared text map remains
-  read-only fallback; empty per-draft overrides keep cleared legacy text empty.
+  read-only fallback. Each text write has an immutable edit identity; clears
+  record the identity they own on a separate key, so relocation cannot overwrite
+  a concurrent source save. Plain per-draft text from earlier versions also reads.
   `SidebarConversationDrafts` lists these prepared
   conversations in both sidebar views, including empty drafts, and lets the user
   reopen or discard one. Opening another new conversation allocates another
@@ -601,10 +603,14 @@ flowchart TD
   edits before deleting the old identity. The completion receipt records a
   retirement snapshot. Reload reconciliation deletes an unchanged source or
   relocates newer edits, including drafts whose composer is not open.
+  Empty retired sources keep recovery metadata but stay hidden. A source edit
+  arriving during retirement remains discoverable with its original owner and
+  selections, then reconciliation relocates it to a fresh identity.
   It adopts the authoritative attempt receipt before replaying relocation, even
   when the localStorage mirror was never saved.
-  Legacy text migration copies to a checked destination key before clearing
-  the source; a quota error leaves the original available with an explicit retry.
+  Legacy text migration copies to a checked destination key before conditionally
+  clearing that source edit; quota errors and intervening source edits leave the
+  source available with an explicit retry.
   Replacement owner/selections must persist before checked text relocation;
   a failed relocation keeps
   the completed claim and original draft with a safe retry. Validated terminal
@@ -645,6 +651,10 @@ flowchart TD
   notification hints, never authorities; failed mirror writes cannot unlock peers.
   Known live terminal outcomes override stale pending records and reconciliation
   repairs their persistence. Retry execution remains in the originating tab, which
+  repairs its known failure before claiming another attempt and retains the
+  execution by attempt identity when a reservation is refused. Every write adopts
+  the authoritative transaction result, fenced against newer live attempts.
+  The originating tab
   owns the browser Files or command closure. An owner-presence probe detects a
   closed/reloaded tab. The unknown outcome remains blocked until the user explicitly
   releases the first-delivery lock; neither reload nor recovery resends the payload.

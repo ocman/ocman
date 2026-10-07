@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { getPendingDraftPayload, updateDraftAttachments } from './pendingDraftPayloads';
 import { readDraftStart } from './draftStartClaims';
-import { getDraft, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
+import { getDraft, getDraftEntryId, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
 import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
 vi.mock('./draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
@@ -23,7 +23,7 @@ it('adopts the authoritative attempt before relocating a completed start with no
   const draft = useNewConversationDrafts.getState().drafts[0];
   const start = { version: getDraftVersion(draft.draftId), text: '', attemptId: 'authoritative-attempt', sessionId: 'created',
     createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId)]) };
+    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
   saveDraft(draft.draftId, 'newer text');
   vi.mocked(readDraftStart).mockResolvedValue(start);
   await reconcileConversationStart(draft.draftId);
@@ -49,11 +49,50 @@ it('does not overwrite another draft during an interleaved text relocation', () 
   } finally { write.mockRestore(); }
 });
 
+it('does not erase an intervening edit to the source during relocation', () => {
+  saveDraft('same-source', 'copied revision');
+  const original = Storage.prototype.setItem;
+  let edited = false;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (!edited && ((key === 'ocman.composerDrafts.v1:same-source' && value === '') || key === 'ocman.composerDraftClear.v1:same-source')) {
+      edited = true;
+      saveDraft('same-source', 'intervening source edit');
+    }
+    original.call(this, key, value);
+  });
+  try {
+    migrateDraft('same-source', 'same-source-copy');
+    expect(getDraft('same-source')).toBe('intervening source edit');
+    expect(getDraft('same-source-copy')).toBe('copied revision');
+  } finally { write.mockRestore(); }
+});
+
+it('keeps a source edit discoverable when it arrives during final retirement', async () => {
+  const id = 'retiring-source';
+  rememberConversationDraft({ draftId: id, directory: '/repo', remoteId: 'box', agent: 'plan' });
+  saveDraft(id, 'submitted');
+  useNewConversationDrafts.setState({ starts: { [id]: { version: getDraftVersion(id), text: 'submitted' } } });
+  const original = Storage.prototype.setItem;
+  let edited = false;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (!edited && key === `ocman.composerDraftClear.v1:${id}`) { edited = true; saveDraft(id, 'late source edit'); }
+    original.call(this, key, value);
+  });
+  try {
+    await completeConversationStart(id, { sessionId: 'created', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo' });
+    expect(getDraft(id)).toBe('late source edit');
+    expect(useNewConversationDrafts.getState().drafts).toContainEqual(expect.objectContaining({ draftId: id, remoteId: 'box', agent: 'plan' }));
+    await reconcileConversationStart(id);
+    const replacement = useNewConversationDrafts.getState().starts[id].replacementDraftId!;
+    expect(getDraft(replacement)).toBe('late source edit');
+  } finally { write.mockRestore(); }
+});
+
 it.each([false, true])('finalizes interrupted retirement while preserving newer edits: %s', async (edited) => {
   rememberConversationDraft({ draftId: 'interrupted-retirement', directory: '/repo' });
   saveDraft('interrupted-retirement', 'submitted');
   const draft = useNewConversationDrafts.getState().drafts[0];
-  const retirement = JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId)]);
+  const retirement = JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]);
   const createdSession = { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' };
   useNewConversationDrafts.setState({ starts: { [draft.draftId]: { version: 0, text: '', sessionId: 'created', createdSession, retirement } } });
   if (edited) saveDraft(draft.draftId, 'newer edit');
@@ -67,12 +106,28 @@ it('replays a saved retirement at startup without opening its composer', async (
   const draft = useNewConversationDrafts.getState().drafts[0];
   const start = { version: getDraftVersion(draft.draftId), text: '', sessionId: 'created',
     createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId)]) };
+    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
   useNewConversationDrafts.setState({ starts: { [draft.draftId]: start } });
   localStorage.setItem(`ocman.newConversationStarts.v1:${draft.draftId}`, JSON.stringify(start));
   vi.resetModules();
   const restored = await import('./newConversationDrafts');
   await waitFor(() => expect(restored.useNewConversationDrafts.getState().drafts).toHaveLength(0));
+});
+
+it('reconciles an unopened draft at startup when its terminal mirror was never saved', async () => {
+  const id = 'startup-missing-mirror';
+  rememberConversationDraft({ draftId: id, directory: '/repo' });
+  saveDraft(id, 'submitted');
+  const draft = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId === id)!;
+  const start = { version: getDraftVersion(id), text: '', sessionId: 'created',
+    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
+    retirement: JSON.stringify([draft, getDraft(id), getDraftVersion(id), getDraftEntryId(id)]) };
+  vi.mocked(readDraftStart).mockResolvedValue(start);
+  expect(localStorage.getItem(`ocman.newConversationStarts.v1:${id}`)).toBeNull();
+  vi.resetModules();
+  const restored = await import('./newConversationDrafts');
+  await waitFor(() => expect(restored.useNewConversationDrafts.getState().drafts).toHaveLength(0));
+  expect(restored.useNewConversationDrafts.getState().starts[id]?.sessionId).toBe('created');
 });
 
 it('transfers peer-local attachments when another tab retires a replaced draft', async () => {

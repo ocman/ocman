@@ -28,7 +28,12 @@ export const forgetDraftAttachments = (draftId: string) => usePayloads.setState(
 
 export function transferDraftAttachments(from: string, to: string) {
   const payload = getPendingDraftPayload(from);
-  if (payload) updateDraftAttachments(to, payload);
+  if (!payload || from === to) return;
+  usePayloads.setState((state) => {
+    const payloads = new Map(state.payloads).set(to, payload);
+    payloads.delete(from);
+    return { payloads };
+  });
   const owner = owners.get(from);
   if (owner) { owner.draftId = to; owners.set(to, owner); }
 }

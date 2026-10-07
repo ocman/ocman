@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { discardDraft, getDraft, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
+import { discardDraft, getDraft, getDraftClearId, getDraftEntryId, getDraftVersion, migrateDraft, saveDraft, subscribeDraftSessionIds } from './composerDraft';
 import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
 import { randomId } from './randomId';
 import { remoteLog } from './remoteLog';
@@ -16,6 +16,7 @@ export interface ConversationDraft extends NewSessionParams {
   reasoning?: string;
   target?: string;
   createdAt?: number;
+  retired?: boolean;
 }
 
 function load(): ConversationDraft[] | null {
@@ -27,12 +28,13 @@ function load(): ConversationDraft[] | null {
       try {
         const draft = JSON.parse(localStorage.getItem(key) || 'null');
         if (draft && typeof draft.draftId === 'string' && key === STORAGE_PREFIX + draft.draftId && typeof draft.directory === 'string' &&
+          (draft.retired === undefined || typeof draft.retired === 'boolean') &&
           (draft.createdAt === undefined || typeof draft.createdAt === 'number') &&
           ['remoteId', 'platform', 'title', 'model', 'agent', 'reasoning', 'target'].every((field) =>
             draft[field] === undefined || typeof draft[field] === 'string')) drafts.push(draft);
       } catch { /* A malformed entry must not hide the other drafts. */ }
     }
-    return drafts.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.draftId.localeCompare(b.draftId));
+    return drafts.filter((draft) => !draft.retired || getDraft(draft.draftId)).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.draftId.localeCompare(b.draftId));
   } catch {
     return null;
   }
@@ -63,11 +65,11 @@ function currentDrafts(fallback = useNewConversationDrafts.getState().drafts) {
     if (draft) drafts.set(id, draft);
     else drafts.delete(id);
   }
-  return [...drafts.values()].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.draftId.localeCompare(b.draftId));
+  return [...drafts.values()].filter((draft) => !draft.retired || getDraft(draft.draftId)).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.draftId.localeCompare(b.draftId));
 }
 
 export const getConversationDraft = (draftId: string) => currentDrafts().find((draft) => draft.draftId === draftId);
-const retirementSnapshot = (id: string) => JSON.stringify([getConversationDraft(id), getDraft(id), getDraftVersion(id)]);
+const retirementSnapshot = (id: string) => JSON.stringify([getConversationDraft(id), getDraft(id), getDraftVersion(id), getDraftEntryId(id)]);
 
 function publishStart(draftId: string, start: DraftStart) {
   try { localStorage.setItem(START_PREFIX + draftId, JSON.stringify(start)); } catch { /* Retain the live receipt. */ }
@@ -92,7 +94,7 @@ export async function reconcileConversationStart(draftId: string, hint?: DraftSt
   if (start?.error && start.version === getDraftVersion(draftId) && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
   if (start?.replacementDraftId) transferDraftAttachments(draftId, start.replacementDraftId);
   if (start?.createdSession && start.retirement && !start.relocationError && getConversationDraft(draftId)) {
-    if (retirementSnapshot(draftId) === start.retirement) forgetConversationDraft(draftId);
+    if (retirementSnapshot(draftId) === start.retirement) retireConversationDraft(draftId, getDraftEntryId(draftId));
     else { publishStart(draftId, start); await completeConversationStart(draftId, start.createdSession, false); return; }
   }
   if (JSON.stringify(start) === JSON.stringify(before)) return;
@@ -130,7 +132,7 @@ export async function completeConversationStart(draftId: string, createdSession:
         pendingReplacementId: replacementDraftId, relocationError: 'Could not preserve the retained draft. Free browser storage and retry.' });
       return;
     }
-    before = snapshot();
+    before = JSON.stringify([saved, '', getDraftVersion(draftId), getDraftClearId(draftId)]);
   }
   const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '', retirement: before };
   // A known created session must never become a retryable creation if saving its receipt fails.
@@ -146,7 +148,7 @@ export async function completeConversationStart(draftId: string, createdSession:
     }
     publishStart(draftId, { ...useNewConversationDrafts.getState().starts[draftId], replacementDraftId });
   }
-  forgetConversationDraft(draftId);
+  retireConversationDraft(draftId, replacementDraftId ? getDraftClearId(draftId) || 'legacy' : JSON.parse(before)[3]);
   if (replacementDraftId !== start.replacementDraftId) {
     await saveTerminalStart(draftId, useNewConversationDrafts.getState().starts[draftId]);
   }
@@ -158,7 +160,7 @@ export async function retryDraftRelocation(draftId: string) {
   const target = receipt?.pendingReplacementId;
   if (!receipt || !saved || !target) return;
   if (!relocateRetainedDraft(draftId, target, saved)) throw new Error(receipt.relocationError);
-  forgetConversationDraft(draftId);
+  retireConversationDraft(draftId, getDraftClearId(draftId) || 'legacy');
   await saveTerminalStart(draftId, { ...receipt, relocationError: undefined, pendingReplacementId: undefined, replacementDraftId: target, text: '' });
 }
 
@@ -215,7 +217,15 @@ function save(draftId: string, draft?: ConversationDraft) {
 export function rememberConversationDraft(params: ConversationDraft) {
   const drafts = currentDrafts();
   const existing = drafts.find((draft) => draft.draftId === params.draftId);
-  return save(params.draftId, { ...existing, ...params, createdAt: existing?.createdAt || Date.now() });
+  return save(params.draftId, { ...existing, ...params, ...(existing?.retired || params.retired ? { retired: false } : {}), createdAt: existing?.createdAt || Date.now() });
+}
+
+function retireConversationDraft(id: string, entryId: string) {
+  // Keep recovery metadata for a late source edit; empty retired rows stay out of the sidebar.
+  const saved = getConversationDraft(id);
+  if (saved) save(id, { ...saved, retired: true });
+  discardDraft(id, entryId);
+  forgetDraftAttachments(id);
 }
 
 export function forgetConversationDraft(draftId: string) {
@@ -259,9 +269,9 @@ if (typeof window !== 'undefined') window.addEventListener('storage', (event) =>
   useNewConversationDrafts.setState({ drafts: currentDrafts() });
 });
 
-// Resume interrupted retirements on reload even when their composer is not open.
+subscribeDraftSessionIds(() => useNewConversationDrafts.setState({ drafts: currentDrafts() }));
+
+// Every visible persisted draft is reconciled, even if its terminal mirror write failed.
 for (const draft of useNewConversationDrafts.getState().drafts) {
-  if (useNewConversationDrafts.getState().starts[draft.draftId]?.retirement) {
-    void reconcileConversationStart(draft.draftId).catch(() => undefined);
-  }
+  void reconcileConversationStart(draft.draftId).catch(() => undefined);
 }
