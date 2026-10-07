@@ -33,6 +33,7 @@ steps:
 
 vi.mock('../lib/api', () => ({ fetchJSON: vi.fn().mockResolvedValue({ total: { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0, estCost: 0 }, phases: Object.fromEntries(['plan', 'implement', 'verify', 'deliver'].map((phase) => [phase, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0, estCost: 0 }])), attempts: [], incomplete: false }), api: {
 		sessionModels: vi.fn(),
+		prepareSession: vi.fn(),
     factoryEpics: vi.fn(),
     projects: vi.fn(),
     sessions: vi.fn(),
@@ -91,6 +92,7 @@ async function fillEpicForm(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+	vi.mocked(api.prepareSession).mockReset().mockResolvedValue({ platform: 'opencode', agents: [], commands: [], models: { models: [], hasProviders: false }, liveConnection: false });
 	vi.mocked(api.sessionModels).mockReset().mockResolvedValue({ models: [], hasProviders: false });
   vi.mocked(api.factoryEpic).mockReset();
   vi.mocked(api.projects).mockReset();

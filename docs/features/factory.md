@@ -248,6 +248,13 @@ Delivery uses the implementation model. Each Attempt freezes its model when it
 is claimed, so a change mid-implementation affects only work that has not
 started.
 
+The picker combines catalogs from all projects attached to the Epic and searches
+model display names as well as IDs. **Refresh models** reloads those catalogs.
+If a configured model is missing after a configuration change, restart that
+project's OpenCode instance and refresh. You can still select an unlisted model
+by entering its full `provider/model` ID in the search field and choosing **Use**.
+Selection does not guarantee that the model is configured in every Epic project.
+
 ## Implementation checkpoints
 
 Each implementation session tests its change, commits it, pushes the shared

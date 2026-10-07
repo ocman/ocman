@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, postJSON, type FactoryEpic } from '../lib/api';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
+import { api, postJSON, type FactoryEpic, type SessionModelEntry } from '../lib/api';
+import { availabilityUnknown } from '../lib/modelCatalogCache';
 
 export interface FactoryEpicModels { plan?: string; implementation?: string; verification?: string }
 export type FactoryEpicWithModels = FactoryEpic & { models?: FactoryEpicModels };
@@ -12,8 +13,16 @@ export const epicModelPhases = [
 
 export function useFactoryEpicModels(epic?: FactoryEpicWithModels) {
 	const client = useQueryClient();
-	// ponytail: the reviewer picker's catalog lists every model OpenCode knows; no per-session context needed.
-	const catalog = useQuery({ queryKey: ['factory-epic-model-options'], queryFn: ({ signal }) => api.getJudgeModelOptions(signal), staleTime: 60_000, retry: false, enabled: !!epic });
+	const projects = [...new Set([epic?.initialProject, ...(epic?.projects ?? []).map(({ path }) => path)].filter((path): path is string => !!path))];
+	const catalogs = useQueries({ queries: projects.map((directory) => ({
+		queryKey: ['factory-epic-model-options', 'local', directory],
+		queryFn: ({ signal }: { signal: AbortSignal }) => api.prepareSession({ directory, remoteId: 'local' }, signal),
+		staleTime: 60_000,
+		retry: false,
+	})) });
+	// Availability is project-specific; this union is for selection, not a guarantee for every project.
+	const allEntries = catalogs.flatMap((catalog) => availabilityUnknown(catalog.data?.models.models ?? []));
+	const entries = [...new Map(allEntries.map((entry): [string, SessionModelEntry] => [`${entry.provider}/${entry.model}`, entry])).values()];
 	const save = useMutation({
 		mutationFn: (models: FactoryEpicModels) => postJSON<FactoryEpicModels, FactoryEpicModels>(`/api/factory/epics/${encodeURIComponent(epic!.id)}/models`, models),
 		onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics'] }),
@@ -21,8 +30,11 @@ export function useFactoryEpicModels(epic?: FactoryEpicWithModels) {
 	const models = epic?.models ?? {};
 	return {
 		models,
-		options: catalog.data?.models ?? [],
-		loading: catalog.isFetching,
+		options: entries.map((entry) => `${entry.provider}/${entry.model}`),
+		entries,
+		loading: catalogs.some((catalog) => catalog.isFetching),
+		error: catalogs.some((catalog) => catalog.isError),
+		refresh: () => { for (const catalog of catalogs) void catalog.refetch(); },
 		save,
 		setModel: (phase: keyof FactoryEpicModels, value: string) => save.mutate({ ...models, [phase]: value }),
 	};

@@ -55,3 +55,24 @@ it('leaves an unlisted saved model unflagged in a rich catalog', async () => {
 	await user.click(screen.getByRole('option', { name: 'openai/custom' }));
 	expect(onChange).toHaveBeenCalledWith('openai/custom');
 });
+
+it('only offers custom selection for a provider/model ID when enabled', async () => {
+	const user = userEvent.setup();
+	const onChange = vi.fn();
+	const { rerender } = render(<ModelSelect value="" models={['p/known']} allowCustom onChange={onChange} />);
+	await user.click(screen.getByRole('combobox', { name: 'Model' }));
+	const search = screen.getByRole('textbox', { name: 'Search models' });
+	for (const value of ['Qwen Flash', '/model', 'provider/', 'provider/model name', 'p/known', `p/${'x'.repeat(299)}`]) {
+		await user.clear(search);
+		await user.type(search, value);
+		expect(screen.queryByRole('option', { name: /^Use / })).not.toBeInTheDocument();
+	}
+	await user.clear(search);
+	await user.type(search, ' spark/qwen-flash ');
+	await user.click(screen.getByRole('option', { name: 'Use spark/qwen-flash' }));
+	expect(onChange).toHaveBeenCalledWith('spark/qwen-flash');
+	rerender(<ModelSelect value="" models={[]} onChange={onChange} />);
+	await user.click(screen.getByRole('combobox', { name: 'Model' }));
+	await user.keyboard('spark/qwen-flash');
+	expect(screen.queryByRole('option', { name: /^Use / })).not.toBeInTheDocument();
+});
