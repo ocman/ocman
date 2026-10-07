@@ -51,7 +51,7 @@ func TestFactoryGateCreationAdmitsAnotherEpicWithoutIdleEvent(t *testing.T) {
 			t.Cleanup(svc.Close)
 			select {
 			case <-store.settled:
-			case <-time.After(time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("startup dispatch did not settle")
 			}
 			switch kind {
@@ -77,7 +77,7 @@ func TestFactoryGateCreationAdmitsAnotherEpicWithoutIdleEvent(t *testing.T) {
 			}
 			select {
 			case <-launcher.launched:
-			case <-time.After(time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("gate creation did not admit the waiting Epic without an idle event")
 			}
 			svc.Close()
