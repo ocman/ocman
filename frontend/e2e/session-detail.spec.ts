@@ -10,7 +10,7 @@
  *  - Navigating directly to a session URL works (deep-link)
  *  - Header logo links to / (redirects to the latest session)
  *  - "New session" action is available in the actions menu
- *  - "Open in VS Code" action is available in the actions menu
+ *  - Session actions exclude tmux and VS Code controls
  *  - Archive button is present on sidebar session items
  *  - Sidebar item for the active session has aria-selected
  */
@@ -654,10 +654,11 @@ test('"New session" action is available in the session actions menu', async ({ m
   await expect(page.getByRole('menuitem', { name: 'New session' })).toBeVisible({ timeout: 5_000 });
 });
 
-test('"Open in VS Code" action is available in the session actions menu', async ({ mockedPage: page }) => {
+test('session actions exclude tmux and VS Code controls', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
   await page.getByLabel('Session actions').click();
-  await expect(page.getByRole('menuitem', { name: /Open in VS Code/ })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('menuitem', { name: 'New session' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /Open in VS Code|Switch tmux/ })).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------------------

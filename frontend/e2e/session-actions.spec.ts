@@ -17,7 +17,7 @@
  *  - Archive button in session detail sidebar archives and navigates away
  *
  * Project detail covers:
- *  - /project/:dir renders the directory path and VS Code button
+ *  - /project/:dir renders the directory path and project actions
  *  - SessionTable inside project detail shows sessions for that project
  *  - "No sessions found" empty state when project has no sessions
  *
@@ -254,9 +254,11 @@ test('project detail page renders directory path', async ({ mockedPage: page }) 
   await expect(page.getByTitle(MOCK_PROJECT.directory)).toHaveText('projects/myapp', { timeout: 5_000 });
 });
 
-test('project detail page shows VS Code button', async ({ mockedPage: page }) => {
+test('project detail has project actions without a VS Code button', async ({ mockedPage: page }) => {
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-  await expect(page.getByRole('button', { name: 'VS Code', exact: true })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('button', { name: 'Worktrees', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'VS Code', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'tmux', exact: true })).toHaveCount(0);
 });
 
 test('project detail shows sessions from the mocked sessions API', async ({ mockedPage: page }) => {

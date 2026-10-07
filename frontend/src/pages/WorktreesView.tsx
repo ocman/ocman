@@ -4,7 +4,6 @@ import type { WorktreeEntry } from '../lib/api';
 import { api } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { usePageTitle } from '../lib/headerContext';
-import { openVSCode } from '../lib/shortcuts';
 import { relativeTime, shortPath } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
@@ -184,13 +183,6 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
                   <td>{stats.lastActivity ? relativeTime(stats.lastActivity) : '—'}</td>
                   <td>
                     <ButtonGroup label={`Actions for ${wt.branch || 'detached worktree'}`} className={styles.actions}>
-                      <Button size="small"
-                        type="button"
-                        title="Open in VS Code"
-                        onClick={() => openVSCode(wt.path)}
-                      >
-                        VS Code
-                      </Button>
                       <Button size="small"
                         type="button"
                         disabled={stats.sessions.length === 0}

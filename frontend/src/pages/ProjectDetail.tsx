@@ -4,16 +4,12 @@ import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import { TimeRangeControl } from '../components/TimeRangeControl';
-import { useTmux } from '../lib/useTmux';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
-import { useClickOutside } from '../lib/useClickOutside';
-import { cleanTitle, fuzzyMatch, shortPath } from '../lib/format';
+import { cleanTitle, fuzzyMatch } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { useProjects, useSessions } from '../lib/queries';
 import { projectIdentityIndex } from '../lib/projectIdentity';
-import { remoteLog } from '../lib/remoteLog';
-import { TmuxClientPopover } from '../components/TmuxClientPopover';
 import { Button, ButtonGroup, SearchField } from '../components/Control';
 import styles from './ProjectDetail.module.css';
 
@@ -25,11 +21,6 @@ export function ProjectDetail() {
   const projectName = directory?.split('/').pop() || 'Project';
   usePageTitle(projectName);
   const navigate = useNavigate();
-  const tmux = useTmux();
-  const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
-  const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
-  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
 
   // Filter state (mirrors the dashboard Sessions tab) — persisted in the
   // URL so refresh / back-forward keep the user's view. Default to 7d
@@ -56,8 +47,6 @@ export function ProjectDetail() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  useClickOutside(pickerRef, !!pendingTmuxSession, () => setPendingTmuxSession(null));
-
   // TanStack Query handles dedup, cancellation, stale-while-revalidate,
   // and visibility pausing automatically (Wave 3 / P4+P5 fix).
   // sinceHours produces a stable query key; the actual timestamp is
@@ -77,28 +66,6 @@ export function ProjectDetail() {
   const filteredSessions = q
     ? sessions.filter((s) => fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`))
     : sessions;
-
-  const handleTmuxSwitch = useCallback((anchor?: HTMLElement | null) => {
-    if (!matchingTmuxSession) return;
-    if (tmux.isLocal) {
-      tmux.switchSession(matchingTmuxSession.name).catch(err => remoteLog.error('tmux switch failed', err));
-      return;
-    }
-    if (tmux.clients.length === 1) {
-      tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty).catch(err => remoteLog.error('tmux switch failed', err));
-      return;
-    }
-
-    const rect = anchor?.getBoundingClientRect();
-    setPickerPos(rect ? { top: rect.bottom + 4, left: rect.right } : { top: 88, left: Math.min(window.innerWidth - 24, 420) });
-    setPendingTmuxSession(matchingTmuxSession.name);
-  }, [matchingTmuxSession, tmux]);
-
-  const handleClientSelect = useCallback((clientTTY: string) => {
-    if (!pendingTmuxSession) return;
-    tmux.switchSession(pendingTmuxSession, clientTTY).catch(err => remoteLog.error('tmux switch failed', err));
-    setPendingTmuxSession(null);
-  }, [pendingTmuxSession, tmux]);
 
   const handleOpenVSCode = useCallback(() => {
     if (!directory) return;
@@ -123,27 +90,8 @@ export function ProjectDetail() {
 
   return (
     <div>
-      {pendingTmuxSession && pickerPos && (
-        <TmuxClientPopover
-          pickerRef={pickerRef}
-          pos={pickerPos}
-          clients={tmux.clients}
-          onSelect={handleClientSelect}
-        />
-      )}
       <HeaderPortal>
         <ButtonGroup label="Project actions">
-          {matchingTmuxSession && (
-            <Button
-              type="button"
-              size="small"
-              onClick={(e) => handleTmuxSwitch(e.currentTarget)}
-              title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
-            >tmux</Button>
-          )}
-          {directory && (
-            <Button type="button" size="small" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</Button>
-          )}
           {directory && launchAllowed && (
             <Button
               type="button"

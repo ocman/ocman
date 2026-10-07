@@ -437,11 +437,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
     remoteId: session?.remoteId,
   });
   const {
-    matchingTmuxSession,
     pendingTmuxSession,
     pickerPos,
     pickerRef,
-    handleTmuxSwitch,
     handleClientSelect,
     handleLaunchOpencode,
     launchingOpencode,
@@ -888,15 +886,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <SessionActionsMenu
               sessionId={session.id}
               tmuxAvailable={tmux.available}
-              matchingTmuxSession={matchingTmuxSession}
               portAvailable={portAvailable}
               liveConnectionHint={caps.liveConnectionHint}
               launchingOpencode={launchingOpencode}
               onNewSession={() => { void handleNewSession(); }}
               onShare={() => modal.open('share')}
-              onTmuxSwitch={handleTmuxSwitch}
               onLaunchOpencode={() => { void handleLaunchOpencode(); }}
-              onOpenVSCode={handleVSCodeShortcut}
             />
           </HeaderPortal>}
           {session && modal.openModal === 'share' && (

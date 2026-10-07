@@ -19,7 +19,6 @@ vi.mock('../lib/useCapabilities', () => ({
     return launchState.allowed;
   },
 }));
-vi.mock('../lib/shortcuts', () => ({ openVSCode: () => {} }));
 const openWorktreeForm = vi.fn();
 vi.mock('../lib/uiStore', () => ({
   useUiStore: (selector: (s: { openWorktreeForm: () => void }) => unknown) =>
@@ -221,7 +220,7 @@ describe('WorktreesView', () => {
       expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute('href', '/project/%2Frepo?remoteId=B');
       expect(screen.getByRole('link', { name: 'Back to project' })).toHaveClass('oc-button');
       expect(screen.getByRole('button', { name: 'New worktree session' })).toHaveClass('oc-button--accent');
-      for (const button of screen.getAllByRole('button', { name: 'VS Code' })) expect(button).toHaveClass('oc-button');
+      expect(screen.queryByRole('button', { name: 'VS Code' })).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'New worktree session' }));
       expect(openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/repo', remoteId: 'B' });

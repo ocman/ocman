@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { TmuxState } from '../../lib/useTmux';
-import type { TmuxSession } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
 import { launchAndWait } from '../../lib/launchAndWait';
 import { useClickOutside } from '../../lib/useClickOutside';
@@ -25,28 +24,17 @@ interface PickerPosition {
  * jump to when they have multiple clients attached.
  */
 export interface UseTmuxActionsResult {
-  /** The tmux session whose resolvedPath matches the current directory, if any. */
-  matchingTmuxSession: TmuxSession | undefined;
   /**
    * Tmux session name awaiting a client selection. `null` when the
    * picker isn't open. Used by the renderer to decide whether to
    * draw the picker.
    */
   pendingTmuxSession: string | null;
-  /** Absolute viewport position for the picker (anchored to the
-   *  click target). `null` while the picker is closed. */
+  /** Absolute viewport position for the command's picker. `null` while closed. */
   pickerPos: PickerPosition | null;
   /** Ref the picker element attaches to so click-outside can detect
    *  taps that should dismiss it. */
   pickerRef: MutableRefObject<HTMLDivElement | null>;
-  /**
-   * Click handler for the per-session "switch tmux" affordance.
-   * Routes the request based on tmux topology:
-   *   - single client (local or remote): switch with that client;
-   *   - multiple clients: open the picker so the user can pick
-   *     which tty to send the switch to.
-   */
-  handleTmuxSwitch: (e: React.MouseEvent, tmuxSessionName: string) => void;
   /** Picker callback that finalises the switch with the chosen client. */
   handleClientSelect: (clientTTY: string) => void;
   /**
@@ -59,8 +47,7 @@ export interface UseTmuxActionsResult {
   launchingOpencode: boolean;
   /**
    * Keyboard-shortcut entry point for the "switch to tmux" command.
-   * Same routing as `handleTmuxSwitch` but with a fixed picker
-   * position (top of viewport) since there's no anchor element.
+   * Uses a fixed picker position since there's no anchor element.
    */
   handleTmuxShortcut: () => void;
 }
@@ -95,20 +82,6 @@ export function useTmuxActions(
   useClickOutside(pickerRef, !!pendingTmuxSession, () => setPendingTmuxSession(null));
 
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
-
-  const handleTmuxSwitch = useCallback((e: React.MouseEvent, tmuxSessionName: string) => {
-    // Single client: route directly to it.
-    if (tmux.clients.length === 1) {
-      tmux.switchSession(tmuxSessionName, tmux.clients[0].tty)
-        .catch((err) => remoteLog.error('tmux switch failed', err));
-      return;
-    }
-    // Multiple clients: open the picker anchored to the click target
-    // so the user can choose which terminal to switch.
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setPickerPos({ top: rect.bottom + 4, left: rect.right });
-    setPendingTmuxSession(tmuxSessionName);
-  }, [tmux]);
 
   const handleClientSelect = useCallback((clientTTY: string) => {
     if (!pendingTmuxSession) return;
@@ -165,11 +138,9 @@ export function useTmuxActions(
   }, [matchingTmuxSession, tmux]);
 
   return {
-    matchingTmuxSession,
     pendingTmuxSession,
     pickerPos,
     pickerRef,
-    handleTmuxSwitch,
     handleClientSelect,
     handleLaunchOpencode,
     launchingOpencode,
