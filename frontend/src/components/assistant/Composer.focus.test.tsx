@@ -12,9 +12,12 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks());
 
-it('shows one spinner instead of empty selectors until the new conversation has a catalog', () => {
+it('shows selector skeletons until the new conversation has a catalog', () => {
   const { rerender } = render(<Composer isRunning={false} newConversation agentsLoaded={false} models={['p/model']} />);
-  expect(screen.getByRole('status', { name: 'Loading agents and models' })).toBeInTheDocument();
+  const loading = screen.getByRole('status', { name: 'Loading agents and models' });
+  expect(loading).toHaveAttribute('aria-busy', 'true');
+  expect(loading.querySelectorAll('.oc-skeleton')).toHaveLength(3);
+  expect(loading.querySelector('.oc-spinner')).not.toBeInTheDocument();
   expect(screen.queryByTitle('Agent (click to change)')).not.toBeInTheDocument();
   expect(screen.queryByTitle('Model (click to change)')).not.toBeInTheDocument();
   expect(screen.getByRole('textbox')).toBeEnabled();
