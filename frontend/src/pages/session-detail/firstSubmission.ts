@@ -17,6 +17,7 @@ const records = new Map<string, DraftStart>();
 const executions = new Map<string, () => Promise<void>>();
 const probes = new Map<string, ReturnType<typeof setTimeout>>();
 const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('ocman.first-delivery');
+const outcomeKey = (record?: DraftStart) => JSON.stringify([record?.attemptId, record?.deliveryOwner, record?.deliveryState, record?.text, record?.error, record?.version]);
 
 // One lifecycle owns execution, persistence and recovery. Mirrors only notify;
 // IndexedDB reserves a delivery before any upload/command or completion publication.
@@ -81,7 +82,7 @@ export async function reconcileFirstSubmission(id: string, hint?: DraftStart) {
   const terminal = live?.deliveryState && live.deliveryState !== 'pending' && live.deliveryState !== 'interrupted';
   const interrupted = live?.deliveryState === 'interrupted' && live.attemptId === stored?.attemptId && stored?.deliveryState === 'pending';
   const record = (terminal && (!stored || live?.attemptId === stored.attemptId)) || interrupted ? live : stored;
-  if (record && terminal && record !== stored) {
+  if (record && terminal && outcomeKey(record) !== outcomeKey(stored)) {
     const actual = await persistOutcome(id, record);
     if (actual?.deliveryState === 'pending') probeOwner(id, actual);
     return;

@@ -123,6 +123,21 @@ it('repairs a saved terminal mirror after reload without waiting for a new notif
   expect(stored.get('first-delivery:reload-terminal')?.deliveryState).toBe('done');
 });
 
+it('converges two tabs on equivalent cloned failure records without rewriting or rebroadcasting', async () => {
+  await startFirstSubmission('converged-failure', 'payload', async () => { throw new Error('known failure'); });
+  await waitFor(() => expect(stored.get('first-delivery:converged-failure')?.deliveryState).toBe('failed'));
+  vi.mocked(readDraftStart).mockImplementation(async (id) => { const record = stored.get(id); return record && structuredClone(record); });
+  vi.resetModules();
+  const peer = await import('./firstSubmission');
+  const writes = vi.mocked(persistDraftStart).mock.calls.length;
+  await peer.reconcileFirstSubmission('converged-failure');
+  await reconcileFirstSubmission('converged-failure');
+  await peer.reconcileFirstSubmission('converged-failure');
+  expect(getFirstSubmission('converged-failure')?.error).toBe('known failure');
+  expect(peer.getFirstSubmission('converged-failure')?.error).toBe('known failure');
+  expect(vi.mocked(persistDraftStart).mock.calls.length).toBe(writes);
+});
+
 it('fails closed on a hydration error and recovers after a successful read', async () => {
   vi.mocked(readDraftStart).mockRejectedValueOnce(new Error('record unavailable'));
   const { result } = renderHook(() => useSessionFirstSubmission('read-error'));

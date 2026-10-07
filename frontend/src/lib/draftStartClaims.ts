@@ -64,5 +64,5 @@ export async function claimDraftStart(draftId: string, next: DraftStart) {
 }
 
 export const persistDraftStart = (draftId: string, start: DraftStart) => transact(draftId, (current) =>
-  current && (current.attemptId !== start.attemptId || current.deliveryState === 'done') ? current : start);
+  current && (current.attemptId !== start.attemptId || current.version > start.version || current.deliveryState === 'done') ? current : start);
 export const readDraftStart = (draftId: string) => transact(draftId);

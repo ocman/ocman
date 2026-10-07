@@ -327,7 +327,7 @@ describe('new-conversation submission lifecycle', () => {
     saveDraft('new', 'only legacy copy');
     const original = Storage.prototype.setItem;
     const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-      if (key.startsWith('ocman.composerDrafts.v1:') && key !== 'ocman.composerDrafts.v1:new') throw new Error('quota');
+      if (key.startsWith('ocman.composerDraftText.v1:') && !key.startsWith('ocman.composerDraftText.v1:new:')) throw new Error('quota');
       original.call(this, key, value);
     });
     try {

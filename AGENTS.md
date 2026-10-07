@@ -61,8 +61,9 @@ The composer's machine selector only
 re-points the route; each draft has its own `draftId` query parameter (`draftKey`
 prop) and survives. Browser-local prepared conversations appear in the sidebar's
 Drafts section before any session exists. `lib/newConversationDrafts` persists
-their targets and selections, while `lib/composerDraft` persists text in independent
-per-draft keys, with a read-only fallback for the former shared map. Completion
+their targets and selections, while `lib/composerDraft` persists immutable per-edit
+text bodies behind per-draft head references. Clears mark the owned edit and reclaim
+its body; older text formats remain readable and cleared legacy entries are reclaimed. Completion
 receipts store a retirement snapshot so reload reconciliation finishes interrupted
 retirement without deleting newer edits. Attachment snapshots use Zustand so a
 composer reopened before an image read completes sees its eventual result.

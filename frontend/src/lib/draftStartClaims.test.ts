@@ -102,6 +102,15 @@ it('does not restore a first-delivery failure after explicit release completed i
   expect(await readDraftStart('first-delivery:child')).toMatchObject({ deliveryState: 'done', text: '' });
 });
 
+it('does not restore a discarded prompt from a delayed older terminal write', async () => {
+  database();
+  const current = { version: 0, text: 'discarded payload', attemptId: 'discarded' };
+  await claimDraftStart('discarded', current);
+  await persistDraftStart('discarded', { ...current, version: 1, text: '', error: 'failed' });
+  await persistDraftStart('discarded', { ...current, error: 'late failure' });
+  expect(await readDraftStart('discarded')).toMatchObject({ version: 1, text: '', error: 'failed' });
+});
+
 it.each([
   [{ openError: new Error('open failed') }, 'open failed'],
   [{ blocked: true }, 'Close other ocman tabs'],

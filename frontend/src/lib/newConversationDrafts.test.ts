@@ -4,7 +4,7 @@ import { waitFor } from '@testing-library/react';
 import { getPendingDraftPayload, updateDraftAttachments } from './pendingDraftPayloads';
 import { readDraftStart } from './draftStartClaims';
 import { getDraft, getDraftEntryId, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
-import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
+import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
 vi.mock('./draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
   persistDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => start,
@@ -23,7 +23,7 @@ it('adopts the authoritative attempt before relocating a completed start with no
   const draft = useNewConversationDrafts.getState().drafts[0];
   const start = { version: getDraftVersion(draft.draftId), text: '', attemptId: 'authoritative-attempt', sessionId: 'created',
     createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
+    retirement: JSON.stringify([draft, getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
   saveDraft(draft.draftId, 'newer text');
   vi.mocked(readDraftStart).mockResolvedValue(start);
   await reconcileConversationStart(draft.draftId);
@@ -37,7 +37,7 @@ it('does not overwrite another draft during an interleaved text relocation', () 
   const original = Storage.prototype.setItem;
   let interleaved = false;
   const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (!interleaved && key.startsWith('ocman.composerDrafts.v1')) {
+    if (!interleaved && key.startsWith('ocman.composerDraftText.v1:')) {
       interleaved = true;
       saveDraft('other-text', 'independent edit');
     }
@@ -54,7 +54,7 @@ it('does not erase an intervening edit to the source during relocation', () => {
   const original = Storage.prototype.setItem;
   let edited = false;
   const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (!edited && ((key === 'ocman.composerDrafts.v1:same-source' && value === '') || key === 'ocman.composerDraftClear.v1:same-source')) {
+    if (!edited && key.startsWith('ocman.composerDraftClear.v1:same-source:')) {
       edited = true;
       saveDraft('same-source', 'intervening source edit');
     }
@@ -75,7 +75,7 @@ it('keeps a source edit discoverable when it arrives during final retirement', a
   const original = Storage.prototype.setItem;
   let edited = false;
   const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (!edited && key === `ocman.composerDraftClear.v1:${id}`) { edited = true; saveDraft(id, 'late source edit'); }
+    if (!edited && key.startsWith(`ocman.composerDraftClear.v1:${id}:`)) { edited = true; saveDraft(id, 'late source edit'); }
     original.call(this, key, value);
   });
   try {
@@ -88,11 +88,24 @@ it('keeps a source edit discoverable when it arrives during final retirement', a
   } finally { write.mockRestore(); }
 });
 
+it.each(['discard', 'completion'])('reclaims prompt bytes after %s, including lifecycle mirrors', async (outcome) => {
+  const id = `reclaim-${outcome}`;
+  const text = `unique reclaimed ${outcome} prompt`;
+  rememberConversationDraft({ draftId: id, directory: '/repo' });
+  saveDraft(id, text);
+  await beginConversationStart(id, text);
+  if (outcome === 'discard') {
+    await failConversationStart(id, 'creation failed');
+    forgetConversationDraft(id);
+  } else await completeConversationStart(id, { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
+  for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain(text);
+});
+
 it.each([false, true])('finalizes interrupted retirement while preserving newer edits: %s', async (edited) => {
   rememberConversationDraft({ draftId: 'interrupted-retirement', directory: '/repo' });
   saveDraft('interrupted-retirement', 'submitted');
   const draft = useNewConversationDrafts.getState().drafts[0];
-  const retirement = JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]);
+  const retirement = JSON.stringify([draft, getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]);
   const createdSession = { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' };
   useNewConversationDrafts.setState({ starts: { [draft.draftId]: { version: 0, text: '', sessionId: 'created', createdSession, retirement } } });
   if (edited) saveDraft(draft.draftId, 'newer edit');
@@ -106,7 +119,7 @@ it('replays a saved retirement at startup without opening its composer', async (
   const draft = useNewConversationDrafts.getState().drafts[0];
   const start = { version: getDraftVersion(draft.draftId), text: '', sessionId: 'created',
     createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraft(draft.draftId), getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
+    retirement: JSON.stringify([draft, getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
   useNewConversationDrafts.setState({ starts: { [draft.draftId]: start } });
   localStorage.setItem(`ocman.newConversationStarts.v1:${draft.draftId}`, JSON.stringify(start));
   vi.resetModules();
@@ -121,7 +134,7 @@ it('reconciles an unopened draft at startup when its terminal mirror was never s
   const draft = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId === id)!;
   const start = { version: getDraftVersion(id), text: '', sessionId: 'created',
     createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraft(id), getDraftVersion(id), getDraftEntryId(id)]) };
+    retirement: JSON.stringify([draft, getDraftVersion(id), getDraftEntryId(id)]) };
   vi.mocked(readDraftStart).mockResolvedValue(start);
   expect(localStorage.getItem(`ocman.newConversationStarts.v1:${id}`)).toBeNull();
   vi.resetModules();
@@ -333,7 +346,7 @@ it('retains the source when replacement relocation fails at quota', async () => 
   useNewConversationDrafts.setState({ starts: { 'quota-copy': { version: 0, text: 'submitted' } } });
   const original = Storage.prototype.setItem;
   const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (key.startsWith('ocman.composerDrafts.v1:') && key !== 'ocman.composerDrafts.v1:quota-copy') throw new Error('quota');
+    if (key.startsWith('ocman.composerDraftText.v1:') && !key.startsWith('ocman.composerDraftText.v1:quota-copy:')) throw new Error('quota');
     original.call(this, key, value);
   });
   try {

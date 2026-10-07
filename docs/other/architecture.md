@@ -561,10 +561,11 @@ flowchart TD
   re-points the route; the target selector changes client state. Neither
   creates a session. `lib/newConversationDrafts` stores each draft's target and
   selections in per-draft browser localStorage keys, while `lib/composerDraft` stores text
-  in independent keys under each `draftId`. The former shared text map remains
-  read-only fallback. Each text write has an immutable edit identity; clears
-  record the identity they own on a separate key, so relocation cannot overwrite
-  a concurrent source save. Plain per-draft text from earlier versions also reads.
+  in immutable per-edit bodies with small per-draft head references. Each clear
+  permanently marks its own edit identity and deletes that immutable body; it
+  cannot erase a concurrent source save or reverse a newer discard. Superseded
+  bodies and explicitly cleared legacy entries are reclaimed. Older per-draft
+  and shared-map text formats remain readable.
   `SidebarConversationDrafts` lists these prepared
   conversations in both sidebar views, including empty drafts, and lets the user
   reopen or discard one. Opening another new conversation allocates another
@@ -580,7 +581,8 @@ flowchart TD
   Terminal receipts cannot be downgraded by a stale pending record for the same
   attempt; failed persistence stays visible and is repaired before retry. A newer
   retained revision is copied to a fresh draft identity before the old identity
-  is retired. Receipt-read failures show a safe, read-only retry control.
+  is retired. Receipt-read failures show a retry control. The composer remains
+  editable; submission still requires a successful atomic claim.
   Explicit clearing/discard increments a per-draft persisted text revision, so
   failed receipt recovery cannot resurrect it after reload. Terminal publication
   changes its committed marker after the IndexedDB transaction, guaranteeing a
@@ -601,8 +603,9 @@ flowchart TD
   Files in peer tabs, before clearing the retired identity.
   Retirement rechecks metadata/text after terminal persistence and copies late
   edits before deleting the old identity. The completion receipt records a
-  retirement snapshot. Reload reconciliation deletes an unchanged source or
-  relocates newer edits, including drafts whose composer is not open.
+  retirement snapshot containing metadata, revision and edit identity, without
+  prompt bytes. Reload reconciliation retires an unchanged source or relocates
+  newer edits, including drafts whose composer is not open.
   Empty retired sources keep recovery metadata but stay hidden. A source edit
   arriving during retirement remains discoverable with its original owner and
   selections, then reconciliation relocates it to a fresh identity.
@@ -654,6 +657,8 @@ flowchart TD
   repairs its known failure before claiming another attempt and retains the
   execution by attempt identity when a reservation is refused. Every write adopts
   the authoritative transaction result, fenced against newer live attempts.
+  Equivalent durable terminal values are adopted without another write or
+  notification, so IndexedDB's cloned objects cannot cause cross-tab ping-pong.
   The originating tab
   owns the browser Files or command closure. An owner-presence probe detects a
   closed/reloaded tab. The unknown outcome remains blocked until the user explicitly

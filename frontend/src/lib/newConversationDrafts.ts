@@ -69,9 +69,15 @@ function currentDrafts(fallback = useNewConversationDrafts.getState().drafts) {
 }
 
 export const getConversationDraft = (draftId: string) => currentDrafts().find((draft) => draft.draftId === draftId);
-const retirementSnapshot = (id: string) => JSON.stringify([getConversationDraft(id), getDraft(id), getDraftVersion(id), getDraftEntryId(id)]);
+const retirementSnapshot = (id: string) => JSON.stringify([getConversationDraft(id), getDraftVersion(id), getDraftEntryId(id)]);
+
+function ownedStart(draftId: string, start: DraftStart) {
+  const version = getDraftVersion(draftId);
+  return start.text && start.version !== version ? { ...start, version, text: '' } : start;
+}
 
 function publishStart(draftId: string, start: DraftStart) {
+  start = ownedStart(draftId, start);
   try { localStorage.setItem(START_PREFIX + draftId, JSON.stringify(start)); } catch { /* Retain the live receipt. */ }
   useNewConversationDrafts.setState((state) => ({ starts: { ...state.starts, [draftId]: start } }));
 }
@@ -91,7 +97,7 @@ export async function reconcileConversationStart(draftId: string, hint?: DraftSt
     const repaired = { ...before, persistenceError: undefined, committed: true };
     start = await persistDraftStart(draftId, repaired);
   }
-  if (start?.error && start.version === getDraftVersion(draftId) && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
+  if (start?.error && start.text && start.version === getDraftVersion(draftId) && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
   if (start?.replacementDraftId) transferDraftAttachments(draftId, start.replacementDraftId);
   if (start?.createdSession && start.retirement && !start.relocationError && getConversationDraft(draftId)) {
     if (retirementSnapshot(draftId) === start.retirement) retireConversationDraft(draftId, getDraftEntryId(draftId));
@@ -132,7 +138,7 @@ export async function completeConversationStart(draftId: string, createdSession:
         pendingReplacementId: replacementDraftId, relocationError: 'Could not preserve the retained draft. Free browser storage and retry.' });
       return;
     }
-    before = JSON.stringify([saved, '', getDraftVersion(draftId), getDraftClearId(draftId)]);
+    before = JSON.stringify([saved, getDraftVersion(draftId), getDraftClearId(draftId)]);
   }
   const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '', retirement: before };
   // A known created session must never become a retryable creation if saving its receipt fails.
@@ -148,7 +154,7 @@ export async function completeConversationStart(draftId: string, createdSession:
     }
     publishStart(draftId, { ...useNewConversationDrafts.getState().starts[draftId], replacementDraftId });
   }
-  retireConversationDraft(draftId, replacementDraftId ? getDraftClearId(draftId) || 'legacy' : JSON.parse(before)[3]);
+  retireConversationDraft(draftId, replacementDraftId ? getDraftClearId(draftId) || 'legacy' : JSON.parse(before)[2]);
   if (replacementDraftId !== start.replacementDraftId) {
     await saveTerminalStart(draftId, useNewConversationDrafts.getState().starts[draftId]);
   }
@@ -176,6 +182,7 @@ function relocateRetainedDraft(from: string, to: string, saved: ConversationDraf
 }
 
 async function saveTerminalStart(draftId: string, start: DraftStart) {
+  start = ownedStart(draftId, start);
   publishStart(draftId, { ...start, committed: false });
   try {
     const persisted = await persistDraftStart(draftId, { ...start, committed: true });
@@ -232,6 +239,12 @@ export function forgetConversationDraft(draftId: string) {
   save(draftId);
   discardDraft(draftId);
   forgetDraftAttachments(draftId);
+  const start = useNewConversationDrafts.getState().starts[draftId];
+  if (start?.error && start.text) {
+    const cleared = { ...start, version: getDraftVersion(draftId), text: '' };
+    publishStart(draftId, cleared);
+    void persistDraftStart(draftId, cleared).catch(() => undefined);
+  }
 }
 
 function retirePeerDraft(draftId: string) {
