@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -26,14 +27,15 @@ import (
 //     A "no running OpenCode" miss should retry on the next call, not
 //     be remembered for 30s.
 //   - getOrFetch wraps fetches in a singleflight.Group keyed by
-//     "port|path" so concurrent misses for the same key only fire one
+//     "generation|port|path" so concurrent misses for the same key only fire one
 //     upstream call. This is the key win on a cold SessionDetail
 //     mount, which fires multiple endpoints simultaneously.
 type httpCache struct {
 	ttl time.Duration
 
-	mu      sync.RWMutex
-	entries map[httpCacheKey]httpCacheEntry
+	mu          sync.RWMutex
+	entries     map[httpCacheKey]httpCacheEntry
+	generations map[string]uint64
 
 	flight singleflight.Group
 
@@ -58,8 +60,9 @@ const httpCacheMaxEntries = 256
 
 func newHTTPCache(ttl time.Duration) *httpCache {
 	return &httpCache{
-		ttl:     ttl,
-		entries: make(map[httpCacheKey]httpCacheEntry),
+		ttl:         ttl,
+		entries:     make(map[httpCacheKey]httpCacheEntry),
+		generations: make(map[string]uint64),
 	}
 }
 
@@ -106,7 +109,21 @@ func (c *httpCache) get(port, path string) ([]byte, bool) {
 // put stores a successful response. Overwrites any existing entry for
 // the same key.
 func (c *httpCache) put(port, path string, body []byte) {
+	c.putForGeneration(port, path, body, c.generation(port))
+}
+
+func (c *httpCache) generation(port string) uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.generations[port]
+}
+
+func (c *httpCache) putForGeneration(port, path string, body []byte, generation uint64) {
 	c.mu.Lock()
+	if c.generations[port] != generation {
+		c.mu.Unlock()
+		return
+	}
 	now := time.Now()
 	var dropped int64
 	for key, entry := range c.entries {
@@ -150,6 +167,7 @@ func (c *httpCache) invalidate(port, path string) {
 // when the auto-approve watcher observes that an OpenCode port disappeared.
 func (c *httpCache) invalidatePort(port string) {
 	c.mu.Lock()
+	c.generations[port]++
 	var dropped int64
 	for k := range c.entries {
 		if k.port == port {
@@ -190,7 +208,8 @@ func (c *httpCache) getOrFetchContext(ctx context.Context, port, path string, fe
 	}
 	c.metrics.RecordMiss(ctx)
 
-	key := port + "|" + path
+	generation := c.generation(port)
+	key := fmt.Sprintf("%d|%s|%s", generation, port, path)
 	result := c.flight.DoChan(key, func() (interface{}, error) {
 		// Re-check inside the singleflight body in case another
 		// caller filled the cache between our miss and acquiring
@@ -207,7 +226,7 @@ func (c *httpCache) getOrFetchContext(ctx context.Context, port, path string, fe
 			// the error value.
 			return nil, errFetchFailed
 		}
-		c.put(port, path, body)
+		c.putForGeneration(port, path, body, generation)
 		return body, nil
 	})
 	select {
