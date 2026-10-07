@@ -37,7 +37,8 @@ export function useComposerDrafts(
   /** Debounced autosave (300ms). Empty text clears the draft instead. */
   const scheduleDraftSave = useCallback((sid: string, getText: () => string) => {
     cancelPending();
-    const version = versionRef.current;
+    // Scheduling is a fresh user edit, unlike an already scheduled callback.
+    const version = versionRef.current = getDraftVersion(sid);
     timerRef.current = setTimeout(() => {
       if (version !== getDraftVersion(sid)) return;
       const text = getText().trim();

@@ -30,9 +30,10 @@ function readFileAsDataURL(file: File): Promise<string> {
  * the prompt; other files are uploaded to the session's attachment dir
  * and referenced by path in the prompt text.
  */
-export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined, platform?: string) {
-  const [images, setImages] = useState<AttachedImage[]>([]);
-  const [files, setFiles] = useState<AttachedFileRef[]>([]);
+export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined, platform?: string,
+  initial?: { images: AttachedImage[]; files: AttachedFileRef[] }) {
+  const [images, setImages] = useState<AttachedImage[]>(initial?.images || []);
+  const [files, setFiles] = useState<AttachedFileRef[]>(initial?.files || []);
   const [pending, setPending] = useState(0);
 
   const addFiles = useCallback(async (all: File[]) => {

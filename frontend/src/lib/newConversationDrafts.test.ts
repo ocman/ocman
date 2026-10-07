@@ -167,6 +167,27 @@ it('publishes a changed post-commit mirror after the pending terminal notificati
   } finally { persist.mockRestore(); }
 });
 
+it('preserves edits made while terminal persistence is outstanding', async () => {
+  rememberConversationDraft({ draftId: 'late-edit', directory: '/repo', agent: 'plan' });
+  useNewConversationDrafts.setState({ starts: { 'late-edit': { version: 0, text: 'submitted' } } });
+  const claims = await import('./draftStartClaims');
+  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
+  let terminal!: import('./draftStartClaims').DraftStart;
+  const persist = vi.spyOn(claims, 'persistDraftStart').mockImplementationOnce((_id, value) => {
+    terminal = value;
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  try {
+    const completion = completeConversationStart('late-edit', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' }, true);
+    saveDraft('late-edit', 'typed during persistence');
+    finish(terminal);
+    await completion;
+    const replacement = useNewConversationDrafts.getState().starts['late-edit'].replacementDraftId!;
+    expect(getDraft(replacement)).toBe('typed during persistence');
+    expect(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === replacement)?.agent).toBe('plan');
+  } finally { persist.mockRestore(); }
+});
+
 it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {
   localStorage.setItem('ocman.newConversationDrafts.v1:invalid', raw);
   vi.resetModules();

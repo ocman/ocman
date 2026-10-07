@@ -122,6 +122,21 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('restores attachments submitted before leaving a pending first start', async () => {
+    const first = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValue(first.promise);
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['note'], 'original.txt', { type: 'text/plain' })] } });
+    await screen.findByText('original.txt');
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'original prompt' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
+    fireEvent.click(screen.getByRole('button', { name: /First/ }));
+    await act(async () => first.reject(new Error('creation failed')));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('original prompt'));
+    expect(screen.getByText('original.txt')).toBeInTheDocument();
+  });
   it('keeps retry attachments through repeated failures after reopening a pending draft', async () => {
     const first = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValueOnce(first.promise).mockRejectedValue(new Error('retry failed'));
@@ -183,6 +198,25 @@ describe('new-conversation submission lifecycle', () => {
     expect(getDraft('new')).toBe('');
     expect(useNewConversationDrafts.getState().drafts).toHaveLength(1);
     expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps the only legacy text copy when its canonical-key migration hits quota', async () => {
+    saveDraft('new', 'only legacy copy');
+    const original = Storage.prototype.setItem;
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'ocman.composerDrafts.v1' && Object.keys(JSON.parse(value)).some((id) => id !== 'new')) throw new Error('quota');
+      original.call(this, key, value);
+    });
+    try {
+      render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo']}><DraftWorkspace /></MemoryRouter>);
+      await act(async () => {});
+      expect(getDraft('new')).toBe('only legacy copy');
+      expect(await screen.findByRole('alert')).toHaveTextContent('draft');
+      write.mockRestore();
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('only legacy copy'));
+      expect(getDraft('new')).toBe('');
+    } finally { write.mockRestore(); }
   });
   it('moves a mounted composer to a fresh identity after another tab discards it', async () => {
     render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);

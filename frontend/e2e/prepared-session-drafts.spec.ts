@@ -59,12 +59,14 @@ test('unavailable atomic storage fails visibly without starting a session', asyn
 
 test('an unusable atomic-store schema surfaces an error and keeps the prompt', async ({ mockedPage: page }) => {
   await prepareDraft(page);
-  await page.goto('/session/new');
-  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+  await page.route('**/fault-setup', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Atomic-store setup</title>' }));
+  await page.goto('/fault-setup');
+  const stores = await page.evaluate(() => new Promise<number>((resolve, reject) => {
     const open = indexedDB.open('ocman.preparedDraftStarts.v1', 1);
-    open.onsuccess = () => { open.result.close(); resolve(); };
+    open.onsuccess = () => { const count = open.result.objectStoreNames.length; open.result.close(); resolve(count); };
     open.onerror = () => reject(open.error);
   }));
+  expect(stores).toBe(0);
   let starts = 0;
   await page.route('**/api/sessions/start', (route) => { starts++; return route.fulfill({ json: {} }); });
   await page.goto('/session/new?dir=%2Frepo&draftId=broken');

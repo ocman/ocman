@@ -68,6 +68,19 @@ export function clearDraft(sessionId: string) {
   emit();
 }
 
+/** Rename in one checked write: quota failure must leave the original intact. */
+export function migrateDraft(from: string, to: string): boolean {
+  const drafts = loadDrafts();
+  if (!drafts[from]) return true;
+  drafts[to] = drafts[from];
+  delete drafts[from];
+  try {
+    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+    emit();
+    return true;
+  } catch { return false; }
+}
+
 // --- which sessions have an unsent draft (sidebar indicator) ---
 // ponytail: the snapshot is the sorted id list joined into a string so
 // useSyncExternalStore gets a stable primitive without a cache layer.

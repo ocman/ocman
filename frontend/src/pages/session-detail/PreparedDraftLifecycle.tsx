@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NEW_SESSION_ID, newSessionPath } from '../../lib/newSessionPath';
 import { reconcileConversationStart, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { useApiStore } from '../../lib/apiStore';
-import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
+import { migrateDraft } from '../../lib/composerDraft';
 import { randomId } from '../../lib/randomId';
 import { InlineAlert } from '../../components/InlineAlert';
 import type { NewConversationProps } from './NewConversation';
@@ -29,8 +29,11 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
   const receiptState = JSON.stringify([receipt?.version, receipt?.error, receipt?.sessionId]);
   useEffect(() => {
     if (!routeDraftId) {
-      const text = getDraft(NEW_SESSION_ID);
-      if (text) { saveDraft(legacyId, text); clearDraft(NEW_SESSION_ID); }
+      if (!migrateDraft(NEW_SESSION_ID, legacyId)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- surface a failed external storage migration; retry is explicit.
+        setReceiptError('Could not migrate the saved draft. Free browser storage and retry.');
+        return;
+      }
       navigate(newSessionPath({ directory, remoteId, platform, title, draftId: legacyId }));
       return;
     }
@@ -73,7 +76,8 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
     return () => { active = false; };
   }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receiptRetry, navigate, navigateToSession]);
   const retry = () => { setReceiptError(''); setReceiptRetry((value) => value + 1); };
-  if (!params.draftId || sessionId || replacement) return null;
+  if (!params.draftId) return receiptError ? <InlineAlert onRetry={retry}>{receiptError}</InlineAlert> : null;
+  if (sessionId || replacement) return null;
   if (observed === draftId && !exists) return receiptError ? <InlineAlert onRetry={retry}>{receiptError}</InlineAlert> : null;
   return <>{(receiptError || receipt?.persistenceError) && <InlineAlert onRetry={retry}>{receiptError || receipt?.persistenceError}</InlineAlert>}{children}</>;
 }

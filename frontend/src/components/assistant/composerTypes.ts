@@ -1,6 +1,6 @@
 import type { ReactNode, Ref } from 'react';
 import type { AgentInfo, SessionModelEntry, SlashCommand } from '../../lib/api';
-import type { AttachedImage } from './useComposerAttachments';
+import type { AttachedImage, AttachedFileRef } from './useComposerAttachments';
 import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 import type { TargetCandidate } from '../../lib/api.types';
 
@@ -26,6 +26,8 @@ export interface ComposerProps {
   isRunning: boolean;
   disabled?: boolean;
   disabledHint?: string;
+  initialAttachments?: { images: AttachedImage[]; files: AttachedFileRef[] };
+  onAttachmentsChange?: (payload: { images: AttachedImage[]; files: AttachedFileRef[] }) => void;
   whisperAvailable?: boolean;
   models?: string[];
   modelEntries?: SessionModelEntry[];

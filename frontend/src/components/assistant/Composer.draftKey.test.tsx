@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, discardDraft, getDraft, saveDraft } from '../../lib/composerDraft';
 import { api, BackendUnavailableError } from '../../lib/api';
 import { Composer } from './Composer';
 
@@ -21,6 +21,15 @@ it('keys drafts by draftKey when there is no session', () => {
   expect(getDraft('new')).toBe('typed now');
   expect(getDraft('s1')).toBe('');
   expect(commands).not.toHaveBeenCalled();
+});
+
+it('adopts an external clear revision for deliberate new edits', () => {
+  saveDraft('new', 'old text');
+  const view = render(<Composer isRunning={false} newConversation draftKey="new" />);
+  discardDraft('new');
+  fireEvent.input(screen.getByRole('textbox'), { target: { value: 'fresh deliberate edit' } });
+  view.unmount();
+  expect(getDraft('new')).toBe('fresh deliberate edit');
 });
 
 it('falls back to the session id as draft key', () => {

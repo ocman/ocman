@@ -4,6 +4,7 @@ import { discardDraft, getDraft, getDraftVersion, saveDraft } from './composerDr
 import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
 import { randomId } from './randomId';
 import { remoteLog } from './remoteLog';
+import { forgetDraftAttachments } from './pendingDraftPayloads';
 
 const STORAGE_PREFIX = 'ocman.newConversationDrafts.v1:';
 const START_PREFIX = 'ocman.newConversationStarts.v1:';
@@ -107,6 +108,8 @@ export async function beginConversationStart(draftId: string, text: string, rout
 
 export async function completeConversationStart(draftId: string, createdSession: NonNullable<DraftStart['createdSession']>, retire = true) {
   const { starts } = useNewConversationDrafts.getState();
+  const snapshot = () => JSON.stringify([getConversationDraft(draftId), getDraft(draftId), getDraftVersion(draftId)]);
+  const before = snapshot();
   let replacementDraftId: string | undefined;
   const saved = getConversationDraft(draftId);
   if (!retire && saved) {
@@ -118,7 +121,19 @@ export async function completeConversationStart(draftId: string, createdSession:
   const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '' };
   // A known created session must never become a retryable creation if saving its receipt fails.
   await saveTerminalStart(draftId, start);
+  // No await may separate the final snapshot/copy from deleting its identity.
+  const latest = getConversationDraft(draftId);
+  if (latest && snapshot() !== before) {
+    replacementDraftId = randomId();
+    rememberConversationDraft({ ...latest, draftId: replacementDraftId });
+    const text = getDraft(draftId);
+    if (text) saveDraft(replacementDraftId, text);
+    publishStart(draftId, { ...useNewConversationDrafts.getState().starts[draftId], replacementDraftId });
+  }
   forgetConversationDraft(draftId);
+  if (replacementDraftId !== start.replacementDraftId) {
+    await saveTerminalStart(draftId, useNewConversationDrafts.getState().starts[draftId]);
+  }
 }
 
 async function saveTerminalStart(draftId: string, start: DraftStart) {
@@ -167,6 +182,7 @@ export function rememberConversationDraft(params: ConversationDraft) {
 export function forgetConversationDraft(draftId: string) {
   save(draftId);
   discardDraft(draftId);
+  forgetDraftAttachments(draftId);
 }
 
 if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
@@ -180,9 +196,13 @@ if (typeof window !== 'undefined') window.addEventListener('storage', (event) =>
   const drafts = load();
   if (!drafts) return;
   // Only an explicit per-draft deletion (or clear) invalidates text; an unrelated write cannot discard it.
-  if (event.key && event.newValue === null && !drafts.some((draft) => STORAGE_PREFIX + draft.draftId === event.key)) discardDraft(event.key.slice(STORAGE_PREFIX.length));
+  if (event.key && event.newValue === null && !drafts.some((draft) => STORAGE_PREFIX + draft.draftId === event.key)) {
+    const id = event.key.slice(STORAGE_PREFIX.length);
+    discardDraft(id);
+    forgetDraftAttachments(id);
+  }
   if (event.key === null) for (const old of useNewConversationDrafts.getState().drafts) {
-    if (!drafts.some((draft) => draft.draftId === old.draftId)) discardDraft(old.draftId);
+    if (!drafts.some((draft) => draft.draftId === old.draftId)) { discardDraft(old.draftId); forgetDraftAttachments(old.draftId); }
   }
   useNewConversationDrafts.setState({ drafts: currentDrafts() });
 });

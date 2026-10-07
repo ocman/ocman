@@ -582,6 +582,12 @@ flowchart TD
   changes its committed marker after the IndexedDB transaction, guaranteeing a
   second cross-tab notification. Reopened composers remount for recovered text
   once, keeping attachments on later retries.
+  Fresh user edits adopt an externally changed text revision while stale
+  callbacks remain fenced. Pending images and browser Files live in a shared
+  draft-keyed memory snapshot, restored after navigation and a failed start.
+  Retirement rechecks metadata/text after terminal persistence and copies late
+  edits before deleting the old identity. Legacy text migration is one checked
+  rename write; a quota error leaves the original available with an explicit retry.
   Explicit metadata deletion invalidates autosave and recovery;
   unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.

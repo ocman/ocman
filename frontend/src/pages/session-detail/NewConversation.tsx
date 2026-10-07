@@ -35,6 +35,7 @@ import { sendFirstFiles } from './sendFirstFiles';
 import { StartProgress, type StartSteps } from './StartProgress';
 import { startHandoffs, startModels } from './startHandoffs';
 import { PreparedDraftLifecycle } from './PreparedDraftLifecycle';
+import { getPendingDraftPayload, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -296,11 +297,14 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [directory, remoteId, title, routeKey, target, seedNewSession, draftId]);
 
-  const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => start(text, (r) => {
-    const { model, agent, reasoning } = pick(r);
-    const send = { message: text, images, model, agent: agent || undefined, reasoning: reasoning || undefined };
-    return files?.length ? { model, execute: sendFirstFiles(send, files) } : { model, send };
-  });
+  const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
+    rememberPendingDraftPayload(draftId, images, files);
+    return start(text, (r) => {
+      const { model, agent, reasoning } = pick(r);
+      const send = { message: text, images, model, agent: agent || undefined, reasoning: reasoning || undefined };
+      return files?.length ? { model, execute: sendFirstFiles(send, files) } : { model, send };
+    });
+  };
 
   const onCommand = (command: string, args: string) => {
     if (command === 'wt' || command === 'worktree') {
@@ -346,6 +350,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         <Composer
           key={`${routeKey}:${recoveryKey}`}
           composerRef={composerRef}
+          initialAttachments={getPendingDraftPayload(draftId)}
+          onAttachmentsChange={(payload) => { if (getConversationDraft(draftId)) updateDraftAttachments(draftId, payload); }}
           onSend={onSend}
           onCommand={onCommand}
           onShell={caps.shellExec ? onShell : undefined}
