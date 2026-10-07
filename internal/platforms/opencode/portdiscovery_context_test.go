@@ -15,6 +15,7 @@ func resetPortCacheForTests() {
 	resetPortCache()
 	portCache.mu.Lock()
 	portCache.lastSuccessful = nil
+	portCache.lastSuccessfulAt = time.Time{}
 	portCache.mu.Unlock()
 }
 
@@ -58,6 +59,24 @@ func TestFailedDiscoveryKeepsLastSnapshotWithoutRenewingTTL(t *testing.T) {
 	discoverPortsImpl.Store(&empty)
 	if ports := discoverOpenCodePorts(); ports == nil || len(ports) != 0 {
 		t.Fatalf("successful empty discovery retained disappeared instances: %v", ports)
+	}
+}
+
+func TestFailedDiscoveryExpiresStoppedInstanceMembership(t *testing.T) {
+	resetPortCacheForTests()
+	t.Cleanup(resetPortCacheForTests)
+	restore := setDiscoverPortsImplForTests(func() map[string]string { return map[string]string{"/repo": "1001"} })
+	defer restore()
+	discoverOpenCodePorts()
+	portCache.mu.Lock()
+	portCache.updated = time.Now().Add(-2 * time.Minute)
+	portCache.lastSuccessfulAt = portCache.updated
+	portCache.mu.Unlock()
+	failed := func(context.Context) map[string]string { return nil }
+	previous := discoverPortsImpl.Swap(&failed)
+	defer discoverPortsImpl.Store(previous)
+	if ports := DiscoverOpenCodePorts(); len(ports) != 0 {
+		t.Fatalf("sustained discovery failure retained stopped watcher members: %v", ports)
 	}
 }
 

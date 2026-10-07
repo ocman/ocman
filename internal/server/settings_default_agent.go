@@ -48,7 +48,9 @@ func knownAgentOptions(ctx context.Context, directories []string) []string {
 				if ctx.Err() != nil {
 					return
 				}
-				agents := defaultAgentCatalog(ctx, targets[directory], directory)
+				targetCtx, cancelTarget := context.WithTimeout(ctx, 500*time.Millisecond)
+				agents := defaultAgentCatalog(targetCtx, targets[directory], directory)
+				cancelTarget()
 				mu.Lock()
 				for _, agent := range agents {
 					known[agent] = true
@@ -57,7 +59,12 @@ func knownAgentOptions(ctx context.Context, directories []string) []string {
 			}
 		})
 	}
+	catalogDirectories := make([]string, 0, len(targets))
 	for directory := range targets {
+		catalogDirectories = append(catalogDirectories, directory)
+	}
+	sort.Strings(catalogDirectories)
+	for _, directory := range catalogDirectories {
 		if ctx.Err() != nil {
 			break
 		}

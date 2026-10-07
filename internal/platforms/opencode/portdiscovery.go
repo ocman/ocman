@@ -19,10 +19,11 @@ import (
 // for simplicity; port discovery is infrequent enough that read/write
 // contention is not a concern.
 var portCache struct {
-	mu             sync.Mutex
-	ports          map[string]string
-	lastSuccessful map[string]string
-	updated        time.Time
+	mu               sync.Mutex
+	ports            map[string]string
+	lastSuccessful   map[string]string
+	lastSuccessfulAt time.Time
+	updated          time.Time
 }
 
 var serverCache struct {
@@ -172,6 +173,7 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 		portCache.ports = result
 		portCache.lastSuccessful = copyMap(result)
 		portCache.updated = time.Now()
+		portCache.lastSuccessfulAt = portCache.updated
 		portCache.mu.Unlock()
 		return copyMap(result), nil
 	})
@@ -211,6 +213,7 @@ func writeCachedPorts(ports map[string]string) {
 	portCache.ports = ports
 	portCache.lastSuccessful = copyMap(ports)
 	portCache.updated = time.Now()
+	portCache.lastSuccessfulAt = portCache.updated
 	portCache.mu.Unlock()
 }
 

@@ -148,6 +148,31 @@ func TestKnownAgentOptionsIncludesHealthyCatalogBesideStalledTarget(t *testing.T
 	}
 }
 
+func TestKnownAgentOptionsReadsHealthyTargetBeyondStalledBatch(t *testing.T) {
+	ports, catalog := defaultAgentPorts, defaultAgentCatalog
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	defaultAgentPorts = func(context.Context) map[string]string {
+		targets := map[string]string{"/z-healthy": "healthy"}
+		for i := range 8 {
+			targets[fmt.Sprintf("/a-stalled-%d", i)] = "stalled"
+		}
+		return targets
+	}
+	defaultAgentCatalog = func(ctx context.Context, port, _ string) []string {
+		if port == "healthy" {
+			return []string{"healthy-agent"}
+		}
+		<-ctx.Done()
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	got := knownAgentOptions(ctx, nil)
+	if ctx.Err() != nil || !reflect.DeepEqual(got, []string{"build", "healthy-agent", "plan"}) {
+		t.Fatalf("stalled batch exhausted the healthy target's budget: agents=%v error=%v", got, ctx.Err())
+	}
+}
+
 func TestKnownAgentOptionsSetsOverallDeadline(t *testing.T) {
 	ports, catalog := defaultAgentPorts, defaultAgentCatalog
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })

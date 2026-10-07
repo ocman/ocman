@@ -87,14 +87,19 @@ func pidCwdContext(ctx context.Context, pid string) (string, bool) {
 
 var lsofWarnOnce sync.Once
 
+const stalePortGrace = time.Minute
+
 func discoverOpenCodePorts() map[string]string {
 	if ports := DiscoverOpenCodePortsContext(context.Background()); ports != nil {
 		return ports
 	}
 	// Failed scans must not make liveness readers or the watcher remove healthy
-	// instances. Keep the last successful snapshot without renewing its TTL.
+	// instances immediately. Retain a short grace without renewing its TTL.
 	portCache.mu.Lock()
 	defer portCache.mu.Unlock()
+	if time.Since(portCache.lastSuccessfulAt) > stalePortGrace {
+		return map[string]string{}
+	}
 	return copyMap(portCache.lastSuccessful)
 }
 

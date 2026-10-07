@@ -499,15 +499,17 @@ flowchart TD
   subagent-only agents are excluded. With no reachable instance, `build`, `plan`,
   and the saved preference remain selectable; remote-only catalogs are not read.
   Catalog discovery uses up to eight concurrent reads within a two-second overall
-  deadline and stops scheduling directories on cancellation. A stalled target
+  deadline, with a 500 ms per-target wait, and stops scheduling directories on
+  cancellation. A stalled target
   does not block healthy catalogs or fallback choices. Shared port scans have an
   independent ten-second deadline;
   canceling a caller only cancels its wait, preserving other clients' live status.
   Settings-owned shared agent fetches also use an independent ten-second deadline,
   so leaving Settings cannot cancel a composer's joined catalog read.
   A failed scan preserves the last successful snapshot for liveness readers and
-  the auto-approval watcher without renewing the cache TTL. A successful empty
-  scan still removes disappeared instances.
+  the auto-approval watcher for at most one minute without renewing the cache TTL.
+  Sustained failure then expires old membership so stopped sessions lose stale
+  busy status. A successful empty scan still removes disappeared instances.
   An explicit composer selection wins.
   `projectSettingsCache` shares the project settings fetch across conversations
   and sibling worktrees, keyed by owner and project root. Successful global or
