@@ -26,7 +26,7 @@ vi.mock('../../lib/apiStore', () => ({
 }));
 
 vi.mock('../../lib/api', () => ({
-  api: { restartOpencode: vi.fn(), debugLog: vi.fn().mockResolvedValue(undefined) },
+  api: { restartOpencode: vi.fn(), reloadOpencode: vi.fn(), debugLog: vi.fn().mockResolvedValue(undefined) },
 }));
 
 const restartOpencode = vi.mocked(api.restartOpencode);
@@ -69,6 +69,42 @@ function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionAc
 
 beforeEach(() => {
   restartOpencode.mockReset();
+  vi.mocked(api.reloadOpencode).mockReset();
+});
+
+describe('useSessionActions — /reload-opencode', () => {
+  it('reloads configuration and refreshes the catalog while a turn is running', async () => {
+    vi.mocked(api.reloadOpencode).mockResolvedValue(undefined);
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ isRunningRef: { current: true }, reloadCapabilities });
+    const { result } = renderHook(() => useSessionActions(opts));
+    await act(async () => { await result.current.handleCommand('reload-opencode', ''); });
+    expect(api.reloadOpencode).toHaveBeenCalledWith('sess-1', 'opencode');
+    expect(restartOpencode).not.toHaveBeenCalled();
+    expect(opts.setRestartToastMessage).toHaveBeenLastCalledWith('Reloaded OpenCode configuration');
+    expect(opts.pending.clear).toHaveBeenCalled();
+    expect(reloadCapabilities).toHaveBeenCalledOnce();
+  });
+
+  it('reports reload failures without restarting or refreshing the catalog', async () => {
+    vi.mocked(api.reloadOpencode).mockRejectedValue(new Error('Requires v2'));
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ reloadCapabilities });
+    const { result } = renderHook(() => useSessionActions(opts));
+    await act(async () => { await result.current.handleCommand('reload-opencode', ''); });
+    expect(opts.pending.fail).toHaveBeenCalledWith('Requires v2');
+    expect(opts.setRestartToastMessage).toHaveBeenLastCalledWith(null);
+    expect(restartOpencode).not.toHaveBeenCalled();
+    expect(reloadCapabilities).not.toHaveBeenCalled();
+  });
+
+  it('rejects arguments before calling the server', async () => {
+    const opts = makeOptions();
+    const { result } = renderHook(() => useSessionActions(opts));
+    await act(async () => { await result.current.handleCommand('reload-opencode', 'all'); });
+    expect(opts.pending.fail).toHaveBeenCalledWith('Usage: /reload-opencode');
+    expect(api.reloadOpencode).not.toHaveBeenCalled();
+  });
 });
 
 describe('useSessionActions — /restart-opencode', () => {

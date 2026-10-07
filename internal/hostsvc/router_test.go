@@ -52,6 +52,7 @@ func (h stubHost) EnsureProjectOpencode(context.Context, EnsureProjectOpencodeRe
 func (h stubHost) StopProjectOpencode(context.Context, EnsureProjectOpencodeRequest) error {
 	return nil
 }
+func (h stubHost) ReloadOpencode(context.Context) error { return nil }
 func (h stubHost) RestartProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error) {
 	return nil, nil
 }

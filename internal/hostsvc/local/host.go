@@ -14,6 +14,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	log "github.com/sirupsen/logrus"
@@ -29,6 +30,8 @@ type Deps struct {
 	DiscoverPort            func(string) string
 	SetMachineServer        func(string)
 	ManagedStore            ManagedStore
+	OpenCodeAuth            func() ocapi.Auth
+	OpenCodeReloaded        func(port string)
 	TmuxSessions            func(context.Context) ([]hostsvc.TmuxSession, error)
 	Projects                func(context.Context) ([]db.ProjectStats, error)
 	ProjectUpstreams        func(context.Context, string) (*hostsvc.ProjectUpstreams, error)

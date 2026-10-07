@@ -5,6 +5,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -24,6 +25,8 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		// OpenCode v2: one server per machine, published to discovery.
 		SetMachineServer: opencode.SetMachineServer,
 		ManagedStore:     managedStoreOrNil(s.stateDB),
+		OpenCodeAuth:     func() ocapi.Auth { return s.openCodeAuth },
+		OpenCodeReloaded: opencode.InvalidateCatalogsForPort,
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/gRPC).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.

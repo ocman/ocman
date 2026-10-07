@@ -159,6 +159,8 @@ export const sessionApi = {
     const suffix = query.size ? `?${query}` : '';
     return postJSON(`/api/session/${encodeURIComponent(sessionId)}/restart-opencode${suffix}`, undefined);
   },
+  reloadOpencode: (sessionId: string, platform: string): Promise<void> =>
+    postJSON(`/api/session/${encodeURIComponent(sessionId)}/reload-opencode${queryString({ platform })}`, undefined),
   runShell: (sessionId: string, command: string, agent?: string) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/shell`, { command, agent }, { parseJSON: false }),
   renameSession: (sessionId: string, title: string) =>

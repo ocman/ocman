@@ -284,6 +284,9 @@ func TestRemoteHost_AllMethods(t *testing.T) {
 	if err := rh.StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: "/x"}); err != nil {
 		t.Errorf("StopProjectOpencode: %v", err)
 	}
+	if err := rh.ReloadOpencode(ctx); err != nil {
+		t.Errorf("ReloadOpencode: %v", err)
+	}
 	// RestartProjectOpencode marshals req+result across the same gRPC seam;
 	// localStubHost returns a distinct endpoint (:5678) + Launched=true so
 	// the roundtrip is observable, not aliased to the ensure result.

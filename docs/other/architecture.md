@@ -290,7 +290,10 @@ flowchart TD
   an opaque `ocruntime.Instance`. The owning host may use discovery once to
   adopt a healthy instance that started before its managed registry entry
   existed. `RestartProjectOpencode` stops and relaunches the tracked
-  instance.
+  instance. `ReloadOpencode` instead calls the owning machine's v2
+  `/api/location/reload` endpoint through the same Host/gRPC seam, retaining
+  the process and running turns while refreshing configuration and the owner's
+  cached catalogs. Pending permission and question prompts are cancelled.
 - **internal/composerattachments.** Owner-local attachment cache storage and
   seven-day cleanup. HTTP uploads stream through `Host.SaveComposerAttachment`;
   remote owners receive a metadata packet followed by bounded byte chunks over

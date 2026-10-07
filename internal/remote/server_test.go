@@ -236,6 +236,7 @@ func (localStubHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjec
 func (localStubHost) StopProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) error {
 	return nil
 }
+func (localStubHost) ReloadOpencode(context.Context) error { return nil }
 func (localStubHost) RestartProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5678", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "restarted"}, Launched: true}, nil
 }
@@ -343,6 +344,7 @@ func TestRemoteHostRemainingMutationsRoundTrip(t *testing.T) {
 		"stop opencode": func() error {
 			return offline.StopProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
 		},
+		"reload opencode": func() error { return offline.ReloadOpencode(t.Context()) },
 		"restart opencode": func() error {
 			_, err := offline.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
 			return err

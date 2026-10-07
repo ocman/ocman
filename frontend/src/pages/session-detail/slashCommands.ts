@@ -138,6 +138,27 @@ const restartOpencode: SlashCommand = {
   },
 };
 
+const reloadOpencode: SlashCommand = {
+  run: async ({ session, pending, setRestartToastMessage, reloadCapabilities }, args) => {
+    if (args.trim()) {
+      pending.fail('Usage: /reload-opencode');
+      return;
+    }
+    pending.begin('/reload-opencode');
+    setRestartToastMessage('Reloading OpenCode configuration...');
+    try {
+      await api.reloadOpencode(session.id, session.platform);
+      pending.clear();
+      setRestartToastMessage('Reloaded OpenCode configuration');
+      reloadCapabilities?.();
+    } catch (e) {
+      setRestartToastMessage(null);
+      remoteLog.error('Failed to reload OpenCode', e);
+      pending.fail(e instanceof Error ? e.message : 'Unknown error');
+    }
+  },
+};
+
 const details: SlashCommand = {
   // Pure client-side UI toggle — works regardless of live port.
   run: () => { useUiStore.getState().toggleToolDetails(); },
@@ -276,6 +297,7 @@ export const SLASH_COMMANDS: Readonly<Record<string, SlashCommand>> = {
   worktree,
   wt: worktree,
   'restart-opencode': restartOpencode,
+  'reload-opencode': reloadOpencode,
   details,
   thinking,
   export: exportMarkdown,

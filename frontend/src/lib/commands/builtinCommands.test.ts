@@ -22,6 +22,7 @@ describe('BUILTIN_COMMANDS', () => {
       'rename',
       'routines',
       'redo',
+      'reload-opencode',
       'restart-opencode',
       'share',
       'skills',
