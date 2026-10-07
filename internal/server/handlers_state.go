@@ -196,6 +196,9 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 	if err != nil {
 		return err
 	}
+	if err := s.sessions.WaitForRoutineCreation(ctx); err != nil {
+		return err
+	}
 	routineSessions, err := s.stateDB.RoutineSessions(ctx)
 	if err != nil {
 		return err

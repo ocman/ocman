@@ -57,17 +57,6 @@ type Hooks struct {
 	CooldownTimes func(ctx context.Context) (patience, fallback time.Duration)
 }
 
-// CreatedSession is the minimal, I/O-free projection of a just-created
-// (or moved) session passed to the SessionCreated hook. Directory/Title
-// are empty for a move (only the ID is known cheaply).
-type CreatedSession struct {
-	ID        string
-	Platform  string
-	Directory string
-	Title     string
-	RoutineID string
-}
-
 // Service validates and dispatches session mutations to the owning
 // platform adapter.
 type Service struct {
@@ -75,8 +64,9 @@ type Service struct {
 	hooks    Hooks
 	// sessionDirs caches session ID → directory for project-default
 	// resolution; Move drops the entry.
-	sessionDirs sync.Map
-	cooldowns   cooldowns
+	sessionDirs        sync.Map
+	cooldowns          cooldowns
+	routinePublication routinePublication
 }
 
 // New builds a Service over the given registry.

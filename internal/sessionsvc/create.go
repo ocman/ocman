@@ -11,6 +11,16 @@ import (
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
+// CreatedSession is the I/O-free projection passed to the creation hook.
+// Directory and title may be empty when only the moved session's ID is known.
+type CreatedSession struct {
+	ID        string
+	Platform  string
+	Directory string
+	Title     string
+	RoutineID string
+}
+
 // Create creates a session, auto-picking the only available platform when empty.
 func (s *Service) Create(ctx context.Context, platformID string, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	return s.create(ctx, platformID, req, nil, routineCreation{})
@@ -33,6 +43,8 @@ func (s *Service) CreateRoutine(ctx context.Context, platformID string, req plat
 	if err := normalizePermissionRules(rules); err != nil {
 		return nil, err
 	}
+	finish := s.routinePublication.begin()
+	defer finish()
 	return s.create(ctx, platformID, req, rules, routineCreation{id: routineID, link: link})
 }
 
