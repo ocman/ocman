@@ -12,9 +12,9 @@
   pointer-events: none;
 }
 
-/* Keep the last message clear of the overlaid notification area. */
+/* Leave breathing room above the overlaid notification area. */
 .oc-thread:has(.oc-composer-notices) .oc-thread-viewport {
-  padding-bottom: 1.25rem;
+  padding-bottom: calc(1.25rem + 12px);
 }
 
 .oc-viewport-footer:has(.oc-composer-notices) .oc-composer-wrap {
