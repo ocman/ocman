@@ -47,9 +47,9 @@ function HtmlPreview({ url, interactiveUrl, title }: { url: string; interactiveU
   const live = !!interactiveUrl && (chosen[interactiveUrl] ?? scriptsAllowed(interactiveUrl));
   return <>
     <div className="artifact-preview-toolbar">
-      <span className="artifact-muted">{live
-        ? 'Scripts are running in an isolated sandbox without network access or access to ocman.'
-        : `Scripts are disabled in this preview.${interactiveUrl ? '' : ' Download the file to use it interactively.'}`}</span>
+      <span className="artifact-muted">{live ? `Scripts are running in a sandbox with no access to ocman. ${SELF_NAVIGATION}`
+        : interactiveUrl ? 'Scripts are disabled in this preview. Running them keeps the page away from ocman, but it can still navigate itself to another site.'
+          : 'Scripts are disabled in this preview. Download the file to use it interactively.'}</span>
       {interactiveUrl && <Button type="button" size="small" variant="ghost" onClick={() => { allowScripts(interactiveUrl, !live); setChosen({ ...chosen, [interactiveUrl]: !live }); }}>
         <i className={`bi ${live ? 'bi-stop-circle' : 'bi-play-circle'}`} aria-hidden="true" />{live ? 'Stop scripts' : 'Run scripts'}
       </Button>}
@@ -58,6 +58,10 @@ function HtmlPreview({ url, interactiveUrl, title }: { url: string; interactiveU
       sandbox={live ? 'allow-scripts' : ''} title={title} data-testid="artifact-preview-html" />
   </>;
 }
+
+// The CSP blocks fetches and external resources, but no directive stops a
+// frame navigating itself, which can carry the page's own data to another site.
+const SELF_NAVIGATION = 'Fetches and external resources are blocked, but the page can still navigate itself to another site.';
 
 const SCRIPTS_KEY = 'ocman:artifact-scripts:';
 

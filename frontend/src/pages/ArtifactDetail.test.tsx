@@ -56,7 +56,7 @@ describe('ArtifactDetail', () => {
     const frame = screen.getByTestId('artifact-preview-html');
     expect(frame).toHaveAttribute('src', '/api/artifacts/a1/files/4');
     expect(frame).toHaveAttribute('sandbox', '');
-    expect(screen.getByText('Scripts are disabled in this preview.')).toBeInTheDocument();
+    expect(screen.getByText(/^Scripts are disabled in this preview\. Running them keeps the page away from ocman, but it can still navigate itself to another site\.$/)).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Heading' })).toBeInTheDocument();
     expect(await screen.findByTestId('artifact-preview-text')).toHaveTextContent('package main');
     const zip = screen.getAllByTestId('artifact-file')[3];
@@ -72,7 +72,7 @@ describe('ArtifactDetail', () => {
     let frame = screen.getByTestId('artifact-preview-html');
     expect(frame).toHaveAttribute('src', '/api/artifacts/a1/files/4/interactive');
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
-    expect(screen.getByText(/isolated sandbox without network access/)).toBeInTheDocument();
+    expect(screen.getByText(/no access to ocman\. Fetches and external resources are blocked, but the page can still navigate itself to another site\./)).toBeInTheDocument();
 
     // Remembered for this file across visits until stopped.
     view.unmount();

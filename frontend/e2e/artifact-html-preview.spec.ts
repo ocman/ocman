@@ -6,13 +6,14 @@ import { test, expect, type Page } from './fixtures';
 // file, so these tests exercise the real response policy, not a copy.
 const headers = JSON.parse(readFileSync(new URL('./artifact-html/headers.json', import.meta.url), 'utf8')) as { inert: string; interactive: string };
 const fixture = (name: string) => readFileSync(new URL(`./artifact-html/${name}`, import.meta.url), 'utf8');
-const bodies = [fixture('interactive.html'), fixture('hostile.html')];
+const bodies = [fixture('interactive.html'), fixture('hostile.html'), fixture('selfnav.html')];
 
 const artifact = {
   id: 'art-h', title: 'Design board', directory: '/home/user/projects/myapp', remoteId: 'local', createdAt: '2026-10-01T10:00:00Z',
   items: [
     { kind: 'file', name: 'board.html', mime: 'text/html; charset=utf-8', size: bodies[0].length, url: '/api/artifacts/art-h/files/0' },
     { kind: 'file', name: 'hostile.html', mime: 'text/html; charset=utf-8', size: bodies[1].length, url: '/api/artifacts/art-h/files/1' },
+    { kind: 'file', name: 'selfnav.html', mime: 'text/html; charset=utf-8', size: bodies[2].length, url: '/api/artifacts/art-h/files/2' },
   ],
 };
 
@@ -72,7 +73,7 @@ test('static preview shows pre-rendered HTML and CSS but runs no script', async 
   await page.goto('/artifacts/art-h');
   const card = fileCard(page, 'board.html');
   await expect(card.getByTestId('artifact-preview-html')).toHaveAttribute('sandbox', '');
-  await expect(card.getByText('Scripts are disabled in this preview.')).toBeVisible();
+  await expect(card.getByText(/^Scripts are disabled in this preview\. Running them keeps the page away from ocman/)).toBeVisible();
   const heading = frameOf(page, 'board.html').getByTestId('screen');
   await expect(heading).toHaveText('Find work (pre-rendered)');
   await expect(heading).toHaveCSS('color', 'rgb(10, 120, 30)');
@@ -134,6 +135,17 @@ test('an interactive hostile artifact cannot reach the app, storage, network, to
   // The form submission did not navigate the frame away from the report.
   await expect(results).not.toHaveText('pending');
   expect(await page.evaluate(() => document.cookie)).toContain('ocman_secret=cookie-value');
+});
+
+test('the known limit: a running page can still navigate its own frame to another site', async ({ mockedPage: page }) => {
+  const { escapes } = await watchEscapes(page);
+  await page.goto('/artifacts/art-h');
+  const card = fileCard(page, 'selfnav.html');
+  await card.getByRole('button', { name: 'Run scripts' }).click();
+  await expect(card.getByText(/can still navigate itself to another site/)).toBeVisible();
+  await frameOf(page, 'selfnav.html').getByRole('button', { name: 'Navigate away' }).click();
+  await expect.poll(() => escapes).toEqual(['http://evil.test/exfil?d=secret-title']);
+  await expect(page).toHaveURL(/\/artifacts\/art-h$/);
 });
 
 test('direct file URLs keep their policy at the top level', async ({ mockedPage: page }) => {
