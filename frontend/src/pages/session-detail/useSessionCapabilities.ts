@@ -133,7 +133,7 @@ export function useSessionCapabilities({
     }
     setAgentsLoaded(false);
     const controller = new AbortController();
-    api.agents(id, controller.signal)
+    api.agents(id, controller.signal, platform)
       .then((list) => {
         if (controller.signal.aborted) return;
         setAgents(list || []);
@@ -145,7 +145,7 @@ export function useSessionCapabilities({
         setAgentsLoaded(true);
       });
     return () => controller.abort();
-  }, [id, directory, portAvailable, reloadNonce]);
+  }, [id, directory, platform, portAvailable, reloadNonce]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Fetch the session-scoped model list once the session has loaded,

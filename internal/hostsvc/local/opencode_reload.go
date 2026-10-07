@@ -2,8 +2,11 @@ package local
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
@@ -50,7 +53,24 @@ func (h *Host) ReloadOpencode(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("reloading OpenCode: upstream HTTP %d", resp.StatusCode)
+		var diagnostic struct {
+			Message string `json:"message"`
+			Data    struct {
+				Message string `json:"message"`
+			} `json:"data"`
+		}
+		message := fmt.Sprintf("OpenCode reload returned HTTP %d", resp.StatusCode)
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&diagnostic); err == nil {
+			if diagnostic.Message != "" {
+				message = diagnostic.Message
+			} else if diagnostic.Data.Message != "" {
+				message = diagnostic.Data.Message
+			}
+		}
+		if len(message) > 1024 {
+			message = strings.ToValidUTF8(message[:1024], "")
+		}
+		return &platforms.UpstreamError{Status: resp.StatusCode, Message: message}
 	}
 	if h.deps.OpenCodeReloaded != nil {
 		h.deps.OpenCodeReloaded(req.URL.Port())

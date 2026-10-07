@@ -146,7 +146,8 @@ export const sessionApi = {
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/compact`, { providerID, modelID }, { parseJSON: false }),
   forkSession: (sessionId: string, messageID?: string) => postJSON<{ id: string }>(`/api/session/${encodeURIComponent(sessionId)}/fork`, { messageID: messageID ?? '' }),
   moveSession: (sessionId: string, directory: string) => postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/move`, { directory }, { parseJSON: false }),
-  commands: (sessionId: string, signal?: AbortSignal) => fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands`, signal),
+  commands: (sessionId: string, signal?: AbortSignal, platform?: string) =>
+    fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands${queryString({ platform })}`, signal),
   agents: (sessionId: string, signal?: AbortSignal, platform?: string) =>
     fetchJSON<AgentInfo[]>(`/api/session/${encodeURIComponent(sessionId)}/agents${queryString({ platform })}`, signal),
   executeCommand: (sessionId: string, command: string, args: string, model?: string, agent?: string) =>

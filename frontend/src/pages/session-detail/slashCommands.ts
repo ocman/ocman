@@ -154,7 +154,7 @@ const reloadOpencode: SlashCommand = {
       pending.clear();
       setRestartToastMessage('Reloaded OpenCode configuration');
       reloadCapabilities?.();
-      reloadSlashCommands(session.id);
+      reloadSlashCommands(session.id, session.platform);
     } catch (e) {
       if (isCurrent && !isCurrent()) return;
       setRestartToastMessage(null);

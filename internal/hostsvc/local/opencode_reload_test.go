@@ -124,6 +124,34 @@ func TestReloadOpencodeErrorsDoNotRestart(t *testing.T) {
 	}
 }
 
+func TestReloadOpencodePreservesBoundedRejectionDiagnostic(t *testing.T) {
+	for _, tc := range []struct{ name, body, message string }{
+		{"message", `{"message":"invalid configuration","secret":"not displayed"}`, "invalid configuration"},
+		{"nested", `{"data":{"message":"cannot reload"}}`, "cannot reload"},
+		{"malformed", `not-json secret`, "OpenCode reload returned HTTP 400"},
+		{"empty", `{}`, "OpenCode reload returned HTTP 400"},
+		{"bounded message", `{"message":"` + strings.Repeat("x", 1500) + `"}`, strings.Repeat("x", 1024)},
+		{"bounded unicode", `{"message":"` + strings.Repeat("€", 500) + `"}`, strings.Repeat("€", 341)},
+		{"bounded body", `{"message":"` + strings.Repeat("x", 5000) + `"}`, "OpenCode reload returned HTTP 400"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _, _, root := v2Host(t)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer upstream.Close()
+			h.setInstance(root, &ocruntime.Instance{Endpoint: upstream.URL})
+			h.deps.OpenCodeReloaded = func(string) { t.Error("failed reload invalidated catalogs") }
+			err := h.ReloadOpencode(t.Context())
+			var rejection *platforms.UpstreamError
+			if !errors.Is(err, platforms.ErrUpstreamRejected) || !errors.As(err, &rejection) || rejection.Status != 400 || rejection.Message != tc.message {
+				t.Fatalf("rejection = %v; want bounded message %q", err, tc.message)
+			}
+		})
+	}
+}
+
 func TestReloadOpencodeMissingUnsupportedAndCancelled(t *testing.T) {
 	h, rt, _, _, root := v2Host(t)
 	if err := h.ReloadOpencode(t.Context()); err == nil || !strings.Contains(err.Error(), "no managed") {

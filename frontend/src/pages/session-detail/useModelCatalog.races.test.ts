@@ -72,6 +72,30 @@ it('keeps the newest refresh when responses complete out of order', async () => 
   expect(readModelCatalog('opencode', '/a')?.map((entry) => entry.model)).toEqual(['fresh']);
 });
 
+it('rolls back both different favorites when overlapping writes fail', async () => {
+  const failures: ((error: Error) => void)[] = [];
+  vi.mocked(api.addFavorite).mockImplementation(() => new Promise<void>((_resolve, reject) => { failures.push(reject); }));
+  vi.mocked(api.sessionModels).mockResolvedValue({ hasProviders: true, models: [
+    { provider: 'p', model: 'a', isFavorite: false },
+    { provider: 'p', model: 'b', isFavorite: false },
+  ] });
+  const { result } = renderHook(() => useModelCatalog('a', 'opencode', '/a', false));
+  act(() => result.current.refreshModels());
+  await waitFor(() => expect(result.current.modelEntries).toHaveLength(2));
+  let a!: Promise<void>;
+  let b!: Promise<void>;
+  act(() => {
+    a = result.current.handleToggleFavorite('p', 'a', true);
+    b = result.current.handleToggleFavorite('p', 'b', true);
+  });
+  expect(result.current.modelEntries.map((entry) => entry.isFavorite)).toEqual([true, true]);
+  await act(async () => {
+    failures.forEach((reject) => reject(new Error('favorite write failed')));
+    await Promise.all([a, b]);
+  });
+  expect(result.current.modelEntries.map((entry) => entry.isFavorite)).toEqual([false, false]);
+});
+
 it('does not apply an older historical fallback after a successful refresh', async () => {
   let resolveHistory!: (models: { provider: string; model: string; count: number }[]) => void;
   getModels.mockImplementationOnce(() => new Promise((resolve) => { resolveHistory = resolve; }));

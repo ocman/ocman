@@ -3,14 +3,26 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { SlashCommand } from '../../lib/api';
 
-const commands = vi.fn<(sid: string) => Promise<SlashCommand[]>>();
-vi.mock('../../lib/api', () => ({ api: { commands: (sid: string) => commands(sid) } }));
+const commands = vi.fn<(sid: string, signal?: AbortSignal, platform?: string) => Promise<SlashCommand[]>>();
+vi.mock('../../lib/api', () => ({ api: { commands: (sid: string, signal?: AbortSignal, platform?: string) => commands(sid, signal, platform) } }));
 
 import { useSlashMenu } from './useSlashMenu';
 
 const vis = { hasModels: true, hasAgents: true, activeAgent: 'build', hasVariants: false };
 
 describe('useSlashMenu', () => {
+  it('fetches and reloads the right owner when session IDs are duplicated', async () => {
+    commands.mockImplementation((_id, _signal, platform) => Promise.resolve([{ name: platform === 'opencode' ? 'local-skill' : 'remote-skill', source: 'skill' }]));
+    const local = renderHook(() => useSlashMenu('duplicate', vis, undefined, 'opencode'));
+    const remote = renderHook(() => useSlashMenu('duplicate', vis, undefined, 'r-owner:opencode'));
+    await waitFor(() => expect(local.result.current.commands.some((c) => c.name === 'local-skill')).toBe(true));
+    await waitFor(() => expect(remote.result.current.commands.some((c) => c.name === 'remote-skill')).toBe(true));
+    commands.mockClear();
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: { sessionId: 'duplicate', platform: 'r-owner:opencode' } })));
+    await waitFor(() => expect(commands).toHaveBeenCalledTimes(1));
+    expect(commands).toHaveBeenCalledWith('duplicate', undefined, 'r-owner:opencode');
+  });
+
   it('refreshes skills and commands after reload without changing the session', async () => {
     commands.mockResolvedValue([{ name: 'old-skill', source: 'skill' } as SlashCommand]);
     const { result } = renderHook(() => useSlashMenu('s1', vis));
@@ -19,7 +31,7 @@ describe('useSlashMenu', () => {
       { name: 'new-skill', source: 'skill' } as SlashCommand,
       { name: 'new-command', source: 'command' } as SlashCommand,
     ]);
-    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 's1' })));
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: { sessionId: 's1' } })));
     await waitFor(() => expect(result.current.commands.some((c) => c.name === 'new-skill')).toBe(true));
     expect(result.current.commands.some((c) => c.name === 'new-command')).toBe(true);
     expect(result.current.commands.some((c) => c.name === 'old-skill')).toBe(false);
@@ -61,9 +73,9 @@ describe('useSlashMenu', () => {
     commands.mockResolvedValue([{ name: 'fresh-skill', source: 'skill' }]);
     const { result, unmount } = renderHook(() => useSlashMenu('s1', vis));
     const count = commands.mock.calls.length;
-    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 'other' })));
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: { sessionId: 'other' } })));
     expect(commands).toHaveBeenCalledTimes(count);
-    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 's1' })));
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: { sessionId: 's1' } })));
     await waitFor(() => expect(result.current.commands.some((c) => c.name === 'fresh-skill')).toBe(true));
     await act(async () => {
       if (outcome === 'resolve') resolve([{ name: 'stale-skill', source: 'skill' }]);
@@ -73,7 +85,7 @@ describe('useSlashMenu', () => {
     expect(result.current.commands.some((c) => c.name === 'stale-skill')).toBe(false);
     unmount();
     const finalCount = commands.mock.calls.length;
-    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: 's1' })));
+    act(() => window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: { sessionId: 's1' } })));
     expect(commands).toHaveBeenCalledTimes(finalCount);
   });
 

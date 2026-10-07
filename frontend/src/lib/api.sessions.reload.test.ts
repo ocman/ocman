@@ -12,3 +12,14 @@ it('reloads the owner-qualified session and accepts the empty response', async (
     expect.objectContaining({ method: 'POST' }),
   );
 });
+
+it('qualifies agent and command catalogs by owner', async () => {
+  const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('[]', { status: 200 })));
+  vi.stubGlobal('fetch', fetch);
+  await sessionApi.commands('duplicate', undefined, 'r-owner:opencode');
+  await sessionApi.agents('duplicate', undefined, 'r-owner:opencode');
+  expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+    '/api/session/duplicate/commands?platform=r-owner%3Aopencode',
+    '/api/session/duplicate/agents?platform=r-owner%3Aopencode',
+  ]);
+});

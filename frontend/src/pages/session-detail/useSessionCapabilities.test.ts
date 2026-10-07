@@ -125,6 +125,17 @@ describe('useSessionCapabilities.reloadCapabilities', () => {
   });
 });
 
+it('refetches agents for a different owner even when the session ID is identical', async () => {
+  vi.mocked(api.agents).mockResolvedValueOnce([{ name: 'local-agent' }]).mockResolvedValueOnce([{ name: 'remote-agent' }]);
+  const { result, rerender } = renderHook((props) => useSessionCapabilities({
+    id: 'duplicate', platform: props.platform, liveConnection: true, directory: '/same', sessionLoaded: true,
+  }), { initialProps: { platform: 'opencode' } });
+  await waitFor(() => expect(result.current.agents[0]?.name).toBe('local-agent'));
+  rerender({ platform: 'r-owner:opencode' });
+  await waitFor(() => expect(result.current.agents[0]?.name).toBe('remote-agent'));
+  expect(api.agents).toHaveBeenLastCalledWith('duplicate', expect.any(AbortSignal), 'r-owner:opencode');
+});
+
 describe('useSessionCapabilities model catalog cache', () => {
   const live = {
     hasProviders: true,

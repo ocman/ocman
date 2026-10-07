@@ -227,15 +227,6 @@ func (h *remoteHost) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpe
 	return out, unmarshalJSON(resp.Payload, &out)
 }
 
-func (h *remoteHost) ReloadOpencode(ctx context.Context) error {
-	client := h.conn.Client()
-	if client == nil {
-		return ErrRemoteOffline
-	}
-	_, err := client.ReloadOpencode(ctx, &pb.Empty{})
-	return remotePlatformError(err)
-}
-
 func (h *remoteHost) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {
 	client := h.conn.Client()
 	if client == nil {

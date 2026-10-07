@@ -126,7 +126,7 @@ describe('useSessionActions — /reload-opencode', () => {
   it('reloads configuration and refreshes the catalog while a turn is running', async () => {
     vi.mocked(api.reloadOpencode).mockResolvedValue(undefined);
     vi.mocked(api.commands).mockResolvedValueOnce([{ name: 'old-skill', source: 'skill' }]);
-    const menu = renderHook(() => useSlashMenu('sess-1', { hasAgents: true, hasModels: true, activeAgent: 'build', hasVariants: false }));
+    const menu = renderHook(() => useSlashMenu('sess-1', { hasAgents: true, hasModels: true, activeAgent: 'build', hasVariants: false }, undefined, 'opencode'));
     await waitFor(() => expect(menu.result.current.commands.some((c) => c.name === 'old-skill')).toBe(true));
     vi.mocked(api.commands).mockResolvedValue([{ name: 'new-skill', source: 'skill' }]);
     const reloadCapabilities = vi.fn();

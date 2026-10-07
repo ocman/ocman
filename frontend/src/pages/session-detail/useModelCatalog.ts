@@ -15,8 +15,10 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
   const scope = useMemo(() => ({ id, platform, directory }), [id, platform, directory]);
   const activeScope = useRef<typeof scope | null>(scope);
   const requestGeneration = useRef(0);
+  const favoriteGenerations = useRef(new Map<string, number>());
   useLayoutEffect(() => {
     activeScope.current = scope;
+    favoriteGenerations.current.clear();
     return () => { activeScope.current = null; };
   }, [scope]);
   const getModels = useApiStore((s) => s.getModels);
@@ -85,8 +87,11 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
   // then re-fetch for authoritative ordering. On error revert.
   const handleToggleFavorite = useCallback(async (provider: string, model: string, nextFavorite: boolean) => {
     if (!platform || !id || activeScope.current !== scope) return;
-    const generation = ++requestGeneration.current;
-    const isCurrent = () => activeScope.current === scope && requestGeneration.current === generation;
+    const key = JSON.stringify([provider, model]);
+    const generation = (favoriteGenerations.current.get(key) ?? 0) + 1;
+    favoriteGenerations.current.set(key, generation);
+    requestGeneration.current++;
+    const isCurrent = () => activeScope.current === scope && favoriteGenerations.current.get(key) === generation;
     const flip = (favorite: boolean) => setModelEntries((prev) => prev.map((e) =>
       e.provider === provider && e.model === model ? { ...e, isFavorite: favorite } : e,
     ));
@@ -97,13 +102,11 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
       } else {
         await api.removeFavorite(platform, provider, model);
       }
-      if (!isCurrent()) return;
-      const models = await api.sessionModels(id, platform);
-      if (isCurrent()) receiveModels(models);
+      if (isCurrent()) refreshModels();
     } catch {
       if (isCurrent()) flip(!nextFavorite);
     }
-  }, [platform, id, receiveModels, scope]);
+  }, [platform, id, refreshModels, scope]);
 
   return { modelOptions, setModelOptions, modelEntries, setModelEntries, refreshModels, handleToggleFavorite };
 }

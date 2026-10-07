@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -39,6 +40,7 @@ func TestReloadOpencodeEndpoint(t *testing.T) {
 		{name: "wrong method", method: "GET", status: 405},
 		{name: "missing session", missing: true, status: 404},
 		{name: "unsupported", err: platforms.ErrUnsupported, status: 501, localCalls: 1},
+		{name: "rejected", err: &platforms.UpstreamError{Status: 400, Message: "invalid configuration"}, status: 422, localCalls: 1},
 		{name: "upstream error", err: errors.New("upstream failed"), status: 502, localCalls: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,6 +75,9 @@ func TestReloadOpencodeEndpoint(t *testing.T) {
 			srv.dispatchSessionSubpath(rr, req)
 			if rr.Code != tc.status || local.calls != tc.localCalls || remote.calls != tc.remoteCalls {
 				t.Fatalf("status=%d body=%s local=%d remote=%d", rr.Code, rr.Body, local.calls, remote.calls)
+			}
+			if tc.name == "rejected" && !strings.Contains(rr.Body.String(), "invalid configuration") {
+				t.Fatalf("rejection diagnostic lost: %s", rr.Body)
 			}
 		})
 	}

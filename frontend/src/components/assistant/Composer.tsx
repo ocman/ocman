@@ -97,7 +97,7 @@ export function Composer({
   const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
   const effectiveAgent = selectedAgent || activeAgent || '';
   const hasVariants = modelHasVariants(selectedModel, modelEntries);
-  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants }, commands);
+  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants }, commands, platform);
   const pickers = useComposerPickers({
     inputRef, sessionIdRef: draftKeyRef, scheduleDraftSave, models, agents, agentOptions,
     onModelChange, onAgentChange, onRefreshModels,

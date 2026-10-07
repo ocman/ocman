@@ -194,9 +194,6 @@ func (s *Server) ManagedOpencodes(ctx context.Context, _ *pb.Empty) (*pb.JsonRes
 	return jsonResp(s.host.ManagedOpencodes(ctx))
 }
 
-func (s *Server) ReloadOpencode(ctx context.Context, _ *pb.Empty) (*pb.Empty, error) {
-	return &pb.Empty{}, svcErr(s.host.ReloadOpencode(ctx))
-}
 func (s *Server) TmuxSessions(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
 	return jsonResp(s.host.TmuxSessions(ctx))
 }
