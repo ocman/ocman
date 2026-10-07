@@ -854,6 +854,7 @@ func TestParseOpenCodeModelRef(t *testing.T) {
 			}
 			if result == nil {
 				t.Fatal("expected non-nil result")
+				return
 			}
 			if result.ProviderID != tt.wantProvider {
 				t.Errorf("ProviderID = %q, want %q", result.ProviderID, tt.wantProvider)

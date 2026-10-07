@@ -433,6 +433,7 @@ func TestEnsureAutoApproveDoesNotStartSecondJudgeOnReplay(t *testing.T) {
 	st := s.autoApprove["ses-1|perm-1"]
 	if st == nil {
 		t.Fatal("expected status to remain in cache after replay")
+		return
 	}
 	if st.cancel != nil {
 		t.Errorf("replay must not create a new goroutine; cancel = %v", st.cancel)

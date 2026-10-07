@@ -440,6 +440,7 @@ func TestSessionModels_MergesLiveProviders(t *testing.T) {
 	}
 	if sonnet == nil {
 		t.Fatalf("anthropic/claude-sonnet missing from Models: %+v", resp.Models)
+		return
 	}
 	if !sonnet.IsAvailable {
 		t.Error("claude-sonnet IsAvailable = false, want true")
