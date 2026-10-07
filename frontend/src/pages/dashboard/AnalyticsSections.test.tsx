@@ -46,7 +46,7 @@ const metrics = {
   series: [{ label: 'Sep 1', avgOutputTokensSec: 5, inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, avgDurationMs: 1000, p50DurationMs: 900, p95DurationMs: 1200, avgCacheEfficiency: 0, errorRate: 0 }],
   stopReasons: [{ reason: 'end_turn', count: 1 }],
   dailyEstimatedCostByModel: { models: [], series: [] }, dailyEffectiveCostByModel: { models: [], series: [] }, costByModel: { models: [], series: [] },
-  agents: [{ agent: 'build', requests: 1, successfulRequests: 1, errorRequests: 0, errorRate: 0, inputTokens: 10, outputTokens: 5, totalTokens: 15, totalDurationMs: 1000, effectiveCost: 0.1 }],
+  agents: [{ agent: 'build', requests: 1, successfulRequests: 1, errorRequests: 0, errorRate: 0, inputTokens: 10, outputTokens: 5, totalTokens: 15, totalDurationMs: 1000, agentDurationMs: 1000, toolDurationMs: 0, unknownDurationMs: 0, effectiveCost: 0.1 }],
 };
 
 function renderTab(component: React.ReactNode) {
@@ -202,10 +202,32 @@ describe('analytics sections', () => {
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
   });
 
+  it('stacks total waiting time by agent and tools in seconds', () => {
+    useMetrics.mockReturnValue(query({ ...metrics, agents: [
+      { ...metrics.agents[0], agent: 'build', agentDurationMs: 2000, toolDurationMs: 8000, unknownDurationMs: 1000 },
+      { ...metrics.agents[0], agent: '', agentDurationMs: 500, toolDurationMs: 0, unknownDurationMs: 0 },
+    ] }));
+    renderTab(<PerformanceTab />);
+    const card = screen.getByText('Waiting Time by Agent (s)').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.labels).toEqual(['build', 'Unknown agent']);
+    expect(chart.datasets.map((dataset: { label: string; data: number[] }) => [dataset.label, dataset.data])).toEqual([
+      ['Agent response', [2, 0.5]], ['Tools', [8, 0]], ['Unknown timing', [1, 0]],
+    ]);
+    expect(screen.getByText(/Parallel tools count once/)).toBeInTheDocument();
+  });
+
+  it('shows an empty waiting-time graph when no requests match', () => {
+    useMetrics.mockReturnValue(query({ ...metrics, agents: [] }));
+    renderTab(<PerformanceTab />);
+    expect(screen.getByText('No recorded waiting time for these filters.')).toBeInTheDocument();
+  });
+
   it('uses chart skeletons while graph data loads', () => {
     useMetrics.mockReturnValue({ data: undefined, isLoading: true, error: null });
     renderTab(<PerformanceTab />);
     expect(screen.getByRole('status', { name: 'Loading request latency' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading waiting time' })).toBeInTheDocument();
     expect(document.querySelector('.oc-spinner')).not.toBeInTheDocument();
   });
 

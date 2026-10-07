@@ -384,20 +384,6 @@ type MetricsPoint struct {
 	ErrorRate               float64 `json:"errorRate"`
 }
 
-// AgentMetrics holds request metrics grouped by composer agent.
-type AgentMetrics struct {
-	Agent              string  `json:"agent"`
-	Requests           int     `json:"requests"`
-	SuccessfulRequests int     `json:"successfulRequests"`
-	ErrorRequests      int     `json:"errorRequests"`
-	ErrorRate          float64 `json:"errorRate"`
-	InputTokens        int64   `json:"inputTokens"`
-	OutputTokens       int64   `json:"outputTokens"`
-	TotalTokens        int64   `json:"totalTokens"`
-	TotalDurationMs    int64   `json:"totalDurationMs"`
-	EffectiveCost      float64 `json:"effectiveCost"`
-}
-
 // StopReasonCount holds the count for a stop reason.
 type StopReasonCount struct {
 	Reason string `json:"reason"`

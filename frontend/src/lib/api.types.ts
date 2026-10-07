@@ -1,5 +1,7 @@
 import type { FactoryProposal } from './factoryProposal.types';
 export type { FactoryProposal } from './factoryProposal.types';
+import type { AgentMetrics } from './api.agentMetrics.types';
+export type { AgentMetrics } from './api.agentMetrics.types';
 
 /**
  * Type-only mirror of the wire shapes exposed by ocman's HTTP API.
@@ -994,19 +996,6 @@ export interface MetricsPoint {
   successfulRequests: number;
   errorRequests: number;
   errorRate: number;
-}
-
-export interface AgentMetrics {
-  agent: string;
-  requests: number;
-  successfulRequests: number;
-  errorRequests: number;
-  errorRate: number;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  totalDurationMs: number;
-  effectiveCost: number;
 }
 
 export interface StopReasonCount {

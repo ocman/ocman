@@ -5,6 +5,7 @@ import {
   STOP_REASON_COLORS,
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
+  BAR_OPTIONS_WAIT_TIME,
   BAR_OPTIONS_STACKED,
   BAR_OPTIONS_COST_BY_MODEL,
   BAR_OPTIONS_SESSIONS,
@@ -40,6 +41,14 @@ describe('chartConfig', () => {
   it('formats seconds on BAR_OPTIONS_DURATION', () => {
     const cb = BAR_OPTIONS_DURATION.scales.y.ticks.callback as (v: number) => string;
     expect(cb(5)).toBe('5s');
+  });
+
+  it('stacks waiting time and formats duration tooltips', () => {
+    expect(BAR_OPTIONS_WAIT_TIME.scales.x.stacked).toBe(true);
+    expect(BAR_OPTIONS_WAIT_TIME.scales.y.stacked).toBe(true);
+    const label = BAR_OPTIONS_WAIT_TIME.plugins.tooltip.callbacks.label;
+    expect(label({ dataset: { label: 'Tools' }, parsed: { y: 90 } })).toBe('Tools: 1m 30s');
+    expect(label({ dataset: {}, parsed: { y: null } })).toBe(': 0s');
   });
 
   it('caps cache-efficiency line chart at 100', () => {

@@ -1,4 +1,4 @@
-import { formatCompactNumber, formatCurrency } from './format';
+import { formatCompactNumber, formatCurrency, formatSeconds } from './format';
 
 /**
  * Standard tick configuration for time-series x-axes used by the
@@ -53,6 +53,24 @@ export const BAR_OPTIONS_DURATION = {
   scales: {
     x: { grid: { display: false }, ticks: CHART_X_TICKS },
     y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}s` } },
+  },
+} as const;
+
+export const BAR_OPTIONS_WAIT_TIME = {
+  ...BAR_OPTIONS_DURATION,
+  interaction: stackedInteraction,
+  plugins: {
+    ...BAR_OPTIONS_DURATION.plugins,
+    tooltip: {
+      callbacks: {
+        label: (item: { dataset: { label?: string }; parsed: { y: number | null } }) =>
+          `${item.dataset.label ?? ''}: ${formatSeconds(Number(item.parsed.y ?? 0))}`,
+      },
+    },
+  },
+  scales: {
+    x: { ...BAR_OPTIONS_DURATION.scales.x, stacked: true },
+    y: { ...BAR_OPTIONS_DURATION.scales.y, stacked: true },
   },
 } as const;
 

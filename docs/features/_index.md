@@ -53,6 +53,12 @@ diff.
 **Stats dashboard.** Per-project metrics, wall-clock totals, token and pricing
 graphs, system stats.
 
+Analytics → Performance shows total waiting time per agent, split into agent
+response and tool time. It follows the project, time, agent and model filters.
+Parallel tools count once within each request. Tool time includes permission
+and question waits; incomplete timings appear as unknown. Totals sum request
+durations, so they are not elapsed session time when sessions run in parallel.
+
 **Model picker.** Per-platform favourites and a refreshable catalog, so new
 models appear without a restart.
 
