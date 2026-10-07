@@ -67,13 +67,11 @@ func ResolveRepoRoot(ctx context.Context, dir string) (string, error) {
 	cmd := gitexec.Command(ctx, "-C", dir, "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()
 	if err != nil {
-		// git exits non-zero outside a repo. Distinguish "not a
-		// repo" from other failures by checking the stderr
-		// fragment, but err on the side of ErrNotARepo for any
-		// rev-parse failure — handlers turn that into a 404, which
-		// is the right shape regardless of the underlying cause.
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("git rev-parse: %w", ctx.Err())
+		}
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(err, &exitErr) && strings.Contains(string(exitErr.Stderr), "not a git repository") {
 			return "", fmt.Errorf("%w: %s", ErrNotARepo, strings.TrimSpace(string(exitErr.Stderr)))
 		}
 		return "", fmt.Errorf("git rev-parse: %w", err)

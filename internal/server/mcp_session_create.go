@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -96,14 +97,10 @@ func mcpWorktreeEligible(ctx context.Context, host hostsvc.Host, dir string) (bo
 	if !host.Capabilities().OpencodeLaunch {
 		return false, nil
 	}
-	info, err := host.GitInfo(ctx, []string{dir})
-	if err != nil {
-		return false, err
-	}
-	if info[dir].Branch == "" {
+	trees, err := host.ListWorktrees(ctx, dir)
+	if errors.Is(err, git.ErrNotARepo) {
 		return false, nil
 	}
-	trees, err := host.ListWorktrees(ctx, dir)
 	if err != nil {
 		return false, err
 	}

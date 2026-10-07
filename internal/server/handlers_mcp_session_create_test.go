@@ -15,21 +15,17 @@ import (
 
 type mcpCreateHost struct {
 	*ensureHost
-	capable      bool
-	branch, base string
-	trees        []git.Worktree
-	err          error
-	treesErr     error
-	baseErr      error
-	worktreeErr  error
-	request      hostsvc.WorktreeSessionRequest
+	capable     bool
+	base        string
+	trees       []git.Worktree
+	treesErr    error
+	baseErr     error
+	worktreeErr error
+	request     hostsvc.WorktreeSessionRequest
 }
 
 func (h *mcpCreateHost) Capabilities() hostsvc.HostCaps {
 	return hostsvc.HostCaps{OpencodeLaunch: h.capable}
-}
-func (h *mcpCreateHost) GitInfo(_ context.Context, dirs []string) (map[string]git.Info, error) {
-	return map[string]git.Info{dirs[0]: {Branch: h.branch}}, h.err
 }
 func (h *mcpCreateHost) ListWorktrees(context.Context, string) ([]git.Worktree, error) {
 	return h.trees, h.treesErr
@@ -81,7 +77,7 @@ func TestMCPCreateSession(t *testing.T) {
 	if sent.Model != "p/default" || sent.Agent != "custom" {
 		t.Fatalf("defaults = %#v", sent)
 	}
-	host.capable, host.branch, host.base = true, "main", "main"
+	host.capable, host.base = true, "main"
 	gotDefault, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "defaults", Directory: "/src/ocman"})
 	if err != nil || gotDefault.Directory != "/src/.worktrees/ocman/new" || !host.request.AutoName || host.request.Prompt != "defaults" || sent.Model != "p/default" {
 		t.Fatalf("worktree default = %#v, %v, request %#v, sent %#v", gotDefault, err, host.request, sent)
@@ -163,20 +159,19 @@ func TestMCPWorktreeEligibility(t *testing.T) {
 		want bool
 	}{
 		{name: "unsupported"},
-		{name: "non repo", host: mcpCreateHost{capable: true}},
-		{name: "no base", host: mcpCreateHost{capable: true, branch: "main"}},
-		{name: "eligible", host: mcpCreateHost{capable: true, branch: "main", base: "main"}, want: true},
-		{name: "linked", host: mcpCreateHost{capable: true, branch: "fix", base: "main", trees: []git.Worktree{{Path: "/repo"}}}},
-		{name: "main", host: mcpCreateHost{capable: true, branch: "main", base: "main", trees: []git.Worktree{{Path: "/repo", Main: true}}}, want: true},
-		{name: "probe error", host: mcpCreateHost{capable: true, err: errors.New("probe failed")}},
-		{name: "list error", host: mcpCreateHost{capable: true, branch: "main", treesErr: errors.New("list failed")}},
-		{name: "base error", host: mcpCreateHost{capable: true, branch: "main", baseErr: errors.New("base failed")}},
+		{name: "non repo", host: mcpCreateHost{capable: true, treesErr: git.ErrNotARepo}},
+		{name: "no base", host: mcpCreateHost{capable: true}},
+		{name: "eligible", host: mcpCreateHost{capable: true, base: "main"}, want: true},
+		{name: "linked", host: mcpCreateHost{capable: true, base: "main", trees: []git.Worktree{{Path: "/repo"}}}},
+		{name: "main", host: mcpCreateHost{capable: true, base: "main", trees: []git.Worktree{{Path: "/repo", Main: true}}}, want: true},
+		{name: "list error", host: mcpCreateHost{capable: true, treesErr: errors.New("list failed")}},
+		{name: "base error", host: mcpCreateHost{capable: true, baseErr: errors.New("base failed")}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := mcpWorktreeEligible(t.Context(), &test.host, "/repo/sub")
-			wantErr := test.host.err
-			if test.host.treesErr != nil {
-				wantErr = test.host.treesErr
+			wantErr := test.host.treesErr
+			if errors.Is(wantErr, git.ErrNotARepo) {
+				wantErr = nil
 			}
 			if test.host.baseErr != nil {
 				wantErr = test.host.baseErr
