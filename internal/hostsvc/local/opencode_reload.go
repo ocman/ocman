@@ -33,20 +33,18 @@ func (h *Host) ReloadOpencode(ctx context.Context) error {
 	if candidate == nil || candidate.Endpoint == "" {
 		return fmt.Errorf("no managed OpenCode v2 server found")
 	}
-	inst := *candidate
-	inst.RepoRoot = root
-	if err := h.runtime.Probe(ctx, &inst); err != nil {
-		return fmt.Errorf("verifying managed OpenCode before reload: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inst.Endpoint+"/api/location/reload", nil)
-	if err != nil {
-		return err
-	}
 	auth := ocapi.Auth{}
 	if h.deps.OpenCodeAuth != nil {
 		auth = h.deps.OpenCodeAuth()
 	}
 	client := &http.Client{Timeout: time.Minute, Transport: auth.Transport(nil)}
+	if err := ocruntime.ProbeV2Identity(ctx, client, candidate.Endpoint, root); err != nil {
+		return fmt.Errorf("verifying managed OpenCode before reload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, candidate.Endpoint+"/api/location/reload", nil)
+	if err != nil {
+		return err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("reloading OpenCode: %w", err)

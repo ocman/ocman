@@ -134,6 +134,39 @@ func probeIdentity(ctx context.Context, client *http.Client, endpoint, repoRoot 
 	return fmt.Errorf("%w: endpoint serves %q, expected %q", ErrProbeUnreachable, payload.Worktree, repoRoot)
 }
 
+// ProbeV2Identity requires a readable, matching server-default location before
+// a machine-wide mutation. Never send a directory query: it would ask an
+// unrelated server to open that path instead of verifying its default location.
+func ProbeV2Identity(ctx context.Context, client *http.Client, endpoint, root string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultProbeClient.Timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/location", nil)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrProbeUnreachable, err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		if errors.Is(err, ocapi.ErrAuthentication) {
+			return err
+		}
+		return fmt.Errorf("%w: %w", ErrProbeUnreachable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%w: v2 identity HTTP %d", ErrProbeUnreachable, resp.StatusCode)
+	}
+	var location struct {
+		Directory string `json:"directory"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&location); err != nil || location.Directory == "" {
+		return fmt.Errorf("%w: invalid v2 location identity", ErrProbeUnreachable)
+	}
+	if !sameDir(location.Directory, root) {
+		return fmt.Errorf("%w: endpoint serves %q, expected %q", ErrProbeUnreachable, location.Directory, root)
+	}
+	return nil
+}
+
 // sameDir compares two paths, falling back to symlink resolution so a
 // symlinked checkout (/tmp vs /private/tmp on macOS) is not read as a
 // different project.

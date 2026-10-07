@@ -15,10 +15,10 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
   const scope = useMemo(() => ({ id, platform, directory }), [id, platform, directory]);
   const activeScope = useRef<typeof scope | null>(scope);
   const requestGeneration = useRef(0);
-  const favoriteGenerations = useRef(new Map<string, number>());
+  const pendingFavorites = useRef(new Set<string>());
   useLayoutEffect(() => {
     activeScope.current = scope;
-    favoriteGenerations.current.clear();
+    pendingFavorites.current.clear();
     return () => { activeScope.current = null; };
   }, [scope]);
   const getModels = useApiStore((s) => s.getModels);
@@ -88,10 +88,11 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
   const handleToggleFavorite = useCallback(async (provider: string, model: string, nextFavorite: boolean) => {
     if (!platform || !id || activeScope.current !== scope) return;
     const key = JSON.stringify([provider, model]);
-    const generation = (favoriteGenerations.current.get(key) ?? 0) + 1;
-    favoriteGenerations.current.set(key, generation);
+    // Only one write per model until it settles; different models stay independent.
+    if (pendingFavorites.current.has(key)) return;
+    pendingFavorites.current.add(key);
     requestGeneration.current++;
-    const isCurrent = () => activeScope.current === scope && favoriteGenerations.current.get(key) === generation;
+    const isCurrent = () => activeScope.current === scope;
     const flip = (favorite: boolean) => setModelEntries((prev) => prev.map((e) =>
       e.provider === provider && e.model === model ? { ...e, isFavorite: favorite } : e,
     ));
@@ -105,6 +106,8 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
       if (isCurrent()) refreshModels();
     } catch {
       if (isCurrent()) flip(!nextFavorite);
+    } finally {
+      if (isCurrent()) pendingFavorites.current.delete(key);
     }
   }, [platform, id, refreshModels, scope]);
 

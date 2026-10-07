@@ -20,7 +20,7 @@ func TestReloadOpencodeRefreshesExistingMachineServer(t *testing.T) {
 		t.Run(map[bool]string{false: "memory", true: "persisted"}[persisted], func(t *testing.T) {
 			h, rt, store, _, root := v2Host(t)
 			calls := 0
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			upstream := reloadTestServer(root, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
 				user, password, ok := r.BasicAuth()
 				if r.Method != http.MethodPost || r.URL.Path != "/api/location/reload" || !ok || user != "opencode" || password != "secret" {
@@ -103,11 +103,50 @@ func TestReloadOpencodeVerifiesCandidateIdentity(t *testing.T) {
 	}
 }
 
+func TestReloadOpencodeRequiresReadableIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"unavailable", `{}`, http.StatusServiceUnavailable},
+		{"malformed", `not-json`, http.StatusOK},
+		{"missing directory", `{}`, http.StatusOK},
+		{"empty directory", `{"directory":""}`, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _, _, root := v2Host(t)
+			h.runtime = ocruntime.NewNativeRuntime()
+			reloads := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/info":
+					_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+				case "/api/config":
+					_, _ = w.Write([]byte(`[]`))
+				case "/api/location":
+					w.WriteHeader(tc.status)
+					_, _ = w.Write([]byte(tc.body))
+				case "/api/location/reload":
+					reloads++
+					w.WriteHeader(http.StatusNoContent)
+				}
+			}))
+			defer upstream.Close()
+			t.Cleanup(func() { ocv2.ForgetHost(strings.TrimPrefix(upstream.URL, "http://")) })
+			h.setInstance(root, &ocruntime.Instance{Endpoint: upstream.URL})
+			if err := h.ReloadOpencode(t.Context()); err == nil || reloads != 0 {
+				t.Fatalf("unverified identity: error=%v reloads=%d", err, reloads)
+			}
+		})
+	}
+}
+
 func TestReloadOpencodeErrorsDoNotRestart(t *testing.T) {
 	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable, http.StatusOK} {
 		t.Run(http.StatusText(code), func(t *testing.T) {
 			h, rt, _, _, root := v2Host(t)
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }))
+			upstream := reloadTestServer(root, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }))
 			defer upstream.Close()
 			h.setInstance(root, &ocruntime.Instance{Endpoint: upstream.URL})
 			err := h.ReloadOpencode(t.Context())
@@ -136,7 +175,7 @@ func TestReloadOpencodePreservesBoundedRejectionDiagnostic(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _, _, _, root := v2Host(t)
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			upstream := reloadTestServer(root, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte(tc.body))
 			}))
@@ -157,7 +196,7 @@ func TestReloadOpencodeMissingUnsupportedAndCancelled(t *testing.T) {
 	if err := h.ReloadOpencode(t.Context()); err == nil || !strings.Contains(err.Error(), "no managed") {
 		t.Fatalf("missing server error = %v", err)
 	}
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	upstream := reloadTestServer(root, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer upstream.Close()
 	h.setInstance(root, &ocruntime.Instance{Endpoint: upstream.URL})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -173,4 +212,15 @@ func TestReloadOpencodeMissingUnsupportedAndCancelled(t *testing.T) {
 	if rt.launchCount() != 0 || rt.stopCount() != 0 {
 		t.Fatal("reload changed server lifecycle")
 	}
+}
+
+func reloadTestServer(root string, handler http.HandlerFunc) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/location" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"directory": root})
+			return
+		}
+		handler(w, r)
+	}))
 }

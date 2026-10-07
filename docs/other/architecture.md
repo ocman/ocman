@@ -290,7 +290,8 @@ flowchart TD
   an opaque `ocruntime.Instance`. The owning host may use discovery once to
   adopt a healthy instance that started before its managed registry entry
   existed. `RestartProjectOpencode` stops and relaunches the tracked
-  instance. `ReloadOpencode` instead calls the owning machine's v2
+  instance. `ReloadOpencode` requires a readable, matching server-default v2
+  location directory before it calls the owning machine's v2
   `/api/location/reload` endpoint through the same Host/gRPC seam, retaining
   the process and running turns while refreshing configuration and the owner's
   cached catalogs. Pending permission and question prompts are cancelled.
