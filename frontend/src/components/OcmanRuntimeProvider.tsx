@@ -13,7 +13,7 @@ import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedS
 import type { FailedSend } from '../lib/failedSends';
 import { computeIsRunning, createConvertMessages, parsePart } from '../lib/convertMessages';
 import { computeTurnStats, ModelLabelsContext, TurnStatsContext } from '../lib/turnStats';
-import { formatModelRef } from '../lib/sessionStatus';
+import { formatModelRef, isSessionRunning } from '../lib/sessionStatus';
 import { TurnSpeechContext, useTurnSpeech } from '../lib/turnSpeech';
 import { convertThreadMessage } from '../lib/threadMessageAdapter';
 
@@ -136,7 +136,9 @@ export function OcmanRuntimeProvider({
     }))];
   }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, showReasoning, reasoningNow]);
 
-  const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
+  const isRunning = useMemo(() => sessionStatus === undefined
+    ? computeIsRunning(messages)
+    : isSessionRunning(messages.at(-1) ?? null, sessionStatus), [messages, sessionStatus]);
 
   const turnStatsMap = useMemo(
     () => computeTurnStats(messages, parts, isRunning),

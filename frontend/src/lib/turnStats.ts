@@ -24,8 +24,8 @@ import { throughputSample } from './throughput';
  *
  * All counts are best-effort while the turn is in progress:
  * - Token/cost fields include any completed assistant messages in the turn.
- * - `isLive` is true when the last assistant message has no finish reason
- *   (still streaming), so the bar can show a "live" indicator.
+ * - `isLive` follows the session lifecycle when supplied, falling back to
+ *   message completion metadata for views without a live session status.
  */
 export interface TurnAggregate {
   /** Ms from user message creation to last assistant message completion. */
@@ -40,7 +40,7 @@ export interface TurnAggregate {
   toolCalls: number;
   /** Estimated output tok/s, excluding recorded tool and approval waits. */
   tps: number | null;
-  /** True when the last assistant message has neither finished nor completed. */
+  /** True while the turn is active. */
   isLive: boolean;
   /** True when this completed turn likely rebuilt a previously used prompt cache. */
   promptCacheRebuilt: boolean;
@@ -103,7 +103,7 @@ export type TurnStatsMap = Map<string, TurnAggregate>;
 export function computeTurnStats(
   messages: Message[],
   parts: Part[],
-  isRunning = false,
+  isRunning?: boolean,
 ): TurnStatsMap {
   const map: TurnStatsMap = new Map();
 
@@ -185,7 +185,7 @@ export function computeTurnStats(
     const isLive = lastAsst.data.error || isCompleted
       ? false
       : isLastTurn
-        ? isRunning || !lastAsst.data.finish
+        ? isRunning ?? !lastAsst.data.finish
         : !lastAsst.data.finish;
 
     // Wall-clock end: when the turn's final reply completed. Measured from
