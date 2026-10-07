@@ -15,7 +15,7 @@ import { usePendingSend } from './usePendingSend';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { useFirstSubmission } from './firstSubmission';
 import type { NewSessionParams } from '../../lib/newSessionPath';
-import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { forgetConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath';
@@ -103,6 +103,25 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('does not restore immediately discarded text during unmount or a delayed start failure', async () => {
+    const props = { params: { directory: '/repo', draftId: 'discarded' }, composerRef: null, whisperAvailable: false,
+      navigate: vi.fn(), navigateToSession: vi.fn() };
+    const view = render(<NewConversation {...props} />);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'discard this text' } });
+    act(() => forgetConversationDraft('discarded'));
+    view.unmount();
+    expect(getDraft('discarded')).toBe('');
+    const request = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValue(request.promise);
+    const second = render(<NewConversation {...props} params={{ directory: '/repo', draftId: 'pending-discard' }} />);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'discard this failed prompt' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalled());
+    act(() => forgetConversationDraft('pending-discard'));
+    second.unmount();
+    await act(async () => request.reject(new Error('lost connection')));
+    expect(getDraft('pending-discard')).toBe('');
+  });
   it('keeps multiple unstarted sidebar conversations and their text independent', async () => {
     const first = newSessionPath({ directory: '/repo', title: 'First' });
     const second = newSessionPath({ directory: '/repo', title: 'Second' });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useUiStore } from '../../lib/uiStore';
+import { useLocation } from 'react-router-dom';
 
 export type MobilePanel = 'sidebar' | 'details' | null;
 
@@ -18,6 +19,7 @@ export interface UseMobilePanelResult {
  * SessionDetail.css). Escape closes; any route change closes.
  */
 export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
+  const { pathname, search } = useLocation();
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const toggleMobileSidebar = useCallback(() => {
     setMobilePanel((p) => (p === 'sidebar' ? null : 'sidebar'));
@@ -48,8 +50,8 @@ export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
     return () => window.removeEventListener('keydown', onKey);
   }, [mobilePanel]);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing a phone overlay in response to an external route change; no render loop (id only changes via navigation).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing a phone overlay in response to navigation, including draft-to-draft query changes.
     setMobilePanel(null);
-  }, [id]);
+  }, [id, pathname, search]);
   return { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel };
 }

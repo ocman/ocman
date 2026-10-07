@@ -3,6 +3,14 @@ import { useMemo, useSyncExternalStore } from 'react';
 const DRAFTS_KEY = 'ocman.composerDrafts.v1';
 
 type Drafts = Record<string, string>;
+const draftVersions = new Map<string, number>();
+export const getDraftVersion = (sessionId: string) => draftVersions.get(sessionId) || 0;
+
+/** Invalidate outstanding autosaves and failed-send recovery before clearing. */
+export function discardDraft(sessionId: string) {
+  draftVersions.set(sessionId, getDraftVersion(sessionId) + 1);
+  clearDraft(sessionId);
+}
 
 function loadDrafts(): Drafts {
   if (typeof window === 'undefined') return {};
@@ -33,7 +41,8 @@ export function getDraft(sessionId: string): string {
   return drafts[sessionId] || '';
 }
 
-export function saveDraft(sessionId: string, text: string) {
+export function saveDraft(sessionId: string, text: string, version = getDraftVersion(sessionId)) {
+  if (version !== getDraftVersion(sessionId)) return;
   const drafts = loadDrafts();
   if (text) {
     drafts[sessionId] = text;

@@ -43,7 +43,7 @@ export interface NewConversationProps {
 }
 
 /** What a submission needs before it can start: the catalog and the resolved target. */
-interface Ready { catalog: PrepareSessionResponse; canWorktree: boolean; platform?: string; model: string }
+interface Ready { catalog: PrepareSessionResponse; canWorktree: boolean; worktrees: { path: string }[]; platform?: string; model: string }
 /** A server-delivered prompt, or work the client runs on the new session. */
 interface Submission {
   model: string;
@@ -51,8 +51,12 @@ interface Submission {
   execute?: (sessionId: string, platform: string) => Promise<void>;
 }
 
+function resolveTarget(target: SessionTarget, canWorktree: boolean, worktrees: { path: string }[]): SessionTarget {
+  return !canWorktree || target.startsWith('dir:') && !worktrees.some((tree) => `dir:${tree.path}` === target) ? 'current' : target;
+}
+
 export function NewConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
-  return <PreparedConversation key={params.draftId || NEW_SESSION_ID} params={params} whisperAvailable={whisperAvailable}
+  return <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params} whisperAvailable={whisperAvailable}
     composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />;
 }
 
@@ -179,10 +183,11 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
   }, [platform]);
 
   const canWorktree = worktreesCapable && (eligibility.resolved?.canCreate ?? false);
+  const effectiveTarget = resolveTarget(target, canWorktree, eligibility.resolved?.worktrees || []);
 
   // The composer stays usable while the catalog and target resolve; a
   // submission made before then waits here (or fails with the prepare error).
-  const ready: Ready | undefined = eligibility.resolved && catalogReady && catalog ? { catalog, canWorktree, platform, model: activeModel } : undefined;
+  const ready: Ready | undefined = eligibility.resolved && catalogReady && catalog ? { catalog, canWorktree, worktrees: eligibility.resolved.worktrees, platform, model: activeModel } : undefined;
   const readyError = catalogError || eligibility.error || '';
   const readyRef = useRef(ready);
   useEffect(() => {
@@ -225,10 +230,11 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
       const { send, execute, model } = build(ready);
+      const startTarget = resolveTarget(target, ready.canWorktree, ready.worktrees);
       const res = await api.startSession({
-        directory: target.startsWith('dir:') ? target.slice(4) : directory,
+        directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,
         platform: ready.platform, remoteId, title, prompt: text, send, startId,
-        worktree: ready.canWorktree && target === 'worktree',
+        worktree: startTarget === 'worktree',
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
       if (model) startModels.set(res.sessionId, model);
@@ -291,6 +297,10 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
 
   // Switching machines re-points this draft, without touching other drafts.
   const onMachineChange = async (machine: TargetCandidate) => {
+    if (target.startsWith('dir:')) {
+      rememberConversationDraft({ ...params, draftId, target: 'current' });
+      setTarget('current');
+    }
     navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title, draftId }));
   };
 
@@ -333,7 +343,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate,
           newConversation
           worktreesSupported={canWorktree}
           worktrees={eligibility.resolved?.worktrees}
-          target={canWorktree ? target : 'current'}
+          target={effectiveTarget}
           onTargetChange={setTarget}
           remoteId={remoteId}
           onMachineChange={onMachineChange}

@@ -33,6 +33,20 @@ it('keeps live drafts when storage refuses writes', () => {
   write.mockRestore();
 });
 
+it('merges another tab before writing and observes cross-tab discards', async () => {
+  vi.resetModules();
+  const otherTab = await import('./newConversationDrafts');
+  rememberConversationDraft({ draftId: 'first', directory: '/repo' });
+  otherTab.rememberConversationDraft({ draftId: 'second', directory: '/repo' });
+  rememberConversationDraft({ draftId: 'first', directory: '/updated' });
+  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['first', 'second']);
+  otherTab.forgetConversationDraft('first');
+  window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1' }));
+  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
+  rememberConversationDraft({ draftId: 'third', directory: '/repo' });
+  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second', 'third']);
+});
+
 it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {
   localStorage.setItem('ocman.newConversationDrafts.v1', raw);
   vi.resetModules();

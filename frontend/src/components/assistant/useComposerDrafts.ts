@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react';
-import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
+import { getDraft, getDraftVersion, saveDraft, clearDraft } from '../../lib/composerDraft';
 
 /**
  * Owns per-session composer draft persistence: loading the saved draft
@@ -18,6 +18,7 @@ export function useComposerDrafts(
   // textarea must not overwrite storage someone else updated meanwhile (a
   // failed send restoring its prompt, another tab).
   const persistedRef = useRef('');
+  const versionRef = useRef(0);
 
   const cancelPending = useCallback(() => {
     if (timerRef.current) {
@@ -36,9 +37,11 @@ export function useComposerDrafts(
   /** Debounced autosave (300ms). Empty text clears the draft instead. */
   const scheduleDraftSave = useCallback((sid: string, getText: () => string) => {
     cancelPending();
+    const version = versionRef.current;
     timerRef.current = setTimeout(() => {
+      if (version !== getDraftVersion(sid)) return;
       const text = getText().trim();
-      if (text) saveDraft(sid, text);
+      if (text) saveDraft(sid, text, version);
       else clearDraft(sid);
       persistedRef.current = text;
     }, 300);
@@ -49,14 +52,16 @@ export function useComposerDrafts(
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el || !sessionId) return;
+    const version = versionRef.current = getDraftVersion(sessionId);
     el.value = persistedRef.current = getDraft(sessionId);
     return () => {
       cancelPending();
+      if (version !== getDraftVersion(sessionId)) return;
       const text = el.value.trim();
       if (text === persistedRef.current) return;
       // eslint-disable-next-line react-hooks/exhaustive-deps -- the live in-flight prompt is wanted here
       if (text && text === inFlightRef.current) return;
-      if (text) saveDraft(sessionId, text);
+      if (text) saveDraft(sessionId, text, version);
       else clearDraft(sessionId);
     };
   }, [sessionId, inputRef, inFlightRef, cancelPending]);

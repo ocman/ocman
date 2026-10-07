@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle } from 'react';
 import './Composer.css';
 import { useComposerDrafts } from './useComposerDrafts';
-import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, getDraft, getDraftVersion, saveDraft } from '../../lib/composerDraft';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { BackendUnavailableError, type SlashCommand } from '../../lib/api';
 import { useComposerAttachments } from './useComposerAttachments';
@@ -148,6 +148,7 @@ export function Composer({
     // nor a session switch mid-send parks it, and restore it only on failure.
     const key = draftKeyRef.current;
     const text = el.value.trim();
+    const draftVersion = key ? getDraftVersion(key) : 0;
     inFlightRef.current = text;
     if (key) clearDraftNow(key);
     sendingRef.current = true;
@@ -168,7 +169,7 @@ export function Composer({
         }
         break;
       } catch (err) {
-        if (key && text && !getDraft(key)) saveDraft(key, text);
+        if (key && text && !getDraft(key)) saveDraft(key, text, draftVersion);
         // Back on the initiating key with an empty box: show the failed prompt again.
         if (mountedRef.current && draftKeyRef.current === key && !el.value.trim()) el.value = text;
         if (!retryBackend || !(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { clearDraft } from './composerDraft';
+import { discardDraft } from './composerDraft';
 
 const STORAGE_KEY = 'ocman.newConversationDrafts.v1';
 
@@ -12,7 +12,7 @@ export interface ConversationDraft extends NewSessionParams {
   target?: string;
 }
 
-function load(): ConversationDraft[] {
+function load(): ConversationDraft[] | null {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     return Array.isArray(value) ? value.filter((draft): draft is ConversationDraft =>
@@ -20,26 +20,45 @@ function load(): ConversationDraft[] {
       ['remoteId', 'platform', 'title', 'model', 'agent', 'reasoning', 'target'].every((key) =>
         draft[key] === undefined || typeof draft[key] === 'string')) : [];
   } catch {
-    return [];
+    return null;
   }
 }
 
-export const useNewConversationDrafts = create<{ drafts: ConversationDraft[] }>(() => ({ drafts: load() }));
+export const useNewConversationDrafts = create<{ drafts: ConversationDraft[] }>(() => ({ drafts: load() || [] }));
+let storageUnavailable = false;
+
+function currentDrafts() {
+  return storageUnavailable ? useNewConversationDrafts.getState().drafts : load() || useNewConversationDrafts.getState().drafts;
+}
 
 function save(drafts: ConversationDraft[]) {
   useNewConversationDrafts.setState({ drafts });
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts)); } catch {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+    storageUnavailable = false;
+  } catch {
+    storageUnavailable = true;
     // Keep live drafts available even when browser storage is full.
   }
 }
 
 export function rememberConversationDraft(params: ConversationDraft) {
-  const drafts = useNewConversationDrafts.getState().drafts;
+  const drafts = currentDrafts();
   const existing = drafts.find((draft) => draft.draftId === params.draftId);
   save(existing ? drafts.map((draft) => draft === existing ? { ...draft, ...params } : draft) : [...drafts, params]);
 }
 
 export function forgetConversationDraft(draftId: string) {
-  save(useNewConversationDrafts.getState().drafts.filter((draft) => draft.draftId !== draftId));
-  clearDraft(draftId);
+  save(currentDrafts().filter((draft) => draft.draftId !== draftId));
+  discardDraft(draftId);
 }
+
+if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
+  if (event.key !== STORAGE_KEY && event.key !== null || storageUnavailable) return;
+  const drafts = load();
+  if (!drafts) return;
+  for (const old of useNewConversationDrafts.getState().drafts) {
+    if (!drafts.some((draft) => draft.draftId === old.draftId)) discardDraft(old.draftId);
+  }
+  useNewConversationDrafts.setState({ drafts });
+});

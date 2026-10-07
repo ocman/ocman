@@ -13,7 +13,7 @@ import { describeModel } from '../../components/assistant/composerModel';
 import { useComposerModel } from './useComposerModel';
 import type { Message } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
-import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), baseRef: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -184,6 +184,27 @@ describe('NewConversation', () => {
     expect(getDraft('second')).toBe('second prompt');
     expect(getDraft('first')).toBe('');
     expect(navigateToSession).toHaveBeenCalledWith('child');
+  });
+
+  it('submits the current checkout when a restored worktree is no longer available', async () => {
+    rememberConversationDraft({ draftId: 'first', directory: '/repo', target: 'dir:/old/worktree' });
+    mount({ directory: '/repo', draftId: 'first' });
+    await ready();
+    expect(composer.target).toBe('current');
+    await act(async () => { await composer.onSend!('run here'); });
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ directory: '/repo', worktree: false }));
+  });
+
+  it('does not carry an existing-worktree target to a different owner', async () => {
+    mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', main: true }, { path: '/repo/wt', branch: 'feat', main: false }] });
+    const view = mount({ directory: '/repo', draftId: 'first' });
+    await ready();
+    act(() => composer.onTargetChange!('dir:/repo/wt'));
+    await act(() => composer.onMachineChange!({ dir: '/repo', remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode' }));
+    view.rerender(<NewConversation params={{ directory: '/repo', draftId: 'first', remoteId: 'box', platform: 'r-box:opencode' }}
+      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    await ready();
+    expect(composer.target).toBe('current');
   });
 
   it('refreshes the owner catalog after changing favorites and preserves manual model selection', async () => {
