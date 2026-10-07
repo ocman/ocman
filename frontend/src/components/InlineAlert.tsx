@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Button } from './Control';
+import styles from './InlineAlert.module.css';
 
 interface InlineAlertProps {
   children: ReactNode;
@@ -10,9 +11,9 @@ interface InlineAlertProps {
 
 export function InlineAlert({ children, onRetry, retrying = false, compact = false }: InlineAlertProps) {
   return (
-    <div className={`oc-error-banner${compact ? ' oc-error-banner--compact' : ''}`} role="alert">
-      <span>{children}</span>
-      {onRetry && <Button type="button" size="small" onClick={onRetry} disabled={retrying} aria-busy={retrying}>Retry</Button>}
+    <div className={`${styles.root}${compact ? ` ${styles.compact}` : ''}`} role="alert" data-inline-alert="">
+      <span className={styles.message}>{children}</span>
+      {onRetry && <Button type="button" size="small" className={styles.action} onClick={onRetry} disabled={retrying} aria-busy={retrying}>Retry</Button>}
     </div>
   );
 }

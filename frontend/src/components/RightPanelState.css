@@ -1,4 +1,4 @@
-.oc-right-panel-pane > [role='alert']:not([data-error-state]) {
+.oc-right-panel-pane > [role='alert']:not([data-error-state], [data-inline-alert]) {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
@@ -14,7 +14,7 @@
   overflow-wrap: anywhere;
 }
 
-.oc-right-panel-pane > [role='alert']:not([data-error-state])::before {
+.oc-right-panel-pane > [role='alert']:not([data-error-state], [data-inline-alert])::before {
   content: '!';
   display: inline-flex;
   align-items: center;
@@ -30,7 +30,7 @@
   line-height: 1;
 }
 
-.oc-right-panel-pane > [role='alert']:not([data-error-state]) button {
+.oc-right-panel-pane > [role='alert']:not([data-error-state], [data-inline-alert]) button {
   grid-column: 2;
   justify-self: start;
   padding: 4px 10px;
@@ -42,8 +42,8 @@
   cursor: pointer;
 }
 
-.oc-right-panel-pane > [role='alert']:not([data-error-state]) button:hover,
-.oc-right-panel-pane > [role='alert']:not([data-error-state]) button:focus-visible {
+.oc-right-panel-pane > [role='alert']:not([data-error-state], [data-inline-alert]) button:hover,
+.oc-right-panel-pane > [role='alert']:not([data-error-state], [data-inline-alert]) button:focus-visible {
   border-color: var(--danger);
   color: var(--danger);
 }
