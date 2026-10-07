@@ -99,7 +99,7 @@ it('reconciles a stale mirror from the authoritative failure and restores missin
     expect(getDraft('reload')).toBe('prompt');
     read.mockResolvedValue(undefined);
     await reconcileConversationStart('reload');
-    expect(useNewConversationDrafts.getState().starts.reload).toBeUndefined();
+    expect(useNewConversationDrafts.getState().starts.reload.error).toBe('failed');
   } finally { read.mockRestore(); }
 });
 
@@ -115,6 +115,20 @@ it('does not replace a newer local receipt with an outstanding read', async () =
     await pending;
     expect(useNewConversationDrafts.getState().starts.draft).toBe(completed);
   } finally { read.mockRestore(); }
+});
+
+it('preserves and repairs a known completion when its terminal transaction fails', async () => {
+  rememberConversationDraft({ draftId: 'terminal', directory: '/repo' });
+  useNewConversationDrafts.setState({ starts: { terminal: { version: 0, text: 'prompt', attemptId: 'one' } } });
+  const claims = await import('./draftStartClaims');
+  const persist = vi.spyOn(claims, 'persistDraftStart').mockRejectedValueOnce(new Error('terminal aborted'));
+  const read = vi.spyOn(claims, 'readDraftStart').mockResolvedValue({ version: 0, text: 'prompt', attemptId: 'one' });
+  try {
+    await completeConversationStart('terminal', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
+    await reconcileConversationStart('terminal');
+    expect(useNewConversationDrafts.getState().starts.terminal.sessionId).toBe('created');
+    expect(persist).toHaveBeenCalledTimes(2);
+  } finally { persist.mockRestore(); read.mockRestore(); }
 });
 
 it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {

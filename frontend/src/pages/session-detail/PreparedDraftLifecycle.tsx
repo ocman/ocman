@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NEW_SESSION_ID, newSessionPath } from '../../lib/newSessionPath';
 import { reconcileConversationStart, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { useApiStore } from '../../lib/apiStore';
@@ -22,7 +22,10 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
   });
   const [observed, setObserved] = useState('');
   const [receiptError, setReceiptError] = useState('');
+  const [receiptRetry, setReceiptRetry] = useState(0);
+  const navigated = useRef('');
   const receipt = useNewConversationDrafts((state) => state.starts[draftId]);
+  const replacement = useNewConversationDrafts((state) => state.drafts.find((draft) => draft.draftId === state.starts[draftId]?.replacementDraftId));
   const receiptState = JSON.stringify([receipt?.version, receipt?.error, receipt?.sessionId]);
   useEffect(() => {
     if (!routeDraftId) {
@@ -36,10 +39,17 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
       if (active) setReceiptError(error instanceof Error ? error.message : String(error));
     });
     return () => { active = false; };
-  }, [directory, remoteId, platform, title, routeDraftId, legacyId, draftId, receiptState, navigate]);
+  }, [directory, remoteId, platform, title, routeDraftId, legacyId, draftId, receiptState, receiptRetry, navigate]);
   useEffect(() => {
     let active = true;
-    if (sessionId) {
+    if (replacement) {
+      const target = `${draftId}:${replacement.draftId}`;
+      if (navigated.current !== target) { navigated.current = target; navigate(newSessionPath(replacement)); }
+    }
+    else if (sessionId) {
+      const target = `${draftId}:${sessionId}`;
+      if (navigated.current === target) return;
+      navigated.current = target;
       const store = useApiStore.getState();
       if (createdSession && store.getCachedSession(sessionId)?.session.platform !== createdSession.platform) {
         store.seedNewSession(sessionId, createdSession.directory, createdSession.platform, params.title, createdSession.remoteId);
@@ -61,7 +71,9 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
       });
     }
     return () => { active = false; };
-  }, [draftId, exists, sessionId, createdSession, observed, params, routeKey, navigate, navigateToSession]);
-  if (!params.draftId || sessionId || observed === draftId && !exists) return null;
-  return <>{receiptError && receipt && !receipt.error && !receipt.sessionId && <InlineAlert>{receiptError}</InlineAlert>}{children}</>;
+  }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receiptRetry, navigate, navigateToSession]);
+  const retry = () => { setReceiptError(''); setReceiptRetry((value) => value + 1); };
+  if (!params.draftId || sessionId || replacement) return null;
+  if (observed === draftId && !exists) return receiptError ? <InlineAlert onRetry={retry}>{receiptError}</InlineAlert> : null;
+  return <>{(receiptError || receipt?.persistenceError) && <InlineAlert onRetry={retry}>{receiptError || receipt?.persistenceError}</InlineAlert>}{children}</>;
 }

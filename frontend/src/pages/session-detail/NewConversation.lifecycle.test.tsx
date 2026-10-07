@@ -122,6 +122,39 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('moves retained newer text to a usable fresh identity and submits that task', async () => {
+    const request = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValueOnce(request.promise).mockResolvedValue({ ...created, sessionId: 'next-child' });
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'first task' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    act(() => saveDraft('first', 'retained next task'));
+    await act(async () => request.resolve(created));
+    await waitFor(() => expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId='));
+    expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first');
+    expect(screen.getByRole('textbox')).toHaveValue('retained next task');
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.startSession).mock.calls[1][0].prompt).toBe('retained next task');
+  });
+
+  it('shows a safe receipt retry when a discarded draft cannot be reconciled', async () => {
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first']}><DraftWorkspace /></MemoryRouter>);
+    const claims = await import('../../lib/draftStartClaims');
+    const read = vi.spyOn(claims, 'readDraftStart').mockRejectedValue(new Error('receipt read failed'));
+    try {
+      act(() => {
+        localStorage.removeItem('ocman.newConversationDrafts.v1:first');
+        window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:first' }));
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent('receipt read failed');
+      read.mockResolvedValue(undefined);
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first'));
+      expect(api.startSession).not.toHaveBeenCalled();
+    } finally { read.mockRestore(); }
+  });
   it('canonicalizes a legacy bookmarked target and migrates its text without reusing the permanent new claim', async () => {
     saveDraft('new', 'legacy prompt');
     useNewConversationDrafts.setState({ starts: { new: { version: 0, text: '', sessionId: 'old-session' } } });
@@ -408,7 +441,7 @@ describe('new-conversation submission lifecycle', () => {
     await act(async () => launch.resolve(created));
     expect(screen.getByTestId('route')).toHaveTextContent('other');
     expect(newer).toHaveValue('newer task');
-    expect(getDraft('new')).toBe('newer task');
+    expect(getDraft(useNewConversationDrafts.getState().starts.new.replacementDraftId!)).toBe('newer task');
   });
 
   it('does not navigate when the same draft component is re-pointed during creation', async () => {
@@ -426,7 +459,7 @@ describe('new-conversation submission lifecycle', () => {
     saveDraft('new', 'new task');
     await act(async () => launch.resolve(created));
     expect(navigate).not.toHaveBeenCalled();
-    expect(getDraft('new')).toBe('new task');
+    expect(getDraft(useNewConversationDrafts.getState().starts.new.replacementDraftId!)).toBe('new task');
   });
 
   it('accepts an independent draft while the previous draft is still starting', async () => {

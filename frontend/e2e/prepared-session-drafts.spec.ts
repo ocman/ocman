@@ -52,7 +52,7 @@ test('unavailable atomic storage fails visibly without starting a session', asyn
   await page.goto('/session/new?dir=%2Frepo&draftId=unavailable');
   await page.getByRole('textbox').fill('Keep this prompt.');
   await page.getByRole('button', { name: 'Send message' }).click();
-  await expect(page.getByRole('alert')).toHaveText('This browser cannot coordinate session starts.');
+  await expect(page.getByTestId('conversation-composer').getByRole('alert')).toHaveText('This browser cannot coordinate session starts.');
   await expect(page.getByRole('textbox')).toHaveValue('Keep this prompt.');
   expect(starts).toBe(0);
 });
@@ -70,7 +70,7 @@ test('an unusable atomic-store schema surfaces an error and keeps the prompt', a
   await page.goto('/session/new?dir=%2Frepo&draftId=broken');
   await page.getByRole('textbox').fill('Keep this prompt.');
   await page.getByRole('button', { name: 'Send message' }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByTestId('conversation-composer').getByRole('alert')).toBeVisible();
   await expect(page.getByRole('textbox')).toHaveValue('Keep this prompt.');
   expect(starts).toBe(0);
 });
@@ -114,6 +114,43 @@ test('reload reconciles a stale pending mirror after a terminal receipt exceeds 
   await expect(page.getByRole('textbox')).toHaveValue('Restore this prompt.');
   await expect(page.getByRole('alert')).toContainText('Retryable start failure');
   expect(starts).toBe(1);
+});
+
+test('an aborted terminal transaction remains visible and can be safely repaired before retry', async ({ mockedPage: page }) => {
+  await prepareDraft(page);
+  await page.addInitScript(() => {
+    const controlled = window as Window & { abortTerminal: boolean };
+    controlled.abortTerminal = true;
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (controlled.abortTerminal && (value.sessionId || value.error)) {
+        this.transaction.abort();
+        return {} as IDBRequest<IDBValidKey>;
+      }
+      return put.call(this, value, key);
+    };
+  });
+  let starts = 0;
+  await page.route('**/api/sessions/start', (route) => {
+    starts++;
+    return starts === 1 ? route.fulfill({ status: 500, json: { error: 'First creation failed' } })
+      : route.fulfill({ json: { sessionId: MOCK_SESSION.id, directory: '/repo', platform: 'opencode', remoteId: 'local', firstMessageSent: true } });
+  });
+  await page.goto('/session/new?dir=%2Frepo&draftId=terminal');
+  await page.getByRole('textbox').fill('Resilient prompt');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not save' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('textbox')).toHaveValue('Resilient prompt');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByRole('textbox')).not.toBeDisabled();
+  expect(starts).toBe(1);
+  await page.evaluate(() => { (window as Window & { abortTerminal: boolean }).abortTerminal = false; });
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  expect(starts).toBe(2);
 });
 
 test('a rejected competing prompt cannot leave the winning failed claim pending', async ({ mockedPage: first }) => {

@@ -573,6 +573,10 @@ flowchart TD
   always receive their terminal result; draft-text ownership only controls text
   restoration and retirement. Identity-less bookmarked URLs get a fresh canonical
   draft id before mounting, with deliberate migration of the legacy `new` text.
+  Terminal receipts cannot be downgraded by a stale pending record for the same
+  attempt; failed persistence stays visible and is repaired before retry. A newer
+  retained revision is copied to a fresh draft identity before the old identity
+  is retired. Receipt-read failures show a safe, read-only retry control.
   Explicit metadata deletion invalidates autosave and recovery;
   unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.

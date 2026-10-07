@@ -85,6 +85,14 @@ it('fails closed without IndexedDB', async () => {
   await expect(claimDraftStart('draft', { version: 0, text: 'prompt' })).rejects.toThrow('cannot coordinate');
 });
 
+it('does not overwrite a newer attempt with an older terminal outcome', async () => {
+  database();
+  const current = { version: 0, text: 'new attempt', attemptId: 'new' };
+  await claimDraftStart('draft', current);
+  await persistDraftStart('draft', { version: 0, text: 'old attempt', attemptId: 'old', error: 'old failure' });
+  expect(await readDraftStart('draft')).toEqual(current);
+});
+
 it.each([
   [{ openError: new Error('open failed') }, 'open failed'],
   [{ blocked: true }, 'Close other ocman tabs'],

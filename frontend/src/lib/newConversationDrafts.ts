@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
 import { discardDraft, getDraft, getDraftVersion, saveDraft } from './composerDraft';
 import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
+import { randomId } from './randomId';
+import { remoteLog } from './remoteLog';
 
 const STORAGE_PREFIX = 'ocman.newConversationDrafts.v1:';
 const START_PREFIX = 'ocman.newConversationStarts.v1:';
@@ -73,8 +75,13 @@ function publishStart(draftId: string, start: DraftStart) {
 /** Mirrors are hints: a dropped terminal write must not become an indefinite lock. */
 export async function reconcileConversationStart(draftId: string) {
   const before = useNewConversationDrafts.getState().starts[draftId];
-  const start = await readDraftStart(draftId);
+  let start = await readDraftStart(draftId);
   if (useNewConversationDrafts.getState().starts[draftId] !== before) return;
+  if (before && (before.sessionId || before.error) && (!start || !start.sessionId && !start.error) &&
+    (!start || start.attemptId === before.attemptId)) {
+    const repaired = { ...before, persistenceError: undefined };
+    start = await persistDraftStart(draftId, repaired);
+  }
   if (start?.error && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
   if (JSON.stringify(start) === JSON.stringify(before)) return;
   useNewConversationDrafts.setState((state) => {
@@ -86,28 +93,49 @@ export async function reconcileConversationStart(draftId: string) {
 }
 
 export async function beginConversationStart(draftId: string, text: string, routeKey?: string): Promise<number | null> {
-  const { starts } = useNewConversationDrafts.getState();
+  let { starts } = useNewConversationDrafts.getState();
+  if (starts[draftId]?.persistenceError) {
+    await reconcileConversationStart(draftId);
+    starts = useNewConversationDrafts.getState().starts;
+  }
   if (starts[draftId] && !starts[draftId].error) return null;
   const version = getDraftVersion(draftId);
-  const result = await claimDraftStart(draftId, { version, text, routeKey });
+  const result = await claimDraftStart(draftId, { version, text, routeKey, attemptId: randomId() });
   publishStart(draftId, result.start);
   return result.claimed ? version : null;
 }
 
 export async function completeConversationStart(draftId: string, createdSession: NonNullable<DraftStart['createdSession']>, retire = true) {
   const { starts } = useNewConversationDrafts.getState();
-  const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, text: '' };
+  let replacementDraftId: string | undefined;
+  const saved = getConversationDraft(draftId);
+  if (!retire && saved) {
+    replacementDraftId = randomId();
+    rememberConversationDraft({ ...saved, draftId: replacementDraftId });
+    const text = getDraft(draftId);
+    if (text) saveDraft(replacementDraftId, text);
+  }
+  const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '' };
   // A known created session must never become a retryable creation if saving its receipt fails.
-  await persistDraftStart(draftId, start).catch(() => undefined);
+  await saveTerminalStart(draftId, start);
+  forgetConversationDraft(draftId);
+}
+
+async function saveTerminalStart(draftId: string, start: DraftStart) {
   publishStart(draftId, start);
-  if (retire) forgetConversationDraft(draftId);
+  try {
+    const persisted = await persistDraftStart(draftId, start);
+    if (persisted) publishStart(draftId, persisted);
+  } catch (error) {
+    remoteLog.error('Could not persist the terminal draft start receipt', error);
+    publishStart(draftId, { ...start, persistenceError: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 export async function failConversationStart(draftId: string, error: string) {
   const { starts } = useNewConversationDrafts.getState();
   const start = { ...starts[draftId], error };
-  await persistDraftStart(draftId, start).catch(() => undefined);
-  publishStart(draftId, start);
+  await saveTerminalStart(draftId, start);
 }
 
 export function endConversationStart(draftId: string) {

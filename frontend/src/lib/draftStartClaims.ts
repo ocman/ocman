@@ -7,6 +7,9 @@ export interface DraftStart {
   error?: string;
   routeKey?: string;
   createdSession?: Pick<StartSessionResponse, 'sessionId' | 'platform' | 'remoteId' | 'directory'>;
+  attemptId?: string;
+  replacementDraftId?: string;
+  persistenceError?: string;
 }
 
 // IndexedDB readwrite transactions serialize claims across tabs, including plain HTTP.
@@ -54,5 +57,6 @@ export async function claimDraftStart(draftId: string, next: DraftStart) {
   return { claimed, start: start! };
 }
 
-export const persistDraftStart = (draftId: string, start: DraftStart) => transact(draftId, () => start);
+export const persistDraftStart = (draftId: string, start: DraftStart) => transact(draftId, (current) =>
+  current && current.attemptId !== start.attemptId ? current : start);
 export const readDraftStart = (draftId: string) => transact(draftId);
