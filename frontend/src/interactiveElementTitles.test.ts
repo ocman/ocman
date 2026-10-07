@@ -47,22 +47,20 @@ function hasLabel(attribute: ts.JsxAttributeLike): boolean {
   return true;
 }
 
-it('gives symbol-only links and buttons an explicit accessible name', () => {
+it.each(tsxFiles('src'))('gives symbol-only controls an accessible name in %s', (file) => {
   const missing: string[] = [];
-  for (const file of tsxFiles('src')) {
-    const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const visit = (node: ts.Node) => {
-      if (ts.isJsxElement(node) && controls.has(node.openingElement.tagName.getText(source))) {
-        const text = staticText(node);
-        const named = node.openingElement.attributes.properties.some(hasLabel);
-        if (!named && !/[\p{L}\p{N}]/u.test(text)) {
-          const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
-          missing.push(`${file}:${line + 1}`);
-        }
+  const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxElement(node) && controls.has(node.openingElement.tagName.getText(source))) {
+      const text = staticText(node);
+      const named = node.openingElement.attributes.properties.some(hasLabel);
+      if (!named && !/[\p{L}\p{N}]/u.test(text)) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+        missing.push(`${file}:${line + 1}`);
       }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-  }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
   expect(missing).toEqual([]);
 });
