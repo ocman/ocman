@@ -507,7 +507,9 @@ flowchart TD
   Shared agent fetches acquire one of eight global slots inside the singleflight
   leader and hold it through the HTTP response. Their two-second fetch deadline
   is independent of callers; slot admission waits at most ten seconds. Leaving
-  Settings cannot cancel a composer's joined catalog read.
+  Settings cannot cancel a composer's joined catalog read. Direct catalog callers
+  also cancel only their own singleflight wait, without waiting for admission or
+  the shared fetch to finish.
   A failed scan preserves the last successful snapshot for liveness readers and
   the auto-approval watcher for at most one minute without renewing the cache TTL.
   Sustained failure then expires old membership so stopped sessions lose stale

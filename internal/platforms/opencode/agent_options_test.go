@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -223,5 +224,37 @@ func TestAgentCatalogAdmissionTimeoutDoesNotCacheFailure(t *testing.T) {
 	}
 	if _, cached := catalogCache.get(port, "/agent"); cached {
 		t.Fatal("admission failure was cached")
+	}
+}
+
+func TestDirectAgentCatalogCallerHonorsDeadline(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		writeJSONBody(w, `[{"name":"custom-agent","mode":"primary"}]`)
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+	defer func() {
+		close(release)
+		<-catalogCache.flight.DoChan(u.Port()+"|/agent", func() (any, error) { return nil, nil })
+	}()
+	t.Cleanup(func() { catalogCache.invalidatePort(u.Port()) })
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := getJSONCached(ctx, u.Port(), "/agent")
+		result <- err
+	}()
+	<-started
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("caller deadline returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("direct catalog caller blocked past its own deadline")
 	}
 }

@@ -177,7 +177,13 @@ func (c *httpCache) invalidatePort(port string) {
 // lookup. Counting it would inflate the hit-rate denominator under
 // concurrent traffic and obscure the actual behaviour of the cache.
 func (c *httpCache) getOrFetch(port, path string, fetcher func() ([]byte, bool)) ([]byte, bool) {
-	ctx := context.Background()
+	return c.getOrFetchContext(context.Background(), port, path, fetcher)
+}
+
+func (c *httpCache) getOrFetchContext(ctx context.Context, port, path string, fetcher func() ([]byte, bool)) ([]byte, bool) {
+	if ctx.Err() != nil {
+		return nil, false
+	}
 	if body, ok := c.get(port, path); ok {
 		c.metrics.RecordHit(ctx)
 		return body, true
@@ -185,7 +191,7 @@ func (c *httpCache) getOrFetch(port, path string, fetcher func() ([]byte, bool))
 	c.metrics.RecordMiss(ctx)
 
 	key := port + "|" + path
-	v, err, _ := c.flight.Do(key, func() (interface{}, error) {
+	result := c.flight.DoChan(key, func() (interface{}, error) {
 		// Re-check inside the singleflight body in case another
 		// caller filled the cache between our miss and acquiring
 		// the flight slot. Cheap insurance.
@@ -204,11 +210,16 @@ func (c *httpCache) getOrFetch(port, path string, fetcher func() ([]byte, bool))
 		c.put(port, path, body)
 		return body, nil
 	})
-	if err != nil {
+	select {
+	case <-ctx.Done():
 		return nil, false
+	case result := <-result:
+		if result.Err != nil {
+			return nil, false
+		}
+		body, _ := result.Val.([]byte)
+		return body, body != nil
 	}
-	body, _ := v.([]byte)
-	return body, body != nil
 }
 
 // errFetchFailed is the sentinel singleflight error used to signal

@@ -140,7 +140,7 @@ func getJSON(ctx context.Context, port, path string) ([]byte, error) {
 // log line, since the caller that did the work logs the real reason.
 func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
 	var fetchErr error
-	body, ok := catalogCache.getOrFetch(port, path, func() ([]byte, bool) {
+	body, ok := catalogCache.getOrFetchContext(ctx, port, path, func() ([]byte, bool) {
 		fetchCtx := ctx
 		endpoint, _, _ := strings.Cut(path, "?")
 		if endpoint == "/agent" {
@@ -162,6 +162,9 @@ func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
 		return b, err == nil
 	})
 	if !ok {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
