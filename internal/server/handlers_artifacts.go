@@ -54,7 +54,13 @@ func (s *Server) handleArtifacts(w http.ResponseWriter, r *http.Request) {
 		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleArtifactShareRevoke(w, r, parts[0], parts[2]) })(w, r)
 	case len(parts) == 3 && parts[1] == "files":
 		requireGET(s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-			s.serveArtifactFile(w, r, parts[0], parts[2])
+			s.serveArtifactFile(w, r, parts[0], parts[2], false)
+		}))(w, r)
+	// A path segment rather than a query flag, so a preview that navigates
+	// itself with "?page=…" (as exported design boards do) stays interactive.
+	case len(parts) == 4 && parts[1] == "files" && parts[3] == "interactive":
+		requireGET(s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			s.serveArtifactFile(w, r, parts[0], parts[2], true)
 		}))(w, r)
 	default:
 		http.NotFound(w, r)
@@ -119,7 +125,19 @@ func (s *Server) handleArtifactStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]int64{"count": int64(count), "totalBytes": bytes})
 }
 
-func (s *Server) serveArtifactFile(w http.ResponseWriter, r *http.Request, id, ordinal string) {
+// interactivePreviewCSP lets an HTML artifact run its own inline script and
+// nothing else: the sandbox keeps it on an opaque origin (no app cookies,
+// storage, DOM or same-origin requests, no popups, forms or top navigation),
+// and default-src 'none' blocks fetch/XHR/WebSocket and every external
+// subresource. The iframe's sandbox attribute must grant the same single
+// allow-scripts token. A frame can still navigate itself, which no shipping
+// CSP directive prevents; see docs/features/artifacts.md.
+const interactivePreviewCSP = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+
+// serveArtifactFile streams one artifact file. interactive serves an HTML
+// file under interactivePreviewCSP instead of the inert sandbox; it is
+// always inline and refuses any other type.
+func (s *Server) serveArtifactFile(w http.ResponseWriter, r *http.Request, id, ordinal string, interactive bool) {
 	a, err := s.stateDB.GetArtifact(r.Context(), id)
 	if err != nil {
 		writeArtifactError(w, "getting artifact", err)
@@ -131,6 +149,10 @@ func (s *Server) serveArtifactFile(w http.ResponseWriter, r *http.Request, id, o
 		return
 	}
 	item := a.Items[n]
+	if base, _, _ := mime.ParseMediaType(item.MIME); interactive && base != "text/html" {
+		http.Error(w, "interactive preview is only available for HTML files", http.StatusNotFound)
+		return
+	}
 	f, err := s.stateDB.OpenArtifactBlob(item.SHA256)
 	if err != nil {
 		writeArtifactError(w, "opening artifact file", err)
@@ -138,11 +160,14 @@ func (s *Server) serveArtifactFile(w http.ResponseWriter, r *http.Request, id, o
 	}
 	defer f.Close()
 	disposition := fileDisposition(item.MIME)
-	if r.URL.Query().Get("download") == "1" {
+	if r.URL.Query().Get("download") == "1" && !interactive {
 		disposition = "attachment"
 	}
 	w.Header().Set("Content-Type", item.MIME)
 	setInertFileHeaders(w)
+	if interactive {
+		w.Header().Set("Content-Security-Policy", interactivePreviewCSP)
+	}
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": item.Name}))
 	http.ServeContent(w, r, "", a.CreatedAt, f)
 }

@@ -50,12 +50,52 @@ time.
 - An artifact's page (`/artifacts/<id>`) previews its files, lists its links,
   links back to the originating session, and offers download, share, and
   delete. HTML files (`text/html`) render in a sandboxed frame with scripts
-  disabled.
+  disabled; **Run scripts** opts that one file into an interactive preview
+  (see below).
 - The **Artifacts** tab in the session sidebar shows artifacts from this
   session and its subagents, or from the whole project. New artifacts appear
   live through the `ocman.artifact.created` event.
 
 Deleting an artifact from its page first revokes all of its live shares.
+
+### HTML previews
+
+Artifact HTML is treated as untrusted, even when an agent wrote it.
+
+- **Static (default).** The file is served with
+  `Content-Security-Policy: sandbox` and framed with an empty `sandbox`
+  attribute: an opaque origin, no script. Markup and inline CSS render, so
+  pre-rendered pages are readable; pages that build their DOM in JavaScript
+  stay blank, and controls driven by script do nothing.
+- **Interactive (opt-in, artifact page only).** **Run scripts** reloads the
+  frame from `/api/artifacts/<id>/files/<n>/interactive`. Only that route
+  sends `sandbox allow-scripts` plus a preview CSP (`default-src 'none'`,
+  inline script and style, `data:`/`blob:` images, fonts and media,
+  `form-action 'none'`, `base-uri 'none'`, `frame-ancestors 'self'`), and the
+  frame grants the same single `allow-scripts` token. `allow-same-origin` is
+  never granted, so the page runs on an opaque origin: it cannot read ocman's
+  DOM, cookies or storage, and cannot fetch, open WebSockets, load external
+  scripts, styles or images, open popups, submit forms, or navigate the ocman
+  window. The opt-in is per file and remembered in this browser until
+  **Stop scripts**. The
+  route is a path segment, so a page that navigates itself with `?page=…`
+  stays interactive.
+- **Shared views and the session sidebar** stay static and say so; download
+  the file to use it interactively. Downloads (`?download=1`) carry the
+  original bytes; response headers, including the sandbox, are not saved
+  with the file, so it runs normally when opened locally.
+
+Residual risks of the interactive preview:
+
+- The page can navigate its own frame anywhere, including an external URL
+  carrying data it holds (its own content, or what the user typed into it).
+  No shipping CSP directive prevents this. It cannot reach ocman data, so
+  that data is limited to the artifact.
+- It can use CPU or memory until the user stops it or leaves the page.
+- Script-started downloads are blocked by the sandbox (no `allow-downloads`);
+  the e2e suite checks this in Chromium and WebKit only.
+- Self-contained pages only: external scripts, stylesheets, fonts, images and
+  CDNs are blocked.
 
 ## Sharing
 

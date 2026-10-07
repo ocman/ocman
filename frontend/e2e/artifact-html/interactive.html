@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Design board</title>
+<style>h1 { color: rgb(10, 120, 30); }</style>
+</head>
+<body>
+<!-- Pre-rendered markup, like an exported design prototype. -->
+<main id="app">
+  <h1 data-testid="screen">Find work (pre-rendered)</h1>
+  <label>Preview screen
+    <select id="screen-select">
+      <option value="board" selected>Find work</option>
+      <option value="job">Job details</option>
+    </select>
+  </label>
+</main>
+<script>
+  // Rebuilds the DOM from the query string, then navigates the frame itself
+  // on selection: the same pattern as the Bouwbuddy design boards.
+  const screens = { board: 'Find work', job: 'Job details' };
+  const page = screens[new URLSearchParams(location.search).get('page')] ? new URLSearchParams(location.search).get('page') : 'board';
+  document.getElementById('app').innerHTML =
+    `<h1 data-testid="screen">${screens[page]} (rendered by script)</h1>` +
+    `<p data-testid="js-only">Built by JavaScript</p>` +
+    `<label>Preview screen <select id="screen-select">` +
+    Object.entries(screens).map(([k, v]) => `<option value="${k}"${k === page ? ' selected' : ''}>${v}</option>`).join('') +
+    `</select></label>`;
+  document.getElementById('screen-select').addEventListener('change', (e) => { location.href = `?page=${e.target.value}`; });
+</script>
+</body>
+</html>

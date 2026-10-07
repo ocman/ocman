@@ -266,3 +266,51 @@ func TestArtifactFileServing(t *testing.T) {
 		}
 	}
 }
+
+func TestArtifactInteractivePreview(t *testing.T) {
+	srv, do := artifactServer(t)
+	page := "<!doctype html><script>document.body.textContent='js'</script>"
+	a := mustArtifact(t, srv, ArtifactInput{Title: "t", Files: []ArtifactFileInput{{Name: "board.html", Content: page}, {Name: "pic.svg", Content: "<svg/>"}}})
+	if !strings.HasPrefix(a.Items[0].MIME, "text/html") {
+		t.Fatalf("mime = %q", a.Items[0].MIME)
+	}
+
+	for _, path := range []string{ArtifactFilePath(a.ID, 0) + "/interactive", ArtifactFilePath(a.ID, 0) + "/interactive?page=job&download=1"} {
+		rec := do(http.MethodGet, path)
+		h := rec.Header()
+		if rec.Code != http.StatusOK || rec.Body.String() != page || h.Get("Content-Security-Policy") != interactivePreviewCSP ||
+			h.Get("X-Content-Type-Options") != "nosniff" || h.Get("X-Frame-Options") != "SAMEORIGIN" || h.Get("Content-Disposition") != "inline; filename=board.html" {
+			t.Fatalf("GET %s = %d %v %q", path, rec.Code, h, rec.Body)
+		}
+	}
+	// The plain file and its download stay inert, and the bytes are untouched.
+	for path, disposition := range map[string]string{ArtifactFilePath(a.ID, 0): "inline", ArtifactFilePath(a.ID, 0) + "?download=1": "attachment"} {
+		rec := do(http.MethodGet, path)
+		if rec.Header().Get("Content-Security-Policy") != inertFileCSP || rec.Body.String() != page || rec.Header().Get("Content-Disposition") != disposition+"; filename=board.html" {
+			t.Fatalf("GET %s = %v %q", path, rec.Header(), rec.Body)
+		}
+	}
+	for _, path := range []string{ArtifactFilePath(a.ID, 1) + "/interactive", ArtifactFilePath(a.ID, 9) + "/interactive", ArtifactFilePath(a.ID, 0) + "/other"} {
+		if rec := do(http.MethodGet, path); rec.Code != http.StatusNotFound || rec.Header().Get("Content-Security-Policy") == interactivePreviewCSP {
+			t.Errorf("GET %s = %d %v", path, rec.Code, rec.Header())
+		}
+	}
+	if rec := do(http.MethodPost, ArtifactFilePath(a.ID, 0)+"/interactive"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST interactive = %d", rec.Code)
+	}
+}
+
+// The Playwright suite replays these exact headers; keep them in step.
+func TestArtifactPreviewHeadersMatchE2E(t *testing.T) {
+	raw, err := os.ReadFile("../../frontend/e2e/artifact-html/headers.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct{ Inert, Interactive string }
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Inert != inertFileCSP || got.Interactive != interactivePreviewCSP {
+		t.Fatalf("frontend/e2e/artifact-html/headers.json = %+v, want inert %q interactive %q", got, inertFileCSP, interactivePreviewCSP)
+	}
+}

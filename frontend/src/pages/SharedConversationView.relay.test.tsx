@@ -151,7 +151,10 @@ describe('SharedConversationView (relay)', () => {
       artifact: {
         title: 'Shared report',
         links: [{ url: 'https://example.com', label: 'Example' }],
-        files: [{ name: 'data.bin', mime: 'application/octet-stream', size: 3, blob: new Blob(['abc']) }],
+        files: [
+          { name: 'data.bin', mime: 'application/octet-stream', size: 3, blob: new Blob(['abc']) },
+          { name: 'board.html', mime: 'text/html', size: 7, blob: new Blob(['<p>x</p>']) },
+        ],
       },
     });
 
@@ -163,6 +166,10 @@ describe('SharedConversationView (relay)', () => {
     // itself appears; wait for it rather than racing the effect flush.
     expect(await screen.findByRole('link', { name: 'Download data.bin' })).toHaveAttribute('href', 'blob:x');
     expect(screen.queryByTestId('thread')).toBeNull();
+    // Shared views never offer script execution: the frame stays fully sandboxed.
+    expect(screen.getByTestId('artifact-preview-html')).toHaveAttribute('sandbox', '');
+    expect(screen.getByText('Scripts are disabled in this preview. Download the file to use it interactively.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /run scripts/i })).toBeNull();
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(readRelayShare).toHaveBeenCalledTimes(1);

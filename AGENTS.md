@@ -193,7 +193,11 @@ bytes are content-addressed by SHA-256 under `<state dir>/artifacts/blobs/`,
 them, updated live by `ocman.artifact.created`. Sharing uploads a write-once
 encrypted snapshot (manifest chunk + file chunks) to the share relay, checked
 against the relay's size/chunk limits before upload; revoke and artifact
-delete remove the relay copy. Artifacts are local to one ocman instance and
+delete remove the relay copy. HTML files preview inert (`sandbox` CSP); the
+artifact page's opt-in **Run scripts** uses `/files/<n>/interactive`, whose
+CSP and the iframe both grant only `allow-scripts` (never `allow-same-origin`),
+pinned for e2e by `frontend/e2e/artifact-html/headers.json`. Shared views stay
+inert. Artifacts are local to one ocman instance and
 are not routed to remotes. See `docs/features/artifacts.md`.
 
 Ocman also surfaces **PRs and Issues** from the active project's
