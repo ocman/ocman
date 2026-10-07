@@ -293,10 +293,10 @@ func TestResolveBaseRef(t *testing.T) {
 	repo := initTestRepo(t)
 
 	// No origin/HEAD, no upstream, current branch is "main" — so
-	// resolver should return "main".
+	// resolver should return its fully qualified branch ref.
 	got := ResolveBaseRef(context.Background(), repo)
-	if got != "main" {
-		t.Errorf("ResolveBaseRef = %q, want main", got)
+	if got != "refs/heads/main" {
+		t.Errorf("ResolveBaseRef = %q, want refs/heads/main", got)
 	}
 }
 

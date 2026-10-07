@@ -35,7 +35,6 @@ type factoryImplementationHost struct {
 	handoffHead   string
 	upstreams     hostsvc.ProjectUpstreams
 	branches      []string
-	branchesErr   error
 	worktrees     []git.Worktree
 	worktreeErr   error
 	target        string
@@ -51,19 +50,18 @@ func (h *factoryImplementationHost) WorktreeDefaultBaseRef(context.Context, stri
 }
 
 func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
-	for _, name := range []string{"shared", "successor", "remote-only default", "local origin branch", "branch lookup error", "unrelated branch", "different worktree", "missing detail", "missing session", "missing directory", "session error", "missing platform", "worktree error", "target error"} {
+	for _, name := range []string{"shared", "successor", "local default", "remote-only default", "local origin branch", "unrelated branch", "different worktree", "missing detail", "missing session", "missing directory", "session error", "missing platform", "worktree error", "target error"} {
 		t.Run(name, func(t *testing.T) {
 			detail := &platforms.SessionDetail{Session: &db.Session{Directory: "/worktree"}}
 			var sessionErr error
 			host := &factoryImplementationHost{target: "main", worktrees: []git.Worktree{{Path: "/worktree", Branch: "factory/epic"}}}
 			switch name {
+			case "local default":
+				host.target = "refs/heads/main"
 			case "remote-only default":
-				host.target = "origin/main"
-			case "branch lookup error":
-				host.target = "origin/main"
-				host.branchesErr = errors.New("branches unavailable")
+				host.target = "refs/remotes/origin/main"
 			case "local origin branch":
-				host.target = "origin/main"
+				host.target = "refs/heads/origin/main"
 				host.branches = []string{"origin/main"}
 			case "successor":
 				host.worktrees[0].Branch = "factory/epic-2"
@@ -91,7 +89,7 @@ func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
 			srv := New(nil, nil, "", registry, nil)
 			srv.hostRouter = hostsvc.NewRouter(host)
 			branch, target, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationWorkspace(t.Context(), "/repo", "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
-			if name == "shared" || name == "successor" || name == "remote-only default" || name == "local origin branch" {
+			if name == "shared" || name == "successor" || name == "local default" || name == "remote-only default" || name == "local origin branch" {
 				wantTarget := "main"
 				if name == "local origin branch" {
 					wantTarget = "origin/main"
@@ -211,7 +209,7 @@ func (h *factoryImplementationHost) ProjectUpstreams(context.Context, string) (*
 }
 
 func (h *factoryImplementationHost) GitBranches(context.Context, string) ([]string, error) {
-	return h.branches, h.branchesErr
+	return h.branches, nil
 }
 
 func (h *factoryImplementationHost) RemoteID() string {

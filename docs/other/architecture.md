@@ -551,6 +551,8 @@ flowchart TD
   list, and its verified default base ref to decide whether "New worktree"
   is offered. A repository without a usable base commit uses the current
   checkout, and automatic creation rejects it before launching OpenCode.
+  Named bases use fully qualified refs to avoid branch/tag name collisions;
+  Factory removes the exact namespace when recording a forge target branch.
   The machine selector
   re-points the route; the target selector changes client state. Neither
   creates a session, and the draft survives under the shared `new` key.

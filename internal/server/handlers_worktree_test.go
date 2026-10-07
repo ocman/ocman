@@ -187,8 +187,8 @@ func TestHandleWorktreeDefaultBaseRef(t *testing.T) {
 	}
 	// Fresh test repo with no remotes -> resolver falls back to the
 	// current branch ("main").
-	if body.BaseRef != "main" {
-		t.Errorf("baseRef = %q; want main", body.BaseRef)
+	if body.BaseRef != "refs/heads/main" {
+		t.Errorf("baseRef = %q; want refs/heads/main", body.BaseRef)
 	}
 }
 

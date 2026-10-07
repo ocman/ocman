@@ -51,7 +51,9 @@ owner's worktree list, and its verified default base ref. A directory already
 inside a linked worktree, a non-repository, or a repository without a usable
 base commit uses the current checkout. Base resolution keeps a remote-tracking
 default when its local branch is absent, then falls back to the current branch
-or detached HEAD; it never assumes `main` exists. The composer's machine selector only
+or detached HEAD; it never assumes `main` exists. Named bases use fully qualified
+refs to distinguish local branches from remote-tracking branches and tags.
+The composer's machine selector only
 re-points the route; the draft lives under the shared `new` key (`draftKey`
 prop) and survives. The first submission calls `POST /api/sessions/start`
 `{directory, remoteId, platform, worktree, title, prompt, send}`: an explicit

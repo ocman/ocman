@@ -13,9 +13,11 @@ func TestResolveBaseRefCreatesWorktree(t *testing.T) {
 		commands [][]string
 		want     string
 	}{
-		{"local default", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"checkout", "-b", "develop"}}, "main"},
-		{"remote-only default", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"branch", "-m", "develop"}}, "origin/main"},
-		{"stale remote HEAD", [][]string{{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing"}, {"branch", "-m", "develop"}}, "develop"},
+		{"remote default collides with local branch", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"branch", "-m", "origin/main"}}, "refs/remotes/origin/main"},
+		{"local branch collides with tag", [][]string{{"tag", "main"}}, "refs/heads/main"},
+		{"local default", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"checkout", "-b", "develop"}}, "refs/heads/main"},
+		{"remote-only default", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"branch", "-m", "develop"}}, "refs/remotes/origin/main"},
+		{"stale remote HEAD", [][]string{{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing"}, {"branch", "-m", "develop"}}, "refs/heads/develop"},
 		{"detached HEAD", [][]string{{"checkout", "--detach"}, {"branch", "-D", "main"}}, "HEAD"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -350,20 +350,21 @@ func classifyAddError(err error, output string) error {
 // ResolveBaseRef returns a verified base for new branches: the local default
 // branch, its remote-tracking ref, the current branch, then detached HEAD.
 // Empty means no usable commit is available (including an unborn repository).
+// Named refs are fully qualified so branch/tag collisions cannot change identity.
 func ResolveBaseRef(ctx context.Context, repoRoot string) string {
 	valid := func(ref string) bool {
 		return ref != "" && runGitOutput(ctx, repoRoot, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}") != ""
 	}
-	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); ref != "" {
-		local := strings.TrimPrefix(ref, "origin/")
-		if branchExists(ctx, repoRoot, local) && valid(local) {
+	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "refs/remotes/origin/HEAD"); ref != "" {
+		local := "refs/heads/" + strings.TrimPrefix(ref, "refs/remotes/origin/")
+		if valid(local) {
 			return local
 		}
 		if valid(ref) {
 			return ref
 		}
 	}
-	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "--short", "HEAD"); valid(ref) {
+	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "HEAD"); valid(ref) {
 		return ref
 	}
 	if valid("HEAD") {
