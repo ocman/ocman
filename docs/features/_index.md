@@ -27,6 +27,10 @@ runs, **waiting** when it finishes, **error** when it fails, and
 **interrupted** when the agent process stopped mid-turn (killed, crashed,
 machine rebooted) so the turn can never complete.
 
+An interruption makes the session unread even if you already read its latest
+output. The sidebar and project indicator highlight it until you view the
+interrupted session in a visible tab. That acknowledgement survives a reload.
+
 **Live composer.** Send messages, answer permission prompts, abort and compact
 a running session from the browser. Streaming output renders live. Plain
 <kbd>Enter</kbd> sends immediately, mid-turn included.

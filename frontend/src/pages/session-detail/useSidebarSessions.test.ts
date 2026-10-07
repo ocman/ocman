@@ -177,6 +177,42 @@ describe('useSidebarSessions live refresh', () => {
     expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
   });
 
+  it('preserves viewing an interruption after a list refresh starts', async () => {
+    const row = { id: 'crashed', platform: 'r-box:opencode', status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
+    let finish!: (value: Session[]) => void;
+    getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finish = resolve; }));
+    useApiStore.setState({ recentSessions: [row] });
+    const abortSignalRef = { current: new AbortController() };
+    const { result } = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    let loading!: Promise<void>;
+    act(() => { loading = result.current.loadRecentSessions(); });
+    act(() => useApiStore.getState().patchRecentSession(row.id, { seen: true }, row.platform));
+    await act(async () => { finish([row]); await loading; });
+    expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+  });
+
+  it('does not preserve a pre-crash busy read across an in-flight list refresh', async () => {
+    const row = { id: 'crashed', platform: 'opencode', status: 'busy', seen: true, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
+    let finish!: (value: Session[]) => void;
+    getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finish = resolve; }));
+    const peekSession = vi.fn(() => new Promise<SessionDetail>(() => {}));
+    useApiStore.setState({ recentSessions: [row], peekSession });
+    const abortSignalRef = { current: new AbortController() };
+    const { result } = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    let loading!: Promise<void>;
+    act(() => { loading = result.current.loadRecentSessions(); });
+    act(() => sessionChanged?.(row.id, undefined, { status: 'interrupted' }, row.platform));
+    expect(useApiStore.getState().recentSessions[0].seen).toBe(false);
+    await act(async () => { finish([{ ...row, status: 'interrupted', seen: false }]); await loading; });
+    expect(useApiStore.getState().recentSessions[0].seen).toBe(false);
+  });
+
   it('updates background activity without reordering or refetching and ignores older events', () => {
     useApiStore.setState({ recentSessions: [
       { id: 'first', timeCreated: 2, lastTurnCompletedAt: 120_000, timeUpdated: 120_000 },

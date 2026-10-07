@@ -128,6 +128,7 @@ export function useSidebarSessions({
   }, [id]);
 
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
+    const requestStart = useApiStore.getState().recentSessions;
     try {
       const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
       // /api/sessions can serialize a Go nil slice as JSON `null`;
@@ -157,6 +158,7 @@ export function useSidebarSessions({
         candidates,
         useApiStore.getState().recentSessions,
         id,
+        requestStart,
       );
 
       const hash = computeSidebarHash(merged);
@@ -203,7 +205,9 @@ export function useSidebarSessions({
       // Older unqualified events are safe only when the owner is unambiguous.
       if (patch && matches.length === 1) {
         const owner = matches[0].platform;
-        patchRecentSession(sessionID, patch, owner);
+        patchRecentSession(sessionID, { ...patch,
+          ...(patch.status === 'interrupted' && matches[0].status !== 'interrupted' ? { seen: false } : {}),
+        }, owner);
         // A terminal status patch carries no completion timestamp. Refresh
         // the durable row before promoting it; never rank by event arrival.
         if (!patch.status || patch.status === 'busy') return;

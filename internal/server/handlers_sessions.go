@@ -239,6 +239,8 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		detail.Session.Archived = row[0].Archived
+		detail.Session.Seen = row[0].Seen
+		detail.Session.SeenTimeUpdated = row[0].SeenTimeUpdated
 	} else if s.stateDB != nil && detail.Session != nil && !remote {
 		if err := s.stateDB.UnarchiveSession(r.Context(), string(adapter.ID()), sessionID); err != nil {
 			log.Printf("unarchiving session on open: %v", err)

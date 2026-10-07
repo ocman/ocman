@@ -115,14 +115,17 @@ export function mergeSidebarSessions(
   next: readonly Session[],
   current: readonly Session[],
   activeId?: string,
+  requestStart?: readonly Session[],
 ): Session[] {
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id && ls.platform === s.platform);
     if (!live) return unarchived;
+    const readDuringRequest = !!requestStart && live.status === 'interrupted'
+      && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform);
     return {
       ...unarchived,
-      seen: s.seen || (s.status !== 'interrupted' && live.seen && live.seenTimeUpdated >= s.timeUpdated),
+      seen: s.seen || ((s.status !== 'interrupted' || readDuringRequest) && live.seen && live.seenTimeUpdated >= s.timeUpdated),
       seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),
       timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),
       lastTurnCompletedAt: Math.max(live.lastTurnCompletedAt ?? 0, s.lastTurnCompletedAt ?? 0),

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,34 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
+
+func TestPeekReturnsInterruptionReadState(t *testing.T) {
+	for _, platform := range []string{"opencode", "r-box:opencode"} {
+		for _, acknowledged := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%t", platform, acknowledged), func(t *testing.T) {
+				srv, _ := newPeekTestServer(t, platform, db.StatusInterrupted)
+				if err := srv.stateDB.MarkSessionSeen(t.Context(), platform, "s1", 2000, acknowledged); err != nil {
+					t.Fatal(err)
+				}
+				if err := srv.stateDB.MarkSessionSeen(t.Context(), "other", "s1", 3000, !acknowledged); err != nil {
+					t.Fatal(err)
+				}
+				w := httptest.NewRecorder()
+				srv.handleSession(w, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1&platform="+platform, nil))
+				if w.Code != http.StatusOK {
+					t.Fatalf("peek: %d %s", w.Code, w.Body.String())
+				}
+				var body struct{ Session db.Session }
+				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if body.Session.Seen != acknowledged || body.Session.SeenTimeUpdated != 2000 {
+					t.Fatalf("peek read state: seen=%v updated=%d, want %v/2000", body.Session.Seen, body.Session.SeenTimeUpdated, acknowledged)
+				}
+			})
+		}
+	}
+}
 
 func TestInterruptedSessionBecomesUnreadWithoutNewActivity(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
