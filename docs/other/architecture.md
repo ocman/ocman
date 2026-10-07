@@ -585,19 +585,27 @@ flowchart TD
   Fresh user edits adopt an externally changed text revision while stale
   callbacks remain fenced. Pending images and browser Files live in a shared
   draft-keyed memory snapshot, restored after navigation and a failed start.
+  Attachment processing captures the initiating draft revision before asynchronous
+  image reads, so accepted batches survive navigation without reviving discarded
+  payloads. Relocation transfers that snapshot, including owner-local browser
+  Files in peer tabs, before clearing the retired identity.
   Retirement rechecks metadata/text after terminal persistence and copies late
   edits before deleting the old identity. Legacy text migration is one checked
   rename write; a quota error leaves the original available with an explicit retry.
-  Replacement text uses the same checked relocation; a failed relocation keeps
+  Replacement owner/selections must persist before checked text relocation;
+  a failed relocation keeps
   the completed claim and original draft with a safe retry. Validated terminal
   mirrors for the current attempt can be adopted and repaired by already-open
   peer tabs. Submitted model/agent/reasoning/target selections participate in
   retirement ownership, so changed selections are retained under a new identity.
+  The comparison captures the initiating composer's selections rather than
+  metadata changed by a peer before submission.
   Explicit metadata deletion invalidates autosave and recovery;
   unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.
   `PreparedDraftLifecycle` follows completed starts to their session and replaces
   an externally discarded identity before it can accept unsavable edits.
+  Its navigation guard remounts per draft identity, including browser Back visits.
   The first submission calls
   `POST /api/sessions/start`, which creates the session at the chosen target
   (an automatically named `session-<suffix>` worktree, or the current

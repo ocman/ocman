@@ -122,6 +122,69 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('retains peer selections changed before this composer submits its own selections', async () => {
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    await waitFor(() => expect(api.prepareSession).toHaveBeenCalled());
+    act(() => rememberConversationDraft({ draftId: 'first', directory: '/repo', agent: 'plan' }));
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submitted' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.startSession).mock.calls[0][0].send?.agent).not.toBe('plan');
+    await waitFor(() => expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.agent === 'plan' && draft.draftId !== 'first')).toBe(true));
+  });
+
+  it('transfers attachment payloads to a retained replacement', async () => {
+    const request = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValue(request.promise);
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['note'], 'retained.txt', { type: 'text/plain' })] } });
+    await screen.findByText('retained.txt');
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submitted' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    act(() => saveDraft('first', 'retained task'));
+    await act(async () => request.resolve(created));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('retained task'));
+    expect(screen.getByText('retained.txt')).toBeInTheDocument();
+  });
+
+  it('redirects again when Back revisits a replaced draft', async () => {
+    const request = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValue(request.promise);
+    function History() {
+      const navigate = useNavigate();
+      return <><button onClick={() => navigate(-1)}>Back</button><DraftWorkspace /></>;
+    }
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><History /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submitted' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    act(() => saveDraft('first', 'retained task'));
+    await act(async () => request.resolve(created));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('retained task'));
+    fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('retained task'));
+  });
+
+  it('retains a mixed drop when image reading finishes after navigation', async () => {
+    const callbacks: (() => void)[] = [];
+    const original = globalThis.FileReader;
+    class DelayedReader {
+      result = 'data:image/png;base64,bm90ZQ==';
+      onload: (() => void) | null = null;
+      readAsDataURL() { callbacks.push(() => this.onload?.()); }
+    }
+    vi.stubGlobal('FileReader', DelayedReader);
+    try {
+      render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+      fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['image'], 'late.png', { type: 'image/png' }), new File(['note'], 'mixed.txt', { type: 'text/plain' })] } });
+      fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
+      await act(async () => callbacks.forEach((finish) => finish()));
+      fireEvent.click(screen.getByRole('button', { name: /First/ }));
+      expect(await screen.findByText('mixed.txt')).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: 'Attachment 1' })).toBeInTheDocument();
+    } finally { vi.stubGlobal('FileReader', original); }
+  });
   it('preserves model/agent/reasoning/target edits made while the API request is unresolved', async () => {
     const request = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValue(request.promise);

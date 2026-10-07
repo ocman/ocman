@@ -4,7 +4,7 @@ import { discardDraft, getDraft, getDraftVersion, migrateDraft, saveDraft } from
 import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
 import { randomId } from './randomId';
 import { remoteLog } from './remoteLog';
-import { forgetDraftAttachments } from './pendingDraftPayloads';
+import { forgetDraftAttachments, transferDraftAttachments } from './pendingDraftPayloads';
 
 const STORAGE_PREFIX = 'ocman.newConversationDrafts.v1:';
 const START_PREFIX = 'ocman.newConversationStarts.v1:';
@@ -89,6 +89,7 @@ export async function reconcileConversationStart(draftId: string, hint?: DraftSt
     start = await persistDraftStart(draftId, repaired);
   }
   if (start?.error && start.version === getDraftVersion(draftId) && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
+  if (start?.replacementDraftId) transferDraftAttachments(draftId, start.replacementDraftId);
   if (JSON.stringify(start) === JSON.stringify(before)) return;
   useNewConversationDrafts.setState((state) => {
     const starts = { ...state.starts };
@@ -119,12 +120,11 @@ export async function completeConversationStart(draftId: string, createdSession:
   const saved = getConversationDraft(draftId);
   if (!retire && saved) {
     replacementDraftId = randomId();
-    if (!migrateDraft(draftId, replacementDraftId)) {
+    if (!relocateRetainedDraft(draftId, replacementDraftId, saved)) {
       await saveTerminalStart(draftId, { ...starts[draftId], sessionId: createdSession.sessionId, createdSession,
         pendingReplacementId: replacementDraftId, relocationError: 'Could not preserve the retained draft. Free browser storage and retry.' });
       return;
     }
-    rememberConversationDraft({ ...saved, draftId: replacementDraftId });
     before = snapshot();
   }
   const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '' };
@@ -134,12 +134,11 @@ export async function completeConversationStart(draftId: string, createdSession:
   const latest = getConversationDraft(draftId);
   if (latest && snapshot() !== before) {
     replacementDraftId = randomId();
-    if (!migrateDraft(draftId, replacementDraftId)) {
+    if (!relocateRetainedDraft(draftId, replacementDraftId, latest)) {
       await saveTerminalStart(draftId, { ...useNewConversationDrafts.getState().starts[draftId],
         pendingReplacementId: replacementDraftId, relocationError: 'Could not preserve the retained draft. Free browser storage and retry.' });
       return;
     }
-    rememberConversationDraft({ ...latest, draftId: replacementDraftId });
     publishStart(draftId, { ...useNewConversationDrafts.getState().starts[draftId], replacementDraftId });
   }
   forgetConversationDraft(draftId);
@@ -153,10 +152,20 @@ export async function retryDraftRelocation(draftId: string) {
   const saved = getConversationDraft(draftId);
   const target = receipt?.pendingReplacementId;
   if (!receipt || !saved || !target) return;
-  if (!migrateDraft(draftId, target)) throw new Error(receipt.relocationError);
-  rememberConversationDraft({ ...saved, draftId: target });
+  if (!relocateRetainedDraft(draftId, target, saved)) throw new Error(receipt.relocationError);
   forgetConversationDraft(draftId);
   await saveTerminalStart(draftId, { ...receipt, relocationError: undefined, pendingReplacementId: undefined, replacementDraftId: target, text: '' });
+}
+
+function relocateRetainedDraft(from: string, to: string, saved: ConversationDraft) {
+  // Write durable owner/selections before moving text or retiring its recoverable source.
+  if (!rememberConversationDraft({ ...saved, draftId: to })) {
+    forgetConversationDraft(to);
+    return false;
+  }
+  if (!migrateDraft(from, to)) { forgetConversationDraft(to); return false; }
+  transferDraftAttachments(from, to);
+  return true;
 }
 
 async function saveTerminalStart(draftId: string, start: DraftStart) {
@@ -194,18 +203,27 @@ function save(draftId: string, draft?: ConversationDraft) {
     } catch { /* Keep live metadata and retry writes on the next mutation. */ }
   }
   useNewConversationDrafts.setState({ drafts: currentDrafts() });
+  return !pendingWrites.has(draftId);
 }
 
 export function rememberConversationDraft(params: ConversationDraft) {
   const drafts = currentDrafts();
   const existing = drafts.find((draft) => draft.draftId === params.draftId);
-  save(params.draftId, { ...existing, ...params, createdAt: existing?.createdAt || Date.now() });
+  return save(params.draftId, { ...existing, ...params, createdAt: existing?.createdAt || Date.now() });
 }
 
 export function forgetConversationDraft(draftId: string) {
   save(draftId);
   discardDraft(draftId);
   forgetDraftAttachments(draftId);
+}
+
+function retirePeerDraft(draftId: string) {
+  discardDraft(draftId);
+  const replacement = useNewConversationDrafts.getState().starts[draftId]?.replacementDraftId;
+  if (replacement) transferDraftAttachments(draftId, replacement);
+  // Reconcile the completed receipt before deleting this tab's retained browser Files.
+  void reconcileConversationStart(draftId).then(() => forgetDraftAttachments(draftId)).catch(() => undefined);
 }
 
 if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
@@ -227,11 +245,10 @@ if (typeof window !== 'undefined') window.addEventListener('storage', (event) =>
   // Only an explicit per-draft deletion (or clear) invalidates text; an unrelated write cannot discard it.
   if (event.key && event.newValue === null && !drafts.some((draft) => STORAGE_PREFIX + draft.draftId === event.key)) {
     const id = event.key.slice(STORAGE_PREFIX.length);
-    discardDraft(id);
-    forgetDraftAttachments(id);
+    retirePeerDraft(id);
   }
   if (event.key === null) for (const old of useNewConversationDrafts.getState().drafts) {
-    if (!drafts.some((draft) => draft.draftId === old.draftId)) { discardDraft(old.draftId); forgetDraftAttachments(old.draftId); }
+    if (!drafts.some((draft) => draft.draftId === old.draftId)) retirePeerDraft(old.draftId);
   }
   useNewConversationDrafts.setState({ drafts: currentDrafts() });
 });

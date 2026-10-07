@@ -31,13 +31,15 @@ function readFileAsDataURL(file: File): Promise<string> {
  * and referenced by path in the prompt text.
  */
 export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined, platform?: string,
-  initial?: { images: AttachedImage[]; files: AttachedFileRef[] }) {
+  initial?: { images: AttachedImage[]; files: AttachedFileRef[] },
+  onProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void) {
   const [images, setImages] = useState<AttachedImage[]>(initial?.images || []);
   const [files, setFiles] = useState<AttachedFileRef[]>(initial?.files || []);
   const [pending, setPending] = useState(0);
 
   const addFiles = useCallback(async (all: File[]) => {
     if (disabled) return;
+    const publish = onProcessing?.();
     setPending((count) => count + 1);
     try {
       const imageFiles = all.filter((f) => f.type.startsWith('image/'));
@@ -53,10 +55,12 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
       if (newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
 
       const otherFiles = all.filter((f) => !f.type.startsWith('image/'));
-      if (otherFiles.length === 0) return;
+      if (otherFiles.length === 0) { publish?.({ images: newImages, files: [] }); return; }
       const sid = sessionIdRef.current;
       if (!sid) {
-        setFiles((prev) => [...prev, ...otherFiles.map((file) => ({ path: '', name: file.name, mime: file.type || 'application/octet-stream', file }))]);
+        const deferred = otherFiles.map((file) => ({ path: '', name: file.name, mime: file.type || 'application/octet-stream', file }));
+        publish?.({ images: newImages, files: deferred });
+        setFiles((prev) => [...prev, ...deferred]);
         return;
       }
       const newFiles: AttachedFileRef[] = [];
@@ -73,10 +77,11 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
         }
       }
       if (newFiles.length > 0) setFiles((prev) => [...prev, ...newFiles]);
+      publish?.({ images: newImages, files: newFiles });
     } finally {
       setPending((count) => count - 1);
     }
-  }, [sessionIdRef, disabled, platform]);
+  }, [sessionIdRef, disabled, platform, onProcessing]);
 
   const removeImage = useCallback((index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));

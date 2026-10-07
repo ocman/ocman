@@ -35,7 +35,7 @@ import { sendFirstFiles } from './sendFirstFiles';
 import { StartProgress, type StartSteps } from './StartProgress';
 import { startHandoffs, startModels } from './startHandoffs';
 import { PreparedDraftLifecycle } from './PreparedDraftLifecycle';
-import { getPendingDraftPayload, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
+import { getPendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -59,7 +59,7 @@ function resolveTarget(target: SessionTarget, canWorktree: boolean, worktrees: {
 }
 
 export function NewConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
-  return <PreparedDraftLifecycle params={params} navigate={navigate} navigateToSession={navigateToSession}>
+  return <PreparedDraftLifecycle key={params.draftId || NEW_SESSION_ID} params={params} navigate={navigate} navigateToSession={navigateToSession}>
     <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params} whisperAvailable={whisperAvailable}
       composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />
   </PreparedDraftLifecycle>;
@@ -261,7 +261,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
       const { send, execute, model } = build(ready);
-      submittedSelections = selections();
+      submittedSelections = JSON.stringify([selectedModel, selectedAgent, selectedReasoning, target]);
       const startTarget = resolveTarget(target, ready.canWorktree, ready.worktrees);
       const res = await api.startSession({
         directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,
@@ -302,7 +302,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, target, seedNewSession, draftId]);
+  }, [directory, remoteId, title, routeKey, target, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     rememberPendingDraftPayload(draftId, images, files);
@@ -358,6 +358,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
           key={`${routeKey}:${recoveryKey}`}
           composerRef={composerRef}
           initialAttachments={getPendingDraftPayload(draftId)}
+          onAttachmentProcessing={() => pendingAttachmentWriter(draftId)}
           onAttachmentsChange={(payload) => { if (getConversationDraft(draftId)) updateDraftAttachments(draftId, payload); }}
           onSend={onSend}
           onCommand={onCommand}

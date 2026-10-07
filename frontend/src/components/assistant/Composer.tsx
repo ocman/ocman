@@ -30,7 +30,7 @@ export function Composer({
   onAbort, isRunning, disabled, whisperAvailable, models, modelEntries,
   selectedModel, onModelChange, onToggleFavorite, onRefreshModels, activeAgent,
   selectedAgent, onAgentChange, agents, agentsLoaded, commands, contextTokens,
-  activeDurationMs, timeCreated, durationMs, sessionId, platform, draftKey: draftKeyProp, tokensPerSecond, initialAttachments, onAttachmentsChange,
+  activeDurationMs, timeCreated, durationMs, sessionId, platform, draftKey: draftKeyProp, tokensPerSecond, initialAttachments, onAttachmentsChange, onAttachmentProcessing,
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
   worktreesSupported, worktrees, permissionControl, composerRef, target, onTargetChange,
@@ -51,7 +51,7 @@ export function Composer({
   const inFlightRef = useRef<string | null>(null);
   const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, inFlightRef);
   const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
-  const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine, platform, initialAttachments);
+  const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine, platform, initialAttachments, onAttachmentProcessing);
   const { images, files } = attachments;
   useEffect(() => { onAttachmentsChange?.({ images, files }); }, [images, files, onAttachmentsChange]);
 

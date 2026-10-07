@@ -28,6 +28,7 @@ export interface ComposerProps {
   disabledHint?: string;
   initialAttachments?: { images: AttachedImage[]; files: AttachedFileRef[] };
   onAttachmentsChange?: (payload: { images: AttachedImage[]; files: AttachedFileRef[] }) => void;
+  onAttachmentProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void;
   whisperAvailable?: boolean;
   models?: string[];
   modelEntries?: SessionModelEntry[];

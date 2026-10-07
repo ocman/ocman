@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
+import { waitFor } from '@testing-library/react';
+import { getPendingDraftPayload, updateDraftAttachments } from './pendingDraftPayloads';
 import { getDraft, saveDraft } from './composerDraft';
 import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
 vi.mock('./draftStartClaims', () => ({
@@ -12,6 +14,18 @@ beforeEach(() => {
   localStorage.clear();
   window.dispatchEvent(new StorageEvent('storage', { key: null }));
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
+});
+
+it('transfers peer-local attachments when another tab retires a replaced draft', async () => {
+  rememberConversationDraft({ draftId: 'peer-source', directory: '/repo' });
+  rememberConversationDraft({ draftId: 'peer-replacement', directory: '/repo' });
+  const payload = { images: [], files: [{ path: '', name: 'peer.txt', mime: 'text/plain', file: new File(['note'], 'peer.txt') }] };
+  updateDraftAttachments('peer-source', payload);
+  useNewConversationDrafts.setState({ starts: { 'peer-source': { version: 0, text: '', sessionId: 'created', replacementDraftId: 'peer-replacement' } } });
+  localStorage.removeItem('ocman.newConversationDrafts.v1:peer-source');
+  window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:peer-source', newValue: null }));
+  await waitFor(() => expect(getPendingDraftPayload('peer-replacement')).toEqual(payload));
+  expect(getPendingDraftPayload('peer-source')).toBeUndefined();
 });
 
 it('persists independent targets and selections and only discards the selected draft', async () => {
@@ -206,6 +220,30 @@ it('retains the source when replacement relocation fails at quota', async () => 
     const target = useNewConversationDrafts.getState().starts['quota-copy'].replacementDraftId!;
     expect(getDraft(target)).toBe('only retained copy');
     expect(getDraft('quota-copy')).toBe('');
+  } finally { write.mockRestore(); }
+});
+
+it('does not retire the source when replacement metadata cannot be persisted', async () => {
+  rememberConversationDraft({ draftId: 'metadata-quota', directory: '/repo', remoteId: 'box', agent: 'plan' });
+  saveDraft('metadata-quota', 'recoverable source');
+  const payload = { images: [], files: [{ path: '', name: 'retry.txt', mime: 'text/plain', file: new File(['note'], 'retry.txt') }] };
+  updateDraftAttachments('metadata-quota', payload);
+  useNewConversationDrafts.setState({ starts: { 'metadata-quota': { version: 0, text: 'submitted' } } });
+  const original = Storage.prototype.setItem;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (key.startsWith('ocman.newConversationDrafts.v1:') && key !== 'ocman.newConversationDrafts.v1:metadata-quota') throw new Error('metadata quota');
+    original.call(this, key, value);
+  });
+  try {
+    await completeConversationStart('metadata-quota', { sessionId: 'created', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo' }, false);
+    expect(getDraft('metadata-quota')).toBe('recoverable source');
+    expect(localStorage.getItem('ocman.newConversationDrafts.v1:metadata-quota')).not.toBeNull();
+    write.mockRestore();
+    await retryDraftRelocation('metadata-quota');
+    const target = useNewConversationDrafts.getState().starts['metadata-quota'].replacementDraftId!;
+    expect(JSON.parse(localStorage.getItem(`ocman.newConversationDrafts.v1:${target}`)!)).toMatchObject({ remoteId: 'box', agent: 'plan', directory: '/repo' });
+    expect(getDraft(target)).toBe('recoverable source');
+    expect(getPendingDraftPayload(target)).toEqual(payload);
   } finally { write.mockRestore(); }
 });
 
