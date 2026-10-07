@@ -8,7 +8,7 @@ import (
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
 // v102 adds viewer-scoped Inbox item pins.
-const latestSchemaVersion = 111
+const latestSchemaVersion = 112
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -331,6 +331,12 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "webhook_delivery", "query_json", "TEXT NOT NULL DEFAULT ''")
+	case 112:
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='seen_session')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		return addColumnIfMissing(tx, "seen_session", "interrupted", "INTEGER NOT NULL DEFAULT 0")
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

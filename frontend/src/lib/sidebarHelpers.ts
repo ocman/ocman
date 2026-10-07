@@ -122,7 +122,7 @@ export function mergeSidebarSessions(
     if (!live) return unarchived;
     return {
       ...unarchived,
-      seen: s.seen || (live.seen && live.seenTimeUpdated >= s.timeUpdated),
+      seen: s.seen || (s.status !== 'interrupted' && live.seen && live.seenTimeUpdated >= s.timeUpdated),
       seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),
       timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),
       lastTurnCompletedAt: Math.max(live.lastTurnCompletedAt ?? 0, s.lastTurnCompletedAt ?? 0),
@@ -188,7 +188,7 @@ export function pickNextSessionAfterArchive(
  *
  * Priority:
  *   1. `pending` — any session has an unanswered prompt.
- *   2. `error`   — any unseen errored session.
+ *   2. `error`   — any unseen errored or interrupted session.
  *   3. `busy`    — any session is actively running.
  *   4. `waiting` — any unseen waiting session.
  *   5. `none`    — nothing notable.
@@ -218,7 +218,7 @@ export function rollupGroupStatus(
       continue;
     }
     const status = effectiveStatusOf(s);
-    if (status === 'error' && !s.seen) {
+    if ((status === 'error' || status === 'interrupted') && !s.seen) {
       error += 1;
       continue;
     }

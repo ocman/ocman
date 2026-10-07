@@ -37,6 +37,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
+  const sessionSeenInterrupted = session?.status === 'interrupted';
   const lastMarked = useRef(0);
   const openedIdentity = useRef('');
   const pendingMark = useRef<(() => void) | null>(null);
@@ -44,12 +45,15 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     if (document.hidden) return;
     lastMarked.current = updated;
     patchRecentSession(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false } : {}) });
-    void markSessionSeen(platform, id, updated)
+    const request = sessionSeenInterrupted
+      ? markSessionSeen(platform, id, updated, true)
+      : markSessionSeen(platform, id, updated);
+    void request
       .then(() => {
         recheckFaviconNotify();
       })
       .catch((err) => remoteLog.error('Failed to mark session seen', err));
-  }, [markSessionSeen, patchRecentSession]);
+  }, [markSessionSeen, patchRecentSession, sessionSeenInterrupted]);
 
   useEffect(() => {
     if (!visible || !sessionSeenId || !sessionSeenPlatform) return;
@@ -66,7 +70,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     };
   // Entry bookkeeping runs once per identity, not on every streamed update.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionSeenId, sessionSeenPlatform, visible]);
+  }, [sessionSeenId, sessionSeenPlatform, sessionSeenInterrupted, visible]);
 
   // The entry can come from cache. Coalesce newer authoritative/streamed
   // timestamps so its stale watermark does not leave the open session unread.

@@ -53,6 +53,16 @@ describe('useSessionSeen', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('acknowledges an interruption while visible even when its timestamp is unchanged', () => {
+    const { rerender } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession: vi.fn() }),
+      { wrapper, initialProps: { value: { ...session, status: 'busy' } as SessionMetadata } },
+    );
+    rerender({ value: { ...session, status: 'interrupted' } });
+    expect(markSessionSeen).toHaveBeenCalledTimes(2);
+    expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 42, true);
+  });
+
   it('does not acknowledge content while hidden, and marks the latest content when visible', async () => {
     vi.useFakeTimers();
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);

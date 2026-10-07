@@ -37,6 +37,17 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('filterInactiveChildren', () => {
+  it('keeps an interrupted session unread despite an identical live read watermark', () => {
+    const current = [makeSession({ status: 'interrupted', seen: true, timeUpdated: 100, seenTimeUpdated: 100 })];
+    const next = [makeSession({ status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 100 })];
+    expect(mergeSidebarSessions(next, current)[0].seen).toBe(false);
+  });
+
+  it('includes unseen interruptions in the project attention indicator', () => {
+    expect(rollupGroupStatus([makeSession({ status: 'interrupted', seen: false })])).toEqual({ kind: 'error', count: 1 });
+    expect(rollupGroupStatus([makeSession({ status: 'interrupted', seen: true })])).toEqual({ kind: 'none' });
+  });
+
   it('drops a child whose parent is not in the list', () => {
     const sessions = [
       makeSession({ id: 'top' }),

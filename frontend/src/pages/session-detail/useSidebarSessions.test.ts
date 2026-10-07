@@ -17,7 +17,7 @@ vi.hoisted(() => {
   });
 });
 
-import type { Session } from '../../lib/api';
+import type { Session, SessionDetail } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { computeSidebarHash, visibleSidebarSessions } from '../../lib/sidebarHelpers';
@@ -145,6 +145,36 @@ describe('useSidebarSessions live refresh', () => {
       recentSessions: [{ id: 'session-1', status: 'done' } as Session],
       recentSessionsHash: '',
     });
+  });
+
+  it('refreshes unread state immediately after a crash status event', async () => {
+    const busy = { id: 'crashed', platform: 'opencode', status: 'busy', seen: true, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
+    const interrupted = { ...busy, status: 'interrupted', seen: false } as Session;
+    useApiStore.setState({ recentSessions: [busy], peekSession: vi.fn().mockResolvedValue({ session: interrupted }) });
+    const abortSignalRef = { current: new AbortController() };
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    await act(async () => sessionChanged?.('crashed', undefined, { status: 'interrupted' }, 'opencode'));
+    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ status: 'interrupted', seen: false });
+  });
+
+  it('does not undo viewing an interruption while its status refresh is in flight', async () => {
+    const busy = { id: 'crashed', platform: 'opencode', status: 'busy', seen: true, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
+    const interrupted = { ...busy, status: 'interrupted', seen: false } as Session;
+    let finish!: (value: SessionDetail) => void;
+    const peekSession = vi.fn(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+    useApiStore.setState({ recentSessions: [busy], peekSession });
+    const abortSignalRef = { current: new AbortController() };
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    act(() => sessionChanged?.('crashed', undefined, { status: 'interrupted' }, 'opencode'));
+    act(() => useApiStore.getState().patchRecentSession('crashed', { seen: true }, 'opencode'));
+    await act(async () => finish({ session: interrupted, messages: [], parts: [] }));
+    expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
   });
 
   it('updates background activity without reordering or refetching and ignores older events', () => {

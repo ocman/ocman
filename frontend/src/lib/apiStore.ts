@@ -121,7 +121,7 @@ type ApiStore = {
   getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
   archiveProject: (directory: string, archived?: boolean, remoteId?: string) => Promise<{ ok: boolean }>;
-  markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
+  markSessionSeen: (platform: string, sessionId: string, timeUpdated: number, interrupted?: boolean) => Promise<{ ok: boolean }>;
   pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
@@ -353,7 +353,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   archiveProject: (directory, archived = true, remoteId) => get().runRequest(`project:archive:${remoteId ?? 'local'}:${directory}`, () => api.archiveProject(directory, archived, remoteId)),
-  markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
+  markSessionSeen: (platform, sessionId, timeUpdated, interrupted) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated, interrupted)),
   pinSession: (platform, sessionId, pinned) => get().runRequest(`session:pin:${sessionId}`, () => api.pinSession(platform, sessionId, pinned)),
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),

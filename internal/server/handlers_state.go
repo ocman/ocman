@@ -52,6 +52,7 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 		Platform           string `json:"platform"`
 		SessionID          string `json:"sessionId"`
 		SessionTimeUpdated int64  `json:"timeUpdated"`
+		Interrupted        bool   `json:"interrupted"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
@@ -65,7 +66,7 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.stateDB.MarkSessionSeen(r.Context(), platform, req.SessionID, req.SessionTimeUpdated); err != nil {
+	if err := s.stateDB.MarkSessionSeen(r.Context(), platform, req.SessionID, req.SessionTimeUpdated, req.Interrupted); err != nil {
 		serverError(w, "updating seen session state", err)
 		return
 	}
@@ -188,7 +189,7 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 	if err != nil {
 		return err
 	}
-	seen, err := s.stateDB.SeenSessions(ctx)
+	seen, err := s.stateDB.SeenSessionStates(ctx)
 	if err != nil {
 		return err
 	}
@@ -221,10 +222,11 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 
 		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
 
-		seenAtUpdate, ok := seen[key]
+		seenState, ok := seen[key]
+		seenAtUpdate := seenState.TimeUpdated
 		if ok {
 			sessions[i].SeenTimeUpdated = seenAtUpdate
-			if seenAtUpdate >= sessions[i].TimeUpdated {
+			if seenAtUpdate >= sessions[i].TimeUpdated && (sessions[i].Status != db.StatusInterrupted || seenState.Interrupted) {
 				sessions[i].Seen = true
 			}
 		}
@@ -304,7 +306,7 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 	if err != nil {
 		return err
 	}
-	seen, err := s.stateDB.SeenSessions(ctx)
+	seen, err := s.stateDB.SeenSessionStates(ctx)
 	if err != nil {
 		return err
 	}
@@ -316,9 +318,10 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 	for i := range sessions {
 		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
 
-		if seenAtUpdate, ok := seen[key]; ok {
+		if seenState, ok := seen[key]; ok {
+			seenAtUpdate := seenState.TimeUpdated
 			sessions[i].SeenTimeUpdated = seenAtUpdate
-			if seenAtUpdate >= sessions[i].TimeUpdated {
+			if seenAtUpdate >= sessions[i].TimeUpdated && (sessions[i].Status != db.StatusInterrupted || seenState.Interrupted) {
 				sessions[i].Seen = true
 			}
 		}

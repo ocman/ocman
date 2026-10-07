@@ -120,7 +120,7 @@ type notifyEntry struct {
 // returned:
 //
 //   - any session with a pending permission or question prompt
-//   - sessions whose status is "waiting" or "error" and that haven't
+//   - sessions whose status is "waiting", "error" or "interrupted" and that haven't
 //     been seen
 //
 // Everything else is filtered out server-side so the response stays
@@ -146,7 +146,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 		deferredPermission := se.PendingPermission && s.deferPermissionNotification(ctx, se)
 		pendingPermission := se.PendingPermission && !deferredPermission
 		hasPrompt := pendingPermission || se.PendingQuestion
-		isUnseenTerminal := (se.Status == db.StatusError || (se.Status == db.StatusWaiting && !deferredPermission)) && !se.Seen
+		isUnseenTerminal := (se.Status == db.StatusError || se.Status == db.StatusInterrupted || (se.Status == db.StatusWaiting && !deferredPermission)) && !se.Seen
 		if !hasPrompt && !isUnseenTerminal {
 			continue
 		}

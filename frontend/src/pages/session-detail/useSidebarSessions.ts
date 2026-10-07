@@ -207,10 +207,12 @@ export function useSidebarSessions({
         // A terminal status patch carries no completion timestamp. Refresh
         // the durable row before promoting it; never rank by event arrival.
         if (!patch.status || patch.status === 'busy') return;
+        const statusRow = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
         peekSession(sessionID, abortSignalRef.current?.signal, owner).then(({ session: row }) => {
           if (!subscribed || row.id !== sessionID || row.platform !== owner) return;
           const current = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
-          patchRecentSession(sessionID, { lastTurnCompletedAt: Math.max(
+          // A local read made during the fetch wins over its stale acknowledgement.
+          patchRecentSession(sessionID, { ...(row.status === 'interrupted' && current === statusRow ? { seen: row.seen, seenTimeUpdated: row.seenTimeUpdated } : {}), lastTurnCompletedAt: Math.max(
             row.lastTurnCompletedAt ?? 0, current?.lastTurnCompletedAt ?? 0,
           ) }, owner);
         }).catch((err) => remoteLog.error('Failed to refresh completed session', err));

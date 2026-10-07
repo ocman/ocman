@@ -45,6 +45,20 @@ function resetCache() {
   useApiStore.setState({ sessionCache: new Map(), sessionCacheOrder: [] });
 }
 
+describe('interruption read acknowledgement', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([true, false])('sends only the interruption state actually viewed: %s', async (interrupted) => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    await useApiStore.getState().markSessionSeen('r-owner:opencode', 's', 100, interrupted);
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      platform: 'r-owner:opencode', sessionId: 's', timeUpdated: 100,
+      ...(interrupted ? { interrupted: true } : {}),
+    });
+  });
+});
+
 describe('session cache', () => {
   beforeEach(resetCache);
 
