@@ -81,6 +81,23 @@ describe('epic models', () => {
 		expect(postJSON).toHaveBeenCalledWith('/api/factory/epics/epic%2F1/models', { plan: 'p/fable', implementation: 'spark/qwen-flash' });
 	});
 
+	it.each(['/repo', '/history'])('preserves live names when %s is the first project', async (initialProject) => {
+		const model = { provider: 'spark', model: 'qwen-flash' };
+		vi.mocked(api.prepareSession).mockImplementation(async ({ directory }) => ({ ...catalog, models: {
+			hasProviders: directory === '/repo',
+			models: [directory === '/repo' ? { ...model, providerName: 'NVIDIA Spark', modelName: 'Qwen3.8 Flash Next NVFP4 256K (Spark)' } : model],
+		} }));
+		mount(<FactoryEpicModels epic={{ ...epic, initialProject, projects: [{ path: '/repo', removable: false }, { path: '/history', removable: true }] }} />);
+		const user = userEvent.setup();
+		await user.click(screen.getByRole('combobox', { name: 'Planning model' }));
+		await user.keyboard('Qwen3.8 Flash Next NVFP4 256K (Spark)');
+		expect(await screen.findByRole('option', { name: 'spark/qwen-flash' })).toBeInTheDocument();
+		await user.clear(screen.getByRole('textbox', { name: 'Search models' }));
+		await user.keyboard('NVIDIA Spark');
+		await user.click(screen.getByRole('option', { name: 'spark/qwen-flash' }));
+		expect(postJSON).toHaveBeenCalledWith('/api/factory/epics/epic%2F1/models', { plan: 'spark/qwen-flash' });
+	});
+
 	it('locks the approval picker to the epic implementation model', () => {
 		function Probe() {
 			const { model, locked } = useFactoryImplementationModel({ ...epic, planGate: { issueId: 'g', proposalRevision: 1, proposalHash: 'h', resolution: 'open' }, models: { implementation: 'p/sol' } } as FactoryEpicWithModels);

@@ -22,7 +22,13 @@ export function useFactoryEpicModels(epic?: FactoryEpicWithModels) {
 	})) });
 	// Availability is project-specific; this union is for selection, not a guarantee for every project.
 	const allEntries = catalogs.flatMap((catalog) => availabilityUnknown(catalog.data?.models.models ?? []));
-	const entries = [...new Map(allEntries.map((entry): [string, SessionModelEntry] => [`${entry.provider}/${entry.model}`, entry])).values()];
+	const merged = new Map<string, SessionModelEntry>();
+	for (const entry of allEntries) {
+		const key = `${entry.provider}/${entry.model}`;
+		const previous = merged.get(key);
+		merged.set(key, { ...entry, modelName: entry.modelName || previous?.modelName, providerName: entry.providerName || previous?.providerName });
+	}
+	const entries = [...merged.values()];
 	const save = useMutation({
 		mutationFn: (models: FactoryEpicModels) => postJSON<FactoryEpicModels, FactoryEpicModels>(`/api/factory/epics/${encodeURIComponent(epic!.id)}/models`, models),
 		onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics'] }),
