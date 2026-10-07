@@ -1,0 +1,4 @@
+.titleCell { min-width: 240px; }
+.title { color: var(--text); font-weight: 600; text-decoration: none; }
+.title:hover { color: var(--accent); }
+.muted { color: var(--text-dim); }

@@ -1,0 +1,11 @@
+.page { flex: 1; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; color: var(--text); background: var(--bg); }
+.page > button { justify-self: start; }
+.header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; }
+.stats { margin: 0; color: var(--text-dim); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.search { width: 240px; }
+.project { max-width: 280px; }
+@media (max-width: 700px) {
+  .filters { width: 100%; }
+  .search, .project { width: 100%; max-width: none; }
+}

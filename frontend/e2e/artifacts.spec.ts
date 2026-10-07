@@ -33,6 +33,41 @@ test('browses, previews and deletes an artifact', async ({ mockedPage: page }) =
 });
 
 for (const width of [1280, 390]) {
+  test(`artifact list filters, retry and table fit at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    let failed = true;
+    const queries: URLSearchParams[] = [];
+    const release = { ...artifact, id: 'release', title: 'Release report with deployment checks and follow-up notes for the next build' };
+    await page.route('/api/artifacts/stats', route => route.fulfill({ json: { count: 2, totalBytes: 22 } }));
+    await page.route(/\/api\/artifacts(\?.*)?$/, route => {
+      const query = new URL(route.request().url()).searchParams;
+      queries.push(query);
+      if (failed) return route.fulfill({ status: 503, contentType: 'text/plain', body: 'Could not load artifact list.' });
+      return route.fulfill({ json: { artifacts: query.get('q') ? [release] : [artifact, release], nextCursor: '' } });
+    });
+    await page.goto('/artifacts');
+    await expect(page.getByRole('alert')).toContainText('Could not load artifact list');
+    await expect(page.getByText('No artifacts yet.')).toHaveCount(0);
+    failed = false;
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page.getByRole('link', { name: 'Build report', exact: true })).toBeVisible();
+    const project = page.getByRole('combobox', { name: 'Project', exact: true });
+    const search = page.getByRole('searchbox', { name: 'Search artifacts', exact: true });
+    if (width === 390) {
+      expect((await project.boundingBox())!.width).toBeGreaterThan(340);
+      expect((await search.boundingBox())!.width).toBeGreaterThan(340);
+      expect((await page.getByRole('cell', { name: release.title, exact: true }).boundingBox())!.width).toBeGreaterThanOrEqual(240);
+    }
+    expect(await page.getByRole('main').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await project.selectOption(artifact.directory);
+    await expect.poll(() => queries.at(-1)!.get('directory')).toBe(artifact.directory);
+    await search.fill('release');
+    await expect.poll(() => queries.at(-1)!.get('q')).toBe('release');
+    await expect(page.getByRole('link', { name: 'Build report', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: release.title, exact: true })).toBeVisible();
+    expect(queries.at(-1)!.get('directory')).toBe(artifact.directory);
+  });
+
   test(`artifact content owns responsive previews and file actions at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
     const filename = 'release-build-output-with-a-long-file-name-and-deployment-check-results.txt';

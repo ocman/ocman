@@ -4,11 +4,6 @@
 .artifact-header p { margin: 0; color: var(--text-dim); }
 .artifact-header h2 { margin: 0 0 4px; }
 .artifact-header p a { color: inherit; }
-.artifact-filters { display: flex; flex-wrap: wrap; gap: 8px; }
-.artifact-filters .oc-field--search { width: 240px; }
-.artifact-filters select.oc-field { max-width: 280px; }
-.artifact-table .artifact-title { color: var(--text); font-weight: 600; text-decoration: none; }
-.artifact-table .artifact-title:hover { color: var(--accent); }
 .artifact-muted { color: var(--text-dim); }
 .artifact-error { color: var(--danger); }
 .artifact-share-section { display: grid; gap: 6px; }
