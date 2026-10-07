@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, type FactoryEpic } from '../lib/api';
+import { availabilityUnknown } from '../lib/modelCatalogCache';
 import type { FactoryEpicWithModels } from './useFactoryEpicModels';
 
 export function implementationModelTier(model: string) {
@@ -20,7 +21,9 @@ export function useFactoryImplementationModel(epic?: FactoryEpic) {
 		staleTime: 60_000,
 		retry: false,
 	});
-	const entries = (catalog.data?.models ?? []).filter((model) => !catalog.data?.hasProviders || model.isAvailable !== false);
+	const entries = catalog.data?.hasProviders
+		? catalog.data.models.filter((model) => model.isAvailable !== false)
+		: availabilityUnknown(catalog.data?.models ?? []);
 	const models = entries.map((model) => `${model.provider}/${model.model}`);
 	const suggested = models.find((model) => implementationModelTier(model) === 'Balanced') ?? models.find((model) => implementationModelTier(model) === 'Fast') ?? '';
 	const [selection, setSelection] = useState<{ gate: string; model: string }>();

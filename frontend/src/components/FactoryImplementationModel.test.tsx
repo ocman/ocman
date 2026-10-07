@@ -52,6 +52,8 @@ describe('implementation model choice', () => {
 		await waitFor(() => expect(picker()).toHaveTextContent('p/sol'));
 		await userEvent.setup().click(picker());
 		expect(screen.getByRole('option', { name: /sol/ })).toBeInTheDocument();
+		expect(screen.queryByText('provider disconnected')).not.toBeInTheDocument();
+		expect(screen.queryByText('Disconnected providers')).not.toBeInTheDocument();
 	});
 
 	it('keeps approval usable when the catalog fails', async () => {

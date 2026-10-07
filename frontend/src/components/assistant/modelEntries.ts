@@ -56,7 +56,7 @@ export function fromStrings(models: string[], currentModel: string | undefined):
       recentRank: 0,
       isSessionDefault: false,
       isProviderDefault: false,
-      isAvailable: false,
+      isAvailable: true,
       isFavorite: false,
       isCurrent: !!currentModel && m === currentModel,
       cooldownUntil: '',

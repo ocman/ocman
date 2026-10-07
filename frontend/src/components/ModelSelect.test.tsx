@@ -44,3 +44,14 @@ it('keeps an unlisted value selectable and offers the default', async () => {
 	await user.click(screen.getByRole('option', { name: 'Runtime default' }));
 	expect(onChange).toHaveBeenCalledWith('');
 });
+
+it('leaves an unlisted saved model unflagged in a rich catalog', async () => {
+	const user = userEvent.setup();
+	const onChange = vi.fn();
+	render(<ModelSelect value="openai/custom" models={[]} modelEntries={entries} onChange={onChange} />);
+	await user.click(screen.getByRole('combobox', { name: 'Model' }));
+	expect(screen.queryByText('provider disconnected')).not.toBeInTheDocument();
+	expect(screen.queryByText('Disconnected providers')).not.toBeInTheDocument();
+	await user.click(screen.getByRole('option', { name: 'openai/custom' }));
+	expect(onChange).toHaveBeenCalledWith('openai/custom');
+});

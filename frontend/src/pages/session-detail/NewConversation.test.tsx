@@ -8,6 +8,8 @@ import { listFailedSends, clearFailedSends } from '../../lib/failedSends';
 import { useFirstSubmission } from './firstSubmission';
 import { HeaderContext } from '../../lib/headerContext';
 import { clearSettingsCache } from '../../lib/projectSettingsCache';
+import { ModelPicker } from '../../components/assistant/ModelPicker';
+import { describeModel } from '../../components/assistant/composerModel';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -119,6 +121,21 @@ describe('NewConversation', () => {
     expect(composer.agentsLoaded).toBe(false);
     act(() => composer.onRefreshModels!());
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
+  });
+
+  it('does not flag historical models when prepared provider availability is unknown', async () => {
+    mocks.prepare.mockResolvedValue({
+      platform: 'r-machine:opencode', agents: [], commands: [], defaultModel: 'prov/custom',
+      models: { hasProviders: false, models: [{ provider: 'prov', model: 'custom', isAvailable: false }] },
+    });
+    mount();
+    await ready();
+    expect(describeModel('prov/custom', composer.modelEntries).unavailable).toBe(false);
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<ModelPicker open models={composer.models ?? []} modelEntries={composer.modelEntries} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText('provider disconnected')).not.toBeInTheDocument();
+    expect(screen.queryByText('Disconnected providers')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /custom/ })).toBeInTheDocument();
   });
 
   it('keeps a failed custom command as child-keyed retry state', async () => {

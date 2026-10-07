@@ -22,6 +22,7 @@ import { useOpencodeLaunch, usePlatformCapabilities } from '../../lib/useCapabil
 import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { randomId } from '../../lib/randomId';
+import { availabilityUnknown } from '../../lib/modelCatalogCache';
 import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
 import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
 import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
@@ -86,7 +87,9 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       loadProjectSettings(directory, remoteId),
     ]).then(([result, settings]) => {
       if (controller.signal.aborted) return;
-      setCatalog({ ...result, defaultAgent: settings.defaultAgent || 'build' });
+      setCatalog({ ...result, defaultAgent: settings.defaultAgent || 'build',
+        models: { ...result.models, models: result.models.hasProviders ? result.models.models : availabilityUnknown(result.models.models) },
+      });
     }).catch((err) => {
       if (controller.signal.aborted) return;
       setCatalogError(err instanceof Error ? err.message : String(err));
