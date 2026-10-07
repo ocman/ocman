@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
+import { RootRedirect } from './pages/RootRedirect';
 import { WorktreesView } from './pages/WorktreesView';
 import { ProjectSettingsView } from './pages/ProjectSettingsView';
 import { Routines } from './pages/Routines';
@@ -34,7 +35,7 @@ import { AuthGate } from './components/AuthGate';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
-import { useSessions, insertProvisionalSession } from './lib/queries';
+import { insertProvisionalSession } from './lib/queries';
 import { queryEventRefresh } from './lib/queryEventRefresh';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
@@ -419,29 +420,4 @@ export function AppRoutes() {
       <Route path="/session/:id" element={<SessionDetail />} />
     </Routes>
   );
-}
-
-export function RootRedirect() {
-  const sessionsQ = useSessions();
-  const lastOpenedSessionId = useUiStore((s) => s.lastOpenedSessionId);
-  if (sessionsQ.isLoading) return null;
-  if (sessionsQ.isError) {
-    const message = sessionsQ.error instanceof Error
-      ? sessionsQ.error.message
-      : 'Could not load sessions.';
-    return (
-      <div className="oc-error-banner">
-        {message}
-        <button type="button" onClick={() => void sessionsQ.refetch()}>Retry</button>
-      </div>
-    );
-  }
-  const active = (sessionsQ.data ?? []).filter((session) => !session.archived);
-  const lastOpened = active.find((session) => session.id === lastOpenedSessionId);
-  const latest = active.reduce<(typeof active)[number] | undefined>(
-    (best, session) => !best || session.timeUpdated > best.timeUpdated ? session : best,
-    undefined,
-  );
-  const target = lastOpened || latest;
-  return <Navigate to={target ? `/session/${target.id}` : '/session/new'} replace />;
 }
