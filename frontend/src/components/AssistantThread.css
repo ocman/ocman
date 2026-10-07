@@ -111,6 +111,7 @@
   margin-top: 16px;
 }
 .oc-msg-user {
+  overflow-wrap: anywhere;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent3);
