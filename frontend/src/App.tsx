@@ -15,7 +15,6 @@ import { FactoryIssues } from './pages/FactoryIssues';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
-import { Login } from './pages/Login';
 import { SubscriptionUsage } from './pages/SubscriptionUsage';
 import { onInboxChanged, onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
@@ -31,7 +30,7 @@ import { PromptToastNotify } from './components/PromptToastNotify';
 import { McpConfigPrompt } from './components/McpConfigPrompt';
 import { SetupPrompt } from './components/SetupPrompt';
 import { BackendStatusBanner } from './components/BackendStatusBanner';
-import { useAuthStore } from './lib/authStore';
+import { AuthGate } from './components/AuthGate';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
@@ -279,45 +278,6 @@ function PerfDevHandle() {
     installPerfMonitor();
   }, []);
   return null;
-}
-
-/**
- * AuthGate short-circuits the app tree while the initial auth probe
- * is in flight, and again whenever the client is unauthenticated
- * against an auth-required server. The inner app is only rendered
- * once the gate decides it's safe — this is also what prevents every
- * store's initial fetch from firing into a 401 storm on page load.
- */
-const AUTH_BOOT_TIMEOUT_MS = 8_000;
-
-export function AuthGate({ children }: { children: ReactNode }) {
-  const checking = useAuthStore((s) => s.checking);
-  const authRequired = useAuthStore((s) => s.authRequired);
-  const authenticated = useAuthStore((s) => s.authenticated);
-  const bootstrap = useAuthStore((s) => s.bootstrap);
-
-  const [timedOut, setTimedOut] = useState(false);
-
-  useEffect(() => {
-    bootstrap();
-  }, [bootstrap]);
-
-  // Bound the initial /api/auth/me wait so a hung backend shows the
-  // unreachable banner instead of an endless spinner.
-  useEffect(() => {
-    if (!checking) return;
-    const t = setTimeout(() => setTimedOut(true), AUTH_BOOT_TIMEOUT_MS);
-    return () => clearTimeout(t);
-  }, [checking]);
-
-  if (checking) {
-    if (timedOut) return <BackendStatusBanner force onRetry={() => void bootstrap()} />;
-    return <div className="oc-login-bootstrap">Checking authentication…</div>;
-  }
-  if (authRequired && !authenticated) {
-    return <Login />;
-  }
-  return <>{children}</>;
 }
 
 // Shared QueryClient for TanStack Query. Sensible defaults:

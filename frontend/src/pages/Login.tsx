@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useAuthStore } from '../lib/authStore';
-import './Login.css';
+import { Button } from '../components/Control';
+import { SecretField } from '../components/SecretField';
+import { InlineAlert } from '../components/InlineAlert';
+import styles from './Login.module.css';
 
 /**
  * Login renders the lockscreen that gates the whole app when the
  * backend has auth configured and this client lacks a valid cookie.
  *
- * It's a plain HTML form — the codebase has no form library or
- * reusable input component, so we stay local and match the house
- * style (squared corners, CSS classes, no inline styles beyond what
- * already exists elsewhere).
+ * The native form sends credentials through the authentication store.
  */
 export function Login() {
   const submitting = useAuthStore((s) => s.submitting);
@@ -28,35 +28,40 @@ export function Login() {
   }
 
   return (
-    <div className="oc-login">
-      <div className="oc-login-card">
-        <h2 className="oc-login-title">ocman</h2>
-        <p className="oc-login-subtitle">Enter password to continue.</p>
-        <form className="oc-login-form" onSubmit={onSubmit}>
-          <input
-            type="password"
-            className="oc-login-input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            autoFocus
-            autoComplete="current-password"
-            disabled={submitting}
-          />
+    <main className={styles.root}>
+      <section className={styles.card} aria-labelledby="login-title">
+        <h2 id="login-title" className={styles.title}>ocman</h2>
+        <p className={styles.subtitle}>Enter password to continue.</p>
+        <form className={styles.form} aria-label="Sign in" onSubmit={onSubmit}>
+          <div className={styles.password}>
+            <label htmlFor="login-password" className={styles.label}>Password</label>
+            <SecretField
+              id="login-password"
+              name="password"
+              allowReveal={false}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              autoFocus
+              autoComplete="current-password"
+              disabled={submitting}
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? 'login-error' : undefined}
+            />
+          </div>
           {error && (
-            <div className="oc-error-banner" role="alert">
-              {error}
-            </div>
+            <InlineAlert><span id="login-error">{error}</span></InlineAlert>
           )}
-          <button
+          <Button
             type="submit"
-            className="oc-login-submit"
+            variant="accent"
             disabled={submitting || !password}
+            aria-busy={submitting}
           >
             {submitting ? 'Signing in…' : 'Sign in'}
-          </button>
+          </Button>
         </form>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
