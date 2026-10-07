@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from '../../components/assistant/composerTypes';
 import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
@@ -10,6 +10,9 @@ import { HeaderContext } from '../../lib/headerContext';
 import { clearSettingsCache } from '../../lib/projectSettingsCache';
 import { ModelPicker } from '../../components/assistant/ModelPicker';
 import { describeModel } from '../../components/assistant/composerModel';
+import { useComposerModel } from './useComposerModel';
+import type { Message } from '../../lib/api';
+import type { SessionMetadata } from '../../lib/sessionReducer';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -43,7 +46,7 @@ vi.mock('../../components/assistant/Composer', () => ({
   Composer: (props: ComposerProps) => { composer = props; return <span>{props.target}:{String(props.disabled)}</span>; },
 }));
 import { NewConversation } from './NewConversation';
-import { startHandoffs } from './startHandoffs';
+import { startHandoffs, startModels } from './startHandoffs';
 
 const navigate = vi.fn();
 const navigateToSession = vi.fn();
@@ -59,6 +62,7 @@ const ready = () => waitFor(() => {
 describe('NewConversation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    startModels.clear();
     clearSettingsCache();
     mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'build' });
     mocks.progress.clear();
@@ -204,10 +208,38 @@ describe('NewConversation', () => {
       send: { message: 'Fix login', images, model: 'prov/plan-model', agent: 'plan', reasoning: undefined },
     });
     expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'Login', 'machine');
+    expect(startModels.get('child')).toBe('prov/plan-model');
     expect(navigateToSession).toHaveBeenCalledWith('child');
     // The shared new-conversation draft now belongs to the session.
     expect(getDraft('new')).toBe('');
     expect(getDraft('child')).toBe('');
+  });
+
+  it('keeps the chosen model for follow-ups before the first response arrives', async () => {
+    mount();
+    await ready();
+    act(() => composer.onModelChange!('prov/manual'));
+    await act(() => composer.onSend!('First prompt'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
+      send: expect.objectContaining({ model: 'prov/manual' }),
+    }));
+
+    const setSelectedModel = vi.fn();
+    const options = {
+      id: 'child',
+      session: { id: 'child', directory: '/worktrees/fix', defaultModel: 'prov/default', projectDefaultModel: 'prov/project' } as SessionMetadata,
+      messages: [] as Message[], parts: [], modelOptions: [], agents: [],
+      setSelectedModel, setSelectedAgent: vi.fn(), setSelectedReasoning: vi.fn(),
+    };
+    const { rerender } = renderHook(useComposerModel, { initialProps: options });
+    expect(setSelectedModel).toHaveBeenLastCalledWith('prov/manual');
+    expect(startModels.has('child')).toBe(false);
+    rerender({ ...options, messages: [{
+      id: 'first', sessionId: 'child', timeCreated: 1,
+      data: { role: 'user', model: { providerID: 'prov', modelID: 'manual' } },
+    } as Message] });
+    expect(setSelectedModel).toHaveBeenCalledTimes(1);
+    expect(setSelectedModel).toHaveBeenLastCalledWith('prov/manual');
   });
 
   it('honours the current-checkout target and preserves an unsent prompt for retry', async () => {
@@ -219,6 +251,7 @@ describe('NewConversation', () => {
     await act(() => composer.onSend!('Fix login'));
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
     expect(listFailedSends('s2')).toEqual([expect.objectContaining({ text: 'Fix login', error: 'boom', reasoning: 'high' })]);
+    expect(startModels.get('s2')).toBe('prov/default');
     expect(navigateToSession).toHaveBeenCalledWith('s2');
     // Failed-send recovery owns the prompt; a handoff would resurrect it on Dismiss.
     expect(startHandoffs.has('s2')).toBe(false);
@@ -253,10 +286,12 @@ describe('NewConversation', () => {
     mount();
     await ready();
     await act(() => composer.onCommand!('review', 'main'));
+    expect(startModels.get('child')).toBe('prov/default');
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ prompt: '/review main', send: undefined }));
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/session/child/command?platform=r-machine%3Aopencode',
       expect.objectContaining({ command: 'review', arguments: 'main' }), { parseJSON: false }));
     await act(() => composer.onShell!('ls'));
+    expect(startModels.get('child')).toBe('prov/default');
     expect(mocks.post).toHaveBeenCalledWith('/api/session/child/shell?platform=r-machine%3Aopencode', { command: 'ls', agent: 'build' }, { parseJSON: false });
 
     mocks.start.mockRejectedValueOnce(new Error('worktree create/launch failed'));

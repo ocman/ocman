@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import { act, renderHook } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, Message, Part } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { useComposerModel, type UseComposerModelOptions } from './useComposerModel';
+import { startModels } from './startHandoffs';
 
 const session = { id: 's1', directory: '/repo', defaultModel: 'prov/default' } as SessionMetadata;
 const turnOn = (model: string): Message[] => [
@@ -32,7 +34,7 @@ function opts(over: Partial<UseComposerModelOptions> = {}): UseComposerModelOpti
 }
 
 describe('useComposerModel', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => { localStorage.clear(); startModels.clear(); });
 
   it('seeds the composer once from the session default and dedupes the model list', () => {
     const o = opts();
@@ -58,6 +60,36 @@ describe('useComposerModel', () => {
     saveProjectModel('/repo', 'prov/remembered');
     const { result } = renderHook(() => useComposerModel(opts()));
     expect(result.current.activeModel).toBe('prov/remembered');
+  });
+
+  it('seeds from the latest requested model before its assistant response exists', () => {
+    const o = opts({ messages: [...turnOn('prov/other'), {
+      id: 'u2', sessionId: 's1', timeCreated: 3,
+      data: { role: 'user', model: { providerID: 'prov', modelID: 'requested' } },
+    } as Message] });
+    const { result } = renderHook(() => useComposerModel(o));
+    expect(result.current.activeModel).toBe('prov/requested');
+    expect(o.setSelectedModel).toHaveBeenCalledWith('prov/requested');
+  });
+
+  it('keeps the start model until matching session metadata arrives', () => {
+    startModels.set('s2', 'prov/chosen');
+    const o = opts({ id: 's2' });
+    const { rerender } = renderHook(useComposerModel, { initialProps: o });
+    expect(startModels.get('s2')).toBe('prov/chosen');
+    expect(o.setSelectedModel).not.toHaveBeenCalled();
+    rerender({ ...o, session: { ...session, id: 's2' } });
+    expect(o.setSelectedModel).toHaveBeenCalledWith('prov/chosen');
+    expect(startModels.has('s2')).toBe(false);
+  });
+
+  it('preserves the handed-off model when StrictMode replays seed effects', () => {
+    startModels.set('s1', 'prov/chosen');
+    const o = opts();
+    const { result } = renderHook(() => useComposerModel(o), { wrapper: StrictMode });
+    expect(result.current.composerModels).toContain('prov/chosen');
+    expect(o.setSelectedModel).toHaveBeenLastCalledWith('prov/chosen');
+    expect(startModels.has('s1')).toBe(false);
   });
 
   it('seeds the project default model for a new session over the remembered pick', () => {
@@ -86,5 +118,19 @@ describe('useComposerModel', () => {
     vi.mocked(o.setSelectedModel).mockClear();
     act(() => result.current.handleAgentChange('unknown'));
     expect(o.setSelectedModel).not.toHaveBeenCalled();
+  });
+
+  it.each(['model', 'agent'])('discards a pending start model after a deliberate %s change', (picker) => {
+    startModels.set('s1', 'prov/chosen');
+    const o = opts({ session: null });
+    const { result, rerender } = renderHook(useComposerModel, { initialProps: o });
+    act(() => {
+      if (picker === 'model') result.current.handleModelChange('prov/other');
+      else result.current.handleAgentChange('coder');
+    });
+    expect(startModels.has('s1')).toBe(false);
+    rerender({ ...o, session });
+    expect(o.setSelectedModel).toHaveBeenCalledTimes(1);
+    expect(o.setSelectedModel).toHaveBeenCalledWith(picker === 'model' ? 'prov/other' : 'prov/agent-model');
   });
 });

@@ -3,7 +3,8 @@ import type { AgentInfo, Message, Part } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { agentModelRef, deriveActiveModelAndAgent } from '../../lib/sessionStatus';
-import { computeTurnStats, latestTurnModel } from '../../lib/turnStats';
+import { computeTurnStats, latestTurnModel, messageModelRef } from '../../lib/turnStats';
+import { startModels } from './startHandoffs';
 
 export interface UseComposerModelOptions {
   /** Route id — the seed is keyed on this, not on `session.id`. */
@@ -21,7 +22,7 @@ export interface UseComposerModelOptions {
 export interface UseComposerModelResult {
   /** Agent behind the most recent assistant turn. */
   activeAgent: string;
-  /** Model the session is currently on (latest turn → project → session default). */
+  /** Latest requested model, falling back to the turn and session defaults. */
   activeModel: string;
   /** Model picker list: active + default + catalog, deduped. */
   composerModels: string[];
@@ -51,8 +52,8 @@ export function useComposerModel({
     seededSessionRef.current = undefined;
   }, [id]);
 
-  // Prefer the model behind the most recent turn (what OpenCode will keep
-  // using). A new session seeds the project's configured default, then the
+  // Prefer the requested model, including a prompt still awaiting a response.
+  // A new session seeds the project's configured default, then the
   // last pick in this project, then the session's default model.
   const turnStatsMap = useMemo(() => computeTurnStats(messages, parts), [messages, parts]);
   const { activeAgent } = useMemo(
@@ -60,14 +61,18 @@ export function useComposerModel({
     [messages, session],
   );
   const activeModel = useMemo(
-    () =>
-      latestTurnModel(messages, turnStatsMap) ||
-      (messages.length === 0
-        ? session?.projectDefaultModel || getProjectModel(session?.directory || '')
-        : '') ||
-      session?.defaultModel ||
-      '',
-    [messages, turnStatsMap, session?.directory, session?.projectDefaultModel, session?.defaultModel],
+    () => {
+      const latestUser = messages.findLast((message) => message.data?.role === 'user');
+      return (session?.id === id && id ? startModels.get(id) : '') ||
+        (latestUser ? messageModelRef(latestUser) : '') ||
+        latestTurnModel(messages, turnStatsMap) ||
+        (messages.length === 0
+          ? session?.projectDefaultModel || getProjectModel(session?.directory || '')
+          : '') ||
+        session?.defaultModel ||
+        '';
+    },
+    [id, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel],
   );
 
   useEffect(() => {
@@ -80,6 +85,7 @@ export function useComposerModel({
     if (session?.id !== id) return;
     if (!activeModel) return;
     setSelectedModel(activeModel);
+    startModels.delete(id);
     seededSessionRef.current = id;
   }, [activeModel, id, session?.id, setSelectedModel]);
 
@@ -91,6 +97,7 @@ export function useComposerModel({
   const directory = session?.directory;
   const handleModelChange = useCallback((model: string) => {
     seededSessionRef.current = id;
+    if (id) startModels.delete(id);
     setSelectedModel(model);
     setSelectedReasoning('');
     if (directory) saveProjectModel(directory, model);
@@ -105,6 +112,7 @@ export function useComposerModel({
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) {
+      if (id) startModels.delete(id);
       setSelectedModel(agentModel);
       setSelectedReasoning('');
     }

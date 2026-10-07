@@ -31,7 +31,7 @@ import { useWorktreeEligibility } from './useWorktreeEligibility';
 import { startFirstSubmission } from './firstSubmission';
 import { sendFirstFiles } from './sendFirstFiles';
 import { StartProgress, type StartSteps } from './StartProgress';
-import { startHandoffs } from './startHandoffs';
+import { startHandoffs, startModels } from './startHandoffs';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -45,6 +45,7 @@ export interface NewConversationProps {
 interface Ready { catalog: PrepareSessionResponse; canWorktree: boolean; platform?: string; model: string }
 /** A server-delivered prompt, or work the client runs on the new session. */
 interface Submission {
+  model: string;
   send?: StartSessionRequest['send'];
   execute?: (sessionId: string, platform: string) => Promise<void>;
 }
@@ -205,13 +206,14 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
         ready = await waitReady();
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
-      const { send, execute } = build(ready);
+      const { send, execute, model } = build(ready);
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
         platform: ready.platform, remoteId, title, prompt: text, send, startId,
         worktree: ready.canWorktree && target === 'worktree',
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
+      if (model) startModels.set(res.sessionId, model);
       // No title: OpenCode titles the session from its first message.
       seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
       if (send && !res.firstMessageSent) {
@@ -248,7 +250,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => start(text, (r) => {
     const { model, agent, reasoning } = pick(r);
     const send = { message: text, images, model, agent: agent || undefined, reasoning: reasoning || undefined };
-    return files?.length ? { execute: sendFirstFiles(send, files) } : { send };
+    return files?.length ? { model, execute: sendFirstFiles(send, files) } : { model, send };
   });
 
   const onCommand = (command: string, args: string) => {
@@ -260,12 +262,12 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       setError(`/${command} needs an existing conversation.`);
       return;
     }
-    return start(`/${command}${args ? ` ${args}` : ''}`, (r) => ({ execute: (id, sessionPlatform) =>
+    return start(`/${command}${args ? ` ${args}` : ''}`, (r) => ({ model: pick(r).model, execute: (id, sessionPlatform) =>
       postJSON<void>(`/api/session/${encodeURIComponent(id)}/command?platform=${encodeURIComponent(sessionPlatform)}`,
         { command, arguments: args, ...pick(r) }, { parseJSON: false }) }));
   };
 
-  const onShell = (command: string) => start(`!${command}`, (r) => ({ execute: (id, sessionPlatform) =>
+  const onShell = (command: string) => start(`!${command}`, (r) => ({ model: pick(r).model, execute: (id, sessionPlatform) =>
     postJSON<void>(`/api/session/${encodeURIComponent(id)}/shell?platform=${encodeURIComponent(sessionPlatform)}`,
       { command, agent: pick(r).agent }, { parseJSON: false }) }));
 

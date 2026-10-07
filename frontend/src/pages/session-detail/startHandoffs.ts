@@ -10,6 +10,10 @@ export interface StartHandoff { prompt: string; steps: StartSteps }
 // A failed delivery is never handed off: failed-send recovery owns that prompt.
 export const startHandoffs = new Map<string, StartHandoff>();
 
+// The first submission's model survives navigation even before message metadata
+// arrives. The composer consumes it separately from the visible prompt handoff.
+export const startModels = new Map<string, string>();
+
 /**
  * Keep the handoff until the user prompt has visible content, not just a header.
  * `viewSessionId` owns the messages: right after a route change the view
