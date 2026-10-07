@@ -69,6 +69,15 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const draftId = params.draftId || NEW_SESSION_ID;
   const draftStart = useNewConversationDrafts((state) => state.starts[draftId]);
   const openedWhilePending = useRef(!!draftStart && !draftStart.error && !draftStart.sessionId).current;
+  const recovered = useRef(false);
+  const [recoveryKey, setRecoveryKey] = useState(0);
+  useEffect(() => {
+    if (openedWhilePending && draftStart?.error && !recovered.current) {
+      recovered.current = true;
+      // Reload recovered text once; later retries must retain attachments.
+      setRecoveryKey(1);
+    }
+  }, [openedWhilePending, draftStart?.error]);
   const saved = useRef(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId)).current;
   const remoteId = params.remoteId || 'local';
   const seedNewSession = useApiStore((state) => state.seedNewSession);
@@ -335,7 +344,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {(error || draftStart?.error) && <InlineAlert>{error || draftStart?.error}</InlineAlert>}
         <Composer
-          key={`${routeKey}:${openedWhilePending && !!draftStart?.error}`}
+          key={`${routeKey}:${recoveryKey}`}
           composerRef={composerRef}
           onSend={onSend}
           onCommand={onCommand}

@@ -131,6 +131,42 @@ it('preserves and repairs a known completion when its terminal transaction fails
   } finally { persist.mockRestore(); read.mockRestore(); }
 });
 
+it('does not restore a failed receipt after the user explicitly clears or discards its prompt', async () => {
+  rememberConversationDraft({ draftId: 'cleared', directory: '/repo' });
+  const version = (await import('./composerDraft')).getDraftVersion('cleared');
+  const claims = await import('./draftStartClaims');
+  const read = vi.spyOn(claims, 'readDraftStart').mockResolvedValue({ version, text: 'old failed prompt', error: 'failed' });
+  try {
+    saveDraft('cleared', 'old failed prompt');
+    saveDraft('cleared', '');
+    await reconcileConversationStart('cleared');
+    expect(getDraft('cleared')).toBe('');
+    forgetConversationDraft('cleared');
+    rememberConversationDraft({ draftId: 'cleared', directory: '/repo' });
+    await reconcileConversationStart('cleared');
+    expect(getDraft('cleared')).toBe('');
+  } finally { read.mockRestore(); }
+});
+
+it('publishes a changed post-commit mirror after the pending terminal notification', async () => {
+  rememberConversationDraft({ draftId: 'notify', directory: '/repo' });
+  useNewConversationDrafts.setState({ starts: { notify: { version: 0, text: 'prompt' } } });
+  const claims = await import('./draftStartClaims');
+  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
+  let terminal!: import('./draftStartClaims').DraftStart;
+  const persist = vi.spyOn(claims, 'persistDraftStart').mockImplementation((_id, value) => {
+    terminal = value;
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  try {
+    const completion = completeConversationStart('notify', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
+    const before = localStorage.getItem('ocman.newConversationStarts.v1:notify');
+    finish(terminal);
+    await completion;
+    expect(localStorage.getItem('ocman.newConversationStarts.v1:notify')).not.toBe(before);
+  } finally { persist.mockRestore(); }
+});
+
 it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {
   localStorage.setItem('ocman.newConversationDrafts.v1:invalid', raw);
   vi.resetModules();

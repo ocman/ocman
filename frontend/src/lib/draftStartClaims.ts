@@ -10,6 +10,7 @@ export interface DraftStart {
   attemptId?: string;
   replacementDraftId?: string;
   persistenceError?: string;
+  committed?: boolean;
 }
 
 // IndexedDB readwrite transactions serialize claims across tabs, including plain HTTP.

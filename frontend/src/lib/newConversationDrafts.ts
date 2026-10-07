@@ -79,10 +79,10 @@ export async function reconcileConversationStart(draftId: string) {
   if (useNewConversationDrafts.getState().starts[draftId] !== before) return;
   if (before && (before.sessionId || before.error) && (!start || !start.sessionId && !start.error) &&
     (!start || start.attemptId === before.attemptId)) {
-    const repaired = { ...before, persistenceError: undefined };
+    const repaired = { ...before, persistenceError: undefined, committed: true };
     start = await persistDraftStart(draftId, repaired);
   }
-  if (start?.error && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
+  if (start?.error && start.version === getDraftVersion(draftId) && !getDraft(draftId) && getConversationDraft(draftId)) saveDraft(draftId, start.text);
   if (JSON.stringify(start) === JSON.stringify(before)) return;
   useNewConversationDrafts.setState((state) => {
     const starts = { ...state.starts };
@@ -122,13 +122,13 @@ export async function completeConversationStart(draftId: string, createdSession:
 }
 
 async function saveTerminalStart(draftId: string, start: DraftStart) {
-  publishStart(draftId, start);
+  publishStart(draftId, { ...start, committed: false });
   try {
-    const persisted = await persistDraftStart(draftId, start);
+    const persisted = await persistDraftStart(draftId, { ...start, committed: true });
     if (persisted) publishStart(draftId, persisted);
   } catch (error) {
     remoteLog.error('Could not persist the terminal draft start receipt', error);
-    publishStart(draftId, { ...start, persistenceError: error instanceof Error ? error.message : String(error) });
+    publishStart(draftId, { ...start, committed: false, persistenceError: error instanceof Error ? error.message : String(error) });
   }
 }
 

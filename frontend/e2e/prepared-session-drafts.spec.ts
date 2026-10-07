@@ -183,6 +183,24 @@ test('a rejected competing prompt cannot leave the winning failed claim pending'
   expect(starts).toBe(1);
 });
 
+test('cleared and discarded failed prompts stay empty after reload and an old-URL revisit', async ({ mockedPage: page }) => {
+  await prepareDraft(page);
+  await page.route('**/api/sessions/start', (route) => route.fulfill({ status: 500, json: { error: 'Creation failed' } }));
+  const url = '/session/new?dir=%2Frepo&draftId=clear';
+  await page.goto(url);
+  await page.getByRole('textbox').fill('Do not resurrect this prompt.');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByTestId('conversation-composer').getByRole('alert')).toContainText('Creation failed');
+  await expect(page.getByRole('textbox')).not.toBeDisabled();
+  await page.getByRole('textbox').fill('');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('ocman.composerDraftRevision.v1:clear'))).not.toBeNull();
+  await page.reload();
+  await expect(page.getByRole('textbox')).toHaveValue('');
+  await page.getByLabel('Prepared sessions').getByRole('button', { name: 'Discard draft' }).click();
+  await page.goto(url);
+  await expect(page.getByRole('textbox')).toHaveValue('');
+});
+
 test('prepares multiple sidebar drafts without starting sessions', async ({ mockedPage: page }, testInfo) => {
   let starts = 0;
   await page.route('**/api/sessions/start', async (route) => {

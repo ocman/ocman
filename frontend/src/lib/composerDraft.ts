@@ -4,12 +4,19 @@ const DRAFTS_KEY = 'ocman.composerDrafts.v1';
 
 type Drafts = Record<string, string>;
 const draftVersions = new Map<string, number>();
-export const getDraftVersion = (sessionId: string) => draftVersions.get(sessionId) || 0;
+const VERSION_PREFIX = 'ocman.composerDraftRevision.v1:';
+export function getDraftVersion(sessionId: string) {
+  let stored = 0;
+  try { stored = Number(window.localStorage.getItem(VERSION_PREFIX + sessionId)) || 0; } catch { /* Keep the live revision. */ }
+  return Math.max(draftVersions.get(sessionId) || 0, stored);
+}
 
 /** Invalidate outstanding autosaves and failed-send recovery before clearing. */
 export function discardDraft(sessionId: string) {
-  draftVersions.set(sessionId, getDraftVersion(sessionId) + 1);
+  const version = getDraftVersion(sessionId) + 1;
+  draftVersions.set(sessionId, version);
   clearDraft(sessionId);
+  try { window.localStorage.setItem(VERSION_PREFIX + sessionId, String(version)); } catch { /* Keep the live tombstone. */ }
 }
 
 function loadDrafts(): Drafts {
@@ -43,6 +50,7 @@ export function getDraft(sessionId: string): string {
 
 export function saveDraft(sessionId: string, text: string, version = getDraftVersion(sessionId)) {
   if (version !== getDraftVersion(sessionId)) return;
+  if (!text) { discardDraft(sessionId); return; }
   const drafts = loadDrafts();
   if (text) {
     drafts[sessionId] = text;

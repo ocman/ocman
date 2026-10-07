@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react';
-import { getDraft, getDraftVersion, saveDraft, clearDraft } from '../../lib/composerDraft';
+import { discardDraft, getDraft, getDraftVersion, saveDraft, clearDraft } from '../../lib/composerDraft';
 
 /**
  * Owns per-session composer draft persistence: loading the saved draft
@@ -42,7 +42,7 @@ export function useComposerDrafts(
       if (version !== getDraftVersion(sid)) return;
       const text = getText().trim();
       if (text) saveDraft(sid, text, version);
-      else clearDraft(sid);
+      else { discardDraft(sid); versionRef.current = getDraftVersion(sid); }
       persistedRef.current = text;
     }, 300);
   }, [cancelPending]);
@@ -52,17 +52,18 @@ export function useComposerDrafts(
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el || !sessionId) return;
-    const version = versionRef.current = getDraftVersion(sessionId);
+    versionRef.current = getDraftVersion(sessionId);
     el.value = persistedRef.current = getDraft(sessionId);
     return () => {
       cancelPending();
-      if (version !== getDraftVersion(sessionId)) return;
+      const currentVersion = versionRef.current;
+      if (currentVersion !== getDraftVersion(sessionId)) return;
       const text = el.value.trim();
       if (text === persistedRef.current) return;
       // eslint-disable-next-line react-hooks/exhaustive-deps -- the live in-flight prompt is wanted here
       if (text && text === inFlightRef.current) return;
-      if (text) saveDraft(sessionId, text, version);
-      else clearDraft(sessionId);
+      if (text) saveDraft(sessionId, text, currentVersion);
+      else discardDraft(sessionId);
     };
   }, [sessionId, inputRef, inFlightRef, cancelPending]);
 

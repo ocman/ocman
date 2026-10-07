@@ -577,6 +577,11 @@ flowchart TD
   attempt; failed persistence stays visible and is repaired before retry. A newer
   retained revision is copied to a fresh draft identity before the old identity
   is retired. Receipt-read failures show a safe, read-only retry control.
+  Explicit clearing/discard increments a per-draft persisted text revision, so
+  failed receipt recovery cannot resurrect it after reload. Terminal publication
+  changes its committed marker after the IndexedDB transaction, guaranteeing a
+  second cross-tab notification. Reopened composers remount for recovered text
+  once, keeping attachments on later retries.
   Explicit metadata deletion invalidates autosave and recovery;
   unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.

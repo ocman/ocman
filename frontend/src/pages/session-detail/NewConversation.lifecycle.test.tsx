@@ -122,6 +122,24 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('keeps retry attachments through repeated failures after reopening a pending draft', async () => {
+    const first = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValueOnce(first.promise).mockRejectedValue(new Error('retry failed'));
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'first prompt' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
+    fireEvent.click(screen.getByRole('button', { name: /First/ }));
+    await act(async () => first.reject(new Error('first failed')));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('first prompt'));
+    fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['note'], 'retry.txt', { type: 'text/plain' })] } });
+    expect(await screen.findByText('retry.txt')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('textbox')).not.toBeDisabled());
+    expect(screen.getByText('retry.txt')).toBeInTheDocument();
+  });
   it('moves retained newer text to a usable fresh identity and submits that task', async () => {
     const request = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValueOnce(request.promise).mockResolvedValue({ ...created, sessionId: 'next-child' });
