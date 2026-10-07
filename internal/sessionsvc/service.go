@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
 // Registry is the consumer-side subset of *platforms.Registry the
@@ -66,6 +65,7 @@ type CreatedSession struct {
 	Platform  string
 	Directory string
 	Title     string
+	RoutineID string
 }
 
 // Service validates and dispatches session mutations to the owning
@@ -396,157 +396,4 @@ func (s *Service) RejectQuestion(ctx context.Context, platformID string, req pla
 		return err
 	}
 	return p.RejectQuestion(ctx, req)
-}
-
-// Create creates a new session. When platformID is empty the adapter is
-// chosen automatically iff exactly one platform is available.
-func (s *Service) Create(ctx context.Context, platformID string, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-	return s.create(ctx, platformID, req, nil)
-}
-
-// CreateConfigured creates a session, applies its permission rules, and only
-// then publishes it through SessionCreated.
-func (s *Service) CreateConfigured(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
-	if err := normalizePermissionRules(rules); err != nil {
-		return nil, err
-	}
-	return s.create(ctx, platformID, req, rules)
-}
-
-// pickAdapter resolves platformID, auto-picking when it is empty and
-// exactly one platform is available.
-func (s *Service) pickAdapter(ctx context.Context, platformID string) (platforms.Platform, error) {
-	if platformID != "" {
-		p, ok := s.registry.Get(platforms.ID(platformID))
-		if !ok {
-			return nil, validation("unknown platform")
-		}
-		return p, nil
-	}
-	var adapter platforms.Platform
-	for _, p := range s.registry.Platforms() {
-		if !p.Available(ctx) {
-			continue
-		}
-		if adapter != nil {
-			return nil, validation("multiple platforms available — specify ?platform=<id>")
-		}
-		adapter = p
-	}
-	if adapter == nil {
-		return nil, ErrNoPlatformAvailable
-	}
-	return adapter, nil
-}
-
-// ResolvePlatformID returns the platform id Create would use for
-// platformID (auto-picked when empty).
-func (s *Service) ResolvePlatformID(ctx context.Context, platformID string) (string, error) {
-	adapter, err := s.pickAdapter(ctx, platformID)
-	if err != nil {
-		return "", err
-	}
-	return string(adapter.ID()), nil
-}
-
-// DirectoryCatalog returns the new-conversation composer catalog for a
-// directory, resolving the platform the same way Create does.
-func (s *Service) DirectoryCatalog(ctx context.Context, platformID string, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, string, error) {
-	if req.Directory == "" {
-		return nil, "", validation("directory is required")
-	}
-	adapter, err := s.pickAdapter(ctx, platformID)
-	if err != nil {
-		return nil, "", err
-	}
-	catalog, err := adapter.DirectoryCatalog(ctx, req)
-	return catalog, string(adapter.ID()), err
-}
-
-func (s *Service) create(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
-	if req.Directory == "" {
-		return nil, validation("directory is required")
-	}
-	adapter, err := s.pickAdapter(ctx, platformID)
-	if err != nil {
-		return nil, err
-	}
-	var disposer platforms.SessionDisposer
-	if rules != nil {
-		var ok bool
-		disposer, ok = adapter.(platforms.SessionDisposer)
-		if !ok {
-			return nil, platforms.ErrUnsupported
-		}
-	}
-	createPhase := srvtiming.Begin(ctx, "create_session")
-	resp, err := adapter.CreateSession(ctx, req)
-	createPhase.EndWithDesc("adapter.CreateSession")
-	if err != nil {
-		return nil, err
-	}
-	if resp == nil || strings.TrimSpace(resp.ID) == "" {
-		return nil, fmt.Errorf("platform %s returned no session", adapter.ID())
-	}
-	if rules != nil {
-		if err := adapter.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: resp.ID, Rules: rules}); err != nil {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			defer cancel()
-			cleanupErr := disposer.DisposeSession(cleanupCtx, platforms.DisposeSessionRequest{SessionID: resp.ID, Port: req.Port})
-			if cleanupErr != nil {
-				return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: errors.Join(err, cleanupErr)}
-			}
-			return nil, err
-		}
-	}
-	// The first send looks up project defaults by directory; we already know it.
-	s.sessionDirs.Store(resp.ID, req.Directory)
-	if s.hooks.SessionCreated != nil {
-		s.hooks.SessionCreated(CreatedSession{
-			ID:        resp.ID,
-			Platform:  string(adapter.ID()),
-			Directory: req.Directory,
-			Title:     req.Title,
-		})
-	}
-	return resp, nil
-}
-
-// Client binds the service to a fixed platform id, exposing the narrow
-// CreateSession/SendMessage surface the MCP launcher and comm tools use.
-type Client struct {
-	svc        *Service
-	platformID string
-}
-
-// Client returns a client bound to platformID.
-func (s *Service) Client(platformID string) *Client {
-	return &Client{svc: s, platformID: platformID}
-}
-
-// CreateSession creates a session on the bound platform.
-func (c *Client) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-	return c.svc.Create(ctx, c.platformID, req)
-}
-
-// SendMessage sends a message via the bound platform.
-func (c *Client) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
-	return c.svc.SendMessage(ctx, c.platformID, req)
-}
-
-// SetPermissionRules replaces a session's permission ruleset via the
-// bound platform.
-func (c *Client) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
-	return c.svc.SetPermissionRules(ctx, c.platformID, req)
-}
-
-// PermissionRules reads a session's current permission ruleset via the
-// bound platform. Used to inherit a parent's live YOLO/custom posture
-// into a child at split time.
-func (c *Client) PermissionRules(ctx context.Context, sessionID string) ([]platforms.PermissionRule, error) {
-	p, err := c.svc.resolve(ctx, sessionID, c.platformID)
-	if err != nil {
-		return nil, err
-	}
-	return p.PermissionRules(ctx, sessionID)
 }

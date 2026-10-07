@@ -63,6 +63,7 @@ func (s *Server) broadcastSessionCreated(info sessionsvc.CreatedSession) {
 	session := db.Session{
 		ID: info.ID, Platform: info.Platform, Directory: info.Directory, Title: info.Title,
 		TimeCreated: now, TimeUpdated: now, Status: db.StatusWaiting,
+		RoutineID: info.RoutineID,
 	}
 	payload, err := json.Marshal(map[string]interface{}{"sessionID": info.ID, "session": session})
 	if err == nil {
