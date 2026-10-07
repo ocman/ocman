@@ -30,6 +30,7 @@ for (const width of [1280, 390]) {
     await page.getByRole('button', { name: 'Explore files' }).click();
     const explore = page.getByRole('dialog', { name: 'Explore', exact: true });
     await explore.getByRole('treeitem', { name: 'README.md', exact: true }).click();
+    await expect(explore.getByRole('treeitem', { name: 'README.md', exact: true })).toHaveCSS('border-radius', '0px');
     await expect(explore.getByTestId('file-browser-content').getByText('README.md', { exact: true })).toBeVisible();
     for (const name of ['file-browser-sidebar', 'file-browser-content']) {
       const bounds = await explore.getByTestId(name).boundingBox();
@@ -51,6 +52,27 @@ for (const width of [1280, 390]) {
     const diff = page.getByRole('dialog', { name: 'Working tree', exact: true });
     await diff.getByRole('treeitem', { name: 'README.md', exact: true }).click();
     await expect(diff.getByRole('treeitem', { name: 'README.md', exact: true })).toHaveAttribute('aria-selected', 'true');
+    const selected = diff.getByRole('treeitem', { name: 'README.md', exact: true });
+    await expect(selected).toHaveCSS('border-radius', '0px');
+    const selection = await selected.evaluate(el => {
+      const sample = document.createElement('div');
+      sample.style.backgroundColor = 'color-mix(in srgb, var(--accent) 18%, var(--bg-card))';
+      document.body.append(sample);
+      const expectedBackground = getComputedStyle(sample).backgroundColor;
+      sample.remove();
+      return { background: getComputedStyle(el).backgroundColor, expectedBackground,
+        color: getComputedStyle(el.querySelector('[data-item-section="content"]')!).color,
+        expectedColor: getComputedStyle(el).color,
+        outline: getComputedStyle(el, '::before').outlineColor };
+    });
+    expect(selection.background).toBe(selection.expectedBackground);
+    expect(selection.color).toBe(selection.expectedColor);
+    expect(selection.outline).toBe('rgba(0, 0, 0, 0)');
+    await selected.press('ArrowUp');
+    const keyboardRow = diff.getByRole('treeitem', { name: 'one.ts', exact: true });
+    await expect(keyboardRow).toBeFocused();
+    await expect(keyboardRow).toHaveCSS('outline-style', 'solid');
+    await expect(keyboardRow).toHaveCSS('outline-width', '2px');
     const sidebar = await diff.getByTestId('file-browser-sidebar').boundingBox();
     const content = await diff.getByTestId('file-browser-content').boundingBox();
     expect(content!.width).toBeGreaterThan(240);

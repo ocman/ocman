@@ -3,6 +3,12 @@ import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
 import styles from './FileBrowserModal.module.css';
 
+// Shadow-root rules supplement the library's host-level theme variables.
+export const FILE_TREE_SELECTION_CSS = `
+  button[data-type='item'][data-item-selected='true'] [data-item-section='content'] { color: var(--text); }
+  button[data-type='item']:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+`;
+
 export function FileBrowserModal({ title, description, sidebar, children, onClose, dialogTestId }: {
   title: string;
   description?: ReactNode;

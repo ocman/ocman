@@ -4,7 +4,7 @@ import { FileTree, useFileTree } from '@pierre/trees/react';
 import { api } from '../lib/api';
 import type { RepoFileContent, RepoFileList } from '../lib/api.types';
 import { shortPath } from '../lib/format';
-import { FileBrowserModal } from './FileBrowserModal';
+import { FileBrowserModal, FILE_TREE_SELECTION_CSS } from './FileBrowserModal';
 import { CheckboxField } from './CheckboxField';
 import { EmptyState } from './EmptyState';
 import { LoadingState } from './LoadingState';
@@ -40,6 +40,7 @@ function RepoTree({ files, onSelect }: { files: string[]; onSelect: (path: strin
     initialExpansion: 'closed',
     search: true,
     fileTreeSearchMode: 'hide-non-matches',
+    unsafeCSS: FILE_TREE_SELECTION_CSS,
     onSelectionChange: (selected) => {
       const file = [...selected].reverse().find((p) => known.current.has(p));
       if (file) onSelectRef.current(file);

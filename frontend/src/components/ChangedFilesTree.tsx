@@ -3,6 +3,7 @@ import type { GitStatus, GitStatusEntry } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
 import type { FullscreenDiffFile } from './DiffFullscreenModal';
 import styles from './ChangedFilesTree.module.css';
+import { FILE_TREE_SELECTION_CSS } from './FileBrowserModal';
 
 const GIT_STATUSES = new Set<string>(['added', 'deleted', 'ignored', 'modified', 'renamed', 'untracked']);
 
@@ -41,7 +42,7 @@ export function ChangedFilesTree({ files, selectedKey, onSelect }: ChangedFilesT
     flattenEmptyDirectories: true,
     initialExpansion: 'open',
     // Keep the +/- counts whole; the file name truncates instead.
-    unsafeCSS: '[data-item-section="decoration"] { flex: none; margin-left: auto; }',
+    unsafeCSS: `${FILE_TREE_SELECTION_CSS}\n[data-item-section="decoration"] { flex: none; margin-left: auto; }`,
     initialSelectedPaths: selectedPath ? [treePath(selectedPath)] : [],
     onSelectionChange: (selected) => {
       // Directories are selectable too; only a file changes the diff.
