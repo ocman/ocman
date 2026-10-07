@@ -68,7 +68,7 @@ function Child() {
       {entry.error}<button onClick={() => actions.handleRetrySend(entry.id)}>Retry message</button>
     </div>)}
     <SessionComposerSlot sessionId="child" platformId="opencode" factoryEpicID=""
-    firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={() => {}} permission={null} question={null}
+    firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={() => {}}
     composer={{ sessionId: 'child', isRunning: false, onSend: actions.handleSend }} />
   </>;
 }

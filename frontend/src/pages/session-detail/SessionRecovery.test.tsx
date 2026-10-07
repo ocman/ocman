@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 function show(platformId = session.platform, sessionId = session.id) {
-  return render(<MemoryRouter><SessionComposerSlot sessionId={sessionId} platformId={platformId} factoryEpicID="" firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={vi.fn()} permission={null} question={null} composer={{ isRunning: false } as never} /></MemoryRouter>);
+  return render(<MemoryRouter><SessionComposerSlot sessionId={sessionId} platformId={platformId} factoryEpicID="" firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={vi.fn()} composer={{ isRunning: false } as never} /></MemoryRouter>);
 }
 
 it('shows recovery choices beside the stuck conversation without a Factory query parameter', () => {

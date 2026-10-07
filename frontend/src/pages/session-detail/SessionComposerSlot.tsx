@@ -20,16 +20,21 @@ export interface SessionComposerSlotProps {
   firstUnreadMessageId: string | null;
   unreadMessageCount: number;
   onJumpToUnread: (messageId: string) => void;
-  /** Exactly one of these renders, in this priority order. */
-  permission: ComponentProps<typeof PermissionPrompt> | null;
-  question: ComponentProps<typeof QuestionPrompt> | null;
+  pendingPrompt?: boolean;
   composer: ComponentProps<typeof Composer> | null;
 }
 
+export function SessionPromptSlot({ permission, question }: {
+  permission: ComponentProps<typeof PermissionPrompt> | null;
+  question: ComponentProps<typeof QuestionPrompt> | null;
+}) {
+  return permission ? <PermissionPrompt {...permission} />
+    : question ? <QuestionPrompt {...question} /> : null;
+}
+
 /**
- * What sits below the thread: the Factory approval card, the unread
- * pill, and then whichever of permission prompt / question prompt /
- * composer the session currently needs.
+ * What sits below the thread: Factory cards, the unread pill and composer.
+ * Pending prompts render inside the conversation viewport instead.
  */
 export function SessionComposerSlot({
   sessionId,
@@ -40,8 +45,7 @@ export function SessionComposerSlot({
   firstUnreadMessageId,
   unreadMessageCount,
   onJumpToUnread,
-  permission,
-  question,
+  pendingPrompt,
   composer,
 }: SessionComposerSlotProps) {
   const firstPending = useFirstSubmission((state) => !!state.entries[sessionId]?.pending);
@@ -64,11 +68,7 @@ export function SessionComposerSlot({
       )}
       {/* Above the prompt branches: a launch can start while a prompt is shown. */}
       <LaunchProgressCard directory={directory} remoteId={remoteId} />
-      {permission ? (
-        <PermissionPrompt {...permission} />
-      ) : question ? (
-        <QuestionPrompt {...question} />
-      ) : composer ? (
+      {!pendingPrompt && composer ? (
         <>
           <FirstSubmissionNotice sessionId={sessionId} />
           <Composer {...composer}
