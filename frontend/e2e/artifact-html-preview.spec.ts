@@ -138,6 +138,33 @@ test('an interactive hostile artifact cannot reach the app, storage, network, to
   expect(await page.evaluate(() => document.cookie)).toContain('ocman_secret=cookie-value');
 });
 
+test('a user click inside the preview cannot navigate the app either', async ({ mockedPage: page }) => {
+  const { escapes } = await watchEscapes(page);
+  await page.goto('/artifacts/art-h');
+  await fileCard(page, 'hostile.html').getByRole('button', { name: 'Run scripts' }).click();
+  const probe = frameOf(page, 'hostile.html').locator('#top-click');
+  await probe.click();
+  await expect(probe).toHaveText(/^blocked:/);
+  await page.waitForTimeout(500);
+  await expect(page).toHaveURL(/\/artifacts\/art-h$/);
+  expect(escapes).toEqual([]);
+
+  // Positive control: the same click does navigate once the sandbox grants
+  // top navigation on user activation, so the probe can detect that grant.
+  await page.route('/api/control-frame', (route) => route.fulfill({
+    body: `<button id="top-click" onclick="top.location.href = '/beacon/top-click'">Navigate the app</button>`, headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': "sandbox allow-scripts allow-top-navigation-by-user-activation" },
+  }));
+  await page.evaluate(() => {
+    const f = document.createElement('iframe');
+    f.sandbox.value = 'allow-scripts allow-top-navigation-by-user-activation';
+    f.src = '/api/control-frame';
+    f.dataset.testid = 'control-frame';
+    document.body.append(f);
+  });
+  await page.frameLocator('[data-testid="control-frame"]').locator('#top-click').click();
+  await expect(page).toHaveURL(/\/beacon\/top-click$/);
+});
+
 test('the known limit: a running page can still navigate its own frame to another site', async ({ mockedPage: page }) => {
   const { escapes } = await watchEscapes(page);
   await page.goto('/artifacts/art-h');

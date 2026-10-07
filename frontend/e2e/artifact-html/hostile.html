@@ -3,6 +3,7 @@
 <head><meta charset="utf-8"><title>Hostile artifact</title></head>
 <body>
 <pre id="results" data-testid="results">pending</pre>
+<button id="top-click" onclick="try { top.location.href = '/beacon/top-click'; this.textContent = 'assigned'; } catch (err) { this.textContent = 'blocked:' + err.name; }">Navigate the app</button>
 <form id="form" method="post" action="/beacon/form"><input name="x" value="1"></form>
 <script>
   // Attempts every escape the interactive preview must deny and reports the
