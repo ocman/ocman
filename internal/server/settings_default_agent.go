@@ -22,7 +22,7 @@ var defaultAgentCatalog = opencode.AgentNames
 var defaultAgentPort = opencode.DiscoverOpenCodePortContext
 
 func knownAgentOptions(ctx context.Context, directories []string) []string {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	known := map[string]bool{"build": true, "plan": true}
 	targets := maps.Clone(defaultAgentPorts(ctx))
@@ -48,7 +48,7 @@ func knownAgentOptions(ctx context.Context, directories []string) []string {
 				if ctx.Err() != nil {
 					return
 				}
-				targetCtx, cancelTarget := context.WithTimeout(ctx, 500*time.Millisecond)
+				targetCtx, cancelTarget := context.WithTimeout(ctx, 4*time.Second)
 				agents := defaultAgentCatalog(targetCtx, targets[directory], directory)
 				cancelTarget()
 				mu.Lock()

@@ -141,7 +141,7 @@ func TestKnownAgentOptionsIncludesHealthyCatalogBesideStalledTarget(t *testing.T
 		<-ctx.Done()
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if got := knownAgentOptions(ctx, nil); !reflect.DeepEqual(got, []string{"build", "healthy-agent", "plan"}) {
 		t.Fatalf("stalled target hid a healthy catalog: %v", got)
@@ -165,7 +165,7 @@ func TestKnownAgentOptionsReadsHealthyTargetBeyondStalledBatch(t *testing.T) {
 		<-ctx.Done()
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	got := knownAgentOptions(ctx, nil)
 	if ctx.Err() != nil || !reflect.DeepEqual(got, []string{"build", "healthy-agent", "plan"}) {
@@ -180,7 +180,7 @@ func TestKnownAgentOptionsSetsOverallDeadline(t *testing.T) {
 	bounded := false
 	defaultAgentCatalog = func(ctx context.Context, _, _ string) []string {
 		deadline, ok := ctx.Deadline()
-		bounded = ok && time.Until(deadline) <= 2*time.Second
+		bounded = ok && time.Until(deadline) <= 5*time.Second
 		return []string{"custom"}
 	}
 	knownAgentOptions(context.Background(), nil)

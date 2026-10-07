@@ -2,10 +2,13 @@ package opencode
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -117,5 +120,108 @@ func TestAgentNamesCanceledLeaderPreservesComposerCatalog(t *testing.T) {
 	agents := agentCatalogAt(context.Background(), u.Port(), "composer", "/repo")
 	if len(agents) != 1 || agents[0].Name != "custom-agent" {
 		t.Fatalf("composer lost its agent catalog: %v", agents)
+	}
+}
+
+func TestAgentNamesBoundsUnderlyingReadsAfterCallersCancel(t *testing.T) {
+	defer ocv2.SetInstalledV2(true)()
+	const callers = 24
+	var active, peak atomic.Int32
+	release := make(chan struct{})
+	completed := make(chan struct{}, callers)
+	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/api/agent" {
+			return false
+		}
+		current := active.Add(1)
+		defer func() { active.Add(-1); completed <- struct{}{} }()
+		for previous := peak.Load(); current > previous; previous = peak.Load() {
+			if peak.CompareAndSwap(previous, current) {
+				break
+			}
+		}
+		select {
+		case <-release:
+			writeJSONBody(w, `{"data":[{"id":"custom","mode":"primary"}]}`)
+		case <-r.Context().Done():
+		}
+		return true
+	})
+	t.Cleanup(func() { catalogCache.invalidatePort(f.Port()) })
+	var waiters sync.WaitGroup
+	for i := range callers {
+		waiters.Go(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			AgentNames(ctx, f.Port(), fmt.Sprintf("/scope/%d", i))
+		})
+	}
+	waiters.Wait()
+	observed := peak.Load()
+	close(release)
+	for range callers {
+		select {
+		case <-completed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("catalog reads did not settle after releasing the upstream")
+		}
+	}
+	for i := range callers {
+		path := scopedPath(context.Background(), f.Port(), "/agent", fmt.Sprintf("/scope/%d", i))
+		<-catalogCache.flight.DoChan(f.Port()+"|"+path, func() (any, error) { return nil, nil })
+	}
+	if observed > 8 {
+		t.Fatalf("canceled callers left %d underlying agent reads active, want at most eight", observed)
+	}
+}
+
+func TestAgentNamesReadsHealthyScopeAfterFullStalledFetchBatch(t *testing.T) {
+	defer ocv2.SetInstalledV2(true)()
+	started := make(chan struct{}, 8)
+	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/api/agent" {
+			return false
+		}
+		if r.URL.Query().Get("location[directory]") == "/healthy" {
+			writeJSONBody(w, `{"data":[{"id":"healthy-agent","mode":"primary"}]}`)
+		} else {
+			started <- struct{}{}
+			<-r.Context().Done()
+		}
+		return true
+	})
+	t.Cleanup(func() { catalogCache.invalidatePort(f.Port()) })
+	var stalled sync.WaitGroup
+	for i := range 8 {
+		stalled.Go(func() { AgentNames(context.Background(), f.Port(), fmt.Sprintf("/stalled/%d", i)) })
+	}
+	for range 8 {
+		<-started
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	got := AgentNames(ctx, f.Port(), "/healthy")
+	stalled.Wait()
+	if !reflect.DeepEqual(got, []string{"healthy-agent"}) || ctx.Err() != nil {
+		t.Fatalf("stalled fetch batch starved healthy scope: agents=%v error=%v", got, ctx.Err())
+	}
+}
+
+func TestAgentCatalogAdmissionTimeoutDoesNotCacheFailure(t *testing.T) {
+	for range cap(agentCatalogFetchSlots) {
+		agentCatalogFetchSlots <- struct{}{}
+	}
+	defer func() {
+		for range cap(agentCatalogFetchSlots) {
+			<-agentCatalogFetchSlots
+		}
+	}()
+	const port = "admission-timeout-test"
+	t.Cleanup(func() { catalogCache.invalidatePort(port) })
+	if _, err := getJSONCached(context.Background(), port, "/agent"); err == nil {
+		t.Fatal("full agent fetch pool did not time out admission")
+	}
+	if _, cached := catalogCache.get(port, "/agent"); cached {
+		t.Fatal("admission failure was cached")
 	}
 }

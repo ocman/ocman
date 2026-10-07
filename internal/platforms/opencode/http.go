@@ -20,6 +20,8 @@ import (
 // HTTP plumbing for talking to a running OpenCode instance: TTL
 // caches, JSON GET/POST/PATCH helpers, and upstream error extraction.
 
+var agentCatalogFetchSlots = make(chan struct{}, 8)
+
 // Upstream response size limits. OpenCode is a local process, but it is
 // still a separate program: a bug or a wedged proxy answering with an
 // endless body must not be buffered into ocman's heap.
@@ -139,7 +141,23 @@ func getJSON(ctx context.Context, port, path string) ([]byte, error) {
 func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
 	var fetchErr error
 	body, ok := catalogCache.getOrFetch(port, path, func() ([]byte, bool) {
-		b, err := getJSON(ctx, port, path)
+		fetchCtx := ctx
+		endpoint, _, _ := strings.Cut(path, "?")
+		if endpoint == "/agent" {
+			queueCtx, cancelQueue := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancelQueue()
+			select {
+			case agentCatalogFetchSlots <- struct{}{}:
+				defer func() { <-agentCatalogFetchSlots }()
+			case <-queueCtx.Done():
+				fetchErr = queueCtx.Err()
+				return nil, false
+			}
+			var cancelFetch context.CancelFunc
+			fetchCtx, cancelFetch = context.WithTimeout(queueCtx, 2*time.Second)
+			defer cancelFetch()
+		}
+		b, err := getJSON(fetchCtx, port, path)
 		fetchErr = err
 		return b, err == nil
 	})

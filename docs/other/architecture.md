@@ -498,14 +498,16 @@ flowchart TD
   single machine server without launching an instance. Hidden helpers and
   subagent-only agents are excluded. With no reachable instance, `build`, `plan`,
   and the saved preference remain selectable; remote-only catalogs are not read.
-  Catalog discovery uses up to eight concurrent reads within a two-second overall
-  deadline, with a 500 ms per-target wait, and stops scheduling directories on
+  Catalog discovery uses up to eight concurrent waiters within a five-second overall
+  deadline, with a four-second per-target wait, and stops scheduling directories on
   cancellation. A stalled target
   does not block healthy catalogs or fallback choices. Shared port scans have an
   independent ten-second deadline;
   canceling a caller only cancels its wait, preserving other clients' live status.
-  Settings-owned shared agent fetches also use an independent ten-second deadline,
-  so leaving Settings cannot cancel a composer's joined catalog read.
+  Shared agent fetches acquire one of eight global slots inside the singleflight
+  leader and hold it through the HTTP response. Their two-second fetch deadline
+  is independent of callers; slot admission waits at most ten seconds. Leaving
+  Settings cannot cancel a composer's joined catalog read.
   A failed scan preserves the last successful snapshot for liveness readers and
   the auto-approval watcher for at most one minute without renewing the cache TTL.
   Sustained failure then expires old membership so stopped sessions lose stale
