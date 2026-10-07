@@ -84,11 +84,11 @@ export function ProjectSettingsView() {
   };
 
   if (!loaded) {
-    return <div className="settings-section">{error ? <div role="alert">{error}</div> : 'Loading…'}</div>;
+    return <div className={styles.section}>{error ? <div role="alert">{error}</div> : 'Loading…'}</div>;
   }
 
   return (
-    <div className="settings-section" data-testid="project-settings">
+    <div className={styles.section} data-testid="project-settings">
       {error && <InlineAlert>{error}</InlineAlert>}
       <SettingRow block setting="project-models">
         {models.length === 0 ? (

@@ -20,7 +20,8 @@ for (const width of [1280, 390]) {
     await page.route('/api/settings/judge-model', route => route.fulfill({ json: { model: '' } }));
     await page.route('/api/settings/judge-model/options', route => route.fulfill({ json: { models: [], default: 'Default reviewer' } }));
     await page.goto('/settings');
-    await page.getByRole('button', { name: 'Auto-approve', exact: true }).click();
+    if (width === 390) await page.getByRole('combobox', { name: 'Settings group', exact: true }).selectOption('auto-approve');
+    else await page.getByRole('button', { name: 'Auto-approve', exact: true }).click();
     const title = page.getByRole('textbox', { name: 'Section 1 title' });
     await expect(title).toHaveValue('Project safety');
     if (width === 390) {
