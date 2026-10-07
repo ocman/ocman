@@ -36,8 +36,10 @@ func TestSeenInterruptionWatermark(t *testing.T) {
 		{100, false, SeenSessionState{100, false}},
 		{100, true, SeenSessionState{100, true}},
 		{99, false, SeenSessionState{100, true}},
-		{100, false, SeenSessionState{100, false}},
+		{100, false, SeenSessionState{100, true}},
+		{101, false, SeenSessionState{101, false}},
 		{101, true, SeenSessionState{101, true}},
+		{101, false, SeenSessionState{101, true}},
 	} {
 		if err := d.MarkSessionSeen(t.Context(), "local", "s", step.updated, step.interrupted); err != nil {
 			t.Fatal(err)

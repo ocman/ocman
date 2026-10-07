@@ -46,7 +46,30 @@ function resetCache() {
 }
 
 describe('interruption read acknowledgement', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it('keeps newer and other-owner reads pending when an older request completes', async () => {
+    let finishOld!: (value: { ok: boolean }) => void;
+    let finishNew!: (value: { ok: boolean }) => void;
+    let failOther!: (error: Error) => void;
+    vi.spyOn(api, 'markSessionSeen')
+      .mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve; }))
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { failOther = reject; }));
+    const old = useApiStore.getState().markSessionSeen('opencode', 's', 100, true);
+    const newer = useApiStore.getState().markSessionSeen('opencode', 's', 100, true);
+    const other = useApiStore.getState().markSessionSeen('r-box:opencode', 's', 100, true);
+    const rejected = expect(other).rejects.toThrow('offline');
+    finishOld({ ok: true });
+    await old;
+    expect(Object.keys(useApiStore.getState().pendingInterruptionReads)).toEqual(['opencode:s', 'r-box:opencode:s']);
+    finishNew({ ok: true });
+    await newer;
+    expect(Object.keys(useApiStore.getState().pendingInterruptionReads)).toEqual(['r-box:opencode:s']);
+    failOther(new Error('offline'));
+    await rejected;
+    expect(useApiStore.getState().pendingInterruptionReads).toEqual({});
+  });
 
   it.each([true, false])('sends only the interruption state actually viewed: %s', async (interrupted) => {
     const fetch = vi.fn().mockResolvedValue(new Response('{"ok":true}', { status: 200 }));

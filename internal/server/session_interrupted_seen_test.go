@@ -47,7 +47,7 @@ func TestInterruptedSessionBecomesUnreadWithoutNewActivity(t *testing.T) {
 	mark := func() {
 		t.Helper()
 		w := httptest.NewRecorder()
-		srv.handleSeenSession(w, httptest.NewRequest(http.MethodPost, "/api/session/seen", strings.NewReader(fmt.Sprintf(`{"platform":"fake","sessionId":"crashed","timeUpdated":100,"interrupted":%t}`, row.Status == db.StatusInterrupted))))
+		srv.handleSeenSession(w, httptest.NewRequest(http.MethodPost, "/api/session/seen", strings.NewReader(fmt.Sprintf(`{"platform":"fake","sessionId":"crashed","timeUpdated":%d,"interrupted":%t}`, row.TimeUpdated, row.Status == db.StatusInterrupted))))
 		if w.Code != 200 {
 			t.Fatalf("mark seen: %d %s", w.Code, w.Body.String())
 		}
@@ -86,11 +86,15 @@ func TestInterruptedSessionBecomesUnreadWithoutNewActivity(t *testing.T) {
 	mark()
 	check(true)
 	w = httptest.NewRecorder()
+	srv.handleSeenSession(w, httptest.NewRequest(http.MethodPost, "/api/session/seen", strings.NewReader(`{"platform":"fake","sessionId":"crashed","timeUpdated":100}`)))
+	check(true)
+	w = httptest.NewRecorder()
 	srv.handleSessionsNotify(w, httptest.NewRequest(http.MethodGet, "/api/sessions/notify", nil))
 	if strings.Contains(w.Body.String(), `"id":"crashed"`) {
 		t.Fatalf("acknowledged interruption still notifies: %s", w.Body.String())
 	}
 	row.Status = db.StatusBusy
+	row.TimeUpdated++
 	mark()
 	row.Status = db.StatusInterrupted
 	check(false)

@@ -48,6 +48,18 @@ describe('filterInactiveChildren', () => {
     expect(rollupGroupStatus([makeSession({ status: 'interrupted', seen: true })])).toEqual({ kind: 'none' });
   });
 
+  it('scopes pending interruption reads to their owner and activity watermark', () => {
+    const read = makeSession({ id: 'a', status: 'interrupted', seen: true, timeUpdated: 100, seenTimeUpdated: 100 });
+    const unread = { ...read, seen: false };
+    const pending = { 'opencode:a': { timeUpdated: 100 } };
+    expect(mergeSidebarSessions([unread], [read], undefined, [read], pending)[0].seen).toBe(true);
+    const remote = { ...read, platform: 'r-box:opencode' };
+    expect(mergeSidebarSessions([{ ...remote, seen: false }], [remote], undefined, [remote], pending)[0].seen).toBe(false);
+    expect(mergeSidebarSessions([{ ...unread, timeUpdated: 101 }], [read], undefined, [read], pending)[0].seen).toBe(false);
+    const busy = { ...read, status: 'busy' as const };
+    expect(mergeSidebarSessions([unread], [busy], undefined, [busy], pending)[0].seen).toBe(false);
+  });
+
   it('drops a child whose parent is not in the list', () => {
     const sessions = [
       makeSession({ id: 'top' }),

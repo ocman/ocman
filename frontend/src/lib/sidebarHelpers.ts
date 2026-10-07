@@ -116,13 +116,17 @@ export function mergeSidebarSessions(
   current: readonly Session[],
   activeId?: string,
   requestStart?: readonly Session[],
+  pendingReads?: Readonly<Record<string, { timeUpdated: number }>>,
 ): Session[] {
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id && ls.platform === s.platform);
     if (!live) return unarchived;
-    const readDuringRequest = !!requestStart && live.status === 'interrupted'
-      && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform);
+    const pending = pendingReads?.[`${s.platform}:${s.id}`];
+    const readDuringRequest = live.status === 'interrupted' && (
+      (pending !== undefined && pending.timeUpdated >= s.timeUpdated)
+      || (!!requestStart && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform))
+    );
     return {
       ...unarchived,
       seen: s.seen || ((s.status !== 'interrupted' || readDuringRequest) && live.seen && live.seenTimeUpdated >= s.timeUpdated),

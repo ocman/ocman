@@ -17,7 +17,7 @@ vi.hoisted(() => {
   });
 });
 
-import type { Session, SessionDetail } from '../../lib/api';
+import { api, type Session, type SessionDetail } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { computeSidebarHash, visibleSidebarSessions } from '../../lib/sidebarHelpers';
@@ -192,6 +192,36 @@ describe('useSidebarSessions live refresh', () => {
     act(() => useApiStore.getState().patchRecentSession(row.id, { seen: true }, row.platform));
     await act(async () => { finish([row]); await loading; });
     expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+  });
+
+  it.each([true, false])('preserves a read whose POST starts before the GET, POST finishes first: %s', async (postFinishesFirst) => {
+    const row = { id: 'crashed', platform: 'r-box:opencode', status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
+    let finishGet!: (value: Session[]) => void;
+    let finishPost!: (value: { ok: boolean }) => void;
+    getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finishGet = resolve; }));
+    const post = vi.spyOn(api, 'markSessionSeen').mockImplementation(() => new Promise<{ ok: boolean }>((resolve) => { finishPost = resolve; }));
+    useApiStore.setState({ recentSessions: [row] });
+    const abortSignalRef = { current: new AbortController() };
+    const { result } = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    try {
+      let reading!: Promise<{ ok: boolean }>;
+      act(() => {
+        useApiStore.getState().patchRecentSession(row.id, { seen: true }, row.platform);
+        reading = useApiStore.getState().markSessionSeen(row.platform, row.id, 100, true);
+      });
+      let loading!: Promise<void>;
+      act(() => { loading = result.current.loadRecentSessions(); });
+      if (postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
+      await act(async () => { finishGet([row]); await loading; });
+      expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+      if (!postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
+      expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+    } finally {
+      post.mockRestore();
+    }
   });
 
   it('does not preserve a pre-crash busy read across an in-flight list refresh', async () => {

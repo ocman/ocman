@@ -129,6 +129,7 @@ export function useSidebarSessions({
 
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     const requestStart = useApiStore.getState().recentSessions;
+    const pendingReads = useApiStore.getState().pendingInterruptionReads;
     try {
       const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
       // /api/sessions can serialize a Go nil slice as JSON `null`;
@@ -159,6 +160,7 @@ export function useSidebarSessions({
         useApiStore.getState().recentSessions,
         id,
         requestStart,
+        { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads },
       );
 
       const hash = computeSidebarHash(merged);
@@ -212,11 +214,13 @@ export function useSidebarSessions({
         // the durable row before promoting it; never rank by event arrival.
         if (!patch.status || patch.status === 'busy') return;
         const statusRow = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
+        const pendingReads = useApiStore.getState().pendingInterruptionReads;
         peekSession(sessionID, abortSignalRef.current?.signal, owner).then(({ session: row }) => {
           if (!subscribed || row.id !== sessionID || row.platform !== owner) return;
           const current = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
-          // A local read made during the fetch wins over its stale acknowledgement.
-          patchRecentSession(sessionID, { ...(row.status === 'interrupted' && current === statusRow ? { seen: row.seen, seenTimeUpdated: row.seenTimeUpdated } : {}), lastTurnCompletedAt: Math.max(
+          const readState = mergeSidebarSessions([row], current ? [current] : [], undefined, statusRow ? [statusRow] : [],
+            { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads })[0];
+          patchRecentSession(sessionID, { ...(row.status === 'interrupted' ? { seen: readState.seen, seenTimeUpdated: readState.seenTimeUpdated } : {}), lastTurnCompletedAt: Math.max(
             row.lastTurnCompletedAt ?? 0, current?.lastTurnCompletedAt ?? 0,
           ) }, owner);
         }).catch((err) => remoteLog.error('Failed to refresh completed session', err));

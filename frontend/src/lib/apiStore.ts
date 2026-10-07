@@ -58,6 +58,7 @@ export function resetWhisperStatusCache() {
 
 type ApiStore = {
   requests: Record<string, RequestStatus>;
+  pendingInterruptionReads: Record<string, { timeUpdated: number }>;
   // Cached list of all sessions (no directory filter). `null` means never
   // fetched; components can render immediately from this value while
   // `refreshCachedSessions` updates it in the background.
@@ -155,6 +156,7 @@ type ApiStore = {
 
 export const useApiStore = create<ApiStore>((set, get) => ({
   requests: {},
+  pendingInterruptionReads: {},
   cachedSessions: null,
   recentSessions: [],
   recentSessionsHash: '',
@@ -353,7 +355,21 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   archiveProject: (directory, archived = true, remoteId) => get().runRequest(`project:archive:${remoteId ?? 'local'}:${directory}`, () => api.archiveProject(directory, archived, remoteId)),
-  markSessionSeen: (platform, sessionId, timeUpdated, interrupted) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated, interrupted)),
+  markSessionSeen: async (platform, sessionId, timeUpdated, interrupted) => {
+    const key = `${platform}:${sessionId}`;
+    const pending = { timeUpdated };
+    if (interrupted) set(state => ({ pendingInterruptionReads: { ...state.pendingInterruptionReads, [key]: pending } }));
+    try {
+      return await get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated, interrupted));
+    } finally {
+      if (interrupted) set(state => {
+        if (state.pendingInterruptionReads[key] !== pending) return state;
+        const next = { ...state.pendingInterruptionReads };
+        delete next[key];
+        return { pendingInterruptionReads: next };
+      });
+    }
+  },
   pinSession: (platform, sessionId, pinned) => get().runRequest(`session:pin:${sessionId}`, () => api.pinSession(platform, sessionId, pinned)),
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),

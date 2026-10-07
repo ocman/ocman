@@ -17,7 +17,8 @@ func (d *DB) MarkSessionSeen(ctx context.Context, platform, sessionID string, se
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(platform, session_id) DO UPDATE SET
 			interrupted = CASE
-				WHEN excluded.session_time_updated >= seen_session.session_time_updated THEN excluded.interrupted
+				WHEN excluded.session_time_updated > seen_session.session_time_updated THEN excluded.interrupted
+				WHEN excluded.session_time_updated = seen_session.session_time_updated THEN seen_session.interrupted OR excluded.interrupted
 				ELSE seen_session.interrupted
 			END,
 			session_time_updated = CASE
