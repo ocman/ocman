@@ -22,8 +22,8 @@ export function ModelBadges({ entry: e, rich }: { entry: ModelEntry; rich: boole
         </span>
       )}
       {rich && !e.isAvailable && (
-        <span className="oc-model-picker-badge oc-model-picker-badge--archived" title="Provider not connected">
-          archived
+        <span className="oc-model-picker-badge oc-model-picker-badge--archived" title="Provider is not connected on this session's machine. Connect it or choose another provider.">
+          provider disconnected
         </span>
       )}
       {cooldownLeft && (

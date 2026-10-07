@@ -3,7 +3,7 @@ import type { SessionModelEntry } from '../../lib/api';
 export interface ModelDescription {
   /** Human-readable label for the model button ('' when no model). */
   label: string;
-  /** Selected model is known but not available on this session's host. */
+  /** Selected model's provider is reported disconnected on this session's host. */
   unavailable: boolean;
   /** Reasoning variants the model exposes. */
   reasoningOptions: string[];
@@ -20,7 +20,7 @@ export function describeModel(effectiveModel: string, modelEntries: SessionModel
     label: match ? (match.modelName || match.model) : slash > 0 ? effectiveModel.slice(slash + 1) : effectiveModel,
     // Only trust the rich entries; the string fallback has no
     // availability data so we stay silent there.
-    unavailable: !!match && !match.isAvailable,
+    unavailable: match?.isAvailable === false,
     reasoningOptions: match?.reasoning ?? [],
   };
 }

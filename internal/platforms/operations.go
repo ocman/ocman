@@ -252,7 +252,7 @@ type SessionModel struct {
 	RecentRank        int      `json:"recentRank,omitempty"`
 	IsSessionDefault  bool     `json:"isSessionDefault,omitempty"`
 	IsProviderDefault bool     `json:"isProviderDefault,omitempty"`
-	IsAvailable       bool     `json:"isAvailable,omitempty"`
+	IsAvailable       bool     `json:"isAvailable"`
 	IsFavorite        bool     `json:"isFavorite,omitempty"`
 	Reasoning         []string `json:"reasoning,omitempty"`
 	// CooldownUntil is when the provider's active cooldown expires; nil

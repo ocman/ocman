@@ -6,7 +6,7 @@ import { ModelBadges } from './assistant/ModelBadges';
 import { ModelLabel } from './ModelLogo';
 import { SearchSelect, type SearchSelectOption } from './SearchSelect';
 
-const sectionOrder = ['Favorites', 'Recent', 'Recommended', 'All models', 'Archived'];
+const sectionOrder = ['Favorites', 'Recent', 'Recommended', 'All models', 'Disconnected providers'];
 
 interface ModelSelectProps {
   value: string;

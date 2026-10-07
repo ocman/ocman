@@ -145,3 +145,31 @@ func TestBuildSessionModelEntries_FavoriteFromDisconnectedProvider(t *testing.T)
 		t.Error("orphan favorite should NOT be marked available (provider disconnected)")
 	}
 }
+
+func TestBuildSessionModelEntries_ConnectedProviderMissingModel(t *testing.T) {
+	for _, source := range []string{"recent", "favorite", "session default"} {
+		t.Run(source, func(t *testing.T) {
+			var recents []db.RecentModel
+			var favorites []state.ModelFavorite
+			var sessionDefault string
+			switch source {
+			case "recent":
+				recents = []db.RecentModel{{Provider: "anthropic", Model: "custom-model"}}
+			case "favorite":
+				favorites = []state.ModelFavorite{{Provider: "anthropic", Model: "custom-model"}}
+			case "session default":
+				sessionDefault = "anthropic/custom-model"
+			}
+			entries := buildSessionModelEntries(recents, favorites, providersFixture(), true, sessionDefault)
+			for _, e := range entries {
+				if e.Model == "custom-model" {
+					if !e.IsAvailable {
+						t.Fatal("model from connected provider incorrectly flagged unavailable because it is absent from the catalog")
+					}
+					return
+				}
+			}
+			t.Fatal("model missing from picker")
+		})
+	}
+}

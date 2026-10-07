@@ -33,7 +33,7 @@ function fromRich(modelEntries: SessionModelEntry[], currentModel: string | unde
       recentRank: m.recentRank ?? 0,
       isSessionDefault: !!m.isSessionDefault,
       isProviderDefault: !!m.isProviderDefault,
-      isAvailable: !!m.isAvailable,
+      isAvailable: m.isAvailable !== false,
       isFavorite: !!m.isFavorite,
       isCurrent: !!currentModel && value === currentModel,
       cooldownUntil: m.cooldownUntil || '',
@@ -82,7 +82,7 @@ export function modelSectionOf(e: ModelEntry): string {
   if (e.isSessionDefault || e.recentRank > 0) return 'Recent';
   if (e.isProviderDefault) return 'Recommended';
   if (e.isAvailable) return 'All models';
-  return 'Archived';
+  return 'Disconnected providers';
 }
 
 // Favorites and defaults outrank closer matches when searching.

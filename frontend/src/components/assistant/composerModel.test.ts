@@ -14,5 +14,6 @@ describe('describeModel', () => {
     expect(describeModel('openai/gpt', entries)).toEqual({ label: 'gpt', unavailable: true, reasoningOptions: [] });
     expect(describeModel('x/unknown-model', entries)).toEqual({ label: 'unknown-model', unavailable: false, reasoningOptions: [] });
     expect(describeModel('bare', undefined).label).toBe('bare');
+    expect(describeModel('a/unknown', [{ provider: 'a', model: 'unknown' }]).unavailable).toBe(false);
   });
 });

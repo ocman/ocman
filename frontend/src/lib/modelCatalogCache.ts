@@ -4,7 +4,8 @@ import type { SessionModelEntry } from './api';
 // data instead of an empty list and a failed refresh never downgrades it.
 // Memory keeps the full catalog; localStorage keeps only favorites, recents
 // and the session default so a reload still has the short list.
-const KEY = 'ocman.modelCatalog.v1';
+// v2 drops availability flags inferred from model catalog membership.
+const KEY = 'ocman.modelCatalog.v2';
 const MAX_PROJECTS = 30;
 
 type Stored = Record<string, SessionModelEntry[]>;

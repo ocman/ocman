@@ -41,7 +41,7 @@ func variantNamesFor(m OpenCodeProviderModel) []string {
 //
 // Favorites are seeded into the entry map the same way recents are, so
 // a favorited model stays visible even when its provider is currently
-// disconnected — it just shows up as "archived" instead.
+// disconnected — it shows a provider-disconnected notice instead.
 //
 // Split out from SessionModels so it's unit-testable without a running
 // OpenCode instance.
@@ -106,7 +106,6 @@ func buildSessionModelEntries(
 			e := get(p.ID, modelID)
 			e.ProviderName = p.Name
 			e.ModelName = m.Name
-			e.IsAvailable = true
 			if variants := variantNamesFor(m); len(variants) > 0 {
 				e.Reasoning = variants
 			}
@@ -137,6 +136,11 @@ func buildSessionModelEntries(
 		if e, ok := entryMap[key(providerID, modelID)]; ok {
 			e.IsProviderDefault = true
 		}
+	}
+	// Catalog membership is not an availability check: custom or historical
+	// model IDs can still work with a connected provider.
+	for _, e := range entryMap {
+		_, e.IsAvailable = connected[e.Provider]
 	}
 
 	// Collect and sort.
@@ -183,7 +187,7 @@ func buildSessionModelEntries(
 		return a.Model < b.Model
 	})
 	// When we got no live provider data, flip IsAvailable off so the client
-	// doesn't try to distinguish "archived" vs "available" in the UI.
+	// treats availability as unknown using the response's HasProviders flag.
 	if !hasProviders {
 		for i := range out {
 			out[i].IsAvailable = false

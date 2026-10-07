@@ -45,4 +45,16 @@ describe('ModelPicker cooldown', () => {
     act(() => { vi.advanceTimersByTime(61_000); });
     expect(row('x').textContent).not.toContain('unavailable');
   });
+
+  it('explains disconnected providers without calling models archived', () => {
+    render(<ModelPicker open models={[]} modelEntries={[
+      { provider: 'a', model: 'disconnected', isAvailable: false },
+      { provider: 'a', model: 'unknown' },
+    ]} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText('Archived')).not.toBeInTheDocument();
+    expect(screen.queryByText('archived')).not.toBeInTheDocument();
+    expect(row('disconnected').textContent).toContain('provider disconnected');
+    expect(row('unknown').textContent).not.toContain('provider disconnected');
+    expect(screen.getByTitle('Provider is not connected on this session\'s machine. Connect it or choose another provider.')).toBeInTheDocument();
+  });
 });

@@ -221,7 +221,7 @@ export function ComposerToolbar({
                 className={`oc-bar-select${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
                 disabled={uiDisabled}
                 onClick={openModelPicker}
-                title={modelUnavailable ? 'Model not available on this host — pick another' : 'Model (click to change)'}
+                title={modelUnavailable ? 'Provider is not connected on this session\'s machine. Connect it or choose another provider.' : 'Model (click to change)'}
               >
                 {modelUnavailable && <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />}
                 {modelButtonLabel ? <ModelLabel model={effectiveModel}>{modelButtonLabel}</ModelLabel> : 'Model'}
