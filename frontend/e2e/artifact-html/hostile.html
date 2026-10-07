@@ -15,7 +15,8 @@
     try { results[name] = 'ok:' + String(await fn()); } catch (err) { results[name] = 'blocked:' + err.name; }
   };
   const violations = [];
-  document.addEventListener('securitypolicyviolation', (e) => violations.push(e.effectiveDirective));
+  const blocked = [];
+  document.addEventListener('securitypolicyviolation', (e) => { violations.push(e.effectiveDirective); blocked.push(e.blockedURI); });
 
   attempt('origin', () => self.origin);
   attempt('parentDocument', () => parent.document.title);
@@ -44,6 +45,9 @@
     const framed = window !== top;
     if (framed) attempt('topNavigation', () => { top.location.href = '/beacon/top'; return 'assigned'; });
     results.violations = [...new Set(violations)].sort().join(',');
+    // A refused connection looks like a CSP block; only a policy report (Chromium)
+    // or a synchronous SecurityError from the constructor (WebKit) proves the CSP.
+    results.socketBlockedByPolicy = String(results.webSocket === 'blocked:SecurityError' || blocked.some((uri) => uri.startsWith('ws://evil.test')));
     document.getElementById('results').textContent = JSON.stringify(results);
     // Last: a permitted form submission would navigate this frame away.
     if (framed) attempt('form', () => { document.getElementById('form').submit(); return 'submitted'; });

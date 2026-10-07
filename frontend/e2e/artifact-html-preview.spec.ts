@@ -128,6 +128,7 @@ test('an interactive hostile artifact cannot reach the app, storage, network, to
   }
   // Chromium reports img-src/frame-src violations asynchronously; the network check below is the ground truth.
   expect(r.violations).toContain('connect-src');
+  expect(r.socketBlockedByPolicy).toBe('true');
   await page.waitForTimeout(1000);
   expect(escapes).toEqual([]);
   await checkWatcher(page);
