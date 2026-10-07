@@ -158,8 +158,23 @@ describe('useSessionActions — /reload-opencode', () => {
     const opts = makeOptions();
     const { result } = renderHook(() => useSessionActions(opts));
     await act(async () => { await result.current.handleCommand('reload-opencode', 'all'); });
-    expect(opts.pending.fail).toHaveBeenCalledWith('Usage: /reload-opencode');
+    expect(opts.setRestartToastMessage).toHaveBeenCalledWith('Usage: /reload-opencode');
+    expect(opts.pending.fail).not.toHaveBeenCalled();
     expect(api.reloadOpencode).not.toHaveBeenCalled();
+  });
+
+  it('keeps a valid reload current when a later command has invalid arguments', async () => {
+    let finish!: () => void;
+    vi.mocked(api.reloadOpencode).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ reloadCapabilities });
+    const { result } = renderHook(() => useSessionActions(opts));
+    let reload!: Promise<void>;
+    act(() => { reload = result.current.handleCommand('reload-opencode', ''); });
+    await act(async () => { await result.current.handleCommand('reload-opencode', 'all'); });
+    await act(async () => { finish(); await reload; });
+    expect(api.reloadOpencode).toHaveBeenCalledTimes(1);
+    expect(reloadCapabilities).toHaveBeenCalledTimes(1);
   });
 });
 

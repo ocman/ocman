@@ -143,7 +143,7 @@ const restartOpencode: SlashCommand = {
 const reloadOpencode: SlashCommand = {
   run: async ({ session, pending, setRestartToastMessage, reloadCapabilities, isCurrent }, args) => {
     if (args.trim()) {
-      pending.fail('Usage: /reload-opencode');
+      setRestartToastMessage('Usage: /reload-opencode');
       return;
     }
     pending.begin('/reload-opencode');

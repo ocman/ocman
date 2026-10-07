@@ -427,7 +427,7 @@ export function useSessionActions({
   const handleCommand = useCallback(async (command: string, args: string) => {
     if (!session) return;
 
-    const generation = command === 'reload-opencode' ? ++reloadGeneration.current : reloadGeneration.current;
+    const generation = command === 'reload-opencode' && !args.trim() ? ++reloadGeneration.current : reloadGeneration.current;
     const isCurrent = () => activeScope.current === scope && reloadGeneration.current === generation;
     if (!isCurrent() || (routeSessionId !== undefined && routeSessionId !== session.id)) return;
 
