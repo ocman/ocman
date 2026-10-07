@@ -548,6 +548,7 @@ func TestHandleSessions_NoticeAppearsForRateLimitedSession(t *testing.T) {
 	notice := byID["s1"]
 	if notice == nil {
 		t.Fatal("s1 should have a notice")
+		return
 	}
 	if notice.Kind != "rate_limit" {
 		t.Errorf("notice.kind = %q, want rate_limit", notice.Kind)

@@ -46,6 +46,7 @@ func TestWithRequestTiming_LogsAtDebugForFastRequests(t *testing.T) {
 	entry := findEntry(hook, "/api/stats")
 	if entry == nil {
 		t.Fatalf("expected a log entry for /api/stats; got %d entries", len(hook.AllEntries()))
+		return
 	}
 	if entry.Level != log.DebugLevel {
 		t.Errorf("level: got %v, want %v", entry.Level, log.DebugLevel)
@@ -83,6 +84,7 @@ func TestWithRequestTiming_LogsAtDebugForSlowRequests(t *testing.T) {
 	entry := findEntry(hook, "/api/sessions")
 	if entry == nil {
 		t.Fatalf("expected a log entry for /api/sessions")
+		return
 	}
 	if entry.Level != log.DebugLevel {
 		t.Errorf("level: got %v, want %v", entry.Level, log.DebugLevel)
