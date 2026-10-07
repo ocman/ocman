@@ -195,6 +195,7 @@ func TestDeriveSessionNotice_ErroredWithRateLimit(t *testing.T) {
 	notice := deriveSessionNotice(s)
 	if notice == nil {
 		t.Fatal("expected notice")
+		return
 	}
 	if notice.Kind != "rate_limit" {
 		t.Errorf("kind = %q, want rate_limit", notice.Kind)
@@ -216,6 +217,7 @@ func TestDeriveSessionNotice_ErroredWithRateLimitInName(t *testing.T) {
 	notice := deriveSessionNotice(s)
 	if notice == nil {
 		t.Fatal("expected notice from error name")
+		return
 	}
 	if notice.Kind != "rate_limit" {
 		t.Errorf("kind = %q, want rate_limit", notice.Kind)
@@ -231,6 +233,7 @@ func TestDeriveSessionNotice_ErroredWithProviderOverload(t *testing.T) {
 	notice := deriveSessionNotice(s)
 	if notice == nil {
 		t.Fatal("expected notice")
+		return
 	}
 	if notice.Kind != "provider_overloaded" {
 		t.Errorf("kind = %q, want provider_overloaded", notice.Kind)
@@ -251,6 +254,7 @@ func TestDeriveSessionNotice_ErroredWithProviderOverloadInName(t *testing.T) {
 	notice := deriveSessionNotice(s)
 	if notice == nil {
 		t.Fatal("expected notice from error name")
+		return
 	}
 	if notice.Kind != "provider_overloaded" {
 		t.Errorf("kind = %q, want provider_overloaded", notice.Kind)
@@ -266,6 +270,7 @@ func TestDeriveSessionNotice_BusyWithRateLimit(t *testing.T) {
 	notice := deriveSessionNotice(s)
 	if notice == nil {
 		t.Fatal("expected notice")
+		return
 	}
 	if notice.Kind != "rate_limit" {
 		t.Errorf("kind = %q, want rate_limit", notice.Kind)
@@ -303,6 +308,7 @@ func TestDeriveSessionNotice_ErroredWithGenericError(t *testing.T) {
 	notice := deriveSessionNotice(s)
 	if notice == nil {
 		t.Fatal("expected generic notice")
+		return
 	}
 	if notice.Kind != "error" {
 		t.Errorf("kind = %q, want error", notice.Kind)
@@ -349,6 +355,7 @@ func TestApplySessionNotice_EnrichesSlice(t *testing.T) {
 
 	if sessions[0].Notice == nil {
 		t.Fatal("s1 should have a notice")
+		return
 	}
 	if sessions[0].Notice.Kind != "rate_limit" {
 		t.Errorf("s1 notice kind = %q", sessions[0].Notice.Kind)

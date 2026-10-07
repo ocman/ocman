@@ -117,6 +117,7 @@ func TestWithRequestTiming_CapturesNon2xxStatus(t *testing.T) {
 	entry := findEntry(hook, "/api/cost/calc")
 	if entry == nil {
 		t.Fatalf("expected a log entry for /api/cost/calc")
+		return
 	}
 	if got, _ := entry.Data["status"].(int); got != http.StatusInternalServerError {
 		t.Errorf("status: got %v, want 500", entry.Data["status"])
