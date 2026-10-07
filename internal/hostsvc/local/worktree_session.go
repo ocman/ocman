@@ -43,6 +43,14 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		req.MustCreateBranch = true
 	}
 
+	baseRef := req.BaseRef
+	if req.NewBranch && baseRef == "" {
+		baseRef = git.ResolveBaseRef(ctx, repoRoot)
+		if baseRef == "" {
+			return nil, fmt.Errorf("worktree: repository has no usable commit; use the current checkout or create an initial commit")
+		}
+	}
+
 	// The instance probe and the checkout are independent; overlap them.
 	type ensureResult struct {
 		res *hostsvc.EnsureProjectOpencodeResult
@@ -56,10 +64,6 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		ensuredCh <- ensureResult{res, err}
 	}()
 
-	baseRef := req.BaseRef
-	if req.NewBranch && baseRef == "" {
-		baseRef = git.ResolveBaseRef(ctx, repoRoot)
-	}
 	hostsvc.ReportProgress(ctx, hostsvc.StepWorktree, hostsvc.StepActive)
 	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
 		RepoRoot: repoRoot, Branch: req.Branch, NewBranch: req.NewBranch,

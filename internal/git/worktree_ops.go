@@ -347,31 +347,29 @@ func classifyAddError(err error, output string) error {
 	}
 }
 
-// ResolveBaseRef returns the best-guess base ref for new branches in
-// the given repo (AD-5):
-//
-//  1. origin/HEAD's target (the upstream's default branch).
-//  2. The repo's currently checked-out branch.
-//  3. Literal "main".
-//
-// Errors at any step fall through to the next option silently — the
-// returned value is *always* a usable string. Used to pre-fill the
-// "base ref" field in the worktree-creation form.
+// ResolveBaseRef returns a verified base for new branches: the local default
+// branch, its remote-tracking ref, the current branch, then detached HEAD.
+// Empty means no usable commit is available (including an unborn repository).
 func ResolveBaseRef(ctx context.Context, repoRoot string) string {
-	// (1) origin/HEAD
+	valid := func(ref string) bool {
+		return ref != "" && runGitOutput(ctx, repoRoot, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}") != ""
+	}
 	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); ref != "" {
-		// Output looks like "origin/main"; strip the remote prefix.
-		if idx := strings.IndexByte(ref, '/'); idx >= 0 {
-			return ref[idx+1:]
+		local := strings.TrimPrefix(ref, "origin/")
+		if branchExists(ctx, repoRoot, local) && valid(local) {
+			return local
 		}
+		if valid(ref) {
+			return ref
+		}
+	}
+	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "--short", "HEAD"); valid(ref) {
 		return ref
 	}
-	// (2) current branch
-	if ref := runGitOutput(ctx, repoRoot, "rev-parse", "--abbrev-ref", "HEAD"); ref != "" && ref != "HEAD" {
-		return ref
+	if valid("HEAD") {
+		return "HEAD"
 	}
-	// (3) sentinel
-	return "main"
+	return ""
 }
 
 // runGitOutput is a small helper around exec.CommandContext that

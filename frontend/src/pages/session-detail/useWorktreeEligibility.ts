@@ -10,8 +10,8 @@ export interface WorktreeEligibility {
 
 /**
  * Whether a new conversation in `directory` may start in a fresh worktree:
- * the directory is a repository and is not itself already a linked
- * worktree. Both reads only need the owner; they are fetched together.
+ * the directory has a usable base commit and is not already a linked
+ * worktree. All reads go to the selected owner.
  */
 export function useWorktreeEligibility(directory: string, remoteId: string) {
   const [resolved, setResolved] = useState<WorktreeEligibility>();
@@ -42,7 +42,12 @@ export function useWorktreeEligibility(directory: string, remoteId: string) {
           linked = worktrees.filter((tree) => !tree.main && !tree.bare)
             .map((tree) => ({ path: tree.path, branch: tree.branch }));
         }
-        if (!controller.signal.aborted) setResolved({ canCreate: repo && !alreadyChosen, worktrees: linked });
+        let canCreate = repo && !alreadyChosen;
+        if (canCreate) {
+          const { baseRef } = await fetchJSON<{ baseRef: string }>(`/api/worktree/default-base-ref?${query}`, controller.signal);
+          canCreate = !!baseRef;
+        }
+        if (!controller.signal.aborted) setResolved({ canCreate, worktrees: linked });
       } catch (err) {
         if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));
       }

@@ -15,7 +15,7 @@ import type { Message } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 
 const mocks = vi.hoisted(() => ({
-  prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
+  prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), baseRef: vi.fn(), post: vi.fn(), seed: vi.fn(),
   openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), settings: vi.fn(), caps: { shellExec: true },
   progress: new Set<(id: string, step: string, state: string) => void>(),
 }));
@@ -27,7 +27,7 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 }));
 vi.mock('../../lib/api', () => ({
   api: { prepareSession: mocks.prepare, startSession: mocks.start, addFavorite: mocks.addFavorite, removeFavorite: mocks.removeFavorite },
-  fetchJSON: (url: string, signal?: AbortSignal) => url.startsWith('/api/project/settings') ? mocks.settings(url) : url.startsWith('/api/worktree/list') ? mocks.worktrees(url, signal) : mocks.info(url, signal),
+  fetchJSON: (url: string, signal?: AbortSignal) => url.startsWith('/api/project/settings') ? mocks.settings(url) : url.startsWith('/api/worktree/list') ? mocks.worktrees(url, signal) : url.startsWith('/api/worktree/default-base-ref') ? mocks.baseRef(url, signal) : mocks.info(url, signal),
   postJSON: mocks.post,
 }));
 vi.mock('../../lib/apiStore', () => ({
@@ -77,8 +77,30 @@ describe('NewConversation', () => {
       models: { hasProviders: true, models: [{ provider: 'prov', model: 'big' }] },
     });
     mocks.info.mockResolvedValue({ '/repo': { branch: 'main' } });
+    mocks.baseRef.mockResolvedValue({ baseRef: 'main' });
     mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', branch: 'main', main: true }] });
     mocks.start.mockResolvedValue({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/worktrees/fix', firstMessageSent: true, firstMessageError: '' });
+  });
+
+  it('uses the current checkout when the owner has no usable worktree base', async () => {
+    mocks.baseRef.mockResolvedValue({ baseRef: '' });
+    mount();
+    await ready();
+    expect(mocks.baseRef).toHaveBeenCalledWith('/api/worktree/default-base-ref?dir=%2Frepo&remoteId=machine', expect.any(AbortSignal));
+    expect(composer.worktreesSupported).toBe(false);
+    expect(composer.target).toBe('current');
+    await act(() => composer.onSend!('First commit'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
+  });
+
+  it('keeps base lookup failures retryable instead of assuming worktrees are available', async () => {
+    mocks.baseRef.mockRejectedValueOnce(new Error('base lookup offline'));
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('base lookup offline');
+    expect(composer.worktreesSupported).toBe(false);
+    await act(async () => screen.getByRole('button', { name: 'Retry' }).click());
+    await ready();
+    expect(composer.worktreesSupported).toBe(true);
   });
 
   it('refreshes the owner catalog after changing favorites and preserves manual model selection', async () => {

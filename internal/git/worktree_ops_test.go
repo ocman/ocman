@@ -300,12 +300,10 @@ func TestResolveBaseRef(t *testing.T) {
 	}
 }
 
-func TestResolveBaseRef_FallsBackToMain(t *testing.T) {
-	// Pass a non-repo dir; should still return "main" as the last-
-	// resort sentinel rather than erroring out.
+func TestResolveBaseRef_NonRepository(t *testing.T) {
 	got := ResolveBaseRef(context.Background(), t.TempDir())
-	if got != "main" {
-		t.Errorf("ResolveBaseRef on non-repo = %q, want main", got)
+	if got != "" {
+		t.Errorf("ResolveBaseRef on non-repo = %q, want empty", got)
 	}
 }
 

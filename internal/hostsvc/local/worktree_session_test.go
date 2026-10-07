@@ -65,6 +65,23 @@ func TestWorktreeSessionSeedsOpencodeDeps(t *testing.T) {
 	}
 }
 
+func TestAutomaticWorktreeWithoutCommitsDoesNotLaunch(t *testing.T) {
+	repo := t.TempDir()
+	ctx := context.Background()
+	if out, err := gitexec.Command(ctx, "-C", repo, "init", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("init: %v: %s", err, out)
+	}
+	rt := &fakeRuntime{endpoint: "http://127.0.0.1:4242"}
+	h := New(Deps{Runtime: rt})
+	_, err := h.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{ProjectDir: repo, AutoName: true})
+	if err == nil || !strings.Contains(err.Error(), "no usable commit") {
+		t.Errorf("error = %v, want no usable commit", err)
+	}
+	if rt.launchCount() != 0 {
+		t.Errorf("launched %d instances for an ineligible repository", rt.launchCount())
+	}
+}
+
 // Automatic worktrees return a provisional name at once; the model's name is
 // applied afterwards to the branch and the session title, keeping the path.
 func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {

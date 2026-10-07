@@ -27,7 +27,7 @@ vi.mock('../../lib/api', async (original) => {
   const actual = await original<typeof import('../../lib/api')>();
   return {
     ...actual,
-    fetchJSON: vi.fn(async (url: string) => url.startsWith('/api/worktree/list')
+    fetchJSON: vi.fn(async (url: string) => url.startsWith('/api/worktree/default-base-ref') ? { baseRef: 'main' } : url.startsWith('/api/worktree/list')
       ? { worktrees: [{ path: '/repo', branch: 'main', main: true }] }
       : { '/repo': { branch: 'main' } }),
     postJSON: vi.fn(),

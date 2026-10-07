@@ -103,3 +103,14 @@ func TestFactoryWorkspaceCheckpoint(t *testing.T) {
 		t.Fatalf("local target = %s/%s, %v", target, base, err)
 	}
 }
+
+func TestFactoryWorkspaceRemoteOnlyDefault(t *testing.T) {
+	repo := initTestRepo(t)
+	gitRun(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+	gitRun(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	gitRun(t, repo, "branch", "-m", "develop")
+	target, base, err := PrepareFactoryWorkspace(t.Context(), repo, "factory/new", "", "")
+	if err != nil || target != "main" || base != "refs/remotes/origin/main" {
+		t.Fatalf("remote-only target = %s/%s, %v", target, base, err)
+	}
+}
