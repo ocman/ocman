@@ -1,5 +1,9 @@
 import { test, expect } from './fixtures';
 
+test.beforeEach(async ({ mockedPage: page }) => {
+  await page.route('/api/sessions/prepare', (route) => route.fulfill({ json: { platform: 'opencode', agents: [], commands: [], models: { models: [], hasProviders: false }, liveConnection: false } }));
+});
+
 test('Factory tracer approves a plan, checkpoints implementation, delivers a PR, and closes its containers', async ({ mockedPage: page }) => {
   const epic = { id: 'ship-a1b2', status: 'open', goal: 'Ship tracer', brief: '', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 1, formulaRevision: 1, formulaHash: 'formula', formulaOrigin: 'built_in', instantiationId: 'one', progress: { requiredTotal: 1, requiredSucceeded: 0, optionalOpen: 0 }, attempts: [] as object[] };
   let poured = false;
@@ -82,7 +86,7 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   await page.getByRole('button', { name: 'Close epic' }).click();
   expect((await prematureClose).status()).toBe(409);
   expect(closed).toBe(false);
-  await expect(page.getByRole('alert')).toHaveText('Final delivery is incomplete');
+  await expect(page.getByRole('alert').filter({ hasText: 'Final delivery is incomplete' })).toHaveText('Final delivery is incomplete');
   // Simulate the final delivery agent completing after the implementation checkpoint.
   delivered = true;
   await page.reload();
