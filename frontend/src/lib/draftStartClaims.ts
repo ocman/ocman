@@ -11,6 +11,8 @@ export interface DraftStart {
   replacementDraftId?: string;
   persistenceError?: string;
   committed?: boolean;
+  relocationError?: string;
+  pendingReplacementId?: string;
 }
 
 // IndexedDB readwrite transactions serialize claims across tabs, including plain HTTP.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NEW_SESSION_ID, newSessionPath } from '../../lib/newSessionPath';
-import { reconcileConversationStart, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { reconcileConversationStart, retryDraftRelocation, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { useApiStore } from '../../lib/apiStore';
 import { migrateDraft } from '../../lib/composerDraft';
 import { randomId } from '../../lib/randomId';
@@ -45,6 +45,7 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
   }, [directory, remoteId, platform, title, routeDraftId, legacyId, draftId, receiptState, receiptRetry, navigate]);
   useEffect(() => {
     let active = true;
+    if (receipt?.relocationError) return;
     if (replacement) {
       const target = `${draftId}:${replacement.draftId}`;
       if (navigated.current !== target) { navigated.current = target; navigate(newSessionPath(replacement)); }
@@ -74,8 +75,13 @@ export function PreparedDraftLifecycle({ params, navigate, navigateToSession, ch
       });
     }
     return () => { active = false; };
-  }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receiptRetry, navigate, navigateToSession]);
-  const retry = () => { setReceiptError(''); setReceiptRetry((value) => value + 1); };
+  }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receipt?.relocationError, receiptRetry, navigate, navigateToSession]);
+  const retry = () => {
+    setReceiptError('');
+    if (receipt?.relocationError) void retryDraftRelocation(draftId).catch((error: unknown) => setReceiptError(error instanceof Error ? error.message : String(error)));
+    else setReceiptRetry((value) => value + 1);
+  };
+  if (receipt?.relocationError) return <InlineAlert onRetry={retry}>{receiptError || receipt.relocationError}</InlineAlert>;
   if (!params.draftId) return receiptError ? <InlineAlert onRetry={retry}>{receiptError}</InlineAlert> : null;
   if (sessionId || replacement) return null;
   if (observed === draftId && !exists) return receiptError ? <InlineAlert onRetry={retry}>{receiptError}</InlineAlert> : null;

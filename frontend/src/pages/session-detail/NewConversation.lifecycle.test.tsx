@@ -15,7 +15,7 @@ import { usePendingSend } from './usePendingSend';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { useFirstSubmission } from './firstSubmission';
 import type { NewSessionParams } from '../../lib/newSessionPath';
-import { forgetConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath';
@@ -122,6 +122,21 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('preserves model/agent/reasoning/target edits made while the API request is unresolved', async () => {
+    const request = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValue(request.promise);
+    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'submitted' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    act(() => rememberConversationDraft({ draftId: 'first', directory: '/repo', title: 'First', remoteId: 'local',
+      model: 'p/new', agent: 'plan', reasoning: 'high', target: 'current' }));
+    await act(async () => request.resolve(created));
+    const replacement = useNewConversationDrafts.getState().starts.first.replacementDraftId;
+    expect(replacement).toBeTruthy();
+    expect(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === replacement))
+      .toMatchObject({ model: 'p/new', agent: 'plan', reasoning: 'high', target: 'current' });
+  });
   it('restores attachments submitted before leaving a pending first start', async () => {
     const first = deferred<typeof created>();
     vi.mocked(api.startSession).mockReturnValue(first.promise);

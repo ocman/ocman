@@ -588,6 +588,11 @@ flowchart TD
   Retirement rechecks metadata/text after terminal persistence and copies late
   edits before deleting the old identity. Legacy text migration is one checked
   rename write; a quota error leaves the original available with an explicit retry.
+  Replacement text uses the same checked relocation; a failed relocation keeps
+  the completed claim and original draft with a safe retry. Validated terminal
+  mirrors for the current attempt can be adopted and repaired by already-open
+  peer tabs. Submitted model/agent/reasoning/target selections participate in
+  retirement ownership, so changed selections are retained under a new identity.
   Explicit metadata deletion invalidates autosave and recovery;
   unrelated metadata writes cannot discard text. Successful
   starts retire their submitted revision independently of active navigation.

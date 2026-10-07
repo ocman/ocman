@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { discardDraft, getDraft, getDraftVersion, saveDraft } from './composerDraft';
+import { discardDraft, getDraft, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
 import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
 import { randomId } from './randomId';
 import { remoteLog } from './remoteLog';
@@ -74,10 +74,15 @@ function publishStart(draftId: string, start: DraftStart) {
 }
 
 /** Mirrors are hints: a dropped terminal write must not become an indefinite lock. */
-export async function reconcileConversationStart(draftId: string) {
-  const before = useNewConversationDrafts.getState().starts[draftId];
+export async function reconcileConversationStart(draftId: string, hint?: DraftStart) {
+  let before = useNewConversationDrafts.getState().starts[draftId];
   let start = await readDraftStart(draftId);
   if (useNewConversationDrafts.getState().starts[draftId] !== before) return;
+  if (hint && (hint.error || hint.sessionId) && start && !start.error && !start.sessionId &&
+    hint.attemptId === start.attemptId && hint.version === start.version && hint.routeKey === start.routeKey) {
+    before = hint;
+    publishStart(draftId, hint);
+  }
   if (before && (before.sessionId || before.error) && (!start || !start.sessionId && !start.error) &&
     (!start || start.attemptId === before.attemptId)) {
     const repaired = { ...before, persistenceError: undefined, committed: true };
@@ -109,14 +114,18 @@ export async function beginConversationStart(draftId: string, text: string, rout
 export async function completeConversationStart(draftId: string, createdSession: NonNullable<DraftStart['createdSession']>, retire = true) {
   const { starts } = useNewConversationDrafts.getState();
   const snapshot = () => JSON.stringify([getConversationDraft(draftId), getDraft(draftId), getDraftVersion(draftId)]);
-  const before = snapshot();
+  let before = snapshot();
   let replacementDraftId: string | undefined;
   const saved = getConversationDraft(draftId);
   if (!retire && saved) {
     replacementDraftId = randomId();
+    if (!migrateDraft(draftId, replacementDraftId)) {
+      await saveTerminalStart(draftId, { ...starts[draftId], sessionId: createdSession.sessionId, createdSession,
+        pendingReplacementId: replacementDraftId, relocationError: 'Could not preserve the retained draft. Free browser storage and retry.' });
+      return;
+    }
     rememberConversationDraft({ ...saved, draftId: replacementDraftId });
-    const text = getDraft(draftId);
-    if (text) saveDraft(replacementDraftId, text);
+    before = snapshot();
   }
   const start = { ...starts[draftId], sessionId: createdSession.sessionId, createdSession, replacementDraftId, text: '' };
   // A known created session must never become a retryable creation if saving its receipt fails.
@@ -125,15 +134,29 @@ export async function completeConversationStart(draftId: string, createdSession:
   const latest = getConversationDraft(draftId);
   if (latest && snapshot() !== before) {
     replacementDraftId = randomId();
+    if (!migrateDraft(draftId, replacementDraftId)) {
+      await saveTerminalStart(draftId, { ...useNewConversationDrafts.getState().starts[draftId],
+        pendingReplacementId: replacementDraftId, relocationError: 'Could not preserve the retained draft. Free browser storage and retry.' });
+      return;
+    }
     rememberConversationDraft({ ...latest, draftId: replacementDraftId });
-    const text = getDraft(draftId);
-    if (text) saveDraft(replacementDraftId, text);
     publishStart(draftId, { ...useNewConversationDrafts.getState().starts[draftId], replacementDraftId });
   }
   forgetConversationDraft(draftId);
   if (replacementDraftId !== start.replacementDraftId) {
     await saveTerminalStart(draftId, useNewConversationDrafts.getState().starts[draftId]);
   }
+}
+
+export async function retryDraftRelocation(draftId: string) {
+  const receipt = useNewConversationDrafts.getState().starts[draftId];
+  const saved = getConversationDraft(draftId);
+  const target = receipt?.pendingReplacementId;
+  if (!receipt || !saved || !target) return;
+  if (!migrateDraft(draftId, target)) throw new Error(receipt.relocationError);
+  rememberConversationDraft({ ...saved, draftId: target });
+  forgetConversationDraft(draftId);
+  await saveTerminalStart(draftId, { ...receipt, relocationError: undefined, pendingReplacementId: undefined, replacementDraftId: target, text: '' });
 }
 
 async function saveTerminalStart(draftId: string, start: DraftStart) {
@@ -187,7 +210,13 @@ export function forgetConversationDraft(draftId: string) {
 
 if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
   if (event.key?.startsWith(START_PREFIX)) {
-    void reconcileConversationStart(event.key.slice(START_PREFIX.length)).catch(() => undefined);
+    let hint: DraftStart | undefined;
+    try {
+      const value = JSON.parse(event.newValue || 'null') as DraftStart | null;
+      if (value && typeof value.version === 'number' && typeof value.text === 'string' && typeof value.attemptId === 'string' &&
+        (typeof value.error === 'string' || typeof value.sessionId === 'string')) hint = value;
+    } catch { /* Ignore malformed mirrors; IndexedDB remains authoritative. */ }
+    void reconcileConversationStart(event.key.slice(START_PREFIX.length), hint).catch(() => undefined);
     return;
   }
   if (event.key !== null && !event.key.startsWith(STORAGE_PREFIX)) return;

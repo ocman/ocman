@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { getDraft, saveDraft } from './composerDraft';
-import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
+import { beginConversationStart, completeConversationStart, endConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
 vi.mock('./draftStartClaims', () => ({
   claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
   persistDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => start,
@@ -186,6 +186,27 @@ it('preserves edits made while terminal persistence is outstanding', async () =>
     expect(getDraft(replacement)).toBe('typed during persistence');
     expect(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === replacement)?.agent).toBe('plan');
   } finally { persist.mockRestore(); }
+});
+
+it('retains the source when replacement relocation fails at quota', async () => {
+  rememberConversationDraft({ draftId: 'quota-copy', directory: '/repo' });
+  saveDraft('quota-copy', 'only retained copy');
+  useNewConversationDrafts.setState({ starts: { 'quota-copy': { version: 0, text: 'submitted' } } });
+  const original = Storage.prototype.setItem;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (key === 'ocman.composerDrafts.v1' && Object.keys(JSON.parse(value)).some((id) => id !== 'quota-copy')) throw new Error('quota');
+    original.call(this, key, value);
+  });
+  try {
+    await completeConversationStart('quota-copy', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' }, false);
+    expect(getDraft('quota-copy')).toBe('only retained copy');
+    expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === 'quota-copy')).toBe(true);
+    write.mockRestore();
+    await retryDraftRelocation('quota-copy');
+    const target = useNewConversationDrafts.getState().starts['quota-copy'].replacementDraftId!;
+    expect(getDraft(target)).toBe('only retained copy');
+    expect(getDraft('quota-copy')).toBe('');
+  } finally { write.mockRestore(); }
 });
 
 it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {

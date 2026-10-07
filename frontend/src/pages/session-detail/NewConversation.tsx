@@ -225,10 +225,16 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
     let revision: number | null = null;
+    let submittedSelections: string | undefined;
+    const selections = () => {
+      const saved = getConversationDraft(draftId);
+      return JSON.stringify([saved?.model, saved?.agent, saved?.reasoning, saved?.target]);
+    };
     const ownsDraft = () => {
       const draft = getConversationDraft(draftId);
       return draft && `${draft.remoteId || 'local'}:${draft.directory}:${draft.platform}:${draft.title}` === routeKey &&
-        getDraftVersion(draftId) === revision && (!getDraft(draftId) || getDraft(draftId) === text);
+        getDraftVersion(draftId) === revision && (!getDraft(draftId) || getDraft(draftId) === text) &&
+        (submittedSelections === undefined || selections() === submittedSelections);
     };
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
     inFlight.current = sourceGeneration;
@@ -255,6 +261,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
       const { send, execute, model } = build(ready);
+      submittedSelections = selections();
       const startTarget = resolveTarget(target, ready.canWorktree, ready.worktrees);
       const res = await api.startSession({
         directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,

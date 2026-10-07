@@ -155,6 +155,34 @@ test('an aborted terminal transaction remains visible and can be safely repaired
   expect(starts).toBe(2);
 });
 
+test('an open peer adopts and repairs a same-attempt terminal hint after the writer aborts', async ({ mockedPage: first }) => {
+  const second = await first.context().newPage();
+  await installDefaultRoutes(second);
+  await first.addInitScript(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (value.error) { this.transaction.abort(); return {} as IDBRequest<IDBValidKey>; }
+      return put.call(this, value, key);
+    };
+  });
+  let finish!: () => void;
+  const waiting = new Promise<void>((resolve) => { finish = resolve; });
+  await first.route('**/api/sessions/start', async (route) => {
+    await waiting;
+    await route.fulfill({ status: 500, json: { error: 'Peer-visible failure' } });
+  });
+  for (const page of [first, second]) {
+    await prepareDraft(page);
+    await page.goto('/session/new?dir=%2Frepo&draftId=peer-abort');
+  }
+  await first.getByRole('textbox').fill('Shared failed prompt');
+  await first.getByRole('button', { name: 'Send message' }).click();
+  await expect(second.getByRole('textbox')).toBeDisabled();
+  finish();
+  await expect(second.getByRole('textbox')).not.toBeDisabled();
+  await expect(second.getByTestId('conversation-composer').getByRole('alert')).toContainText('Peer-visible failure');
+});
+
 test('a rejected competing prompt cannot leave the winning failed claim pending', async ({ mockedPage: first }) => {
   const second = await first.context().newPage();
   await installDefaultRoutes(second);
