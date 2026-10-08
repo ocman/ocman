@@ -11,3 +11,10 @@
   display: flex;
   visibility: visible;
 }
+
+@media (max-width: 768px) {
+  .session-sidebar-item.session-sidebar-draft .session-sidebar-actions {
+    display: flex;
+    visibility: visible;
+  }
+}

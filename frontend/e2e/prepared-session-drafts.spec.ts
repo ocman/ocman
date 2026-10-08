@@ -36,7 +36,8 @@ test('a draft discarded in one tab is not resurrected by another tab\'s autosave
   }
   await second.getByRole('textbox').fill('typed in the second tab');
   await expect.poll(async () => (await storedText(first, 'shared-discard'))?.text).toBe('typed in the second tab');
-  await first.getByLabel('Prepared sessions').getByRole('button', { name: 'Discard draft' }).click();
+  await first.getByTestId('conversation-draft').hover();
+  await first.getByTestId('session-sidebar').getByRole('button', { name: 'Discard draft' }).click();
   // The second tab learns of the discard and moves off the retired identity.
   await expect(second).not.toHaveURL(/draftId=shared-discard/);
   await second.getByRole('textbox').fill('a new draft');
@@ -45,7 +46,7 @@ test('a draft discarded in one tab is not resurrected by another tab\'s autosave
   await expect.poll(async () => (await storedText(first, 'shared-discard'))?.text).toBe('');
   await second.reload();
   // Only the fresh replacement draft remains; the retired identity stays retired.
-  await expect(second.getByLabel('Prepared sessions').getByRole('button', { name: 'Discard draft' })).toHaveCount(1);
+  await expect(second.getByTestId('session-sidebar').getByRole('button', { name: 'Discard draft', includeHidden: true })).toHaveCount(1);
   await expect(second).not.toHaveURL(/draftId=shared-discard/);
   await expect(second.getByRole('textbox')).toHaveValue('a new draft');
 });
@@ -302,7 +303,8 @@ test('cleared and discarded failed prompts stay empty after reload and an old-UR
   await expect.poll(async () => (await storedText(page, 'clear'))?.revision).toBeGreaterThan(0);
   await page.reload();
   await expect(page.getByRole('textbox')).toHaveValue('');
-  await page.getByLabel('Prepared sessions').getByRole('button', { name: 'Discard draft' }).click();
+  await page.getByTestId('conversation-draft').hover();
+  await page.getByTestId('session-sidebar').getByRole('button', { name: 'Discard draft' }).click();
   await page.goto(url);
   await expect(page.getByRole('textbox')).toHaveValue('');
 });
@@ -320,7 +322,8 @@ test('prepares multiple sidebar drafts without starting sessions', async ({ mock
   await page.goto('/session/new?dir=%2Frepo&draftId=second&title=Prepare+the+UI');
   await expect(page.getByRole('textbox')).toHaveValue('');
   await page.getByRole('textbox').fill('Prepare the sidebar UI.');
-  const drafts = page.getByLabel('Prepared sessions');
+  const drafts = page.getByTestId('session-sidebar');
+  await expect(drafts.getByText('Drafts', { exact: true })).toHaveCount(0);
   await drafts.getByRole('button', { name: /Plan the API/ }).click();
   await expect(page.getByRole('textbox')).toHaveValue('Design the API before implementation.');
   await drafts.getByRole('button', { name: /Prepare the UI/ }).click();

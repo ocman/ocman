@@ -273,13 +273,13 @@ export function SessionSidebar({
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const dirs = allProjectGroups.filter((group) => !group.isPinned).map((group) => group.key ?? group.directory);
+      const dirs = draftGroups.filter((group) => !group.isPinned).map((group) => group.key ?? group.directory);
       const from = dirs.indexOf(active.id as string);
       const to = dirs.indexOf(over.id as string);
       if (from === -1 || to === -1) return;
       onReorderProjects(arrayMove(dirs, from, to));
     },
-    [allProjectGroups, onReorderProjects],
+    [draftGroups, onReorderProjects],
   );
 
   const renderPinnedRows = (sessions: Session[]) =>

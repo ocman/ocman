@@ -42,7 +42,7 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
     fuzzyMatch(searchQuery.trim(), `${draft.title || ''} ${draft.directory} ${draft.remoteId || 'local'}`));
   if (!visible.length) return null;
   return <>
-    {visible.map((draft) => <div key={draft.draftId} aria-selected={draft.draftId === activeId}
+    {visible.map((draft) => <div key={draft.draftId} data-testid="conversation-draft" aria-selected={draft.draftId === activeId}
       className={`session-sidebar-item session-sidebar-draft ${inGroup ? 'in-group' : 'flat'}${draft.draftId === activeId ? ' active' : ''}`}>
       {inGroup && <StatusBadge status="done" compact draft seen />}
       <Button variant="ghost" className="session-sidebar-item-body session-sidebar-draft-open" aria-current={draft.draftId === activeId ? 'page' : undefined}

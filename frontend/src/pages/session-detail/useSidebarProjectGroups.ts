@@ -122,22 +122,7 @@ export function useSidebarProjectGroups({
     // drag-and-drop order: directories present in projectOrder come
     // first (in that order); any project not yet ordered (new or never
     // dragged) keeps its alphabetical position at the end.
-    visibleGroups.sort((a, b) =>
-      shortPath(a.directory).localeCompare(shortPath(b.directory), undefined, {
-        sensitivity: 'base',
-      }),
-    );
-    if (projectOrder.length > 0) {
-      const rank = new Map(projectOrder.map((dir, i) => [dir, i]));
-      visibleGroups.sort((a, b) => {
-        const ra = rank.get(a.key ?? a.directory) ?? rank.get(a.directory);
-        const rb = rank.get(b.key ?? b.directory) ?? rank.get(b.directory);
-        if (ra === undefined && rb === undefined) return 0; // keep alphabetical
-        if (ra === undefined) return 1; // unordered after ordered
-        if (rb === undefined) return -1;
-        return ra - rb;
-      });
-    }
+    orderSidebarProjectGroups(visibleGroups, projectOrder);
 
     const pinnedSessions = recentSessions
       .filter((s) => s.pinned)
@@ -190,4 +175,20 @@ export function useSidebarProjectGroups({
   );
 
   return { allProjects, sidebarProjectGroups, handleReorderProjects, handleArchiveProjectFromSidebar };
+}
+
+export function orderSidebarProjectGroups(groups: SidebarProjectGroup[], projectOrder: string[]) {
+  groups.sort((a, b) => shortPath(a.directory).localeCompare(shortPath(b.directory), undefined, { sensitivity: 'base' }));
+  if (projectOrder.length > 0) {
+    const rank = new Map(projectOrder.map((dir, i) => [dir, i]));
+    groups.sort((a, b) => {
+      const ra = rank.get(a.key ?? a.directory) ?? rank.get(a.directory);
+      const rb = rank.get(b.key ?? b.directory) ?? rank.get(b.directory);
+      if (ra === undefined && rb === undefined) return 0;
+      if (ra === undefined) return 1;
+      if (rb === undefined) return -1;
+      return ra - rb;
+    });
+  }
+  return groups;
 }

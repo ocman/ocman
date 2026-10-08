@@ -3,13 +3,17 @@ import { useLocation } from 'react-router-dom';
 import { fuzzyMatch } from '../../lib/format';
 import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { projectIdentityIndex } from '../../lib/projectIdentity';
+import { useUiStore } from '../../lib/uiStore';
+import { orderSidebarProjectGroups } from './useSidebarProjectGroups';
 import type { SidebarProjectGroup } from './SessionSidebar';
 
 export function useSidebarDraftGroups(groups: SidebarProjectGroup[], searchQuery: string) {
   const drafts = useNewConversationDrafts((state) => state.drafts);
+  const projectOrder = useUiStore((state) => state.projectOrder);
   const location = useLocation();
   const activeId = location.pathname === '/session/new' ? new URLSearchParams(location.search).get('draftId') || 'new' : null;
   return useMemo(() => {
+    if (!drafts.length) return groups;
     const projects = groups.filter((group) => !group.isPinned);
     const identity = projectIdentityIndex(projects.flatMap((group) => [
       { ...group, projectKey: group.key },
@@ -29,6 +33,7 @@ export function useSidebarDraftGroups(groups: SidebarProjectGroup[], searchQuery
       }
       group.drafts.push(draft);
     }
-    return result;
-  }, [groups, drafts, searchQuery, activeId]);
+    return [...result.filter((group) => group.isPinned),
+      ...orderSidebarProjectGroups(result.filter((group) => !group.isPinned), projectOrder)];
+  }, [groups, drafts, searchQuery, activeId, projectOrder]);
 }

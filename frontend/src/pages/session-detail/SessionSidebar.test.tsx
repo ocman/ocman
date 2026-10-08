@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { DndContext } from '@dnd-kit/core';
+import { useUiStore } from '../../lib/uiStore';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import type { GitInfo, Session } from '../../lib/api';
 import { useWorkEpics } from '../../lib/queries';
@@ -14,6 +16,10 @@ vi.mock('../../components/BackendStats', () => ({
 vi.mock('../../components/SidebarResizer', () => ({
   SidebarResizer: () => null,
 }));
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@dnd-kit/core')>();
+  return { ...original, DndContext: vi.fn((props: React.ComponentProps<typeof original.DndContext>) => <original.DndContext {...props} />) };
+});
 vi.mock('../../lib/queries', () => ({
   useWorkEpics: vi.fn(),
 }));
@@ -49,6 +55,7 @@ function renderSidebar(
   setSidebarView: (view: 'recent' | 'projects') => void = vi.fn(),
   onNewSession: () => void = vi.fn(),
   groups: SidebarProjectGroup[] = [group],
+  onReorderProjects: (keys: string[]) => void = vi.fn(),
 ) {
   return render(
     <MemoryRouter><SessionSidebar
@@ -61,7 +68,7 @@ function renderSidebar(
       loadingRecentSessions={false}
       recentSessions={group.sessions}
       sidebarProjectGroups={groups}
-      onReorderProjects={vi.fn()}
+      onReorderProjects={onReorderProjects}
       archivingSessionIds={new Set()}
       collapsedProjectSet={new Set()}
       toggleCollapsedProject={vi.fn()}
@@ -95,7 +102,26 @@ describe('SessionSidebar', () => {
   beforeEach(() => {
     localStorage.clear();
     useNewConversationDrafts.setState({ drafts: [] });
+    useUiStore.setState({ projectOrder: [] });
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
+  });
+
+  it('persists reordering draft-only projects and restores their saved order', () => {
+    rememberConversationDraft({ draftId: 'draft', directory: '/draft-only', title: 'Draft-only task' });
+    const group: SidebarProjectGroup = { directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' } };
+    const reorder = vi.fn((keys: string[]) => useUiStore.getState().setProjectOrder(keys));
+    const view = renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'projects', vi.fn(), vi.fn(), [group], reorder);
+    const drag = vi.mocked(DndContext).mock.calls.at(-1)![0].onDragEnd!;
+    act(() => drag({ active: { id: '/draft-only' }, over: { id: '/repo' } } as Parameters<typeof drag>[0]));
+    expect(reorder).toHaveBeenCalledWith(['/repo', '/draft-only']);
+    view.unmount();
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'projects', vi.fn(), vi.fn(), [group], reorder);
+    const draft = screen.getByText('Draft-only task');
+    const saved = screen.getByText('Fix thing');
+    expect(saved.compareDocumentPosition(draft) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const drop = vi.mocked(DndContext).mock.calls.at(-1)![0].onDragEnd!;
+    act(() => drop({ active: { id: '/repo' }, over: { id: '/draft-only' } } as Parameters<typeof drop>[0]));
+    expect(reorder).toHaveBeenLastCalledWith(['/draft-only', '/repo']);
   });
 
   it.each(['recent', 'projects'] as const)('includes drafts in the %s session list without a drafts header', (view) => {
