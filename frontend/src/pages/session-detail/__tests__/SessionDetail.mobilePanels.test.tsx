@@ -48,7 +48,7 @@ describe('SessionDetail — phone overlay panels', () => {
   it('keeps branch-only search and archive candidates when the mobile drawer closes', async () => {
     vi.stubGlobal('innerWidth', 390);
     useUiStore.setState({ sidebarView: 'recent' });
-    vi.spyOn(gitInfoHook, 'useGitInfo').mockImplementation((dirs) => ({
+    vi.spyOn(gitInfoHook, 'useGitInfo').mockImplementation((dirs): gitInfoHook.UseGitInfoResult => ({
       infos: dirs?.includes('/branch') ? { '/branch': { branch: 'feature-only' } as never } : {}, loading: false, error: null,
     }));
     const current = makeSession({ id: 'sess_1', directory: '/current', title: 'Current', timeCreated: 300, timeUpdated: 300 });
