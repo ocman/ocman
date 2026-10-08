@@ -80,7 +80,7 @@ func TestProjectsAsyncRefreshUsesServerCancellation(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	srv.pluginCtx = ctx
+	srv.lifetimeCtx = ctx
 	srv.projects.fetch = func() ([]db.ProjectStats, error) { return nil, nil }
 	entered := make(chan context.Context, 1)
 	srv.projects.enrich = func(ctx context.Context, _ []db.ProjectStats) error { entered <- ctx; <-ctx.Done(); return ctx.Err() }

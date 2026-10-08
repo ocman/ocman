@@ -56,6 +56,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	s.loadProjectsIndexCache(context.WithoutCancel(ctx))
 	s.pluginMu.Lock()
 	s.pluginCtx = ctx
+	s.lifetimeCtx = ctx
 	s.pluginMu.Unlock()
 	defer s.stopPluginProcesses()
 	if _, err := s.RescanPlugins(ctx); err != nil {

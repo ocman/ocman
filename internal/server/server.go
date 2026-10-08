@@ -131,6 +131,7 @@ type Server struct {
 	pluginRecovered bool
 	pluginDiscovery []pluginDiscoveryFailure
 	pluginCtx       context.Context
+	lifetimeCtx     context.Context // guarded by pluginMu; retained through plugin cleanup
 	// webhookCtx outlives requests so pollers for newly created inboxes keep running.
 	webhookCtx context.Context
 	// webhookKeyMu serializes relay-side inbox mutations (key resets, secret

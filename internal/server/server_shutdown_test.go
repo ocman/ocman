@@ -139,3 +139,60 @@ func TestServerShutdownCancelsBlockedProjectRefresh(t *testing.T) {
 		t.Fatal("project refresh has no bounded deadline")
 	}
 }
+
+func TestQueuedProjectRefreshAfterPluginCleanupKeepsCancellation(t *testing.T) {
+	t.Setenv("OCMAN_PLUGIN_DIR", t.TempDir())
+	srv := testServer(t)
+	entered, release := make(chan context.Context, 1), make(chan struct{})
+	srv.projects.fetch = func() ([]db.ProjectStats, error) { return nil, nil }
+	srv.projects.enrich = func(ctx context.Context, _ []db.ProjectStats) error {
+		entered <- ctx
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return context.Canceled
+		}
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	serverDone, workerDone := make(chan error, 1), make(chan struct{})
+	go func() { err := srv.StartOnListener(ctx, ln); serverDone <- err; close(serverDone) }()
+	for {
+		resp, err := http.Get("http://" + ln.Addr().String() + "/api/routines")
+		if err == nil {
+			_ = resp.Body.Close()
+			break
+		}
+		select {
+		case <-time.After(time.Millisecond):
+		case <-t.Context().Done():
+			t.Fatal(err)
+		}
+	}
+	// Queue a cycle but delay running it until plugin cleanup has cleared pluginCtx.
+	srv.projects.mu.Lock()
+	srv.projects.running = true
+	srv.projects.done = make(chan struct{})
+	done := srv.projects.done
+	srv.projects.mu.Unlock()
+	srv.stopPluginProcesses()
+	cancel()
+	t.Cleanup(func() { close(release); <-workerDone; <-serverDone })
+	go func() { srv.runProjectsRefresh(done); close(workerDone) }()
+	refreshCtx := <-entered
+	select {
+	case <-workerDone:
+	case <-time.After(time.Second):
+		t.Fatal("queued refresh lost cancellation after plugin cleanup")
+	}
+	if refreshCtx.Err() != context.Canceled {
+		t.Fatalf("worker context=%v", refreshCtx.Err())
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}

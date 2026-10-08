@@ -123,9 +123,9 @@ func (s *Server) refreshProjectsIndex(ctx context.Context) error {
 
 // Shared scans belong to the server, while every caller waits independently.
 func (s *Server) runProjectsRefresh(done chan struct{}) {
-	// StartOnListener installs the server lifetime in pluginCtx.
+	// Plugin cleanup must not erase the lifetime of queued shared work.
 	s.pluginMu.Lock()
-	ctx := s.pluginCtx
+	ctx := s.lifetimeCtx
 	s.pluginMu.Unlock()
 	if ctx == nil {
 		ctx = context.Background()
