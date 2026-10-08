@@ -64,15 +64,20 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 		_ = postJSON(cleanup, port, path+"/abort"+query, nil)
 		_ = sendJSON(cleanup, http.MethodDelete, port, path+query, nil)
 	}()
-	// The title agent titles whatever text it gets, so it gets only the user's
-	// task; wrapping it in instructions made it title the instructions.
+	// Delimit the task so the title agent names the work, not these instructions.
 	runes := []rune(prompt)
 	if len(runes) > 2000 {
 		runes = runes[:2000]
 	}
 	body := map[string]any{
 		"agent": "title",
-		"parts": []map[string]string{{"type": "text", "text": string(runes)}},
+		"parts": []map[string]string{{"type": "text", "text": `Generate a short git branch name for the work described in <task>. Name only that task, not these naming instructions.
+Return only a lowercase, hyphen-separated name of 2-6 words, at most 48 characters.
+Do not answer the task, describe your next step, or use first-person phrasing. Never ask for more details or mention missing context. If the task is vague or only a link, name the investigation using the topic or source that is available. Do not invent details.
+Examples: a vague diagnosis request -> diagnose-issue; a Slack link to investigate -> investigate-slack-thread. Never output need-more-details-to-diagnose or i-ll-check-the-slack-link-you-pasted.
+
+<task>
+` + string(runes) + "\n</task>"}},
 	}
 	if modelRef != nil {
 		body["model"] = modelRef

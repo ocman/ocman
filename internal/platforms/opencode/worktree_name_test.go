@@ -62,8 +62,19 @@ func TestWorktreeName(t *testing.T) {
 					if body.Model.ProviderID+"/"+body.Model.ModelID != wantModel || body.Agent != "title" {
 						t.Errorf("wrong model/agent: %+v", body)
 					}
-					if len(body.Parts) != 1 || len(body.Parts[0].Text) > 2300 {
+					if len(body.Parts) != 1 || len(body.Parts[0].Text) > 3200 {
 						t.Errorf("unbounded naming prompt")
+					}
+					if len(body.Parts) == 1 {
+						text := body.Parts[0].Text
+						for _, instruction := range []string{"Do not answer the task", "Never ask for more details", "diagnose-issue", "investigate-slack-thread"} {
+							if !strings.Contains(text, instruction) {
+								t.Errorf("naming prompt missing %q", instruction)
+							}
+						}
+						if !strings.HasSuffix(text, "<task>\n"+strings.Repeat("x", 2000)+"\n</task>") {
+							t.Error("naming prompt must delimit and truncate the user's task")
+						}
 					}
 					if tc.failPrompt {
 						w.WriteHeader(http.StatusInternalServerError)

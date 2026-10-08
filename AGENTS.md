@@ -91,8 +91,8 @@ pending, the child composer blocks further submissions so follow-ups cannot
 overtake it; permission and question controls remain available. Start transport failures
 are never automatically replayed, and completion only navigates/clears the
 initiating draft while that route generation is still active. The owner then
-names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) titles the
-bare prompt and the title is slugged into the branch (`git branch -m`, the path
+names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) names the
+delimited task under branch-naming instructions and the title is slugged into the branch (`git branch -m`, the path
 stays). The session keeps OpenCode's default title so OpenCode titles it from
 the first message; the branch name is never used as the title. A naming
 failure keeps the provisional name. The naming session is titled
