@@ -610,8 +610,9 @@ flowchart TD
   override a newer route or clear its draft. Prepare/start preserve the
   localhost host-control guard. Afterwards the host has the
   `title` agent (its `small_model` or Haiku, in a temporary tool-denied
-  session) title the bare prompt and renames the branch to that slug in
-  place; the session title is left to OpenCode's own first-message titling.
+  session) name the delimited task under branch-naming instructions and
+  renames the branch to that slug in place; the session title is left to
+  OpenCode's own first-message titling.
   Naming failures keep `session-<suffix>`. Non-repository directories and
   directories already inside a linked worktree use the current checkout.
   Existing linked worktrees are also selectable. New conversations started
