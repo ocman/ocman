@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Control';
@@ -17,6 +17,8 @@ export function SidebarConversationDrafts({ searchQuery }: { searchQuery: string
 function DraftRows({ drafts, searchQuery }: { drafts: ConversationDraft[]; searchQuery: string }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const currentLocation = useRef<typeof location | undefined>(location);
+  useLayoutEffect(() => { currentLocation.current = location; return () => { currentLocation.current = undefined; }; }, [location]);
   const [failed, setFailed] = useState<{ draftId: string; message: string }>();
   const [discarding, setDiscarding] = useState<string>();
   const discard = async (draft: ConversationDraft) => {
@@ -25,8 +27,9 @@ function DraftRows({ drafts, searchQuery }: { drafts: ConversationDraft[]; searc
     try {
       // Only a stored discard moves on; a failure keeps the draft, its text and files.
       await forgetConversationDraft(draft.draftId, () => {
-        const next = drafts.find((entry) => entry.draftId !== draft.draftId);
-        if (draft.draftId === activeId) flushSync(() => navigate(next ? newSessionPath(next) : '/', { replace: true }));
+        if (currentLocation.current?.key !== location.key || draft.draftId !== activeId) return;
+        const next = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId !== draft.draftId);
+        flushSync(() => navigate(next ? newSessionPath(next) : '/', { replace: true }));
       });
     } catch (error) {
       setFailed({ draftId: draft.draftId, message: `Could not discard the draft: ${error instanceof Error ? error.message : String(error)}` });

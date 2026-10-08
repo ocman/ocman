@@ -47,6 +47,17 @@ describe('composerDraft', () => {
     await waitFor(() => expect(getDraft('race')).toBe(''));
   });
 
+  it('rebases a fresh post-discard edit when the committed revision exceeds the optimistic revision', async () => {
+    saveDraft('stale-discard', 'first');
+    await waitFor(async () => expect((await stored('stale-discard'))?.text).toBe('first'));
+    // A peer advanced the stored fence while this tab still sees revision zero.
+    await transact(['texts'], 'readwrite', (tx) => tx.put('texts', 'stale-discard', { text: '', revision: 5 }));
+    discardDraft('stale-discard');
+    saveDraft('stale-discard', 'fresh edit after my discard');
+    await waitFor(async () => expect(await stored('stale-discard')).toEqual({ text: 'fresh edit after my discard', revision: 6 }));
+    expect(getDraft('stale-discard')).toBe('fresh edit after my discard');
+  });
+
   it('clears only the text it saw, preserving a newer edit from another tab', async () => {
     saveDraft('sent', 'sent prompt');
     await waitFor(async () => expect((await stored('sent'))?.text).toBe('sent prompt'));

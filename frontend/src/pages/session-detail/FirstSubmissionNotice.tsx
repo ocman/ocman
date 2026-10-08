@@ -14,7 +14,7 @@ export function FirstSubmissionNotice({ sessionId }: { sessionId: string }) {
   if (submission.pending && !submission.error) return <div role="status">Sending first submission…</div>;
   return <InlineAlert onRetry={() => recover(submission.execute && !submission.pending ? () => startFirstSubmission(sessionId, submission.text, submission.execute!) : () => reconcileFirstSubmission(sessionId))}>
     {recoveryError || submission.error} First submission: <code>{submission.text}</code>
-    {!submission.execute && ' Retry in the originating tab, which retains the attachment or command payload.'}
-    {!submission.execute && submission.canRelease && <Button onClick={() => { if (window.confirm('The first delivery may already have run. Release this lock without resending it?')) recover(() => discardFirstSubmission(sessionId)); }}>Release first-delivery lock</Button>}
+    {!submission.execute && !submission.persistenceError && ' Retry in the originating tab, which retains the attachment or command payload.'}
+    {!submission.execute && !submission.persistenceError && submission.canRelease && <Button onClick={() => { if (window.confirm('The first delivery may already have run. Release this lock without resending it?')) recover(() => discardFirstSubmission(sessionId)); }}>Release first-delivery lock</Button>}
   </InlineAlert>;
 }

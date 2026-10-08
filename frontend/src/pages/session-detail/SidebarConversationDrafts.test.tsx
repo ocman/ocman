@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import { getConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { transact } from '../../lib/draftDb';
+import * as draftsModule from '../../lib/newConversationDrafts';
 
 beforeEach(() => {
   localStorage.clear();
@@ -67,4 +68,18 @@ it('keeps the draft and offers a retry when discarding cannot be stored', async 
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() => expect(getConversationDraft('stuck')).toBeUndefined());
   expect(screen.getByTestId('location')).toHaveTextContent('/');
+});
+
+it('does not leave a newer route when an earlier discard commits', async () => {
+  rememberConversationDraft({ draftId: 'old', directory: '/old', title: 'Old' });
+  rememberConversationDraft({ draftId: 'middle', directory: '/other', title: 'Other' });
+  rememberConversationDraft({ draftId: 'z-new', directory: '/new', title: 'New' });
+  await transact(['drafts'], 'readonly', (tx) => tx.get('drafts', 'old'));
+  mount('', newSessionPath({ draftId: 'old', directory: '/old' }));
+  const discard = vi.spyOn(draftsModule, 'forgetConversationDraft');
+  fireEvent.click(within(screen.getByRole('button', { name: /Old/ }).parentElement!).getByRole('button', { name: 'Discard draft' }));
+  fireEvent.click(screen.getByRole('button', { name: /New\/new/ }));
+  await act(async () => { await discard.mock.results[0].value; });
+  expect(getConversationDraft('old')).toBeUndefined();
+  expect(screen.getByTestId('location')).toHaveTextContent('draftId=z-new');
 });

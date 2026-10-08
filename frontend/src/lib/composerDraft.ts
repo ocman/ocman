@@ -17,6 +17,8 @@ const texts = new Map<string, TextRecord>();
 const localSeq = new Map<string, number>();
 // Text whose latest write failed: the live copy is authoritative until a write succeeds.
 const writeErrors = new Map<string, string>();
+// Edits after this tab's discard follow its actual committed fence, not its optimistic one.
+const discards = new Map<string, { optimistic: number; committed?: number }>();
 const listeners = new Set<() => void>();
 let snapshot: string | null = null;
 
@@ -50,6 +52,7 @@ export function applyTexts(entries: [string, TextRecord | undefined][], seqs?: M
 
 /** A transaction authoritatively replaced this text (discard, retirement): drop any unsaved live copy. */
 export function settleText(id: string, record: TextRecord | undefined) {
+  discards.delete(id);
   writeErrors.delete(id);
   bump(id);
   setMemory(id, record);
@@ -98,7 +101,11 @@ export function saveDraft(id: string, text: string, version = getDraftVersion(id
   setMemory(id, { text, revision: version });
   emit();
   // A peer's discard raised the revision: this autosave is stale and must not land.
-  write(id, (stored) => (stored?.revision || 0) <= version ? { text, revision: version } : undefined);
+  const discard = discards.get(id);
+  write(id, (stored) => {
+    const revision = discard?.optimistic === version ? discard.committed ?? version : version;
+    return (stored?.revision || 0) <= revision ? { text, revision } : undefined;
+  });
 }
 
 /** Remove sent text without invalidating newer edits: only the exact text/revision seen here is cleared. */
@@ -115,10 +122,15 @@ export function clearDraft(id: string) {
 /** Explicit discard: clears and invalidates outstanding autosaves and failed-send recovery. */
 export function discardDraft(id: string) {
   const revision = getDraftVersion(id);
+  const discard = { optimistic: revision + 1, committed: undefined as number | undefined };
+  discards.set(id, discard);
   bump(id);
   setMemory(id, { text: '', revision: revision + 1 });
   emit();
-  write(id, (stored) => ({ text: '', revision: Math.max(stored?.revision || 0, revision) + 1 }));
+  write(id, (stored) => {
+    discard.committed = Math.max(stored?.revision || 0, revision) + 1;
+    return { text: '', revision: discard.committed };
+  });
 }
 
 /** Move text in one transaction; the source is discarded only together with the copy. */
@@ -181,6 +193,7 @@ export function useDraftSessionIds(): Set<string> {
 export function resetDraftTextsForTests() {
   texts.clear();
   writeErrors.clear();
+  discards.clear();
   localSeq.clear();
   emit();
 }

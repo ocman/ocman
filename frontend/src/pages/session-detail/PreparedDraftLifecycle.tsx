@@ -14,6 +14,7 @@ export function PreparedDraftLifecycle({ params, navigate, children }:
   const [legacyId] = useState(randomId);
   const draftId = params.draftId || legacyId;
   const exists = useNewConversationDrafts((state) => state.drafts.some((draft) => draft.draftId === draftId));
+  const discardNavigation = useNewConversationDrafts((state) => !!state.discardNavigation[draftId]);
   const routeKey = `${params.remoteId || 'local'}:${params.directory}:${params.platform}:${params.title}`;
   const createdSession = useNewConversationDrafts((state) => state.starts[draftId]?.createdSession);
   const sessionId = useNewConversationDrafts((state) => {
@@ -61,20 +62,24 @@ export function PreparedDraftLifecycle({ params, navigate, children }:
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- remember which route has registered its client-only draft.
     else if (exists) setObserved(draftId);
-    else if (observed === draftId) {
+    else if (observed === draftId && !discardNavigation) {
       // Completion and deletion arrive on different storage keys. Read the
       // authoritative receipt before interpreting retirement as user discard.
       void reconcileConversationStart(draftId).then(() => {
         if (!active) return;
+        if (useNewConversationDrafts.getState().discardNavigation[draftId]) return;
         const start = useNewConversationDrafts.getState().starts[draftId];
         if (start?.sessionId && (!start.routeKey || start.routeKey === routeKey)) return;
+        const target = `${draftId}:discarded`;
+        if (navigated.current === target) return;
+        navigated.current = target;
         navigate(newSessionPath({ ...params, draftId: undefined }), { replace: true });
       }).catch((error: unknown) => {
         if (active) setReceiptError(error instanceof Error ? error.message : String(error));
       });
     }
     return () => { active = false; };
-  }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receipt?.relocationError, receiptRetry, navigate]);
+  }, [draftId, exists, sessionId, createdSession, replacement, observed, params, routeKey, receipt?.relocationError, receiptRetry, discardNavigation, navigate]);
   const retry = () => {
     setReceiptError('');
     if (receipt?.relocationError) void retryDraftRelocation(draftId).catch((error: unknown) => setReceiptError(error instanceof Error ? error.message : String(error)));

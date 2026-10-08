@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { applyTexts, captureTextSeqs, settleText, finishLegacyTextImport, getDraftVersion, hydrateTexts, type TextRecord } from './composerDraft';
+import { applyTexts, captureTextSeqs, settleText, finishLegacyTextImport, getDraft, getDraftWriteError, getDraftVersion, hydrateTexts, type TextRecord } from './composerDraft';
 import type { DraftStart } from './draftStartClaims';
 import { onDraftChange, publishDraftChange, transact } from './draftDb';
 import { randomId } from './randomId';
@@ -31,7 +31,13 @@ export const routeKeyOf = (draft: Pick<NewSessionParams, 'remoteId' | 'directory
 export const selectionsKey = (draft: Pick<ConversationDraft, 'model' | 'agent' | 'reasoning' | 'target'>) =>
   JSON.stringify([draft.model || '', draft.agent || '', draft.reasoning || '', draft.target || '']);
 
-export const useNewConversationDrafts = create<{ drafts: ConversationDraft[]; starts: Record<string, DraftStart> }>(() => ({ drafts: [], starts: {} }));
+export const useNewConversationDrafts = create<{
+  drafts: ConversationDraft[];
+  starts: Record<string, DraftStart>;
+  /** This tab's sidebar owns navigation for the pending discard. */
+  discardNavigation: Record<string, boolean>;
+  saveErrors: Record<string, string>;
+}>(() => ({ drafts: [], starts: {}, discardNavigation: {}, saveErrors: {} }));
 export const getConversationDraft = (id: string) => useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === id);
 const isConversationStart = (key: string) => !key.startsWith('first-delivery:');
 const RELOCATION_ERROR = 'Could not update the draft. Free browser storage and retry.';
@@ -40,6 +46,20 @@ const RELOCATION_ERROR = 'Could not update the draft. Free browser storage and r
 const draftSeq = new Map<string, number>();
 // Drafts whose latest local write failed: keep the live copy until a write succeeds.
 const unsaved = new Set<string>();
+
+function setSaveError(id: string, error?: string) {
+  useNewConversationDrafts.setState((state) => {
+    const saveErrors = { ...state.saveErrors };
+    if (error) { unsaved.add(id); saveErrors[id] = error; }
+    else { unsaved.delete(id); delete saveErrors[id]; }
+    return { saveErrors };
+  });
+}
+
+export function retryConversationDraftSave(id: string) {
+  const draft = getConversationDraft(id);
+  if (draft) rememberConversationDraft(draft);
+}
 
 function applyDrafts(entries: [string, StoredDraft | undefined][], seqs?: Map<string, number>) {
   const drafts = new Map(useNewConversationDrafts.getState().drafts.map((draft) => [draft.draftId, draft]));
@@ -79,7 +99,7 @@ async function refresh(ids: string[]) {
     if (!rows[i][1]?.deleted) { current.push(i); return; }
     // A committed discard/retirement is authoritative, including for unsaved live
     // state. Failed transactions never reach this path. Transfer ran above first.
-    unsaved.delete(id);
+    setSaveError(id);
     draftSeq.set(id, (draftSeq.get(id) || 0) + 1);
     settleText(id, rows[i][0]);
     applyDrafts([[id, rows[i][1]]]);
@@ -116,10 +136,14 @@ export function rememberConversationDraft(params: ConversationDraft) {
     tx.put('drafts', params.draftId, next);
     return next;
   }).then((committed) => {
-    unsaved.delete(params.draftId);
-    if (draftSeq.get(params.draftId) === seq) applyDrafts([[params.draftId, committed]]);
+    if (draftSeq.get(params.draftId) === seq) {
+      setSaveError(params.draftId);
+      applyDrafts([[params.draftId, committed]]);
+    }
     publishDraftChange({ drafts: [params.draftId] });
-  }, () => { unsaved.add(params.draftId); }); // Keep the live selection; the next edit retries the write.
+  }, (error: unknown) => {
+    if (draftSeq.get(params.draftId) === seq) setSaveError(params.draftId, error instanceof Error ? error.message : String(error));
+  });
 }
 
 /**
@@ -127,6 +151,18 @@ export function rememberConversationDraft(params: ConversationDraft) {
  * dropped only after the tombstone commits; a failure rejects and keeps it.
  */
 export async function forgetConversationDraft(draftId: string, afterCommit?: () => void) {
+  if (afterCommit) useNewConversationDrafts.setState((state) => ({ discardNavigation: { ...state.discardNavigation, [draftId]: true } }));
+  try { await discardCommitted(draftId, afterCommit); }
+  finally {
+    if (afterCommit) useNewConversationDrafts.setState((state) => {
+      const discardNavigation = { ...state.discardNavigation };
+      delete discardNavigation[draftId];
+      return { discardNavigation };
+    });
+  }
+}
+
+async function discardCommitted(draftId: string, afterCommit?: () => void) {
   const revision = getDraftVersion(draftId);
   const cleared = await transact(['texts', 'drafts'], 'readwrite', async (tx) => {
     const text = await tx.get<TextRecord>('texts', draftId);
@@ -140,7 +176,7 @@ export async function forgetConversationDraft(draftId: string, afterCommit?: () 
     // lifecycle observers. Other tabs still redirect when they learn of deletion.
     afterCommit?.();
   } finally {
-    unsaved.delete(draftId);
+    setSaveError(draftId);
     draftSeq.set(draftId, (draftSeq.get(draftId) || 0) + 1);
     applyDrafts([[draftId, undefined]]);
     settleText(draftId, cleared);
@@ -181,8 +217,12 @@ export async function completeConversationStart(draftId: string, createdSession:
   draftSeq.set(draftId, (draftSeq.get(draftId) || 0) + 1);
   try {
     const { start, replacement, source, moved } = await transact(['texts', 'drafts', 'starts'], 'readwrite', async (tx) => {
-      const [stored, meta, text] = await Promise.all([tx.get<DraftStart>('starts', draftId),
+      const [stored, storedMeta, storedText] = await Promise.all([tx.get<DraftStart>('starts', draftId),
         tx.get<StoredDraft>('drafts', draftId), tx.get<TextRecord>('texts', draftId)]);
+      const meta: StoredDraft | undefined = !storedMeta?.deleted && unsaved.has(draftId) ? getConversationDraft(draftId) : storedMeta;
+      const text = !storedMeta?.deleted && getDraftWriteError(draftId)
+        ? { text: getDraft(draftId), revision: getDraftVersion(draftId) } : storedText;
+      if (text && text.revision < (storedText?.revision || 0)) throw new Error('The unsaved text conflicts with a newer discard.');
       const next: DraftStart = { ...(stored || live || { version: submitted.revision, text: '' }), sessionId: createdSession.sessionId,
         createdSession, text: '', submitted, relocationError: undefined, persistenceError: undefined, error: undefined };
       let replacement: ConversationDraft | undefined;
@@ -205,7 +245,7 @@ export async function completeConversationStart(draftId: string, createdSession:
       tx.put('starts', draftId, next);
       return { start: next, replacement, source, moved };
     });
-    if (source) settleText(draftId, source);
+    if (source) { settleText(draftId, source); setSaveError(draftId); }
     if (replacement) applyTexts([[replacement.draftId, moved]]);
     applyDrafts([[draftId, undefined], ...(replacement ? [[replacement.draftId, replacement] as [string, ConversationDraft]] : [])]);
     applyStarts([[draftId, start]]);

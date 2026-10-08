@@ -9,6 +9,7 @@ interface Submission {
   error?: string;
   execute?: () => Promise<void>;
   canRelease?: boolean;
+  persistenceError?: string;
 }
 
 const key = (id: string) => `first-delivery:${id}`;
@@ -32,9 +33,10 @@ function adopt(id: string, record: DraftStart | undefined) {
   if (record?.deliveryState === 'done') executions.delete(record.attemptId || '');
   useFirstSubmission.setState(({ entries, ready }) => {
     const next = { ...entries };
-    if (!record || record.deliveryState === 'done') delete next[id];
+    if (!record || record.deliveryState === 'done' && !record.persistenceError) delete next[id];
     else next[id] = { text: record.text, pending: record.deliveryState !== 'failed',
-      error: record.error, execute: executions.get(record.attemptId || ''),
+      error: record.error || (record.persistenceError ? `Could not save first-delivery outcome: ${record.persistenceError}` : undefined),
+      persistenceError: record.persistenceError, execute: record.persistenceError ? undefined : executions.get(record.attemptId || ''),
       canRelease: record.deliveryState === 'interrupted' || record.deliveryState === 'failed' };
     return { entries: next, ready: { ...ready, [id]: true } };
   });
@@ -48,7 +50,7 @@ function notify(id: string, record: DraftStart) {
 
 async function persistOutcome(id: string, record: DraftStart) {
   const before = records.get(id);
-  const persisted = await persistDraftStart(key(id), record);
+  const persisted = await persistDraftStart(key(id), { ...record, persistenceError: undefined });
   if (records.get(id) !== before) return;
   adopt(id, persisted);
   if (persisted) notify(id, persisted);
@@ -58,7 +60,11 @@ async function persistOutcome(id: string, record: DraftStart) {
 async function settle(id: string, record: DraftStart) {
   adopt(id, record);
   try { await persistOutcome(id, record); }
-  catch { if (records.get(id) === record) notify(id, record); }
+  catch (error) {
+    if (records.get(id) !== record) return;
+    adopt(id, { ...record, persistenceError: error instanceof Error ? error.message : String(error) });
+    notify(id, record);
+  }
 }
 
 function probeOwner(id: string, record: DraftStart) {
@@ -110,13 +116,14 @@ export function useSessionFirstSubmission(id: string) {
       });
     };
     reconcile();
-    const timer = setInterval(() => { if (getFirstSubmission(id)?.pending) reconcile(); }, 5000);
+    const timer = setInterval(reconcile, 5000);
     return () => clearInterval(timer);
   }, [id]);
   return entry || (ready ? undefined : { text: '', pending: true });
 }
 
 export async function startFirstSubmission(id: string, text: string, execute: () => Promise<void>) {
+  if (records.get(id)?.persistenceError) await reconcileFirstSubmission(id);
   if (getFirstSubmission(id)?.pending) return;
   if (records.get(id)?.deliveryState === 'failed') {
     // A rejection preserves the original execution and surfaces through the caller's recovery error.

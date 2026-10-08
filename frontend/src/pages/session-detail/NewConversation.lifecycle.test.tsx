@@ -304,10 +304,11 @@ describe('new-conversation submission lifecycle', () => {
     const read = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(() => { throw new DOMException('receipt read failed', 'UnknownError'); });
     try {
       render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first']}><DraftWorkspace /></MemoryRouter>);
-      expect(await screen.findByRole('alert')).toHaveTextContent('receipt read failed');
+      expect((await screen.findAllByRole('alert'))[0]).toHaveTextContent('receipt read failed');
+      expect(await screen.findByText(/Draft selections not saved:/)).toBeInTheDocument();
       read.mockRestore();
-      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-      await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+      screen.getAllByRole('button', { name: 'Retry' }).forEach((button) => fireEvent.click(button));
+      await waitFor(() => expect(screen.queryAllByRole('alert')).toHaveLength(0));
       // The draft metadata that could not be written while reads failed stays live.
       expect(await screen.findByRole('textbox')).toBeInTheDocument();
       expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId=first');

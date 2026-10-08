@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import { clearDraft, discardDraft, getDraft, resetDraftTextsForTests, saveDraft } from './composerDraft';
+import { clearDraft, discardDraft, getDraft, getDraftWriteError, resetDraftTextsForTests, saveDraft } from './composerDraft';
 import {
   beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft,
   getConversationDraft, hydrateDrafts, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation,
@@ -110,6 +110,35 @@ it('applies a peer edit committed before completion and leaves the peer pointed 
   expect(getDraft(replacement)).toBe('typed in another tab');
   await waitFor(() => expect(peer.useNewConversationDrafts.getState().starts['peer-edit']?.replacementDraftId).toBe(replacement));
   await waitFor(() => expect(texts.getDraft(replacement)).toBe('typed in another tab'));
+});
+
+it('moves failed-autosave live text and selections into the committed replacement', async () => {
+  const submitted = await submit('unsaved-completion', 'prompt');
+  await settle();
+  const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new Error('quota'); });
+  try {
+    saveDraft('unsaved-completion', 'only live text');
+    rememberConversationDraft(draft('unsaved-completion', { agent: 'plan' }));
+    await waitFor(() => expect(getDraftWriteError('unsaved-completion')).toBeTruthy());
+    await settle();
+  } finally { fail.mockRestore(); }
+  await completeConversationStart('unsaved-completion', created, submitted);
+  const replacement = useNewConversationDrafts.getState().starts['unsaved-completion'].replacementDraftId!;
+  expect(getDraft(replacement)).toBe('only live text');
+  expect(await storedDraft(replacement)).toMatchObject({ agent: 'plan' });
+});
+
+it('reports a metadata write failure and clears it after the latest edit commits', async () => {
+  rememberConversationDraft(draft('unsaved-meta'));
+  await settle();
+  const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new Error('quota'); });
+  try {
+    rememberConversationDraft(draft('unsaved-meta', { agent: 'plan' }));
+    await waitFor(() => expect(useNewConversationDrafts.getState().saveErrors?.['unsaved-meta']).toContain('quota'));
+  } finally { fail.mockRestore(); }
+  rememberConversationDraft(getConversationDraft('unsaved-meta')!);
+  await waitFor(async () => expect(await storedDraft('unsaved-meta')).toMatchObject({ agent: 'plan' }));
+  await waitFor(() => expect(useNewConversationDrafts.getState().saveErrors?.['unsaved-meta']).toBeUndefined());
 });
 
 it('restores a failed prompt only when no newer edit or discard happened', async () => {

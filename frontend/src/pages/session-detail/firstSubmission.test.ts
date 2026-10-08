@@ -40,6 +40,30 @@ it('retains a live failed outcome over a stale pending durable record and repair
   expect(stored.get('first-delivery:failed-terminal')).toMatchObject({ deliveryState: 'failed', error: 'upload failed' });
 });
 
+it('repairs a completed delivery receipt without executing its payload again', async () => {
+  vi.mocked(persistDraftStart).mockRejectedValueOnce(new Error('quota'));
+  const execute = vi.fn(async () => {});
+  await startFirstSubmission('done-write-error', 'payload', execute);
+  await waitFor(() => expect(getFirstSubmission('done-write-error')).toMatchObject({ pending: true, persistenceError: 'quota' }));
+  expect(stored.get('first-delivery:done-write-error')?.deliveryState).toBe('pending');
+  await reconcileFirstSubmission('done-write-error');
+  expect(stored.get('first-delivery:done-write-error')?.deliveryState).toBe('done');
+  expect(getFirstSubmission('done-write-error')).toBeUndefined();
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it('polls for a later first-delivery claim after an empty initial read without a notification', async () => {
+  vi.useFakeTimers();
+  try {
+    const { result } = renderHook(() => useSessionFirstSubmission('later-claim'));
+    await act(async () => {});
+    expect(result.current).toBeUndefined();
+    stored.set('first-delivery:later-claim', { version: 0, text: 'later', attemptId: 'later', deliveryState: 'pending' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(result.current).toMatchObject({ pending: true, text: 'later' });
+  } finally { vi.useRealTimers(); }
+});
+
 it('immediately retries a known failure without discarding its retained execution after a failed terminal write', async () => {
   const execute = vi.fn().mockRejectedValueOnce(new Error('delivery failed')).mockResolvedValueOnce(undefined);
   vi.mocked(persistDraftStart).mockRejectedValueOnce(new Error('terminal write failed'));

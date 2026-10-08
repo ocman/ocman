@@ -8,7 +8,7 @@ import { api, postJSON, type PrepareSessionResponse, type StartSessionRequest } 
 import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, getConversationDraft, rememberConversationDraft, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, getConversationDraft, rememberConversationDraft, retryConversationDraftSave, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
@@ -69,6 +69,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const { directory, title } = params;
   const draftId = params.draftId || NEW_SESSION_ID;
   const draftStart = useNewConversationDrafts((state) => state.starts[draftId]);
+  const saveError = useNewConversationDrafts((state) => state.saveErrors[draftId]);
   const openedWhilePending = useRef(!!draftStart && !draftStart.error && !draftStart.sessionId).current;
   const recovered = useRef(false);
   const [recoveryKey, setRecoveryKey] = useState(0);
@@ -257,7 +258,6 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       if (!res.sessionId) throw new Error('Session creation returned no session');
       if (model) startModels.set(res.sessionId, model);
       // No title: OpenCode titles the session from its first message.
-      seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
       if (send && !res.firstMessageSent) {
         recordFailedSend(res.sessionId, {
           id: randomId(), text, images: send.images, model: send.model, agent: send.agent, reasoning: send.reasoning,
@@ -267,6 +267,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       if (execute) {
         await startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
+      seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
       if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, steps });
       await completeConversationStart(draftId, { sessionId: res.sessionId, platform: res.platform, remoteId: res.remoteId, directory: res.directory }, submitted, text);
     } catch (err) {
@@ -337,6 +338,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       <div className="oc-viewport-footer" data-testid="conversation-composer">
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
+        {saveError && <InlineAlert onRetry={() => retryConversationDraftSave(draftId)}>Draft selections not saved: {saveError}</InlineAlert>}
         {(error || draftStart?.error) && <InlineAlert>{error || draftStart?.error}</InlineAlert>}
         <Composer
           key={`${routeKey}:${recoveryKey}`}
