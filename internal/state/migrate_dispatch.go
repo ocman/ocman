@@ -8,7 +8,8 @@ import (
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
 // v102 adds viewer-scoped Inbox item pins.
-const latestSchemaVersion = 112
+// v113 indexes running routine runs in scheduler polling order.
+const latestSchemaVersion = 113
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -337,6 +338,14 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "seen_session", "interrupted", "INTEGER NOT NULL DEFAULT 0")
+	case 113:
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='routine_run')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		_, err := tx.Exec(`CREATE INDEX IF NOT EXISTS routine_run_running_idx
+			ON routine_run (created_at, id) WHERE state = 'running'`)
+		return err
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
