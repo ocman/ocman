@@ -4,6 +4,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import type { TermWindow } from '../lib/api';
 import { api } from '../lib/api';
 import { remoteLog } from '../lib/remoteLog';
+import { withDeadline } from '../lib/coalescedRefresh';
 import './SessionTerminalDock.css';
 
 const MIN_HEIGHT = 120;
@@ -100,12 +101,12 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     let request = 0;
     let controller: AbortController | undefined;
     const refresh = async () => {
-      if (document.hidden) return;
+      if (document.hidden || controller && !controller.signal.aborted) return;
       const current = ++request;
-      controller?.abort();
-      controller = new AbortController();
+      const readController = new AbortController();
+      controller = readController;
       try {
-        const { windows: live } = await api.term.listWindows(directory, remoteId, controller.signal);
+        const { windows: live } = await withDeadline(15_000, (signal) => api.term.listWindows(directory, remoteId, signal), readController.signal);
         if (cancelled || current !== request || document.hidden) return;
         setWindows(live);
         setDiscoveredGeneration(generation);
@@ -114,6 +115,8 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
         );
       } catch (e) {
         if (!cancelled && current === request) remoteLog.error('terminal: listing windows failed', e);
+      } finally {
+        if (controller === readController) controller = undefined;
       }
     };
     void refresh();

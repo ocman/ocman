@@ -36,6 +36,21 @@ afterEach(() => {
 });
 
 describe('MaintenanceSettings', () => {
+  it('allows status reads slower than the poll interval to finish', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: MaintenanceStatus) => void;
+    m.status.mockResolvedValueOnce(status({}, { job: 'cleanup', running: true }))
+      .mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const view = render(<MaintenanceSettings />);
+    try {
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(m.status).toHaveBeenCalledTimes(2);
+      await act(async () => { finish(status({}, { finishedAt: 'now' })); });
+      expect(screen.getByText('Finished.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Clean up' })).toBeEnabled();
+    } finally { view.unmount(); }
+  });
   it('ignores an idle resume read after cleanup starts and keeps polling', async () => {
     vi.useFakeTimers();
     let hidden = false;

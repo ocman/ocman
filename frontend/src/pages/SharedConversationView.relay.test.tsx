@@ -46,6 +46,26 @@ describe('SharedConversationView (relay)', () => {
     window.location.hash = '';
   });
 
+  it('times out a stalled relay read and retries from the last committed cursor', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: unknown) => void;
+    readRelayShare.mockResolvedValueOnce({ chunks: [chunk({ session: { id: 's1', title: 'First' } as never })], last: 0 })
+      .mockReturnValueOnce(new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValue({ chunks: [chunk({ session: { id: 's1', title: 'Recovered' } as never })], last: 1 });
+    const view = renderRelayView();
+    try {
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      const stalledSignal = readRelayShare.mock.calls[1][3] as AbortSignal;
+      await act(async () => { await vi.advanceTimersByTimeAsync(18_000); });
+      expect(stalledSignal.aborted).toBe(true);
+      expect(readRelayShare).toHaveBeenNthCalledWith(3, 'share-1', 'the-key', 1, expect.any(AbortSignal));
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Recovered');
+      await act(async () => { finish({ chunks: [chunk({ session: { id: 's1', title: 'Obsolete' } as never })], last: 20 }); });
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Recovered');
+    } finally { view.unmount(); }
+  });
+
   it('does not poll hidden shares and refreshes immediately on return', async () => {
     vi.useFakeTimers();
     let hidden = true;

@@ -46,6 +46,22 @@ beforeEach(() => {
 });
 
 describe('SessionTerminalDock gating', () => {
+  it('allows an open-dock discovery slower than the title interval to finish', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: { windows: TermWindow[] }) => void;
+    listWindows.mockResolvedValueOnce({ windows: [] })
+      .mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const view = render(<SessionTerminalDock tmuxAvailable directory={DIR} />);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+      expect(listWindows).toHaveBeenCalledTimes(2);
+      await act(async () => { finish({ windows: [{ name: 'existing', title: 'Slow shell' }] }); });
+      expect(screen.getByRole('tab', { name: 'Slow shell' })).toBeInTheDocument();
+      expect(createWindow).not.toHaveBeenCalled();
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
   it('ignores an older empty discovery after resume finds an existing shell', async () => {
     let hidden = false;
     const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);

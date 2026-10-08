@@ -4,6 +4,7 @@ import { SubmitButton } from './Control';
 import { SettingRow } from './SettingRow';
 import './MaintenanceSettings.css';
 import { useDocumentVisible } from '../lib/usePanelVisible';
+import { withDeadline } from '../lib/coalescedRefresh';
 
 const POLL_MS = 1000;
 
@@ -24,15 +25,21 @@ export function MaintenanceSettings() {
   const [status, setStatus] = useState<MaintenanceStatus | null>(null);
   const [error, setError] = useState('');
   const generation = useRef(0);
+  const inFlight = useRef<{ signal?: AbortSignal; promise: Promise<void> } | null>(null);
   const refresh = useCallback((signal?: AbortSignal) => {
+    if (inFlight.current && !inFlight.current.signal?.aborted) return inFlight.current.promise;
     const current = ++generation.current;
-    return maintenance.status(signal).then((next) => {
+    const promise = withDeadline(15_000, (readSignal) => maintenance.status(readSignal), signal).then((next) => {
       if (signal?.aborted || current !== generation.current) return;
       setStatus(next);
       setError('');
     }).catch((err: unknown) => {
       if (!signal?.aborted && current === generation.current) setError(err instanceof Error ? err.message : String(err));
+    }).finally(() => {
+      if (inFlight.current?.promise === promise) inFlight.current = null;
     });
+    inFlight.current = { signal, promise };
+    return promise;
   }, []);
 
   useEffect(() => {
@@ -55,6 +62,7 @@ export function MaintenanceSettings() {
     try {
       const next = await action();
       generation.current += 1;
+      inFlight.current = null;
       setStatus(next);
       setError('');
     } catch (err) {

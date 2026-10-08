@@ -10,6 +10,7 @@ import './SharedConversationView.css';
 import { mergeRelayChunks, readRelayShare, relayKeyFromFragment, relayPollMs } from '../lib/relayShare';
 import type { ArtifactShare } from '../lib/artifactShare';
 import { ArtifactShareView } from './ArtifactShareView';
+import { withDeadline } from '../lib/coalescedRefresh';
 
 type LoadState =
   | { status: 'loading' }
@@ -23,10 +24,11 @@ function pollRelayShare(token: string, key: string, signal: AbortSignal, setStat
   let next = 0;
   let inFlight = false;
   const poll = async () => {
-    if (document.hidden || inFlight) return;
+    if (signal.aborted || document.hidden || inFlight) return;
     inFlight = true;
     try {
-      const result = await readRelayShare(token, key, next, signal);
+      const result = await withDeadline(15_000, (readSignal) => readRelayShare(token, key, next, readSignal), signal);
+      if (signal.aborted) return;
       if (result.artifact) {
         // Artifact shares are written once; nothing to poll for.
         window.clearInterval(timer);
@@ -40,7 +42,7 @@ function pollRelayShare(token: string, key: string, signal: AbortSignal, setStat
         setState({ status: 'ready', data: current });
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (signal.aborted || err instanceof DOMException && err.name === 'AbortError') return;
       setState({ status: 'error', message: 'Failed to load or decrypt the shared conversation.' });
     } finally {
       inFlight = false;
