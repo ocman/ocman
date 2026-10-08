@@ -15,8 +15,13 @@ function subscribeViewport(notify: () => void) {
 }
 
 /** Matches SessionDetail.css: mobile drawers are hidden unless opened. */
+export function usePanelOpen(mobileOpen: boolean) {
+  const desktop = useSyncExternalStore(subscribeViewport, () => window.innerWidth > 768);
+  return desktop || mobileOpen;
+}
+
 export function usePanelVisible(mobileOpen: boolean) {
   const visible = useDocumentVisible();
-  const desktop = useSyncExternalStore(subscribeViewport, () => window.innerWidth > 768);
-  return visible && (desktop || mobileOpen);
+  const open = usePanelOpen(mobileOpen);
+  return visible && open;
 }

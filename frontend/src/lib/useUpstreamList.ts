@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDocumentVisible } from './usePanelVisible';
 import {
   fetchPRs,
   fetchIssues,
@@ -39,6 +40,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   /** When false (e.g. tab not yet opened), no fetch is issued. */
   enabled: boolean;
 }): UseUpstreamListResult<T> {
+  const visible = useDocumentVisible();
   const { kind, dir, remoteId, remote, state, mine, enabled } = opts;
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<T[]>([]);
@@ -65,6 +67,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   }, [state, mine, dir, remoteId, remote, kind]);
 
   useEffect(() => {
+    if (!visible) return;
     if (!enabled || !dir || !remote) {
       const reset = () => {
         lastRequestKey.current = requestKey;
@@ -134,7 +137,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
     return () => {
       abortRef.current?.abort();
     };
-  }, [enabled, dir, remoteId, remote, state, mine, page, kind, refreshCounter, requestKey]);
+  }, [enabled, dir, remoteId, remote, state, mine, page, kind, refreshCounter, requestKey, visible]);
 
   const refresh = useCallback(() => {
     setRefreshCounter((n) => n + 1);

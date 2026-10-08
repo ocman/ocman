@@ -21,8 +21,10 @@ type LoadState =
 function pollRelayShare(token: string, key: string, signal: AbortSignal, setState: (s: LoadState) => void): () => void {
   let current: SharedConversation | null = null;
   let next = 0;
+  let inFlight = false;
   const poll = async () => {
-    if (document.hidden) return;
+    if (document.hidden || inFlight) return;
+    inFlight = true;
     try {
       const result = await readRelayShare(token, key, next, signal);
       if (result.artifact) {
@@ -40,6 +42,8 @@ function pollRelayShare(token: string, key: string, signal: AbortSignal, setStat
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       setState({ status: 'error', message: 'Failed to load or decrypt the shared conversation.' });
+    } finally {
+      inFlight = false;
     }
   };
   const timer = window.setInterval(() => void poll(), relayPollMs);

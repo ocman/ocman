@@ -12,6 +12,7 @@ import { Pane } from './RightPanelPane';
 import { trackRender } from '../lib/renderRateMonitor';
 import { Button } from './Control';
 import { EmptyState } from './EmptyState';
+import { useDocumentVisible } from '../lib/usePanelVisible';
 import { TAB_ICONS, TAB_LABELS, mergeVisibleTabOrder, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
 import {
   DndContext,
@@ -90,6 +91,7 @@ export function RightPanel({
   commitSourceStatus,
 }: RightPanelProps) {
   trackRender('RightPanel');
+  const documentVisible = useDocumentVisible();
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);
   const sizes = useUiStore((s) => s.changesSidebarTabSizes);
   const persistedOrder = useUiStore((s) => s.changesSidebarTabOrder);
@@ -108,7 +110,7 @@ export function RightPanel({
   // no upstream.
   const upstreamTarget = useProjectTarget(directory, session);
   const upstreamsResult = useUpstreams(visible && openTabs.includes('upstream') ? upstreamTarget.directory : undefined, upstreamTarget.remoteId);
-  const pluginPanesResult = usePluginPanes(visible && session ? session.remoteId || 'local' : undefined);
+  const pluginPanesResult = usePluginPanes(visible && session ? session.remoteId || 'local' : undefined, documentVisible);
   const pluginPanes = useMemo(() => pluginPanesResult.isError ? [] : pluginPanesResult.data ?? [], [pluginPanesResult.data, pluginPanesResult.isError]);
   const tabLabels = useMemo(() => ({ ...TAB_LABELS, ...Object.fromEntries(pluginPanes.map((pane) => [pluginPaneTab(pane), pane.pane.label])) }), [pluginPanes]);
 

@@ -25,7 +25,7 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
   return sessions
     .map(
       (s) =>
-        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}`,
+        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}${s.factoryAttemptId ? `|f:${s.factoryAttemptId}` : ''}`,
     )
     .join(',');
 }

@@ -8,10 +8,11 @@
 // and testable in jsdom.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { flushPromises, makeSession, makeSessionDetail, renderSessionPage } from './harness';
 import { useUiStore } from '../../../lib/uiStore';
-import type { SessionInfo } from '../../../lib/api';
+import type { SessionInfo, FileChange } from '../../../lib/api';
 
 let slot: HTMLDivElement;
 let navigationSlot: HTMLSpanElement;
@@ -41,6 +42,56 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it('loads Move destinations independently of the closed mobile sidebar', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    try {
+      const projects = vi.fn().mockResolvedValue([{ directory: '/destination', remoteId: 'local', name: 'Destination', archived: false }]);
+      renderSessionPage({ sessionId: 'sess_1', apiOverrides: { projects } });
+      const input = await screen.findByRole('textbox');
+      await userEvent.type(input, '/move');
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      await screen.findByPlaceholderText('Search directories');
+      expect(await screen.findByText('/destination')).toBeInTheDocument();
+      expect(projects).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open');
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('retains open desktop pane controls across document hide and resume', async () => {
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    useUiStore.setState({ changesSidebarOpenTabs: ['session'] });
+    renderSessionPage({ sessionId: 'sess_1' });
+    const fullscreen = await screen.findByRole('button', { name: 'Fullscreen' });
+    act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBe(fullscreen);
+    act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBe(fullscreen);
+    visibility.mockRestore();
+  });
+
+  it('keeps the fullscreen diff and selected file across document hide/resume', async () => {
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    useUiStore.setState({ changesSidebarOpenTabs: ['session'] });
+    const files: FileChange[] = ['first.ts', 'second.ts'].map((path) => ({ path, displayPath: path, additions: 1, deletions: 0, editCount: 1, firstEditAt: 0, lastEditAt: 0, before: '', after: 'hello\n', edits: [] }));
+    const { result } = renderSessionPage({ sessionId: 'sess_1', sessionChanges: { sessionId: 'sess_1', supported: true, totalAdditions: 2, totalDeletions: 0, filesChanged: 2, files } });
+    try {
+      const fullscreen = await screen.findByRole('button', { name: 'Fullscreen' });
+      await waitFor(() => expect(fullscreen).toBeEnabled());
+      await userEvent.click(fullscreen);
+      const dialog = screen.getByRole('dialog', { name: 'Session changes' });
+      const tree = within(within(dialog).getByTestId('changed-files-tree').shadowRoot as unknown as HTMLElement);
+      const second = tree.getByRole('treeitem', { name: 'second.ts' });
+      await userEvent.click(second);
+      expect(second).toHaveAttribute('aria-selected', 'true');
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(screen.getByRole('dialog', { name: 'Session changes' })).toBe(dialog);
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(screen.getByRole('dialog', { name: 'Session changes' })).toBe(dialog);
+      expect(second).toHaveAttribute('aria-selected', 'true');
+    } finally { result.unmount(); visibility.mockRestore(); }
+  });
   it('loads the session list only after the mobile sidebar opens', async () => {
     vi.stubGlobal('innerWidth', 390);
     try {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDocumentVisible } from './usePanelVisible';
 
 export interface UseAsyncResourceResult<T> {
   data: T;
@@ -50,6 +51,8 @@ function isAbort(err: unknown): boolean {
  * react-hooks lint rule against "setState directly in effect" passes.
  */
 export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncResourceResult<T> {
+  const visible = useDocumentVisible();
+  const pausedRef = useRef(false);
   const { fetcher, deps, initial, enabled, errorMessage = defaultErrorMessage } = opts;
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(false);
@@ -69,6 +72,9 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
   });
 
   useEffect(() => {
+    if (!visible) { pausedRef.current = true; return; }
+    const resuming = pausedRef.current;
+    pausedRef.current = false;
     const reset = () => {
       setData(initialRef.current);
       setLoading(false);
@@ -83,8 +89,10 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
-      setData(initialRef.current);
-      setReady(false);
+      if (!resuming) {
+        setData(initialRef.current);
+        setReady(false);
+      }
       setLoading(true);
       setError(null);
       fetcherRef.current(ctrl.signal)
@@ -107,7 +115,7 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
       abortRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, ...deps]);
+  }, [enabled, visible, ...deps]);
 
   return { data, loading, error, ready };
 }

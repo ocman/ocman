@@ -27,6 +27,7 @@ import type {
   AgentInfo,
   PlatformCapabilities,
   SessionInfo,
+  SessionChanges,
 } from '../../../lib/api';
 
 /**
@@ -147,6 +148,7 @@ const mockState: {
   assistantThreadCrashMessage: string | null;
   assistantThreadCrashCount: number;
   sessionInfo: SessionInfo | null;
+  sessionChanges?: SessionChanges;
   tmuxAvailable: boolean;
   realAssistantThread: boolean;
 } = {
@@ -253,7 +255,7 @@ vi.mock('../../../lib/useGitInfo', () => ({
 
 vi.mock('../../../lib/useSessionChanges', () => ({
   useSessionChanges: () => ({
-    data: { sessionId: '', supported: false, totalAdditions: 0, totalDeletions: 0, filesChanged: 0, files: [] },
+    data: mockState.sessionChanges ?? { sessionId: '', supported: false, totalAdditions: 0, totalDeletions: 0, filesChanged: 0, files: [] },
     loading: false,
     error: null,
     refresh: vi.fn(),
@@ -407,6 +409,7 @@ export interface RenderOptions {
   assistantThreadCrashMessage?: string;
   assistantThreadCrashCount?: number;
   sessionInfo?: SessionInfo | null;
+  sessionChanges?: SessionChanges;
   /** Report tmux as available so the real terminal dock renders. */
   tmuxAvailable?: boolean;
   realAssistantThread?: boolean;
@@ -464,6 +467,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   mockState.assistantThreadCrashMessage = opts.assistantThreadCrashMessage ?? null;
   mockState.assistantThreadCrashCount = opts.assistantThreadCrashCount ?? 0;
   mockState.sessionInfo = opts.sessionInfo ?? null;
+  mockState.sessionChanges = opts.sessionChanges;
   mockState.tmuxAvailable = opts.tmuxAvailable ?? false;
   mockState.realAssistantThread = opts.realAssistantThread ?? false;
 

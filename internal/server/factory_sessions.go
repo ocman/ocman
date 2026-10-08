@@ -8,7 +8,7 @@ import (
 
 // factoryAttemptID tags one session detail the way applySessionState tags the
 // list. A lookup failure only hides the Factory recovery card.
-func (s *Server) factoryAttemptID(ctx context.Context, platform, sessionID string) string {
+func (s *Server) factoryAttemptID(ctx context.Context, platform, sessionID, parentID string) string {
 	if s.stateDB == nil {
 		return ""
 	}
@@ -16,5 +16,8 @@ func (s *Server) factoryAttemptID(ctx context.Context, platform, sessionID strin
 	if err != nil {
 		return ""
 	}
-	return tags[state.Key{Platform: platform, SessionID: sessionID}]
+	if attemptID := tags[state.Key{Platform: platform, SessionID: sessionID}]; attemptID != "" {
+		return attemptID
+	}
+	return tags[state.Key{Platform: platform, SessionID: parentID}]
 }

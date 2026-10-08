@@ -60,8 +60,8 @@ export function useFactoryRemovedIssues(id: string) {
   });
 }
 
-export function useFactoryGraphIssues(epics: FactoryEpic[] | undefined) {
-  return useQueries({ queries: (epics ?? []).map((epic) => ({ queryKey: ['factory-epics', epic.id, 'issues'], queryFn: ({ signal }: { signal: AbortSignal }) => api.factoryIssues(epic.id, signal), refetchInterval: factoryRefetchInterval })) });
+export function useFactoryGraphIssues(epics: FactoryEpic[] | undefined, enabled = true) {
+  return useQueries({ queries: (epics ?? []).map((epic) => ({ queryKey: ['factory-epics', epic.id, 'issues'], queryFn: ({ signal }: { signal: AbortSignal }) => api.factoryIssues(epic.id, signal), enabled, refetchInterval: factoryRefetchInterval })) });
 }
 
 export function useMutateFactoryGraph(id: string) {

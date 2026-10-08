@@ -479,8 +479,10 @@ Session list/detail responses carry `factoryAttemptId` from a single state.db
 attempt lookup. The sidebar filters these tagged rows and their descendants
 without requesting `/api/factory/epics`. Only tagged conversations mount Factory
 recovery queries. On mobile, closed drawers disable sidebar list/git/stats reads
-and unmount right-panel content. Document visibility pauses these reads and
-pending PR check polls; reopening refreshes the visible content.
+and unmount the closed mobile details drawer. Document visibility pauses reads
+without unmounting open panes or recovery controls, preserving fullscreen diffs,
+pagination, expanded previews and unsent guidance. Resuming refreshes the visible
+content, including the artifact pages already opened by the user.
 Settled agent bash commands also produce `ocman.git.command` refresh hints for
 the owning project's PR/Issue pane.
 

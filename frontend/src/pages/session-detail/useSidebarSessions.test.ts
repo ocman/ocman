@@ -44,6 +44,17 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('keeps a Factory tag-only change from a later session list read', async () => {
+    const row = { id: 'factory', platform: 'opencode', status: 'done', timeUpdated: 1 } as Session;
+    const getSessions = vi.fn().mockResolvedValue([row]);
+    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    const { result } = renderHook(() => useSidebarSessions({ id: 'factory', sessionId: 'factory', collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    await waitFor(() => expect(result.current.recentSessions).toHaveLength(1));
+    getSessions.mockResolvedValue([{ ...row, factoryAttemptId: 'attempt' }]);
+    await act(async () => { await result.current.loadRecentSessions(); });
+    expect(result.current.recentSessions[0].factoryAttemptId).toBe('attempt');
+  });
   it('makes no list or peek requests while closed, then refreshes on open', async () => {
     const row = { id: 'open', platform: 'opencode', directory: '/repo', status: 'done', timeUpdated: 1 } as Session;
     const getSessions = vi.fn().mockResolvedValue([row]);

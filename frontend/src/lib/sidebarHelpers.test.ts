@@ -3,6 +3,12 @@ import type { Session } from './api';
 import { computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, mergeSidebarSessions, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
 import { vi } from 'vitest';
 
+it('changes the sidebar hash when only the Factory association changes', () => {
+  const plain = makeSession();
+  const tagged = { ...plain, factoryAttemptId: 'attempt' };
+  expect(computeSidebarHash([tagged])).not.toBe(computeSidebarHash([plain]));
+});
+
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 's',

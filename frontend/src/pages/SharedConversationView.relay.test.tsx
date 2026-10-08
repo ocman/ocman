@@ -63,6 +63,27 @@ describe('SharedConversationView (relay)', () => {
     } finally { view.unmount(); visibility.mockRestore(); }
   });
 
+  it('serializes a pending relay read across hide/resume and preserves its cursor', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    let finish!: (value: unknown) => void;
+    readRelayShare.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    readRelayShare.mockResolvedValue({ chunks: [], last: 0 });
+    const view = renderRelayView();
+    try {
+      expect(readRelayShare).toHaveBeenCalledTimes(1);
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(readRelayShare).toHaveBeenCalledTimes(1);
+      await act(async () => { finish({ chunks: [chunk({ session: { id: 's1', title: 'Latest' } as never })], last: 0 }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(readRelayShare).toHaveBeenLastCalledWith('share-1', 'the-key', 1, expect.anything());
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Latest');
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
+
   it('decrypts with the key from the fragment, which is never sent to the relay', async () => {
     readRelayShare.mockResolvedValue({
       chunks: [chunk({ session: { id: 's1', title: 'From the relay' } as never })],

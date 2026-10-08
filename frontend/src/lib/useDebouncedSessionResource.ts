@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DebouncedTrigger } from './debouncedTrigger';
+import { useDocumentVisible } from './usePanelVisible';
 
 // Inner debounce window. A live session can fire many edit/write part
 // updates in quick succession; coalescing them into one fetch every
@@ -59,6 +60,7 @@ export function useDebouncedSessionResource<T>(
   fallbackError: string,
   { enabled = true, dirtyTick = 0 }: DebouncedSessionResourceOptions = {},
 ): DebouncedSessionResourceResult<T> {
+  const visible = useDocumentVisible();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled && !!sessionId);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +77,7 @@ export function useDebouncedSessionResource<T>(
   const fetchRef = useRef<() => void>(() => {});
   // Lazily created on first effect run; persists across renders.
   const triggerRef = useRef<DebouncedTrigger | null>(null);
+  const resumeRef = useRef(false);
   if (triggerRef.current === null) {
     triggerRef.current = new DebouncedTrigger(
       () => fetchRef.current(),
@@ -83,6 +86,11 @@ export function useDebouncedSessionResource<T>(
   }
 
   useEffect(() => {
+    if (!visible) {
+      resumeRef.current = true;
+      triggerRef.current?.reset();
+      return;
+    }
     if (!enabled || !sessionId) {
       setData(enabled ? null : emptyValue);
       setLoading(false);
@@ -127,7 +135,8 @@ export function useDebouncedSessionResource<T>(
     // First load on mount / session change: fire immediately, no
     // debounce. dirtyTick changes during the same session use the
     // DebouncedTrigger.
-    if (data === null) {
+    if (data === null || resumeRef.current) {
+      resumeRef.current = false;
       fetchNow();
     } else {
       triggerRef.current?.bump();
@@ -140,7 +149,7 @@ export function useDebouncedSessionResource<T>(
     // loop. dirtyTick / sessionId / enabled are the explicit re-trigger
     // signals; fetch is stable across renders (from apiStore selector).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, enabled, dirtyTick, fetch]);
+  }, [sessionId, enabled, dirtyTick, fetch, visible]);
 
   // Cancel pending timers on unmount so dead triggers don't fire after
   // the component is gone.
@@ -153,9 +162,9 @@ export function useDebouncedSessionResource<T>(
   // refresh bypasses the debounce. Stable identity via useCallback so
   // consumers can pass it to memoised buttons without extra re-renders.
   const refresh = useCallback(() => {
-    if (!enabled || !sessionId) return;
+    if (!enabled || !sessionId || !visible) return;
     triggerRef.current?.flushNow();
-  }, [enabled, sessionId]);
+  }, [enabled, sessionId, visible]);
 
   return { data, loading, error, refresh };
 }

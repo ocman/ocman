@@ -1,6 +1,7 @@
 import { fetchJSON } from './api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ChangesSidebarTab } from './uiStoreConfig';
+import { useDocumentVisible } from './usePanelVisible';
 
 export type PluginPane = {
   pluginId: string;
@@ -21,21 +22,22 @@ export function pluginPaneTab(pane: PluginPane): ChangesSidebarTab {
   return `plugin:${pane.pluginId}/${pane.pane.id}`;
 }
 
-export function usePluginPanes(ownerId: string | undefined) {
+export function usePluginPanes(ownerId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ['plugin-panes', ownerId],
-    enabled: !!ownerId,
+    enabled: !!ownerId && enabled,
     retry: false,
     queryFn: ({ signal }) => fetchJSON<PluginPane[]>(`/api/plugins/panes?${new URLSearchParams({ ownerId: ownerId! })}`, signal),
   });
 }
 
 export function usePluginPaneTree(pane: PluginPane, directory: string | undefined) {
+  const visible = useDocumentVisible();
   const client = useQueryClient();
   const queryKey = ['plugin-pane-tree', pane.ownerId, pane.pluginId, pane.pane.id, directory] as const;
   return useQuery<PluginPaneTree>({
     queryKey,
-    enabled: !!directory,
+    enabled: !!directory && visible,
     retry: false,
     refetchInterval: (query) => query.state.data?.available ? 30_000 : false,
     refetchIntervalInBackground: false,

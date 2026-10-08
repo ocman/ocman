@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('./usePanelVisible', () => ({ useDocumentVisible: () => true }));
 import type { SessionChanges } from './api';
 
 // useSessionChanges follows the same shape as useSessionInfo —

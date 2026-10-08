@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('./usePanelVisible', () => ({ useDocumentVisible: () => true }));
 
 // useDebouncedSessionResource is the shared base for useSessionChanges
 // and useSessionInfo. These tests exercise the generic hook directly to

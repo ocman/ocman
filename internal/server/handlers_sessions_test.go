@@ -887,6 +887,33 @@ func TestHandleSession_TagsFactoryAttempt(t *testing.T) {
 	}
 }
 
+func TestHandleSession_TagsFactoryChildDetailsAndPeeks(t *testing.T) {
+	for _, platform := range []string{"opencode", "r-owner:opencode"} {
+		t.Run(platform, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			child := db.Session{ID: "child", ParentID: "parent-outside-window", Platform: platform, Directory: "/repo"}
+			reg.Register(&fakePlatform{id: platform, sessions: []db.Session{child}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+				cp := child
+				return &platforms.SessionDetail{Session: &cp}, nil
+			}})
+			attempt, err := srv.stateDB.CreatePreparedFactoryAttempt(t.Context(), "epic", "work", model.FactoryAttemptPolicy{Repository: "/repo", Profile: "factory-implement/v1"}, time.UnixMilli(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := srv.stateDB.ActivateFactoryAttempt(t.Context(), attempt.ID, model.PlanningSession{Platform: platform, ID: child.ParentID}, time.UnixMilli(1)); err != nil {
+				t.Fatal(err)
+			}
+			for _, suffix := range []string{"", "&peek=1"} {
+				rr := httptest.NewRecorder()
+				srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/child?platform="+platform+suffix, nil))
+				if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"factoryAttemptId":"`+attempt.ID+`"`) {
+					t.Fatalf("child detail%s = %d %s", suffix, rr.Code, rr.Body)
+				}
+			}
+		})
+	}
+}
+
 // --- POST /api/session/{id}/auto-approve ---
 
 func TestPromptSessionIDPrefersIssuingChild(t *testing.T) {
