@@ -185,8 +185,9 @@ flowchart TD
   `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound
   platform on the hub. Older owners fall back to session detail. Session-list
-  SSE invalidations trail by 150 ms, finish existing reads before refreshing,
-  and retain one follow-up when another event arrives during the refresh.
+  SSE invalidations trail by 150 ms with a 500 ms maximum wait, finish existing
+  reads before refreshing, and retain one follow-up when another event arrives
+  during the refresh.
 - **Factory usage.** `/api/factory/epics/{id}/usage` joins durable attempt
   identities to `platforms.UsageReader`. The local OpenCode adapter reads
   descendant message metadata and reuses token and pricing calculations.
