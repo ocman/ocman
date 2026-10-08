@@ -86,8 +86,10 @@ export function Inbox() {
   };
   const archiveItem = (item: InboxItem) => {
     const key = itemKey(item);
-    const index = visibleItems.findIndex((candidate) => itemKey(candidate) === key);
-    const next = visibleItems[index + 1] ?? visibleItems[index - 1];
+    const index = items.findIndex((candidate) => itemKey(candidate) === key);
+    const visibleKeys = new Set(visibleItems.map(itemKey));
+    const next = items.slice(index + 1).find((candidate) => visibleKeys.has(itemKey(candidate)))
+      ?? items.slice(0, index).reverse().find((candidate) => visibleKeys.has(itemKey(candidate)));
     archive.mutate([{ id: item.id, remoteId: item.remoteId }], { onSuccess: () => {
       if (activeKeyRef.current !== key) return;
       if (next) open(next); else setActiveKey(null);

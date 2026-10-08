@@ -255,6 +255,22 @@ describe('Inbox', () => {
     expect(screen.queryByRole('heading', { name: 'Remote note' })).toBeNull();
   });
 
+  it.each([['C', 'D'], ['D', 'C']])('archives hidden unread row %s and opens its neighbor %s', async (target, expected) => {
+    let currentItems: InboxItem[] = ['A', 'B', 'C', 'D'].map((title) => ({ ...items[0], id: title, title }));
+    vi.mocked(api.inbox).mockImplementation(async () => ({ items: currentItems, unreadTotal: 4 }));
+    vi.mocked(api.markInboxItemRead).mockImplementation(async (id) => {
+      currentItems = currentItems.map((item) => item.id === id ? { ...item, readAt: Date.now() } : item);
+    });
+    renderInbox();
+    await screen.findByRole('heading', { name: 'A' });
+    fireEvent.click(statusFilter('Unread'));
+    const list = within(screen.getByRole('region', { name: 'Inbox messages' }));
+    fireEvent.click((await list.findByText(target)).closest('button')!);
+    await waitFor(() => expect(list.queryByText(target)).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
+    await screen.findByRole('heading', { name: expected });
+  });
+
   it.each(['open another', 'change filter'])('preserves navigation during a pending archive: %s', async (action) => {
     let complete!: () => void;
     vi.mocked(api.archiveInboxItems).mockImplementation(() => new Promise<void>((resolve) => { complete = resolve; }));

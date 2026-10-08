@@ -15,6 +15,10 @@ while the others show icons with hover titles. Each message in the sidebar also
 shows its category icon before the title. Older messages appear under Primary.
 
 Opening a message marks it read. Mark unread returns it to the unread list.
+Archiving the open message with either archive button or Delete/Backspace opens
+the next message below that matches the current filters. If none is below, it
+opens the nearest matching message above; if none remain, the reader clears.
+This also works in Unread after reading has hidden the current row.
 Pinning is a user-only action that keeps selected messages above the rest, in
 most-recently-pinned order. Agents cannot pin or unpin messages through MCP.
 Messages show their source machine in the reading pane, but there is no machine
