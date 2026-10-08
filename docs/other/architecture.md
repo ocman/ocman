@@ -469,7 +469,7 @@ the owning project's PR/Issue pane.
 flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
-    Stores --> Persistence[Browser persistence<br/>per-draft localStorage + IndexedDB lifecycle records]
+    Stores --> Persistence[Browser persistence<br/>IndexedDB drafts, text + receipts]
     Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
@@ -559,90 +559,60 @@ flowchart TD
   uses the same preparation path.
   The machine selector
   re-points the route; the target selector changes client state. Neither
-  creates a session. `lib/newConversationDrafts` stores each draft's target and
-  selections in per-draft browser localStorage keys, while `lib/composerDraft` stores text
-  in immutable per-edit bodies with small per-draft head references. Each clear
-  commits the authoritative mark for its edit before reclaiming that immutable
-  body. Without room for that mark, the clear deletes only its exact immutable
-  body, or the matching older inline/legacy record, which frees space and still
-  reads empty. Emptying the composer is applied at the input gesture, so a
-  delayed clear cannot invalidate a later edit from another composer.
-  Auxiliary cleanup failures
-  cannot roll back a committed relocation or delete its recoverable destination.
-  A clear cannot erase a concurrent source save or reverse a newer discard. Superseded
-  bodies and explicitly cleared legacy entries are reclaimed. Older per-draft
-  and shared-map text formats remain readable.
+  creates a session. All browser-local draft state lives in one IndexedDB
+  database, `ocman.drafts.v1` (`lib/draftDb`), with three stores: composer
+  text per session or draft id (`lib/composerDraft`), prepared-conversation
+  metadata (owner, directory, target, selections; `lib/newConversationDrafts`),
+  and start/first-delivery receipts (`lib/draftStartClaims`). Every lifecycle
+  step is one readwrite transaction over the stores it touches. IndexedDB runs
+  overlapping readwrite transactions one at a time in creation order, so each
+  check and its write are atomic across tabs, and an aborted transaction leaves
+  nothing half-applied. Each tab keeps a synchronous in-memory snapshot (a Map for
+  text, Zustand for drafts and receipts), hydrated in one transaction before the
+  app renders. After a commit, BroadcastChannel tells other tabs which keys
+  changed and they re-read them; a per-key local edit counter stops a database
+  read from overwriting a newer local edit. Hydration imports the pre-IndexedDB
+  `ocman.composerDrafts.v1` localStorage map once without overwriting stored text.
+  Without IndexedDB, drafts live in memory only and starts fail closed.
+  Text records carry a revision that only grows. An autosave writes only if the
+  stored revision is not newer, so a stale autosave cannot land after a discard
+  in another tab. Clearing sent text clears only the exact text and revision this
+  tab saw. Discard increments the revision, and emptying the composer applies it
+  at the input gesture. A composer that is still empty shows text restored later,
+  such as a failed start recovered by another tab; a user edit always wins.
   `SidebarConversationDrafts` lists these prepared
   conversations in both sidebar views, including empty drafts, and lets the user
   reopen or discard one. Opening another new conversation allocates another
   draft id; switching machines retains the current id.
-  `lib/draftStartClaims` reserves starts with an atomic IndexedDB readwrite
-  transaction, so two tabs cannot create sessions for the same draft. Per-draft
-  localStorage receipts share pending, failure and completion state across tabs
-  and reloads. The active receipt is reconciled from IndexedDB, so a failed mirror
-  write cannot leave a retryable failure locked after reload. Acquired claims
-  always receive their terminal result; draft-text ownership only controls text
-  restoration and retirement. Identity-less bookmarked URLs get a fresh canonical
-  draft id before mounting, with deliberate migration of the legacy `new` text.
-  Terminal receipts cannot be downgraded by a stale pending record for the same
-  attempt; failed persistence stays visible and is repaired before retry. A newer
-  retained revision is copied to a fresh draft identity before the old identity
-  is retired. Receipt-read failures show a retry control. The composer remains
-  editable; submission still requires a successful atomic claim.
-  Explicit clearing/discard increments a per-draft persisted text revision, so
-  failed receipt recovery cannot resurrect it after reload. Terminal publication
-  changes its committed marker after the IndexedDB transaction, guaranteeing a
-  second cross-tab notification. Reopened composers remount for recovered text
-  once, keeping attachments on later retries.
-  Fresh user edits adopt an externally changed text revision while stale
-  callbacks remain fenced. Pending images and browser Files live in a shared
-  draft-keyed Zustand snapshot, restored after navigation and a failed start.
-  Mounted composers read this snapshot directly, including late image conversions
-  that finish after reopening the draft; local arrays cannot overwrite it.
-  Outstanding attachment processing belongs to the same snapshot, so remounting
-  cannot unlock submission before accepted files are ready.
-  Attachment processing captures its attachment owner before asynchronous
-  image reads, so accepted batches survive navigation without reviving discarded
-  payloads. Attachment cancellation has its own identity; empty-text autosaves
-  never cancel accepted files or strand their processing counts.
-  Relocation transfers that snapshot and its pending batch owner, including owner-local browser
-  Files in peer tabs, before clearing the retired identity.
-  Retirement rechecks metadata/text after terminal persistence and copies late
-  edits before deleting the old identity. The completion receipt records a
-  retirement snapshot containing metadata, revision and edit identity, without
-  prompt bytes. Reload reconciliation retires an unchanged source or relocates
-  newer edits, including drafts whose composer is not open.
-  Empty retired sources keep recovery metadata but stay hidden. A source edit
-  arriving during retirement remains discoverable with its original owner and
-  selections, then reconciliation relocates it to a fresh identity.
-  It adopts the authoritative attempt receipt before replaying relocation, even
-  when the localStorage mirror was never saved.
-  Legacy text migration copies to a checked destination key before conditionally
-  clearing that source edit; quota errors and intervening source edits leave the
-  source available with an explicit retry.
-  Replacement owner/selections must persist before checked text relocation;
-  a failed relocation keeps
-  the completed claim and original draft with a safe retry. Retry commits the
-  replacement receipt, with a retirement snapshot, before retiring the source,
-  and accepts a replacement already created by an interrupted attempt without
-  overwriting its newer owner, selections or text. Completed, released and
-  session-created records are final inside the atomic claim transaction.
-  Peer completion or release drops the originating tab's retained delivery
-  payload, and reconciliation failures during Retry surface without re-running it.
-  Validated terminal
-  mirrors for the current attempt can be adopted and repaired by already-open
-  peer tabs. Submitted model/agent/reasoning/target selections participate in
-  retirement ownership, so changed selections are retained under a new identity.
-  The comparison captures the initiating composer's selections rather than
-  metadata changed by a peer before submission.
-  Catalog defaults are derived for display and submission, not saved as user edits.
-  Explicit metadata deletion invalidates autosave and recovery;
-  unrelated metadata writes cannot discard text. Successful
-  starts retire their submitted revision independently of active navigation.
-  `PreparedDraftLifecycle` follows completed starts to their session and replaces
-  an externally discarded identity before it can accept unsavable edits.
-  Its navigation guard remounts per draft identity. Lifecycle redirects replace
-  history entries, so browser Back reaches the page before the retired draft.
+  The first submission claims the draft in one transaction: a pending or
+  completed receipt refuses a second claim in any tab. The pending receipt holds
+  the prompt so reopened composers show it; terminal receipts drop it. A failure
+  this tab knows but could not store is repaired inside the next claim.
+  Completion is one transaction. It records the created session and retires the
+  draft when its owner, route, revision, text and selections still match what the
+  initiating composer submitted. Otherwise it moves the newer edits (text, owner,
+  target or selections) to a fresh identity. The submitted selections are captured
+  from that composer, so peer changes made before submission are kept. The retired
+  identity becomes a tombstone, so a late metadata write cannot resurrect it.
+  If that transaction fails (for example at quota), a receipt-only write records
+  the session with a relocation error. The draft stays untouched and a retry
+  re-runs the same idempotent transaction. If even that write fails, the outcome
+  stays visible in this tab and reconciliation repairs it.
+  A failure is recorded in one transaction that restores the prompt only when no
+  newer edit or discard happened. A created session is never downgraded to a failure.
+  Identity-less bookmarked URLs get a fresh canonical draft id before mounting,
+  with a transactional move of the legacy `new` text.
+  Pending images and browser Files live in a shared draft-keyed Zustand snapshot,
+  restored after navigation and a failed start. Mounted composers read it directly,
+  including outstanding processing counts, so a remount cannot unlock submission
+  before accepted files are ready. Attachment cancellation has its own identity,
+  separate from text revisions. A completion or peer retirement transfers the
+  snapshot and its pending batch owner to the replacement before clearing the
+  retired identity. Catalog defaults are derived for display and submission, not saved as user edits.
+  `PreparedDraftLifecycle` follows completed starts to their session or
+  replacement and replaces an externally discarded identity. Its navigation
+  guard remounts per draft identity. Lifecycle redirects replace history
+  entries, so browser Back reaches the page before the retired draft.
   The first submission calls
   `POST /api/sessions/start`, which creates the session at the chosen target
   (an automatically named `session-<suffix>` worktree, or the current
@@ -661,7 +631,8 @@ flowchart TD
   until creation, uploaded to
   the real session, then sent; file/command/shell execution lives in
   child-keyed retry state, independently of the child's draft. First-delivery
-  lifecycle is owned by `firstSubmission`: an atomic IndexedDB reservation must
+  lifecycle is owned by `firstSubmission`: an atomic reservation in the shared
+  draft database's receipt store must
   succeed before upload/command execution or completion publication. Child composers
   remain locked until they read that record. localStorage and BroadcastChannel are
   notification hints, never authorities; failed mirror writes cannot unlock peers.

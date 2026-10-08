@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useLayoutEffect, useRef } from 'react';
 import { useComposerDrafts } from './useComposerDrafts';
-import { getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, getDraft, resetDraftTextsForTests, saveDraft } from '../../lib/composerDraft';
 
 function setup(sessionId: string | undefined, el: HTMLTextAreaElement) {
   return renderHook(
@@ -21,6 +21,7 @@ describe('useComposerDrafts', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    resetDraftTextsForTests();
     // jsdom's localStorage is only partially implemented in this setup;
     // plant a full in-memory stub so getDraft/saveDraft work.
     const data = new Map<string, string>();
@@ -102,6 +103,29 @@ describe('useComposerDrafts', () => {
     expect(getDraft('shared')).toBe('newer peer edit');
     act(() => peer.unmount());
     expect(getDraft('shared')).toBe('newer peer edit');
+  });
+
+  it('shows text restored after mount in an untouched composer, but never over a user edit', () => {
+    setup('recovered', el);
+    // Another tab's failed start restores the prompt after this composer mounted.
+    act(() => saveDraft('recovered', 'restored prompt'));
+    expect(el.value).toBe('restored prompt');
+    const editedEl = document.createElement('textarea');
+    const edited = setup('edited', editedEl);
+    editedEl.value = 'typing';
+    act(() => edited.result.current.scheduleDraftSave('edited', () => editedEl.value));
+    act(() => saveDraft('edited', 'restored elsewhere'));
+    expect(editedEl.value).toBe('typing');
+  });
+
+  it('follows another tab\'s edits and its send while untouched, so a sent prompt cannot be sent again', () => {
+    setup('peer', el);
+    act(() => saveDraft('peer', 'hel'));
+    expect(el.value).toBe('hel');
+    act(() => saveDraft('peer', 'hello world'));
+    expect(el.value).toBe('hello world');
+    act(() => clearDraft('peer'));
+    expect(el.value).toBe('');
   });
 
   it('clearDraftNow removes the draft and cancels pending saves', () => {

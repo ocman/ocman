@@ -1,133 +1,73 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
-
-afterEach(() => vi.unstubAllGlobals());
-
-type Request = { result?: DraftStart; onsuccess?: () => void };
-type Transaction = {
-  oncomplete?: () => void;
-  onabort?: () => void;
-  error?: Error;
-  objectStore: () => { get: (key: string) => Request; put: (value: DraftStart, key: string) => void };
-};
-
-// Unit tests drive the SDK callbacks; the two-tab browser regression verifies real transaction serialization.
-function database(options: { manualCommit?: boolean; blocked?: boolean; openError?: Error; abort?: boolean; brokenSchema?: boolean } = {}) {
-  const rows = new Map<string, DraftStart>();
-  const staged = new Map<string, DraftStart>();
-  let transaction: Transaction;
-  const commit = () => {
-    for (const [key, value] of staged) rows.set(key, value);
-    staged.clear();
-    transaction.oncomplete?.();
-  };
-  const db = {
-    close: vi.fn(), createObjectStore: vi.fn(),
-    transaction: () => {
-      if (options.brokenSchema) throw new Error('schema missing');
-      transaction = { objectStore: () => ({
-        get: (key) => {
-          const request: Request = {};
-          queueMicrotask(() => {
-            if (options.abort) { transaction.onabort?.(); return; }
-            request.result = rows.get(key);
-            request.onsuccess?.();
-            if (!options.manualCommit) queueMicrotask(commit);
-          });
-          return request;
-        },
-        put: (value, key) => { staged.set(key, value); },
-      }) };
-      return transaction;
-    },
-  };
-  vi.stubGlobal('indexedDB', { open: () => {
-    const request = { result: db, error: options.openError,
-      onsuccess: undefined as (() => void) | undefined, onerror: undefined as (() => void) | undefined,
-      onblocked: undefined as (() => void) | undefined, onupgradeneeded: undefined as (() => void) | undefined };
-    queueMicrotask(() => {
-      if (options.openError) { request.onerror?.(); return; }
-      if (options.blocked) request.onblocked?.();
-      request.onupgradeneeded?.();
-      request.onsuccess?.();
-    });
-    return request;
-  } });
-  return { rows, staged, commit, close: db.close };
-}
-
-it('does not grant a claim until the transaction commits', async () => {
-  const db = database({ manualCommit: true });
-  let resolved = false;
-  const result = claimDraftStart('draft', { version: 1, text: 'prompt' }).then((value) => { resolved = true; return value; });
-  await vi.waitFor(() => expect(db.staged.has('draft')).toBe(true));
-  expect(resolved).toBe(false);
-  db.commit();
-  expect(await result).toEqual({ claimed: true, start: { version: 1, text: 'prompt' } });
-  expect(db.close).toHaveBeenCalledOnce();
-});
+import { expect, it, vi } from 'vitest';
+import { claimDraftStart, persistDraftStart, readDraftStart } from './draftStartClaims';
+import { closeDraftDbForTests, transact } from './draftDb';
 
 it('preserves a standing claim, permits an explicit failed-start retry and retains completion', async () => {
-  database();
-  const original = { version: 1, text: 'first' };
+  const original = { version: 1, text: '', attemptId: 'a' };
   expect((await claimDraftStart('draft', original)).claimed).toBe(true);
-  expect(await claimDraftStart('draft', { version: 1, text: 'duplicate' })).toEqual({ claimed: false, start: original });
+  expect(await claimDraftStart('draft', { version: 1, text: '', attemptId: 'b' })).toEqual({ claimed: false, start: original });
   await persistDraftStart('draft', { ...original, error: 'failed' });
-  expect((await claimDraftStart('draft', original)).claimed).toBe(true);
-  await persistDraftStart('draft', { ...original, sessionId: 'session' });
+  expect((await claimDraftStart('draft', { ...original, attemptId: 'c' })).claimed).toBe(true);
+  await persistDraftStart('draft', { ...original, attemptId: 'c', sessionId: 'session' });
   expect((await claimDraftStart('draft', original)).start.sessionId).toBe('session');
   expect((await readDraftStart('draft'))?.sessionId).toBe('session');
   expect(await readDraftStart('missing')).toBeUndefined();
 });
 
-it('fails closed without IndexedDB', async () => {
-  vi.stubGlobal('indexedDB', undefined);
-  await expect(claimDraftStart('draft', { version: 0, text: 'prompt' })).rejects.toThrow('cannot coordinate');
+it('lets only one of two concurrent claims win', async () => {
+  const results = await Promise.all([
+    claimDraftStart('race', { version: 0, text: '', attemptId: 'first' }),
+    claimDraftStart('race', { version: 0, text: '', attemptId: 'second' }),
+  ]);
+  expect(results.filter((result) => result.claimed)).toHaveLength(1);
 });
 
 it('does not overwrite a newer attempt with an older terminal outcome', async () => {
-  database();
   const current = { version: 0, text: 'new attempt', attemptId: 'new' };
   await claimDraftStart('draft', current);
-  await persistDraftStart('draft', { version: 0, text: 'old attempt', attemptId: 'old', error: 'old failure' });
+  expect(await persistDraftStart('draft', { version: 0, text: 'old attempt', attemptId: 'old', error: 'old failure' })).toEqual(current);
   expect(await readDraftStart('draft')).toEqual(current);
 });
 
-it('does not restore a first-delivery failure after explicit release completed its record', async () => {
-  database();
-  const current = { version: 0, text: 'payload', attemptId: 'delivery', deliveryState: 'pending' as const };
-  await claimDraftStart('first-delivery:child', current);
-  await persistDraftStart('first-delivery:child', { ...current, text: '', deliveryState: 'done' });
-  await persistDraftStart('first-delivery:child', { ...current, deliveryState: 'failed', error: 'late error' });
-  expect(await readDraftStart('first-delivery:child')).toMatchObject({ deliveryState: 'done', text: '' });
-});
-
 it('does not let a retry claim a released delivery that retained its old error', async () => {
-  database();
   const failed = { version: 0, text: 'abandoned command', attemptId: 'released', deliveryState: 'failed' as const, error: 'failed' };
   await claimDraftStart('first-delivery:released', failed);
   await persistDraftStart('first-delivery:released', { ...failed, deliveryState: 'done', text: '' });
+  await persistDraftStart('first-delivery:released', { ...failed, error: 'late error' });
   const retry = await claimDraftStart('first-delivery:released', { version: 0, text: 'abandoned command', attemptId: 'retry', deliveryState: 'pending' });
   expect(retry.claimed).toBe(false);
   expect(retry.start).toMatchObject({ attemptId: 'released', deliveryState: 'done' });
 });
 
-it('does not restore a discarded prompt from a delayed older terminal write', async () => {
-  database();
-  const current = { version: 0, text: 'discarded payload', attemptId: 'discarded' };
-  await claimDraftStart('discarded', current);
-  await persistDraftStart('discarded', { ...current, version: 1, text: '', error: 'failed' });
-  await persistDraftStart('discarded', { ...current, error: 'late failure' });
-  expect(await readDraftStart('discarded')).toMatchObject({ version: 1, text: '', error: 'failed' });
+it('fails closed without IndexedDB', async () => {
+  closeDraftDbForTests();
+  vi.stubGlobal('indexedDB', undefined);
+  try { await expect(claimDraftStart('draft', { version: 0, text: '' })).rejects.toThrow('cannot coordinate'); }
+  finally { vi.unstubAllGlobals(); }
 });
 
-it.each([
-  [{ openError: new Error('open failed') }, 'open failed'],
-  [{ blocked: true }, 'Close other ocman tabs'],
-  [{ brokenSchema: true }, 'schema missing'],
-  [{ abort: true }, 'Could not save'],
-] as const)('does not grant a claim after an SDK failure %j', async (options, message) => {
-  const db = database(options);
-  await expect(claimDraftStart('draft', { version: 0, text: 'prompt' })).rejects.toThrow(message);
-  expect(db.rows.size).toBe(0);
+it('rejects a database whose stores are missing instead of granting a claim', async () => {
+  closeDraftDbForTests();
+  await new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open('ocman.drafts.v1', 1);
+    open.onupgradeneeded = () => undefined; // An older/foreign schema: no stores.
+    open.onsuccess = () => { open.result.close(); resolve(); };
+    open.onerror = () => reject(open.error);
+  });
+  await expect(claimDraftStart('draft', { version: 0, text: '' })).rejects.toThrow();
+});
+
+it('aborts every write when the transaction body throws', async () => {
+  await expect(transact(['starts'], 'readwrite', (tx) => {
+    tx.put('starts', 'partial', { version: 0, text: '' });
+    throw new Error('boom');
+  })).rejects.toThrow('boom');
+  expect(await readDraftStart('partial')).toBeUndefined();
+});
+
+it('reopens a connection the browser closed', async () => {
+  await readDraftStart('warm');
+  const close = vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementationOnce(() => { throw new DOMException('closed', 'InvalidStateError'); });
+  try { expect((await claimDraftStart('reopened', { version: 0, text: '' })).claimed).toBe(true); } finally { close.mockRestore(); }
+  expect(await readDraftStart('reopened')).toEqual({ version: 0, text: '' });
 });

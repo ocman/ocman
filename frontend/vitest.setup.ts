@@ -3,6 +3,9 @@
 // import is a no-op under the node environment because the matchers
 // only register when `expect` is in scope, which it is for vitest.
 import '@testing-library/jest-dom/vitest';
+import 'fake-indexeddb/auto';
+import { IDBFactory } from 'fake-indexeddb';
+import { closeDraftDbForTests } from './src/lib/draftDb';
 import { afterEach } from 'vitest';
 import { cleanup, configure } from '@testing-library/react';
 
@@ -26,6 +29,9 @@ if (!('ResizeObserver' in globalThis)) {
 // no document was rendered.
 afterEach(() => {
   cleanup();
+  // Each test gets an empty draft database; module memory is reset by the tests that use it.
+  closeDraftDbForTests();
+  globalThis.indexedDB = new IDBFactory();
 });
 
 // CI runners are noticeably slower than dev hardware: cold-start the

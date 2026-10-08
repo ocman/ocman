@@ -1,6 +1,20 @@
 import { test, expect, installDefaultRoutes, MOCK_SESSION } from './fixtures';
 import type { Page } from '@playwright/test';
 
+/** Read a composer text record straight from the draft database. */
+function storedText(page: Page, id: string) {
+  return page.evaluate((key) => new Promise<{ text: string; revision: number } | undefined>((resolve, reject) => {
+    const open = indexedDB.open('ocman.drafts.v1');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const request = db.transaction('texts').objectStore('texts').get(key);
+      request.onsuccess = () => { db.close(); resolve(request.result); };
+      request.onerror = () => { db.close(); reject(request.error); };
+    };
+  }), id);
+}
+
 async function prepareDraft(page: Page) {
   await page.route('**/api/sessions/prepare', (route) => route.fulfill({ json: {
     platform: 'opencode', agents: [{ name: 'build' }, { name: 'plan' }], commands: [],
@@ -12,6 +26,29 @@ async function prepareDraft(page: Page) {
   const remote = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/repo' };
   await page.route('**/api/sessions/resolve-targets', (route) => route.fulfill({ json: { candidates: [local, remote], remotes: [remote] } }));
 }
+
+test('a draft discarded in one tab is not resurrected by another tab\'s autosave', async ({ mockedPage: first }) => {
+  const second = await first.context().newPage();
+  await installDefaultRoutes(second);
+  for (const page of [first, second]) {
+    await prepareDraft(page);
+    await page.goto('/session/new?dir=%2Frepo&draftId=shared-discard&title=Shared');
+  }
+  await second.getByRole('textbox').fill('typed in the second tab');
+  await expect.poll(async () => (await storedText(first, 'shared-discard'))?.text).toBe('typed in the second tab');
+  await first.getByLabel('Prepared sessions').getByRole('button', { name: 'Discard draft' }).click();
+  // The second tab learns of the discard and moves off the retired identity.
+  await expect(second).not.toHaveURL(/draftId=shared-discard/);
+  await second.getByRole('textbox').fill('a new draft');
+  const freshId = new URL(second.url()).searchParams.get('draftId')!;
+  await expect.poll(async () => (await storedText(second, freshId))?.text).toBe('a new draft');
+  await expect.poll(async () => (await storedText(first, 'shared-discard'))?.text).toBe('');
+  await second.reload();
+  // Only the fresh replacement draft remains; the retired identity stays retired.
+  await expect(second.getByLabel('Prepared sessions').getByRole('button', { name: 'Discard draft' })).toHaveCount(1);
+  await expect(second).not.toHaveURL(/draftId=shared-discard/);
+  await expect(second.getByRole('textbox')).toHaveValue('a new draft');
+});
 
 test('Back skips a completed draft and reaches the preceding page', async ({ mockedPage: page }) => {
   await prepareDraft(page);
@@ -27,11 +64,11 @@ test('Back skips a completed draft and reaches the preceding page', async ({ moc
   await expect(page).toHaveURL(/\/settings$/);
 });
 
-for (const failMirror of [false, true]) test(`peer first-delivery ordering and owner recovery with mirror failure: ${failMirror}`, async ({ mockedPage: first }) => {
+for (const failMirror of [false, true]) test(`peer first-delivery ordering and owner recovery with localStorage unavailable: ${failMirror}`, async ({ mockedPage: first }) => {
   if (failMirror) await first.addInitScript(() => {
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key, value) {
-      if (key.startsWith('ocman.firstSubmission.v1:')) throw new Error('first-delivery mirror quota');
+      if (key.startsWith('ocman.')) throw new Error('localStorage quota');
       original.call(this, key, value);
     };
   });
@@ -138,7 +175,7 @@ test('an unusable atomic-store schema surfaces an error and keeps the prompt', a
   await page.route('**/fault-setup', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Atomic-store setup</title>' }));
   await page.goto('/fault-setup');
   const stores = await page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const open = indexedDB.open('ocman.preparedDraftStarts.v1', 1);
+    const open = indexedDB.open('ocman.drafts.v1', 1);
     open.onsuccess = () => { const count = open.result.objectStoreNames.length; open.result.close(); resolve(count); };
     open.onerror = () => reject(open.error);
   }));
@@ -172,15 +209,8 @@ test('a failed start preserves its prompt and releases the atomic claim for an e
   expect(starts).toBe(2);
 });
 
-test('reload reconciles a stale pending mirror after a terminal receipt exceeds localStorage quota', async ({ mockedPage: page }) => {
+test('a failed start keeps its prompt and failure across reload without replaying', async ({ mockedPage: page }) => {
   await prepareDraft(page);
-  await page.addInitScript(() => {
-    const set = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      if (key.startsWith('ocman.newConversationStarts.v1:') && JSON.parse(value).error) throw new Error('quota');
-      set.call(this, key, value);
-    };
-  });
   let starts = 0;
   await page.route('**/api/sessions/start', (route) => { starts++; return route.fulfill({ status: 500, json: { error: 'Retryable start failure' } }); });
   await page.goto('/session/new?dir=%2Frepo&draftId=quota');
@@ -218,45 +248,15 @@ test('an aborted terminal transaction remains visible and can be safely repaired
   await page.getByRole('textbox').fill('Resilient prompt');
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Could not save' })).toBeVisible();
-  await page.reload();
   await expect(page.getByRole('textbox')).toHaveValue('Resilient prompt');
-  await page.getByRole('button', { name: 'Send message' }).click();
-  await expect(page.getByRole('textbox')).not.toBeDisabled();
   expect(starts).toBe(1);
+  // Storage recovers: the known failure is written first, then the retry may claim the draft.
   await page.evaluate(() => { (window as Window & { abortTerminal: boolean }).abortTerminal = false; });
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not save' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
   expect(starts).toBe(2);
-});
-
-test('an open peer adopts and repairs a same-attempt terminal hint after the writer aborts', async ({ mockedPage: first }) => {
-  const second = await first.context().newPage();
-  await installDefaultRoutes(second);
-  await first.addInitScript(() => {
-    const put = IDBObjectStore.prototype.put;
-    IDBObjectStore.prototype.put = function (value, key) {
-      if (value.error) { this.transaction.abort(); return {} as IDBRequest<IDBValidKey>; }
-      return put.call(this, value, key);
-    };
-  });
-  let finish!: () => void;
-  const waiting = new Promise<void>((resolve) => { finish = resolve; });
-  await first.route('**/api/sessions/start', async (route) => {
-    await waiting;
-    await route.fulfill({ status: 500, json: { error: 'Peer-visible failure' } });
-  });
-  for (const page of [first, second]) {
-    await prepareDraft(page);
-    await page.goto('/session/new?dir=%2Frepo&draftId=peer-abort');
-  }
-  await first.getByRole('textbox').fill('Shared failed prompt');
-  await first.getByRole('button', { name: 'Send message' }).click();
-  await expect(second.getByRole('textbox')).toBeDisabled();
-  finish();
-  await expect(second.getByRole('textbox')).not.toBeDisabled();
-  await expect(second.getByTestId('conversation-composer').getByRole('alert')).toContainText('Peer-visible failure');
 });
 
 test('a rejected competing prompt cannot leave the winning failed claim pending', async ({ mockedPage: first }) => {
@@ -280,7 +280,7 @@ test('a rejected competing prompt cannot leave the winning failed claim pending'
   await Promise.all([first.getByRole('button', { name: 'Send message' }).dispatchEvent('click'), second.getByRole('button', { name: 'Send message' }).dispatchEvent('click')]);
   await expect.poll(() => starts).toBe(1);
   const losingText = owner === first ? 'Other prompt' : 'First prompt';
-  await expect.poll(() => first.evaluate(() => localStorage.getItem(`ocman.composerDraftText.v1:competing:${localStorage.getItem('ocman.composerDraftHead.v1:competing')}`))).toBe(losingText);
+  await expect.poll(async () => (await storedText(first, 'competing'))?.text).toBe(losingText);
   finish();
   await expect(owner!.getByRole('alert')).toContainText('First creation failed');
   await Promise.all([first.reload(), second.reload()]);
@@ -299,7 +299,7 @@ test('cleared and discarded failed prompts stay empty after reload and an old-UR
   await expect(page.getByTestId('conversation-composer').getByRole('alert')).toContainText('Creation failed');
   await expect(page.getByRole('textbox')).not.toBeDisabled();
   await page.getByRole('textbox').fill('');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('ocman.composerDraftRevision.v1:clear'))).not.toBeNull();
+  await expect.poll(async () => (await storedText(page, 'clear'))?.revision).toBeGreaterThan(0);
   await page.reload();
   await expect(page.getByRole('textbox')).toHaveValue('');
   await page.getByLabel('Prepared sessions').getByRole('button', { name: 'Discard draft' }).click();
@@ -316,8 +316,7 @@ test('prepares multiple sidebar drafts without starting sessions', async ({ mock
   await prepareDraft(page);
   await page.goto('/session/new?dir=%2Frepo&draftId=first&title=Plan+the+API');
   await page.getByRole('textbox').fill('Design the API before implementation.');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem(`ocman.composerDraftText.v1:first:${localStorage.getItem('ocman.composerDraftHead.v1:first')}`)))
-    .toContain('Design the API');
+  await expect.poll(async () => (await storedText(page, 'first'))?.text).toContain('Design the API');
   await page.goto('/session/new?dir=%2Frepo&draftId=second&title=Prepare+the+UI');
   await expect(page.getByRole('textbox')).toHaveValue('');
   await page.getByRole('textbox').fill('Prepare the sidebar UI.');
@@ -326,8 +325,7 @@ test('prepares multiple sidebar drafts without starting sessions', async ({ mock
   await expect(page.getByRole('textbox')).toHaveValue('Design the API before implementation.');
   await drafts.getByRole('button', { name: /Prepare the UI/ }).click();
   await expect(page.getByRole('textbox')).toHaveValue('Prepare the sidebar UI.');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem(`ocman.composerDraftText.v1:second:${localStorage.getItem('ocman.composerDraftHead.v1:second')}`)))
-    .toContain('Prepare the sidebar UI.');
+  await expect.poll(async () => (await storedText(page, 'second'))?.text).toContain('Prepare the sidebar UI.');
   await page.reload();
   await expect(drafts.getByRole('button', { name: /Plan the API/ })).toBeVisible();
   await expect(page.getByRole('textbox')).toHaveValue('Prepare the sidebar UI.');

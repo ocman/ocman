@@ -1,184 +1,143 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { randomId } from './randomId';
+import { onDraftChange, publishDraftChange, transact, type DraftTx } from './draftDb';
 
-const DRAFTS_KEY = 'ocman.composerDrafts.v1';
-const TEXT_PREFIX = DRAFTS_KEY + ':';
-const CLEAR_PREFIX = 'ocman.composerDraftClear.v1:';
-const HEAD_PREFIX = 'ocman.composerDraftHead.v1:';
-const VALUE_PREFIX = 'ocman.composerDraftText.v1:';
-const ownerKey = (id: string, entry: string) => `${CLEAR_PREFIX}${encodeURIComponent(id)}:${encodeURIComponent(entry)}`;
-const valueKey = (id: string, entry: string) => `${VALUE_PREFIX}${encodeURIComponent(id)}:${encodeURIComponent(entry)}`;
-type TextEntry = { kind: 'ocman/composer-text'; id: string; text: string };
+/**
+ * Unsent composer text per session/draft id. Reads are synchronous from an
+ * in-memory snapshot; every write is one IndexedDB transaction that re-checks
+ * the stored revision, so a stale autosave can never land after a discard in
+ * another tab. A revision only grows: explicit discard increments it, which
+ * invalidates outstanding autosaves and failed-start recovery for older text.
+ */
+export interface TextRecord { text: string; revision: number }
+const LEGACY_KEY = 'ocman.composerDrafts.v1';
 
-type Drafts = Record<string, string>;
-const draftVersions = new Map<string, number>();
-const VERSION_PREFIX = 'ocman.composerDraftRevision.v1:';
-export function getDraftVersion(sessionId: string) {
-  let stored = 0;
-  try { stored = Number(window.localStorage.getItem(VERSION_PREFIX + sessionId)) || 0; } catch { /* Keep the live revision. */ }
-  return Math.max(draftVersions.get(sessionId) || 0, stored);
-}
-
-/** Invalidate outstanding autosaves and failed-send recovery before clearing. */
-export function discardDraft(sessionId: string, entryId = getDraftEntryId(sessionId)) {
-  const version = getDraftVersion(sessionId) + 1;
-  draftVersions.set(sessionId, version);
-  clearDraft(sessionId, entryId);
-  try { window.localStorage.setItem(VERSION_PREFIX + sessionId, String(version)); } catch { /* Keep the live tombstone. */ }
-}
-
-function loadDrafts(): Drafts {
-  if (typeof window === 'undefined') return {};
-
-  try {
-    const raw = window.localStorage.getItem(DRAFTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Drafts;
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed;
-  } catch {
-    return {};
-  }
-}
-
-function readEntry(sessionId: string): TextEntry {
-  const head = localStorage.getItem(HEAD_PREFIX + sessionId);
-  if (head) return { kind: 'ocman/composer-text', id: head, text: localStorage.getItem(valueKey(sessionId, head)) || '' };
-  const raw = window.localStorage.getItem(TEXT_PREFIX + sessionId) ?? loadDrafts()[sessionId] ?? '';
-  try {
-    const entry = JSON.parse(raw);
-    if (entry?.kind === 'ocman/composer-text' && typeof entry.id === 'string' && typeof entry.text === 'string') return entry;
-  } catch { /* The earlier per-draft values contain plain text. */ }
-  return { kind: 'ocman/composer-text', id: raw ? 'legacy' : localStorage.getItem(CLEAR_PREFIX + sessionId) || 'legacy', text: typeof raw === 'string' ? raw : '' };
-}
-
-export const getDraftEntryId = (id: string) => { try { return readEntry(id).id; } catch { return 'legacy'; } };
-export const getDraftClearId = (id: string) => {
-  try {
-    const head = localStorage.getItem(HEAD_PREFIX + id);
-    // A reclaimed body without a tombstone (quota fallback) is cleared as well.
-    return head && (localStorage.getItem(ownerKey(id, head)) || localStorage.getItem(valueKey(id, head)) === null) ? head : localStorage.getItem(CLEAR_PREFIX + id);
-  }
-  catch { return null; }
-};
-
-export function getDraft(sessionId: string): string {
-  try { const entry = readEntry(sessionId); return localStorage.getItem(ownerKey(sessionId, entry.id)) || getDraftClearId(sessionId) === entry.id ? '' : entry.text; }
-  catch { return ''; }
-}
-
-export function saveDraft(sessionId: string, text: string, version = getDraftVersion(sessionId)) {
-  if (version !== getDraftVersion(sessionId)) return;
-  if (!text) { discardDraft(sessionId); return; }
-  try { writeEntry(sessionId, text); } catch { /* Best-effort autosave. */ }
-  emit();
-}
-
-export function clearDraft(sessionId: string, entryId = getDraftEntryId(sessionId)) {
-  try { clearEntry(sessionId, entryId); } catch { /* Best-effort clear. */ }
-  emit();
-}
-
-/** Copy before clearing: a failed write must leave the original recoverable. */
-export function migrateDraft(from: string, to: string): boolean {
-  const entryId = getDraftEntryId(from);
-  const text = getDraft(from);
-  if (!text) return true;
-  try {
-    writeEntry(to, text);
-    clearEntry(from, entryId);
-    emit();
-    return getDraftEntryId(from) === entryId;
-  } catch { return false; }
-}
-
-function pruneLegacyDrafts() {
-  const drafts = loadDrafts();
-  let changed = false;
-  for (const id of Object.keys(drafts)) {
-    if (localStorage.getItem(ownerKey(id, 'legacy'))) { delete drafts[id]; changed = true; }
-  }
-  if (changed) {
-    if (Object.keys(drafts).length) localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
-    else localStorage.removeItem(DRAFTS_KEY);
-  }
-}
-
-function writeEntry(id: string, text: string) {
-  const previous = localStorage.getItem(HEAD_PREFIX + id);
-  const entry = randomId();
-  localStorage.setItem(valueKey(id, entry), text);
-  try { localStorage.setItem(HEAD_PREFIX + id, entry); }
-  catch (error) { try { localStorage.removeItem(valueKey(id, entry)); } catch { /* Preserve the previous head. */ } throw error; }
-  try {
-    if (previous) { localStorage.removeItem(valueKey(id, previous)); localStorage.removeItem(ownerKey(id, previous)); }
-    localStorage.removeItem(TEXT_PREFIX + id); // New writers never use this legacy namespace.
-    localStorage.setItem(ownerKey(id, 'legacy'), '1');
-    pruneLegacyDrafts();
-  } catch { /* Cleanup is retryable; it cannot undo the committed head. */ }
-}
-
-function clearEntry(id: string, entry: string) {
-  // Monotonic per-edit tombstones cannot be reversed by a delayed older clear.
-  try { localStorage.setItem(ownerKey(id, entry), '1'); }
-  catch {
-    // Quota fallback: deletion frees space and touches only this exact edit.
-    if (localStorage.getItem(HEAD_PREFIX + id)) { localStorage.removeItem(valueKey(id, entry)); return; }
-    // Older formats: an inline record or legacy text, cleared only if it is still the owned edit.
-    if (readEntry(id).id !== entry) return;
-    localStorage.removeItem(TEXT_PREFIX + id);
-    const drafts = loadDrafts();
-    if (id in drafts) { delete drafts[id]; localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } // Smaller value fits.
-    return;
-  }
-  try {
-    localStorage.removeItem(valueKey(id, entry));
-    localStorage.setItem(CLEAR_PREFIX + id, entry);
-    localStorage.setItem(ownerKey(id, 'legacy'), '1');
-    localStorage.removeItem(TEXT_PREFIX + id);
-    pruneLegacyDrafts();
-  } catch { /* The logical clear remains durable if physical cleanup is interrupted. */ }
-}
-
-if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
-  if (event.key === DRAFTS_KEY) try { pruneLegacyDrafts(); } catch { /* Retry cleanup on the next mutation. */ }
-});
-
-// --- which sessions have an unsent draft (sidebar indicator) ---
-// ponytail: the snapshot is the sorted id list joined into a string so
-// useSyncExternalStore gets a stable primitive without a cache layer.
-
+const texts = new Map<string, TextRecord>();
+// Local operation counter per id: a database read never overwrites a newer local edit.
+const localSeq = new Map<string, number>();
 const listeners = new Set<() => void>();
 let snapshot: string | null = null;
 
-function computeSnapshot() {
-  const ids = new Set(Object.keys(loadDrafts()));
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(TEXT_PREFIX)) ids.add(key.slice(TEXT_PREFIX.length));
-      if (key?.startsWith(HEAD_PREFIX)) ids.add(key.slice(HEAD_PREFIX.length));
-    }
-  } catch { /* Legacy reads remain available when storage is blocked. */ }
-  return [...ids].filter((id) => getDraft(id)).sort().join('\n');
-}
+export const getDraft = (id: string) => texts.get(id)?.text || '';
+export const getDraftVersion = (id: string) => texts.get(id)?.revision || 0;
+const seqOf = (id: string) => localSeq.get(id) || 0;
+const bump = (id: string) => { const seq = seqOf(id) + 1; localSeq.set(id, seq); return seq; };
+
+const computeSnapshot = () => [...texts].filter(([, record]) => record.text).map(([id]) => id).sort().join('\n');
 
 function emit() {
-  const next = computeSnapshot();
-  if (next === snapshot) return;
-  snapshot = next;
-  for (const l of listeners) l();
+  snapshot = computeSnapshot();
+  for (const listener of listeners) listener();
 }
 
-export function subscribeDraftSessionIds(cb: () => void) {
-  listeners.add(cb);
-  // Another tab wrote drafts for the same user.
-  const onStorage = (e: StorageEvent) => { if (e.key === null || e.key === DRAFTS_KEY || e.key.startsWith(TEXT_PREFIX) || e.key.startsWith(CLEAR_PREFIX) || e.key.startsWith(HEAD_PREFIX)) emit(); };
-  window.addEventListener('storage', onStorage);
-  return () => {
-    listeners.delete(cb);
-    window.removeEventListener('storage', onStorage);
-  };
+function setMemory(id: string, record: TextRecord | undefined) {
+  if (record) texts.set(id, record);
+  else texts.delete(id);
+}
+
+/** Apply committed database values unless a newer local edit superseded them. */
+export function applyTexts(entries: [string, TextRecord | undefined][], seqs?: Map<string, number>) {
+  for (const [id, record] of entries) if (!seqs || (seqs.get(id) ?? 0) === seqOf(id)) setMemory(id, record);
+  emit();
+}
+
+/** Snapshot local edit counters (all ids when none are given) to guard a later database read. */
+export const captureTextSeqs = (ids?: string[]) => ids ? new Map(ids.map((id) => [id, seqOf(id)])) : new Map(localSeq);
+
+async function refresh(ids: string[]) {
+  const seqs = captureTextSeqs(ids);
+  try {
+    const records = await transact(['texts'], 'readonly', (tx) => Promise.all(ids.map((id) => tx.get<TextRecord>('texts', id))));
+    applyTexts(ids.map((id, i) => [id, records[i]]), seqs);
+  } catch { /* Keep the live snapshot when the database is unavailable. */ }
+}
+
+/** One fenced read-modify-write; `next` returns undefined to leave the stored record as is. */
+function write(id: string, next: (stored: TextRecord | undefined) => TextRecord | undefined) {
+  const seq = seqOf(id);
+  void transact(['texts'], 'readwrite', async (tx) => {
+    const stored = await tx.get<TextRecord>('texts', id);
+    const value = next(stored);
+    if (value) tx.put('texts', id, value);
+    return value || stored;
+  }).then((committed) => {
+    if (seqOf(id) === seq) { setMemory(id, committed); emit(); }
+    publishDraftChange({ texts: [id] });
+  }, () => { void refresh([id]); });
+}
+
+export function saveDraft(id: string, text: string, version = getDraftVersion(id)) {
+  if (version !== getDraftVersion(id)) return;
+  if (!text) { discardDraft(id); return; }
+  bump(id);
+  setMemory(id, { text, revision: version });
+  emit();
+  // A peer's discard raised the revision: this autosave is stale and must not land.
+  write(id, (stored) => (stored?.revision || 0) <= version ? { text, revision: version } : undefined);
+}
+
+/** Remove sent text without invalidating newer edits: only the exact text/revision seen here is cleared. */
+export function clearDraft(id: string) {
+  const expected = texts.get(id);
+  if (!expected?.text) return;
+  bump(id);
+  setMemory(id, { text: '', revision: expected.revision });
+  emit();
+  write(id, (stored) => stored && stored.text === expected.text && stored.revision === expected.revision
+    ? { text: '', revision: stored.revision } : undefined);
+}
+
+/** Explicit discard: clears and invalidates outstanding autosaves and failed-send recovery. */
+export function discardDraft(id: string) {
+  const revision = getDraftVersion(id);
+  bump(id);
+  setMemory(id, { text: '', revision: revision + 1 });
+  emit();
+  write(id, (stored) => ({ text: '', revision: Math.max(stored?.revision || 0, revision) + 1 }));
+}
+
+/** Move text in one transaction; the source is discarded only together with the copy. */
+export async function migrateDraft(from: string, to: string): Promise<boolean> {
+  const seqs = captureTextSeqs([from, to]);
+  try {
+    const [source, target] = await transact(['texts'], 'readwrite', async (tx) => {
+      const [src, dst] = await Promise.all([tx.get<TextRecord>('texts', from), tx.get<TextRecord>('texts', to)]);
+      if (!src?.text) return [src, dst];
+      const moved = dst?.text ? dst : { text: src.text, revision: dst?.revision || 0 };
+      const cleared = { text: '', revision: src.revision + 1 };
+      tx.put('texts', to, moved);
+      tx.put('texts', from, cleared);
+      return [cleared, moved];
+    });
+    applyTexts([[from, source], [to, target]], seqs);
+    publishDraftChange({ texts: [from, to] });
+    return true;
+  } catch { return false; }
+}
+
+/** Startup: read every stored text and import the pre-IndexedDB localStorage map once. */
+export async function hydrateTexts(tx: DraftTx) {
+  const stored = new Map(await tx.getAll<TextRecord>('texts'));
+  let legacy: Record<string, unknown> = {};
+  try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || '{}') || {}; } catch { /* Malformed: nothing to import. */ }
+  for (const [id, text] of Object.entries(legacy)) {
+    if (typeof text !== 'string' || !text || stored.has(id)) continue;
+    const record = { text, revision: 0 };
+    tx.put('texts', id, record);
+    stored.set(id, record);
+  }
+  return stored;
+}
+
+export function finishLegacyTextImport() {
+  try { localStorage.removeItem(LEGACY_KEY); } catch { /* The import is idempotent. */ }
+}
+
+if (typeof window !== 'undefined') onDraftChange((change) => { if (change.texts?.length) void refresh(change.texts); });
+
+/** Fires on every text change, including ones committed by other tabs. */
+export function subscribeDraftTexts(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
 }
 
 function getSnapshot() {
@@ -188,6 +147,13 @@ function getSnapshot() {
 
 /** Session ids that currently hold an unsent composer draft. */
 export function useDraftSessionIds(): Set<string> {
-  const key = useSyncExternalStore(subscribeDraftSessionIds, getSnapshot, () => '');
+  const key = useSyncExternalStore(subscribeDraftTexts, getSnapshot, () => '');
   return useMemo(() => new Set(key ? key.split('\n') : []), [key]);
+}
+
+/** Tests only. */
+export function resetDraftTextsForTests() {
+  texts.clear();
+  localSeq.clear();
+  emit();
 }

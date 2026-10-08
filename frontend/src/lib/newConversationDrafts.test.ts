@@ -1,484 +1,199 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
+import { clearDraft, discardDraft, getDraft, resetDraftTextsForTests, saveDraft } from './composerDraft';
+import {
+  beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft,
+  getConversationDraft, hydrateDrafts, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation,
+  selectionsKey, useNewConversationDrafts,
+} from './newConversationDrafts';
 import { getPendingDraftPayload, updateDraftAttachments } from './pendingDraftPayloads';
 import { readDraftStart } from './draftStartClaims';
-import { getDraft, getDraftEntryId, getDraftVersion, migrateDraft, saveDraft } from './composerDraft';
-import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation, useNewConversationDrafts } from './newConversationDrafts';
-vi.mock('./draftStartClaims', () => ({
-  claimDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => ({ claimed: true, start }),
-  persistDraftStart: async (_id: string, start: import('./draftStartClaims').DraftStart) => start,
-  readDraftStart: vi.fn(async (id: string) => useNewConversationDrafts.getState().starts[id]),
-}));
+import { transact } from './draftDb';
+
+vi.mock('./remoteLog', () => ({ remoteLog: { error: vi.fn(), warn: vi.fn() } }));
+
+const created = { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' };
+const route = 'local:/repo:opencode:Draft';
+const draft = (draftId: string, extra = {}) => ({ draftId, directory: '/repo', remoteId: 'local', platform: 'opencode', title: 'Draft', ...extra });
+const storedDraft = (id: string) => transact(['drafts'], 'readonly', (tx) => tx.get<Record<string, unknown>>('drafts', id));
+const settle = () => waitFor(async () => expect(await transact(['drafts'], 'readonly', () => true)).toBe(true));
+
+/** Submit like the composer: claim, then clear the sent prompt. */
+async function submit(id: string, text: string, extra = {}) {
+  rememberConversationDraft(draft(id, extra));
+  saveDraft(id, text);
+  const revision = (await beginConversationStart(id, route))!;
+  clearDraft(id); // The composer clears the sent prompt without a new revision.
+  return { revision: revision, routeKey: route, selections: selectionsKey(getConversationDraft(id)!) };
+}
+
+async function otherTab() {
+  vi.resetModules();
+  const peer = await import('./newConversationDrafts');
+  await peer.hydrateDrafts();
+  return { peer, texts: await import('./composerDraft') };
+}
 
 beforeEach(() => {
-  vi.mocked(readDraftStart).mockImplementation(async (id) => useNewConversationDrafts.getState().starts[id]);
   localStorage.clear();
-  window.dispatchEvent(new StorageEvent('storage', { key: null }));
+  resetDraftTextsForTests();
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
 });
 
-it('adopts the authoritative attempt before relocating a completed start with no mirror', async () => {
-  rememberConversationDraft({ draftId: 'missing-mirror', directory: '/repo' });
-  const draft = useNewConversationDrafts.getState().drafts[0];
-  const start = { version: getDraftVersion(draft.draftId), text: '', attemptId: 'authoritative-attempt', sessionId: 'created',
-    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
-  saveDraft(draft.draftId, 'newer text');
-  vi.mocked(readDraftStart).mockResolvedValue(start);
-  await reconcileConversationStart(draft.draftId);
-  const completed = useNewConversationDrafts.getState().starts[draft.draftId];
-  expect(completed.attemptId).toBe('authoritative-attempt');
-  expect(getDraft(completed.replacementDraftId!)).toBe('newer text');
-});
-
-it('does not overwrite another draft during an interleaved text relocation', () => {
-  saveDraft('moving-text', 'move me');
-  const original = Storage.prototype.setItem;
-  let interleaved = false;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (!interleaved && key.startsWith('ocman.composerDraftText.v1:')) {
-      interleaved = true;
-      saveDraft('other-text', 'independent edit');
-    }
-    original.call(this, key, value);
-  });
-  try {
-    expect(migrateDraft('moving-text', 'moved-text')).toBe(true);
-    expect(getDraft('other-text')).toBe('independent edit');
-  } finally { write.mockRestore(); }
-});
-
-it('does not erase an intervening edit to the source during relocation', () => {
-  saveDraft('same-source', 'copied revision');
-  const original = Storage.prototype.setItem;
-  let edited = false;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (!edited && key.startsWith('ocman.composerDraftClear.v1:same-source:')) {
-      edited = true;
-      saveDraft('same-source', 'intervening source edit');
-    }
-    original.call(this, key, value);
-  });
-  try {
-    migrateDraft('same-source', 'same-source-copy');
-    expect(getDraft('same-source')).toBe('intervening source edit');
-    expect(getDraft('same-source-copy')).toBe('copied revision');
-  } finally { write.mockRestore(); }
-});
-
-it('keeps a source edit discoverable when it arrives during final retirement', async () => {
-  const id = 'retiring-source';
-  rememberConversationDraft({ draftId: id, directory: '/repo', remoteId: 'box', agent: 'plan' });
-  saveDraft(id, 'submitted');
-  useNewConversationDrafts.setState({ starts: { [id]: { version: getDraftVersion(id), text: 'submitted' } } });
-  const original = Storage.prototype.setItem;
-  let edited = false;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (!edited && key.startsWith(`ocman.composerDraftClear.v1:${id}:`)) { edited = true; saveDraft(id, 'late source edit'); }
-    original.call(this, key, value);
-  });
-  try {
-    await completeConversationStart(id, { sessionId: 'created', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo' });
-    expect(getDraft(id)).toBe('late source edit');
-    expect(useNewConversationDrafts.getState().drafts).toContainEqual(expect.objectContaining({ draftId: id, remoteId: 'box', agent: 'plan' }));
-    await reconcileConversationStart(id);
-    const replacement = useNewConversationDrafts.getState().starts[id].replacementDraftId!;
-    expect(getDraft(replacement)).toBe('late source edit');
-  } finally { write.mockRestore(); }
-});
-
-it.each(['discard', 'completion'])('reclaims prompt bytes after %s, including lifecycle mirrors', async (outcome) => {
-  const id = `reclaim-${outcome}`;
-  const text = `unique reclaimed ${outcome} prompt`;
-  rememberConversationDraft({ draftId: id, directory: '/repo' });
-  saveDraft(id, text);
-  await beginConversationStart(id, text);
-  if (outcome === 'discard') {
-    await failConversationStart(id, 'creation failed');
-    forgetConversationDraft(id);
-  } else await completeConversationStart(id, { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
-  for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain(text);
-});
-
-it.each([false, true])('finalizes interrupted retirement while preserving newer edits: %s', async (edited) => {
-  rememberConversationDraft({ draftId: 'interrupted-retirement', directory: '/repo' });
-  saveDraft('interrupted-retirement', 'submitted');
-  const draft = useNewConversationDrafts.getState().drafts[0];
-  const retirement = JSON.stringify([draft, getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]);
-  const createdSession = { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' };
-  useNewConversationDrafts.setState({ starts: { [draft.draftId]: { version: 0, text: '', sessionId: 'created', createdSession, retirement } } });
-  if (edited) saveDraft(draft.draftId, 'newer edit');
-  await reconcileConversationStart(draft.draftId);
-  expect(useNewConversationDrafts.getState().drafts.some((item) => item.draftId === draft.draftId)).toBe(false);
-  if (edited) expect(getDraft(useNewConversationDrafts.getState().starts[draft.draftId].replacementDraftId!)).toBe('newer edit');
-});
-
-it('replays a saved retirement at startup without opening its composer', async () => {
-  rememberConversationDraft({ draftId: 'startup-retirement', directory: '/repo' });
-  const draft = useNewConversationDrafts.getState().drafts[0];
-  const start = { version: getDraftVersion(draft.draftId), text: '', sessionId: 'created',
-    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraftVersion(draft.draftId), getDraftEntryId(draft.draftId)]) };
-  useNewConversationDrafts.setState({ starts: { [draft.draftId]: start } });
-  localStorage.setItem(`ocman.newConversationStarts.v1:${draft.draftId}`, JSON.stringify(start));
-  vi.resetModules();
-  const restored = await import('./newConversationDrafts');
-  await waitFor(() => expect(restored.useNewConversationDrafts.getState().drafts).toHaveLength(0));
-});
-
-it('reconciles an unopened draft at startup when its terminal mirror was never saved', async () => {
-  const id = 'startup-missing-mirror';
-  rememberConversationDraft({ draftId: id, directory: '/repo' });
-  saveDraft(id, 'submitted');
-  const draft = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId === id)!;
-  const start = { version: getDraftVersion(id), text: '', sessionId: 'created',
-    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    retirement: JSON.stringify([draft, getDraftVersion(id), getDraftEntryId(id)]) };
-  vi.mocked(readDraftStart).mockResolvedValue(start);
-  expect(localStorage.getItem(`ocman.newConversationStarts.v1:${id}`)).toBeNull();
-  vi.resetModules();
-  const restored = await import('./newConversationDrafts');
-  await waitFor(() => expect(restored.useNewConversationDrafts.getState().drafts).toHaveLength(0));
-  expect(restored.useNewConversationDrafts.getState().starts[id]?.sessionId).toBe('created');
-});
-
-it('transfers peer-local attachments when another tab retires a replaced draft', async () => {
-  rememberConversationDraft({ draftId: 'peer-source', directory: '/repo' });
-  rememberConversationDraft({ draftId: 'peer-replacement', directory: '/repo' });
-  const payload = { images: [], files: [{ path: '', name: 'peer.txt', mime: 'text/plain', file: new File(['note'], 'peer.txt') }] };
-  updateDraftAttachments('peer-source', payload);
-  useNewConversationDrafts.setState({ starts: { 'peer-source': { version: 0, text: '', sessionId: 'created', replacementDraftId: 'peer-replacement' } } });
-  localStorage.removeItem('ocman.newConversationDrafts.v1:peer-source');
-  window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:peer-source', newValue: null }));
-  await waitFor(() => expect(getPendingDraftPayload('peer-replacement')).toEqual(payload));
-  expect(getPendingDraftPayload('peer-source')).toBeUndefined();
-});
-
 it('persists independent targets and selections and only discards the selected draft', async () => {
-  rememberConversationDraft({ draftId: 'first', directory: '/repo', model: 'p/m', agent: 'plan', target: 'current' });
-  rememberConversationDraft({ draftId: 'second', directory: '/repo', remoteId: 'box' });
-  rememberConversationDraft({ draftId: 'first', directory: '/other', reasoning: 'high' });
+  rememberConversationDraft(draft('first', { model: 'p/m', agent: 'plan', target: 'current' }));
+  rememberConversationDraft(draft('second', { remoteId: 'box' }));
+  rememberConversationDraft({ ...draft('first'), reasoning: 'high' });
   saveDraft('first', 'one');
   saveDraft('second', 'two');
-  expect(useNewConversationDrafts.getState().drafts[0]).toEqual({
-    draftId: 'first', directory: '/other', model: 'p/m', agent: 'plan', reasoning: 'high', target: 'current', createdAt: expect.any(Number),
-  });
-  vi.resetModules();
-  const restored = await import('./newConversationDrafts');
-  expect(restored.useNewConversationDrafts.getState().drafts).toEqual(useNewConversationDrafts.getState().drafts);
+  await settle();
+  const { peer, texts } = await otherTab();
+  expect(peer.getConversationDraft('first')).toMatchObject({ model: 'p/m', agent: 'plan', reasoning: 'high', target: 'current' });
   forgetConversationDraft('first');
-  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
-  expect(getDraft('first')).toBe('');
-  expect(getDraft('second')).toBe('two');
+  await waitFor(() => expect(peer.useNewConversationDrafts.getState().drafts.map((entry) => entry.draftId)).toEqual(['second']));
+  await waitFor(() => expect(texts.getDraft('first')).toBe(''));
+  expect(texts.getDraft('second')).toBe('two');
 });
 
-it('keeps live drafts when storage refuses writes', () => {
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
-  rememberConversationDraft({ draftId: 'first', directory: '/repo' });
-  expect(useNewConversationDrafts.getState().drafts).toHaveLength(1);
-  write.mockRestore();
-  rememberConversationDraft({ draftId: 'second', directory: '/repo' });
-  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['first', 'second']);
-});
-
-it('keeps live draft owners and selections when browser storage cannot be enumerated', () => {
-  rememberConversationDraft({ draftId: 'read-blocked', directory: '/repo', remoteId: 'box', agent: 'plan' });
-  const read = vi.spyOn(Storage.prototype, 'key').mockImplementation(() => { throw new Error('storage unavailable'); });
-  try {
-    rememberConversationDraft({ draftId: 'read-blocked', directory: '/repo', reasoning: 'high' });
-    expect(useNewConversationDrafts.getState().drafts).toEqual([expect.objectContaining({
-      draftId: 'read-blocked', remoteId: 'box', agent: 'plan', reasoning: 'high',
-    })]);
-  } finally { read.mockRestore(); }
-});
-
-it('holds the start guard by draft identity, releases failures and remembers completed sessions', async () => {
-  rememberConversationDraft({ draftId: 'pending', directory: '/repo' });
-  expect(await beginConversationStart('pending', 'prompt')).toEqual(expect.any(Number));
-  expect(await beginConversationStart('pending', 'duplicate')).toBeNull();
+it('lets only one tab start a draft and repairs a failure this tab could not store', async () => {
+  rememberConversationDraft(draft('pending'));
+  expect(await beginConversationStart('pending', route)).toBe(0);
+  const { peer } = await otherTab();
+  expect(await peer.beginConversationStart('pending', route)).toBeNull();
+  // The failure could not be written: the live receipt is repaired inside the next claim.
+  useNewConversationDrafts.setState((state) => ({ starts: { pending: { ...state.starts.pending, error: 'lost', persistenceError: 'quota' } } }));
+  expect(await beginConversationStart('pending', route)).toBe(0);
   endConversationStart('pending');
-  expect(await beginConversationStart('pending', 'retry')).toEqual(expect.any(Number));
-  await completeConversationStart('pending', { sessionId: 'session', platform: 'opencode', remoteId: 'local', directory: '/repo' });
-  endConversationStart('pending');
-  expect(useNewConversationDrafts.getState().drafts).toEqual([]);
-  expect(useNewConversationDrafts.getState().starts.pending.sessionId).toBe('session');
-  expect(await beginConversationStart('pending', 'duplicate')).toBeNull();
+  expect(useNewConversationDrafts.getState().starts.pending).toBeUndefined();
 });
 
-it('merges another tab before writing and observes cross-tab discards', async () => {
+it('retires an unchanged submitted draft and records the session', async () => {
+  const submitted = await submit('retire', 'prompt');
+  await completeConversationStart('retire', created, submitted);
+  expect(getConversationDraft('retire')).toBeUndefined();
+  expect(useNewConversationDrafts.getState().starts.retire).toMatchObject({ sessionId: 'created' });
+  expect(useNewConversationDrafts.getState().starts.retire.replacementDraftId).toBeUndefined();
+  expect(await storedDraft('retire')).toMatchObject({ deleted: true });
+  expect((await readDraftStart('retire'))?.sessionId).toBe('created');
+  expect(await beginConversationStart('retire', route)).toBeNull();
+});
+
+it.each([
+  ['text', (id: string) => saveDraft(id, 'newer task')],
+  ['selections', (id: string) => rememberConversationDraft({ ...draft(id), agent: 'build' })],
+  ['owner', (id: string) => rememberConversationDraft({ ...draft(id), remoteId: 'box' })],
+])('moves a newer %s edit to a fresh identity in the same transaction', async (_change, edit) => {
+  const id = `edit-${_change}`;
+  const submitted = await submit(id, 'prompt', { agent: 'plan' });
+  updateDraftAttachments(id, { images: [], files: [{ path: '', name: 'kept.txt', mime: 'text/plain' }] });
+  edit(id);
+  await completeConversationStart(id, created, submitted);
+  const replacement = useNewConversationDrafts.getState().starts[id].replacementDraftId!;
+  expect(replacement).toBeTruthy();
+  expect(getConversationDraft(id)).toBeUndefined();
+  expect(getConversationDraft(replacement)).toBeTruthy();
+  expect(getPendingDraftPayload(replacement)?.files).toHaveLength(1);
+  if (_change === 'text') expect(getDraft(replacement)).toBe('newer task');
+  expect(await storedDraft(replacement)).toMatchObject({ draftId: replacement });
+});
+
+it('applies a peer edit committed before completion and leaves the peer pointed at the replacement', async () => {
+  const submitted = await submit('peer-edit', 'prompt');
+  await settle();
+  const { peer, texts } = await otherTab();
+  texts.saveDraft('peer-edit', 'typed in another tab');
+  await settle();
   vi.resetModules();
-  const otherTab = await import('./newConversationDrafts');
-  rememberConversationDraft({ draftId: 'first', directory: '/repo' });
-  otherTab.rememberConversationDraft({ draftId: 'second', directory: '/repo' });
-  rememberConversationDraft({ draftId: 'first', directory: '/updated' });
-  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['first', 'second']);
-  otherTab.forgetConversationDraft('first');
-  window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:first' }));
-  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
-  rememberConversationDraft({ draftId: 'third', directory: '/repo' });
-  expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second', 'third']);
+  await completeConversationStart('peer-edit', created, submitted);
+  const replacement = useNewConversationDrafts.getState().starts['peer-edit'].replacementDraftId!;
+  expect(getDraft(replacement)).toBe('typed in another tab');
+  await waitFor(() => expect(peer.useNewConversationDrafts.getState().starts['peer-edit']?.replacementDraftId).toBe(replacement));
+  await waitFor(() => expect(texts.getDraft(replacement)).toBe('typed in another tab'));
 });
 
-it('keeps both drafts when two tabs interleave their metadata writes', async () => {
-  vi.resetModules();
-  const otherTab = await import('./newConversationDrafts');
-  const original = Storage.prototype.setItem;
-  let interleaved = false;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (key.startsWith('ocman.newConversationDrafts') && !interleaved) {
-      interleaved = true;
-      otherTab.rememberConversationDraft({ draftId: 'second', directory: '/repo' });
-    }
-    original.call(this, key, value);
+it('restores a failed prompt only when no newer edit or discard happened', async () => {
+  const kept = await submit('fail-restore', 'restore me');
+  await failConversationStart('fail-restore', 'boom', { text: 'restore me', revision: kept.revision });
+  expect(getDraft('fail-restore')).toBe('restore me');
+  expect(useNewConversationDrafts.getState().starts['fail-restore'].error).toBe('boom');
+  const discarded = await submit('fail-discard', 'do not restore');
+  discardDraft('fail-discard');
+  await failConversationStart('fail-discard', 'boom', { text: 'do not restore', revision: discarded.revision });
+  expect(getDraft('fail-discard')).toBe('');
+  expect(await beginConversationStart('fail-restore', route)).toEqual(expect.any(Number));
+});
+
+it('never turns a created session back into a failure', async () => {
+  const submitted = await submit('final', 'prompt');
+  await completeConversationStart('final', created, submitted);
+  await failConversationStart('final', 'late failure');
+  expect((await readDraftStart('final'))).toMatchObject({ sessionId: 'created', error: undefined });
+});
+
+it('does not let a late autosave resurrect a retired or discarded draft', async () => {
+  const submitted = await submit('retired', 'prompt');
+  await completeConversationStart('retired', created, submitted);
+  forgetConversationDraft('gone');
+  rememberConversationDraft(draft('retired', { agent: 'late' }));
+  rememberConversationDraft(draft('gone'));
+  await settle();
+  await waitFor(async () => expect(await storedDraft('retired')).toMatchObject({ deleted: true }));
+  expect(await storedDraft('gone')).toMatchObject({ deleted: true });
+  await hydrateDrafts();
+  expect(getConversationDraft('retired')).toBeUndefined();
+  expect(getConversationDraft('gone')).toBeUndefined();
+});
+
+it('records the session alone when the atomic completion fails, then completes on retry with current edits', async () => {
+  const submitted = await submit('quota', 'prompt');
+  saveDraft('quota', 'retained text');
+  await settle();
+  const original = IDBObjectStore.prototype.put;
+  const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+    if (this.name === 'texts') throw new DOMException('quota', 'QuotaExceededError');
+    return original.call(this, value, key);
   });
-  try {
-    rememberConversationDraft({ draftId: 'first', directory: '/repo' });
-    vi.resetModules();
-    const restored = await import('./newConversationDrafts');
-    expect(restored.useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId).sort()).toEqual(['first', 'second']);
-  } finally { write.mockRestore(); }
+  try { await completeConversationStart('quota', created, submitted); } finally { fail.mockRestore(); }
+  // The receipt says a session exists; the draft and its text are untouched.
+  expect(useNewConversationDrafts.getState().starts.quota).toMatchObject({ sessionId: 'created', relocationError: expect.any(String) });
+  expect(await readDraftStart('quota')).toMatchObject({ sessionId: 'created', relocationError: expect.any(String) });
+  expect(getDraft('quota')).toBe('retained text');
+  expect(await beginConversationStart('quota', route)).toBeNull();
+  // A selection change before retry is part of what the retry moves.
+  rememberConversationDraft({ ...draft('quota'), agent: 'build' });
+  await retryDraftRelocation('quota');
+  const replacement = useNewConversationDrafts.getState().starts.quota.replacementDraftId!;
+  expect(useNewConversationDrafts.getState().starts.quota.relocationError).toBeUndefined();
+  expect(getDraft(replacement)).toBe('retained text');
+  expect(getConversationDraft(replacement)).toMatchObject({ agent: 'build' });
+  // Retrying again is idempotent: no second replacement.
+  await retryDraftRelocation('quota');
+  expect(useNewConversationDrafts.getState().drafts.map((entry) => entry.draftId)).toEqual([replacement]);
 });
 
-it('reconciles a stale mirror from the authoritative failure and restores missing text', async () => {
-  rememberConversationDraft({ draftId: 'reload', directory: '/repo' });
-  useNewConversationDrafts.setState({ starts: { reload: { version: 0, text: 'prompt' } } });
-  const claims = await import('./draftStartClaims');
-  const read = vi.spyOn(claims, 'readDraftStart').mockResolvedValue({ version: 0, text: 'prompt', error: 'failed' });
-  try {
-    await reconcileConversationStart('reload');
-    expect(useNewConversationDrafts.getState().starts.reload.error).toBe('failed');
-    expect(getDraft('reload')).toBe('prompt');
-    read.mockResolvedValue(undefined);
-    await reconcileConversationStart('reload');
-    expect(useNewConversationDrafts.getState().starts.reload.error).toBe('failed');
-  } finally { read.mockRestore(); }
+it('keeps a receipt this tab could not store and repairs it on reconciliation', async () => {
+  const submitted = await submit('unstored', 'prompt');
+  const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new DOMException('quota', 'QuotaExceededError'); });
+  try { await completeConversationStart('unstored', created, submitted); } finally { fail.mockRestore(); }
+  expect(useNewConversationDrafts.getState().starts.unstored).toMatchObject({ sessionId: 'created', persistenceError: expect.any(String) });
+  await reconcileConversationStart('unstored');
+  expect(await readDraftStart('unstored')).toMatchObject({ sessionId: 'created' });
+  expect(getConversationDraft('unstored')).toBeUndefined();
 });
 
-it('does not replace a newer local receipt with an outstanding read', async () => {
-  const claims = await import('./draftStartClaims');
-  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
-  const read = vi.spyOn(claims, 'readDraftStart').mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-  try {
-    const pending = reconcileConversationStart('draft');
-    const completed = { version: 0, text: '', sessionId: 'session' };
-    useNewConversationDrafts.setState({ starts: { draft: completed } });
-    finish({ version: 0, text: 'old prompt' });
-    await pending;
-    expect(useNewConversationDrafts.getState().starts.draft).toBe(completed);
-  } finally { read.mockRestore(); }
+it('surfaces a failed reconciliation repair', async () => {
+  useNewConversationDrafts.setState({ starts: { broken: { version: 0, text: '', error: 'failed', persistenceError: 'quota' } } });
+  const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new DOMException('quota', 'QuotaExceededError'); });
+  try { await expect(reconcileConversationStart('broken')).rejects.toThrow(); } finally { fail.mockRestore(); }
 });
 
-it('preserves and repairs a known completion when its terminal transaction fails', async () => {
-  rememberConversationDraft({ draftId: 'terminal', directory: '/repo' });
-  useNewConversationDrafts.setState({ starts: { terminal: { version: 0, text: 'prompt', attemptId: 'one' } } });
-  const claims = await import('./draftStartClaims');
-  const persist = vi.spyOn(claims, 'persistDraftStart').mockRejectedValueOnce(new Error('terminal aborted'));
-  const read = vi.spyOn(claims, 'readDraftStart').mockResolvedValue({ version: 0, text: 'prompt', attemptId: 'one' });
-  try {
-    await completeConversationStart('terminal', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
-    await reconcileConversationStart('terminal');
-    expect(useNewConversationDrafts.getState().starts.terminal.sessionId).toBe('created');
-    expect(persist).toHaveBeenCalledTimes(2);
-  } finally { persist.mockRestore(); read.mockRestore(); }
-});
-
-it('does not restore a failed receipt after the user explicitly clears or discards its prompt', async () => {
-  rememberConversationDraft({ draftId: 'cleared', directory: '/repo' });
-  const version = (await import('./composerDraft')).getDraftVersion('cleared');
-  const claims = await import('./draftStartClaims');
-  const read = vi.spyOn(claims, 'readDraftStart').mockResolvedValue({ version, text: 'old failed prompt', error: 'failed' });
-  try {
-    saveDraft('cleared', 'old failed prompt');
-    saveDraft('cleared', '');
-    await reconcileConversationStart('cleared');
-    expect(getDraft('cleared')).toBe('');
-    forgetConversationDraft('cleared');
-    rememberConversationDraft({ draftId: 'cleared', directory: '/repo' });
-    await reconcileConversationStart('cleared');
-    expect(getDraft('cleared')).toBe('');
-  } finally { read.mockRestore(); }
-});
-
-it('publishes a changed post-commit mirror after the pending terminal notification', async () => {
-  rememberConversationDraft({ draftId: 'notify', directory: '/repo' });
-  useNewConversationDrafts.setState({ starts: { notify: { version: 0, text: 'prompt' } } });
-  const claims = await import('./draftStartClaims');
-  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
-  let terminal!: import('./draftStartClaims').DraftStart;
-  const persist = vi.spyOn(claims, 'persistDraftStart').mockImplementation((_id, value) => {
-    terminal = value;
-    return new Promise((resolve) => { finish = resolve; });
-  });
-  try {
-    const completion = completeConversationStart('notify', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
-    const before = localStorage.getItem('ocman.newConversationStarts.v1:notify');
-    finish(terminal);
-    await completion;
-    expect(localStorage.getItem('ocman.newConversationStarts.v1:notify')).not.toBe(before);
-  } finally { persist.mockRestore(); }
-});
-
-it('preserves edits made while terminal persistence is outstanding', async () => {
-  rememberConversationDraft({ draftId: 'late-edit', directory: '/repo', agent: 'plan' });
-  useNewConversationDrafts.setState({ starts: { 'late-edit': { version: 0, text: 'submitted' } } });
-  const claims = await import('./draftStartClaims');
-  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
-  let terminal!: import('./draftStartClaims').DraftStart;
-  const persist = vi.spyOn(claims, 'persistDraftStart').mockImplementationOnce((_id, value) => {
-    terminal = value;
-    return new Promise((resolve) => { finish = resolve; });
-  });
-  try {
-    const completion = completeConversationStart('late-edit', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' }, true);
-    saveDraft('late-edit', 'typed during persistence');
-    finish(terminal);
-    await completion;
-    const replacement = useNewConversationDrafts.getState().starts['late-edit'].replacementDraftId!;
-    expect(getDraft(replacement)).toBe('typed during persistence');
-    expect(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === replacement)?.agent).toBe('plan');
-  } finally { persist.mockRestore(); }
-});
-
-it('retains the source when replacement relocation fails at quota', async () => {
-  rememberConversationDraft({ draftId: 'quota-copy', directory: '/repo' });
-  saveDraft('quota-copy', 'only retained copy');
-  useNewConversationDrafts.setState({ starts: { 'quota-copy': { version: 0, text: 'submitted' } } });
-  const original = Storage.prototype.setItem;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (key.startsWith('ocman.composerDraftText.v1:') && !key.startsWith('ocman.composerDraftText.v1:quota-copy:')) throw new Error('quota');
-    original.call(this, key, value);
-  });
-  try {
-    await completeConversationStart('quota-copy', { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' }, false);
-    expect(getDraft('quota-copy')).toBe('only retained copy');
-    expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === 'quota-copy')).toBe(true);
-    write.mockRestore();
-    await retryDraftRelocation('quota-copy');
-    const target = useNewConversationDrafts.getState().starts['quota-copy'].replacementDraftId!;
-    expect(getDraft(target)).toBe('only retained copy');
-    expect(getDraft('quota-copy')).toBe('');
-  } finally { write.mockRestore(); }
-});
-
-it('keeps relocation retry replayable when its completion receipt fails to commit, then finishes after reload', async () => {
-  const id = 'retry-receipt';
-  rememberConversationDraft({ draftId: id, directory: '/repo', agent: 'plan' });
-  saveDraft(id, 'retained retry text');
-  const createdSession = { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' };
-  const pending = { version: getDraftVersion(id), text: '', sessionId: 'created', createdSession, attemptId: 'retry-attempt',
-    pendingReplacementId: 'retry-target', relocationError: 'Could not preserve the retained draft.' };
-  useNewConversationDrafts.setState({ starts: { [id]: pending } });
-  localStorage.setItem(`ocman.newConversationStarts.v1:${id}`, JSON.stringify(pending));
-  const claims = await import('./draftStartClaims');
-  const persist = vi.spyOn(claims, 'persistDraftStart').mockRejectedValueOnce(new Error('receipt write failed'));
-  try { await expect(retryDraftRelocation(id)).rejects.toThrow('receipt write failed'); } finally { persist.mockRestore(); }
-  // The interrupted attempt moved text, but the source and its error receipt remain retryable.
-  expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === id)).toBe(true);
-  expect(getDraft('retry-target')).toBe('retained retry text');
-  // The user keeps working in the replacement before retrying.
-  rememberConversationDraft({ draftId: 'retry-target', directory: '/repo', remoteId: 'box', agent: 'build', target: 'current' });
-  saveDraft('retry-target', 'newer replacement text');
-  vi.mocked(readDraftStart).mockImplementation(async (draftId) => draftId === id ? pending : undefined);
-  vi.resetModules();
-  const reloaded = await import('./newConversationDrafts');
-  await reloaded.retryDraftRelocation(id);
-  expect(reloaded.useNewConversationDrafts.getState().starts[id]).toMatchObject({ replacementDraftId: 'retry-target', relocationError: undefined });
-  expect(reloaded.useNewConversationDrafts.getState().drafts).toEqual([expect.objectContaining({
-    draftId: 'retry-target', remoteId: 'box', agent: 'build', target: 'current' })]);
-  expect(getDraft('retry-target')).toBe('newer replacement text');
-});
-
-it('replays a committed relocation retry after a crash before source retirement', async () => {
-  const id = 'retry-crash';
-  rememberConversationDraft({ draftId: id, directory: '/repo' });
-  rememberConversationDraft({ draftId: 'crash-target', directory: '/repo' });
-  saveDraft('crash-target', 'moved text');
-  const committed = { version: getDraftVersion(id), text: '', sessionId: 'created', attemptId: 'crash',
-    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
-    replacementDraftId: 'crash-target', retirement: JSON.stringify([useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === id), getDraftVersion(id), getDraftEntryId(id)]) };
-  vi.mocked(readDraftStart).mockImplementation(async (draftId) => draftId === id ? committed : undefined);
-  vi.resetModules();
-  const reloaded = await import('./newConversationDrafts');
-  await waitFor(() => expect(reloaded.useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['crash-target']));
-  expect(getDraft('crash-target')).toBe('moved text');
-});
-
-it.each(['commit', 'auxiliary'])('preserves retained text when source clear %s writes fail during relocation', async (failure) => {
-  const id = `clear-failure-${failure}`;
-  rememberConversationDraft({ draftId: id, directory: '/repo' });
-  saveDraft(id, 'only recoverable retained text');
-  useNewConversationDrafts.setState({ starts: { [id]: { version: getDraftVersion(id), text: 'submitted' } } });
-  const original = Storage.prototype.setItem;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (failure === 'commit' ? key.startsWith(`ocman.composerDraftClear.v1:${id}:`) : key === `ocman.composerDraftClear.v1:${id}`) throw new Error('source clear failed');
-    original.call(this, key, value);
-  });
-  try {
-    await completeConversationStart(id, { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' }, false);
-    const target = useNewConversationDrafts.getState().starts[id].replacementDraftId;
-    expect(target ? getDraft(target) : getDraft(id)).toBe('only recoverable retained text');
-  } finally { write.mockRestore(); }
-});
-
-it('retains late edits when their relocation fails after the completion receipt commits', async () => {
-  const id = 'late-quota';
-  rememberConversationDraft({ draftId: id, directory: '/repo', agent: 'plan' });
-  useNewConversationDrafts.setState({ starts: { [id]: { version: 0, text: 'submitted' } } });
-  const claims = await import('./draftStartClaims');
-  let finish!: (value: import('./draftStartClaims').DraftStart) => void;
-  let terminal!: import('./draftStartClaims').DraftStart;
-  const persist = vi.spyOn(claims, 'persistDraftStart').mockImplementationOnce((_id, value) => {
-    terminal = value;
-    return new Promise((resolve) => { finish = resolve; });
-  });
-  const original = Storage.prototype.setItem;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (key.startsWith('ocman.newConversationDrafts.v1:') && key !== `ocman.newConversationDrafts.v1:${id}`) throw new Error('metadata quota');
-    original.call(this, key, value);
-  });
-  try {
-    const completion = completeConversationStart(id, { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' });
-    saveDraft(id, 'late retained text');
-    finish(terminal);
-    await completion;
-    expect(getDraft(id)).toBe('late retained text');
-    expect(useNewConversationDrafts.getState().starts[id]).toMatchObject({ sessionId: 'created', relocationError: expect.any(String) });
-    write.mockRestore();
-    await retryDraftRelocation(id);
-    const replacement = useNewConversationDrafts.getState().starts[id].replacementDraftId!;
-    expect(getDraft(replacement)).toBe('late retained text');
-    expect(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === replacement)?.agent).toBe('plan');
-  } finally { persist.mockRestore(); write.mockRestore(); }
-});
-
-it('does not retire the source when replacement metadata cannot be persisted', async () => {
-  rememberConversationDraft({ draftId: 'metadata-quota', directory: '/repo', remoteId: 'box', agent: 'plan' });
-  saveDraft('metadata-quota', 'recoverable source');
-  const payload = { images: [], files: [{ path: '', name: 'retry.txt', mime: 'text/plain', file: new File(['note'], 'retry.txt') }] };
-  updateDraftAttachments('metadata-quota', payload);
-  useNewConversationDrafts.setState({ starts: { 'metadata-quota': { version: 0, text: 'submitted' } } });
-  const original = Storage.prototype.setItem;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (key.startsWith('ocman.newConversationDrafts.v1:') && key !== 'ocman.newConversationDrafts.v1:metadata-quota') throw new Error('metadata quota');
-    original.call(this, key, value);
-  });
-  try {
-    await completeConversationStart('metadata-quota', { sessionId: 'created', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo' }, false);
-    expect(getDraft('metadata-quota')).toBe('recoverable source');
-    expect(localStorage.getItem('ocman.newConversationDrafts.v1:metadata-quota')).not.toBeNull();
-    write.mockRestore();
-    await retryDraftRelocation('metadata-quota');
-    const target = useNewConversationDrafts.getState().starts['metadata-quota'].replacementDraftId!;
-    expect(JSON.parse(localStorage.getItem(`ocman.newConversationDrafts.v1:${target}`)!)).toMatchObject({ remoteId: 'box', agent: 'plan', directory: '/repo' });
-    expect(getDraft(target)).toBe('recoverable source');
-    expect(getPendingDraftPayload(target)).toEqual(payload);
-  } finally { write.mockRestore(); }
-});
-
-it.each(['null', '{}', '[null, {}, {"draftId": 1, "directory": "/repo"}]', 'invalid'])('ignores malformed storage %s', async (raw) => {
-  localStorage.setItem('ocman.newConversationDrafts.v1:invalid', raw);
-  vi.resetModules();
-  const restored = await import('./newConversationDrafts');
-  expect(restored.useNewConversationDrafts.getState().drafts).toEqual([]);
+it('drops this tab\'s attachments when a peer discards the draft', async () => {
+  rememberConversationDraft(draft('peer-discard'));
+  updateDraftAttachments('peer-discard', { images: [], files: [{ path: '', name: 'local.txt', mime: 'text/plain' }] });
+  await settle();
+  const { peer } = await otherTab();
+  peer.forgetConversationDraft('peer-discard');
+  await waitFor(() => expect(getConversationDraft('peer-discard')).toBeUndefined());
+  await waitFor(() => expect(getPendingDraftPayload('peer-discard')).toBeUndefined());
 });

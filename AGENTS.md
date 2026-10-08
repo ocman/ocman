@@ -60,12 +60,15 @@ preparation asks for an explicit target. Legacy recovery uses the same preparati
 The composer's machine selector only
 re-points the route; each draft has its own `draftId` query parameter (`draftKey`
 prop) and survives. Browser-local prepared conversations appear in the sidebar's
-Drafts section before any session exists. `lib/newConversationDrafts` persists
-their targets and selections, while `lib/composerDraft` persists immutable per-edit
-text bodies behind per-draft head references. Clears mark the owned edit and reclaim
-its body; older text formats remain readable and cleared legacy entries are reclaimed. Completion
-receipts store a retirement snapshot so reload reconciliation finishes interrupted
-retirement without deleting newer edits. Attachment snapshots use Zustand so a
+Drafts section before any session exists. All draft state (composer text,
+prepared-conversation metadata, start and first-delivery receipts) lives in one
+IndexedDB database (`lib/draftDb`, `ocman.drafts.v1`). Every lifecycle step
+(claim, failure, completion with retire-or-relocate, discard) is one readwrite
+transaction, so tabs never interleave partial changes. `lib/composerDraft` and
+`lib/newConversationDrafts` keep synchronous in-memory snapshots, hydrated
+before the app renders (`main.tsx`); BroadcastChannel tells other tabs which keys to
+re-read. Text revisions only grow and fence stale autosaves. Never add a second
+storage path for draft state. Attachment snapshots use Zustand so a
 composer reopened before an image read completes sees its eventual result.
 The first submission calls `POST /api/sessions/start`
 `{directory, remoteId, platform, worktree, title, prompt, send}`: an explicit
@@ -91,10 +94,9 @@ pending, the child composer blocks further submissions so follow-ups cannot
 overtake it; permission and question controls remain available. Start transport failures
 are never automatically replayed. Completion retires only the unchanged
 submitted draft revision, including background starts, and only the currently
-open initiating draft navigates to the created session. Metadata uses per-draft
-localStorage keys so concurrent tabs cannot erase unrelated entries. An atomic
-IndexedDB claim prevents duplicate first submissions across tabs and reloads;
-per-draft localStorage receipts share pending, failure and completion state.
+open initiating draft navigates to the created session. The atomic claim
+prevents duplicate first submissions across tabs and reloads. Tests get a fresh
+fake IndexedDB per case (`vitest.setup.ts`).
 The composer and its machine/target controls stay locked while a start is pending.
 The owner then
 names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) titles the

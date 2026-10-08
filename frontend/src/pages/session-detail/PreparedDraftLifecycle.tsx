@@ -28,16 +28,15 @@ export function PreparedDraftLifecycle({ params, navigate, children }:
   const replacement = useNewConversationDrafts((state) => state.drafts.find((draft) => draft.draftId === state.starts[draftId]?.replacementDraftId));
   const receiptState = JSON.stringify([receipt?.version, receipt?.error, receipt?.sessionId]);
   useEffect(() => {
-    if (!routeDraftId) {
-      if (!migrateDraft(NEW_SESSION_ID, legacyId)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- surface a failed external storage migration; retry is explicit.
-        setReceiptError('Could not migrate the saved draft. Free browser storage and retry.');
-        return;
-      }
-      navigate(newSessionPath({ directory, remoteId, platform, title, draftId: legacyId }), { replace: true });
-      return;
-    }
     let active = true;
+    if (!routeDraftId) {
+      void migrateDraft(NEW_SESSION_ID, legacyId).then((moved) => {
+        if (!active) return;
+        if (!moved) { setReceiptError('Could not migrate the saved draft. Free browser storage and retry.'); return; }
+        navigate(newSessionPath({ directory, remoteId, platform, title, draftId: legacyId }), { replace: true });
+      });
+      return () => { active = false; };
+    }
     void reconcileConversationStart(draftId).catch((error: unknown) => {
       if (active) setReceiptError(error instanceof Error ? error.message : String(error));
     });

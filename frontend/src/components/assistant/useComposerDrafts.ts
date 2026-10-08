@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react';
-import { discardDraft, getDraft, getDraftVersion, saveDraft, clearDraft } from '../../lib/composerDraft';
+import { discardDraft, getDraft, getDraftVersion, saveDraft, clearDraft, subscribeDraftTexts } from '../../lib/composerDraft';
 
 /**
  * Owns per-session composer draft persistence: loading the saved draft
@@ -48,6 +48,7 @@ export function useComposerDrafts(
     // Scheduling is a fresh user edit, unlike an already scheduled callback.
     const version = versionRef.current = getDraftVersion(sid);
     timerRef.current = setTimeout(() => {
+      timerRef.current = null;
       if (version !== getDraftVersion(sid)) return;
       const text = getText().trim();
       if (text) saveDraft(sid, text, version);
@@ -75,6 +76,21 @@ export function useComposerDrafts(
       else discardDraft(sessionId);
     };
   }, [sessionId, inputRef, inFlightRef, cancelPending]);
+
+  // An untouched composer (showing exactly what it last loaded or saved)
+  // mirrors stored text changed elsewhere: another tab's edit, its send, or a
+  // failed start restored by another tab. A local edit always wins.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el || !sessionId) return;
+    return subscribeDraftTexts(() => {
+      const stored = getDraft(sessionId);
+      if (stored === persistedRef.current || el.value.trim() !== persistedRef.current || timerRef.current || inFlightRef.current) return;
+      versionRef.current = getDraftVersion(sessionId);
+      el.value = persistedRef.current = stored;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }, [sessionId, inputRef, inFlightRef]);
 
   return { clearDraftNow, scheduleDraftSave };
 }

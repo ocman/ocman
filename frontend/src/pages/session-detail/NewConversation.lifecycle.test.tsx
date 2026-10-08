@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendUnavailableError, api } from '../../lib/api';
-import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, getDraft, resetDraftTextsForTests, saveDraft } from '../../lib/composerDraft';
 import { clearFailedSends, listFailedSends } from '../../lib/failedSends';
 import { saveProjectModel } from '../../lib/projectModel';
 import { useApiStore } from '../../lib/apiStore';
@@ -16,6 +16,7 @@ import { useSessionActions, type UseSessionActionsOptions } from './useSessionAc
 import { useFirstSubmission } from './firstSubmission';
 import type { NewSessionParams } from '../../lib/newSessionPath';
 import { forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { resetDraftPayloadsForTests } from '../../lib/pendingDraftPayloads';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath';
@@ -23,12 +24,6 @@ import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath'
 vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => ({ shellExec: true }),
-}));
-const deliveryRecords = vi.hoisted(() => new Map<string, import('../../lib/draftStartClaims').DraftStart>());
-vi.mock('../../lib/draftStartClaims', () => ({
-  claimDraftStart: async (id: string, start: import('../../lib/draftStartClaims').DraftStart) => { if (id.startsWith('first-delivery:')) deliveryRecords.set(id, start); return { claimed: true, start }; },
-  persistDraftStart: async (id: string, start: import('../../lib/draftStartClaims').DraftStart) => { if (id.startsWith('first-delivery:')) deliveryRecords.set(id, start); return start; },
-  readDraftStart: async (id: string) => id.startsWith('first-delivery:') ? deliveryRecords.get(id) : useNewConversationDrafts.getState().starts[id],
 }));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
 vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
@@ -57,6 +52,17 @@ function deferred<T>() {
 
 const prepared = { platform: 'opencode', agents: [], commands: [], models: { hasProviders: true, models: [] }, liveConnection: true };
 const created = { sessionId: 'child', platform: 'opencode', remoteId: 'local', directory: '/repo', firstMessageSent: true, firstMessageError: '' };
+
+/** Another tab over the same database. */
+async function peerTab() {
+  vi.resetModules();
+  const peer = await import('../../lib/newConversationDrafts');
+  await peer.hydrateDrafts();
+  return { peerForget: async (id: string) => {
+    peer.forgetConversationDraft(id);
+    await waitFor(() => expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === id)).toBe(false));
+  } };
+}
 
 function DraftWorkspace() {
   const location = useLocation();
@@ -108,11 +114,11 @@ function Flow({ params = { directory: '/repo', platform: 'opencode' } }: { param
 }
 
 beforeEach(() => {
-  deliveryRecords.clear();
   vi.clearAllMocks();
   useFirstSubmission.setState({ entries: {} });
   window.localStorage.clear();
-  window.dispatchEvent(new StorageEvent('storage', { key: null }));
+  resetDraftTextsForTests();
+  resetDraftPayloadsForTests();
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
   clearFailedSends('child');
   clearDraft('new');
@@ -240,8 +246,8 @@ describe('new-conversation submission lifecycle', () => {
     act(() => rememberConversationDraft({ draftId: 'first', directory: '/repo', title: 'First', remoteId: 'local',
       model: 'p/new', agent: 'plan', reasoning: 'high', target: 'current' }));
     await act(async () => request.resolve(created));
+    await waitFor(() => expect(useNewConversationDrafts.getState().starts.first.replacementDraftId).toBeTruthy());
     const replacement = useNewConversationDrafts.getState().starts.first.replacementDraftId;
-    expect(replacement).toBeTruthy();
     expect(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === replacement))
       .toMatchObject({ model: 'p/new', agent: 'plan', reasoning: 'high', target: 'current' });
   });
@@ -287,27 +293,24 @@ describe('new-conversation submission lifecycle', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     act(() => saveDraft('first', 'retained next task'));
     await act(async () => request.resolve(created));
-    await waitFor(() => expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId='));
-    expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first');
-    expect(screen.getByRole('textbox')).toHaveValue('retained next task');
+    await waitFor(() => expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first'));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('retained next task'));
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(2));
     expect(vi.mocked(api.startSession).mock.calls[1][0].prompt).toBe('retained next task');
   });
 
-  it('shows a safe receipt retry when a discarded draft cannot be reconciled', async () => {
-    render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first']}><DraftWorkspace /></MemoryRouter>);
-    const claims = await import('../../lib/draftStartClaims');
-    const read = vi.spyOn(claims, 'readDraftStart').mockRejectedValue(new Error('receipt read failed'));
+  it('shows a safe receipt retry when the draft state cannot be read', async () => {
+    const read = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(() => { throw new DOMException('receipt read failed', 'UnknownError'); });
     try {
-      act(() => {
-        localStorage.removeItem('ocman.newConversationDrafts.v1:first');
-        window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:first' }));
-      });
+      render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first']}><DraftWorkspace /></MemoryRouter>);
       expect(await screen.findByRole('alert')).toHaveTextContent('receipt read failed');
-      read.mockResolvedValue(undefined);
+      read.mockRestore();
       fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-      await waitFor(() => expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first'));
+      await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+      // The draft metadata that could not be written while reads failed stays live.
+      expect(await screen.findByRole('textbox')).toBeInTheDocument();
+      expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId=first');
       expect(api.startSession).not.toHaveBeenCalled();
     } finally { read.mockRestore(); }
   });
@@ -325,29 +328,28 @@ describe('new-conversation submission lifecycle', () => {
 
   it('keeps the only legacy text copy when its canonical-key migration hits quota', async () => {
     saveDraft('new', 'only legacy copy');
-    const original = Storage.prototype.setItem;
-    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-      if (key.startsWith('ocman.composerDraftText.v1:') && !key.startsWith('ocman.composerDraftText.v1:new:')) throw new Error('quota');
-      original.call(this, key, value);
+    const original = IDBObjectStore.prototype.put;
+    const write = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+      if (this.name === 'texts' && key !== 'new') throw new DOMException('quota', 'QuotaExceededError');
+      return original.call(this, value, key);
     });
     try {
       render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo']}><DraftWorkspace /></MemoryRouter>);
-      await act(async () => {});
-      expect(getDraft('new')).toBe('only legacy copy');
       expect(await screen.findByRole('alert')).toHaveTextContent('draft');
+      expect(getDraft('new')).toBe('only legacy copy');
       write.mockRestore();
       fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
       await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('only legacy copy'));
-      expect(getDraft('new')).toBe('');
+      await waitFor(() => expect(getDraft('new')).toBe(''));
     } finally { write.mockRestore(); }
   });
   it('moves a mounted composer to a fresh identity after another tab discards it', async () => {
     render(<MemoryRouter initialEntries={['/session/new?dir=%2Frepo&draftId=first&title=First']}><DraftWorkspace /></MemoryRouter>);
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'old text' } });
-    act(() => {
-      localStorage.removeItem('ocman.newConversationDrafts.v1:first');
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ocman.newConversationDrafts.v1:first' }));
-    });
+    await waitFor(() => expect(useNewConversationDrafts.getState().drafts).toHaveLength(1));
+    // Another tab discards it: this tab learns it from the database.
+    const { peerForget } = await peerTab();
+    await act(async () => { await peerForget('first'); });
     await waitFor(() => expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first'));
     expect(screen.getByRole('textbox')).toHaveValue('');
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'new text' } });
@@ -374,9 +376,9 @@ describe('new-conversation submission lifecycle', () => {
     expect(api.startSession).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: /Second/ }));
     await act(async () => request.resolve(created));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /First/ })).not.toBeInTheDocument());
     expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId=second');
     expect(screen.getByRole('textbox')).toHaveValue('prepare second');
-    expect(screen.queryByRole('button', { name: /First/ })).not.toBeInTheDocument();
     expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['second']);
   });
 
@@ -390,7 +392,8 @@ describe('new-conversation submission lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
     fireEvent.click(screen.getByRole('button', { name: /First/ }));
     await act(async () => request.reject(new Error('start failed')));
-    expect(screen.getByRole('textbox')).toHaveValue('retry first');
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('retry first'));
+    await waitFor(() => expect(screen.getByRole('textbox')).not.toBeDisabled());
     expect(screen.getByRole('textbox')).not.toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('start failed');
   });
@@ -519,6 +522,8 @@ describe('new-conversation submission lifecycle', () => {
     expect(api.startSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
     await waitFor(() => expect(api.prepareSession).toHaveBeenCalledTimes(2));
+    // The failed attempt's receipt is stored before the composer accepts a retry.
+    await screen.findByRole('button', { name: 'Send message' });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
   });
@@ -614,6 +619,7 @@ describe('new-conversation submission lifecycle', () => {
     fireEvent.input(newer, { target: { value: 'newer task' } });
     saveDraft('new', 'newer task');
     await act(async () => launch.resolve(created));
+    await waitFor(() => expect(useNewConversationDrafts.getState().starts.new?.replacementDraftId).toBeTruthy());
     expect(screen.getByTestId('route')).toHaveTextContent('other');
     expect(newer).toHaveValue('newer task');
     expect(getDraft(useNewConversationDrafts.getState().starts.new.replacementDraftId!)).toBe('newer task');
@@ -633,6 +639,7 @@ describe('new-conversation submission lifecycle', () => {
     view.rerender(<NewConversation {...props} params={{ ...props.params, title: 'new' }} />);
     saveDraft('new', 'new task');
     await act(async () => launch.resolve(created));
+    await waitFor(() => expect(useNewConversationDrafts.getState().starts.new?.replacementDraftId).toBeTruthy());
     expect(navigate).not.toHaveBeenCalledWith('/session/child', { replace: true });
     expect(getDraft(useNewConversationDrafts.getState().starts.new.replacementDraftId!)).toBe('new task');
   });
@@ -654,12 +661,15 @@ describe('new-conversation submission lifecycle', () => {
     const newInput = screen.getByRole('textbox');
     fireEvent.input(newInput, { target: { value: 'new prompt' } });
     fireEvent.keyDown(newInput, { key: 'Enter' });
+    // Claims are IndexedDB transactions: wait for both requests before settling them.
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(2));
     await act(async () => {
       oldStart.resolve({ ...created, sessionId: 'old-child' });
       newStart.resolve({ ...created, sessionId: 'new-child' });
     });
     expect(api.startSession).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api.startSession).mock.calls[1][0]).toMatchObject({ title: 'new', send: { message: 'new prompt' } });
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(navigate).toHaveBeenCalledExactlyOnceWith('/session/new-child', { replace: true });
   });
 
@@ -716,10 +726,10 @@ describe('new-conversation submission lifecycle', () => {
     await act(async () => send.reject(new Error('delivery failed')));
     expect(await screen.findByRole('alert')).toHaveTextContent('delivery failed');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(api.startSession).toHaveBeenCalledTimes(1);
     expect(api.uploadComposerAttachment).toHaveBeenCalledTimes(1);
-    expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a failed file upload retryable after the child mounts', async () => {
@@ -756,8 +766,8 @@ describe('new-conversation submission lifecycle', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('shell failed');
     expect(childInput).toHaveValue('new follow-up');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(postJSON).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(postJSON).toHaveBeenCalledTimes(2);
     expect(childInput).toHaveValue('new follow-up');
   });
 

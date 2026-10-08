@@ -2,7 +2,7 @@
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from '../../components/assistant/composerTypes';
-import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, getDraft, resetDraftTextsForTests, saveDraft } from '../../lib/composerDraft';
 import { useLaunchProgressStore } from '../../lib/launchProgressStore';
 import { listFailedSends, clearFailedSends } from '../../lib/failedSends';
 import { useFirstSubmission } from './firstSubmission';
@@ -19,11 +19,6 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), baseRef: vi.fn(), post: vi.fn(), seed: vi.fn(),
   openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), settings: vi.fn(), caps: { shellExec: true },
   progress: new Set<(id: string, step: string, state: string) => void>(),
-}));
-vi.mock('../../lib/draftStartClaims', () => ({
-  claimDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => ({ claimed: true, start }),
-  persistDraftStart: async (_id: string, start: import('../../lib/draftStartClaims').DraftStart) => start,
-  readDraftStart: async (id: string) => useNewConversationDrafts.getState().starts[id],
 }));
 vi.mock('../../lib/useGlobalEvents', () => ({
   onSessionStartProgress: (cb: (id: string, step: string, state: string) => void) => {
@@ -72,7 +67,7 @@ describe('NewConversation', () => {
     vi.resetAllMocks();
     startModels.clear();
     window.localStorage.clear();
-    window.dispatchEvent(new StorageEvent('storage', { key: null }));
+    resetDraftTextsForTests();
     useNewConversationDrafts.setState({ drafts: [], starts: {} });
     clearSettingsCache();
     mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'build' });
@@ -450,9 +445,11 @@ describe('NewConversation', () => {
     first.unmount();
     const shell = mount({ directory: '/repo', draftId: 'shell' });
     await ready();
+    // Each start creates its own session; a session's first delivery runs once.
+    mocks.start.mockResolvedValueOnce({ sessionId: 'shell-child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/repo', firstMessageSent: true, firstMessageError: '' });
     await act(() => composer.onShell!('ls'));
-    expect(startModels.get('child')).toBe('prov/default');
-    expect(mocks.post).toHaveBeenCalledWith('/api/session/child/shell?platform=r-machine%3Aopencode', { command: 'ls', agent: 'build' }, { parseJSON: false });
+    expect(startModels.get('shell-child')).toBe('prov/default');
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/session/shell-child/shell?platform=r-machine%3Aopencode', { command: 'ls', agent: 'build' }, { parseJSON: false }));
 
     shell.unmount();
     mount({ directory: '/repo', draftId: 'failure' });

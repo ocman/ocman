@@ -12,7 +12,8 @@ import './App.css'
 import './print.css'
 import './components/RightPanelState.css'
 import App from './App'
-import { installRemoteLogHandlers } from './lib/remoteLog'
+import { installRemoteLogHandlers, remoteLog } from './lib/remoteLog'
+import { hydrateDrafts } from './lib/newConversationDrafts'
 import { installAuthIntegration } from './lib/authStore'
 import { registerServiceWorker } from './lib/registerServiceWorker'
 import { installDesktopShell } from './lib/desktopShell'
@@ -51,8 +52,14 @@ installAuthIntegration()
 // No-op in dev mode and on browsers without SW support.
 registerServiceWorker()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// Composers read drafts synchronously, so load them from IndexedDB first: an
+// edit typed before that would otherwise overwrite stored text. A failed or
+// blocked database still starts the app; drafts then live in memory only and
+// session starts fail closed.
+void hydrateDrafts().catch((error) => remoteLog.warn('Could not load saved drafts', error)).then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+})

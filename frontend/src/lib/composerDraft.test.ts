@@ -1,153 +1,123 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { saveDraft, clearDraft, discardDraft, getDraft, getDraftEntryId, useDraftSessionIds } from './composerDraft';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { clearDraft, discardDraft, getDraft, getDraftVersion, migrateDraft, resetDraftTextsForTests, saveDraft, useDraftSessionIds } from './composerDraft';
+import { hydrateDrafts } from './newConversationDrafts';
+import { closeDraftDbForTests, transact } from './draftDb';
+
+const stored = (id: string) => transact(['texts'], 'readonly', (tx) => tx.get<{ text: string; revision: number }>('texts', id));
+/** Another tab: a fresh module instance over the same database. */
+async function otherTab() {
+  vi.resetModules();
+  const drafts = await import('./composerDraft');
+  await (await import('./newConversationDrafts')).hydrateDrafts();
+  return drafts;
+}
+
+beforeEach(() => { localStorage.clear(); resetDraftTextsForTests(); });
 
 describe('composerDraft', () => {
-  beforeEach(() => {
-    // jsdom's localStorage is only partially implemented here; plant a
-    // full in-memory stub (same trick as useComposerDrafts.test.ts).
-    const data = new Map<string, string>();
-    Object.defineProperty(window, 'localStorage', {
-      configurable: true,
-      value: {
-        get length() { return data.size; },
-        key: (index: number) => [...data.keys()][index] ?? null,
-        getItem: (k: string) => (data.has(k) ? data.get(k)! : null),
-        setItem: (k: string, v: string) => { data.set(k, String(v)); },
-        removeItem: (k: string) => { data.delete(k); },
-        clear: () => { data.clear(); },
-      },
-    });
-    clearDraft('__reset__'); // resync the module snapshot after the swap
-  });
-
-  it('stores and clears drafts', () => {
+  it('stores, clears and persists drafts', async () => {
     saveDraft('s1', 'hello');
     expect(getDraft('s1')).toBe('hello');
+    await waitFor(async () => expect(await stored('s1')).toEqual({ text: 'hello', revision: 0 }));
     saveDraft('s1', '');
     expect(getDraft('s1')).toBe('');
-  });
-
-  it('does not let a stale clear reverse a newer explicit discard', () => {
-    saveDraft('clear-order', 'old text');
-    const older = getDraftEntryId('clear-order');
-    saveDraft('clear-order', 'new discarded text');
-    discardDraft('clear-order');
-    clearDraft('clear-order', older);
-    expect(getDraft('clear-order')).toBe('');
-  });
-
-  it('reclaims actual prompt bytes when a fresh draft is discarded', () => {
-    saveDraft('reclaimed', 'large unique prompt payload');
-    discardDraft('reclaimed');
-    expect(getDraft('reclaimed')).toBe('');
-    for (let i = 0; i < localStorage.length; i++) {
-      expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('large unique prompt payload');
-    }
-  });
-
-  it('preserves the previous head and reclaims an unpublished body when head publication fails', () => {
-    saveDraft('failed-head', 'retained previous text');
-    const original = localStorage.setItem;
-    const write = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
-      if (key === 'ocman.composerDraftHead.v1:failed-head') throw new Error('head quota');
-      original(key, value);
-    });
-    try {
-      saveDraft('failed-head', 'unpublished replacement text');
-      expect(getDraft('failed-head')).toBe('retained previous text');
-      for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('unpublished replacement text');
-    } finally { write.mockRestore(); }
-  });
-
-  it('keeps an edit cleared if physical body reclamation is temporarily blocked', () => {
-    saveDraft('blocked-delete', 'logically cleared text');
-    const original = localStorage.removeItem;
-    const remove = vi.spyOn(localStorage, 'removeItem').mockImplementation((key) => {
-      if (key.startsWith('ocman.composerDraftText.v1:blocked-delete:')) throw new Error('delete blocked');
-      original(key);
-    });
-    try { clearDraft('blocked-delete'); expect(getDraft('blocked-delete')).toBe(''); }
-    finally { remove.mockRestore(); }
-    clearDraft('blocked-delete');
-    for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('logically cleared text');
-  });
-
-  it('reads and reclaims an older inline record without deleting a newer immutable body', () => {
-    localStorage.setItem('ocman.composerDrafts.v1:inline', JSON.stringify({ kind: 'ocman/composer-text', id: 'old-inline', text: 'old inline payload' }));
-    expect(getDraft('inline')).toBe('old inline payload');
-    const old = getDraftEntryId('inline');
-    saveDraft('inline', 'new immutable payload');
-    clearDraft('inline', old);
-    expect(getDraft('inline')).toBe('new immutable payload');
-    clearDraft('inline');
-    for (let i = 0; i < localStorage.length; i++) {
-      expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('old inline payload');
-      expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('new immutable payload');
-    }
-  });
-
-  it('reads legacy text and reclaims only explicitly cleared legacy entries', () => {
-    const legacy = JSON.stringify({ legacy: 'old text', other: 'untouched' });
-    localStorage.setItem('ocman.composerDrafts.v1', legacy);
-    expect(getDraft('legacy')).toBe('old text');
-    clearDraft('legacy');
-    expect(getDraft('legacy')).toBe('');
-    saveDraft('new', 'independent text');
-    expect(JSON.parse(localStorage.getItem('ocman.composerDrafts.v1')!)).toEqual({ other: 'untouched' });
-    expect(getDraft('other')).toBe('untouched');
-  });
-
-  it('clears and reclaims owned text when storage has no room for a tombstone', () => {
-    saveDraft('quota-clear', 'sent prompt under quota');
-    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('quota'); });
-    try {
-      discardDraft('quota-clear');
-      expect(getDraft('quota-clear')).toBe('');
-    } finally { write.mockRestore(); }
-    for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('sent prompt under quota');
-    saveDraft('quota-clear', 'newer prompt');
-    expect(getDraft('quota-clear')).toBe('newer prompt');
-  });
-
-  it('clears an older inline per-draft record under quota without touching a newer edit', () => {
-    localStorage.setItem('ocman.composerDrafts.v1:inline-quota', JSON.stringify({ kind: 'ocman/composer-text', id: 'inline-edit', text: 'inline sent prompt' }));
-    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('quota'); });
-    try {
-      clearDraft('inline-quota', 'stale-edit');
-      expect(getDraft('inline-quota')).toBe('inline sent prompt');
-      clearDraft('inline-quota', 'inline-edit');
-      expect(getDraft('inline-quota')).toBe('');
-    } finally { write.mockRestore(); }
-    for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('inline sent prompt');
-  });
-
-  it('clears legacy text under quota by shrinking only the shared map', () => {
-    localStorage.setItem('ocman.composerDrafts.v1', JSON.stringify({ old: 'legacy sent prompt', other: 'kept' }));
-    const original = localStorage.setItem;
-    const write = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
-      if (key !== 'ocman.composerDrafts.v1') throw new Error('quota');
-      original(key, value);
-    });
-    try { clearDraft('old'); } finally { write.mockRestore(); }
-    expect(getDraft('old')).toBe('');
-    expect(getDraft('other')).toBe('kept');
-  });
-
-  it.each(['null', 'invalid'])('ignores malformed legacy text maps: %s', (raw) => {
-    localStorage.setItem('ocman.composerDrafts.v1', raw);
-    expect(getDraft('missing')).toBe('');
+    await waitFor(async () => expect(await stored('s1')).toEqual({ text: '', revision: 1 }));
   });
 
   it('tracks which sessions hold a draft', () => {
     const { result } = renderHook(() => useDraftSessionIds());
     expect(result.current.has('s1')).toBe(false);
-
     act(() => saveDraft('s1', 'draft text'));
     expect(result.current.has('s1')).toBe(true);
-
     act(() => clearDraft('s1'));
     expect(result.current.has('s1')).toBe(false);
+  });
+
+  it('does not let a stale autosave land after another tab discards', async () => {
+    saveDraft('race', 'first');
+    await waitFor(async () => expect((await stored('race'))?.text).toBe('first'));
+    const peer = await otherTab();
+    const staleVersion = getDraftVersion('race');
+    peer.discardDraft('race');
+    // This tab has not observed the discard yet: its autosave uses the old revision.
+    saveDraft('race', 'stale autosave', staleVersion);
+    await waitFor(async () => expect(await stored('race')).toEqual({ text: '', revision: 1 }));
+    await waitFor(() => expect(getDraft('race')).toBe(''));
+  });
+
+  it('clears only the text it saw, preserving a newer edit from another tab', async () => {
+    saveDraft('sent', 'sent prompt');
+    await waitFor(async () => expect((await stored('sent'))?.text).toBe('sent prompt'));
+    const peer = await otherTab();
+    // The peer's write is queued first; this tab has not observed it when it clears.
+    peer.saveDraft('sent', 'newer peer edit');
+    clearDraft('sent');
+    await waitFor(() => expect(getDraft('sent')).toBe('newer peer edit'));
+    expect((await stored('sent'))?.text).toBe('newer peer edit');
+  });
+
+  it('applies changes committed by other tabs', async () => {
+    const peer = await otherTab();
+    vi.resetModules();
+    const self = await import('./composerDraft');
+    peer.saveDraft('shared', 'from the peer');
+    await waitFor(() => expect(self.getDraft('shared')).toBe('from the peer'));
+  });
+
+  it('moves text atomically and keeps a destination edit', async () => {
+    saveDraft('from', 'moved text');
+    saveDraft('busy', 'source text');
+    saveDraft('dest', 'destination edit');
+    expect(await migrateDraft('from', 'to')).toBe(true);
+    expect(getDraft('to')).toBe('moved text');
+    expect(getDraft('from')).toBe('');
+    expect(await stored('to')).toEqual({ text: 'moved text', revision: 0 });
+    expect(await migrateDraft('busy', 'dest')).toBe(true);
+    expect(getDraft('dest')).toBe('destination edit');
+    expect(await migrateDraft('missing', 'elsewhere')).toBe(true);
+  });
+
+  it('reports a failed move and keeps the source', async () => {
+    saveDraft('keep', 'only copy');
+    await waitFor(async () => expect((await stored('keep'))?.text).toBe('only copy'));
+    const open = vi.spyOn(indexedDB, 'open').mockImplementation(() => { throw new Error('storage unavailable'); });
+    try {
+      closeDraftDbForTests();
+      expect(await migrateDraft('keep', 'elsewhere')).toBe(false);
+      expect(getDraft('keep')).toBe('only copy');
+    } finally { open.mockRestore(); }
+  });
+
+  it('imports the pre-IndexedDB localStorage map once without overwriting stored text', async () => {
+    saveDraft('existing', 'stored text');
+    await waitFor(async () => expect((await stored('existing'))?.text).toBe('stored text'));
+    localStorage.setItem('ocman.composerDrafts.v1', JSON.stringify({ legacy: 'old text', existing: 'older text', bad: 1 }));
+    resetDraftTextsForTests();
+    await hydrateDrafts();
+    expect(getDraft('legacy')).toBe('old text');
+    expect(getDraft('existing')).toBe('stored text');
+    expect(localStorage.getItem('ocman.composerDrafts.v1')).toBeNull();
+  });
+
+  it('ignores a malformed legacy map', async () => {
+    localStorage.setItem('ocman.composerDrafts.v1', 'not json');
+    await hydrateDrafts();
+    expect(getDraft('anything')).toBe('');
+  });
+
+  it('keeps a local edit made before hydration finishes', async () => {
+    await transact(['texts'], 'readwrite', (tx) => tx.put('texts', 'early', { text: 'stored', revision: 0 }));
+    const hydration = hydrateDrafts();
+    saveDraft('early', 'typed during startup');
+    await hydration;
+    expect(getDraft('early')).toBe('typed during startup');
+  });
+
+  it('reclaims prompt bytes on discard', async () => {
+    saveDraft('reclaim', 'large unique prompt payload');
+    discardDraft('reclaim');
+    await waitFor(async () => expect(await stored('reclaim')).toEqual({ text: '', revision: 1 }));
   });
 });

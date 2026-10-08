@@ -50,3 +50,9 @@ export function pendingAttachmentWriter(draftId: string) {
     updateDraftAttachments(owner.draftId, { images: [...current.images, ...batch.images], files: [...current.files, ...batch.files], pending: Math.max(0, (current.pending || 0) - 1) });
   };
 }
+
+/** Tests only. */
+export function resetDraftPayloadsForTests() {
+  owners.clear();
+  usePayloads.setState({ payloads: new Map() });
+}

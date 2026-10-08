@@ -114,13 +114,13 @@ it('repairs an authoritative pending record from a same-attempt terminal hint', 
   expect(getFirstSubmission('hint')).toMatchObject({ pending: false, error: 'known failure' });
 });
 
-it('repairs a saved terminal mirror after reload without waiting for a new notification', async () => {
-  const pending = { version: 0, text: 'payload', attemptId: 'reload-terminal', deliveryState: 'pending' as const };
+it('treats an outcome lost before it was stored as unknown after reload, never as done', async () => {
+  const pending = { version: 0, text: 'payload', attemptId: 'reload-terminal', deliveryOwner: 'reloaded-tab', deliveryState: 'pending' as const };
   stored.set('first-delivery:reload-terminal', pending);
-  localStorage.setItem('ocman.firstSubmission.v1:reload-terminal', JSON.stringify({ ...pending, deliveryState: 'done', text: '' }));
   await reconcileFirstSubmission('reload-terminal');
-  expect(getFirstSubmission('reload-terminal')).toBeUndefined();
-  expect(stored.get('first-delivery:reload-terminal')?.deliveryState).toBe('done');
+  expect(getFirstSubmission('reload-terminal')?.pending).toBe(true);
+  await waitFor(() => expect(getFirstSubmission('reload-terminal')?.error).toContain('outcome is unknown'), { timeout: 2500 });
+  expect(stored.get('first-delivery:reload-terminal')?.deliveryState).toBe('pending');
 });
 
 it('converges two tabs on equivalent cloned failure records without rewriting or rebroadcasting', async () => {

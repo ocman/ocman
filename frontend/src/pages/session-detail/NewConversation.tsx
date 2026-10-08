@@ -8,8 +8,7 @@ import { api, postJSON, type PrepareSessionResponse, type StartSessionRequest } 
 import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, getConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
-import { getDraft, getDraftVersion, saveDraft } from '../../lib/composerDraft';
+import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, getConversationDraft, rememberConversationDraft, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
@@ -143,7 +142,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const [error, setError] = useState('');
   // The submitted prompt, shown as the conversation's first message while
   // the session starts. Keyed by route so a machine switch mid-start hides it.
-  const routeKey = `${remoteId}:${directory}:${params.platform}:${title}`;
+  const routeKey = routeKeyOf({ remoteId, directory, platform: params.platform, title });
   const [pending, setPending] = useState<{ key: string; text: string; startId: string; steps: StartSteps }>();
   const inFlight = useRef<number | undefined>(undefined);
   const active = useRef(false);
@@ -218,17 +217,6 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
     let revision: number | null = null;
-    let submittedSelections: string | undefined;
-    const selections = () => {
-      const saved = getConversationDraft(draftId);
-      return JSON.stringify([saved?.model, saved?.agent, saved?.reasoning, saved?.target]);
-    };
-    const ownsDraft = () => {
-      const draft = getConversationDraft(draftId);
-      return draft && `${draft.remoteId || 'local'}:${draft.directory}:${draft.platform}:${draft.title}` === routeKey &&
-        getDraftVersion(draftId) === revision && (!getDraft(draftId) || getDraft(draftId) === text) &&
-        (submittedSelections === undefined || selections() === submittedSelections);
-    };
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
     inFlight.current = sourceGeneration;
     setError('');
@@ -244,7 +232,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       setPending((p) => p?.startId === id ? { ...p, steps } : p);
     });
     try {
-      revision = await beginConversationStart(draftId, text, routeKey);
+      revision = await beginConversationStart(draftId, routeKey, text);
       if (revision === null) throw new Error('Session creation is already in progress');
       // Synchronous when ready, so a re-point right after submit cannot drop it.
       let ready = readyRef.current;
@@ -254,7 +242,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         if (!stillCurrent()) throw new Error('The session target changed before it was ready');
       }
       const { send, execute, model } = build(ready);
-      submittedSelections = JSON.stringify([selectedModel, selectedAgent, selectedReasoning, target]);
+      // Retirement compares these initiating selections, not ones a peer stored meanwhile.
+      const submitted = { revision, routeKey, selections: selectionsKey({ model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target }) };
       const startTarget = resolveTarget(target, ready.canWorktree, ready.worktrees);
       const res = await api.startSession({
         directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,
@@ -275,13 +264,11 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         await startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
       if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, steps });
-      await completeConversationStart(draftId, { sessionId: res.sessionId, platform: res.platform, remoteId: res.remoteId, directory: res.directory }, !!ownsDraft());
+      await completeConversationStart(draftId, { sessionId: res.sessionId, platform: res.platform, remoteId: res.remoteId, directory: res.directory }, submitted, text);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (ownsDraft()) {
-        saveDraft(draftId, text, revision!);
-      }
-      if (revision !== null) await failConversationStart(draftId, message);
+      // The transaction restores the prompt only if no newer edit or discard happened.
+      if (revision !== null) await failConversationStart(draftId, message, { text, revision });
       // Only this request's prompt: a newer start may be pending already.
       setPending((p) => p?.startId === startId ? undefined : p);
       if (stillCurrent()) setError(message);

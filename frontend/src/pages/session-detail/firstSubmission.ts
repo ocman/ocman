@@ -11,7 +11,6 @@ interface Submission {
   canRelease?: boolean;
 }
 
-const PREFIX = 'ocman.firstSubmission.v1:';
 const key = (id: string) => `first-delivery:${id}`;
 const owner = randomId();
 const records = new Map<string, DraftStart>();
@@ -41,8 +40,9 @@ function adopt(id: string, record: DraftStart | undefined) {
   });
 }
 
+// Peers learn of changes over BroadcastChannel and re-read the durable record;
+// one that misses a message still converges through the periodic reconcile.
 function notify(id: string, record: DraftStart) {
-  try { localStorage.setItem(PREFIX + id, JSON.stringify(record)); } catch { /* Hints are optional; the durable record already exists. */ }
   channel?.postMessage({ id, record });
 }
 
@@ -76,9 +76,6 @@ function probeOwner(id: string, record: DraftStart) {
 
 export async function reconcileFirstSubmission(id: string, hint?: DraftStart) {
   const before = records.get(id);
-  if (!hint) {
-    try { hint = JSON.parse(localStorage.getItem(PREFIX + id) || 'null') || undefined; } catch { /* The durable record remains readable. */ }
-  }
   const stored = await readDraftStart(key(id));
   if (records.get(id) !== before) return;
   let live = records.get(id);
@@ -177,11 +174,3 @@ if (channel) channel.onmessage = (event: MessageEvent) => {
     void reconcileFirstSubmission(id, record).catch(() => undefined);
   }
 };
-
-if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
-  if (!event.key?.startsWith(PREFIX)) return;
-  const id = event.key.slice(PREFIX.length);
-  let hint: DraftStart | undefined;
-  try { hint = JSON.parse(event.newValue || 'null') || undefined; } catch { /* Read the authoritative record. */ }
-  void reconcileFirstSubmission(id, hint).catch(() => undefined);
-});

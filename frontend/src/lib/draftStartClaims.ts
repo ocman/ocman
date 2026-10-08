@@ -1,4 +1,5 @@
 import type { StartSessionResponse } from './api.types';
+import { transact } from './draftDb';
 
 export interface DraftStart {
   version: number;
@@ -9,61 +10,34 @@ export interface DraftStart {
   createdSession?: Pick<StartSessionResponse, 'sessionId' | 'platform' | 'remoteId' | 'directory'>;
   attemptId?: string;
   replacementDraftId?: string;
+  /** The terminal outcome is known in this tab but could not be stored yet. */
   persistenceError?: string;
-  committed?: boolean;
+  /** The session exists; the draft could not be retired/relocated yet. */
   relocationError?: string;
-  pendingReplacementId?: string;
-  retirement?: string;
+  /** What the initiating composer submitted: the retirement ownership check. */
+  submitted?: { revision: number; routeKey: string; selections: string };
   deliveryState?: 'pending' | 'failed' | 'interrupted' | 'done';
   deliveryOwner?: string;
 }
 
-// IndexedDB readwrite transactions serialize claims across tabs, including plain HTTP.
-function transact(draftId: string, change?: (current: DraftStart | undefined) => DraftStart): Promise<DraftStart | undefined> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
-      reject(new Error('This browser cannot coordinate session starts.'));
-      return;
-    }
-    const open = indexedDB.open('ocman.preparedDraftStarts.v1', 1);
-    let blocked = false;
-    open.onupgradeneeded = () => open.result.createObjectStore('starts');
-    open.onerror = () => reject(open.error || new Error('Could not open the draft start database'));
-    open.onblocked = () => {
-      blocked = true;
-      reject(new Error('Close other ocman tabs to update the draft start database'));
-    };
-    open.onsuccess = () => {
-      const db = open.result;
-      if (blocked) { db.close(); return; }
-      let transaction: IDBTransaction;
-      try { transaction = db.transaction('starts', change ? 'readwrite' : 'readonly'); }
-      catch (error) { db.close(); reject(error); return; }
-      const store = transaction.objectStore('starts');
-      const read = store.get(draftId);
-      let result: DraftStart | undefined;
-      read.onsuccess = () => {
-        const current = read.result as DraftStart | undefined;
-        result = change ? change(current) : current;
-        if (change && result !== current) store.put(result, draftId);
-      };
-      transaction.oncomplete = () => { db.close(); resolve(result); };
-      transaction.onabort = () => { db.close(); reject(transaction.error || new Error('Could not save the draft start claim')); };
-    };
+// Completed, released and session-created records are final, even when they kept an old error.
+const isFinal = (start: DraftStart) => !start.error || !!start.sessionId || start.deliveryState === 'done';
+
+export async function claimDraftStart(key: string, next: DraftStart) {
+  return transact(['starts'], 'readwrite', async (tx) => {
+    const current = await tx.get<DraftStart>('starts', key);
+    if (current && isFinal(current)) return { claimed: false, start: current };
+    tx.put('starts', key, next);
+    return { claimed: true, start: next };
   });
 }
 
-export async function claimDraftStart(draftId: string, next: DraftStart) {
-  let claimed = false;
-  const start = await transact(draftId, (current) => {
-    // Completed, released and session-created records are final, even when they kept an old error.
-    if (current && (!current.error || current.sessionId || current.deliveryState === 'done')) return current;
-    claimed = true;
-    return next;
-  });
-  return { claimed, start: start! };
-}
+/** Write a terminal outcome for its own attempt; an older attempt or a released record wins. */
+export const persistDraftStart = (key: string, start: DraftStart) => transact(['starts'], 'readwrite', async (tx) => {
+  const current = await tx.get<DraftStart>('starts', key);
+  if (current && (current.attemptId !== start.attemptId || current.deliveryState === 'done')) return current;
+  tx.put('starts', key, start);
+  return start;
+});
 
-export const persistDraftStart = (draftId: string, start: DraftStart) => transact(draftId, (current) =>
-  current && (current.attemptId !== start.attemptId || current.version > start.version || current.deliveryState === 'done') ? current : start);
-export const readDraftStart = (draftId: string) => transact(draftId);
+export const readDraftStart = (key: string) => transact(['starts'], 'readonly', (tx) => tx.get<DraftStart>('starts', key));
