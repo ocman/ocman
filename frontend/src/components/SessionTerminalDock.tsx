@@ -71,8 +71,8 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
   const [windows, setWindows] = useState<TermWindow[]>([]);
-  const [discoveredKey, setDiscoveredKey] = useState('');
-  const discoveryKey = `${remoteId ?? 'local'}\0${directory ?? ''}\0${open}`;
+  const [discoveredGeneration, setDiscoveredGeneration] = useState<number | null>(null);
+  const discoveryGeneration = useRef(0);
   const [active, setActive] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -95,6 +95,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
       setActive(null);
       return;
     }
+    const generation = ++discoveryGeneration.current;
     let cancelled = false;
     const refresh = async () => {
       if (document.hidden) return;
@@ -102,7 +103,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
         const { windows: live } = await api.term.listWindows(directory, remoteId);
         if (cancelled) return;
         setWindows(live);
-        setDiscoveredKey(discoveryKey);
+        setDiscoveredGeneration(generation);
         setActive((prev) =>
           prev && live.some((w) => w.name === prev) ? prev : live[0]?.name ?? null,
         );
@@ -119,9 +120,10 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       cancelled = true;
+      discoveryGeneration.current += 1;
       if (id !== undefined) window.clearInterval(id);
     };
-  }, [directory, open, remoteId, tmuxAvailable, discoveryKey]);
+  }, [directory, open, remoteId, tmuxAvailable]);
 
   // Opening the panel with no terminals yet creates the first one. The
   // in-flight guard is a ref, not `busy`: depending on `busy` re-ran this
@@ -129,7 +131,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
   // the panel stuck on "Loading…".
   const creatingRef = useRef(false);
   useEffect(() => {
-    if (!open || !directory || !tmuxAvailable || discoveredKey !== discoveryKey || windows.length > 0 || creatingRef.current) return;
+    if (!open || !directory || !tmuxAvailable || discoveredGeneration !== discoveryGeneration.current || windows.length > 0 || creatingRef.current) return;
     let cancelled = false;
     (async () => {
       creatingRef.current = true;
@@ -147,7 +149,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
       }
     })();
     return () => { cancelled = true; };
-  }, [open, directory, windows.length, remoteId, tmuxAvailable, discoveredKey, discoveryKey]);
+  }, [open, directory, windows.length, remoteId, tmuxAvailable, discoveredGeneration]);
 
   const handleAdd = useCallback(async () => {
     if (!directory || busy) return;

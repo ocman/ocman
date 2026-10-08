@@ -46,6 +46,26 @@ beforeEach(() => {
 });
 
 describe('SessionTerminalDock gating', () => {
+  it('requires fresh discovery when reopened after creation finishes while closed', async () => {
+    let finishCreate!: (value: { window: string }) => void;
+    let finishDiscovery!: (value: { windows: TermWindow[] }) => void;
+    const pendingDiscovery = new Promise<{ windows: TermWindow[] }>((resolve) => { finishDiscovery = resolve; });
+    listWindows.mockResolvedValueOnce({ windows: [] }).mockResolvedValueOnce({ windows: [] }).mockReturnValue(pendingDiscovery);
+    createWindow.mockReturnValueOnce(new Promise((resolve) => { finishCreate = resolve; }));
+    const view = render(<SessionTerminalDock tmuxAvailable directory={DIR} />);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      await waitFor(() => expect(createWindow).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByTitle('Hide terminal'));
+      await act(async () => { finishCreate({ window: 'first' }); });
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      await act(async () => {});
+      expect(createWindow).toHaveBeenCalledTimes(1);
+      await act(async () => { finishDiscovery({ windows: [{ name: 'first', title: 'Existing shell' }] }); });
+      expect(createWindow).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); }
+  });
   it('discovers existing tabs after hidden startup without opening the dock', async () => {
     let hidden = true;
     const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);

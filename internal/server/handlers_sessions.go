@@ -115,12 +115,15 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	remote := isRemotePlatformID(string(adapter.ID()))
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
+	peek := r.URL.Query().Get("peek") == "1"
 	if detail.Session != nil {
 		detail.Session.ProjectDefaultModel = s.projectDefaultModel(r.Context(), detail.Session.Directory)
-		detail.Session.FactoryAttemptID, err = s.factoryAttemptID(r.Context(), string(adapter.ID()), sessionID, detail.Session.ParentID)
-		if err != nil {
-			serverError(w, "fetching Factory session tag", err)
-			return
+		if !peek || s.stateDB == nil {
+			detail.Session.FactoryAttemptID, err = s.factoryAttemptID(r.Context(), string(adapter.ID()), sessionID, detail.Session.ParentID)
+			if err != nil {
+				serverError(w, "fetching Factory session tag", err)
+				return
+			}
 		}
 	}
 
@@ -133,7 +136,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// and resurface policy as the session list (remote sessions included,
 	// keyed by their compound platform), so an archived session stays
 	// archived while it is still working.
-	if s.stateDB != nil && detail.Session != nil && r.URL.Query().Get("peek") == "1" {
+	if s.stateDB != nil && detail.Session != nil && peek {
 		row := []db.Session{*detail.Session}
 		if err := s.applySessionState(r.Context(), row); err != nil {
 			serverError(w, "applying session state on peek", err)
@@ -142,6 +145,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		detail.Session.Archived = row[0].Archived
 		detail.Session.Seen = row[0].Seen
 		detail.Session.SeenTimeUpdated = row[0].SeenTimeUpdated
+		detail.Session.FactoryAttemptID = row[0].FactoryAttemptID
 	} else if s.stateDB != nil && detail.Session != nil && !remote {
 		if err := s.stateDB.UnarchiveSession(r.Context(), string(adapter.ID()), sessionID); err != nil {
 			log.Printf("unarchiving session on open: %v", err)
