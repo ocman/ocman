@@ -96,6 +96,9 @@ export function SidebarHeader({
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
             <SelectField aria-label="Project" style={{ width: '100%' }} value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
               <option value="">All projects</option>
+              {projectFilter && !projects.some((group) => (group.key ?? group.directory) === projectFilter) && (
+                <option value={projectFilter} disabled>Unavailable project</option>
+              )}
               {projects.map((group) => (
                 <option key={group.key ?? group.directory} value={group.key ?? group.directory}>
                   {shortPath(group.directory)}{group.remoteName ? ` · ${group.remoteName}` : ''}

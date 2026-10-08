@@ -16,6 +16,12 @@ new activity restores an archived session to the sidebar: **Session halts**
 is the default and waits for done, waiting, error, or interrupted status;
 **Any activity** restores it even while it is running.
 
+Use **Filter sessions → Project** to select a project or return to **All projects**.
+The selection filters flat and grouped views, including opened and pinned sessions,
+and includes the project's worktrees and grouped remote checkouts.
+If the selected project disappears, the selector shows **Unavailable project**;
+choose **All projects** to clear it.
+
 The session sidebar orders rows by their last completed assistant turn,
 including errors, newest first. Streaming output, sending a prompt and reading
 a session do not move it. Sessions without a completed turn use creation time;
