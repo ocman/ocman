@@ -196,6 +196,10 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string, enabled
   }, [queryParam, remoteId, requestKey, enabled]);
 
   if (queryParam === null) return { infos: {}, loading: false, error: null };
+  if (!enabled && activeKey.startsWith(`${remoteId}\0`)) {
+    const requested = new Set(decodeURIComponent(queryParam).split(','));
+    return { infos: Object.fromEntries(Object.entries(infos).filter(([dir]) => requested.has(dir))), loading: false, error };
+  }
   if (activeKey !== requestKey) return { infos: {}, loading: enabled, error: null };
   return { infos, loading: enabled && loading, error };
 }

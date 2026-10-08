@@ -23,6 +23,21 @@ it('retains same-owner branch data while paused and during resume refresh', asyn
   } finally { view.unmount(); }
 });
 
+it('retains still-requested same-owner branches when directories change while paused', async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ '/repo': { branch: 'task' }, '/removed': { branch: 'old' } }), { status: 200 }));
+  vi.stubGlobal('fetch', fetcher);
+  const view = renderHook(({ dirs, owner, enabled }) => useGitInfo(dirs, owner, enabled), {
+    initialProps: { dirs: ['/repo', '/removed'], owner: 'local', enabled: true },
+  });
+  await waitFor(() => expect(view.result.current.infos['/repo']?.branch).toBe('task'));
+  view.rerender({ dirs: ['/repo', '/added'], owner: 'local', enabled: false });
+  expect(view.result.current.infos).toEqual({ '/repo': { branch: 'task' } });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  view.rerender({ dirs: ['/repo', '/added'], owner: 'other', enabled: false });
+  expect(view.result.current.infos).toEqual({});
+  view.unmount();
+});
+
 it('clears branch data when the owner changes', async () => {
   const snapshots: Array<{ owner: string; branch?: string }> = [];
   const fetcher = vi.fn()
