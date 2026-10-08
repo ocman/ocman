@@ -48,11 +48,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			if !ok || !adapter.Available(ctx) {
 				continue
 			}
-			detail, err := adapter.Session(ctx, key.SessionID, 0, 0)
-			if err != nil || detail == nil || detail.Session == nil {
+			row, err := platforms.ReadSessionSummary(ctx, adapter, key.SessionID)
+			if err != nil || row == nil {
 				continue
 			}
-			all = append(all, *detail.Session)
+			all = append(all, *row)
 		}
 	}
 

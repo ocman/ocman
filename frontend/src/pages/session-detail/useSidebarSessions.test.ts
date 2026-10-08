@@ -44,6 +44,32 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('coalesces changed-event bursts and preserves changes received in flight', async () => {
+    vi.useFakeTimers();
+    let finish: (() => void) | undefined;
+    const getSessions = vi.fn().mockResolvedValue([]);
+    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    const { unmount } = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    try {
+      getSessions.mockImplementationOnce(() => new Promise<Session[]>(resolve => { finish = () => resolve([]); }));
+      act(() => { for (let i = 0; i < 5; i++) sessionChanged?.('new'); });
+      expect(getSessions).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      expect(getSessions).toHaveBeenCalledTimes(1);
+      act(() => { for (let i = 0; i < 5; i++) sessionChanged?.('renamed'); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      expect(getSessions).toHaveBeenCalledTimes(1);
+      await act(async () => { finish?.(); await vi.advanceTimersByTimeAsync(150); });
+      expect(getSessions).toHaveBeenCalledTimes(2);
+      act(() => sessionChanged?.('archived'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      expect(getSessions).toHaveBeenCalledTimes(3);
+    } finally { unmount(); vi.useRealTimers(); }
+  });
+
   it('keeps an acknowledged old interruption read when reusing the open-session fallback', async () => {
     const row = { id: 'old', platform: 'r-box:opencode', directory: '/repo/old', status: 'interrupted', seen: false,
       timeUpdated: Date.now() - 96 * 60 * 60 * 1000, seenTimeUpdated: 0, unreadCount: 0 } as Session;
@@ -482,7 +508,7 @@ describe('useSidebarSessions live refresh', () => {
     }));
     await act(async () => { sessionChanged?.('shared', undefined, { status: 'waiting' }); });
     expect(peekSession).not.toHaveBeenCalled();
-    expect(getSessions).toHaveBeenCalledOnce();
+    await waitFor(() => expect(getSessions).toHaveBeenCalledOnce());
     expect(useApiStore.getState().recentSessions.every(s => s.status === 'busy')).toBe(true);
   });
 

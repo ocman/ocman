@@ -165,7 +165,7 @@ flowchart TD
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Server -->|Factory usage via platforms.UsageReader| OC
-    Registry -->|session detail + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
+    Registry -->|session detail, summary + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations + attachment cache]
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
@@ -181,6 +181,12 @@ flowchart TD
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux, terminal, whisper, auto-approve and routine ticks.
+- **Session summary reads.** Pinned sessions outside the recent window use
+  `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
+  return the owner-local row through `SessionSummary` and stamp its compound
+  platform on the hub. Older owners fall back to session detail. Session-list
+  SSE invalidations trail by 150 ms, finish existing reads before refreshing,
+  and retain one follow-up when another event arrives during the refresh.
 - **Factory usage.** `/api/factory/epics/{id}/usage` joins durable attempt
   identities to `platforms.UsageReader`. The local OpenCode adapter reads
   descendant message metadata and reuses token and pricing calculations.

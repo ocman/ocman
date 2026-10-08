@@ -23,6 +23,7 @@ const (
 	Ocman_Sessions_FullMethodName               = "/ocman.remote.v1.Ocman/Sessions"
 	Ocman_Session_FullMethodName                = "/ocman.remote.v1.Ocman/Session"
 	Ocman_SessionLifecycle_FullMethodName       = "/ocman.remote.v1.Ocman/SessionLifecycle"
+	Ocman_SessionSummary_FullMethodName         = "/ocman.remote.v1.Ocman/SessionSummary"
 	Ocman_SessionsInactiveBefore_FullMethodName = "/ocman.remote.v1.Ocman/SessionsInactiveBefore"
 	Ocman_SessionChanges_FullMethodName         = "/ocman.remote.v1.Ocman/SessionChanges"
 	Ocman_SessionInfo_FullMethodName            = "/ocman.remote.v1.Ocman/SessionInfo"
@@ -114,6 +115,7 @@ type OcmanClient interface {
 	// Bounded status + latest message for queue decisions. Additive: an older
 	// owner answers Unimplemented and the hub falls back to Session.
 	SessionLifecycle(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
+	SessionSummary(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
 	SessionsInactiveBefore(ctx context.Context, in *CutoffReq, opts ...grpc.CallOption) (*JsonResp, error)
 	SessionChanges(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
 	SessionInfo(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
@@ -236,6 +238,16 @@ func (c *ocmanClient) SessionLifecycle(ctx context.Context, in *SessionRef, opts
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
 	err := c.cc.Invoke(ctx, Ocman_SessionLifecycle_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) SessionSummary(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_SessionSummary_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -940,6 +952,7 @@ type OcmanServer interface {
 	// Bounded status + latest message for queue decisions. Additive: an older
 	// owner answers Unimplemented and the hub falls back to Session.
 	SessionLifecycle(context.Context, *SessionRef) (*JsonResp, error)
+	SessionSummary(context.Context, *SessionRef) (*JsonResp, error)
 	SessionsInactiveBefore(context.Context, *CutoffReq) (*JsonResp, error)
 	SessionChanges(context.Context, *SessionRef) (*JsonResp, error)
 	SessionInfo(context.Context, *SessionRef) (*JsonResp, error)
@@ -1039,6 +1052,9 @@ func (UnimplementedOcmanServer) Session(context.Context, *SessionReq) (*JsonResp
 }
 func (UnimplementedOcmanServer) SessionLifecycle(context.Context, *SessionRef) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method SessionLifecycle not implemented")
+}
+func (UnimplementedOcmanServer) SessionSummary(context.Context, *SessionRef) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method SessionSummary not implemented")
 }
 func (UnimplementedOcmanServer) SessionsInactiveBefore(context.Context, *CutoffReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method SessionsInactiveBefore not implemented")
@@ -1324,6 +1340,24 @@ func _Ocman_SessionLifecycle_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OcmanServer).SessionLifecycle(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_SessionSummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).SessionSummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_SessionSummary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).SessionSummary(ctx, req.(*SessionRef))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2484,6 +2518,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SessionLifecycle",
 			Handler:    _Ocman_SessionLifecycle_Handler,
+		},
+		{
+			MethodName: "SessionSummary",
+			Handler:    _Ocman_SessionSummary_Handler,
 		},
 		{
 			MethodName: "SessionsInactiveBefore",

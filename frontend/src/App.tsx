@@ -36,6 +36,7 @@ import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
 import { useSessions, insertProvisionalSession } from './lib/queries';
+import { queryEventRefresh } from './lib/queryEventRefresh';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
@@ -345,12 +346,13 @@ const queryClient = new QueryClient({
 // upstream, instead of waiting for the next poll tick. Registered at
 // module scope so it's wired once for the app's lifetime; the
 // EventSource itself is opened by useGlobalEvents() mounted at the root.
+const sessionsEventRefresh = queryEventRefresh(queryClient, ['sessions']);
 onSessionChanged((_sessionId, session) => {
   // Insert the provisional row first so a freshly-created session shows
   // up instantly, then invalidate so the authoritative list overwrites
   // it on the next fetch.
   if (session) insertProvisionalSession(queryClient, session);
-  void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+  sessionsEventRefresh.schedule();
 });
 
 onProjectsChanged(() => {
