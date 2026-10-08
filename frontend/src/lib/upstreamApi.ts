@@ -212,8 +212,13 @@ export async function fetchPRMergeability(opts: {
   signal: AbortSignal;
 }): Promise<boolean | null> {
   const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
-  const result = await fetchJSON<{ mergeable: boolean | null }>(`/api/project/pr-mergeability?${q}`, opts.signal);
-  return result.mergeable;
+  const resp = await fetchResponse(`/api/project/pr-mergeability?${q}`, { signal: opts.signal });
+  if (!resp.ok) {
+    const env = await safeError(resp);
+    if (sessionExpired(resp, env)) throw raiseAuthError();
+    throw new UpstreamApiError(env, resp.status);
+  }
+  return (await readJSON<{ mergeable: boolean | null }>(resp)).mergeable;
 }
 
 // fetchPRChecks returns the combined CI/build status for a PR's head

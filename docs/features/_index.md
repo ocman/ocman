@@ -119,6 +119,13 @@ empty result is remembered. Failed requests retry with delays from 5 to 60
 seconds and honor forge rate-limit deadlines. Polling pauses when the browser
 tab is hidden; scrolling a row away and back preserves its retry deadline.
 
+The circle's colour shows CI status. A diagonal slash marks a draft or a PR
+the forge reports as unmergeable. Hover over the circle for both statuses.
+Unknown mergeability stays unslashed. When the PR list omits mergeability,
+visible open rows fetch it separately and retry while the forge computes it.
+The pane's refresh button also rechecks those mergeability lookups, even when
+the PR head has not changed.
+
 ## Guides
 
 {{< cards >}}

@@ -4,6 +4,7 @@ import {
   fetchPRs,
   fetchIssues,
   fetchPRChecks,
+  fetchPRMergeability,
   fetchForgeUser,
   postHandle,
   UpstreamApiError,
@@ -27,6 +28,7 @@ describe('upstreamApi', () => {
     ['PRs', () => fetchPRs({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 })],
     ['issues', () => fetchIssues({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 })],
     ['checks', () => fetchPRChecks({ dir: '/x', remoteId: 'local', remote: 'origin', sha: 'abc' })],
+    ['mergeability', () => fetchPRMergeability({ dir: '/x', remoteId: 'local', remote: 'origin', number: 42, signal: new AbortController().signal })],
     ['forge user', () => fetchForgeUser({ dir: '/x', remoteId: 'local', remote: 'origin' })],
     ['handle PR', () => postHandle({ dir: '/x', remoteId: 'local', remote: 'origin', type: 'pr', number: 1, mode: 'session' })],
   ];
@@ -358,6 +360,16 @@ describe('upstreamApi', () => {
     afterEach(() => { registerAuthErrorHandler(restore); });
 
     const bare401 = () => new Response('unauthorized', { status: 401 });
+
+    it('keeps forge mergeability authentication errors separate from an expired ocman login', async () => {
+      const call = () => fetchPRMergeability({ dir: '/x', remoteId: 'local', remote: 'origin', number: 42, signal: new AbortController().signal });
+      fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'auth_required', message: 'no token' } }), { status: 401 }));
+      await expect(call()).rejects.toThrow(UpstreamApiError);
+      expect(seen).toHaveLength(0);
+      fetchSpy.mockResolvedValueOnce(bare401());
+      await expect(call()).rejects.toThrow(AuthError);
+      expect(seen).toHaveLength(1);
+    });
 
     it('fetchUpstreams reports the auth error', async () => {
       fetchSpy.mockResolvedValue(bare401());
