@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 func TestServerShutdownWaitsForStartedWorkers(t *testing.T) {
@@ -13,7 +16,7 @@ func TestServerShutdownWaitsForStartedWorkers(t *testing.T) {
 	srv := testServer(t)
 	entered, release, exited := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	original := autoArchiveTickFn
-	autoArchiveTickFn = func(*Server) { close(entered); <-release; close(exited) }
+	autoArchiveTickFn = func(context.Context, *Server) { close(entered); <-release; close(exited) }
 	defer func() { autoArchiveTickFn = original }()
 	defer func() { close(release); <-exited }()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -50,4 +53,49 @@ func TestServerShutdownWaitsForStartedWorkers(t *testing.T) {
 			t.Fatalf("shutdown: %v", err)
 		}
 	})
+}
+
+type blockedArchivePlatform struct {
+	fakePlatform
+	entered chan context.Context
+	release chan struct{}
+}
+
+func (p *blockedArchivePlatform) SessionsInactiveBefore(ctx context.Context, _ int64) ([]db.SessionArchiveCandidate, error) {
+	p.entered <- ctx
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-p.release:
+		return nil, context.Canceled
+	}
+}
+
+func TestServerShutdownCancelsBlockedArchiveRPC(t *testing.T) {
+	t.Setenv("OCMAN_PLUGIN_DIR", t.TempDir())
+	srv := testServer(t)
+	remote := &blockedArchivePlatform{entered: make(chan context.Context, 1), release: make(chan struct{})}
+	srv.registry = platforms.NewRegistry()
+	srv.registry.Register(remote)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	t.Cleanup(func() { cancel(); close(remote.release); <-done })
+	go func() { err := srv.StartOnListener(ctx, ln); done <- err; close(done) }()
+	rpcCtx := <-remote.entered
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("shutdown hung on the blocked archive RPC")
+	}
+	if deadline, ok := rpcCtx.Deadline(); !ok || time.Until(deadline) > time.Minute {
+		t.Fatal("archive RPC has no bounded deadline")
+	}
 }

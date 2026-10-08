@@ -30,8 +30,10 @@ They share the sidebar's repository-and-SHA cache, so either view can reuse a
 finished result fetched by the other. Visible cards check every 5 seconds
 until every check finishes. Rate-limited results never become final cached
 results. Empty checks are confirmed over one minute before caching. Errors
-back off from 5 to 60 seconds, respecting forge rate-limit deadlines even when
-a card leaves and reenters view. Polling pauses while the browser tab is hidden.
+back off from 5 to 60 seconds, retaining that delay when a card leaves and
+reenters view. The preview resolver retains upstream rate-limit deadlines;
+browser retries may reach the resolver before it can call the forge again.
+Polling pauses while the browser tab is hidden.
 The sidebar's refresh button clears this shared cache and refreshes
 visible conversation cards too. Refresh reloads PR metadata first, so checks
 follow the current head commit after a new push.
