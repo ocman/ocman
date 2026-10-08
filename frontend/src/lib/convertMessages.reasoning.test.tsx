@@ -67,6 +67,17 @@ it('preserves literal reasoning examples in fenced code', () => {
   expect(container.querySelector('pre code')?.textContent).toBe(`${code}\n`);
 });
 
+it.each([
+  ['Last · **11s**', 'Last'],
+  ['```js\n> const x = true; · 11s', 'const x = true;'],
+])('removes a timer split across rendered text leaves: %s', (tail, remaining) => {
+  const { container } = render(<MarkdownContent text={`> **Thinking:** Preview.\n>\n> ${tail}`} />);
+  expect(container.querySelector('summary')).toHaveTextContent('Thinking: Preview. · 11s');
+  const details = container.querySelector('details')!;
+  expect(details.textContent?.match(/· 11s/g)).toHaveLength(1);
+  expect(details.textContent?.replace('Thinking: Preview. · 11s', '').trim()).toBe(remaining);
+});
+
 it.each(['**Note:** First paragraph.', 'First paragraph.', '# Heading'])('leaves ordinary blockquotes expanded: %s', (first) => {
   const { container } = render(<MarkdownContent text={`> ${first}\n>\n> Second paragraph.`} />);
   expect(container.querySelector('details')).not.toBeInTheDocument();

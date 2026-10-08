@@ -241,17 +241,25 @@ const sharedRehypeHighlight = () => (highlightTransformer ??= rehypeHighlight())
 const REHYPE_PLUGINS = [sharedRehypeHighlight];
 
 function removeTrailingDuration(node: ReactNode, duration: string): ReactNode {
-  if (typeof node === 'string') {
-    const end = node.trimEnd().length;
-    return node.slice(0, end - duration.length) + node.slice(end);
+  let remaining = duration.length;
+  const text = nodeText(node);
+  let trailing = text.length - text.trimEnd().length;
+  function remove(child: ReactNode): ReactNode {
+    if (typeof child === 'string') {
+      const end = Math.max(0, child.length - trailing);
+      trailing = Math.max(0, trailing - child.length);
+      const count = Math.min(remaining, end);
+      remaining -= count;
+      return child.slice(0, end - count) + child.slice(end);
+    }
+    if (isValidElement<{ children?: ReactNode }>(child)) {
+      return cloneElement(child, { children: remove(child.props.children) });
+    }
+    const children: ReactNode[] = Children.toArray(child);
+    for (let i = children.length - 1; i >= 0 && remaining > 0; i--) children[i] = remove(children[i]);
+    return children;
   }
-  if (isValidElement<{ children?: ReactNode }>(node)) {
-    return cloneElement(node, { children: removeTrailingDuration(node.props.children, duration) });
-  }
-  const children: ReactNode[] = Children.toArray(node);
-  const last = children.findLastIndex(child => nodeText(child).trim());
-  if (last >= 0) children[last] = removeTrailingDuration(children[last], duration);
-  return children;
+  return remove(node);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
