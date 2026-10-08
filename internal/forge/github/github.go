@@ -11,16 +11,16 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -43,7 +43,7 @@ type Client struct {
 func New() *Client {
 	return &Client{
 		token: discoverToken(),
-		http:  &http.Client{Timeout: 10 * time.Second},
+		http:  forgehttp.InstrumentClient(nil),
 	}
 }
 
@@ -53,7 +53,7 @@ func New() *Client {
 func NewForTest(apiBase, token string, httpClient *http.Client) *Client {
 	return &Client{
 		token:   token,
-		http:    httpClient,
+		http:    forgehttp.InstrumentClient(httpClient),
 		apiBase: apiBase,
 	}
 }
@@ -99,18 +99,12 @@ func (c *Client) get(path string) (map[string]interface{}, error) {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.http.Do(req)
+	body, _, status, err := forgehttp.Get(context.Background(), c.http, req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("github api %s: %s", path, resp.Status)
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("github api %s: status %d", path, status)
 	}
 
 	var out map[string]interface{}

@@ -238,7 +238,7 @@ func (c *Client) CurrentUser(ctx context.Context) (forge.CurrentUser, error) {
 		return forge.CurrentUser{}, forge.ErrUnauthenticated
 	}
 
-	body, _, status, err := c.fetch(ctx, "/user")
+	body, rl, status, err := c.fetch(ctx, "/user")
 	if err != nil {
 		return forge.CurrentUser{}, err
 	}
@@ -246,6 +246,9 @@ func (c *Client) CurrentUser(ctx context.Context) (forge.CurrentUser, error) {
 		return forge.CurrentUser{}, forge.ErrUnauthenticated
 	}
 	if status != http.StatusOK {
+		if rl.Limited {
+			return forge.CurrentUser{}, &forgehttp.ResponseError{Status: status, RateLimit: rl}
+		}
 		return forge.CurrentUser{}, fmt.Errorf("github /user: status %d", status)
 	}
 

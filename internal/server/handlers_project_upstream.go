@@ -257,6 +257,9 @@ func (s *Server) handleProjectUpstreams(w http.ResponseWriter, r *http.Request) 
 	}
 	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
+		if writeCancellation(w, "failed to detect upstreams", err) {
+			return
+		}
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return
@@ -297,7 +300,10 @@ func (s *Server) handleProjectPRs(w http.ResponseWriter, r *http.Request) {
 
 	prs, rl, err := f.ListPRs(r.Context(), rem.Repo, opts)
 	if err != nil {
-		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
+		writeProjectForgeError(w, r, rem, err)
+		return
+	}
+	if writeProjectRateLimit(w, rl) {
 		return
 	}
 	hasMore := !rl.Limited && len(prs) >= effectivePerPage(opts)
@@ -332,7 +338,10 @@ func (s *Server) handleProjectIssues(w http.ResponseWriter, r *http.Request) {
 
 	issues, rl, err := f.ListIssues(r.Context(), rem.Repo, opts)
 	if err != nil {
-		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
+		writeProjectForgeError(w, r, rem, err)
+		return
+	}
+	if writeProjectRateLimit(w, rl) {
 		return
 	}
 	hasMore := !rl.Limited && len(issues) >= effectivePerPage(opts)
@@ -384,6 +393,9 @@ func (s *Server) handleProjectForgeUser(w http.ResponseWriter, r *http.Request) 
 	}
 	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
+		if writeCancellation(w, "failed to detect upstreams", err) {
+			return
+		}
 		http.Error(w, "failed to detect upstreams", http.StatusBadGateway)
 		return
 	}
@@ -404,76 +416,10 @@ func (s *Server) handleProjectForgeUser(w http.ResponseWriter, r *http.Request) 
 			writeProjectListError(w, http.StatusUnauthorized, "auth_required", "not authenticated")
 			return
 		}
-		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
+		writeProjectForgeError(w, r, rem, err)
 		return
 	}
 	writeJSON(w, u)
-}
-
-// handleProjectPRChecks returns the combined CI/build status for a
-// PR's head commit. Fetched lazily by the sidebar when a PR row is
-// expanded/hovered, so the list endpoint stays cheap.
-//
-// GET /api/project/pr-checks?dir=<abs>&remote=<name>&remoteId=<owner>&sha=<headSha>
-//
-// 200: { "state": "success|pending|failure|unknown", "checks": [...] }
-func (s *Server) handleProjectPRChecks(w http.ResponseWriter, r *http.Request) {
-	dir, ok := parseAbsDir(w, r)
-	if !ok {
-		return
-	}
-	remoteName := strings.TrimSpace(r.URL.Query().Get("remote"))
-	sha := strings.TrimSpace(r.URL.Query().Get("sha"))
-	if remoteName == "" || sha == "" {
-		http.Error(w, "remote and sha query parameters are required", http.StatusBadRequest)
-		return
-	}
-	if !validCommitSHA(sha) {
-		http.Error(w, "sha must be a hexadecimal commit ID", http.StatusBadRequest)
-		return
-	}
-	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
-	if !ok {
-		return
-	}
-	host, ok := s.resolveOwner(w, dir, remoteID)
-	if !ok {
-		return
-	}
-	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
-	if err != nil {
-		if errors.Is(err, git.ErrNotARepo) {
-			http.Error(w, "directory is not a git repository", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "failed to detect upstreams", http.StatusBadGateway)
-		return
-	}
-	rem, ok := findRemote(remotes, remoteName)
-	if !ok {
-		http.Error(w, "remote not found among project upstreams", http.StatusNotFound)
-		return
-	}
-	f, ok := s.resolveForge(rem)
-	if !ok {
-		writeProjectListError(w, http.StatusUnauthorized, "auth_required",
-			"no forge client configured for "+rem.Host)
-		return
-	}
-
-	ci, rl, err := f.Checks(r.Context(), rem.Repo, sha)
-	if err != nil {
-		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
-		return
-	}
-	if ci.Checks == nil {
-		ci.Checks = []forge.Check{}
-	}
-	writeJSON(w, map[string]interface{}{
-		"state":     ci.State,
-		"checks":    ci.Checks,
-		"rateLimit": rl,
-	})
 }
 
 func validCommitSHA(sha string) bool {
@@ -528,6 +474,9 @@ func (s *Server) parseProjectListParams(w http.ResponseWriter, r *http.Request) 
 	}
 	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
+		if writeCancellation(w, "failed to detect upstreams", err) {
+			return "", forge.Remote{}, forge.ListOptions{}, false
+		}
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 		} else {

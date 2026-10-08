@@ -18,11 +18,10 @@ const isFinalCIState = (state: CIState) => state === 'success' || state === 'fai
  * enough: it reports failure while other checks are still running, and a
  * rate-limited response may hold only some of the checks.
  */
-export const isSettled = (checks: PRChecks) =>
+export const isSettled = (checks: PRChecks, emptyConfirmed = false) =>
   !checks.rateLimit?.limited &&
-  checks.checks.length > 0 &&
-  isFinalCIState(checks.state) &&
-  checks.checks.every((c) => isFinalCIState(c.state));
+  (checks.checks.length === 0 ? emptyConfirmed && checks.state === 'unknown' :
+    isFinalCIState(checks.state) && checks.checks.every((c) => isFinalCIState(c.state)));
 
 export const prChecksCacheKey = (host: string, repo: string, sha: string) => `${host}/${repo}@${sha}`;
 
@@ -50,8 +49,8 @@ export function getCachedPRChecks(key: string): PRChecks | undefined {
   return load().get(key);
 }
 
-export function cachePRChecks(key: string, checks: PRChecks) {
-  if (!isSettled(checks)) return;
+export function cachePRChecks(key: string, checks: PRChecks, emptyConfirmed = false) {
+  if (!isSettled(checks, emptyConfirmed)) return;
   const map = load();
   map.delete(key);
   map.set(key, { state: checks.state, checks: checks.checks });

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // defaultTimeout bounds a forge API call when the caller doesn't supply
@@ -27,6 +28,35 @@ const defaultTimeout = 10 * time.Second
 // misbehaving (or impersonated) forge from filling ocman's heap.
 const MaxResponseBytes int64 = 8 << 20
 
+// ResponseError retains safe HTTP metadata without the upstream body or token.
+type ResponseError struct {
+	Status     int
+	RateLimit  forge.RateLimit
+	RetryAfter string
+}
+
+func (e *ResponseError) Error() string { return fmt.Sprintf("forge upstream status %d", e.Status) }
+
+func (e *ResponseError) Unwrap() error {
+	if e.RateLimit.Limited {
+		return forge.ErrRateLimited
+	}
+	if e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden {
+		return forge.ErrUnauthenticated
+	}
+	return nil
+}
+
+// InstrumentClient preserves caller-owned transports and timeouts.
+func InstrumentClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = &http.Client{Timeout: defaultTimeout}
+	}
+	instrumented := *client
+	instrumented.Transport = otelhttp.NewTransport(client.Transport)
+	return &instrumented
+}
+
 // Get issues req using client (or a default 10s client when nil), reads
 // the full body, parses rate-limit headers, and returns body +
 // rate-limit info + HTTP status. Network and read errors surface as
@@ -34,7 +64,7 @@ const MaxResponseBytes int64 = 8 << 20
 // callers can distinguish "rate limited" from "totally failed".
 func Get(ctx context.Context, client *http.Client, req *http.Request) ([]byte, forge.RateLimit, int, error) {
 	if client == nil {
-		client = &http.Client{Timeout: defaultTimeout}
+		client = InstrumentClient(nil)
 	}
 	resp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -52,7 +82,13 @@ func Get(ctx context.Context, client *http.Client, req *http.Request) ([]byte, f
 		return nil, forge.RateLimit{}, resp.StatusCode,
 			fmt.Errorf("forge response too large (over %d bytes)", MaxResponseBytes)
 	}
-	rl := ParseRateLimit(resp.Header, resp.StatusCode == http.StatusTooManyRequests)
+	limited := resp.StatusCode == http.StatusTooManyRequests ||
+		(resp.StatusCode == http.StatusForbidden && (resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != ""))
+	rl := ParseRateLimit(resp.Header, limited)
+	// Preserve adapters' optional-check 404 and existing 429 metadata paths.
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusTooManyRequests {
+		return nil, rl, resp.StatusCode, &ResponseError{Status: resp.StatusCode, RateLimit: rl, RetryAfter: resp.Header.Get("Retry-After")}
+	}
 	return body, rl, resp.StatusCode, nil
 }
 
@@ -62,9 +98,11 @@ func Get(ctx context.Context, client *http.Client, req *http.Request) ([]byte, f
 // Both GitHub and Forgejo emit these headers.
 func ParseRateLimit(h http.Header, limited bool) forge.RateLimit {
 	if v := h.Get("Retry-After"); v != "" {
-		// Retry-After can be HTTP-date or delta-seconds; we accept seconds.
 		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 			return forge.RateLimit{Limited: limited, ResetAt: time.Now().Add(time.Duration(secs) * time.Second)}
+		}
+		if date, err := http.ParseTime(v); err == nil {
+			return forge.RateLimit{Limited: limited, ResetAt: date}
 		}
 	}
 	if v := h.Get("X-RateLimit-Reset"); v != "" {
