@@ -967,10 +967,18 @@ func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err != nil {
 		t.Fatal(err)
 	}
+	// Dispatch performs SQLite work; coverage under CI load can exceed one second.
+	// Assert the notification-driven launch, using the test's overall budget.
+	waitCtx := t.Context()
+	if deadline, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithDeadline(waitCtx, deadline)
+		defer cancel()
+	}
 	select {
 	case <-launcher.launched:
-	case <-time.After(time.Second):
-		t.Fatal("completion did not trigger dispatch")
+	case <-waitCtx.Done():
+		t.Fatalf("completion did not trigger dispatch: %v", waitCtx.Err())
 	}
 	if len(launcher.calls) != 2 {
 		t.Fatalf("launches = %#v", launcher.calls)
