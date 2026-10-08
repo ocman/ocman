@@ -38,7 +38,9 @@ it('keeps an explicit cache bypass after its request is aborted by hiding', asyn
   act(() => window.dispatchEvent(new CustomEvent(PR_CHECKS_REFRESH_EVENT)));
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+  expect(vi.mocked(resolvePreviews).mock.calls[1][2]?.aborted).toBe(true);
   act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(resolvePreviews).toHaveBeenCalledTimes(3);
   expect(resolvePreviews).toHaveBeenLastCalledWith(expect.any(String), 'local', expect.any(AbortSignal), true);
 });

@@ -166,7 +166,10 @@ export function useSidebarSessions({
           fetched: result,
           cached: openSessionFallbackRef.current,
           fetchById: async (sid) => (await getSession(sid, 1, 0, signal)).session,
-          onError: (err) => remoteLog.warn('sidebar open-session fallback fetch failed', { sessionID: id, error: err }),
+          onError: (err) => {
+            if (force) throw err;
+            remoteLog.warn('sidebar open-session fallback fetch failed', { sessionID: id, error: err });
+          },
         });
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         openSessionFallbackRef.current = resolved.cache;

@@ -24,6 +24,7 @@ export function MaintenanceSettings() {
   const [status, setStatus] = useState<MaintenanceStatus | null>(null);
   const [error, setError] = useState('');
   const refresh = useCallback((signal?: AbortSignal) => maintenance.status(signal).then((next) => {
+    if (signal?.aborted) return;
     setStatus(next);
     setError('');
   }).catch((err: unknown) => {
@@ -40,8 +41,9 @@ export function MaintenanceSettings() {
   const running = status?.job.running ?? false;
   useEffect(() => {
     if (!running || !visible) return;
-    const id = window.setInterval(() => { void refresh(); }, POLL_MS);
-    return () => window.clearInterval(id);
+    const controller = new AbortController();
+    const id = window.setInterval(() => { void refresh(controller.signal); }, POLL_MS);
+    return () => { controller.abort(); window.clearInterval(id); };
   }, [running, refresh, visible]);
 
   async function act(question: string, action: () => Promise<MaintenanceStatus>) {

@@ -43,6 +43,22 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it.each(['archive', 'next'] as const)('reports a forced current-session fallback failure for %s', async (action) => {
+    vi.stubGlobal('innerWidth', 390);
+    try {
+      const { store } = renderSessionPage({ sessionId: 'sess_1', sessions: [], storeOverrides: { getSession: vi.fn().mockRejectedValue(new Error('Fallback unavailable')) } });
+      const input = await screen.findByRole('textbox');
+      if (action === 'archive') {
+        await userEvent.type(input, '/archive');
+        fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      } else {
+        const dispatcher = renderHook(() => useShortcutDispatcher());
+        input.blur(); fireEvent.keyDown(window, { key: 'j', code: 'KeyJ', altKey: true }); dispatcher.unmount();
+      }
+      expect(await screen.findByText('Could not load session navigation: Fallback unavailable')).toBeInTheDocument();
+      expect(store.archiveSession).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
   it.each(['archive', 'next'] as const)('reports a failed cold navigation read for %s without redirecting', async (action) => {
     vi.stubGlobal('innerWidth', 390);
     try {

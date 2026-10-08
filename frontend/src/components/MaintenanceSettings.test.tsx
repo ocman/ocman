@@ -36,6 +36,26 @@ afterEach(() => {
 });
 
 describe('MaintenanceSettings', () => {
+  it('ignores a pre-hide poll that arrives after fresh completion on resume', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    let finish!: (value: MaintenanceStatus) => void;
+    m.status.mockResolvedValueOnce(status({}, { job: 'cleanup', running: true }))
+      .mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValue(status({}, { job: 'cleanup', running: false, finishedAt: 'now' }));
+    const view = render(<MaintenanceSettings />);
+    try {
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(screen.getByText('Finished.')).toBeInTheDocument();
+      await act(async () => { finish(status({}, { job: 'cleanup', running: true })); });
+      expect(screen.getByText('Finished.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Clean up' })).toBeEnabled();
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
   it('pauses job polling while hidden and refreshes on return', async () => {
     vi.useFakeTimers();
     let hidden = true;
