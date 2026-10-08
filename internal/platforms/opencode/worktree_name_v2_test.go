@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
@@ -12,6 +13,7 @@ import (
 // one itself. Through the ocv2 translation that means the naming session's
 // model is never switched (no POST /api/session/{id}/model).
 func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
+	shortenReadTimeout(t)
 	defer ocv2.SetInstalledV2(true)()
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		switch r.Method + " " + r.URL.Path {
@@ -25,8 +27,10 @@ func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
 			writeJSONBody(w, `{"data":{"id":"msg_0"}}`)
 		case "GET /api/session/active":
 			writeJSONBody(w, `{"data":{}}`)
+		case "POST /api/experimental/session/naming/wait":
+			time.Sleep(80 * time.Millisecond)
+			writeJSONBody(w, `{}`)
 		case "POST /api/session/naming/agent", "POST /api/session/naming/model",
-			"POST /api/experimental/session/naming/wait",
 			"POST /api/session/naming/interrupt", "DELETE /api/session/naming":
 			writeJSONBody(w, `{}`)
 		case "GET /api/session/naming/message":
