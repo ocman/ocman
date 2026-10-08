@@ -10,13 +10,17 @@ export interface SlashMenuVisibility {
   hasVariants: boolean;
 }
 
+export function reloadSlashCommands(sessionId: string, platform: string) {
+  window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: { sessionId, platform } }));
+}
+
 /**
  * The `/` autocomplete menu: fetches the session's command catalog
  * (built-ins merged with what the platform reports), tracks the open/
  * filter/highlight state driven by the textarea, and hides commands
  * whose feature isn't available on this session.
  */
-export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibility, provided?: SlashCommand[]) {
+export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibility, provided?: SlashCommand[], platform?: string) {
   const [fetched, setFetched] = useState<SlashCommand[]>([]);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
@@ -25,14 +29,26 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
 
   useEffect(() => {
     if (!sessionId) return;
-    let cancelled = false;
-    api.commands(sessionId).then((cmds) => {
-      if (!cancelled) setFetched(cmds || []);
-    }).catch(() => {
-      setFetched([]);
-    });
-    return () => { cancelled = true; };
-  }, [sessionId]);
+    let generation = 0;
+    const load = () => {
+      const current = ++generation;
+      api.commands(sessionId, undefined, platform).then((cmds) => {
+        if (current === generation) setFetched(cmds || []);
+      }).catch(() => {
+        if (current === generation) setFetched([]);
+      });
+    };
+    const reload = (event: Event) => {
+      const target = (event as CustomEvent<{ sessionId: string; platform?: string }>).detail;
+      if (target?.sessionId === sessionId && target.platform === platform) load();
+    };
+    load();
+    window.addEventListener('oc-slash-commands-reload', reload);
+    return () => {
+      generation++;
+      window.removeEventListener('oc-slash-commands-reload', reload);
+    };
+  }, [sessionId, platform]);
 
   // Platform commands come from the session's catalog, or from the caller
   // when there is no session yet; built-ins fill the rest.

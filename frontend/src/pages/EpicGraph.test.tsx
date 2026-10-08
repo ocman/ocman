@@ -15,15 +15,13 @@ vi.mock('./FactoryIssues', () => ({
 }));
 
 describe('workflow graph', () => {
-  it('opens implementation task details and keeps proposal previews read-only', () => {
+  it.each([false, true])('opens task details with preview=%s', (preview) => {
     const issues: FactoryIssue[] = [{ id: 'task', kind: 'implementation', epicId: 'epic', project: '/repo', title: 'Task', status: 'open' }];
-    const { rerender } = render(<EpicGraph issues={issues} />);
+    render(<EpicGraph issues={issues} preview={preview} />);
     const props = vi.mocked(ReactFlow).mock.calls.at(-1)![0];
     act(() => props.onNodeClick!({} as never, props.nodes![0]));
     fireEvent.click(screen.getByRole('button', { name: 'Close Task' }));
     expect(screen.queryByRole('button', { name: 'Close Task' })).not.toBeInTheDocument();
-    rerender(<EpicGraph issues={issues} preview />);
-    expect(vi.mocked(ReactFlow).mock.calls.at(-1)![0].onNodeClick).toBeUndefined();
   });
 
   it('draws decision provenance without a dependency arrow or implementation placeholder', () => {

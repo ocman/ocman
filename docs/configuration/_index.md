@@ -200,6 +200,17 @@ On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
   agent calls ocman's tools directly instead of through v2's Code Mode `execute` tool.
 - **Settings → Maintenance** is not available on v2; it only knows the v1 storage layout.
 
+Use `/reload-opencode` in an existing conversation to refresh the owning machine's
+OpenCode v2 skills and configuration without restarting its server. Running turns
+continue with fresh services at the next step boundary. Pending permission and
+question prompts are cancelled during the reload. The command refreshes the
+composer's agent, model, command and skill catalogs after completion. It does not
+launch a server if none is managed, and is unavailable on v1.
+
+Keep `/restart-opencode` for an unhealthy server, a binary upgrade, changed process
+environment or launch settings, or unwatched plugin dependencies. On v2 it
+restarts the machine-wide server, affecting every project on that machine.
+
 On v2, ocman resolves one absolute database path and exports it as `OPENCODE_DB` for the server,
 so both read and write the same file. An explicit `-db` wins (including the default path); otherwise
 `OPENCODE_DB` wins, then the default. Relative paths are resolved from ocman's working directory

@@ -164,12 +164,16 @@ func (s *Server) handleFileProxy(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, path, info.ModTime(), f)
 }
 
+// inertFileCSP sandboxes a served file with every capability off: an opaque
+// origin and no script, whatever the embedding iframe allows.
+const inertFileCSP = "sandbox; frame-ancestors 'self'"
+
 // setInertFileHeaders neutralises active content (SVG and HTML can carry
 // script) and lets only the dashboard itself frame the file, replacing the
 // global X-Frame-Options: DENY so HTML previews can render in an iframe.
 func setInertFileHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "sandbox; frame-ancestors 'self'")
+	w.Header().Set("Content-Security-Policy", inertFileCSP)
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 }
 

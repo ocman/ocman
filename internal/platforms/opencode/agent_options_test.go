@@ -101,7 +101,7 @@ func TestAgentNamesCanceledLeaderPreservesComposerCatalog(t *testing.T) {
 	leader := make(chan []string, 1)
 	go func() { leader <- AgentNames(ctx, u.Port(), "/repo") }()
 	<-started
-	key := u.Port() + "|" + scopedPath(context.Background(), u.Port(), "/agent", "/repo")
+	key := fmt.Sprintf("%d|%s|%s", catalogCache.generation(u.Port()), u.Port(), scopedPath(context.Background(), u.Port(), "/agent", "/repo"))
 	waiter := catalogCache.flight.DoChan(key, func() (any, error) {
 		t.Error("composer did not join the in-flight catalog read")
 		return nil, errFetchFailed
@@ -169,7 +169,7 @@ func TestAgentNamesBoundsUnderlyingReadsAfterCallersCancel(t *testing.T) {
 	}
 	for i := range callers {
 		path := scopedPath(context.Background(), f.Port(), "/agent", fmt.Sprintf("/scope/%d", i))
-		<-catalogCache.flight.DoChan(f.Port()+"|"+path, func() (any, error) { return nil, nil })
+		<-catalogCache.flight.DoChan(fmt.Sprintf("%d|%s|%s", catalogCache.generation(f.Port()), f.Port(), path), func() (any, error) { return nil, nil })
 	}
 	if observed > 8 {
 		t.Fatalf("canceled callers left %d underlying agent reads active, want at most eight", observed)
@@ -238,7 +238,7 @@ func TestDirectAgentCatalogCallerHonorsDeadline(t *testing.T) {
 	u, _ := url.Parse(server.URL)
 	defer func() {
 		close(release)
-		<-catalogCache.flight.DoChan(u.Port()+"|/agent", func() (any, error) { return nil, nil })
+		<-catalogCache.flight.DoChan(fmt.Sprintf("%d|%s|/agent", catalogCache.generation(u.Port()), u.Port()), func() (any, error) { return nil, nil })
 	}()
 	t.Cleanup(func() { catalogCache.invalidatePort(u.Port()) })
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)

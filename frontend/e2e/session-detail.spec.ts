@@ -1701,17 +1701,26 @@ test.describe('phone viewport', () => {
     expect(main!.width).toBeGreaterThanOrEqual(viewport.width);
   });
 
-  test('phone header keeps navigation, title, and actions separate', async ({ mockedPage: page }) => {
-    await page.goto(SESSION_URL);
+  for (const directory of [MOCK_SESSION.directory, '/home/user/projects/a-very-long-project-name-that-must-fit-the-phone-header']) {
+    test(`phone header keeps navigation, title, project settings, and actions separate for ${directory}`, async ({ mockedPage: page }) => {
+      await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) => route.fulfill({ json: {
+        session: { ...MOCK_SESSION, directory }, messages: [], parts: [], totalMessages: 0,
+      } }));
+      await page.goto(SESSION_URL);
 
-    await expect(page.getByRole('heading', { level: 1 }).getByText(MOCK_SESSION.title)).toBeVisible();
-    await expect(page.locator('.header-project')).toBeHidden();
-    const heading = await page.getByRole('heading', { level: 1 }).boundingBox();
-    const actions = await page.locator('.header-right').boundingBox();
-    expect(heading).not.toBeNull();
-    expect(actions).not.toBeNull();
-    expect(heading!.x + heading!.width).toBeLessThanOrEqual(actions!.x);
-  });
+      await expect(page.getByRole('heading', { level: 1 }).getByText(MOCK_SESSION.title)).toBeVisible();
+      const project = page.getByRole('button', { name: 'Project quick settings' });
+      await expect(project).toBeVisible();
+      await expect(project).toHaveAttribute('title', directory);
+      const heading = await page.getByRole('heading', { level: 1 }).boundingBox();
+      const actions = await page.locator('.header-right').boundingBox();
+      expect(heading).not.toBeNull();
+      expect(actions).not.toBeNull();
+      expect(heading!.x + heading!.width).toBeLessThanOrEqual(actions!.x);
+      const projectBox = await project.boundingBox();
+      expect(projectBox!.x + projectBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    });
+  }
 
   test('sessions drawer opens, selects a session, and auto-closes', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);

@@ -10,10 +10,12 @@ interface Props {
   files: ArtifactItem[];
   /** Download href for a file; the detail page asks the server for an attachment. */
   downloadHref?: (file: ArtifactItem) => string | undefined;
+  /** Opt-in script-running preview URL for HTML files; the public share view omits it. */
+  interactiveHref?: (file: ArtifactItem) => string | undefined;
 }
 
 /** Description, links and file previews of one artifact; shared by the detail page and the public share view. */
-export function ArtifactContent({ description, links, files, downloadHref = (f) => f.url }: Props) {
+export function ArtifactContent({ description, links, files, downloadHref = (f) => f.url, interactiveHref }: Props) {
   return <>
     {description && <section className="artifact-description oc-md"><MarkdownContent text={description} /></section>}
     {links.length > 0 && (
@@ -34,7 +36,7 @@ export function ArtifactContent({ description, links, files, downloadHref = (f) 
                 {download && <AnchorButton size="small" href={download} download={f.name} aria-label={`Download ${f.name}`}><i className="bi bi-download" aria-hidden="true" />Download</AnchorButton>}
               </ButtonGroup>}
             </header>
-            {f.url && <ArtifactPreview item={f} />}
+            {f.url && <ArtifactPreview item={f} interactiveUrl={interactiveHref?.(f)} />}
           </article>;
         })}
       </section>

@@ -1,7 +1,8 @@
-.oc-factory-plan-graph { display: block; width: 100%; max-height: 240px; padding: 8px; color: inherit; background: var(--bg); border: 1px solid var(--border); cursor: zoom-in; }
+.oc-factory-plan-graph { box-sizing: border-box; display: block; width: 100%; padding: 8px; color: inherit; background: var(--bg); border: 1px solid var(--border); }
 .oc-factory-plan-graph svg { display: block; width: 100%; max-height: 222px; }
 .oc-factory-plan-graph rect { stroke: currentColor; stroke-width: 2; fill: var(--bg-card); }
-.oc-factory-plan-graph g { color: var(--overlay1); }
+.oc-factory-plan-graph g { color: var(--overlay1); cursor: pointer; }
+.oc-factory-plan-graph g:focus-visible rect { stroke: var(--accent); }
 .oc-factory-plan-graph text { fill: var(--text); font-size: 18px; dominant-baseline: middle; }
 .oc-factory-plan-graph g.factory-node-box--ready { color: var(--teal); }
 .oc-factory-plan-graph g.factory-node-box--done { color: var(--green); }

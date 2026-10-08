@@ -1107,6 +1107,9 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakeImplementationLauncher{result: PlanningSession{Platform: "opencode", ID: "partial"}, err: errors.New("unavailable")}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	// Explicit Dispatch calls drive this test; background retries would repeat the partial launch.
+	svc.startOnce.Do(func() {})
+	t.Cleanup(svc.Close)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {

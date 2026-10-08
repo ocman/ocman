@@ -15,6 +15,7 @@ import { copyTextToClipboard, copyToClipboard } from '../../lib/clipboard';
 import { remoteLog } from '../../lib/remoteLog';
 import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
 import type { UsePendingSendResult } from './usePendingSend';
+import { reloadSlashCommands } from '../../components/assistant/useSlashMenu';
 
 export interface CommandSession {
   id: string;
@@ -50,6 +51,7 @@ export interface CommandContext {
   setCopyToastMessage: (message: string | null) => void;
   reloadCapabilities?: () => void;
   refreshThread?: () => Promise<void>;
+  isCurrent?: () => boolean;
 }
 
 export interface SlashCommand {
@@ -133,6 +135,30 @@ const restartOpencode: SlashCommand = {
     } catch (e) {
       setRestartToastMessage(null);
       remoteLog.error('Failed to restart OpenCode', e);
+      pending.fail(e instanceof Error ? e.message : 'Unknown error');
+    }
+  },
+};
+
+const reloadOpencode: SlashCommand = {
+  run: async ({ session, pending, setRestartToastMessage, reloadCapabilities, isCurrent }, args) => {
+    if (args.trim()) {
+      setRestartToastMessage('Usage: /reload-opencode');
+      return;
+    }
+    pending.begin('/reload-opencode');
+    setRestartToastMessage('Reloading OpenCode configuration...');
+    try {
+      await api.reloadOpencode(session.id, session.platform);
+      if (isCurrent && !isCurrent()) return;
+      pending.clear();
+      setRestartToastMessage('Reloaded OpenCode configuration');
+      reloadCapabilities?.();
+      reloadSlashCommands(session.id, session.platform);
+    } catch (e) {
+      if (isCurrent && !isCurrent()) return;
+      setRestartToastMessage(null);
+      remoteLog.error('Failed to reload OpenCode', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
   },
@@ -276,6 +302,7 @@ export const SLASH_COMMANDS: Readonly<Record<string, SlashCommand>> = {
   worktree,
   wt: worktree,
   'restart-opencode': restartOpencode,
+  'reload-opencode': reloadOpencode,
   details,
   thinking,
   export: exportMarkdown,

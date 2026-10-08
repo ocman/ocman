@@ -78,7 +78,7 @@ import { SessionActionsMenu } from './SessionActionsMenu';
 import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
 import { useMobilePanel } from './useMobilePanel';
 import { SessionModals, type MessageJumpHistory } from './SessionModals';
-import { SessionComposerSlot } from './SessionComposerSlot';
+import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
 import { useSessionModal } from './useSessionModal';
 import { SessionSidebar } from './SessionSidebar';
 import { useSessionActions } from './useSessionActions';
@@ -790,6 +790,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [lastMsg, session?.status, setAwaitingAssistantResponse]);
 
   const hasPendingPrompt = pendingPermission !== null || pendingQuestion !== null;
+  const showPendingPrompt = !!(pendingPermission && caps.respondPermission || pendingQuestion && portAvailable && caps.respondQuestion);
   const isRunning = isSessionRunning(lastMsg, session?.status, awaitingAssistantResponse);
 
   // Keep the ref handleShell reads in sync, and flush any queued
@@ -1006,25 +1007,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         id: messageId,
                         tick: Date.now(),
                       })}
-                      permission={pendingPermission && caps.respondPermission ? {
-                        permission: pendingPermission,
-                        onReply: handlePermissionReply,
-                        disabled: answeringPermission,
-                        error: permissionError,
-                        autoApproveCapable: caps.autoApprove,
-                        autoApproveEnabled: autoApprove.enabled,
-                        autoApproveChecking,
-                        judgeStartsAt,
-                        judgeReasoning,
-                        onEnableAutoApprove: () => autoApprove.setEnabled(true),
-                      } : null}
-                      question={pendingQuestion && portAvailable && caps.respondQuestion ? {
-                        question: pendingQuestion,
-                        onReply: handleQuestionReply,
-                        onReject: handleQuestionReject,
-                        disabled: answeringQuestion,
-                        error: questionError,
-                      } : null}
+                      pendingPrompt={showPendingPrompt}
                       composer={caps.composer ? {
                         composerRef,
                         onSend: handleSend,
@@ -1075,7 +1058,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                     />
                     </>
                   )}
-                  footer={showSseDebug ? (
+                  footer={showPendingPrompt || showSseDebug ? (
                     <>
                       {showSseDebug && (
                         <details className="oc-sse-debug">
@@ -1090,6 +1073,29 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           </div>
                         </details>
                       )}
+                      <ErrorBoundary name="session:prompt" inline resetKey={session.id}>
+                        <SessionPromptSlot
+                          permission={pendingPermission && caps.respondPermission ? {
+                            permission: pendingPermission,
+                            onReply: handlePermissionReply,
+                            disabled: answeringPermission,
+                            error: permissionError,
+                            autoApproveCapable: caps.autoApprove,
+                            autoApproveEnabled: autoApprove.enabled,
+                            autoApproveChecking,
+                            judgeStartsAt,
+                            judgeReasoning,
+                            onEnableAutoApprove: () => autoApprove.setEnabled(true),
+                          } : null}
+                          question={pendingQuestion && portAvailable && caps.respondQuestion ? {
+                            question: pendingQuestion,
+                            onReply: handleQuestionReply,
+                            onReject: handleQuestionReject,
+                            disabled: answeringQuestion,
+                            error: questionError,
+                          } : null}
+                        />
+                      </ErrorBoundary>
                     </>
                   ) : undefined}
                 />

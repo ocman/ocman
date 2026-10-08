@@ -305,6 +305,9 @@ type Host interface {
 	// Owner-routed via Router.ForDir exactly like EnsureProjectOpencode, so
 	// it works for local and remote native instances (AD-7).
 	RestartProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
+	// ReloadOpencode refreshes the existing v2 machine server without restarting it.
+	// Running turns continue; pending permissions and questions are cancelled.
+	ReloadOpencode(ctx context.Context) error
 
 	// ManagedOpencodes lists every project with a managed OpenCode instance.
 	ManagedOpencodes(ctx context.Context) ([]ManagedOpencode, error)

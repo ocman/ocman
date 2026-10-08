@@ -143,6 +143,9 @@ func parseDuration(s string) (int64, bool) {
 // deriveSessionNotice returns a SessionNotice for an error or an active
 // provider retry whose latest error matches a known transient pattern.
 func deriveSessionNotice(s db.Session) *db.SessionNotice {
+	if s.Notice != nil {
+		return s.Notice
+	}
 	if s.Status != db.StatusError && s.Status != db.StatusBusy {
 		return nil
 	}

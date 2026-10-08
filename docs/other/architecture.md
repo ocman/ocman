@@ -105,7 +105,7 @@ flowchart LR
   provider tokens and account identifiers never reach the browser.
 - **Native plugin executables.** Startup and explicit rescans describe direct
   executables from the local plugin directory. Each describe has a fresh token,
-  minimal environment, bounded output, and a three-second deadline. Duplicate
+  minimal environment, bounded output, and a fifteen-second deadline. Duplicate
   identities conflict; changed binaries lose approval. Discovery itself executes
   trusted code. Grants minimize brokered context, not operating-system access.
   See [Plugins](../features/plugins.md) for installation and operations.
@@ -165,8 +165,8 @@ flowchart TD
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Server -->|Factory usage via platforms.UsageReader| OC
-    Registry -->|session detail + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
-    Router --> Local[hostsvc/local + composerattachments<br/>host operations + attachment cache]
+    Registry -->|session detail, summary + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
+    Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
     Inbox --> State
@@ -181,6 +181,13 @@ flowchart TD
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux, terminal, whisper, auto-approve and routine ticks.
+- **Session summary reads.** Pinned sessions outside the recent window use
+  `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
+  return the owner-local row through `SessionSummary` and stamp its compound
+  platform on the hub. Older owners fall back to session detail. Session-list
+  SSE invalidations trail by 150 ms with a 500 ms maximum wait, finish existing
+  reads before refreshing, and retain one follow-up when another event arrives
+  during the refresh.
 - **Factory usage.** `/api/factory/epics/{id}/usage` joins durable attempt
   identities to `platforms.UsageReader`. The local OpenCode adapter reads
   descendant message metadata and reuses token and pricing calculations.
@@ -290,7 +297,15 @@ flowchart TD
   an opaque `ocruntime.Instance`. The owning host may use discovery once to
   adopt a healthy instance that started before its managed registry entry
   existed. `RestartProjectOpencode` stops and relaunches the tracked
-  instance.
+  instance. Owner-local replacement callbacks use the read-only
+  `ManagedRootReader.ManagedOpencodeRoot` view of that same main-checkout
+  identity, so external linked worktrees share membership and nested independent
+  repositories do not. This view neither launches a server nor requires a new RPC.
+  `ReloadOpencode` requires a readable, matching server-default v2
+  location directory before it calls the owning machine's v2
+  `/api/location/reload` endpoint through the same Host/gRPC seam, retaining
+  the process and running turns while refreshing configuration and the owner's
+  cached catalogs. Pending permission and question prompts are cancelled.
 - **internal/composerattachments.** Owner-local attachment cache storage and
   seven-day cleanup. HTTP uploads stream through `Host.SaveComposerAttachment`;
   remote owners receive a metadata packet followed by bounded byte chunks over
@@ -522,7 +537,17 @@ flowchart TD
   cached project setting and refreshes mounted composers. Reconnecting SSE also
   clears the cache to recover missed saves; in-flight reads cannot restore stale
   settings after invalidation. The preference is stored in the hub's `state.db`.
+  The header's project button opens `ProjectQuickSettings`, which reads the
+  directory catalog without launching an instance and saves model, agent, and
+  worktree defaults through `/api/project/settings`. These defaults use a
+  separate owner-and-project-root setting key, preserving the ordered model
+  fallback list. New conversations apply them after preparation; explicit
+  composer selections win, including selections made while preparation waits.
 - **Selection and overlays.** `SegmentedControl` uses native radios for filters.
+  `Popover` shares the usage popover's compact, square-cornered shell with
+  project quick settings. It portals to the document body, focuses the panel,
+  handles outside-click and Escape dismissal, and restores trigger focus on
+  Escape. Each caller positions the shell beside its trigger.
   `Tabs` and `DropdownMenu` wrap Radix UI for keyboard navigation, focus, and
   accessible associations, styled with the app's CSS. Tabs activate on click,
   Enter, or Space and unmount inactive content by default. Menu actions that open

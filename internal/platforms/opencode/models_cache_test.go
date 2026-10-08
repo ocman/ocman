@@ -653,6 +653,7 @@ func resetSessionsCache() {
 	sessionsFullDirty = false
 	lastRefreshEnd = time.Time{}
 	lastRefreshCost = 0
+	lastIncrementalRefresh = time.Time{}
 	lastFullRefresh = time.Time{}
 	sessionsMu.Unlock()
 }

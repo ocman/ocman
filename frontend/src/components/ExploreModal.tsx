@@ -49,6 +49,12 @@ function RepoTree({ files, onSelect }: { files: string[]; onSelect: (path: strin
 }
 
 function FileBody({ file }: { file: RepoFileContent }) {
+  const [imageError, setImageError] = useState(false);
+  if (file.mimeType?.startsWith('image/')) {
+    if (file.truncated) return <EmptyState>Image exceeds the 10 MiB preview limit.</EmptyState>;
+    if (imageError) return <EmptyState>Unable to display this image.</EmptyState>;
+    return <div className="oc-explore-image"><img src={`data:${file.mimeType};base64,${file.content}`} alt={file.path} onError={() => setImageError(true)} /></div>;
+  }
   if (file.binary) return <EmptyState>Binary file, not shown.</EmptyState>;
   return (
     <>
@@ -90,7 +96,7 @@ export function ExploreModal({ dir, remoteId, onClose }: { dir: string; remoteId
             : <LoadingState className="oc-explore-tree">Loading files…</LoadingState>}
         </div>
         <div className="oc-diff-fs-diff">
-          {file.data ? <FileBody file={file.data} />
+          {file.data ? <FileBody key={file.data.path} file={file.data} />
             : file.error ? <EmptyState>{file.error}</EmptyState>
             : file.loading ? <LoadingState>Loading…</LoadingState>
             : <EmptyState>Select a file to view it.</EmptyState>}

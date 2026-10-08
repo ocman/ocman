@@ -5,6 +5,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -18,12 +19,20 @@ import (
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
-		LaunchTmux:   s.gateLaunchTmux(tmux.LaunchOpencode),
-		Runtime:      s.gatedRuntime(),
-		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
+		LaunchTmux:            s.gateLaunchTmux(tmux.LaunchOpencode),
+		Runtime:               s.gatedRuntime(),
+		BeforeReplace:         s.recordOpencodeReplacement,
+		BeforeStop:            s.beginOpencodeReplacementStopWithInstance,
+		AfterStop:             s.confirmOpencodeReplacement,
+		ReplacementStopped:    s.opencodeReplacementStopped,
+		ReplacementStopping:   s.opencodeReplacementStopping,
+		CancelReplacementStop: s.cancelOpencodeReplacementStop,
+		DiscoverPort:          opencode.DiscoverOpenCodePortFresh,
 		// OpenCode v2: one server per machine, published to discovery.
 		SetMachineServer: opencode.SetMachineServer,
 		ManagedStore:     managedStoreOrNil(s.stateDB),
+		OpenCodeAuth:     func() ocapi.Auth { return s.openCodeAuth },
+		OpenCodeReloaded: opencode.InvalidateCatalogsForPort,
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/gRPC).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
@@ -44,6 +53,15 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		TermAttach:       term.AttachLocalPTY,
 		StateDir:         stateDirOrEmpty(s.stateDB),
 	})
+}
+
+// Runtime rows can be absent after a failed confirmation. The owner's durable
+// replacement phase, not a cleanup handle, decides whether to reconcile first.
+func (s *Server) opencodeReplacementStopped(ctx context.Context, root string) (bool, error) {
+	if s.stateDB == nil {
+		return false, nil
+	}
+	return s.stateDB.ReplacementStopped(ctx, "opencode", root)
 }
 
 // stateDirOrEmpty returns the ocman data directory when a state DB is

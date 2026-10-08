@@ -81,9 +81,8 @@ func TestRestartProjectOpencode_NoTrackedInstance(t *testing.T) {
 	}
 }
 
-// TestRestartProjectOpencode_SoftFailsOnStopError: a Stop error must not
-// block the relaunch — the restart still returns a fresh healthy instance.
-func TestRestartProjectOpencode_SoftFailsOnStopError(t *testing.T) {
+// A failed Stop must preserve the old instance rather than start a duplicate.
+func TestRestartProjectOpencode_PreservesInstanceOnStopError(t *testing.T) {
 	repo := initRepo(t)
 	var launched int32
 	rt := &fakeRuntime{stopErr: errors.New("boom")}
@@ -102,14 +101,14 @@ func TestRestartProjectOpencode_SoftFailsOnStopError(t *testing.T) {
 		t.Fatalf("ensure: %v", err)
 	}
 	res, err := h.RestartProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
-	if err != nil {
-		t.Fatalf("restart should soft-fail on Stop error, got: %v", err)
+	if !errors.Is(err, rt.stopErr) {
+		t.Fatalf("restart should report Stop error, got: %v", err)
 	}
 	if rt.stopCount() != 1 {
 		t.Errorf("Stop called %d times; want 1", rt.stopCount())
 	}
-	if !res.Launched || res.Endpoint != "http://127.0.0.1:9002" {
-		t.Errorf("result = %+v; want the fresh relaunched instance", res)
+	if res != nil || rt.launchCount() != 1 {
+		t.Errorf("result = %+v launches=%d; old instance must remain the only launch", res, rt.launchCount())
 	}
 }
 

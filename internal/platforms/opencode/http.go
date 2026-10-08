@@ -189,7 +189,14 @@ func logFetchFailure(err error, fields log.Fields, msg string) {
 // postJSON performs a POST with a JSON body. Returns nil on 2xx,
 // an error describing the upstream status otherwise.
 func postJSON(ctx context.Context, port, path string, payload []byte) error {
-	return sendJSON(ctx, http.MethodPost, port, path, payload)
+	return sendJSONWithClient(ctx, openCodeClient, http.MethodPost, port, path, payload)
+}
+
+// postJSONLLM is postJSON for calls that block until a model replies
+// (slash commands, summarize). It bypasses the 10s openCodeClient
+// timeout; the caller's context is the budget.
+func postJSONLLM(ctx context.Context, port, path string, payload []byte) error {
+	return sendJSONWithClient(ctx, openCodeLLMClient, http.MethodPost, port, path, payload)
 }
 
 func postJSONForDirectory(ctx context.Context, port, path, directory string, payload []byte) error {
@@ -206,13 +213,24 @@ func patchJSON(ctx context.Context, port, path string, payload []byte) error {
 // response body on 2xx. Error handling mirrors sendJSON (4xx wraps a
 // *platforms.UpstreamError).
 func postJSONReturning(ctx context.Context, port, path string, payload []byte) ([]byte, error) {
+	return postJSONReturningWithClient(ctx, openCodeClient, port, path, payload)
+}
+
+// postJSONReturningLLM is postJSONReturning for calls that block until
+// a model replies (the worktree title agent). It bypasses the 10s
+// openCodeClient timeout; the caller's context is the budget.
+func postJSONReturningLLM(ctx context.Context, port, path string, payload []byte) ([]byte, error) {
+	return postJSONReturningWithClient(ctx, openCodeLLMClient, port, path, payload)
+}
+
+func postJSONReturningWithClient(ctx context.Context, client *http.Client, port, path string, payload []byte) ([]byte, error) {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := openCodeClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("opencode %s: %w", path, err)
 	}
@@ -246,13 +264,17 @@ func postJSONReturning(ctx context.Context, port, path string, payload []byte) (
 // 5xx and transport errors fall through as plain wrapped errors and
 // land in the default "platform unreachable" bucket on the way out.
 func sendJSON(ctx context.Context, method, port, path string, payload []byte) error {
+	return sendJSONWithClient(ctx, openCodeClient, method, port, path, payload)
+}
+
+func sendJSONWithClient(ctx context.Context, client *http.Client, method, port, path string, payload []byte) error {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
 	req, err := http.NewRequestWithContext(ctx, method, apiURL, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := openCodeClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("opencode %s: %w", path, err)
 	}

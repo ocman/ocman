@@ -45,6 +45,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'rename', description: 'Rename this session' },
   { name: 'routines', description: 'Insert a saved routine prompt (opens a picker)' },
   { name: 'redo', description: 'Restore messages and file changes reverted by /undo' },
+  { name: 'reload-opencode', description: 'Reload OpenCode v2 skills and configuration; running turns continue, pending permissions/questions are cancelled' },
   { name: 'restart-opencode', description: 'Restart managed OpenCode after sessions are idle; add all and/or now' },
   { name: 'share', description: 'Copy this ocman session URL to the clipboard (reachable only by clients that can access this ocman instance)' },
   { name: 'skills', description: 'Insert a skill command into the prompt (opens a picker)' },

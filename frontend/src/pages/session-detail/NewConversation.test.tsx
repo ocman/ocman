@@ -99,6 +99,43 @@ describe('NewConversation', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
   });
 
+  it('uses project startup defaults and respects explicit composer choices', async () => {
+    mocks.settings.mockResolvedValue({ models: ['prov/fallback'], off: false, defaultAgent: 'plan',
+      defaults: { model: 'prov/start', agent: 'plan', worktree: 'current' } });
+    mount();
+    await ready();
+    expect(composer.selectedModel).toBe('prov/start');
+    expect(composer.activeAgent).toBe('plan');
+    expect(composer.target).toBe('current');
+    act(() => composer.onModelChange!('prov/manual'));
+    act(() => composer.onAgentChange!('build'));
+    act(() => composer.onTargetChange!('worktree'));
+    await act(() => composer.onSend!('hello'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: true,
+      send: expect.objectContaining({ model: 'prov/manual', agent: 'build' }) }));
+  });
+
+  it('waits for project defaults when submitted before preparation finishes', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.settings.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    mount();
+    let submission!: Promise<void>;
+    act(() => { submission = composer.onSend!('hello') as Promise<void>; });
+    await act(async () => finish({ models: [], off: false, defaultAgent: 'plan', defaults: { model: 'prov/start', agent: 'plan', worktree: 'current' } }));
+    await act(() => submission);
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false,
+      send: expect.objectContaining({ model: 'prov/start', agent: 'plan' }) }));
+  });
+
+  it('refreshes inherited picks after project quick settings are saved', async () => {
+    mount();
+    await ready();
+    mocks.settings.mockResolvedValue({ models: [], off: false, defaultAgent: 'plan', defaults: { model: 'prov/updated', agent: 'plan', worktree: 'current' } });
+    act(() => clearSettingsCache());
+    await waitFor(() => expect(composer.selectedModel).toBe('prov/updated'));
+    expect(composer.target).toBe('current');
+  });
+
   it('keeps base lookup failures retryable instead of assuming worktrees are available', async () => {
     mocks.baseRef.mockRejectedValueOnce(new Error('base lookup offline'));
     mount();

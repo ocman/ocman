@@ -54,8 +54,7 @@ describe('Factory human action cards', () => {
       externalIssues: [{ ...issue, id: 'other.1', epicId: 'other', title: 'External blocker' }],
     } }]);
     renderCard('[[ocman:card type=factory-epic epic=ship action=approve_plan]]');
-    const thumbnail = await screen.findByRole('button', { name: 'Expand plan graph' });
-    expect(screen.getByRole('img', { name: 'Plan graph with 4 steps' })).toBeInTheDocument();
+    const thumbnail = await screen.findByRole('group', { name: 'Plan graph with 4 steps' });
     expect(screen.getByText('New parent', { selector: 'text' })).toBeInTheDocument();
     expect(screen.getByText('other: External blocker', { selector: 'title' })).toBeInTheDocument();
     expect(thumbnail.querySelectorAll('line')).toHaveLength(2);
@@ -67,8 +66,7 @@ describe('Factory human action cards', () => {
     vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'old', manifest: manifest('Old API') }, { revision: 2, contentHash: 'hash', manifest: manifest('Build API') }, { revision: 3, contentHash: 'new', manifest: manifest('New API') }]);
     renderCard('[[ocman:card type=factory-epic epic=ship action=approve_plan]]');
     const thumbnail = await screen.findByRole('button', { name: 'Expand plan graph' });
-    expect(screen.getByRole('img', { name: 'Plan graph with 2 steps' })).toBeInTheDocument();
-    expect(thumbnail.querySelectorAll('line')).toHaveLength(1);
+    expect(screen.getByRole('group', { name: 'Plan graph with 2 steps' }).querySelectorAll('line')).toHaveLength(1);
     expect(screen.getByText('Build API', { selector: 'text' })).toBeInTheDocument();
     expect(screen.queryByText(/Old API|New API/)).not.toBeInTheDocument();
     fireEvent.click(thumbnail);

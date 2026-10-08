@@ -271,17 +271,19 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 		platformID = remote.CompoundPlatformID(host.RemoteID(), platformID)
 	}
 	sessionID := run.TargetSessionID
-	created := false
+	link := func(id string) error {
+		return s.store.LinkRoutineRun(ctx, run.ID, platformID, id, s.now().UnixMilli(), run.SessionMode == SessionReuse)
+	}
 	if sessionID == "" {
 		var rules []platforms.PermissionRule
 		if err := json.Unmarshal([]byte(routine.PermissionRulesJSON), &rules); err != nil || rules == nil {
 			rules = []platforms.PermissionRule{}
 		}
-		result, err := s.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: run.RoutineName + " " + s.now().Format("2006-01-02 15:04"), Port: ensured.Port()}, rules)
+		result, err := s.sessions.CreateRoutine(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: run.RoutineName + " " + s.now().Format("2006-01-02 15:04"), Port: ensured.Port()}, rules, run.RoutineID, link)
 		if err != nil {
 			return s.failDispatch(ctx, run, err)
 		}
-		sessionID, created = result.ID, true
+		sessionID = result.ID
 	} else {
 		platform, ok := s.platforms.Get(platforms.ID(platformID))
 		if !ok {
@@ -294,9 +296,9 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 		if filepath.Clean(detail.Session.Directory) != filepath.Clean(run.Directory) {
 			return s.failDispatch(ctx, run, fmt.Errorf("routine session %q does not belong to %q", sessionID, run.Directory))
 		}
-	}
-	if err := s.store.LinkRoutineRun(ctx, run.ID, platformID, sessionID, s.now().UnixMilli(), created && run.SessionMode == SessionReuse); err != nil {
-		return s.failDispatch(ctx, run, fmt.Errorf("linking routine session: %w", err))
+		if err := s.store.LinkRoutineRun(ctx, run.ID, platformID, sessionID, s.now().UnixMilli(), false); err != nil {
+			return s.failDispatch(ctx, run, fmt.Errorf("linking routine session: %w", err))
+		}
 	}
 	if err := s.sessions.SendMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Agent: run.Agent, Model: run.Model}); err != nil {
 		return s.failDispatch(ctx, run, err)

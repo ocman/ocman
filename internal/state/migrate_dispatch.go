@@ -8,7 +8,8 @@ import (
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
 // v102 adds viewer-scoped Inbox item pins.
-const latestSchemaVersion = 111
+// v113 indexes running routine runs in scheduler polling order.
+const latestSchemaVersion = 119
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -331,6 +332,46 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "webhook_delivery", "query_json", "TEXT NOT NULL DEFAULT ''")
+	case 112:
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='seen_session')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		return addColumnIfMissing(tx, "seen_session", "interrupted", "INTEGER NOT NULL DEFAULT 0")
+	case 113:
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='routine_run')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		_, err := tx.Exec(`CREATE INDEX IF NOT EXISTS routine_run_running_idx
+			ON routine_run (created_at, id) WHERE state = 'running'`)
+		return err
+	case 114:
+		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS session_interruption (
+			platform TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			observed_at INTEGER NOT NULL,
+			message TEXT NOT NULL,
+			PRIMARY KEY (platform, session_id, message_id)
+		)`)
+		return err
+	case 115:
+		if err := addColumnIfMissing(tx, "session_interruption", "replacement_root", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+		return addColumnIfMissing(tx, "session_interruption", "confirmed", "INTEGER NOT NULL DEFAULT 1 CHECK (confirmed IN (0, 1))")
+	case 116:
+		return migrateToV116(tx)
+	case 117:
+		if err := addColumnIfMissing(tx, "session_replacement", "stop_started_at", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+		return addColumnIfMissing(tx, "session_replacement", "stop_baseline_json", "TEXT NOT NULL DEFAULT '{}'")
+	case 118:
+		return addColumnIfMissing(tx, "session_replacement", "stop_runtime_json", "TEXT NOT NULL DEFAULT ''")
+	case 119:
+		return migrateToV119(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

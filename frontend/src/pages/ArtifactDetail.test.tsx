@@ -40,6 +40,7 @@ function renderPage() {
 describe('ArtifactDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(api.sessions).mockResolvedValue([] as never);
     vi.mocked(artifactsApi.get).mockResolvedValue(artifact);
     vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(url.endsWith('/1') ? '# Heading' : 'package main')));
@@ -55,12 +56,44 @@ describe('ArtifactDetail', () => {
     const frame = screen.getByTestId('artifact-preview-html');
     expect(frame).toHaveAttribute('src', '/api/artifacts/a1/files/4');
     expect(frame).toHaveAttribute('sandbox', '');
+    expect(screen.getByText(/^Scripts are disabled in this preview\. Running them keeps the page away from ocman, but it can still navigate itself to another site\.$/)).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Heading' })).toBeInTheDocument();
     expect(await screen.findByTestId('artifact-preview-text')).toHaveTextContent('package main');
     const zip = screen.getAllByTestId('artifact-file')[3];
     expect(within(zip).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/api/artifacts/a1/files/3');
     expect(within(zip).getByRole('link', { name: 'Download bundle.zip' })).toHaveAttribute('href', '/api/artifacts/a1/files/3?download=1');
     await waitFor(() => expect(screen.getByText('missing')).toBeInTheDocument());
+  });
+
+  it('runs HTML scripts only after opting in, and stops them again', async () => {
+    let view = renderPage();
+    const run = await screen.findByRole('button', { name: 'Run scripts' });
+    await userEvent.click(run);
+    let frame = screen.getByTestId('artifact-preview-html');
+    expect(frame).toHaveAttribute('src', '/api/artifacts/a1/files/4/interactive');
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+    expect(screen.getByText(/no access to ocman\. Fetches and external resources are blocked, but the page can still navigate itself to another site\./)).toBeInTheDocument();
+
+    // Remembered for this file across visits until stopped.
+    view.unmount();
+    view = renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop scripts' }));
+    frame = screen.getByTestId('artifact-preview-html');
+    expect(frame).toHaveAttribute('src', '/api/artifacts/a1/files/4');
+    expect(frame).toHaveAttribute('sandbox', '');
+    view.unmount();
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Run scripts' })).toBeInTheDocument();
+  });
+
+  it('keeps the opt-in for the visit when storage is unavailable', async () => {
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Run scripts' }));
+    expect(screen.getByTestId('artifact-preview-html')).toHaveAttribute('sandbox', 'allow-scripts');
+    await userEvent.click(screen.getByRole('button', { name: 'Stop scripts' }));
+    expect(screen.getByTestId('artifact-preview-html')).toHaveAttribute('sandbox', '');
+    set.mockRestore();
   });
 
   it('deletes after confirmation and returns to the list', async () => {

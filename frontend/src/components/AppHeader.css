@@ -50,7 +50,7 @@
   .app-header h1 { flex: 1; overflow: hidden; }
   .header-navigation-slot { flex-shrink: 0; }
   .header-right { max-width: none; flex-shrink: 0; }
-  .header-project { display: none; }
+  .header-project { max-width: 28vw; }
   .mobile-nav-toggle {
     display: inline-flex;
     align-items: center;

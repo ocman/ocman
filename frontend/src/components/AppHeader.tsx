@@ -8,6 +8,7 @@ import { PlatformBadge } from './PlatformBadge';
 import { HostBadge } from './HostBadge';
 import { IconButton } from './IconButton';
 import { ExploreModal } from './ExploreModal';
+import { ProjectQuickSettings } from './ProjectQuickSettings';
 import './AppHeader.css';
 
 export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
@@ -26,7 +27,9 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
   if (projectDir?.split('/').pop()) {
     breadcrumb = (
       <>
-        <ProjectLabel path={projectDir} />
+        <ProjectQuickSettings key={JSON.stringify([projectDir, location.search])} directory={projectDir} remoteId={new URLSearchParams(location.search).get('remoteId') || 'local'}>
+          <ProjectLabel path={projectDir} />
+        </ProjectQuickSettings>
         {path.endsWith('/worktrees') && ' / Worktrees'}
         {path.endsWith('/settings') && ' / Settings'}
       </>
@@ -73,7 +76,10 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
           />
         )}
         {routeSessionId && sessionInfo.sessionProject && (
-          <span
+          <ProjectQuickSettings
+            key={JSON.stringify([sessionInfo.sessionRemoteId, sessionInfo.sessionProjectFull, routeSessionId])}
+            directory={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
+            remoteId={sessionInfo.sessionRemoteId}
             className="header-project"
             title={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
           >
@@ -83,7 +89,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
               stale={sessionInfo.sessionRemoteStale}
             />
             {sessionInfo.sessionProject}
-          </span>
+          </ProjectQuickSettings>
         )}
         {/* SessionDetail portals its per-route action buttons here. */}
         <div id="header-actions-slot" className="header-actions" />

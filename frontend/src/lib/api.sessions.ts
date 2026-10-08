@@ -9,8 +9,8 @@ export const sessionApi = {
     fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
   sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) =>
     fetchJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
-  // peek avoids unarchiving a session merely to inspect it.
-  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = false) => {
+  // Reads preserve archives; only a navigation fetch explicitly opens a session.
+  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = true) => {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (platform) query.set('platform', platform);
     if (peek) query.set('peek', '1');
@@ -33,8 +33,8 @@ export const sessionApi = {
     fetchJSON<{ tasks: Record<string, TaskSessionData> }>(`/api/session/${encodeURIComponent(sessionId)}/tasks?ids=${taskIds.map(encodeURIComponent).join(',')}`, signal),
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived = true) =>
     postJSON<{ ok: boolean }>('/api/session/archive', { platform, sessionId, timeUpdated, archived }),
-  markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) =>
-    postJSON<{ ok: boolean }>('/api/session/seen', { platform, sessionId, timeUpdated }),
+  markSessionSeen: (platform: string, sessionId: string, timeUpdated: number, interrupted?: boolean) =>
+    postJSON<{ ok: boolean }>('/api/session/seen', { platform, sessionId, timeUpdated, ...(interrupted ? { interrupted } : {}) }),
   pinSession: (platform: string, sessionId: string, pinned: boolean) =>
     postJSON<{ ok: boolean }>('/api/session/pin', { platform, sessionId, pinned }),
   sessionModels: (sessionId: string, platform?: string) =>
@@ -146,7 +146,8 @@ export const sessionApi = {
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/compact`, { providerID, modelID }, { parseJSON: false }),
   forkSession: (sessionId: string, messageID?: string) => postJSON<{ id: string }>(`/api/session/${encodeURIComponent(sessionId)}/fork`, { messageID: messageID ?? '' }),
   moveSession: (sessionId: string, directory: string) => postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/move`, { directory }, { parseJSON: false }),
-  commands: (sessionId: string, signal?: AbortSignal) => fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands`, signal),
+  commands: (sessionId: string, signal?: AbortSignal, platform?: string) =>
+    fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands${queryString({ platform })}`, signal),
   agents: (sessionId: string, signal?: AbortSignal, platform?: string) =>
     fetchJSON<AgentInfo[]>(`/api/session/${encodeURIComponent(sessionId)}/agents${queryString({ platform })}`, signal),
   executeCommand: (sessionId: string, command: string, args: string, model?: string, agent?: string) =>
@@ -159,6 +160,8 @@ export const sessionApi = {
     const suffix = query.size ? `?${query}` : '';
     return postJSON(`/api/session/${encodeURIComponent(sessionId)}/restart-opencode${suffix}`, undefined);
   },
+  reloadOpencode: (sessionId: string, platform: string): Promise<void> =>
+    postJSON(`/api/session/${encodeURIComponent(sessionId)}/reload-opencode${queryString({ platform })}`, undefined),
   runShell: (sessionId: string, command: string, agent?: string) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/shell`, { command, agent }, { parseJSON: false }),
   renameSession: (sessionId: string, title: string) =>

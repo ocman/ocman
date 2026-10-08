@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -64,8 +63,7 @@ func makeTempDB(t *testing.T) string {
 
 // TestOpen_ConfiguresConnectionPool verifies that Open returns a
 // database with a bounded pool. The configured cap is enforced by
-// firing more concurrent queries than the cap and observing that
-// at least one of them ends up in WaitCount > 0.
+// holding the capped connections and observing that another acquisition waits.
 //
 // This is the behavioural test of the "ocman shouldn't stockpile
 // SQLite connections" contract — without this cap, the previous
@@ -82,42 +80,53 @@ func TestOpen_ConfiguresConnectionPool(t *testing.T) {
 	}
 	defer d.Close()
 
-	// Fire more concurrent queries than the pool cap. Each query
-	// holds a connection while it sleeps in SQLite (we use a small
-	// busy-loop CTE so the work is real, not just sleep).
-	const concurrency = maxOpenReadConns + 4
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			rows, err := d.db.QueryContext(ctx, `
-				WITH RECURSIVE c(x) AS (
-					SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 50000
-				)
-				SELECT COUNT(*) FROM c
-			`)
-			if err != nil {
-				return
-			}
-			defer rows.Close()
-			for rows.Next() {
-				var n int
-				_ = rows.Scan(&n)
-			}
-		}()
+	if got := d.db.Stats().MaxOpenConnections; got != maxOpenReadConns {
+		t.Fatalf("MaxOpenConnections = %d, want %d", got, maxOpenReadConns)
 	}
-	wg.Wait()
-
-	stats := d.db.Stats()
-	if stats.MaxOpenConnections != maxOpenReadConns {
-		t.Errorf("MaxOpenConnections = %d, want %d", stats.MaxOpenConnections, maxOpenReadConns)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var held []*sql.Conn
+	defer func() {
+		for _, conn := range held {
+			_ = conn.Close()
+		}
+	}()
+	for i := 0; i < maxOpenReadConns; i++ {
+		conn, err := d.db.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, conn)
 	}
-	if stats.WaitCount == 0 {
-		t.Errorf("WaitCount = 0; expected at least one query to wait on the pool cap (concurrency=%d, cap=%d)",
-			concurrency, maxOpenReadConns)
+	acquired := make(chan error, 1)
+	go func() {
+		conn, err := d.db.Conn(ctx)
+		if err == nil {
+			_ = conn.Close()
+		}
+		acquired <- err
+	}()
+	for d.db.Stats().WaitCount == 0 && ctx.Err() == nil {
+		time.Sleep(time.Millisecond)
+	}
+	if d.db.Stats().WaitCount == 0 {
+		t.Fatal("extra connection did not wait on the pool cap")
+	}
+	select {
+	case err := <-acquired:
+		t.Fatalf("connection acquired before capacity was released: %v", err)
+	default:
+	}
+	if err := held[0].Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-acquired:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("waiter did not acquire released capacity")
 	}
 }
 

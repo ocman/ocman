@@ -73,7 +73,8 @@ func (h *remoteHost) ReadRepoFile(ctx context.Context, dir, path string, ignored
 
 // maxRepoResponseBytes lifts gRPC's 4 MiB default for the file RPCs. The
 // producer bounds the payload: git.MaxListedBytes (8 MiB) of paths or
-// git.MaxFileBytes (1 MiB) of content, and JSON escaping grows a byte to
+// git.MaxFileBytes (1 MiB) of text or MaxImageBytes (10 MiB) of base64
+// image bytes. JSON escaping grows a text byte to
 // at most 6 (\u003c), plus per-entry quotes and commas.
 const maxRepoResponseBytes = 6*8<<20 + 16<<20
 

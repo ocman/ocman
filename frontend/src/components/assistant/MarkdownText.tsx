@@ -1,9 +1,10 @@
 // Markdown rendering for assistant text parts and tool output:
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
-import { Fragment, isValidElement, memo, useEffect, useId, useState } from 'react';
+import { Children, Fragment, isValidElement, memo, useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
+import type { ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeHighlight from 'rehype-highlight';
@@ -18,6 +19,7 @@ import { remarkFactoryCards } from '../factoryCards';
 import { Modal } from '../Modal';
 import { CopyButton } from '../CopyButton';
 import { splitMarkdownBlocks } from './markdownBlocks';
+import './Reasoning.css';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
 function loadMermaid() {
@@ -237,7 +239,27 @@ const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
 let highlightTransformer: ReturnType<typeof rehypeHighlight> | undefined;
 const sharedRehypeHighlight = () => (highlightTransformer ??= rehypeHighlight());
 const REHYPE_PLUGINS = [sharedRehypeHighlight];
-const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable };
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'blockquote'> & ExtraProps) {
+  const blocks = Children.toArray(children);
+  const firstIndex = blocks.findIndex(child => isValidElement(child));
+  const first = blocks[firstIndex];
+  if (!isValidElement<{ children?: ReactNode }>(first) || first.type !== 'p') return <blockquote {...props}>{children}</blockquote>;
+  const label = Children.toArray(first.props.children)[0];
+  if (!isValidElement(label) || label.type !== 'strong' || !/^(Thinking|Thought):$/.test(nodeText(label))) {
+    return <blockquote {...props}>{children}</blockquote>;
+  }
+  return (
+    <blockquote className="oc-reasoning">
+      <details>
+        <summary>{first.props.children}</summary>
+        {blocks.slice(firstIndex + 1)}
+      </details>
+    </blockquote>
+  );
+}
+
+const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable, blockquote: MarkdownQuote };
 
 // One independently parsed chunk. memo: while an answer streams only the
 // last chunk's text changes, so earlier chunks skip re-parsing.

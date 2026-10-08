@@ -50,7 +50,7 @@ export interface UseSessionOptions {
    * inject fixtures without touching the network. Production code
    * leaves it undefined.
    */
-  fetchSession?: (id: string, limit: number, offset: number, signal?: AbortSignal, platform?: string) => Promise<SessionDetail>;
+  fetchSession?: (id: string, limit: number, offset: number, signal?: AbortSignal, platform?: string, peek?: boolean) => Promise<SessionDetail>;
   /**
    * Replaces the default exponential-backoff schedule. Tests use
    * this to drive reconnects without sleeping for 500 ms.
@@ -155,8 +155,9 @@ async function defaultFetchSession(
   offset: number,
   signal?: AbortSignal,
   platform?: string,
+  peek = true,
 ): Promise<SessionDetail> {
-  return api.session(id, limit, offset, signal, platform);
+  return api.session(id, limit, offset, signal, platform, peek);
 }
 
 /** Build a SessionView from a freshly-fetched SessionDetail. */
@@ -475,6 +476,8 @@ export function useSession(
     setTotalMessages(nextCached?.totalMessages || nextCached?.session.messageCount || 0);
 
     let cancelled = false;
+    // A reconnect or refresh in another tab must not undo an archive.
+    let opened = false;
     let evtSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
@@ -502,8 +505,9 @@ export function useSession(
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const detail = await fetchSession(sessionId, pageSize, 0, controller.signal, routedPlatform);
+        const detail = await fetchSession(sessionId, pageSize, 0, controller.signal, routedPlatform, opened);
         if (cancelled || controller.signal.aborted) return false;
+        opened = true;
         events.flush();
         dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
@@ -688,7 +692,7 @@ export function useSession(
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
     try {
-      const detail = await fetchSession(sessionId, pageSize, offset, controller.signal, routedPlatform);
+      const detail = await fetchSession(sessionId, pageSize, offset, controller.signal, routedPlatform, true);
       if (controller.signal.aborted) return;
       // Re-read the view instead of using the pre-fetch snapshot: SSE
       // may have appended messages while the page was in flight, and

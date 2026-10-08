@@ -37,6 +37,29 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('filterInactiveChildren', () => {
+  it('keeps an interrupted session unread despite an identical live read watermark', () => {
+    const current = [makeSession({ status: 'interrupted', seen: true, timeUpdated: 100, seenTimeUpdated: 100 })];
+    const next = [makeSession({ status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 100 })];
+    expect(mergeSidebarSessions(next, current)[0].seen).toBe(false);
+  });
+
+  it('includes unseen interruptions in the project attention indicator', () => {
+    expect(rollupGroupStatus([makeSession({ status: 'interrupted', seen: false })])).toEqual({ kind: 'error', count: 1 });
+    expect(rollupGroupStatus([makeSession({ status: 'interrupted', seen: true })])).toEqual({ kind: 'none' });
+  });
+
+  it('scopes pending interruption reads to their owner and activity watermark', () => {
+    const read = makeSession({ id: 'a', status: 'interrupted', seen: true, timeUpdated: 100, seenTimeUpdated: 100 });
+    const unread = { ...read, seen: false };
+    const pending = { 'opencode:a': { timeUpdated: 100 } };
+    expect(mergeSidebarSessions([unread], [read], undefined, [read], pending)[0].seen).toBe(true);
+    const remote = { ...read, platform: 'r-box:opencode' };
+    expect(mergeSidebarSessions([{ ...remote, seen: false }], [remote], undefined, [remote], pending)[0].seen).toBe(false);
+    expect(mergeSidebarSessions([{ ...unread, timeUpdated: 101 }], [read], undefined, [read], pending)[0].seen).toBe(false);
+    const busy = { ...read, status: 'busy' as const };
+    expect(mergeSidebarSessions([unread], [busy], undefined, [busy], pending)[0].seen).toBe(false);
+  });
+
   it('drops a child whose parent is not in the list', () => {
     const sessions = [
       makeSession({ id: 'top' }),

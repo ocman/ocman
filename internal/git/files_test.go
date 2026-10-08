@@ -2,16 +2,74 @@ package git
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+func TestReadFileImages(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	for _, tc := range []struct{ name, body, mime string }{
+		{"image.png", "\x89PNG\r\n\x1a\n\x00payload", "image/png"},
+		{"image.jpg", "\xff\xd8\xffpayload", "image/jpeg"},
+		{"image.gif", "GIF89apayload", "image/gif"},
+		{"image.webp", "RIFF\x00\x00\x00\x00WEBPVP8 payload", "image/webp"},
+		{"image.SVG", `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`, "image/svg+xml"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(dir, tc.name), []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := ReadFile(context.Background(), dir, tc.name, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var wire struct{ MimeType, Content string }
+			if err := json.Unmarshal(b, &wire); err != nil {
+				t.Fatal(err)
+			}
+			if wire.MimeType != tc.mime || wire.Content != base64.StdEncoding.EncodeToString([]byte(tc.body)) || got.Truncated {
+				t.Fatalf("image response = %s", b)
+			}
+		})
+	}
+}
+
+func TestReadFileImageLimit(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	for _, size := range []int{2 << 20, 10 << 20, (10 << 20) + 1} {
+		body := "GIF89a" + strings.Repeat("x", size-6)
+		if err := os.WriteFile(filepath.Join(dir, "large.gif"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, err := ReadFile(context.Background(), dir, "large.gif", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if size > 10<<20 {
+			if !got.Truncated || got.Content != "" {
+				t.Fatalf("oversized image = %+v", got)
+			}
+		} else if got.Truncated || got.Content != base64.StdEncoding.EncodeToString([]byte(body)) {
+			t.Fatalf("image of %d bytes was not returned intact", size)
+		}
+	}
+}
 
 func TestListAndReadFiles(t *testing.T) {
 	dir := t.TempDir()

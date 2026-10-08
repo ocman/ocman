@@ -31,6 +31,7 @@ import { SidebarSessionRow } from './SidebarSessionRow';
 import { useSidebarReorder } from './useSidebarReorder';
 import { SidebarHeader } from './SidebarHeader';
 import { useSidebarFilter } from './useSidebarFilter';
+import { useSidebarProjectFilter } from './useSidebarProjectFilter';
 import { TmuxClientPopover } from './TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
@@ -89,10 +90,6 @@ export interface SessionSidebarProps {
   onArchiveProject: (directory: string, remoteId?: string) => void;
 }
 
-/**
- * The full left sidebar: header buttons, tmux client picker, session list
- * (flat recent view or projects grouped view), and the backend stats footer.
- */
 export function SessionSidebar({
   activeId,
   sidebarWidth,
@@ -101,8 +98,8 @@ export function SessionSidebar({
   showArchivedRecent,
   setShowArchivedRecent,
   loadingRecentSessions,
-  recentSessions,
-  sidebarProjectGroups,
+  recentSessions: allRecentSessions,
+  sidebarProjectGroups: allProjectGroups,
   onReorderProjects,
   archivingSessionIds,
   collapsedProjectSet,
@@ -123,6 +120,7 @@ export function SessionSidebar({
   onArchiveProject,
 }: SessionSidebarProps) {
   trackRender('SessionSidebar');
+  const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, allProjectGroups);
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
   const [showChildren, setShowChildren] = useSidebarFilter('children', true);
@@ -276,13 +274,13 @@ export function SessionSidebar({
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const dirs = sidebarProjectGroups.filter((group) => !group.isPinned).map((group) => group.key ?? group.directory);
+      const dirs = allProjectGroups.filter((group) => !group.isPinned).map((group) => group.key ?? group.directory);
       const from = dirs.indexOf(active.id as string);
       const to = dirs.indexOf(over.id as string);
       if (from === -1 || to === -1) return;
       onReorderProjects(arrayMove(dirs, from, to));
     },
-    [sidebarProjectGroups, onReorderProjects],
+    [allProjectGroups, onReorderProjects],
   );
 
   const renderPinnedRows = (sessions: Session[]) =>
@@ -354,6 +352,9 @@ export function SessionSidebar({
     <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
       <SidebarResizer />
       <SidebarHeader
+        projects={projects}
+        projectFilter={projectFilter}
+        setProjectFilter={setProjectFilter}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         showArchivedRecent={showArchivedRecent}
@@ -375,11 +376,11 @@ export function SessionSidebar({
         <SidebarConversationDrafts searchQuery={searchQuery} />
         {loadingRecentSessions ? (
           <SessionSidebarListSkeleton rows={5} />
-        ) : sidebarView === 'recent' && recentSessions.length === 0 ? (
+        ) : sidebarView === 'recent' && allRecentSessions.length === 0 ? (
           !hasPreparedDrafts && <GettingStartedEmpty compact />
         ) : sidebarView === 'recent' ? (
           renderFlatView()
-        ) : sidebarProjectGroups.length === 0 ? (
+        ) : allProjectGroups.length === 0 ? (
           !hasPreparedDrafts && <GettingStartedEmpty compact />
         ) : (
           renderProjectsView()

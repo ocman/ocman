@@ -13,7 +13,7 @@ import { NewConversation } from './NewConversation';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { usePendingSend } from './usePendingSend';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
-import { useFirstSubmission } from './firstSubmission';
+import { resetFirstSubmissionForTests } from './firstSubmission';
 import type { NewSessionParams } from '../../lib/newSessionPath';
 import { forgetConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { resetDraftPayloadsForTests } from '../../lib/pendingDraftPayloads';
@@ -97,7 +97,7 @@ function Child() {
       {entry.error}<button onClick={() => actions.handleRetrySend(entry.id)}>Retry message</button>
     </div>)}
     <SessionComposerSlot sessionId="child" platformId="opencode" factoryEpicID=""
-    firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={() => {}} permission={null} question={null}
+    firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={() => {}}
     composer={{ sessionId: 'child', isRunning: false, onSend: actions.handleSend }} />
   </>;
 }
@@ -115,7 +115,7 @@ function Flow({ params = { directory: '/repo', platform: 'opencode' } }: { param
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useFirstSubmission.setState({ entries: {} });
+  resetFirstSubmissionForTests();
   window.localStorage.clear();
   resetDraftTextsForTests();
   resetDraftPayloadsForTests();

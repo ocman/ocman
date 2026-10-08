@@ -386,7 +386,7 @@ describe('useSession — initial load', () => {
     await waitFor(() => {
       expect(result.current.session?.id).toBe(SID);
     });
-    expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.anything(), undefined);
+    expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.anything(), undefined, false);
     expect(result.current.status).toBe('live');
   });
 
@@ -531,7 +531,7 @@ describe('useSession — initial load', () => {
     expect(FakeEventSource.latest()).toBe(sse);
     expect(sse.closed).toBe(false);
     expect(fetchSession).toHaveBeenCalledTimes(1);
-    expect(fetchSession).toHaveBeenLastCalledWith(SID, expect.any(Number), 0, expect.anything(), 'r-m2:opencode');
+    expect(fetchSession).toHaveBeenLastCalledWith(SID, expect.any(Number), 0, expect.anything(), 'r-m2:opencode', false);
   });
 
   it('caches only the newest page of a long view', async () => {
@@ -646,11 +646,15 @@ describe('useSession — initial load', () => {
     });
   });
 
-  it('adds session notices to the message history', async () => {
+  it.each([
+    ['error', 'error', 'connection refused'],
+    ['busy', 'rate_limit', "This request would exceed your account's rate limit. Please try again later."],
+  ] as const)('adds %s session %s notices to the message history', async (status, kind, message) => {
     const detail = makeDetail({
       session: {
         ...makeDetail().session,
-        notice: { kind: 'error', message: 'connection refused', retryAt: 0, attempt: 0 },
+        status,
+        notice: { kind, message, retryAt: 0, attempt: 0 },
       },
     });
     const fetchSession = vi.fn().mockResolvedValue(detail);
@@ -662,7 +666,7 @@ describe('useSession — initial load', () => {
     });
     expect(result.current.parts.find((p) => p.messageId === `ocman-session-notice-${SID}`)?.data).toEqual({
       type: 'text',
-      text: 'connection refused',
+      text: message,
     });
   });
 });
@@ -853,7 +857,7 @@ describe('useSession — SSE event dispatch', () => {
       expect(FakeEventSource.latest()).toBeDefined();
     });
     expect(FakeEventSource.latest()!.url).toContain(`/api/session/${SID}/events?platform=r-box%3Aopencode`);
-    expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.any(AbortSignal), 'r-box:opencode');
+    expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.any(AbortSignal), 'r-box:opencode', false);
   });
 });
 
@@ -966,6 +970,43 @@ describe('useSession — reconnect after error', () => {
 });
 
 describe('useSession — session.idle refetch', () => {
+  it('keeps a session archived elsewhere when an existing tab refreshes or reconnects', async () => {
+    vi.useFakeTimers();
+    const requests: URL[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input), 'http://localhost');
+      requests.push(url);
+      const detail = makeDetail();
+      detail.session.id = url.pathname.split('/').pop()!;
+      return new Response(JSON.stringify(detail), { headers: { 'Content-Type': 'application/json' } });
+    });
+    const { result, rerender, unmount } = renderHook(({ id }) => useSession(id, { reconnectDelay: () => 10 }), {
+      initialProps: { id: SID },
+    });
+    await act(async () => {});
+    expect(requests).toHaveLength(1);
+    expect(requests[0].searchParams.has('peek')).toBe(false);
+    const sse = FakeEventSource.latest()!;
+    act(() => sse.open());
+
+    // Another client archives the session. This tab has no navigation event.
+    act(() => sse.error());
+    await act(async () => vi.advanceTimersByTimeAsync(10));
+    await act(async () => FakeEventSource.latest()!.open());
+    expect(requests).toHaveLength(2);
+    expect(requests[1].searchParams.get('peek')).toBe('1');
+    await act(async () => FakeEventSource.latest()!.emitMessage({ type: 'session.idle', properties: {} }));
+    await act(async () => result.current.reload());
+    await act(async () => result.current.loadMore());
+    expect(requests).toHaveLength(5);
+    expect(requests.slice(1).every((url) => url.searchParams.get('peek') === '1')).toBe(true);
+
+    await act(async () => rerender({ id: 'other-session' }));
+    expect(requests).toHaveLength(6);
+    expect(requests[5].searchParams.has('peek')).toBe(false);
+    unmount();
+  });
+
   it('refetches /api/session/{id} when session.idle lands', async () => {
     const detail = makeDetail();
     const fetchSession = vi.fn().mockResolvedValue(detail);
@@ -1067,7 +1108,7 @@ describe('useSession — loadMore', () => {
 
     await act(async () => { await result.current.loadMore(); });
 
-    expect(fetchSession).toHaveBeenLastCalledWith(SID, 30, 1, expect.any(AbortSignal), undefined);
+    expect(fetchSession).toHaveBeenLastCalledWith(SID, 30, 1, expect.any(AbortSignal), undefined, true);
   });
 
   // A pagination response that lands after the user navigated away

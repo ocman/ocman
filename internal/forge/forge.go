@@ -58,7 +58,8 @@ type PR struct {
 	Title              string    `json:"title"`
 	Body               string    `json:"body"`
 	Author             string    `json:"author"`
-	Status             string    `json:"status"` // "open" | "draft" | "merged" | "closed"
+	Status             string    `json:"status"`              // "open" | "draft" | "merged" | "closed"
+	Mergeable          *bool     `json:"mergeable,omitempty"` // nil when the forge has not computed it
 	UpdatedAt          time.Time `json:"updatedAt"`
 	Labels             []Label   `json:"labels"`
 	Assignees          []User    `json:"assignees"`

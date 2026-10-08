@@ -10,7 +10,7 @@ import type { FactoryIssue } from '../lib/api';
 import type { ProposalChanges } from './factoryProposalChanges';
 import './EpicGraph.css';
 
-// preview: nodes are proposal keys, not issues, so there is nothing to open on click.
+// Preview nodes can be inspected before their issues have been created.
 export function EpicGraph({ issues, preview, changes }: { issues?: FactoryIssue[]; preview?: boolean; changes?: ProposalChanges }) {
   const [selected, setSelected] = useState<FactoryIssue>();
   const { nodes, edges } = useMemo(() => {
@@ -58,12 +58,12 @@ export function EpicGraph({ issues, preview, changes }: { issues?: FactoryIssue[
         nodesConnectable={false}
         edgesFocusable={false}
         proOptions={{ hideAttribution: true }}
-        onNodeClick={preview ? undefined : (_event, node) => setSelected(byID.get(node.id))}
+        onNodeClick={(_event, node) => setSelected(byID.get(node.id))}
       >
         <Background />
         <Controls showInteractive={false} />
       </ReactFlow>
     </div>
-    {selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => setSelected(undefined)} />}
+    {selected && <IssueDrawer key={selected.id} issue={selected} preview={preview} onClose={() => setSelected(undefined)} />}
   </div>;
 }

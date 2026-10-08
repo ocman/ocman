@@ -115,14 +115,23 @@ export function mergeSidebarSessions(
   next: readonly Session[],
   current: readonly Session[],
   activeId?: string,
+  requestStart?: readonly Session[],
+  pendingReads?: Readonly<Record<string, { timeUpdated: number }>>,
 ): Session[] {
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id && ls.platform === s.platform);
-    if (!live) return unarchived;
+    const pending = pendingReads?.[`${s.platform}:${s.id}`];
+    if (!live) return s.status === 'interrupted' && pending && pending.timeUpdated >= s.timeUpdated
+      ? { ...unarchived, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, pending.timeUpdated) }
+      : unarchived;
+    const readDuringRequest = live.status === 'interrupted' && (
+      (pending !== undefined && pending.timeUpdated >= s.timeUpdated)
+      || (!!requestStart && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform))
+    );
     return {
       ...unarchived,
-      seen: s.seen || (live.seen && live.seenTimeUpdated >= s.timeUpdated),
+      seen: s.seen || ((s.status !== 'interrupted' || readDuringRequest) && live.seen && live.seenTimeUpdated >= s.timeUpdated),
       seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),
       timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),
       lastTurnCompletedAt: Math.max(live.lastTurnCompletedAt ?? 0, s.lastTurnCompletedAt ?? 0),
@@ -188,7 +197,7 @@ export function pickNextSessionAfterArchive(
  *
  * Priority:
  *   1. `pending` — any session has an unanswered prompt.
- *   2. `error`   — any unseen errored session.
+ *   2. `error`   — any unseen errored or interrupted session.
  *   3. `busy`    — any session is actively running.
  *   4. `waiting` — any unseen waiting session.
  *   5. `none`    — nothing notable.
@@ -218,7 +227,7 @@ export function rollupGroupStatus(
       continue;
     }
     const status = effectiveStatusOf(s);
-    if (status === 'error' && !s.seen) {
+    if ((status === 'error' || status === 'interrupted') && !s.seen) {
       error += 1;
       continue;
     }

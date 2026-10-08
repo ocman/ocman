@@ -504,7 +504,9 @@ func (a *Adapter) ExecuteCommand(ctx context.Context, req platforms.ExecuteComma
 	if err != nil {
 		return err
 	}
-	return postJSON(ctx, port, fmt.Sprintf("/session/%s/command", req.SessionID), payload)
+	// Slash commands run through the model; the request context bounds
+	// the wait, not the 10s read client.
+	return postJSONLLM(ctx, port, fmt.Sprintf("/session/%s/command", req.SessionID), payload)
 }
 
 // RespondPermission answers a pending permission prompt.
@@ -742,7 +744,8 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 	if err != nil {
 		return err
 	}
-	return postJSON(ctx, port, fmt.Sprintf("/session/%s/summarize", req.SessionID), payload)
+	// Summarizing the history is itself a model call.
+	return postJSONLLM(ctx, port, fmt.Sprintf("/session/%s/summarize", req.SessionID), payload)
 }
 
 // ForkSession branches a session into a new child session via
@@ -854,7 +857,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		httpReq.Header.Set("x-opencode-directory", url.PathEscape(req.Directory))
 	}
 	// Session creation may outlive the shared API timeout; the caller context still bounds it.
-	resp, err := (&http.Client{Transport: openCodeClient.Transport}).Do(httpReq)
+	resp, err := openCodeLLMClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("opencode create-session: %w", err)
 	}

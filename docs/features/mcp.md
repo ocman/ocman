@@ -212,9 +212,16 @@ The `sessions` tool inspects sessions with `list`, `search`, and `get`, and
 starts new top-level sessions with `create`.
 
 `create` sends `prompt` to the new session. `model` (`provider/model`), `agent`,
-and `title` are optional. `directory` must be absolute. When it is omitted, the
-session starts in the project root of the calling session, which the agent
-identifies with `platform` and `session_id`. The calling session also
+`worktree`, and `title` are optional. An omitted model uses the project's first
+configured model, then the platform's default selection. An omitted agent uses
+Settings' default agent. Explicit model and agent values override those defaults.
+Like the new-conversation composer, an omitted `worktree` creates a fresh worktree
+when the directory is eligible. Non-repositories, existing linked worktrees,
+and repositories without a usable base use the current checkout. Set
+`worktree: false` to use the given directory, or `worktree: true` to require a
+fresh worktree. Git probe failures return an error rather than choosing a target.
+`directory` must be absolute. When omitted, the target is the project root of the
+calling session, identified with `platform` and `session_id`. The calling session also
 determines which machine runs the new one. New sessions use the platform's
 default permissions and do not inherit the caller's rules.
 

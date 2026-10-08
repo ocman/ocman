@@ -16,6 +16,12 @@ new activity restores an archived session to the sidebar: **Session halts**
 is the default and waits for done, waiting, error, or interrupted status;
 **Any activity** restores it even while it is running.
 
+Use **Filter sessions → Project** to select a project or return to **All projects**.
+The selection filters flat and grouped views, including opened and pinned sessions,
+and includes the project's worktrees and grouped remote checkouts.
+If the selected project disappears, the selector shows **Unavailable project**;
+choose **All projects** to clear it.
+
 The session sidebar orders rows by their last completed assistant turn,
 including errors, newest first. Streaming output, sending a prompt and reading
 a session do not move it. Sessions without a completed turn use creation time;
@@ -26,6 +32,10 @@ lifecycle rather than a guess about stored messages: **busy** while a turn
 runs, **waiting** when it finishes, **error** when it fails, and
 **interrupted** when the agent process stopped mid-turn (killed, crashed,
 machine rebooted) so the turn can never complete.
+
+An interruption makes the session unread even if you already read its latest
+output. The sidebar and project indicator highlight it until you view the
+interrupted session in a visible tab. That acknowledgement survives a reload.
 
 **Live composer.** Send messages, answer permission prompts, abort and compact
 a running session from the browser. Streaming output renders live. Plain
@@ -49,8 +59,29 @@ diff.
 **Stats dashboard.** Per-project metrics, wall-clock totals, token and pricing
 graphs, system stats.
 
+Analytics → Performance shows total waiting time per agent, split into agent
+response and tool time. It follows the project, time, agent and model filters.
+Parallel tools count once within each request. Tool time includes permission
+and question waits; incomplete timings appear as unknown. Totals sum request
+durations, so they are not elapsed session time when sessions run in parallel.
+
+Analytics → Activity shows active parallel sessions over time, following the
+project and date filters. Each point is the peak simultaneous session count
+within its bucket, starting at one hour and widening for longer ranges.
+Completed assistant timings reconstruct the history on the local machine.
+Overlapping messages in one session count once, subagents count separately,
+and tool time counts as active. Idle gaps and unfinished messages are excluded.
+
 **Model picker.** Per-platform favourites and a refreshable catalog, so new
 models appear without a restart.
+
+Click the project name in the header to open **Project defaults**. Choose a
+default model, agent, and whether new conversations use a new worktree or the
+current checkout, then Save. These preferences belong to that project on that
+machine and are shared by its sibling worktrees. A composer choice overrides
+the default for that conversation. **Use inherited default** clears an override.
+Worktrees are used only when the project supports them. The startup model
+preference does not change the project's model fallback list.
 
 ## Worktrees and parallel work
 

@@ -78,11 +78,21 @@ func (d *DB) applyThroughput(ctx context.Context, source *sql.DB, requests []req
 		}
 		for i := range batch {
 			entry := &batch[i]
+			entry.unknownDurationMs = entry.DurationMs
 			tools := timings[entry.ID]
 			if entry.StopReason == "tool-calls" && len(tools) == 0 {
 				continue
 			}
 			duration := modelDuration(entry.modelStarted, entry.modelStarted+entry.DurationMs, tools)
+			valid := entry.modelStarted > 0 && entry.DurationMs > 0
+			for _, tool := range tools {
+				valid = valid && tool.Start > 0 && tool.End >= tool.Start
+			}
+			if valid {
+				entry.agentDurationMs = duration
+				entry.toolDurationMs = entry.DurationMs - duration
+				entry.unknownDurationMs = 0
+			}
 			if duration > 100 {
 				entry.TokensPerSecond = float64(entry.OutputTokens) / (float64(duration) / 1000)
 			}

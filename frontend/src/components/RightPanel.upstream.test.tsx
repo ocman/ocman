@@ -129,26 +129,29 @@ it('does not flash upstream detection during a fast project switch', async () =>
   vi.mocked(upstreamApi.fetchUpstreams).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
 
   rerender(panel(session('s2', '/other', 'other-proj')));
-  expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+  expect(screen.queryByRole('status', { name: 'Loading upstreams' })).not.toBeInTheDocument();
   await act(async () => resolve([{ remote: 'origin', host: 'github.com', type: 'github', repo: 'other/repo' }]));
   await screen.findByText('PR 1');
-  expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+  expect(screen.queryByRole('status', { name: 'Loading upstreams' })).not.toBeInTheDocument();
 });
 
-it('shows upstream detection for a slow request and resets it on the next project', async () => {
+it('shows a spinner in the list for slow upstream detection and resets it on the next project', async () => {
   const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
   await screen.findByText('PR 1');
   vi.mocked(upstreamApi.fetchUpstreams).mockReturnValue(new Promise(() => {}));
   vi.useFakeTimers();
   try {
     rerender(panel(session('s2', '/other', 'other-proj')));
-    expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Loading upstreams' })).not.toBeInTheDocument();
     act(() => vi.advanceTimersByTime(200));
-    expect(screen.getByText('Detecting upstreams…')).toHaveAttribute('role', 'status');
+    const status = screen.getByRole('status', { name: 'Loading upstreams' });
+    expect(status.closest('[role="tabpanel"]')).toBe(screen.getByRole('tabpanel'));
+    expect(status.querySelector('.oc-loading-spinner')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
     rerender(panel(session('s3', '/third', 'third-proj')));
-    expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Loading upstreams' })).not.toBeInTheDocument();
     act(() => vi.advanceTimersByTime(200));
-    expect(screen.getByText('Detecting upstreams…')).toHaveAttribute('role', 'status');
+    expect(screen.getByRole('status', { name: 'Loading upstreams' })).toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }

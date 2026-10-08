@@ -16,20 +16,24 @@ export interface SessionComposerSlotProps {
   directory?: string;
   remoteId?: string;
   factoryEpicID: string;
-  /** Unread pill; hidden when null / 0. */
   firstUnreadMessageId: string | null;
   unreadMessageCount: number;
   onJumpToUnread: (messageId: string) => void;
-  /** Exactly one of these renders, in this priority order. */
-  permission: ComponentProps<typeof PermissionPrompt> | null;
-  question: ComponentProps<typeof QuestionPrompt> | null;
+  pendingPrompt?: boolean;
   composer: ComponentProps<typeof Composer> | null;
 }
 
+export function SessionPromptSlot({ permission, question }: {
+  permission: ComponentProps<typeof PermissionPrompt> | null;
+  question: ComponentProps<typeof QuestionPrompt> | null;
+}) {
+  return permission ? <PermissionPrompt {...permission} />
+    : question ? <QuestionPrompt {...question} /> : null;
+}
+
 /**
- * What sits below the thread: the Factory approval card, the unread
- * pill, and then whichever of permission prompt / question prompt /
- * composer the session currently needs.
+ * What sits below the thread: Factory cards and composer.
+ * Pending prompts render inside the conversation viewport instead.
  */
 export function SessionComposerSlot({
   sessionId,
@@ -37,11 +41,7 @@ export function SessionComposerSlot({
   directory,
   remoteId,
   factoryEpicID,
-  firstUnreadMessageId,
-  unreadMessageCount,
-  onJumpToUnread,
-  permission,
-  question,
+  pendingPrompt,
   composer,
 }: SessionComposerSlotProps) {
   const firstPending = useSessionFirstSubmission(sessionId)?.pending;
@@ -49,26 +49,9 @@ export function SessionComposerSlot({
     <ErrorBoundary name="session:composer" inline resetKey={sessionId}>
       <FactoryPlanApproval epicID={factoryEpicID} platformID={platformId} sessionID={sessionId} />
       <FactorySessionRecovery key={`${platformId}/${sessionId}`} platformID={platformId} sessionID={sessionId} />
-      {firstUnreadMessageId && unreadMessageCount > 0 && (
-        <button
-          type="button"
-          className="oc-jump-unread"
-          data-testid="jump-to-first-unread"
-          onClick={() => onJumpToUnread(firstUnreadMessageId)}
-          title="Scroll to the first message you haven't seen yet"
-        >
-          <i className="bi bi-arrow-up" aria-hidden="true" />
-          {' '}
-          {unreadMessageCount} new message{unreadMessageCount === 1 ? '' : 's'}
-        </button>
-      )}
       {/* Above the prompt branches: a launch can start while a prompt is shown. */}
       <LaunchProgressCard directory={directory} remoteId={remoteId} />
-      {permission ? (
-        <PermissionPrompt {...permission} />
-      ) : question ? (
-        <QuestionPrompt {...question} />
-      ) : composer ? (
+      {!pendingPrompt && composer ? (
         <>
           <FirstSubmissionNotice sessionId={sessionId} />
           <Composer {...composer}

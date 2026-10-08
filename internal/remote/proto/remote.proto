@@ -25,6 +25,7 @@ service Ocman {
   // Bounded status + latest message for queue decisions. Additive: an older
   // owner answers Unimplemented and the hub falls back to Session.
   rpc SessionLifecycle(SessionRef) returns (JsonResp);    // *platforms.SessionLifecycle
+  rpc SessionSummary(SessionRef) returns (JsonResp);      // *db.Session, no transcript/tree
   rpc SessionsInactiveBefore(CutoffReq) returns (JsonResp);
   rpc SessionChanges(SessionRef) returns (JsonResp);
   rpc SessionInfo(SessionRef) returns (JsonResp);
@@ -80,6 +81,7 @@ service Ocman {
   rpc EnsureProjectOpencode(JsonReq) returns (JsonResp);
   rpc StopProjectOpencode(JsonReq) returns (Empty);
   rpc RestartProjectOpencode(JsonReq) returns (JsonResp);
+  rpc ReloadOpencode(Empty) returns (Empty);
   rpc ManagedOpencodes(Empty) returns (JsonResp);
   rpc TmuxSessions(Empty) returns (JsonResp);
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps

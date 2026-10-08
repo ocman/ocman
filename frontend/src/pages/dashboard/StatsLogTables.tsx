@@ -22,6 +22,8 @@ import { ProjectLabel } from '../../components/ProjectLabel';
 import {
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
+  BAR_OPTIONS_WAIT_TIME,
+  CHART_COLORS,
   LINE_OPTIONS_CACHE,
   DOUGHNUT_OPTIONS,
   STOP_REASON_COLORS,
@@ -29,6 +31,7 @@ import {
 import { MetricCard, ChartCard } from './shared';
 import { ModelLabel } from '../../components/ModelLogo';
 import { DataTable } from '../../components/DataTable';
+import { EmptyState } from '../../components/EmptyState';
 
 const dim = { color: 'var(--text-dim)' } as const;
 const dash = <span style={dim}>—</span>;
@@ -65,6 +68,24 @@ export function PerformanceCharts({ metrics }: { metrics: MetricsPerformance }) 
   const metricLabels = metrics.series.map((point) => point.label);
   return (
     <>
+      <div className="metrics-chart-grid">
+        <ChartCard title="Waiting Time by Agent (s)">
+          {metrics.agents.some((agent) => agent.totalDurationMs > 0) ? <Bar
+            role="img"
+            aria-label="Total waiting time by agent, split into agent response, tools, and unknown timing"
+            data={{
+              labels: metrics.agents.map((agent) => agent.agent || 'Unknown agent'),
+              datasets: [
+                { label: 'Agent response', data: metrics.agents.map((agent) => agent.agentDurationMs / 1000), backgroundColor: CHART_COLORS[0] },
+                { label: 'Tools', data: metrics.agents.map((agent) => agent.toolDurationMs / 1000), backgroundColor: CHART_COLORS[1] },
+                { label: 'Unknown timing', data: metrics.agents.map((agent) => agent.unknownDurationMs / 1000), backgroundColor: CHART_COLORS[3] },
+              ],
+            }}
+            options={BAR_OPTIONS_WAIT_TIME}
+          /> : <EmptyState>No recorded waiting time for these filters.</EmptyState>}
+        </ChartCard>
+      </div>
+      <div className="analytics-scope-note">Summed request time, not elapsed session time. Parallel tools count once per request. Tool time includes permission and question waits; incomplete timings remain unknown.</div>
       <div className="metrics-chart-grid metrics-chart-grid-top">
         <ChartCard title="Avg Output Tokens/Second">
           <Bar data={{

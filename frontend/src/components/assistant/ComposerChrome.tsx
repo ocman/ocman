@@ -7,6 +7,7 @@ import { agentColor } from '../../lib/agentColor';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
 import { formatCurrency, formatDate, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { ModelLabel } from '../ModelLogo';
+import { Skeleton } from '../Skeleton';
 import { TargetSelector } from './ComposerSelectorRow';
 import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 
@@ -211,7 +212,11 @@ export function ComposerToolbar({
         {isBashMode ? (
           <span className="oc-bar-shell">shell</span>
         ) : selectorsLoading ? (
-          <span className="oc-spinner" role="status" aria-label="Loading agents and models" />
+          <span className="oc-composer-bar-left oc-bar-model" role="status" aria-label="Loading agents and models" aria-busy="true">
+            <Skeleton className="oc-skeleton-line" style={{ width: 56 }} />
+            <Skeleton className="oc-skeleton-line oc-bar-model" style={{ width: 144 }} />
+            <Skeleton className="oc-skeleton-line" style={{ width: 48 }} />
+          </span>
         ) : (
           <>
             <button type="button" className="oc-bar-select" disabled={uiDisabled} onClick={openAgentPicker} title="Agent (click to change)">
@@ -221,13 +226,13 @@ export function ComposerToolbar({
             {hasModels && (
               <button
                 type="button"
-                className={`oc-bar-select${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
+                className={`oc-bar-select oc-bar-model${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
                 disabled={uiDisabled}
                 onClick={openModelPicker}
                 title={modelUnavailable ? 'Provider is not connected on this session\'s machine. Connect it or choose another provider.' : 'Model (click to change)'}
               >
                 {modelUnavailable && <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />}
-                {modelButtonLabel ? <ModelLabel model={effectiveModel}>{modelButtonLabel}</ModelLabel> : 'Model'}
+                {modelButtonLabel ? <ModelLabel model={effectiveModel}><span className="oc-bar-model-name">{modelButtonLabel}</span></ModelLabel> : 'Model'}
               </button>
             )}
             {hasReasoning && (

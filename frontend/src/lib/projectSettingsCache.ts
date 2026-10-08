@@ -6,6 +6,13 @@ export interface CachedProjectSettings {
   models: string[];
   off: boolean;
   defaultAgent: string;
+  defaults?: ProjectDefaults;
+}
+
+export interface ProjectDefaults {
+  model: string;
+  agent: string;
+  worktree: '' | 'worktree' | 'current';
 }
 
 const cache = new Map<string, Promise<CachedProjectSettings>>();

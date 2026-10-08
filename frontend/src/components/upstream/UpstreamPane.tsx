@@ -9,6 +9,17 @@ import { clearPRChecksCache } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 import { onGitCommand } from '../../lib/useGlobalEvents';
+import { Spinner } from '../Spinner';
+
+function UpstreamDetectionStatus() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    // ponytail: delay only the status; upstream detection still starts immediately.
+    const timeout = setTimeout(() => setVisible(true), 200);
+    return () => clearTimeout(timeout);
+  }, []);
+  return visible ? <div className="oc-upstream-empty" role="status" aria-label="Loading upstreams"><Spinner /></div> : null;
+}
 
 interface UpstreamPaneProps {
   /** Project directory the upstreams were detected for; keys the lists. */
@@ -28,6 +39,7 @@ interface UpstreamPaneProps {
   actionsEnabled?: boolean;
   remoteId: string;
   upstreams: Upstream[];
+  upstreamLoading?: boolean;
   /** Hide controls only after detection confirms there are no supported upstreams. */
   upstreamsReady?: boolean;
   embedded?: boolean;
@@ -64,6 +76,7 @@ export function UpstreamPane({
   actionsEnabled = true,
   remoteId,
   upstreams,
+  upstreamLoading = false,
   upstreamsReady = true,
   onRefresh,
   onLoadingChange,
@@ -109,6 +122,7 @@ export function UpstreamPane({
           launchDirectory={launchDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
+          upstreamLoading={upstreamLoading}
           state={prState}
           onStateChange={(prState) => setPreferences({ prState })}
           mine={prMine}
@@ -127,6 +141,7 @@ export function UpstreamPane({
           launchDirectory={launchDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
+          upstreamLoading={upstreamLoading}
           state={issueState}
           onStateChange={(issueState) => setPreferences({ issueState })}
           mine={issueMine}
@@ -147,6 +162,7 @@ interface UpstreamTabContentProps {
   launchDirectory: string | undefined;
   remoteId: string;
   upstreams: Upstream[];
+  upstreamLoading: boolean;
   state: StateFilter;
   onStateChange: (s: StateFilter) => void;
   mine: boolean;
@@ -163,6 +179,7 @@ function UpstreamTabContent({
   launchDirectory,
   remoteId,
   upstreams,
+  upstreamLoading,
   state,
   onStateChange,
   mine,
@@ -228,6 +245,7 @@ function UpstreamTabContent({
         mine={mine}
         onMineChange={onMineChange}
       />
+      {upstreamLoading && <UpstreamDetectionStatus key={`${remoteId}\0${directory}`} />}
       {upstreams.map((u) => (
         <UpstreamRemoteGroup
           key={`${remoteId}/${directory}/${u.host}/${u.remote}`}

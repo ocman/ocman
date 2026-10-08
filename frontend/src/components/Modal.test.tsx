@@ -6,6 +6,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { Modal } from './Modal';
 
 describe('Modal', () => {
+  it('dismisses only the focused nested drawer on Escape', async () => {
+    const user = userEvent.setup();
+    const closeGraph = vi.fn();
+    const closeDrawer = vi.fn();
+    const { rerender } = render(<Modal label="Graph" onClose={closeGraph}><button>Graph control</button></Modal>);
+    rerender(<Modal label="Graph" onClose={closeGraph}><button>Graph control</button><Modal label="Drawer" onClose={closeDrawer}><button>Drawer control</button></Modal></Modal>);
+    await user.keyboard('{Escape}');
+    expect(closeDrawer).toHaveBeenCalledOnce();
+    expect(closeGraph).not.toHaveBeenCalled();
+  });
+
   it('provides dialog semantics and centralizes dismissal', () => {
     const onClose = vi.fn();
     const { rerender } = render(

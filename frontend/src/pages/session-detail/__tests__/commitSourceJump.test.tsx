@@ -132,7 +132,7 @@ describe('SessionDetail commit source jump', () => {
     await screen.findByTestId('assistant-thread');
     fireEvent.click(await screen.findByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
     act(() => page.navigate(`/session/${second.id}`));
-    await waitFor(() => expect(fetchSession).toHaveBeenCalledWith(second.id, expect.any(Number), 0, expect.any(AbortSignal), undefined));
+    await waitFor(() => expect(fetchSession).toHaveBeenCalledWith(second.id, expect.any(Number), 0, expect.any(AbortSignal), undefined, false));
     await act(async () => { release(); await gate; });
 
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('');
@@ -153,7 +153,7 @@ describe('SessionDetail commit source jump', () => {
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('old-message:commit-call:1');
 
     act(() => page.navigate('/session/sess_2'));
-    await waitFor(() => expect(fetchSession).toHaveBeenCalledWith('sess_2', expect.any(Number), 0, expect.any(AbortSignal), undefined));
+    await waitFor(() => expect(fetchSession).toHaveBeenCalledWith('sess_2', expect.any(Number), 0, expect.any(AbortSignal), undefined, false));
     act(() => page.navigate('/session/sess_1'));
     await waitFor(() => expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent(''));
   });

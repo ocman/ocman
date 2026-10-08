@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import { api, BackendUnavailableError, type PlatformCapabilities } from '../../lib/api';
 import type { AttachedImage } from '../../components/assistant/Composer';
@@ -179,6 +179,13 @@ export function useSessionActions({
   refreshThread,
   refreshMessageQueue,
 }: UseSessionActionsOptions): UseSessionActionsResult {
+  const scope = useMemo(() => ({ id: session?.id, platform: session?.platform, directory: session?.directory, routeSessionId }), [session?.id, session?.platform, session?.directory, routeSessionId]);
+  const activeScope = useRef<typeof scope | null>(scope);
+  const reloadGeneration = useRef(0);
+  useLayoutEffect(() => {
+    activeScope.current = scope;
+    return () => { activeScope.current = null; };
+  }, [scope]);
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
   // Shell command waiting for the current turn to finish, tagged with the
   // session that asked for it. Mirrored in a ref so the idle-transition
@@ -420,8 +427,13 @@ export function useSessionActions({
   const handleCommand = useCallback(async (command: string, args: string) => {
     if (!session) return;
 
+    const generation = command === 'reload-opencode' && !args.trim() ? ++reloadGeneration.current : reloadGeneration.current;
+    const isCurrent = () => activeScope.current === scope && reloadGeneration.current === generation;
+    if (!isCurrent() || (routeSessionId !== undefined && routeSessionId !== session.id)) return;
+
     const handled = await runSlashCommand({
       session,
+      isCurrent,
       portAvailable,
       caps,
       pending,
@@ -469,7 +481,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending]);
+  }, [activeAgent, archiveSession, caps, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending, routeSessionId, scope]);
 
   return {
     awaitingAssistantResponse,

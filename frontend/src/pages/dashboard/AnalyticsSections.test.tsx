@@ -3,16 +3,22 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const lineOptions = vi.hoisted(() => vi.fn());
+
 vi.mock('react-chartjs-2', () => ({
   Bar: ({ data }: { data: unknown }) => <div data-testid="bar-chart" data-chart={JSON.stringify(data)} />,
   Doughnut: ({ data, options }: { data: unknown; options: unknown }) => <div data-testid="doughnut-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />,
-  Line: ({ data, options }: { data: unknown; options: unknown }) => <div data-testid="line-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />,
+  Line: ({ data, options }: { data: unknown; options: unknown }) => {
+    lineOptions(options);
+    return <div data-testid="line-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />;
+  },
 }));
 vi.mock('../../components/ProjectScopePicker', () => ({ ProjectScopePicker: () => <div>project scope</div> }));
 vi.mock('./context', () => ({ useDashboard: () => ({ projects: [], dirScope: '/repo', setDirScope: vi.fn() }) }));
 
 const useActivity = vi.fn();
 const useHourly = vi.fn();
+const useSessionConcurrency = vi.fn();
 const useHourlyTokens = vi.fn();
 const useMetrics = vi.fn();
 const useAnalyticsOverview = vi.fn();
@@ -23,6 +29,7 @@ const useMetricLogs = vi.fn();
 vi.mock('../../lib/queries', () => ({
   useActivity: (...args: unknown[]) => useActivity(...args),
   useHourly: (...args: unknown[]) => useHourly(...args),
+  useSessionConcurrency: (...args: unknown[]) => useSessionConcurrency(...args),
   useHourlyTokens: (...args: unknown[]) => useHourlyTokens(...args),
   useMetrics: (...args: unknown[]) => useMetrics(...args),
   useAnalyticsOverview: (...args: unknown[]) => useAnalyticsOverview(...args),
@@ -46,7 +53,7 @@ const metrics = {
   series: [{ label: 'Sep 1', avgOutputTokensSec: 5, inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, avgDurationMs: 1000, p50DurationMs: 900, p95DurationMs: 1200, avgCacheEfficiency: 0, errorRate: 0 }],
   stopReasons: [{ reason: 'end_turn', count: 1 }],
   dailyEstimatedCostByModel: { models: [], series: [] }, dailyEffectiveCostByModel: { models: [], series: [] }, costByModel: { models: [], series: [] },
-  agents: [{ agent: 'build', requests: 1, successfulRequests: 1, errorRequests: 0, errorRate: 0, inputTokens: 10, outputTokens: 5, totalTokens: 15, totalDurationMs: 1000, effectiveCost: 0.1 }],
+  agents: [{ agent: 'build', requests: 1, successfulRequests: 1, errorRequests: 0, errorRate: 0, inputTokens: 10, outputTokens: 5, totalTokens: 15, totalDurationMs: 1000, agentDurationMs: 1000, toolDurationMs: 0, unknownDurationMs: 0, effectiveCost: 0.1 }],
 };
 
 function renderTab(component: React.ReactNode) {
@@ -58,6 +65,7 @@ describe('analytics sections', () => {
     vi.clearAllMocks();
     useActivity.mockReturnValue(query([{ date: '2026-09-01', messages: 2, userMessages: 1, sessions: 1 }]));
     useHourly.mockReturnValue(query([{ hour: 12, sessions: 1 }]));
+    useSessionConcurrency.mockReturnValue(query({ bucketMs: 3_600_000, series: [{ timestamp: 1000, sessions: 2 }, { timestamp: 3_601_000, sessions: 0 }] }));
     useHourlyTokens.mockReturnValue(query([]));
     useModels.mockReturnValue(query([{ provider: 'provider', model: 'model', count: 2, tokensIn: 10, tokensOut: 5 }]));
     useMetrics.mockReturnValue(query(metrics));
@@ -115,6 +123,49 @@ describe('analytics sections', () => {
     const chart = JSON.parse(within(card).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
     expect(chart.labels).toHaveLength(30);
     expect(chart.datasets[0].data[0]).toBe(336);
+  });
+
+  it('plots concurrent sessions on a timestamp axis with the activity filters', () => {
+    renderTab(<ActivityTab />);
+    expect(useSessionConcurrency).toHaveBeenCalledWith({ days: 30, dir: '/repo' });
+    const card = screen.getByText('Active Parallel Sessions').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.datasets[0].data).toEqual([{ x: 1000, y: 2 }, { x: 3_601_000, y: 0 }]);
+    const options = JSON.parse(within(card).getByTestId('line-chart').getAttribute('data-options') ?? '{}');
+    expect(options.scales.x.type).toBe('linear');
+    expect(options.scales.y.beginAtZero).toBe(true);
+    expect(options.scales.y.ticks.precision).toBe(0);
+    const callbacks = lineOptions.mock.lastCall?.[0];
+    expect(callbacks.scales.x.ticks.callback(1000)).toBe(new Date(1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' }));
+    expect(callbacks.plugins.tooltip.callbacks.title([{ parsed: { x: 1000 } }])).toBe(new Date(1000).toLocaleString());
+    expect(callbacks.plugins.tooltip.callbacks.title([])).toBe('');
+    expect(screen.getByText(/excludes idle gaps and unfinished messages/)).toBeInTheDocument();
+  });
+
+  it('loads concurrency independently and shows its errors', () => {
+    useSessionConcurrency.mockReturnValue({ data: undefined, isLoading: true, error: new Error('concurrency failed') });
+    renderTab(<ActivityTab />);
+    expect(screen.getByRole('status', { name: 'Loading parallel sessions' })).toBeInTheDocument();
+    expect(screen.getByText('concurrency failed')).toBeInTheDocument();
+    expect(screen.getByText('Daily Messages')).toBeInTheDocument();
+  });
+
+  it('handles absent concurrency history without inventing active sessions', () => {
+    useSessionConcurrency.mockReturnValue(query(undefined));
+    renderTab(<ActivityTab />);
+    const card = screen.getByText('Active Parallel Sessions').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.datasets[0].data).toEqual([]);
+    expect(screen.getByText(/Peak per 1-hour bucket/)).toBeInTheDocument();
+  });
+
+  it('shows a visible marker for a single concurrency bucket', () => {
+    useSessionConcurrency.mockReturnValue(query({ bucketMs: 3_600_000, series: [{ timestamp: 1000, sessions: 2 }] }));
+    renderTab(<ActivityTab />);
+    const card = screen.getByText('Active Parallel Sessions').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.datasets[0].data).toEqual([{ x: 1000, y: 2 }]);
+    expect(chart.datasets[0].pointRadius).toBeGreaterThan(0);
   });
 
   it('shows partial activity query failures', () => {
@@ -202,10 +253,32 @@ describe('analytics sections', () => {
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
   });
 
+  it('stacks total waiting time by agent and tools in seconds', () => {
+    useMetrics.mockReturnValue(query({ ...metrics, agents: [
+      { ...metrics.agents[0], agent: 'build', agentDurationMs: 2000, toolDurationMs: 8000, unknownDurationMs: 1000 },
+      { ...metrics.agents[0], agent: '', agentDurationMs: 500, toolDurationMs: 0, unknownDurationMs: 0 },
+    ] }));
+    renderTab(<PerformanceTab />);
+    const card = screen.getByText('Waiting Time by Agent (s)').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.labels).toEqual(['build', 'Unknown agent']);
+    expect(chart.datasets.map((dataset: { label: string; data: number[] }) => [dataset.label, dataset.data])).toEqual([
+      ['Agent response', [2, 0.5]], ['Tools', [8, 0]], ['Unknown timing', [1, 0]],
+    ]);
+    expect(screen.getByText(/Parallel tools count once/)).toBeInTheDocument();
+  });
+
+  it('shows an empty waiting-time graph when no requests match', () => {
+    useMetrics.mockReturnValue(query({ ...metrics, agents: [] }));
+    renderTab(<PerformanceTab />);
+    expect(screen.getByText('No recorded waiting time for these filters.')).toBeInTheDocument();
+  });
+
   it('uses chart skeletons while graph data loads', () => {
     useMetrics.mockReturnValue({ data: undefined, isLoading: true, error: null });
     renderTab(<PerformanceTab />);
     expect(screen.getByRole('status', { name: 'Loading request latency' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading waiting time' })).toBeInTheDocument();
     expect(document.querySelector('.oc-spinner')).not.toBeInTheDocument();
   });
 

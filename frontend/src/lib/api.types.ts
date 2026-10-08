@@ -1,5 +1,7 @@
 import type { FactoryProposal } from './factoryProposal.types';
 export type { FactoryProposal } from './factoryProposal.types';
+import type { AgentMetrics } from './api.agentMetrics.types';
+export type { AgentMetrics } from './api.agentMetrics.types';
 
 /**
  * Type-only mirror of the wire shapes exposed by ocman's HTTP API.
@@ -504,10 +506,11 @@ export interface RepoFileList {
   truncated?: boolean;
 }
 
-/** GET /api/git/file — one file, capped at 1 MiB. */
+/** GET /api/git/file — text capped at 1 MiB, base64 images at 10 MiB. */
 export interface RepoFileContent {
   path: string;
   content: string;
+  mimeType?: string;
   size: number;
   binary?: boolean;
   truncated?: boolean;
@@ -993,19 +996,6 @@ export interface MetricsPoint {
   successfulRequests: number;
   errorRequests: number;
   errorRate: number;
-}
-
-export interface AgentMetrics {
-  agent: string;
-  requests: number;
-  successfulRequests: number;
-  errorRequests: number;
-  errorRate: number;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  totalDurationMs: number;
-  effectiveCost: number;
 }
 
 export interface StopReasonCount {

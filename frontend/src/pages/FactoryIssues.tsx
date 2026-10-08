@@ -29,7 +29,7 @@ export function FactoryIssueRow({ issue, epic, onOpen }: { issue: FactoryIssue; 
 	return <DataTableRow className={epic ? 'factory-grid-row' : ''} primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} title={`${issue.kind} issue`} /><button type="button" aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</button></div>} secondary={<span className="factory-list-subline"><Link to={`/factory/epics/${encodeURIComponent(issue.epicId)}`}>#{issue.id}</Link>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={epic && <><ProjectCell path={issue.project} /><EpicCell id={epic.id} goal={epic.goal} /></>} />;
 }
 
-export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: () => void }) {
+function IssueComments({ issue }: { issue: FactoryIssue }) {
 	const comments = useFactoryIssueComments(issue.epicId, issue.id);
 	const addComment = useAddFactoryIssueComment(issue.epicId, issue.id);
 	const [body, setBody] = useState('');
@@ -39,6 +39,18 @@ export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: 
 		if (!body.trim()) return;
 		addComment.mutate(body, { onSuccess: () => { setBody(''); setStatus('Comment added.'); } });
 	}
+	return <section className="factory-issue-comments" aria-label="Issue comments">
+			<h3>Comments</h3>
+			{comments.isLoading && <p role="status">Loading comments...</p>}
+			{comments.isError && <p role="alert">Could not load comments.</p>}
+			{comments.data && !comments.data.length && <EmptyState>No comments yet.</EmptyState>}
+			{!!comments.data?.length && <ol>{comments.data.map((comment) => <li key={comment.id}><header><strong>{comment.actor}</strong><time dateTime={new Date(comment.createdAt).toISOString()}>{new Date(comment.createdAt).toLocaleString()}</time></header><p>{comment.body}</p></li>)}</ol>}
+			<form onSubmit={submit}><label>Add comment<textarea maxLength={16000} value={body} onChange={(event) => { setBody(event.target.value); setStatus(''); }} /></label><button type="submit" disabled={addComment.isPending || !body.trim()}>{addComment.isPending ? 'Adding...' : 'Add comment'}</button>{addComment.isError && <p role="alert">Could not add comment.</p>}{status && <p role="status">{status}</p>}</form>
+		</section>;
+}
+
+export function IssueDrawer({ issue, preview = false, onClose }: { issue: FactoryIssue; preview?: boolean; onClose: () => void }) {
+  const blockers = preview ? issue.dependsOn : issue.blockers;
   return <Modal label={`Issue ${issue.id}`} onClose={onClose} backdropClassName="factory-issue-backdrop" dialogClassName="factory-issue-drawer">
     <header><div><span>{issue.id}</span><h2>{issue.title}</h2></div><button className="factory-issue-close" type="button" onClick={onClose} aria-label="Close issue details" title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
     {issue.description && <p>{issue.description}</p>}
@@ -50,20 +62,13 @@ export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: 
       {issue.parentId && <div><dt>Parent</dt><dd>{issue.parentId}</dd></div>}
       {issue.requirement && <div><dt>Requirement</dt><dd>{issue.requirement}</dd></div>}
       {issue.dispatchState && <div><dt>Dispatch</dt><dd>{issue.dispatchState}</dd></div>}
-      <div><dt>Blocked by</dt><dd>{issue.blockers?.length ? issue.blockers.map((blocker, index) => <span key={blocker.id}>{index > 0 && ', '}{blocker.type === 'merge_gated' && 'merge gate on '}<Link to={`/factory/issues/${encodeURIComponent(blocker.id)}`}>{blocker.id}</Link>{blocker.reason ? `: ${blocker.reason}` : ''}</span>) : 'none'}</dd></div>
+      <div><dt>Blocked by</dt><dd>{blockers?.length ? blockers.map((blocker, index) => <span key={blocker.id}>{index > 0 && ', '}{blocker.type === 'merge_gated' && 'merge gate on '}{preview ? blocker.id : <Link to={`/factory/issues/${encodeURIComponent(blocker.id)}`}>{blocker.id}</Link>}{'reason' in blocker && blocker.reason ? `: ${blocker.reason}` : ''}</span>) : 'none'}</dd></div>
 		{issue.outcome && <div><dt>Outcome</dt><dd>{issue.outcome}{issue.outcomeReason ? `: ${issue.outcomeReason}` : ''}</dd></div>}
 		{issue.conclusion && <div><dt>Conclusion</dt><dd>{issue.conclusion}</dd></div>}
 		{issue.prUrl && <div><dt>Pull request</dt><dd><a href={issue.prUrl} target="_blank" rel="noreferrer">{issue.prUrl}</a></dd></div>}
 		{issue.session?.id && <div><dt>Session</dt><dd><Link to={`/session/${encodeURIComponent(issue.session.id)}`}>{issue.session.id}</Link></dd></div>}
     </dl>
-		<section className="factory-issue-comments" aria-label="Issue comments">
-			<h3>Comments</h3>
-			{comments.isLoading && <p role="status">Loading comments...</p>}
-			{comments.isError && <p role="alert">Could not load comments.</p>}
-			{comments.data && !comments.data.length && <EmptyState>No comments yet.</EmptyState>}
-			{!!comments.data?.length && <ol>{comments.data.map((comment) => <li key={comment.id}><header><strong>{comment.actor}</strong><time dateTime={new Date(comment.createdAt).toISOString()}>{new Date(comment.createdAt).toLocaleString()}</time></header><p>{comment.body}</p></li>)}</ol>}
-			<form onSubmit={submit}><label>Add comment<textarea maxLength={16000} value={body} onChange={(event) => { setBody(event.target.value); setStatus(''); }} /></label><button type="submit" disabled={addComment.isPending || !body.trim()}>{addComment.isPending ? 'Adding...' : 'Add comment'}</button>{addComment.isError && <p role="alert">Could not add comment.</p>}{status && <p role="status">{status}</p>}</form>
-		</section>
+		{!preview && <IssueComments issue={issue} />}
   </Modal>;
 }
 

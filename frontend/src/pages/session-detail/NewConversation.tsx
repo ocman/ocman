@@ -15,7 +15,7 @@ import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
-import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSettingsCache';
+import { loadProjectSettings, useSettingsRevision, type ProjectDefaults } from '../../lib/projectSettingsCache';
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
@@ -45,7 +45,8 @@ export interface NewConversationProps {
 }
 
 /** What a submission needs before it can start: the catalog and the resolved target. */
-interface Ready { catalog: PrepareSessionResponse; canWorktree: boolean; worktrees: { path: string }[]; platform?: string; model: string }
+type DraftCatalog = PrepareSessionResponse & { defaults?: ProjectDefaults };
+interface Ready { catalog: DraftCatalog; canWorktree: boolean; worktrees: { path: string }[]; platform?: string; model: string }
 /** A server-delivered prompt, or work the client runs on the new session. */
 interface Submission {
   model: string;
@@ -87,12 +88,12 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
 
   const catalogKey = JSON.stringify([remoteId, directory, params.platform]);
   const cachedCatalog = useMemo(() => getNewSessionCatalog(catalogKey), [catalogKey]);
-  const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: PrepareSessionResponse }>();
+  const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: DraftCatalog }>();
   const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const settingsRevision = useSettingsRevision();
   const catalogRequest = JSON.stringify([catalogKey, catalogAttempt, settingsRevision]);
-  const catalog = prepared?.key === catalogKey ? prepared.catalog : cachedCatalog;
+  const catalog: DraftCatalog | undefined = prepared?.key === catalogKey ? prepared.catalog : cachedCatalog;
   const catalogReady = prepared?.request === catalogRequest;
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
@@ -120,6 +121,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     ]).then(([result, settings]) => {
       if (controller.signal.aborted) return;
       const catalog = { ...result, defaultAgent: settings.defaultAgent || 'build',
+        defaults: settings.defaults,
+        projectDefaultModel: settings.defaults?.model || result.projectDefaultModel,
         models: { ...result.models, models: result.models.hasProviders ? result.models.models : availabilityUnknown(result.models.models) },
       };
       cacheNewSessionCatalog(catalogKey, catalog);
@@ -134,11 +137,12 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const [selectedModel, setSelectedModel] = useState(saved?.model || '');
   const [selectedAgent, setSelectedAgent] = useState(saved?.agent || '');
   const [selectedReasoning, setSelectedReasoning] = useState(saved?.reasoning || '');
-  const [target, setTarget] = useState<SessionTarget>((saved?.target as SessionTarget) || 'worktree');
+  const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
+  const target = targetPick || catalog?.defaults?.worktree || 'worktree';
   useEffect(() => {
     rememberConversationDraft({ directory, remoteId, platform: params.platform, title, draftId,
-      model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target });
-  }, [directory, remoteId, params.platform, title, draftId, selectedModel, selectedAgent, selectedReasoning, target]);
+      model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick });
+  }, [directory, remoteId, params.platform, title, draftId, selectedModel, selectedAgent, selectedReasoning, targetPick]);
   const [error, setError] = useState('');
   // The submitted prompt, shown as the conversation's first message while
   // the session starts. Keyed by route so a machine switch mid-start hides it.
@@ -179,7 +183,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) { setSelectedModel(agentModel); setSelectedReasoning(''); }
-  }, [agents, directory]);
+  }, [agents]);
   const handleToggleFavorite = useCallback(async (provider: string, model: string, next: boolean) => {
     if (!platform) return;
     try {
@@ -243,8 +247,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       }
       const { send, execute, model } = build(ready);
       // Retirement compares these initiating selections, not ones a peer stored meanwhile.
-      const submitted = { revision, routeKey, selections: selectionsKey({ model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target }) };
-      const startTarget = resolveTarget(target, ready.canWorktree, ready.worktrees);
+      const submitted = { revision, routeKey, selections: selectionsKey({ model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick }) };
+      const startTarget = resolveTarget(targetPick || ready.catalog.defaults?.worktree || 'worktree', ready.canWorktree, ready.worktrees);
       const res = await api.startSession({
         directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,
         platform: ready.platform, remoteId, title, prompt: text, send, startId,
@@ -282,7 +286,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, target, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId]);
+  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     rememberPendingDraftPayload(draftId, images, files);

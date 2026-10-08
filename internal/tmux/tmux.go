@@ -23,11 +23,22 @@ func commandContext(ctx context.Context, timeout time.Duration, args ...string) 
 func runCommand(ctx context.Context, timeout time.Duration, args ...string) error {
 	cmd, cmdCtx, cancel := commandContext(ctx, timeout, args...)
 	defer cancel()
-	if err := cmd.Run(); err != nil && cmdCtx.Err() != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil && cmdCtx.Err() != nil {
 		return cmdCtx.Err()
-	} else {
-		return err
 	}
+	if err != nil {
+		diagnostic := strings.TrimSpace(string(out))
+		for i, arg := range args {
+			if i > 0 && args[i-1] == "-e" {
+				if _, value, ok := strings.Cut(arg, "="); ok && value != "" {
+					diagnostic = strings.ReplaceAll(diagnostic, value, "<redacted>")
+				}
+			}
+		}
+		return fmt.Errorf("tmux command failed: %w: %s", err, diagnostic)
+	}
+	return nil
 }
 
 // Run executes a short-lived tmux command with the package deadline.

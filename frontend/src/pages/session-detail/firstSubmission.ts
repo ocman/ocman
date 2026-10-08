@@ -174,3 +174,12 @@ if (channel) channel.onmessage = (event: MessageEvent) => {
     void reconcileFirstSubmission(id, record).catch(() => undefined);
   }
 };
+
+/** Tests only: each case uses a new database and must release its old runtime state too. */
+export function resetFirstSubmissionForTests() {
+  for (const timer of probes.values()) clearTimeout(timer);
+  probes.clear();
+  records.clear();
+  executions.clear();
+  useFirstSubmission.setState({ entries: {}, ready: {} });
+}

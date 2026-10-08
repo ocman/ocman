@@ -62,7 +62,7 @@ export function ArtifactDetail() {
       {error && <p role="alert" className="artifact-error">{error}</p>}
       {sharing && <ArtifactShareModal artifact={artifact} onClose={() => setSharing(false)} />}
       <ArtifactContent description={artifact.description} links={artifact.items.filter((it) => it.kind === 'link')}
-        files={artifact.items.filter((it) => it.kind === 'file')} downloadHref={(f) => `${f.url}?download=1`} />
+        files={artifact.items.filter((it) => it.kind === 'file')} downloadHref={(f) => `${f.url}?download=1`} interactiveHref={(f) => `${f.url}/interactive`} />
     </main>
   );
 }

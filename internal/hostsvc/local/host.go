@@ -14,6 +14,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	log "github.com/sirupsen/logrus"
@@ -26,19 +27,29 @@ type Deps struct {
 	CreateSession           func(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	CreateConfiguredSession func(context.Context, platforms.CreateSessionRequest, []platforms.PermissionRule) (*platforms.CreateSessionResponse, error)
 	Runtime                 ocruntime.Runtime
-	DiscoverPort            func(string) string
-	SetMachineServer        func(string)
-	ManagedStore            ManagedStore
-	TmuxSessions            func(context.Context) ([]hostsvc.TmuxSession, error)
-	Projects                func(context.Context) ([]db.ProjectStats, error)
-	ProjectUpstreams        func(context.Context, string) (*hostsvc.ProjectUpstreams, error)
-	FetchPRHead             func(context.Context, hostsvc.FetchPRHeadRequest) (string, error)
-	Caps                    func() hostsvc.HostCaps
-	TermWindows             func(context.Context, string) ([]hostsvc.TermWindow, error)
-	TermCreateWindow        func(context.Context, string) (string, error)
-	TermKillWindow          func(context.Context, string, string) error
-	TermAttach              func(context.Context, hostsvc.TermAttachRequest, hostsvc.TermConn) error
-	StateDir                string
+	// BeforeReplace prepares history, BeforeStop records the stop boundary,
+	// and AfterStop confirms reconciliation.
+	BeforeReplace         func(context.Context, string, string) error
+	BeforeStop            func(context.Context, string, *ocruntime.Instance) error
+	AfterStop             func(context.Context, string) error
+	ReplacementStopped    func(context.Context, string) (bool, error)
+	ReplacementStopping   func(context.Context, string) (*ocruntime.Instance, error)
+	CancelReplacementStop func(context.Context, string) error
+	DiscoverPort          func(string) string
+	SetMachineServer      func(string)
+	ManagedStore          ManagedStore
+	OpenCodeAuth          func() ocapi.Auth
+	OpenCodeReloaded      func(port string)
+	TmuxSessions          func(context.Context) ([]hostsvc.TmuxSession, error)
+	Projects              func(context.Context) ([]db.ProjectStats, error)
+	ProjectUpstreams      func(context.Context, string) (*hostsvc.ProjectUpstreams, error)
+	FetchPRHead           func(context.Context, hostsvc.FetchPRHeadRequest) (string, error)
+	Caps                  func() hostsvc.HostCaps
+	TermWindows           func(context.Context, string) ([]hostsvc.TermWindow, error)
+	TermCreateWindow      func(context.Context, string) (string, error)
+	TermKillWindow        func(context.Context, string, string) error
+	TermAttach            func(context.Context, hostsvc.TermAttachRequest, hostsvc.TermConn) error
+	StateDir              string
 }
 
 // ManagedInstance mirrors the durable runtime fields needed for recovery.
@@ -65,9 +76,12 @@ type Host struct {
 	sf singleflight.Group
 	// background tracks detached worktree naming so tests can wait for it.
 	background sync.WaitGroup
-	// instances is a hot cache; persisted candidates are always re-probed.
-	mu               sync.Mutex
-	instances        map[string]*ocruntime.Instance
+	// instances retains cleanup handles; only successful probes authorize routing.
+	mu         sync.Mutex
+	instances  map[string]*ocruntime.Instance
+	authorized map[string]string
+	// stopped retains non-routable recovery until reconciliation commits.
+	stopped          map[string]bool
 	portWaitTimeout  time.Duration
 	portWaitInterval time.Duration
 }
@@ -80,6 +94,8 @@ func New(deps Deps) *Host {
 	return &Host{
 		deps: deps, runtime: rt, store: deps.ManagedStore,
 		instances:       map[string]*ocruntime.Instance{},
+		authorized:      map[string]string{},
+		stopped:         map[string]bool{},
 		portWaitTimeout: 15 * time.Second, portWaitInterval: 200 * time.Millisecond,
 	}
 }
@@ -142,7 +158,6 @@ func (h *Host) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc.Proje
 func (h *Host) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
 	return h.deps.FetchPRHead(ctx, req)
 }
-
 func (h *Host) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {
 	repoRoot, err := git.ResolveRepoRoot(ctx, dir)
 	if err != nil {

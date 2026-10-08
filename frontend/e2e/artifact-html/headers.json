@@ -1,0 +1,4 @@
+{
+  "inert": "sandbox; frame-ancestors 'self'",
+  "interactive": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+}
