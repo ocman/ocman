@@ -44,6 +44,8 @@
 /* Portal target for per-route header actions. */
 .header-actions { display: flex; justify-content: flex-end; gap: 4px; }
 .header-actions:empty { display: none; }
+.header-machine-pill { position: relative; display: inline-block; flex-shrink: 0; max-width: 120px; padding: 4px 8px 4px 20px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.header-machine-pill::before { position: absolute; top: 50%; left: 8px; transform: translateY(-50%); }
 
 @media (max-width: 768px) {
   .app-header { padding: 0 12px; }
@@ -51,6 +53,7 @@
   .header-navigation-slot { flex-shrink: 0; }
   .header-right { max-width: none; flex-shrink: 0; }
   .header-project { max-width: 28vw; }
+  .header-machine-pill { max-width: 64px; }
   .mobile-nav-toggle {
     display: inline-flex;
     align-items: center;

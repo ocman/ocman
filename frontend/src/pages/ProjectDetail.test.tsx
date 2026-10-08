@@ -30,18 +30,27 @@ vi.mock('../components/SessionTable', () => ({
   ),
 }));
 
-it('filters project sessions by search and portals actions into the header', () => {
+it('filters project sessions by search and uses shared view tabs', () => {
   render(
     <MemoryRouter initialEntries={['/project/%2Frepos%2Focman']}>
       <div id="header-actions-slot" data-testid="header-slot" />
       <Routes><Route path="/project/:dir" element={<ProjectDetail />} /></Routes>
     </MemoryRouter>,
   );
-  expect(screen.getByTestId('header-slot')).toHaveTextContent('Worktrees');
+  expect(screen.getByRole('tab', { name: 'Sessions' })).toHaveAttribute('aria-selected', 'true');
   expect(screen.queryByRole('button', { name: 'VS Code' })).not.toBeInTheDocument();
   expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(['Fix header', 'Add search', 'Remote change']);
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'search' } });
   expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Add search']);
+});
+
+it('restores search from the URL', () => {
+  render(<MemoryRouter initialEntries={['/project/%2Frepos%2Focman?q=search&t=0&a=1']}>
+    <Routes><Route path="/project/:dir" element={<ProjectDetail />} /></Routes>
+  </MemoryRouter>);
+  expect(screen.getByRole('searchbox', { name: 'Search sessions' })).toHaveValue('search');
+  expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Add search']);
+  expect(screen.getByRole('button', { name: 'Exclude archived' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 it('keeps project sessions beyond 500 newer unrelated sessions in both time-range and All views', () => {

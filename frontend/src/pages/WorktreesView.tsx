@@ -3,8 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { WorktreeEntry } from '../lib/api';
 import { api } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
-import { usePageTitle } from '../lib/headerContext';
-import { relativeTime, shortPath } from '../lib/format';
+import { relativeTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { sessionsForWorktree } from '../lib/worktrees';
@@ -14,9 +13,10 @@ import { DataTable } from '../components/DataTable';
 import { RefreshButton } from '../components/RefreshButton';
 import { InlineAlert } from '../components/InlineAlert';
 import { EmptyState } from '../components/EmptyState';
-import { Button, ButtonGroup, RouteButton } from '../components/Control';
+import { Button, ButtonGroup } from '../components/Control';
 import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import styles from './WorktreesView.module.css';
+import { ProjectShell } from './ProjectShell';
 
 export function WorktreesView() {
   const { dir } = useParams();
@@ -29,12 +29,10 @@ export function WorktreesView() {
   // Keyed by (owner, project): rows, in-flight responses, and delete /
   // force-delete consent all belong to one machine's project, so switching
   // either remounts with fresh state instead of carrying them across.
-  return <WorktreesContent key={`${remoteId}\n${projectDir}`} projectDir={projectDir} remoteId={remoteId} />;
+  return <ProjectShell view="worktrees"><WorktreesContent key={`${remoteId}\n${projectDir}`} projectDir={projectDir} remoteId={remoteId} /></ProjectShell>;
 }
 
 function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remoteId: string }) {
-  usePageTitle(projectDir ? `${shortPath(projectDir)} · Worktrees` : 'Worktrees');
-  const ownerQuery = remoteId === 'local' ? '' : `?remoteId=${encodeURIComponent(remoteId)}`;
 
   const navigate = useNavigate();
   const allowed = useOpencodeLaunch(remoteId);
@@ -129,9 +127,6 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
     <div>
       <HeaderPortal>
         <ButtonGroup label="Worktree actions">
-          <RouteButton size="small" to={`/project/${encodeURIComponent(projectDir)}${ownerQuery}`}>
-            Back to project
-          </RouteButton>
           <RefreshButton size="small" variant="default" onClick={() => void load()} loading={loading} />
           <Button size="small" variant="accent"
             type="button"

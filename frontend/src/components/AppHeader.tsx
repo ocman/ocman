@@ -24,10 +24,11 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
 
   let breadcrumb: ReactNode = routeTitle(path, sessionInfo.sessionTitle);
   const projectDir = routeProjectDir(path);
+  const projectOwner = new URLSearchParams(location.search).get('remoteId') || 'local';
   if (projectDir?.split('/').pop()) {
     breadcrumb = (
       <>
-        <ProjectQuickSettings key={JSON.stringify([projectDir, location.search])} directory={projectDir} remoteId={new URLSearchParams(location.search).get('remoteId') || 'local'}>
+        <ProjectQuickSettings key={JSON.stringify([projectDir, location.search])} directory={projectDir} remoteId={projectOwner}>
           <ProjectLabel path={projectDir} />
         </ProjectQuickSettings>
         {path.endsWith('/worktrees') && ' / Worktrees'}
@@ -63,6 +64,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
         <span className="header-breadcrumb">{breadcrumb}</span>
       </h1>
       <div className="header-right">
+        {projectDir && <HostBadge alwaysShow className="header-machine-pill" remoteId={projectOwner} remoteName={projectOwner === 'local' ? 'Local' : projectOwner} />}
         {exploreDir && (
           <IconButton icon="bi-folder2-open" label="Explore files" variant="ghost" size="compact" onClick={() => setExploring(true)} />
         )}

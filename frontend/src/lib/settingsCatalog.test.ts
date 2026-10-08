@@ -34,6 +34,6 @@ describe('searchSettings', () => {
   it('ranks title matches first and skips groups not shown', () => {
     expect(ids('reviewer')[0]).toMatch(/^reviewer-/);
     expect(ids('sign out')).toEqual([]); // Account group not in labels
-    expect(ids('models')).not.toContain('project-models');
+    expect(ids('models')).not.toContain('project-add-model');
   });
 });

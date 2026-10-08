@@ -8,8 +8,8 @@ import { Popover } from './Popover';
 import { PERMISSION_MODES } from '../lib/permissionModes';
 import './ProjectQuickSettings.css';
 
-export function ProjectQuickSettings({ directory, remoteId = 'local', children, className, title }: {
-  directory: string; remoteId?: string; children: ReactNode; className?: string; title?: string;
+export function ProjectQuickSettings({ directory, remoteId = 'local', children, className, title, triggerLabel = 'Project quick settings', disabled }: {
+  directory: string; remoteId?: string; children: ReactNode; className?: string; title?: string; triggerLabel?: string; disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 12 });
@@ -17,7 +17,7 @@ export function ProjectQuickSettings({ directory, remoteId = 'local', children, 
   const id = useId();
   return <span className="project-quick-settings">
     <Button ref={trigger} type="button" variant="ghost" size="compact" className={className} title={title}
-      aria-label="Project quick settings" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+      aria-label={triggerLabel} disabled={disabled} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={(event) => {
         const anchor = event.currentTarget.getBoundingClientRect();
         setPosition({ top: anchor.bottom + 8, left: Math.max(12, Math.min(anchor.left, window.innerWidth - 352)) });

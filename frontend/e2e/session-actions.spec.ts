@@ -251,12 +251,12 @@ test('archive button in session detail sidebar navigates away from archived sess
 
 test('project detail page renders directory path', async ({ mockedPage: page }) => {
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-  await expect(page.getByTitle(MOCK_PROJECT.directory)).toHaveText('projects/myapp', { timeout: 5_000 });
+  await expect(page.getByRole('button', { name: 'Project quick settings' }).getByTitle(MOCK_PROJECT.directory)).toHaveText('projects/myapp', { timeout: 5_000 });
 });
 
 test('project detail has project actions without a VS Code button', async ({ mockedPage: page }) => {
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-  await expect(page.getByRole('button', { name: 'Worktrees', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Worktrees', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'VS Code', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'tmux', exact: true })).toHaveCount(0);
 });

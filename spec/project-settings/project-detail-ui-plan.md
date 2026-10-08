@@ -1,6 +1,6 @@
 # Project detail layout plan
 
-Status: planned for later implementation.
+Status: implemented on `feat/project-detail-tables`.
 
 ## Goal
 
@@ -19,8 +19,8 @@ existing quick-settings popover. Keep CSS with the component that owns it.
 - `ProjectSettingsView.tsx` edits the ordered fallback model list and the
   disable-fallthrough flag. Its reads/writes need the same explicit owner as
   the rest of the project page.
-- `ProjectQuickSettings.tsx` already edits default model, default agent, and
-  default worktree behavior through `Popover`. It loads owner-scoped settings
+- `ProjectQuickSettings.tsx` already edits default model, default agent,
+  default worktree behavior, and permission mode through `Popover`. It loads owner-scoped settings
   and catalogs, retains saved choices missing from the catalog, and calls
   `clearSettingsCache()` after a successful save.
 - `DefaultAgentSetting.tsx` is the global default. Project overrides must keep
@@ -37,8 +37,8 @@ existing quick-settings popover. Keep CSS with the component that owns it.
 - Settings use a framed name/value/action table. Show the project default
   model, agent, worktree behavior, ordered fallback models, and fallthrough
   setting. Distinguish inherited defaults from explicit overrides.
-- Put `ProjectQuickSettings` beside the project header for quick edits of the
-  three defaults. Reuse its form for those edits instead of adding another
+- Reuse `ProjectQuickSettings` already mounted in the app header for quick edits
+  of the defaults, including permission mode. Reuse its form for table edits instead of adding another
   settings request/save implementation.
 - Preserve the existing worktree/settings URLs as entry points to the
   corresponding view. Carry `remoteId` through links and navigation.
@@ -75,4 +75,16 @@ Verify each slice and present desktop/phone screenshots before proceeding.
   and phone table scrolling work.
 - Run tests for changed components/routes, typecheck, and targeted lint.
 
-No project-detail UI implementation is included in this planning change.
+## Implementation
+
+- `ProjectShell` gives the existing routes shared URL-backed tabs and owner
+  identity. Tab navigation retains session search, time range, and archive filters.
+- Project identity appears once in the app header, with the machine in a pill.
+- Worktree rows and destructive confirmations remain keyed by owner and project.
+- The Settings table separates inherited defaults from overrides and opens the
+  existing defaults editor. Catalog preparation, settings reads, and fallback
+  writes carry an explicit owner; defaults refresh through settings-cache revision.
+- Fallback edits retain optimistic rollback and block overlapping changes.
+  Successful writes invalidate the settings cache used by new conversations.
+- Desktop and phone browser checks cover tab history, retained filters, shared
+  defaults editing, wide table containment, and model-save completion.

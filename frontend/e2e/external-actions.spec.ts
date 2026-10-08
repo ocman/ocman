@@ -12,9 +12,9 @@ for (const width of [1280, 390]) {
       { path: '/home/user/.worktrees/myapp/feature', branch: 'feature', main: false, locked: false, bare: false, head: 'def' },
     ] } }));
     await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-    await expect(page.getByRole('button', { name: 'Worktrees', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Worktrees', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /^(tmux|VS Code)$/ })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Worktrees', exact: true }).click();
+    await page.getByRole('tab', { name: 'Worktrees', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /tmux|VS Code/ })).toHaveCount(0);
     await page.goto(`/session/${MOCK_SESSION.id}`);

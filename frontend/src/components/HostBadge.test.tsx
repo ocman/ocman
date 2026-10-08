@@ -10,6 +10,11 @@ vi.mock('../lib/useCapabilities', () => ({
 }));
 
 describe('HostBadge', () => {
+  it('can show the local owner in a styled project header on a single-host install', () => {
+    multiHost.mockReturnValue(false);
+    render(<HostBadge remoteId="local" remoteName="This machine" alwaysShow className="header-machine-pill" />);
+    expect(screen.getByLabelText('This machine')).toHaveClass('host-badge', 'header-machine-pill');
+  });
   it('renders nothing on a single-host install', () => {
     multiHost.mockReturnValue(false);
     const { container } = render(<HostBadge remoteName="Box" remoteId="r1" />);

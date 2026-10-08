@@ -233,8 +233,8 @@ describe('WorktreesView', () => {
       expect(api.worktree.list).toHaveBeenCalledWith('/repo', 'B');
       expect(launchState.askedFor).toContain('B');
       expect(launchState.askedFor).not.toContain(undefined);
-      expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute('href', '/project/%2Frepo?remoteId=B');
-      expect(screen.getByRole('link', { name: 'Back to project' })).toHaveClass('oc-button');
+      expect(screen.getByRole('tab', { name: 'Worktrees' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('tab', { name: 'Sessions' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'New worktree session' })).toHaveClass('oc-button--accent');
       expect(screen.queryByRole('button', { name: 'VS Code' })).not.toBeInTheDocument();
 

@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { HeaderContext, type HeaderInfo } from '../lib/headerContext';
 import { AppHeader } from './AppHeader';
+
+it.each(['local', 'B'])('shows the %s project owner as a header pill', (owner) => {
+  render(<MemoryRouter initialEntries={[`/project/%2Frepo/settings?remoteId=${owner}`]}><AppHeader onOpenNav={vi.fn()} /></MemoryRouter>);
+  const label = owner === 'local' ? 'Local' : owner;
+  expect(within(screen.getByRole('banner')).getByLabelText(label)).toHaveClass('header-machine-pill');
+  expect(screen.getByTitle('/repo')).toHaveTextContent('repo');
+});
 
 it.each([
   ['/sessions', { sessionId: 'old', sessionTitle: 'Old title', sessionProject: 'old-project' }, 'Sessions'],

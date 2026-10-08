@@ -329,23 +329,11 @@ export const SETTINGS = {
     example: 'Sign out on a shared computer before you leave.',
     keywords: 'logout sign out password',
   },
-  'project-models': {
-    group: 'project',
-    title: 'Models',
-    description: 'The first model is the project default, used when a prompt names no model. When a provider runs out of tokens, the session continues on the next model in the list.',
-    example: '1. claude-sonnet 2. gpt-5: sessions use Sonnet, and move to GPT-5 when Anthropic quota runs out.',
-  },
   'project-add-model': {
     group: 'project',
     title: 'Add model',
-    description: 'Choices come from a session in this project, or the models it has used before.',
+    description: 'Available or previously used models on the selected machine.',
     example: 'Add "openai/gpt-5" as a fallback below the default.',
-  },
-  'project-disable-fallthrough': {
-    group: 'project',
-    title: 'Disable fallthrough',
-    description: 'Keep the list and its project default, but never switch to another model when a provider runs out of tokens.',
-    example: 'Turn it on for a benchmark project that must only ever run on one model.',
   },
 } satisfies Record<string, SettingEntry>;
 

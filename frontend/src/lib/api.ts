@@ -2,6 +2,7 @@ import { fetchJSON, postJSON, queryString } from './api.requests';
 import { settingsApi } from './api.settings';
 import { sessionApi } from './api.sessions';
 import { hostApi } from './api.host';
+import type { CachedProjectSettings } from './projectSettingsCache';
 import type {
   WebhookDelivery, WebhookInbox, WebhookSubscription, ClientActivity, Stats, MetricsPerformance,
   AnalyticsOverview, DatabaseSizeSample, SubscriptionUsageResponse, MetricsLog, MetricsLogKind,
@@ -121,8 +122,8 @@ export const api = {
   calcCost: (req: { modelID: string; input: number; output: number; cacheRead: number; cacheWrite: number }) => postJSON<{ cost: number; known: boolean }>('/api/cost/calc', req),
   activity: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => fetchJSON<ActivityDay[]>(`/api/activity${queryString(params)}`, signal),
   models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => fetchJSON<ModelUsage[]>(`/api/models${queryString(params)}`, signal),
-  projectSettings: (dir: string, signal?: AbortSignal) => fetchJSON<{ models: string[]; off: boolean }>(`/api/project/settings${queryString({ dir })}`, signal),
-  setProjectSettings: (directory: string, models: string[], off: boolean) => postJSON<{ ok: boolean }>('/api/project/settings', { directory, models, off }),
+  projectSettings: (dir: string, signal?: AbortSignal, remoteId = 'local') => fetchJSON<CachedProjectSettings>(`/api/project/settings${queryString({ dir, remoteId })}`, signal),
+  setProjectSettings: (directory: string, models: string[], off: boolean, remoteId = 'local') => postJSON<{ ok: boolean }>('/api/project/settings', { directory, models, off, remoteId }),
   listFavorites: (platform: string) => fetchJSON<FavoriteEntry[]>(`/api/favorites?platform=${encodeURIComponent(platform)}`),
   addFavorite: (platform: string, provider: string, model: string) => postJSON<void>('/api/favorites', { platform, provider, model }, { parseJSON: false }),
   removeFavorite: (platform: string, provider: string, model: string) => postJSON<void>('/api/favorites', { platform, provider, model }, { method: 'DELETE', parseJSON: false }),

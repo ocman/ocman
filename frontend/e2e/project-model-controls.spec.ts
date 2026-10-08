@@ -20,10 +20,10 @@ for (const width of [1280, 390]) {
       off = payload.off;
       return route.fulfill({ status: 204 });
     });
-    await page.route('/api/session/*/models*', route => route.fulfill({ json: { hasProviders: true, models: [
+    await page.route('/api/sessions/prepare', route => route.fulfill({ json: { agents: [], models: { hasProviders: true, models: [
       { provider: 'anthropic', model: 'claude-haiku-4-5', providerName: 'Anthropic', modelName: 'Claude Haiku' },
       { provider: 'openai', model: 'gpt-5', providerName: 'OpenAI', modelName: 'GPT-5' },
-    ] } }));
+    ] } } }));
     await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}/settings`);
     const list = page.getByRole('list', { name: 'Project models' });
     await expect(list.getByRole('listitem')).toHaveCount(2);
@@ -33,7 +33,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('combobox', { name: 'Add model', exact: true })).toBeDisabled();
     await expect(page.getByRole('checkbox', { name: 'Disable fallthrough', exact: true })).toBeDisabled();
     await expect.poll(() => writes.length).toBe(1);
-    expect(writes[0]).toEqual({ directory: MOCK_PROJECT.directory, models: [second, first], off: true });
+    expect(writes[0]).toEqual({ directory: MOCK_PROJECT.directory, remoteId: 'local', models: [second, first], off: true });
     finish();
     await expect(page.getByRole('button', { name: 'Clear list', exact: true })).toBeEnabled();
     await expect(list.getByRole('listitem').first()).toContainText(second);
@@ -47,6 +47,6 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByTestId('project-models-empty')).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Disable fallthrough', exact: true })).toBeDisabled();
-    expect(writes[2]).toEqual({ directory: MOCK_PROJECT.directory, models: [], off: true });
+    expect(writes[2]).toEqual({ directory: MOCK_PROJECT.directory, remoteId: 'local', models: [], off: true });
   });
 }

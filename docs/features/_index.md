@@ -83,6 +83,13 @@ the default for that conversation. **Use inherited default** clears an override.
 Worktrees are used only when the project supports them. The startup model
 preference does not change the project's model fallback list.
 
+Project pages share **Sessions**, **Worktrees**, and **Settings** tabs. Switching
+tabs preserves the selected machine, session search, time range, and archived
+filter in the URL. Settings shows inherited defaults and project overrides in
+a table; **Edit defaults** opens the same editor as the project name. The ordered
+fallback model list remains separate, with reorder, remove, clear, and fallthrough
+controls. Wide tables scroll within the page on phones.
+
 Permission modes are **Plan only**, which denies edits and shell commands;
 **Auto-accept edits**, which allows edits and asks for shell commands; and
 **YOLO**, which allows everything without asking. Saving YOLO requires

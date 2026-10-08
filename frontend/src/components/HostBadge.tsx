@@ -8,6 +8,9 @@ interface HostBadgeProps {
   remoteId?: string;
   /** True when the session is last-known data from an offline remote. */
   stale?: boolean;
+  /** Project headers show the owner even on a single-host install. */
+  alwaysShow?: boolean;
+  className?: string;
 }
 
 /**
@@ -16,17 +19,17 @@ interface HostBadgeProps {
  * adds no information. Display-only: it never branches behaviour on the
  * host identity, it just shows the server-provided label.
  */
-export function HostBadge({ remoteName, remoteId, stale }: HostBadgeProps) {
+export function HostBadge({ remoteName, remoteId, stale, alwaysShow = false, className = '' }: HostBadgeProps) {
   const multi = useMultiHost();
-  // Only prefix remote-owned sessions; the local machine needs no label.
+  // Session rows omit the local owner; project headers always show it.
   // An offline remote may arrive without a name — still flag it as remote.
-  if (!multi || !remoteId || remoteId === 'local') return null;
+  if (!alwaysShow && (!multi || !remoteId || remoteId === 'local')) return null;
   const label = remoteName || 'Remote';
-  const classes = ['host-badge'];
+  const classes = ['host-badge', className];
   if (stale) classes.push('stale');
   const title = stale ? `${label} (offline — last known)` : label;
   return (
-    <span className={classes.join(' ')} title={title} aria-label={title}>
+    <span className={classes.join(' ').trim()} title={title} aria-label={title}>
       {label}
       {stale ? ' (offline)' : ''}
     </span>

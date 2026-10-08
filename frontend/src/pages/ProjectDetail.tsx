@@ -1,10 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { usePageTitle } from '../lib/headerContext';
+import { useEffect, useCallback, useRef, useMemo } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { SessionTable } from '../components/SessionTable';
-import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import { TimeRangeControl } from '../components/TimeRangeControl';
-import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, fuzzyMatch } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
@@ -12,15 +9,13 @@ import { useProjects, useSessions } from '../lib/queries';
 import { projectIdentityIndex } from '../lib/projectIdentity';
 import { Button, ButtonGroup, SearchField } from '../components/Control';
 import styles from './ProjectDetail.module.css';
+import { ProjectShell } from './ProjectShell';
 
 const DEFAULT_TIME_RANGE = 168; // 7d
 
 export function ProjectDetail() {
   const { dir } = useParams();
   const directory = dir ? decodeURIComponent(dir) : undefined;
-  const projectName = directory?.split('/').pop() || 'Project';
-  usePageTitle(projectName);
-  const navigate = useNavigate();
 
   // Filter state (mirrors the dashboard Sessions tab) — persisted in the
   // URL so refresh / back-forward keep the user's view. Default to 7d
@@ -32,8 +27,6 @@ export function ProjectDetail() {
   const excludeArchived = searchParams.get('a') === '1';
   // Carry an explicit owner on to the Worktrees view (absent = this machine).
   const ownerId = searchParams.get('remoteId');
-  const ownerQuery = ownerId ? `?remoteId=${encodeURIComponent(ownerId)}` : '';
-  const launchAllowed = useOpencodeLaunch(ownerId ?? undefined);
 
   const setTimeRange = useCallback((v: number) => {
     setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
@@ -61,7 +54,7 @@ export function ProjectDetail() {
   const projectKey = identity(directory ?? '', ownerId ?? undefined).key;
   const sessions = (sessionsQ.data ?? []).filter(s => identity(s.directory || '', s.remoteId).key === projectKey);
   const sessionsLoaded = !sessionsQ.isLoading && !projectsQ.isLoading;
-  const [search, setSearch] = useState('');
+  const search = searchParams.get('q') || '';
   const q = search.trim();
   const filteredSessions = q
     ? sessions.filter((s) => fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`))
@@ -89,37 +82,17 @@ export function ProjectDetail() {
   useShortcut(openVscodeShortcut);
 
   return (
-    <div>
-      <HeaderPortal>
-        <ButtonGroup label="Project actions">
-          {directory && launchAllowed && (
-            <Button
-              type="button"
-              size="small"
-              onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees${ownerQuery}`)}
-              title="View project worktrees"
-            >
-              Worktrees
-            </Button>
-          )}
-          {directory && (
-            <Button
-              type="button"
-              size="small"
-              onClick={() => navigate(`/project/${encodeURIComponent(directory)}/settings`)}
-              title="Project settings"
-            >
-              Settings
-            </Button>
-          )}
-        </ButtonGroup>
-      </HeaderPortal>
+    <ProjectShell view="sessions">
       <div className={styles.searchBar}>
         <SearchField className={styles.search}
           placeholder="Search sessions…"
           aria-label="Search sessions"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => setSearchParams((params) => {
+            const next = new URLSearchParams(params);
+            if (e.target.value) next.set('q', e.target.value); else next.delete('q');
+            return next;
+          }, { replace: true })}
         />
       </div>
       <ButtonGroup label="Project session filters" className={styles.range}>
@@ -129,6 +102,6 @@ export function ProjectDetail() {
         >Exclude archived</Button>
       </ButtonGroup>
       <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
-    </div>
+    </ProjectShell>
   );
 }

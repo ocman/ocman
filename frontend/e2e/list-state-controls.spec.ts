@@ -40,6 +40,7 @@ for (const width of [1280, 390]) {
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     expect(owners.length).toBeGreaterThanOrEqual(2);
     expect(owners.every(owner => owner === 'build')).toBe(true);
-    await expect(page.getByRole('link', { name: 'Back to project' })).toHaveAttribute('href', `/project/${encodeURIComponent(MOCK_PROJECT.directory)}?remoteId=build`);
+    await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}\\?remoteId=build$`));
   });
 }

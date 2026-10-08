@@ -6,6 +6,11 @@ import { api, fetchJSON, postJSON } from '../lib/api';
 import { clearSettingsCache, loadProjectSettings } from '../lib/projectSettingsCache';
 import { ProjectQuickSettings } from './ProjectQuickSettings';
 
+it('supports a labelled table action and pending-save protection', () => {
+  render(<ProjectQuickSettings directory="/repo" triggerLabel="Edit project defaults" disabled>Edit defaults</ProjectQuickSettings>);
+  expect(screen.getByRole('button', { name: 'Edit project defaults' })).toBeDisabled();
+});
+
 vi.mock('../lib/api', () => ({ api: { prepareSession: vi.fn() }, fetchJSON: vi.fn(), postJSON: vi.fn() }));
 beforeEach(() => {
   vi.resetAllMocks();
