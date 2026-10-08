@@ -573,6 +573,9 @@ flowchart TD
   changed and they re-read them; a per-key local edit counter stops a database
   read from overwriting a newer local edit. Hydration imports the pre-IndexedDB
   `ocman.composerDrafts.v1` localStorage map once without overwriting stored text.
+  Failed autosaves retain the unsaved live text across refreshes and report the
+  failure in the composer; another edit retries persistence. Synchronizing an
+  untouched composer updates presentation without dispatching input or saving.
   Without IndexedDB, drafts live in memory only and starts fail closed.
   Text records carry a revision that only grows. An autosave writes only if the
   stored revision is not newer, so a stale autosave cannot land after a discard
@@ -585,7 +588,8 @@ flowchart TD
   reopen or discard one. Opening another new conversation allocates another
   draft id; switching machines retains the current id.
   The first submission claims the draft in one transaction: a pending or
-  completed receipt refuses a second claim in any tab. The pending receipt holds
+  completed receipt refuses a second claim in any tab, and a committed metadata
+  tombstone refuses a start on a discarded identity. The pending receipt holds
   the prompt so reopened composers show it; terminal receipts drop it. A failure
   this tab knows but could not store is repaired inside the next claim.
   Completion is one transaction. It records the created session and retires the
@@ -600,6 +604,8 @@ flowchart TD
   stays visible in this tab and reconciliation repairs it.
   A failure is recorded in one transaction that restores the prompt only when no
   newer edit or discard happened. A created session is never downgraded to a failure.
+  Sidebar discard waits for its transaction to commit before navigating or
+  releasing live attachments; failure keeps the draft and exposes a retry.
   Identity-less bookmarked URLs get a fresh canonical draft id before mounting,
   with a transactional move of the legacy `new` text.
   Pending images and browser Files live in a shared draft-keyed Zustand snapshot,
@@ -634,8 +640,8 @@ flowchart TD
   lifecycle is owned by `firstSubmission`: an atomic reservation in the shared
   draft database's receipt store must
   succeed before upload/command execution or completion publication. Child composers
-  remain locked until they read that record. localStorage and BroadcastChannel are
-  notification hints, never authorities; failed mirror writes cannot unlock peers.
+  remain locked until they read that record. BroadcastChannel carries notification
+  hints, never authority; a missed notification cannot unlock peers.
   Known live terminal outcomes override stale pending records and reconciliation
   repairs their persistence. Retry execution remains in the originating tab, which
   repairs its known failure before claiming another attempt and retains the

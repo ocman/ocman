@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle } from 'react';
 import './Composer.css';
 import { useComposerDrafts } from './useComposerDrafts';
-import { clearDraft, getDraft, getDraftVersion, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, getDraft, getDraftVersion, saveDraft, useDraftWriteError } from '../../lib/composerDraft';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { BackendUnavailableError, type SlashCommand } from '../../lib/api';
 import { useComposerAttachments } from './useComposerAttachments';
@@ -20,6 +20,7 @@ import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinComman
 import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
 import type { ComposerProps } from './composerTypes';
 import { ComposerMachineSelector } from './ComposerMachineSelector';
+import { InlineAlert } from '../InlineAlert';
 
 export type { AttachedImage } from './useComposerAttachments';
 export type { ComposerHandle } from './composerTypes';
@@ -47,9 +48,11 @@ export function Composer({
   // Drafts are keyed separately from the session: a new conversation keeps
   // one shared draft while it has no session to attach it to.
   const draftKey = draftKeyProp ?? sessionId;
+  const draftWriteError = useDraftWriteError(draftKey);
   const draftKeyRef = useRef(draftKey);
   const inFlightRef = useRef<string | null>(null);
-  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, inFlightRef);
+  const syncInputRef = useRef<(text: string) => void>(() => {});
+  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, inFlightRef, (text) => syncInputRef.current(text));
   const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
   const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine, platform, initialAttachments, onAttachmentProcessing, onAttachmentsChange);
   const { images, files } = attachments;
@@ -249,10 +252,14 @@ export function Composer({
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e.ctrlKey || e.metaKey); }
   };
 
+  const syncInput = (text: string) => {
+    setIsBashMode(text.startsWith('!') && !!shellExec);
+    slash.syncToInput(text);
+  };
+  syncInputRef.current = syncInput;
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
-    setIsBashMode(el.value.startsWith('!') && !!shellExec);
-    slash.syncToInput(el.value);
+    syncInput(el.value);
     const key = draftKeyRef.current;
     if (key) scheduleDraftSave(key, () => el.value);
   };
@@ -301,6 +308,7 @@ export function Composer({
         onDragOver={attachments.handleDragOver} onDrop={attachments.handleDrop}
         onClick={disabled && onLaunchRequest ? onLaunchRequest : undefined}
         style={disabled && onLaunchRequest ? { cursor: 'pointer' } : undefined}>
+        {draftWriteError && <InlineAlert compact>Draft not saved: {draftWriteError}. Your text is retained in this tab; editing retries the save.</InlineAlert>}
         <ComposerDialogs pickers={pickers} models={models} modelEntries={modelEntries}
           effectiveModel={effectiveModel} onModelChange={onModelChange} onToggleFavorite={onToggleFavorite}
           agentOptions={agentOptions} agents={agents} activeAgent={activeAgent} effectiveAgent={effectiveAgent}

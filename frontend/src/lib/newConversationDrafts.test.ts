@@ -17,7 +17,7 @@ const created = { sessionId: 'created', platform: 'opencode', remoteId: 'local',
 const route = 'local:/repo:opencode:Draft';
 const draft = (draftId: string, extra = {}) => ({ draftId, directory: '/repo', remoteId: 'local', platform: 'opencode', title: 'Draft', ...extra });
 const storedDraft = (id: string) => transact(['drafts'], 'readonly', (tx) => tx.get<Record<string, unknown>>('drafts', id));
-const settle = () => waitFor(async () => expect(await transact(['drafts'], 'readonly', () => true)).toBe(true));
+const settle = () => transact(['texts', 'drafts', 'starts'], 'readonly', () => true);
 
 /** Submit like the composer: claim, then clear the sent prompt. */
 async function submit(id: string, text: string, extra = {}) {
@@ -50,7 +50,7 @@ it('persists independent targets and selections and only discards the selected d
   await settle();
   const { peer, texts } = await otherTab();
   expect(peer.getConversationDraft('first')).toMatchObject({ model: 'p/m', agent: 'plan', reasoning: 'high', target: 'current' });
-  forgetConversationDraft('first');
+  await forgetConversationDraft('first');
   await waitFor(() => expect(peer.useNewConversationDrafts.getState().drafts.map((entry) => entry.draftId)).toEqual(['second']));
   await waitFor(() => expect(texts.getDraft('first')).toBe(''));
   expect(texts.getDraft('second')).toBe('two');
@@ -134,7 +134,7 @@ it('never turns a created session back into a failure', async () => {
 it('does not let a late autosave resurrect a retired or discarded draft', async () => {
   const submitted = await submit('retired', 'prompt');
   await completeConversationStart('retired', created, submitted);
-  forgetConversationDraft('gone');
+  await forgetConversationDraft('gone');
   rememberConversationDraft(draft('retired', { agent: 'late' }));
   rememberConversationDraft(draft('gone'));
   await settle();
@@ -193,7 +193,32 @@ it('drops this tab\'s attachments when a peer discards the draft', async () => {
   updateDraftAttachments('peer-discard', { images: [], files: [{ path: '', name: 'local.txt', mime: 'text/plain' }] });
   await settle();
   const { peer } = await otherTab();
-  peer.forgetConversationDraft('peer-discard');
+  await peer.forgetConversationDraft('peer-discard');
   await waitFor(() => expect(getConversationDraft('peer-discard')).toBeUndefined());
   await waitFor(() => expect(getPendingDraftPayload('peer-discard')).toBeUndefined());
+});
+
+it('refuses to start a draft another tab already discarded', async () => {
+  rememberConversationDraft(draft('discarded-first'));
+  await settle();
+  const { peer } = await otherTab();
+  await peer.forgetConversationDraft('discarded-first');
+  // This tab has not observed the discard yet; the claim transaction must.
+  await expect(beginConversationStart('discarded-first', route)).rejects.toThrow('discarded');
+  expect(await readDraftStart('discarded-first')).toBeUndefined();
+});
+
+it('keeps a draft, its text and live files when discarding cannot be stored, then discards on retry', async () => {
+  rememberConversationDraft(draft('keep-on-fail'));
+  saveDraft('keep-on-fail', 'still here');
+  updateDraftAttachments('keep-on-fail', { images: [], files: [{ path: '', name: 'live.txt', mime: 'text/plain' }] });
+  await settle();
+  const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new DOMException('quota', 'QuotaExceededError'); });
+  try { await expect(forgetConversationDraft('keep-on-fail')).rejects.toThrow(); } finally { fail.mockRestore(); }
+  expect(getConversationDraft('keep-on-fail')).toBeTruthy();
+  expect(getDraft('keep-on-fail')).toBe('still here');
+  expect(getPendingDraftPayload('keep-on-fail')?.files).toHaveLength(1);
+  await forgetConversationDraft('keep-on-fail');
+  expect(getConversationDraft('keep-on-fail')).toBeUndefined();
+  expect(await storedDraft('keep-on-fail')).toMatchObject({ deleted: true });
 });

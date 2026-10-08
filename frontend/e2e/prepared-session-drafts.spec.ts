@@ -165,7 +165,7 @@ test('unavailable atomic storage fails visibly without starting a session', asyn
   await page.goto('/session/new?dir=%2Frepo&draftId=unavailable');
   await page.getByRole('textbox').fill('Keep this prompt.');
   await page.getByRole('button', { name: 'Send message' }).click();
-  await expect(page.getByTestId('conversation-composer').getByRole('alert')).toHaveText('This browser cannot coordinate session starts.');
+  await expect(page.getByTestId('conversation-composer').getByRole('alert').filter({ hasText: /^This browser cannot coordinate session starts\.$/ })).toBeVisible();
   await expect(page.getByRole('textbox')).toHaveValue('Keep this prompt.');
   expect(starts).toBe(0);
 });
@@ -185,7 +185,7 @@ test('an unusable atomic-store schema surfaces an error and keeps the prompt', a
   await page.goto('/session/new?dir=%2Frepo&draftId=broken');
   await page.getByRole('textbox').fill('Keep this prompt.');
   await page.getByRole('button', { name: 'Send message' }).click();
-  await expect(page.getByTestId('conversation-composer').getByRole('alert')).toBeVisible();
+  await expect(page.getByTestId('conversation-composer').getByRole('alert').filter({ hasText: /Draft not saved/ })).toBeVisible();
   await expect(page.getByRole('textbox')).toHaveValue('Keep this prompt.');
   expect(starts).toBe(0);
 });

@@ -402,7 +402,7 @@ describe('new-conversation submission lifecycle', () => {
       navigate: vi.fn(), navigateToSession: vi.fn() };
     const view = render(<NewConversation {...props} />);
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'discard this text' } });
-    act(() => forgetConversationDraft('discarded'));
+    await act(async () => forgetConversationDraft('discarded'));
     view.unmount();
     expect(getDraft('discarded')).toBe('');
     const request = deferred<typeof created>();
@@ -411,7 +411,7 @@ describe('new-conversation submission lifecycle', () => {
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'discard this failed prompt' } });
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     await waitFor(() => expect(api.startSession).toHaveBeenCalled());
-    act(() => forgetConversationDraft('pending-discard'));
+    await act(async () => forgetConversationDraft('pending-discard'));
     second.unmount();
     await act(async () => request.reject(new Error('lost connection')));
     expect(getDraft('pending-discard')).toBe('');
@@ -442,7 +442,7 @@ describe('new-conversation submission lifecycle', () => {
     expect(screen.getAllByRole('button', { name: 'Discard draft' })).toHaveLength(2);
     expect(api.startSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole('button', { name: 'Discard draft' })[0]);
-    expect(screen.queryByRole('button', { name: /First/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /First/ })).not.toBeInTheDocument());
     expect(screen.getByRole('textbox')).toHaveValue('second prompt');
   });
   it('preserves an explicit remote owner with no platform and references its uploaded path', async () => {
@@ -722,7 +722,8 @@ describe('new-conversation submission lifecycle', () => {
     await screen.findByText('note.txt');
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1));
-    expect(screen.getByText('Sending first submission…')).toHaveAttribute('role', 'status');
+    // The child mounts once completion commits, which can trail the delivery's start.
+    expect(await screen.findByText('Sending first submission…')).toHaveAttribute('role', 'status');
     await act(async () => send.reject(new Error('delivery failed')));
     expect(await screen.findByRole('alert')).toHaveTextContent('delivery failed');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));

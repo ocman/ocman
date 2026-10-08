@@ -12,7 +12,11 @@ export function useComposerDrafts(
   inputRef: RefObject<HTMLTextAreaElement | null>,
   sessionId: string | undefined,
   inFlightRef: RefObject<string | null>,
+  /** Presentation only (bash mode, slash menu) for text synchronized from storage; never saves. */
+  onSync?: (text: string) => void,
 ) {
+  const onSyncRef = useRef(onSync);
+  onSyncRef.current = onSync;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // What this hook last loaded or persisted for the current key. An unchanged
   // textarea must not overwrite storage someone else updated meanwhile (a
@@ -87,8 +91,9 @@ export function useComposerDrafts(
       const stored = getDraft(sessionId);
       if (stored === persistedRef.current || el.value.trim() !== persistedRef.current || timerRef.current || inFlightRef.current) return;
       versionRef.current = getDraftVersion(sessionId);
+      // Synchronizing is not a user edit: no autosave, no revision change.
       el.value = persistedRef.current = stored;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      onSyncRef.current?.(stored);
     });
   }, [sessionId, inputRef, inFlightRef]);
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { applyTexts, captureTextSeqs, finishLegacyTextImport, getDraftVersion, hydrateTexts, type TextRecord } from './composerDraft';
+import { applyTexts, captureTextSeqs, settleText, finishLegacyTextImport, getDraftVersion, hydrateTexts, type TextRecord } from './composerDraft';
 import type { DraftStart } from './draftStartClaims';
 import { onDraftChange, publishDraftChange, transact } from './draftDb';
 import { randomId } from './randomId';
@@ -71,13 +71,22 @@ async function refresh(ids: string[]) {
   const textSeqs = captureTextSeqs(ids);
   const rows = await transact(['texts', 'drafts', 'starts'], 'readonly', (tx) => Promise.all(ids.map((id) => Promise.all([
     tx.get<TextRecord>('texts', id), tx.get<StoredDraft>('drafts', id), tx.get<DraftStart>('starts', id)]))));
-  applyTexts(ids.map((id, i) => [id, rows[i][0]]), textSeqs);
   // A terminal outcome this tab knows but could not store stays until it is repaired.
   const live = useNewConversationDrafts.getState().starts;
   applyStarts(ids.map((id, i) => [id, live[id]?.persistenceError ? live[id] : rows[i][2]]));
-  applyDrafts(ids.map((id, i) => [id, rows[i][1]]), seqs);
-  // A peer retired this identity: drop this tab's browser Files after any transfer above.
-  ids.forEach((id, i) => { if (!rows[i][1] || rows[i][1]!.deleted) forgetDraftAttachments(id); });
+  const current: number[] = [];
+  ids.forEach((id, i) => {
+    if (!rows[i][1]?.deleted) { current.push(i); return; }
+    // A committed discard/retirement is authoritative, including for unsaved live
+    // state. Failed transactions never reach this path. Transfer ran above first.
+    unsaved.delete(id);
+    draftSeq.set(id, (draftSeq.get(id) || 0) + 1);
+    settleText(id, rows[i][0]);
+    applyDrafts([[id, rows[i][1]]]);
+    forgetDraftAttachments(id);
+  });
+  applyTexts(current.map((i) => [ids[i], rows[i][0]]), textSeqs);
+  applyDrafts(current.map((i) => [ids[i], rows[i][1]]), seqs);
 }
 
 /** Startup: one transaction reads all draft state and imports legacy localStorage text. */
@@ -113,25 +122,34 @@ export function rememberConversationDraft(params: ConversationDraft) {
   }, () => { unsaved.add(params.draftId); }); // Keep the live selection; the next edit retries the write.
 }
 
-export function forgetConversationDraft(draftId: string) {
+/**
+ * Discard a prepared draft. Live state (metadata, text, browser Files) is
+ * dropped only after the tombstone commits; a failure rejects and keeps it.
+ */
+export async function forgetConversationDraft(draftId: string) {
+  const revision = getDraftVersion(draftId);
+  const cleared = await transact(['texts', 'drafts'], 'readwrite', async (tx) => {
+    const text = await tx.get<TextRecord>('texts', draftId);
+    const next = { text: '', revision: Math.max(text?.revision || 0, revision) + 1 };
+    tx.put('drafts', draftId, { draftId, directory: '', deleted: true });
+    tx.put('texts', draftId, next);
+    return next;
+  });
   unsaved.delete(draftId);
   draftSeq.set(draftId, (draftSeq.get(draftId) || 0) + 1);
-  const revision = getDraftVersion(draftId);
   applyDrafts([[draftId, undefined]]);
-  applyTexts([[draftId, { text: '', revision: revision + 1 }]]);
+  settleText(draftId, cleared);
   forgetDraftAttachments(draftId);
-  void transact(['texts', 'drafts'], 'readwrite', async (tx) => {
-    const text = await tx.get<TextRecord>('texts', draftId);
-    tx.put('drafts', draftId, { draftId, directory: '', deleted: true });
-    tx.put('texts', draftId, { text: '', revision: Math.max(text?.revision || 0, revision) + 1 });
-  }).then(() => publishDraftChange({ drafts: [draftId], texts: [draftId] }), () => { void refresh([draftId]).catch(() => undefined); });
+  publishDraftChange({ drafts: [draftId], texts: [draftId] });
 }
 
-/** Claim the draft's first start. The prompt is kept only while pending, to show it in other tabs. */
 export async function beginConversationStart(draftId: string, routeKey: string, text = ''): Promise<number | null> {
   const known = useNewConversationDrafts.getState().starts[draftId];
-  const result = await transact(['texts', 'starts'], 'readwrite', async (tx) => {
-    const [stored, textRecord] = await Promise.all([tx.get<DraftStart>('starts', draftId), tx.get<TextRecord>('texts', draftId)]);
+  const result = await transact(['texts', 'drafts', 'starts'], 'readwrite', async (tx) => {
+    const [stored, textRecord, meta] = await Promise.all([tx.get<DraftStart>('starts', draftId),
+      tx.get<TextRecord>('texts', draftId), tx.get<StoredDraft>('drafts', draftId)]);
+    // Another tab discarded this identity: starting it would launch an orphaned session.
+    if (meta?.deleted && !stored?.sessionId) throw new Error('This draft was discarded in another tab.');
     // A failure this tab knows about but could not store is repaired in the same transaction.
     const current = stored && !stored.error && !stored.sessionId && known?.error && known.attemptId === stored.attemptId
       ? { ...stored, error: known.error } : stored;
@@ -181,7 +199,8 @@ export async function completeConversationStart(draftId: string, createdSession:
       tx.put('starts', draftId, next);
       return { start: next, replacement, source, moved };
     });
-    applyTexts([[draftId, source], ...(replacement ? [[replacement.draftId, moved] as [string, TextRecord | undefined]] : [])]);
+    if (source) settleText(draftId, source);
+    if (replacement) applyTexts([[replacement.draftId, moved]]);
     applyDrafts([[draftId, undefined], ...(replacement ? [[replacement.draftId, replacement] as [string, ConversationDraft]] : [])]);
     applyStarts([[draftId, start]]);
     forgetDraftAttachments(draftId);

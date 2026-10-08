@@ -1,12 +1,28 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { clearDraft, discardDraft, getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, discardDraft, getDraft, getDraftVersion, saveDraft } from '../../lib/composerDraft';
 import { api, BackendUnavailableError } from '../../lib/api';
 import { Composer } from './Composer';
+import { transact } from '../../lib/draftDb';
 
 beforeEach(() => { clearDraft('new'); clearDraft('s1'); vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [], remotes: [] }); });
 afterEach(() => { vi.restoreAllMocks(); });
+
+it('keeps typed text and reports a failed autosave in the mounted composer', async () => {
+  saveDraft('write-error-ui', 'stored text');
+  await transact(['texts'], 'readonly', (tx) => tx.get('texts', 'write-error-ui'));
+  render(<Composer isRunning={false} newConversation draftKey="write-error-ui" />);
+  const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new DOMException('quota', 'QuotaExceededError'); });
+  try {
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'latest live text' } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Draft not saved');
+    expect(screen.getByRole('textbox')).toHaveValue('latest live text');
+  } finally { fail.mockRestore(); }
+  fireEvent.input(screen.getByRole('textbox'), { target: { value: 'latest live text!' } });
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(getDraft('write-error-ui')).toBe('latest live text!');
+});
 
 // A new conversation has no session: its draft lives under its own key and
 // the platform catalog is not fetched for a session that does not exist.
@@ -128,4 +144,24 @@ it('keeps a late-restored new-conversation draft after a remount', async () => {
   await act(async () => { reject(new Error('boom')); });
   second.unmount();
   expect(getDraft('new')).toBe('ship it');
+});
+
+it('mirrors another tab without autosaving or advancing the discard fence', async () => {
+  vi.useFakeTimers();
+  try {
+    render(<Composer isRunning={false} newConversation draftKey="synced" shellExec />);
+    const input = screen.getByRole('textbox');
+    act(() => saveDraft('synced', '!ls from the peer'));
+    expect(input).toHaveValue('!ls from the peer');
+    // Presentation follows the synchronized text: shell mode is on.
+    expect(input.closest('.oc-composer')).toHaveStyle({ borderLeftColor: '#f38ba8' });
+    const revision = getDraftVersion('synced');
+    const write = vi.spyOn(IDBObjectStore.prototype, 'put');
+    act(() => clearDraft('synced'));
+    expect(input).toHaveValue('');
+    await act(async () => { vi.advanceTimersByTime(500); });
+    // Neither the synchronized text nor its clear is written back as this tab's edit.
+    expect(write).not.toHaveBeenCalled();
+    expect(getDraftVersion('synced')).toBe(revision);
+  } finally { vi.useRealTimers(); }
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { clearDraft, discardDraft, getDraft, getDraftVersion, migrateDraft, resetDraftTextsForTests, saveDraft, useDraftSessionIds } from './composerDraft';
+import { clearDraft, discardDraft, getDraft, getDraftVersion, getDraftWriteError, migrateDraft, resetDraftTextsForTests, saveDraft, useDraftSessionIds } from './composerDraft';
 import { hydrateDrafts } from './newConversationDrafts';
 import { closeDraftDbForTests, transact } from './draftDb';
 
@@ -113,6 +113,24 @@ describe('composerDraft', () => {
     saveDraft('early', 'typed during startup');
     await hydration;
     expect(getDraft('early')).toBe('typed during startup');
+  });
+
+  it('keeps the latest typed text live when its write fails, and stores it on the next successful write', async () => {
+    saveDraft('unsaved', 'stored version');
+    await waitFor(async () => expect((await stored('unsaved'))?.text).toBe('stored version'));
+    const original = IDBObjectStore.prototype.put;
+    const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new DOMException('quota', 'QuotaExceededError'); });
+    try {
+      saveDraft('unsaved', 'latest typed text');
+      await waitFor(() => expect(getDraftWriteError('unsaved')).toBeTruthy());
+      // A refresh after the failed write must not roll the live text back.
+      expect(getDraft('unsaved')).toBe('latest typed text');
+      expect(getDraftWriteError('unsaved')).toBeTruthy();
+    } finally { fail.mockRestore(); }
+    void original;
+    saveDraft('unsaved', 'latest typed text!');
+    await waitFor(async () => expect((await stored('unsaved'))?.text).toBe('latest typed text!'));
+    expect(getDraftWriteError('unsaved')).toBeUndefined();
   });
 
   it('reclaims prompt bytes on discard', async () => {

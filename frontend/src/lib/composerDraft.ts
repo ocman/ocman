@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import { onDraftChange, publishDraftChange, transact, type DraftTx } from './draftDb';
+import { remoteLog } from './remoteLog';
 
 /**
  * Unsent composer text per session/draft id. Reads are synchronous from an
@@ -14,11 +15,15 @@ const LEGACY_KEY = 'ocman.composerDrafts.v1';
 const texts = new Map<string, TextRecord>();
 // Local operation counter per id: a database read never overwrites a newer local edit.
 const localSeq = new Map<string, number>();
+// Text whose latest write failed: the live copy is authoritative until a write succeeds.
+const writeErrors = new Map<string, string>();
 const listeners = new Set<() => void>();
 let snapshot: string | null = null;
 
 export const getDraft = (id: string) => texts.get(id)?.text || '';
 export const getDraftVersion = (id: string) => texts.get(id)?.revision || 0;
+/** Why the latest local write for `id` was not stored, if it failed. */
+export const getDraftWriteError = (id: string) => writeErrors.get(id);
 const seqOf = (id: string) => localSeq.get(id) || 0;
 const bump = (id: string) => { const seq = seqOf(id) + 1; localSeq.set(id, seq); return seq; };
 
@@ -36,12 +41,27 @@ function setMemory(id: string, record: TextRecord | undefined) {
 
 /** Apply committed database values unless a newer local edit superseded them. */
 export function applyTexts(entries: [string, TextRecord | undefined][], seqs?: Map<string, number>) {
-  for (const [id, record] of entries) if (!seqs || (seqs.get(id) ?? 0) === seqOf(id)) setMemory(id, record);
+  for (const [id, record] of entries) {
+    if (writeErrors.has(id) || (seqs && (seqs.get(id) ?? 0) !== seqOf(id))) continue;
+    setMemory(id, record);
+  }
+  emit();
+}
+
+/** A transaction authoritatively replaced this text (discard, retirement): drop any unsaved live copy. */
+export function settleText(id: string, record: TextRecord | undefined) {
+  writeErrors.delete(id);
+  bump(id);
+  setMemory(id, record);
   emit();
 }
 
 /** Snapshot local edit counters (all ids when none are given) to guard a later database read. */
 export const captureTextSeqs = (ids?: string[]) => ids ? new Map(ids.map((id) => [id, seqOf(id)])) : new Map(localSeq);
+
+export function useDraftWriteError(id?: string) {
+  return useSyncExternalStore(subscribeDraftTexts, () => id ? getDraftWriteError(id) : undefined, () => undefined);
+}
 
 async function refresh(ids: string[]) {
   const seqs = captureTextSeqs(ids);
@@ -60,9 +80,15 @@ function write(id: string, next: (stored: TextRecord | undefined) => TextRecord 
     if (value) tx.put('texts', id, value);
     return value || stored;
   }).then((committed) => {
-    if (seqOf(id) === seq) { setMemory(id, committed); emit(); }
+    if (seqOf(id) === seq) { writeErrors.delete(id); setMemory(id, committed); emit(); }
     publishDraftChange({ texts: [id] });
-  }, () => { void refresh([id]); });
+  }, (error: unknown) => {
+    // Keep the typed text live (the next edit retries); never roll it back to the stored copy.
+    if (seqOf(id) !== seq) return;
+    writeErrors.set(id, error instanceof Error ? error.message : String(error));
+    remoteLog.warn('Could not save the composer draft', error);
+    emit();
+  });
 }
 
 export function saveDraft(id: string, text: string, version = getDraftVersion(id)) {
@@ -154,6 +180,7 @@ export function useDraftSessionIds(): Set<string> {
 /** Tests only. */
 export function resetDraftTextsForTests() {
   texts.clear();
+  writeErrors.clear();
   localSeq.clear();
   emit();
 }
