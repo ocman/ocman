@@ -219,6 +219,19 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
 	ctx := r.Context()
+	defaults, err := s.getProjectDefaults(ctx, req.Directory, req.RemoteID)
+	if err != nil {
+		serverError(w, "reading project defaults", err)
+		return
+	}
+	var permissionRules []platforms.PermissionRule
+	if defaults != nil {
+		permissionRules, err = defaults.permissionRules()
+		if err != nil {
+			serverError(w, "reading default permission mode", err)
+			return
+		}
+	}
 	if req.StartID != "" {
 		ctx = hostsvc.WithProgress(ctx, s.startProgress(req.StartID))
 		r = r.WithContext(ctx)
@@ -254,6 +267,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		}
 		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
 			ProjectDir: req.Directory, AutoName: true, Prompt: req.Prompt, Title: req.Title,
+			PermissionRules: permissionRules,
 		})
 		if remoteHost {
 			hostsvc.FinishStep(ctx, hostsvc.StepOpencode, err)
@@ -278,7 +292,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		}
 		hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepDone)
 		hostsvc.ReportProgress(ctx, hostsvc.StepSession, hostsvc.StepActive)
-		resp, err := s.sessions.Create(ctx, resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port})
+		resp, err := s.sessions.CreateConfigured(ctx, resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port}, permissionRules)
 		hostsvc.FinishStep(ctx, hostsvc.StepSession, err)
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{"platform": resolved, "directory": req.Directory}).Warn("hub: start session failed")
