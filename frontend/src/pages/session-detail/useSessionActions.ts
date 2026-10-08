@@ -54,6 +54,7 @@ export interface UseSessionActionsOptions {
   activeAgent: string;
   /** Mutable ref to the recent sessions list — read inside handleCommand. */
   recentSessionsRef: MutableRefObject<Session[]>;
+  loadNavigationSessions?: () => Promise<void>;
   /** Mutable refs to the current transcript — read by `/export`. Refs
    *  (not values) so handleCommand doesn't re-bind on every message. */
   messagesRef: MutableRefObject<Message[]>;
@@ -156,6 +157,7 @@ export function useSessionActions({
   selectedReasoning,
   activeAgent,
   recentSessionsRef,
+  loadNavigationSessions,
   messagesRef,
   partsRef,
   isRunningRef,
@@ -438,6 +440,7 @@ export function useSessionActions({
       caps,
       pending,
       recentSessionsRef,
+      loadNavigationSessions,
       messagesRef,
       partsRef,
       archiveSession,
@@ -481,7 +484,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending, routeSessionId, scope]);
+  }, [activeAgent, archiveSession, caps, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, loadNavigationSessions, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending, routeSessionId, scope]);
 
   return {
     awaitingAssistantResponse,

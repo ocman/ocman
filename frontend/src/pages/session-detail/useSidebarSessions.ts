@@ -10,6 +10,7 @@ import { remoteLog } from '../../lib/remoteLog';
 import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { useActivityScope } from '../../lib/activityScopes';
 import { useSidebarFilter } from './useSidebarFilter';
+import { flushSync } from 'react-dom';
 import { eventRefresh } from '../../lib/eventRefresh';
 
 /**
@@ -52,7 +53,8 @@ export interface UseSidebarSessionsResult {
   setShowArchivedRecent: Dispatch<SetStateAction<boolean>>;
   /** Ref-mirror of `showArchivedRecent` for the polling closure. */
   showArchivedRecentRef: MutableRefObject<boolean>;
-  loadRecentSessions: (signal?: AbortSignal) => Promise<void>;
+  /** force is for explicit conversation navigation, never background polling. */
+  loadRecentSessions: (signal?: AbortSignal, force?: boolean) => Promise<void>;
   handleArchiveSession: (e: React.MouseEvent, target: Session) => void;
   handlePinSession: (e: React.MouseEvent, target: Session) => void;
   /** Set of collapsed project keys with the current session's group
@@ -132,11 +134,14 @@ export function useSidebarSessions({
     openSessionFallbackRef.current = null;
   }, [id]);
 
-  const recentRequest = useRef<{ key: string; signal?: AbortSignal; promise: Promise<void> } | null>(null);
-  const loadRecentSessions = useCallback((signal?: AbortSignal): Promise<void> => {
-    if (!enabledRef.current || document.hidden) return Promise.resolve();
+  const recentRequest = useRef<{ key: string; signal?: AbortSignal; force: boolean; promise: Promise<void> } | null>(null);
+  const loadRecentSessions = useCallback((signal?: AbortSignal, force = false): Promise<void> => {
+    if (!force && (!enabledRef.current || document.hidden)) return Promise.resolve();
     const key = JSON.stringify([id, sidebarRecentHoursRef.current]);
-    if (recentRequest.current?.key === key && !recentRequest.current.signal?.aborted) return recentRequest.current.promise;
+    if (recentRequest.current?.key === key && !recentRequest.current.signal?.aborted) {
+      if (force && !recentRequest.current.force) return recentRequest.current.promise.catch(() => {}).then(() => loadRecentSessions(signal, true));
+      return recentRequest.current.promise;
+    }
     const promise = (async () => {
       const requestStart = useApiStore.getState().recentSessions;
       const pendingReads = useApiStore.getState().pendingInterruptionReads;
@@ -145,7 +150,7 @@ export function useSidebarSessions({
         // /api/sessions can serialize a Go nil slice as JSON `null`;
         // coerce here so .find() / filterVisibleSessions never see null.
         const result = (await getSessions({ since, limit: 0 }, signal)) ?? [];
-        if (signal?.aborted) return;
+        if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         // Child sessions are useful while active; completed output has
         // already bubbled up to the parent.
         const rooted = filterInactiveChildren(result, id);
@@ -163,7 +168,7 @@ export function useSidebarSessions({
           fetchById: async (sid) => (await getSession(sid, 1, 0, signal)).session,
           onError: (err) => remoteLog.warn('sidebar open-session fallback fetch failed', { sessionID: id, error: err }),
         });
-        if (signal?.aborted) return;
+        if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         openSessionFallbackRef.current = resolved.cache;
         const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
         const current = resolved.session;
@@ -179,14 +184,15 @@ export function useSidebarSessions({
         );
 
         const hash = computeSidebarHash(merged);
-        storeSetRecentSessions(merged, hash);
+        if (force) flushSync(() => storeSetRecentSessions(merged, hash));
+        else storeSetRecentSessions(merged, hash);
         setLoadingRecentSessions(false);
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         throw e;
       }
     })();
-    const request = { key, signal, promise };
+    const request = { key, signal, force, promise };
     recentRequest.current = request;
     void promise.finally(() => { if (recentRequest.current === request) recentRequest.current = null; }).catch(() => {});
     return promise;

@@ -23,6 +23,24 @@ it('retains the upstream discovery snapshot while hidden and during resume', asy
   expect(result.current.ready).toBe(true);
 });
 
+it('retains the same-resource discovery snapshot when resume fails', async () => {
+  let hidden = false;
+  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+  const fetcher = vi.fn().mockResolvedValue('snapshot');
+  const { result, rerender } = renderHook(({ key }) => useAsyncResource({ fetcher, deps: [key], initial: '', enabled: true }), { initialProps: { key: 'owner-a' } });
+  await waitFor(() => expect(result.current.data).toBe('snapshot'));
+  act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+  fetcher.mockRejectedValue(new Error('offline'));
+  act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+  await waitFor(() => expect(result.current.error).toBe('offline'));
+  expect(result.current.data).toBe('snapshot');
+  act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+  rerender({ key: 'owner-b' });
+  act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+  await waitFor(() => expect(result.current.error).toBe('offline'));
+  expect(result.current.data).toBe('');
+});
+
 it('retains diff/info data, cancels dirty work while hidden, then refreshes', async () => {
   let hidden = false;
   vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);

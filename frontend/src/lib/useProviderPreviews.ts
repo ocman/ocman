@@ -64,9 +64,9 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
         // Public forge links resolve silently, as their cards always did.
         if (config?.providers.some((p) => p.accounts.length)) setPending(true);
         const refresh = refreshPending.current;
-        refreshPending.current = false;
         const previews = await resolvePreviews(text, owner, abort.signal, refresh);
         if (!abort.signal.aborted) {
+          if (refresh) refreshPending.current = false;
           const result = { text, owner, previews, providers: config?.providers ?? [], refreshChecks: refresh };
           lastResolved.current = result;
           setResolved(result);

@@ -140,6 +140,9 @@ flowchart LR
 
 ## 2. Backend composition
 
+Server shutdown cancels and joins its owned background loops before returning,
+so closing the databases cannot race a pending refresh.
+
 The Go package graph, collapsed to the seams that matter.
 
 ```mermaid
@@ -483,6 +486,9 @@ and unmount the closed mobile details drawer. Document visibility pauses reads
 without unmounting open panes or recovery controls, preserving fullscreen diffs,
 pagination, expanded previews and unsent guidance. Resuming refreshes the visible
 content, including the artifact pages already opened by the user.
+Conversation archive and keyboard navigation load their candidates on demand
+when the mobile sidebar is closed, without restarting sidebar polling. Artifact
+pagination and resume refreshes share a serialized read chain.
 Settled agent bash commands also produce `ocman.git.command` refresh hints for
 the owning project's PR/Issue pane.
 

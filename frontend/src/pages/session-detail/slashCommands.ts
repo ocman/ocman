@@ -32,6 +32,7 @@ export interface CommandContext {
   caps: Pick<PlatformCapabilities, 'fork' | 'move'>;
   pending: UsePendingSendResult;
   recentSessionsRef: MutableRefObject<Session[]>;
+  loadNavigationSessions?: () => Promise<void>;
   messagesRef: MutableRefObject<Message[]>;
   partsRef: MutableRefObject<Part[]>;
   archiveSession: (platform: string, id: string, timeUpdated: number, archive: boolean) => Promise<unknown>;
@@ -61,7 +62,9 @@ export interface SlashCommand {
 }
 
 const archive: SlashCommand = {
-  run: async ({ session, recentSessionsRef, archiveSession, navigateToSession, navigate }) => {
+  run: async ({ session, recentSessionsRef, archiveSession, navigateToSession, navigate, loadNavigationSessions, isCurrent }) => {
+    await loadNavigationSessions?.();
+    if (isCurrent?.() === false) return;
     // Same choice as the sidebar's archive button, among the rows it shows.
     const nextSession = pickNextSessionAfterArchive(
       sidebarNavigableSessions(recentSessionsRef.current),
@@ -81,6 +84,7 @@ const archive: SlashCommand = {
       id: session.id,
       timeUpdated: session.timeUpdated,
     });
+    if (isCurrent?.() === false) return;
     if (nextSession) {
       navigateToSession(nextSession.id);
     } else {

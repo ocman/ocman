@@ -46,6 +46,22 @@ describe('Routines', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('resumes history independently when the inbox-list refresh fails', async () => {
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    vi.mocked(api.routines.history).mockReturnValueOnce(new Promise(() => {}));
+    const view = render(<MemoryRouter><Routines /></MemoryRouter>);
+    try {
+      fireEvent.click(await screen.findByText('Morning check'));
+      await waitFor(() => expect(api.routines.history).toHaveBeenCalledTimes(1));
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      vi.mocked(api.webhookInboxes.list).mockRejectedValueOnce(new Error('Inbox unavailable'));
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      await waitFor(() => expect(api.routines.history).toHaveBeenCalledTimes(2));
+      expect(await screen.findByText('manual')).toBeInTheDocument();
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
+
   it('cancels a pending history refresh before it reads older running pages', async () => {
     let hidden = false;
     const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
@@ -116,7 +132,8 @@ describe('Routines', () => {
       await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
       expect(api.routines.list).toHaveBeenCalledTimes(1);
       expect(api.webhookInboxes.list).toHaveBeenCalledTimes(1);
-      expect(api.routines.history).toHaveBeenCalledTimes(1);
+      // History resumes independently, then reconciles the parent's fresh list.
+      expect(api.routines.history).toHaveBeenCalledTimes(2);
     } finally { view.unmount(); visibility.mockRestore(); }
   });
 

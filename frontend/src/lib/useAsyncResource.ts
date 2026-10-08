@@ -54,6 +54,7 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
   const visible = useDocumentVisible();
   const pausedRef = useRef(false);
   const { fetcher, deps, initial, enabled, errorMessage = defaultErrorMessage } = opts;
+  const lastDeps = useRef(deps);
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,8 +74,10 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
 
   useEffect(() => {
     if (!visible) { pausedRef.current = true; return; }
-    const resuming = pausedRef.current;
+    const resuming = pausedRef.current && deps.length === lastDeps.current.length
+      && deps.every((value, index) => Object.is(value, lastDeps.current[index]));
     pausedRef.current = false;
+    lastDeps.current = deps;
     const reset = () => {
       setData(initialRef.current);
       setLoading(false);
@@ -104,7 +107,7 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
         })
         .catch((err: unknown) => {
           if (ctrl.signal.aborted || isAbort(err)) return;
-          setData(initialRef.current);
+          if (!resuming) setData(initialRef.current);
           setError(errorMessageRef.current(err));
           setLoading(false);
           setReady(true);

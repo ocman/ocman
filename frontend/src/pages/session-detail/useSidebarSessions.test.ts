@@ -44,6 +44,18 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('does not start an open-session fallback after the sidebar closes mid-read', async () => {
+    let finish!: (rows: Session[]) => void;
+    const getSessions = vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const getSession = vi.fn().mockResolvedValue({ session: { id: 'outside' } });
+    useApiStore.setState({ getSessions, getSession, recentSessions: [], recentSessionsHash: '' });
+    const options = { id: 'outside', sessionId: 'outside', collapsedProjects: [], sidebarView: 'recent' as const,
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
+    const { rerender } = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: true } });
+    rerender({ enabled: false });
+    await act(async () => { finish([]); });
+    expect(getSession).not.toHaveBeenCalled();
+  });
   it('performs a fresh reconciliation after a pre-hide request finishes', async () => {
     let finish!: (rows: Session[]) => void;
     const old = { id: 'old', platform: 'opencode', status: 'done', timeUpdated: 1 } as Session;

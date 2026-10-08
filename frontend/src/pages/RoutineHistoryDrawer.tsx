@@ -74,7 +74,7 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
   // One newest-page fetch at a time: a refresh that lands mid-flight is skipped
   // (the next one catches up), so a slow response is never discarded.
   useEffect(() => {
-    if (document.hidden || refreshRequest.current) return;
+    if (!visible || document.hidden || refreshRequest.current) return;
     const controller = new AbortController();
     refreshRequest.current = controller;
     const refresh = async () => {
@@ -89,7 +89,7 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
     };
     refresh().catch((err: unknown) => { if (mounted.current && !controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load history.'); })
       .finally(() => { if (refreshRequest.current === controller) refreshRequest.current = null; });
-  }, [routine.id, refreshKey]);
+  }, [routine.id, refreshKey, visible]);
 
   const loadOlder = async () => {
     const before = runs[runs.length - 1];

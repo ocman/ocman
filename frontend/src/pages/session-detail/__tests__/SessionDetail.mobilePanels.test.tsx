@@ -8,7 +8,8 @@
 // and testable in jsdom.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { useShortcutDispatcher } from '../../../lib/shortcutRegistry';
 import userEvent from '@testing-library/user-event';
 import { flushPromises, makeSession, makeSessionDetail, renderSessionPage } from './harness';
 import { useUiStore } from '../../../lib/uiStore';
@@ -42,6 +43,29 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it.each(['archive', 'next'] as const)('loads cold-mobile navigation candidates on demand for %s', async (action) => {
+    vi.stubGlobal('innerWidth', 390);
+    useUiStore.setState({ sidebarView: 'recent' });
+    try {
+      const current = makeSession({ id: 'sess_1', title: 'Current', timeCreated: 200, timeUpdated: 200 });
+      const next = makeSession({ id: 'sess_next', title: 'Next', timeCreated: 100, timeUpdated: 100 });
+      const { store, api } = renderSessionPage({ sessionId: current.id, detail: makeSessionDetail(current), sessions: [current, next] });
+      const input = await screen.findByRole('textbox');
+      expect(store.getSessions).not.toHaveBeenCalled();
+      if (action === 'archive') {
+        await userEvent.type(input, '/archive');
+        fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      } else {
+        const dispatcher = renderHook(() => useShortcutDispatcher());
+        input.blur();
+        fireEvent.keyDown(window, { key: 'j', code: 'KeyJ', altKey: true });
+        dispatcher.unmount();
+      }
+      await waitFor(() => expect(vi.mocked(api.session).mock.calls.some(([id]) => id === next.id)).toBe(true));
+      expect(store.getSessions).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open');
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('loads Move destinations independently of the closed mobile sidebar', async () => {
     vi.stubGlobal('innerWidth', 390);
     try {
