@@ -56,7 +56,8 @@ function transact(draftId: string, change?: (current: DraftStart | undefined) =>
 export async function claimDraftStart(draftId: string, next: DraftStart) {
   let claimed = false;
   const start = await transact(draftId, (current) => {
-    if (current && !current.error) return current;
+    // Completed, released and session-created records are final, even when they kept an old error.
+    if (current && (!current.error || current.sessionId || current.deliveryState === 'done')) return current;
     claimed = true;
     return next;
   });

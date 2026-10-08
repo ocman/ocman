@@ -102,6 +102,16 @@ it('does not restore a first-delivery failure after explicit release completed i
   expect(await readDraftStart('first-delivery:child')).toMatchObject({ deliveryState: 'done', text: '' });
 });
 
+it('does not let a retry claim a released delivery that retained its old error', async () => {
+  database();
+  const failed = { version: 0, text: 'abandoned command', attemptId: 'released', deliveryState: 'failed' as const, error: 'failed' };
+  await claimDraftStart('first-delivery:released', failed);
+  await persistDraftStart('first-delivery:released', { ...failed, deliveryState: 'done', text: '' });
+  const retry = await claimDraftStart('first-delivery:released', { version: 0, text: 'abandoned command', attemptId: 'retry', deliveryState: 'pending' });
+  expect(retry.claimed).toBe(false);
+  expect(retry.start).toMatchObject({ attemptId: 'released', deliveryState: 'done' });
+});
+
 it('does not restore a discarded prompt from a delayed older terminal write', async () => {
   database();
   const current = { version: 0, text: 'discarded payload', attemptId: 'discarded' };

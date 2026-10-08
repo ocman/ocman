@@ -89,6 +89,21 @@ describe('useComposerDrafts', () => {
     expect(getDraft('s1')).toBe('second');
   });
 
+  it('does not let a delayed empty autosave drop a newer edit from another composer', () => {
+    saveDraft('shared', 'original');
+    const peerEl = document.createElement('textarea');
+    const clearer = setup('shared', el);
+    const peer = setup('shared', peerEl);
+    act(() => clearer.result.current.scheduleDraftSave('shared', () => ''));
+    act(() => vi.advanceTimersByTime(100));
+    peerEl.value = 'newer peer edit';
+    act(() => peer.result.current.scheduleDraftSave('shared', () => peerEl.value));
+    act(() => vi.advanceTimersByTime(300));
+    expect(getDraft('shared')).toBe('newer peer edit');
+    act(() => peer.unmount());
+    expect(getDraft('shared')).toBe('newer peer edit');
+  });
+
   it('clearDraftNow removes the draft and cancels pending saves', () => {
     saveDraft('s1', 'existing');
     const { result } = setup('s1', el);

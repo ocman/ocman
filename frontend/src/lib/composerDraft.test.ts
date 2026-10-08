@@ -111,6 +111,18 @@ describe('composerDraft', () => {
     expect(getDraft('quota-clear')).toBe('newer prompt');
   });
 
+  it('clears an older inline per-draft record under quota without touching a newer edit', () => {
+    localStorage.setItem('ocman.composerDrafts.v1:inline-quota', JSON.stringify({ kind: 'ocman/composer-text', id: 'inline-edit', text: 'inline sent prompt' }));
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+    try {
+      clearDraft('inline-quota', 'stale-edit');
+      expect(getDraft('inline-quota')).toBe('inline sent prompt');
+      clearDraft('inline-quota', 'inline-edit');
+      expect(getDraft('inline-quota')).toBe('');
+    } finally { write.mockRestore(); }
+    for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('inline sent prompt');
+  });
+
   it('clears legacy text under quota by shrinking only the shared map', () => {
     localStorage.setItem('ocman.composerDrafts.v1', JSON.stringify({ old: 'legacy sent prompt', other: 'kept' }));
     const original = localStorage.setItem;

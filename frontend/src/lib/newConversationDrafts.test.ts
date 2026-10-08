@@ -376,13 +376,17 @@ it('keeps relocation retry replayable when its completion receipt fails to commi
   // The interrupted attempt moved text, but the source and its error receipt remain retryable.
   expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === id)).toBe(true);
   expect(getDraft('retry-target')).toBe('retained retry text');
+  // The user keeps working in the replacement before retrying.
+  rememberConversationDraft({ draftId: 'retry-target', directory: '/repo', remoteId: 'box', agent: 'build', target: 'current' });
+  saveDraft('retry-target', 'newer replacement text');
   vi.mocked(readDraftStart).mockImplementation(async (draftId) => draftId === id ? pending : undefined);
   vi.resetModules();
   const reloaded = await import('./newConversationDrafts');
   await reloaded.retryDraftRelocation(id);
   expect(reloaded.useNewConversationDrafts.getState().starts[id]).toMatchObject({ replacementDraftId: 'retry-target', relocationError: undefined });
-  expect(reloaded.useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['retry-target']);
-  expect(getDraft('retry-target')).toBe('retained retry text');
+  expect(reloaded.useNewConversationDrafts.getState().drafts).toEqual([expect.objectContaining({
+    draftId: 'retry-target', remoteId: 'box', agent: 'build', target: 'current' })]);
+  expect(getDraft('retry-target')).toBe('newer replacement text');
 });
 
 it('replays a committed relocation retry after a crash before source retirement', async () => {

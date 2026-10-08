@@ -564,7 +564,9 @@ flowchart TD
   in immutable per-edit bodies with small per-draft head references. Each clear
   commits the authoritative mark for its edit before reclaiming that immutable
   body. Without room for that mark, the clear deletes only its exact immutable
-  body (or shrinks the legacy map), which frees space and still reads empty.
+  body, or the matching older inline/legacy record, which frees space and still
+  reads empty. Emptying the composer is applied at the input gesture, so a
+  delayed clear cannot invalidate a later edit from another composer.
   Auxiliary cleanup failures
   cannot roll back a committed relocation or delete its recoverable destination.
   A clear cannot erase a concurrent source save or reverse a newer discard. Superseded
@@ -622,7 +624,9 @@ flowchart TD
   a failed relocation keeps
   the completed claim and original draft with a safe retry. Retry commits the
   replacement receipt, with a retirement snapshot, before retiring the source,
-  and accepts a replacement already created by an interrupted attempt.
+  and accepts a replacement already created by an interrupted attempt without
+  overwriting its newer owner, selections or text. Completed, released and
+  session-created records are final inside the atomic claim transaction.
   Peer completion or release drops the originating tab's retained delivery
   payload, and reconciliation failures during Retry surface without re-running it.
   Validated terminal

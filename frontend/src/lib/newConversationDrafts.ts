@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NewSessionParams } from './newSessionPath';
-import { discardDraft, getDraft, getDraftClearId, getDraftEntryId, getDraftVersion, migrateDraft, saveDraft, subscribeDraftSessionIds } from './composerDraft';
+import { clearDraft, discardDraft, getDraft, getDraftClearId, getDraftEntryId, getDraftVersion, migrateDraft, saveDraft, subscribeDraftSessionIds } from './composerDraft';
 import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from './draftStartClaims';
 import { randomId } from './randomId';
 import { remoteLog } from './remoteLog';
@@ -178,12 +178,18 @@ export async function retryDraftRelocation(draftId: string) {
 }
 
 function relocateRetainedDraft(from: string, to: string, saved: ConversationDraft) {
+  // A replay finds the destination it already created; never overwrite its newer edits.
+  const replay = !!getConversationDraft(to);
   // Write durable owner/selections before moving text or retiring its recoverable source.
-  if (!rememberConversationDraft({ ...saved, draftId: to })) {
+  if (!replay && !rememberConversationDraft({ ...saved, draftId: to })) {
     forgetConversationDraft(to);
     return false;
   }
-  if (!migrateDraft(from, to)) { forgetConversationDraft(to); return false; }
+  if (replay && getDraft(to)) {
+    // Text already moved. Clear only an identical leftover source copy; a newer source
+    // edit stays visible and reconciliation relocates it separately.
+    if (getDraft(from) === getDraft(to)) clearDraft(from);
+  } else if (!migrateDraft(from, to)) { if (!replay) forgetConversationDraft(to); return false; }
   transferDraftAttachments(from, to);
   return true;
 }

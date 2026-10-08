@@ -37,6 +37,14 @@ export function useComposerDrafts(
   /** Debounced autosave (300ms). Empty text clears the draft instead. */
   const scheduleDraftSave = useCallback((sid: string, getText: () => string) => {
     cancelPending();
+    // Emptying is applied at the gesture: a delayed clear must not invalidate
+    // edits other composers make to this draft after it.
+    if (!getText().trim()) {
+      discardDraft(sid);
+      versionRef.current = getDraftVersion(sid);
+      persistedRef.current = '';
+      return;
+    }
     // Scheduling is a fresh user edit, unlike an already scheduled callback.
     const version = versionRef.current = getDraftVersion(sid);
     timerRef.current = setTimeout(() => {

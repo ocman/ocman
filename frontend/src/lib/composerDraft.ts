@@ -121,14 +121,14 @@ function writeEntry(id: string, text: string) {
 function clearEntry(id: string, entry: string) {
   // Monotonic per-edit tombstones cannot be reversed by a delayed older clear.
   try { localStorage.setItem(ownerKey(id, entry), '1'); }
-  catch (error) {
-    // Quota fallback: deleting frees space and only touches this exact immutable edit.
-    if (entry !== 'legacy') { localStorage.removeItem(valueKey(id, entry)); return; }
-    if (localStorage.getItem(HEAD_PREFIX + id)) throw error;
+  catch {
+    // Quota fallback: deletion frees space and touches only this exact edit.
+    if (localStorage.getItem(HEAD_PREFIX + id)) { localStorage.removeItem(valueKey(id, entry)); return; }
+    // Older formats: an inline record or legacy text, cleared only if it is still the owned edit.
+    if (readEntry(id).id !== entry) return;
     localStorage.removeItem(TEXT_PREFIX + id);
     const drafts = loadDrafts();
-    delete drafts[id];
-    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); // A smaller value fits under quota.
+    if (id in drafts) { delete drafts[id]; localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } // Smaller value fits.
     return;
   }
   try {
