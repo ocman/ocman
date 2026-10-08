@@ -47,7 +47,7 @@ function ParallelSessionsChart({ data }: { data?: SessionConcurrency }) {
   return <>
     <ChartCard title="Active Parallel Sessions">
       <Line aria-label="Peak active parallel sessions over time" role="img" data={{
-        datasets: [{ label: 'Peak simultaneous sessions', data: data?.series.map((point) => ({ x: point.timestamp, y: point.sessions })) ?? [], borderColor: CHART_COLORS[0], pointRadius: 0, stepped: true }],
+        datasets: [{ label: 'Peak simultaneous sessions', data: data?.series.map((point) => ({ x: point.timestamp, y: point.sessions })) ?? [], borderColor: CHART_COLORS[0], pointRadius: data?.series.length === 1 ? 3 : 0, stepped: true }],
       }} options={{
         ...BAR_OPTIONS_HOURLY,
         scales: {
