@@ -44,6 +44,47 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('performs a fresh reconnect read after the pre-reconnect request settles', async () => {
+    let finish!: (rows: Session[]) => void;
+    const row = { id: 'new', platform: 'opencode', timeUpdated: Date.now() } as Session;
+    const getSessions = vi.fn().mockImplementationOnce(() => new Promise<Session[]>(resolve => { finish = resolve; })).mockResolvedValue([row]);
+    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    const { result } = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    let loading!: Promise<void>;
+    act(() => { loading = result.current.loadRecentSessions(); });
+    act(() => { sseConnect?.(); });
+    expect(getSessions).toHaveBeenCalledTimes(1);
+    await act(async () => { finish([]); await loading; });
+    expect(getSessions).toHaveBeenCalledTimes(2);
+    expect(result.current.recentSessions.map(s => s.id)).toEqual(['new']);
+  });
+
+  it('uses the current archived filter after an awaited open-session fallback', async () => {
+    localStorage.setItem('ocman:sidebar-filter:archived', 'false');
+    const archived = { id: 'archived', platform: 'opencode', archived: true, timeUpdated: Date.now() } as Session;
+    const open = { ...archived, id: 'open', archived: false };
+    let finish!: (detail: SessionDetail) => void;
+    const getSessions = vi.fn().mockResolvedValue([archived]);
+    const getSession = vi.fn(() => new Promise<SessionDetail>(resolve => { finish = resolve; }));
+    useApiStore.setState({ getSessions, getSession, recentSessions: [], recentSessionsHash: '' });
+    const { result } = renderHook(() => useSidebarSessions({
+      id: open.id, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    try {
+      let loading!: Promise<void>;
+      await act(async () => { loading = result.current.loadRecentSessions(); });
+      expect(getSession).toHaveBeenCalledOnce();
+      act(() => result.current.setShowArchivedRecent(true));
+      expect(getSessions).toHaveBeenCalledOnce();
+      await act(async () => { finish({ session: open, messages: [], parts: [] }); await loading; });
+      expect(result.current.recentSessions.map(s => s.id).sort()).toEqual(['archived', 'open']);
+    } finally { localStorage.setItem('ocman:sidebar-filter:archived', 'false'); }
+  });
+
   it('coalesces changed-event bursts and preserves changes received in flight', async () => {
     vi.useFakeTimers();
     let finish: (() => void) | undefined;

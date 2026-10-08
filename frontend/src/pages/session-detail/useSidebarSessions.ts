@@ -144,7 +144,6 @@ export function useSidebarSessions({
         // Child sessions are useful while active; completed output has
         // already bubbled up to the parent.
         const rooted = filterInactiveChildren(result, id);
-        const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
         // When the open session is older than the recent window, fetch it once
         // by id so it is always present in the sidebar.
         const fallback = openSessionFallbackRef.current;
@@ -161,6 +160,7 @@ export function useSidebarSessions({
         });
         if (signal?.aborted) return;
         openSessionFallbackRef.current = resolved.cache;
+        const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
         const current = resolved.session;
         const candidates = current && !visible.some((s) => s.id === current.id)
           ? [current, ...visible]
@@ -216,10 +216,11 @@ export function useSidebarSessions({
       return loadRecentSessions(abortSignalRef.current?.signal)
         .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
     };
-    const changedRefresh = eventRefresh(async () => {
+    const refreshAfterCurrent = async () => {
       await recentRequest.current?.promise.catch(() => {});
       if (subscribed) await refresh();
-    });
+    };
+    const changedRefresh = eventRefresh(refreshAfterCurrent);
     let subscribed = true;
     const unsubscribeChanged = onSessionChanged((sessionID, _session, patch, platform) => {
       const matches = useApiStore.getState().recentSessions.filter(s => s.id === sessionID && (!platform || s.platform === platform));
@@ -248,7 +249,7 @@ export function useSidebarSessions({
       }
       changedRefresh.schedule();
     });
-    const unsubscribeConnect = onSseConnect(() => { void refresh(); });
+    const unsubscribeConnect = onSseConnect(() => { void refreshAfterCurrent(); });
     const pendingActivity = new Map<string, number>();
     const hiddenSessions = new Set<string>();
     const unsubscribeActivity = onSessionActivity((sessionID, timeUpdated) => {
