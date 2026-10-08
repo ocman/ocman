@@ -5,6 +5,7 @@ import { SidebarHeader } from './SidebarHeader';
 
 it('keeps the filter button neutral with every filter changed and the menu open', () => {
   render(<SidebarHeader
+    projects={[]} projectFilter="" setProjectFilter={vi.fn()}
     searchQuery="" setSearchQuery={vi.fn()}
     showArchivedRecent setShowArchivedRecent={vi.fn()}
     showChildren={false} setShowChildren={vi.fn()}
