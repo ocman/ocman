@@ -61,6 +61,8 @@ export function Inbox() {
   const pin = usePinInboxItem();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const activeKeyRef = useRef(activeKey);
+  useEffect(() => { activeKeyRef.current = activeKey; }, [activeKey]);
   const [search, setSearch] = useState('');
   const query = useDeferredValue(search.trim());
   const actions = useRef<HTMLDetailsElement>(null);
@@ -81,6 +83,15 @@ export function Inbox() {
   const open = (item: InboxItem) => {
     setActiveKey(itemKey(item));
     if (!item.readAt && !item.archivedAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
+  };
+  const archiveItem = (item: InboxItem) => {
+    const key = itemKey(item);
+    const index = visibleItems.findIndex((candidate) => itemKey(candidate) === key);
+    const next = visibleItems[index + 1] ?? visibleItems[index - 1];
+    archive.mutate([{ id: item.id, remoteId: item.remoteId }], { onSuccess: () => {
+      if (activeKeyRef.current !== key) return;
+      if (next) open(next); else setActiveKey(null);
+    } });
   };
   const toggle = (item: InboxItem) => setSelected((current) => {
     const next = new Set(current);
@@ -121,11 +132,9 @@ export function Inbox() {
     scope: 'site',
     keys: [{ code: 'Delete' }, { code: 'Backspace' }],
     description: 'Archive the open message',
-    enabled: () => !!activeItem && !archived,
+    enabled: () => !!activeItem && !archived && !archive.isPending,
     handler: () => {
-      if (!activeItem || archived) return;
-      archive.mutate([{ id: activeItem.id, remoteId: activeItem.remoteId }]);
-      setActiveKey(null);
+      if (activeItem && !archived) archiveItem(activeItem);
     },
   });
 
@@ -173,7 +182,7 @@ export function Inbox() {
               <IconButton className="inbox-message-pin" label={item.pinned ? 'Unpin message' : 'Pin message'} icon={item.pinned ? 'bi-pin-fill' : 'bi-pin'} disabled={pin.isPending}
                 onClick={() => pin.mutate({ id: item.id, remoteId: item.remoteId, pinned: !item.pinned })} />
               {!archived && <ArchiveButton className="inbox-message-archive" label="Archive" disabled={archive.isPending}
-                onClick={() => archive.mutate([{ id: item.id, remoteId: item.remoteId }], { onSuccess: () => { if (activeKey === itemKey(item)) setActiveKey(null); } })} />}
+                onClick={() => archiveItem(item)} />}
             </span>
           </article>)}
         </div>
@@ -185,7 +194,7 @@ export function Inbox() {
             <span className="inbox-meta">From {sourceLabel(activeItem.remoteId)}</span>
             <div className="inbox-actions">
              <Button type="button" size="small" disabled={archived || !activeItem.readAt || markRead.isPending || markUnread.isPending} onClick={() => markUnread.mutate({ id: activeItem.id, remoteId: activeItem.remoteId }, { onSuccess: () => setActiveKey(null) })}><i className="bi bi-envelope" aria-hidden="true" />Mark unread</Button>
-             <Button type="button" size="small" disabled={archived || archive.isPending} onClick={() => archive.mutate([{ id: activeItem.id, remoteId: activeItem.remoteId }])}><i className="bi bi-archive" aria-hidden="true" />Archive message</Button>
+             <Button type="button" size="small" disabled={archived || archive.isPending} onClick={() => archiveItem(activeItem)}><i className="bi bi-archive" aria-hidden="true" />Archive message</Button>
             </div>
           </div>
           <article className="inbox-letter" key={itemKey(activeItem)}>
