@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Bar, Line } from 'react-chartjs-2';
 import { EmptyState } from '../../components/EmptyState';
+import { InlineAlert } from '../../components/InlineAlert';
 import type { DatabaseSizeSample } from '../../lib/api';
 import { BAR_OPTIONS_STACKED, LINE_OPTIONS_DATABASE_SIZE } from '../../lib/chartConfig';
 import { formatNumber } from '../../lib/format';
@@ -52,7 +53,7 @@ export function OverviewTab() {
     <div>
       <section aria-labelledby="inventory-heading">
         <h2 id="inventory-heading" className="analytics-section-heading">All-time inventory</h2>
-        {overviewQ.error instanceof Error && <div className="oc-error-banner">{overviewQ.error.message}</div>}
+        {overviewQ.error instanceof Error && <InlineAlert>{overviewQ.error.message}</InlineAlert>}
         {overviewQ.isLoading && !overview && <MetricCardsSkeleton cards={7} label="Loading inventory" />}
         {overview && (
           <>
@@ -77,7 +78,7 @@ export function OverviewTab() {
       <section aria-labelledby="activity-heading">
         <h2 id="activity-heading" className="analytics-section-heading">Request activity</h2>
         <AnalyticsFilters days={days} onDaysChange={setDays} />
-        {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
+        {metricsQ.error instanceof Error && <InlineAlert>{metricsQ.error.message}</InlineAlert>}
         {metricsQ.isLoading && !metrics && <>
           <MetricCardsSkeleton cards={8} label="Loading request summary" />
           <ChartSkeletons labels={['Loading token usage']} />
@@ -99,9 +100,10 @@ export function OverviewTab() {
             </div>
           </>
         )}
-        {databaseSizesQ.error instanceof Error && <div className="oc-error-banner">{databaseSizesQ.error.message}</div>}
+        {databaseSizesQ.error instanceof Error && <InlineAlert>{databaseSizesQ.error.message}</InlineAlert>}
         <DatabaseSizeChart samples={databaseSizesQ.data} isLoading={databaseSizesQ.isLoading} />
       </section>
     </div>
   );
 }
+import './OverviewTab.css';

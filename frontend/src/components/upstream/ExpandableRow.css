@@ -1,0 +1,21 @@
+.oc-upstream-row { padding: 12px 10px; border-bottom: 1px solid var(--border); }
+.oc-upstream-row:last-child { border-bottom: none; }
+.oc-upstream-row.expanded { background: var(--mantle); }
+.oc-upstream-row-head { display: flex; align-items: center; gap: 6px; }
+.oc-upstream-row-summary { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; background: none; border: none; color: inherit; text-align: left; cursor: pointer; padding: 0; font-family: inherit; font-size: 13px; }
+.oc-upstream-row-number { color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 12px; flex-shrink: 0; }
+.oc-upstream-row-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.oc-upstream-row.expanded .oc-upstream-row-title { white-space: normal; }
+.oc-upstream-status { display: inline-block; padding: 2px 8px; border-radius: 0; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; font-weight: 500; text-transform: lowercase; flex-shrink: 0; }
+.oc-upstream-status-open { background: rgba(166, 227, 161, .15); color: var(--accent2); }
+.oc-upstream-status-draft { background: rgba(108, 112, 134, .2); color: var(--text-dim); }
+.oc-upstream-status-merged { background: rgba(203, 166, 247, .15); color: var(--accent3); }
+.oc-upstream-status-closed { background: rgba(243, 139, 168, .15); color: var(--danger); }
+.oc-upstream-row-detail { padding-top: 10px; font-size: 13px; color: var(--text); }
+.oc-upstream-row-link { display: inline-block; margin-bottom: 8px; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--accent); }
+.oc-upstream-row-link:hover { text-decoration: underline; }
+.oc-upstream-row-body { max-height: 18em; overflow-y: auto; margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--border); background: var(--bg); font-size: 13px; word-break: break-word; }
+.oc-upstream-row-body p { margin: .4em 0; }
+.oc-upstream-row-body pre { overflow-x: auto; padding: 8px; background: var(--crust); font-size: 12px; }
+.oc-upstream-row-body code { font-family: 'SF Mono', Consolas, monospace; font-size: .92em; padding: 1px 4px; background: var(--crust); }
+.oc-upstream-row-body pre code { padding: 0; background: transparent; }

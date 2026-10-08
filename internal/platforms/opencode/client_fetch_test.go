@@ -2,7 +2,11 @@ package opencode
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestFetchSessionFromOpenCodeCtx_Healthy(t *testing.T) {
@@ -284,5 +288,39 @@ func TestFetchSessionFromOpenCodeCtx_SkipsMessagesWithMissingInfo(t *testing.T) 
 	}
 	if detail.TotalMessages != 1 {
 		t.Errorf("expected exactly 1 valid message, got TotalMessages=%d", detail.TotalMessages)
+	}
+}
+
+func TestFetchSessionFromOpenCodeCtxCancelAbortsUpstream(t *testing.T) {
+	const sid, dir = "cancel-upstream", "/tmp/cancel-upstream"
+	arrived := make(chan struct{}, 2)
+	aborted := make(chan struct{}, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived <- struct{}{}
+		select {
+		case <-r.Context().Done():
+			aborted <- struct{}{}
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer srv.Close()
+	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
+	a := New(newTestDBWithSession(t, sid, dir), nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan bool)
+	go func() {
+		_, ok := a.fetchSessionFromOpenCodeCtx(ctx, sid, 30, 0)
+		done <- ok
+	}()
+	<-arrived
+	cancel()
+	select {
+	case <-aborted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream request kept running after the caller cancelled")
+	}
+	if ok := <-done; ok {
+		t.Fatal("cancelled fetch reported success")
 	}
 }

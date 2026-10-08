@@ -48,8 +48,17 @@ func configureHTTPAuth(auth ocapi.Auth) {
 // rawGet performs a plain GET against the OpenCode instance and
 // returns the response body if the status is 200.
 func rawGet(port, path string) ([]byte, bool) {
-	url := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
-	resp, err := openCodeClient.Get(url)
+	return rawGetContext(context.Background(), port, path)
+}
+
+// rawGetContext is rawGet bound to ctx, so a cancelled caller stops the
+// upstream read instead of letting it run to completion.
+func rawGetContext(ctx context.Context, port, path string) ([]byte, bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%s%s", port, path), nil)
+	if err != nil {
+		return nil, false
+	}
+	resp, err := openCodeClient.Do(req)
 	if err != nil {
 		return nil, false
 	}
@@ -61,8 +70,7 @@ func rawGet(port, path string) ([]byte, bool) {
 	// OpenCode; bound them so a runaway response can't be buffered whole.
 	body, err := readLimited(resp.Body, maxUpstreamConversationBytes)
 	if err != nil {
-		log.WithFields(log.Fields{"port": port, "path": path, "error": err}).
-			Warn("opencode: upstream response refused")
+		logFetchFailure(err, log.Fields{"port": port, "path": path}, "opencode: upstream response refused")
 		return nil, false
 	}
 	return body, true
@@ -80,10 +88,10 @@ func getInto(port, path string, v interface{}) bool {
 }
 
 // fetchOpenCodeSession fetches session metadata from the OpenCode HTTP API.
-func fetchOpenCodeSession(port, sessionID string) (map[string]interface{}, error) {
+func fetchOpenCodeSession(ctx context.Context, port, sessionID string) (map[string]interface{}, error) {
 	path := "/session/" + sessionID
-	body, ok := sessionCache.getOrFetch(port, path, func() ([]byte, bool) {
-		return rawGet(port, path)
+	body, ok := sessionCache.getOrFetchShared(ctx, port, path, func(shared context.Context) ([]byte, bool) {
+		return rawGetContext(shared, port, path)
 	})
 	if !ok {
 		return nil, fmt.Errorf("session API: upstream fetch failed")
@@ -162,10 +170,10 @@ func fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCo
 }
 
 // fetchOpenCodeMessages fetches messages for a session from the OpenCode HTTP API.
-func fetchOpenCodeMessages(port, sessionID string) ([]map[string]interface{}, error) {
+func fetchOpenCodeMessages(ctx context.Context, port, sessionID string) ([]map[string]interface{}, error) {
 	path := "/session/" + sessionID + "/message"
-	body, ok := sessionCache.getOrFetch(port, path, func() ([]byte, bool) {
-		return rawGet(port, path)
+	body, ok := sessionCache.getOrFetchShared(ctx, port, path, func(shared context.Context) ([]byte, bool) {
+		return rawGetContext(shared, port, path)
 	})
 	if !ok {
 		return nil, fmt.Errorf("messages API: upstream fetch failed")
@@ -230,18 +238,22 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	go func() {
 		defer wg.Done()
 		p := srvtiming.Begin(ctx, "http_session")
-		ocSession, sessionErr = fetchOpenCodeSession(port, sessionID)
+		ocSession, sessionErr = fetchOpenCodeSession(ctx, port, sessionID)
 		p.EndWithDesc("GET /session/{id}")
 	}()
 	go func() {
 		defer wg.Done()
 		p := srvtiming.Begin(ctx, "http_messages")
-		ocMessages, messagesErr = fetchOpenCodeMessages(port, sessionID)
+		ocMessages, messagesErr = fetchOpenCodeMessages(ctx, port, sessionID)
 		p.EndWithDesc("GET /session/{id}/message")
 	}()
 	wg.Wait()
 	parallelPhase.EndWithDesc("wall-clock for both fetches")
 
+	if ctx.Err() != nil {
+		// The caller left; the port is fine, so keep it.
+		return nil, false
+	}
 	if sessionErr != nil || messagesErr != nil || ocSession == nil {
 		forgetSessionPort(sessionID, port)
 		return nil, false
@@ -259,8 +271,8 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	defaults, err := getSessionDefaultsCached(ctx, a.db, sessionID, dbSession.Directory)
 	defaultsPhase.End()
 	if err != nil {
-		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
-			Warn("opencode: fetching session defaults for live path")
+		logFetchFailure(err, log.Fields{"sessionID": sessionID},
+			"opencode: fetching session defaults for live path")
 	}
 	if stats.currentModel != "" {
 		defaults.Model = stats.currentModel

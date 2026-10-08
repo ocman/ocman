@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { Button } from '../components/Control';
 import { DataTable } from '../components/DataTable';
 import { EmptyState } from '../components/EmptyState';
-import { Modal } from '../components/Modal';
-import { ModalHeader } from '../components/ModalHeader';
+import { Drawer } from '../components/Drawer';
+import { RoutineStateBadge } from '../components/RoutineStateBadge';
 import { api, type Routine, type RoutineRun } from '../lib/api';
 import { formatDateTimeShort } from '../lib/format';
+import styles from './RoutineHistoryDrawer.module.css';
 
 const HISTORY_PAGE_SIZE = 50;
 
@@ -101,19 +102,18 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
   };
 
   return (
-    <Modal label={`${routine.name} history`} onClose={onClose} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
-      <div className="routine-form">
-        <ModalHeader title={routine.name} onClose={onClose} closeLabel="Close routine history" />
-        <p className="routine-detail-next">Next run: {routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</p>
-        {error && <p role="alert" className="routine-error">{error}</p>}
-        <section className="routine-detail-history" aria-labelledby="routine-history-heading">
+    <Drawer title={`${routine.name} history`} onClose={onClose} closeLabel="Close routine history" backdropTestId="routine-drawer-backdrop">
+      <div className={styles.content}>
+        <p className={styles.next}>Next run: {routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</p>
+        {error && <p role="alert" className={styles.error}>{error}</p>}
+        <section className={styles.history} aria-labelledby="routine-history-heading">
           <h3 id="routine-history-heading">History</h3>
           {!loaded && !error ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading history...</div> : runs.length === 0 ? <EmptyState>No runs yet.</EmptyState> : (
-            <DataTable framed><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><span className={`routine-state ${run.state}`}>{run.state}</span>{run.error && <small className="routine-error">{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></DataTable>
+            <DataTable framed><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><RoutineStateBadge state={run.state} />{run.error && <small className={styles.error}>{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></DataTable>
           )}
           {loaded && !exhausted && runs.length > 0 && <Button type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading...' : 'Load older runs'}</Button>}
         </section>
       </div>
-    </Modal>
+    </Drawer>
   );
 }

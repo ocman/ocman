@@ -4,7 +4,9 @@ import type { PluginInput, PluginRegistration } from '../lib/plugins';
 import { plugins } from '../lib/plugins';
 import { SearchSelect } from './SearchSelect';
 import { SettingRow } from './SettingRow';
-import { Button, CheckboxField, SelectField, TextField } from './Control';
+import { Button, SelectField, TextField } from './Control';
+import { SecretField } from './SecretField';
+import styles from './PluginConfiguration.module.css';
 
 const emptyCatalog = { agents: [] as string[], models: [] as string[] };
 
@@ -49,45 +51,44 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
     ...Array.from(new Set([...items, current].filter(Boolean))).map((value) => ({ value, label: value })),
   ];
 
-  return <form aria-label="Plugin configuration" onSubmit={(event) => {
+  return <form className={styles.form} aria-label="Plugin configuration" onSubmit={(event) => {
     event.preventDefault();
     const input = { values, secrets };
     setSecrets({});
     void save(input);
   }}>
     {settings.map((s) => <SettingRow key={s.key} label={s.label} desc={s.secret ? 'Write-only. Leave blank to keep the current secret.' : s.required ? 'Required' : undefined}>
-      {s.secret ? <>
-        <TextField aria-label={s.label} type="password" autoComplete="new-password" value={secrets[s.key] ?? ''}
-          required={s.required && !plugin.configuration.secrets?.[s.key]}
-          onChange={(event) => setSecrets((previous) => {
-            const next = { ...previous };
-            if (event.target.value) next[s.key] = event.target.value; else delete next[s.key];
-            return next;
-          })} />
-        {!s.required && <label><CheckboxField checked={secrets[s.key] === ''} onChange={(event) => setSecrets((previous) => {
+      {s.secret ? <SecretField wrapperClassName={styles.control} aria-label={s.label} autoComplete="new-password" value={secrets[s.key] ?? ''}
+        protect={Boolean(plugin.configuration.secrets?.[s.key])} resetPending={secrets[s.key] === ''}
+        required={s.required && !plugin.configuration.secrets?.[s.key]}
+        onChange={(event) => setSecrets((previous) => {
           const next = { ...previous };
-          if (event.target.checked) next[s.key] = ''; else delete next[s.key];
+          if (event.target.value) next[s.key] = event.target.value; else delete next[s.key];
           return next;
-        })} />Clear {s.label}</label>}
-      </> : slack && s.key === 'project' ? <SearchSelect ariaLabel={s.label} searchLabel="Search projects" placeholder="Select a project" value={String(values.project ?? '')}
+        })}
+        onReset={s.required ? undefined : () => setSecrets((previous) => {
+          const next = { ...previous };
+          if (previous[s.key] === '') delete next[s.key]; else next[s.key] = '';
+          return next;
+        })} /> : slack && s.key === 'project' ? <SearchSelect className={styles.control} ariaLabel={s.label} searchLabel="Search projects" placeholder="Select a project" value={String(values.project ?? '')}
         options={selectOptions(projects.map((project) => project.directory), String(values.project ?? ''), 'Select a project')}
         onChange={(project) => setValues((previous) => ({ ...previous, project, agent: '', model: '' }))} />
-      : slack && (s.key === 'agent' || s.key === 'model') ? <SearchSelect ariaLabel={s.label} searchLabel={`Search ${s.key}s`} placeholder={`Default ${s.key}`} disabled={!values.project}
+      : slack && (s.key === 'agent' || s.key === 'model') ? <SearchSelect className={styles.control} ariaLabel={s.label} searchLabel={`Search ${s.key}s`} placeholder={`Default ${s.key}`} disabled={!values.project}
         value={String(values[s.key] ?? '')} options={selectOptions(s.key === 'agent' ? options.agents : options.models, String(values[s.key] ?? ''), `Default ${s.key}`)}
         onChange={(value) => selectValue(s.key, value)} />
-      : s.type === 'boolean' ? <SelectField aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
+      : s.type === 'boolean' ? <SelectField className={styles.control} aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
         const next = { ...previous };
         if (event.target.value === '') delete next[s.key]; else next[s.key] = event.target.value === 'true';
         return next;
       })}>
         <option value="">Not set</option><option value="true">Yes</option><option value="false">No</option>
-      </SelectField> : s.enum?.length ? <SelectField aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
+      </SelectField> : s.enum?.length ? <SelectField className={styles.control} aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
         const next = { ...previous };
         if (event.target.value === '') delete next[s.key]; else next[s.key] = event.target.value;
         return next;
       })}>
         <option value="">Select a value</option>{s.enum.map((option) => <option key={option}>{option}</option>)}
-      </SelectField> : <TextField aria-label={s.label} type={s.type === 'string' ? 'text' : 'number'} step={s.type === 'integer' ? 1 : 'any'} required={s.required}
+      </SelectField> : <TextField className={styles.control} aria-label={s.label} type={s.type === 'string' ? 'text' : 'number'} step={s.type === 'integer' ? 1 : 'any'} required={s.required}
         value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
           const next = { ...previous };
           if (s.type === 'string') next[s.key] = event.target.value;
@@ -97,6 +98,6 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
         })} />}
     </SettingRow>)}
     {!settings.length && <p>No configuration settings.</p>}
-    <Button type="submit" size="small" variant="accent">Save configuration</Button>
+    <Button type="submit" variant="accent" className={styles.save}>Save configuration</Button>
   </form>;
 }

@@ -1,0 +1,7 @@
+.panel { position: fixed; inset: 0; z-index: 1000; background: var(--bg); overflow: auto; }
+.banner { position: fixed; top: 0; left: 0; right: 0; z-index: 999; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--danger); color: var(--danger); font-family: var(--font-conversation-mono); font-size: 12px; }
+.message { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.list { margin: 4px 0; padding-left: 18px; text-align: left; }
+.detail, .hint { color: var(--text-dim); }
+.hint { font-style: italic; }
+.log { margin: 0; font-size: 13px; text-align: center; }

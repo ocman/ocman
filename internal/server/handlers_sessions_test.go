@@ -1443,7 +1443,7 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 			aiReviewing:     true,
 			pendingQuestion: true,
 			want: `[{"id":"pending","status":"waiting","seen":false,` +
-				`"pendingQuestion":true,"title":"pending","directory":"/repo"}]`,
+				`"pendingQuestion":true,"title":"pending","directory":"/repo","suppressTerminal":true}]`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

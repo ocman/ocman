@@ -166,7 +166,7 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 		t.Fatalf("seeding first project session: %v", err)
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("initial projects refresh: %v", err)
 	}
 
@@ -193,7 +193,7 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 		t.Fatalf("expected stale in-memory index with one project, got %+v", projects)
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("second projects refresh: %v", err)
 	}
 
@@ -233,7 +233,7 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	})
 	srv.registry = reg
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("initial projects refresh: %v", err)
 	}
 	sub, unsubscribe := srv.broadcastHub.subscribe()
@@ -1455,7 +1455,7 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 		t.Fatalf("seeding session: %v", err)
 	}
 
-	srv.autoArchiveInactiveSessions()
+	srv.autoArchiveInactiveSessions(t.Context())
 
 	archived, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
@@ -1485,7 +1485,7 @@ func TestAutoArchiveUsesConfiguredTTL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv.autoArchiveInactiveSessions()
+	srv.autoArchiveInactiveSessions(t.Context())
 
 	archived, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
@@ -1511,8 +1511,8 @@ func TestAutoArchiveCanBeDisabled(t *testing.T) {
 	}
 	opencodeplatform.ResetCachesForTests()
 
-	srv.autoArchiveInactiveSessions()
-	srv.autoArchiveInactiveProjects()
+	srv.autoArchiveInactiveSessions(t.Context())
+	srv.autoArchiveInactiveProjects(t.Context())
 
 	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
@@ -1551,7 +1551,7 @@ func TestAutoArchiveProjects(t *testing.T) {
 	}
 	opencodeplatform.ResetCachesForTests()
 
-	srv.autoArchiveInactiveProjects()
+	srv.autoArchiveInactiveProjects(t.Context())
 
 	archived, err := srv.stateDB.ArchivedProjects(t.Context())
 	if err != nil {
@@ -1591,8 +1591,8 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 	}
 
 	// ocman restarts for an unrelated reason; both loops run at boot.
-	srv.autoArchiveInactiveSessions()
-	srv.autoArchiveInactiveProjects()
+	srv.autoArchiveInactiveSessions(t.Context())
+	srv.autoArchiveInactiveProjects(t.Context())
 
 	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {

@@ -20,14 +20,16 @@ func (s *Server) InboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, err
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
 	}
-	return jsonResp(s.inboxStore.ListInboxItems(ctx))
+	items, err := s.inboxStore.ListInboxItems(ctx)
+	return jsonResp(s.inboxSessionTitles(ctx, items), err)
 }
 
 func (s *Server) ArchivedInboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
 	}
-	return jsonResp(s.inboxStore.ListArchivedInboxItems(ctx))
+	items, err := s.inboxStore.ListArchivedInboxItems(ctx)
+	return jsonResp(s.inboxSessionTitles(ctx, items), err)
 }
 
 func (s *Server) MarkInboxItemRead(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {

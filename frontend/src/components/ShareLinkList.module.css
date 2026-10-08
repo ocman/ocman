@@ -1,0 +1,3 @@
+.links { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.link { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--border); }
+.url { width: 100%; font-family: var(--font-conversation-mono); }

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
+import { RootRedirect } from './pages/RootRedirect';
 import { WorktreesView } from './pages/WorktreesView';
 import { ProjectSettingsView } from './pages/ProjectSettingsView';
 import { Routines } from './pages/Routines';
@@ -15,7 +16,6 @@ import { FactoryIssues } from './pages/FactoryIssues';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
-import { Login } from './pages/Login';
 import { SubscriptionUsage } from './pages/SubscriptionUsage';
 import { onInboxChanged, onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
@@ -31,11 +31,11 @@ import { PromptToastNotify } from './components/PromptToastNotify';
 import { McpConfigPrompt } from './components/McpConfigPrompt';
 import { SetupPrompt } from './components/SetupPrompt';
 import { BackendStatusBanner } from './components/BackendStatusBanner';
-import { useAuthStore } from './lib/authStore';
+import { AuthGate } from './components/AuthGate';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
-import { useSessions, insertProvisionalSession } from './lib/queries';
+import { insertProvisionalSession, inboxEventRefresh } from './lib/queries';
 import { queryEventRefresh } from './lib/queryEventRefresh';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
@@ -281,45 +281,6 @@ function PerfDevHandle() {
   return null;
 }
 
-/**
- * AuthGate short-circuits the app tree while the initial auth probe
- * is in flight, and again whenever the client is unauthenticated
- * against an auth-required server. The inner app is only rendered
- * once the gate decides it's safe — this is also what prevents every
- * store's initial fetch from firing into a 401 storm on page load.
- */
-const AUTH_BOOT_TIMEOUT_MS = 8_000;
-
-export function AuthGate({ children }: { children: ReactNode }) {
-  const checking = useAuthStore((s) => s.checking);
-  const authRequired = useAuthStore((s) => s.authRequired);
-  const authenticated = useAuthStore((s) => s.authenticated);
-  const bootstrap = useAuthStore((s) => s.bootstrap);
-
-  const [timedOut, setTimedOut] = useState(false);
-
-  useEffect(() => {
-    bootstrap();
-  }, [bootstrap]);
-
-  // Bound the initial /api/auth/me wait so a hung backend shows the
-  // unreachable banner instead of an endless spinner.
-  useEffect(() => {
-    if (!checking) return;
-    const t = setTimeout(() => setTimedOut(true), AUTH_BOOT_TIMEOUT_MS);
-    return () => clearTimeout(t);
-  }, [checking]);
-
-  if (checking) {
-    if (timedOut) return <BackendStatusBanner force onRetry={() => void bootstrap()} />;
-    return <div className="oc-login-bootstrap">Checking authentication…</div>;
-  }
-  if (authRequired && !authenticated) {
-    return <Login />;
-  }
-  return <>{children}</>;
-}
-
 // Shared QueryClient for TanStack Query. Sensible defaults:
 // - staleTime: 10s — data is considered fresh for 10s after fetch,
 //   so rapid navigation doesn't re-fetch immediately.
@@ -359,7 +320,7 @@ onProjectsChanged(() => {
   void queryClient.invalidateQueries({ queryKey: ['projects'] });
 });
 
-onInboxChanged(() => { void queryClient.invalidateQueries({ queryKey: ['inbox'] }); });
+onInboxChanged(inboxEventRefresh(queryClient));
 
 export default function App() {
   return (
@@ -459,29 +420,4 @@ export function AppRoutes() {
       <Route path="/session/:id" element={<SessionDetail />} />
     </Routes>
   );
-}
-
-export function RootRedirect() {
-  const sessionsQ = useSessions();
-  const lastOpenedSessionId = useUiStore((s) => s.lastOpenedSessionId);
-  if (sessionsQ.isLoading) return null;
-  if (sessionsQ.isError) {
-    const message = sessionsQ.error instanceof Error
-      ? sessionsQ.error.message
-      : 'Could not load sessions.';
-    return (
-      <div className="oc-error-banner">
-        {message}
-        <button type="button" onClick={() => void sessionsQ.refetch()}>Retry</button>
-      </div>
-    );
-  }
-  const active = (sessionsQ.data ?? []).filter((session) => !session.archived);
-  const lastOpened = active.find((session) => session.id === lastOpenedSessionId);
-  const latest = active.reduce<(typeof active)[number] | undefined>(
-    (best, session) => !best || session.timeUpdated > best.timeUpdated ? session : best,
-    undefined,
-  );
-  const target = lastOpened || latest;
-  return <Navigate to={target ? `/session/${target.id}` : '/session/new'} replace />;
 }

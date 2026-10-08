@@ -81,6 +81,7 @@ import { SessionModals, type MessageJumpHistory } from './SessionModals';
 import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
 import { useSessionModal } from './useSessionModal';
 import { SessionSidebar } from './SessionSidebar';
+import { SessionEmptyDetail, SessionLoadError } from './SessionStatusViews';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { platformMessageCount, useSession } from './useSession';
@@ -437,11 +438,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
     remoteId: session?.remoteId,
   });
   const {
-    matchingTmuxSession,
     pendingTmuxSession,
     pickerPos,
     pickerRef,
-    handleTmuxSwitch,
     handleClientSelect,
     handleLaunchOpencode,
     launchingOpencode,
@@ -888,15 +887,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <SessionActionsMenu
               sessionId={session.id}
               tmuxAvailable={tmux.available}
-              matchingTmuxSession={matchingTmuxSession}
               portAvailable={portAvailable}
               liveConnectionHint={caps.liveConnectionHint}
               launchingOpencode={launchingOpencode}
               onNewSession={() => { void handleNewSession(); }}
               onShare={() => modal.open('share')}
-              onTmuxSwitch={handleTmuxSwitch}
               onLaunchOpencode={() => { void handleLaunchOpencode(); }}
-              onOpenVSCode={handleVSCodeShortcut}
             />
           </HeaderPortal>}
           {session && modal.openModal === 'share' && (
@@ -905,10 +901,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           {loading ? (
             <ThreadSkeleton rows={5} />
           ) : loadError ? (
-            <div className="oc-error-banner" data-testid="error-banner" style={{ margin: 24 }}>
-              {loadError}
-              <button onClick={() => { void reload(); }}>Retry</button>
-            </div>
+            <SessionLoadError message={loadError} onRetry={() => { void reload(); }} />
           ) : newConversation && !session ? (
             <NewConversation
               key={`${newConversation.remoteId}:${newConversation.directory}`}
@@ -919,10 +912,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               navigateToSession={navigateToSession}
             />
           ) : id === NEW_SESSION_ID && !session ? (
-            <div className="oc-empty-detail" data-testid="empty-detail" style={{ margin: 24, opacity: 0.7 }}>
-              <p>No session open.</p>
-              <p>Pick a session from the sidebar, or press <kbd>{paletteShortcutLabel}</kbd> and run <code>/new</code> to start one.</p>
-            </div>
+            <SessionEmptyDetail shortcutLabel={paletteShortcutLabel} />
           ) : session && (
             <PerfProfiler id="Thread">
             <OcmanRuntimeProvider

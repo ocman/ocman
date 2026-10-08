@@ -53,6 +53,15 @@ export interface NotifyEntry {
   pendingQuestion?: boolean;
   title?: string;
   directory?: string;
+  permissions?: NotifyPrompt[];
+  questions?: NotifyPrompt[];
+  suppressTerminal?: boolean;
+}
+
+export interface NotifyPrompt {
+  platform: string;
+  sessionId: string;
+  requestId: string;
 }
 
 export interface ClientActivity {

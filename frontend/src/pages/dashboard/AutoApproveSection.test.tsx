@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutoApproveSection } from './AutoApproveSection';
 
 // An older or remote backend can answer the best-effort model lookups with a
@@ -8,6 +8,8 @@ import { AutoApproveSection } from './AutoApproveSection';
 const store = vi.hoisted(() => ({
   getJudgeModel: vi.fn(),
   getJudgeModelOptions: vi.fn(),
+  setPromptSections: vi.fn(),
+  setPromptSectionsApi: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../lib/uiStore', () => ({
@@ -17,12 +19,11 @@ vi.mock('../../lib/uiStore', () => ({
     autoApproveDelayMs: 0,
     setAutoApproveDelayMs: vi.fn(),
     promptSections: [],
-    setPromptSections: vi.fn(),
+    setPromptSections: store.setPromptSections,
   }),
 }));
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    setPromptSectionsApi: vi.fn(),
     setJudgeDelayApi: vi.fn(),
     setJudgeModelApi: vi.fn(),
     ...store,
@@ -30,6 +31,21 @@ vi.mock('../../lib/apiStore', () => ({
 }));
 
 describe('AutoApproveSection reviewer model', () => {
+  beforeEach(() => {
+    store.setPromptSections.mockClear();
+    store.setPromptSectionsApi.mockClear();
+  });
+
+  it('adds a section with the shared action and saves its complete payload', async () => {
+    store.getJudgeModel.mockResolvedValue('');
+    store.getJudgeModelOptions.mockResolvedValue({ models: [], default: '' });
+    render(<AutoApproveSection />);
+    const button = screen.getByRole('button', { name: '+ Add section' });
+    expect(button).toHaveClass('oc-button');
+    fireEvent.click(button);
+    await vi.waitFor(() => expect(store.setPromptSectionsApi).toHaveBeenCalledWith([{ title: '', content: '' }]));
+    expect(store.setPromptSections).toHaveBeenCalledWith([{ title: '', content: '' }]);
+  });
   it('survives model lookups that return empty bodies', async () => {
     store.getJudgeModel.mockResolvedValue(undefined);
     store.getJudgeModelOptions.mockResolvedValue({});

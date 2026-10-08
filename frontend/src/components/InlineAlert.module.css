@@ -1,0 +1,5 @@
+.root { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; margin: 8px 0; background: color-mix(in srgb, var(--danger) 10%, transparent); border: 1px solid var(--danger); color: var(--danger); font-family: var(--font-conversation-mono); font-size: 12px; }
+.message { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.action { flex-shrink: 0; white-space: nowrap; }
+.compact { padding: 4px 16px; margin: 0; background: transparent; border: 0; }
+.compact .action { padding: 0; border: 0; background: transparent; text-decoration: underline; }

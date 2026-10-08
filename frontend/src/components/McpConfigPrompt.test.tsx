@@ -69,6 +69,8 @@ describe('McpConfigPrompt', () => {
     expect(prompt).toHaveTextContent(PATH);
     expect(screen.getByText('ocman MCP not configured')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Install' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Install' })).toHaveClass('oc-button');
+    expect(screen.getByRole('button', { name: 'Not now' })).toHaveClass('oc-icon-button');
   });
 
   it('flags a stale entry differently', async () => {
@@ -93,6 +95,8 @@ describe('McpConfigPrompt', () => {
     expect(done).toHaveTextContent('Restart OpenCode');
     expect(done).toHaveTextContent('opencode.2026-08-06T101500-backup.json');
     expect(screen.queryByTestId('mcp-config-prompt')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(screen.queryByTestId('mcp-config-installed')).toBeNull());
   });
 
   it('shows the error and keeps the Install button on failure', async () => {

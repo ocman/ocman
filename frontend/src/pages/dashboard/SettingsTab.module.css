@@ -1,0 +1,17 @@
+.page { display: flex; gap: 32px; max-width: 880px; }
+.nav { display: flex; flex-direction: column; flex-shrink: 0; width: 180px; position: sticky; top: 0; align-self: flex-start; }
+.groups { display: flex; flex-direction: column; gap: 2px; }
+.group { justify-content: flex-start; width: 100%; }
+.compact { display: none; }
+.caption { color: var(--text-dim); font-size: 12px; }
+.content { flex: 1; min-width: 0; max-width: 640px; }
+.section { margin-bottom: 32px; }
+.sectionTitle { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--text-dim); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.search { margin-bottom: 8px; width: 100%; }
+@media (max-width: 700px) {
+  .page { flex-direction: column; gap: 16px; }
+  .nav { width: 100%; position: static; }
+  .groups { display: none; }
+  .compact { display: grid; gap: 6px; }
+  .content { max-width: none; width: 100%; }
+}

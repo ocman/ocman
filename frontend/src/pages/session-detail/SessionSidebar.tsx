@@ -32,7 +32,7 @@ import { useSidebarReorder } from './useSidebarReorder';
 import { SidebarHeader } from './SidebarHeader';
 import { useSidebarFilter } from './useSidebarFilter';
 import { useSidebarProjectFilter } from './useSidebarProjectFilter';
-import { TmuxClientPopover } from './TmuxClientPopover';
+import { TmuxClientPopover } from '../../components/TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
 import { checkoutKey } from '../../lib/projectIdentity';

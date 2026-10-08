@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -107,10 +108,12 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 					}
 					_, _ = w.Write([]byte(`{"id":"name"}`))
 				case r.URL.Path == "/session/name/message":
-					// The title agent sees only the user's task, never naming instructions.
-					body, _ := io.ReadAll(r.Body)
-					if strings.Contains(string(body), "branch") || !strings.Contains(string(body), `"text":"Fix login"`) {
-						t.Errorf("naming input is not the bare prompt: %s", body)
+					var body struct{ Parts []struct{ Text string } }
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					if len(body.Parts) != 1 || !strings.HasSuffix(body.Parts[0].Text, "<task>\nFix login\n</task>") {
+						t.Errorf("naming input lost the task: %+v", body)
 					}
 					_, _ = w.Write([]byte(`{"parts":[{"type":"text","text":"Fix Login\n"}]}`))
 				case r.Method == http.MethodPatch:

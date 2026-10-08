@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import './Dashboard.css';
 import { Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import type { Project, Session } from '../lib/api';
@@ -78,7 +77,7 @@ export function DashboardLayout() {
 
   const sessionsError = sessionsQ.error instanceof Error ? sessionsQ.error.message : null;
   const { isLoading: sessionsLoading, refetch: refetchSessions } = sessionsQ;
-  const { isLoading: projectsLoading, refetch: refetchProjectsQ } = projectsQ;
+  const { isLoading: projectsLoading, isFetching: projectsFetching, refetch: refetchProjectsQ } = projectsQ;
   // Surfaced so tabs can tell a failed query from a successfully empty
   // one; discarding it made every failure look like first-run.
   const projectsError = projectsQ.isError
@@ -94,6 +93,7 @@ export function DashboardLayout() {
     sessionsLoading,
     sessionsError,
     projectsLoading,
+    projectsFetching,
     projectsError,
     loadSessions,
     refetchProjects,
@@ -109,6 +109,7 @@ export function DashboardLayout() {
     sessionsLoading,
     sessionsError,
     projectsLoading,
+    projectsFetching,
     projectsError,
     loadSessions,
     refetchProjects,

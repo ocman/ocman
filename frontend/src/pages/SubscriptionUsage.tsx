@@ -6,6 +6,7 @@ import { RefreshButton } from '../components/RefreshButton';
 import { InlineAlert } from '../components/InlineAlert';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
+import './SubscriptionUsage.css';
 
 const STATUS_LABELS: Record<string, string> = {
   expired: 'OpenCode token expired',

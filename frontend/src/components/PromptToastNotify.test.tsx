@@ -17,6 +17,8 @@ describe('PromptToastNotify', () => {
     render(<MemoryRouter><PromptToastNotify /><Location /></MemoryRouter>);
     const actions = await screen.findAllByRole('button', { name: 'Open session' });
     expect(actions).toHaveLength(2);
+    expect(actions[0]).toHaveClass('oc-button');
+    expect(screen.getAllByRole('button', { name: 'Dismiss' })[0]).toHaveClass('oc-icon-button');
     fireEvent.click(actions[0]);
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/session/child');
     fireEvent.click(actions[1]);

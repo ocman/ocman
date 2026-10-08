@@ -3,6 +3,7 @@ package opencode
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,7 +53,8 @@ func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
 		t.Fatalf("title agent not selected: %+v", agent)
 	}
 	prompt, ok := f.find(http.MethodPost, "/api/session/naming/prompt")
-	if !ok || prompt.body["text"] != "fix the login flow" {
+	text, _ := prompt.body["text"].(string)
+	if !ok || !strings.Contains(text, "Do not answer the task") || !strings.HasSuffix(text, "<task>\nfix the login flow\n</task>") {
 		t.Fatalf("prompt = %+v", prompt)
 	}
 	if _, hit := f.find(http.MethodDelete, "/api/session/naming"); !hit {

@@ -1,0 +1,6 @@
+.badge { align-self: start; padding: 3px 7px; border: 1px solid var(--border); color: var(--text-dim); font: 11px var(--font-conversation-mono); }
+.badge:is([data-state="success"], [data-state="done"]) { color: var(--accent2); }
+.badge:is([data-state="failure"], [data-state="error"], [data-state="interrupted"], [data-state="expired"]) { color: var(--danger); }
+.badge[data-state="running"] { color: var(--warning); }
+.badge a { color: inherit; text-decoration: none; }
+.badge:has(a):hover { border-color: var(--accent); }

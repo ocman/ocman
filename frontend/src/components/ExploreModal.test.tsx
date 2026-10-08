@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { HeaderContext } from '../lib/headerContext';
 import { api } from '../lib/api';
 import { AppHeader } from './AppHeader';
+import checkboxStyles from './CheckboxField.module.css';
 
 // Shiki highlighting is not the subject here.
 vi.mock('@pierre/diffs/react', () => ({
@@ -92,6 +93,7 @@ it('toggles gitignored files', async () => {
   await user.click(screen.getByRole('button', { name: 'Explore files' }));
   await waitFor(() => expect(tree().getByRole('treeitem', { name: 'img.png' })).toBeInTheDocument());
   expect(api.repoFiles).toHaveBeenLastCalledWith('/repo/wt', 'rem1', expect.anything(), false);
+  expect(screen.getByRole('checkbox', { name: 'Show ignored files' })).toHaveClass(checkboxStyles.input);
 
   vi.mocked(api.repoFiles).mockResolvedValue({ root: '/repo/wt', files: ['src/a.ts', '.env'] });
   await user.click(screen.getByRole('checkbox', { name: 'Show ignored files' }));

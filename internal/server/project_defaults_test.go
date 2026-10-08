@@ -20,7 +20,7 @@ func TestProjectDefaults(t *testing.T) {
 		srv.handleProjectSettings(rr, httptest.NewRequest(http.MethodPost, "/api/project/settings", strings.NewReader(body)))
 		return rr.Code
 	}
-	if code := post(`{"directory":"/src/.worktrees/foo/wt","remoteId":"machine","defaults":{"model":"p/start","agent":"plan","worktree":"current"}}`); code != 200 {
+	if code := post(`{"directory":"/src/.worktrees/foo/wt","remoteId":"machine","defaults":{"model":"p/start","agent":"plan","worktree":"current","permissionMode":"yolo"}}`); code != 200 {
 		t.Fatalf("save: %d", code)
 	}
 	rr := httptest.NewRecorder()
@@ -33,7 +33,7 @@ func TestProjectDefaults(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if rr.Code != 200 || got.DefaultAgent != "plan" || got.Defaults.Model != "p/start" || got.Defaults.Worktree != "current" || !got.Off || len(got.Models) != 1 || got.Models[0] != "p/fallback" {
+	if rr.Code != 200 || got.DefaultAgent != "plan" || got.Defaults.Model != "p/start" || got.Defaults.Worktree != "current" || got.Defaults.PermissionMode != "yolo" || !got.Off || len(got.Models) != 1 || got.Models[0] != "p/fallback" {
 		t.Fatalf("settings: %d %s", rr.Code, rr.Body.String())
 	}
 	for _, owner := range []string{"", "local", "other"} {
@@ -45,6 +45,7 @@ func TestProjectDefaults(t *testing.T) {
 	for _, body := range []string{
 		`{"directory":"/src/foo","defaults":{"model":"invalid"}}`,
 		`{"directory":"/src/foo","defaults":{"worktree":"elsewhere"}}`,
+		`{"directory":"/src/foo","defaults":{"permissionMode":"unknown"}}`,
 		`{"directory":"/src/foo","defaults":{"agent":" plan"}}`,
 		`{"directory":"/src/foo","defaults":{"agent":"bad\nagent"}}`,
 		`{"directory":"/src/foo","defaults":{"agent":"` + strings.Repeat("a", 201) + `"}}`,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { plugins, type PluginBacklog, type PluginRegistration } from '../lib/plugins';
 import { SettingRow } from './SettingRow';
-import { Button } from './Control';
+import { Button, ButtonGroup } from './Control';
 
 function age(since: number) {
   if (!since) return 'none waiting';
@@ -70,12 +70,14 @@ export function PluginDeliveryBacklog({ plugin, owner }: { plugin: PluginRegistr
       <ul>
         {deadLetters.map((letter) => <li key={letter.id}>
           <code>{letter.threadId}</code> in <code>{letter.accountId}</code> · {letter.attempts} attempts · {letter.lastError}
+          <ButtonGroup label={`Reply ${letter.id} actions`}>
           <Button type="button" size="small" onClick={() => { void decide('conversations/retry', letter.id); }}>
             Retry delivery
           </Button>
           <Button type="button" size="small" variant="danger" onClick={() => { void decide('conversations/discard', letter.id); }}>
             Discard reply
           </Button>
+          </ButtonGroup>
         </li>)}
       </ul>
     </SettingRow>}

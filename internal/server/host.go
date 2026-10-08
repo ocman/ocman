@@ -88,10 +88,10 @@ func (s *Server) hostTmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, e
 }
 
 // hostProjects returns stale data immediately while a dirty index refreshes.
-func (s *Server) hostProjects(_ context.Context) ([]db.ProjectStats, error) {
+func (s *Server) hostProjects(ctx context.Context) ([]db.ProjectStats, error) {
 	projects, loaded, dirty := s.projectsSnapshotState()
 	if !loaded {
-		if err := s.refreshProjectsIndex(); err != nil {
+		if err := s.refreshProjectsIndex(ctx); err != nil {
 			return nil, err
 		}
 		projects, _ = s.projectsSnapshot()

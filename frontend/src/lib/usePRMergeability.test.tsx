@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePRMergeability } from './usePRMergeability';
 import * as api from './upstreamApi';
 import type { PR } from './upstreamApi';
+import { clearPRChecksCache } from './prChecksCache';
 
-const pr = { number: 42, status: 'open', headSha: 'abc', updatedAt: 'today' } as PR;
+const pr = { number: 42, status: 'open', headSha: 'abc', updatedAt: 'today', host: 'github.com', repo: 'a/repo' } as PR;
 
 describe('usePRMergeability', () => {
   beforeEach(() => { vi.spyOn(api, 'fetchPRMergeability'); });
@@ -42,6 +43,17 @@ describe('usePRMergeability', () => {
     const { result } = renderHook(() => usePRMergeability({ ...pr, mergeable }, '/repo', 'local', 'origin', true));
     expect(result.current).toBe(mergeable);
     expect(api.fetchPRMergeability).not.toHaveBeenCalled();
+  });
+
+  it('revalidates on a refresh for its repository, but not another repository', async () => {
+    vi.mocked(api.fetchPRMergeability).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const { result } = renderHook(() => usePRMergeability(pr, '/repo', 'local', 'origin', true));
+    await waitFor(() => expect(result.current).toBe(true));
+    act(() => clearPRChecksCache(['github.com/other/repo']));
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
+    act(() => clearPRChecksCache(['github.com/a/repo']));
+    await waitFor(() => expect(result.current).toBe(false));
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2);
   });
 
   it.each(['draft', 'closed', 'merged'] as const)('does not fetch %s PRs', (status) => {

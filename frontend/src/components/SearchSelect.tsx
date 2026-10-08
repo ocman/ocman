@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useClickOutside } from '../lib/useClickOutside';
 import { fuzzyMatch } from '../lib/format';
-import './Control.css';
+import { Button } from './Control';
 import './SearchSelect.css';
 
 export interface SearchSelectOption {
@@ -45,6 +45,7 @@ export function SearchSelect({
 }: SearchSelectProps) {
   const id = useId();
   const root = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const [menuOpen, setOpen] = useState(false);
   // A control disabled while open (e.g. a busy lock) must not stay selectable.
@@ -66,8 +67,15 @@ export function SearchSelect({
   const selected = options.find((option) => option.value === value);
 
   return (
-    <span className={className ? `oc-search-select ${className}` : 'oc-search-select'} ref={root} onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}>
-      <button
+    <span className={className ? `oc-search-select ${className}` : 'oc-search-select'} ref={root} onKeyDown={(event) => {
+      if (event.key !== 'Escape' || !open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    }}>
+      <Button
+        ref={trigger}
         type="button"
         role="combobox"
         aria-label={ariaLabel}
@@ -80,9 +88,9 @@ export function SearchSelect({
           setOpen((current) => !current);
         }}
       >
-        <span className="oc-search-select-label">{selected?.icon}{selected?.displayLabel ?? selected?.label ?? (value || placeholder)}</span>
+        <span className="oc-search-select-label">{selected?.icon}<span className="oc-search-select-text">{selected?.displayLabel ?? selected?.label ?? (value || placeholder)}</span></span>
         <i className="bi bi-chevron-down" aria-hidden="true" />
-      </button>
+      </Button>
       {open && (
         <span className="oc-search-select-menu">
           <input
@@ -92,6 +100,7 @@ export function SearchSelect({
             placeholder={searchLabel}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }}
           />
           <span id={id} role="listbox">
             {shown.map((option, index) => [

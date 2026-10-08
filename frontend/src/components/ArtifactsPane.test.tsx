@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -53,6 +53,21 @@ it('renders the Artifacts tab and queries this session with descendants', async 
   expect(screen.getByRole('tab', { name: 'Artifacts' })).toHaveAttribute('aria-selected', 'true');
   expect(await screen.findByText('Report a1')).toBeInTheDocument();
   expect(listParams()).toEqual([{ platform: 'r-a:opencode', sessionId: 'ses 1', includeDescendants: '1' }]);
+});
+
+it('shows loading before an empty result and retries a failed owner-scoped read', async () => {
+  let resolve!: (response: Response) => void;
+  vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>(done => { resolve = done; }));
+  renderPanel();
+  expect(within(screen.getByTestId('artifacts-pane')).getByRole('status')).toHaveTextContent('Loading artifacts');
+  expect(screen.queryByText('No artifacts yet.')).not.toBeInTheDocument();
+  await act(async () => resolve(new Response('Could not read artifacts', { status: 503 })));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not read artifacts');
+  pages[''] = { artifacts: [artifact('recovered')], nextCursor: '' };
+  await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('Report recovered')).toBeVisible();
+  expect(listParams().at(-1)).toEqual({ platform: 'r-a:opencode', sessionId: 'ses 1', includeDescendants: '1' });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
 it('switches to the project sub-tab, persists it, and folds worktrees to the project root', async () => {

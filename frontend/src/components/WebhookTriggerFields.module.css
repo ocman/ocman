@@ -1,0 +1,5 @@
+.filter { display: grid; gap: 8px; margin: 0; padding: 10px; border: 1px solid var(--border); min-width: 0; }
+.filter legend { padding: 0 4px; color: var(--text-dim); font-size: 12px; font-weight: 600; }
+.row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, .9fr) minmax(0, 1.3fr) auto; gap: 6px; align-items: center; }
+.filter > button { justify-self: start; }
+.hint { margin: 0; color: var(--text-dim); font-size: 12px; }

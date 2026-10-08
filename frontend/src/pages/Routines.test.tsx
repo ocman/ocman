@@ -137,6 +137,30 @@ describe('Routines', () => {
 
     await user.click(create);
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveClass('oc-button');
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveClass('oc-field');
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveClass('oc-field');
+    expect(screen.getByRole('combobox', { name: 'Trigger' })).toHaveClass('oc-field');
+  });
+
+  it('keeps edited fields visible when project-session lookup fails', async () => {
+    vi.mocked(api.sessions).mockRejectedValueOnce(new Error('Project sessions unavailable'));
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Project sessions unavailable');
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue(routine.name);
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(routine.prompt);
+  });
+
+  it('retains the stored agent and model when their catalog cannot load', async () => {
+    vi.mocked(api.agents).mockRejectedValueOnce(new Error('Catalog unavailable'));
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByText('Session and model'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Agent' })).toBeEnabled());
+    expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent(routine.agent);
+    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent(routine.model);
   });
 
   it('keeps essentials visible and optional groups collapsed until opened', async () => {
@@ -174,6 +198,8 @@ describe('Routines', () => {
     await user.click(within(actions).getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(api.routines.update).toHaveBeenCalled());
     expect(screen.getByRole('button', { name: 'Close routine form' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeDisabled();
     expect(within(actions).getByRole('button', { name: 'Cancel' })).toBeDisabled();
     await user.keyboard('{Escape}');
     await user.click(screen.getByTestId('routine-drawer-backdrop'));

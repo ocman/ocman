@@ -1,4 +1,6 @@
 import { useUiStore } from '../lib/uiStore';
+import { Button } from './Control';
+import styles from './GettingStartedEmpty.module.css';
 
 /**
  * First-run / empty-state guidance. Shown wherever the session or
@@ -15,34 +17,23 @@ export function GettingStartedEmpty({ compact = false }: { compact?: boolean }) 
   return (
     <div
       data-testid="getting-started-empty"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        padding: compact ? '20px 16px' : 24,
-        color: 'var(--text-dim)',
-        textAlign: compact ? 'left' : 'center',
-        alignItems: compact ? 'stretch' : 'center',
-        maxWidth: compact ? undefined : 520,
-        margin: compact ? undefined : '0 auto',
-        lineHeight: 1.5,
-      }}
+      className={`${styles.root}${compact ? ` ${styles.compact}` : ''}`}
     >
-      <strong style={{ color: 'var(--text)' }}>No sessions yet</strong>
-      <p style={{ margin: 0 }}>
+      <strong className={styles.heading}>No sessions yet</strong>
+      <p className={styles.copy}>
         ocman shows the coding sessions OpenCode creates. Add a project
         directory here, or run <code>opencode</code> in any project directory
         and it will appear in this list.
       </p>
-      <button
+      <Button
         type="button"
-        className="vscode-btn"
+        variant="accent"
+        className={styles.action}
         onClick={openProjectPalette}
-        style={{ alignSelf: compact ? 'flex-start' : 'center', padding: '6px 12px', fontSize: 13 }}
       >
         + New project
-      </button>
-      <p style={{ margin: 0, fontSize: 12 }}>
+      </Button>
+      <p className={styles.tip}>
         Tip: press <kbd>Alt</kbd>+<kbd>N</kbd> any time to start a session in a known project.
       </p>
     </div>

@@ -24,6 +24,20 @@ describe('api.gitBranches / gitCheckout', () => {
     expect(res.branches).toEqual(['main', 'feature/x']);
   });
 
+  it('gitBranches carries an explicit owner and cancellation signal', async () => {
+    const controller = new AbortController();
+    let captured = '';
+    let signal: AbortSignal | null | undefined;
+    stubFetch((url, init) => {
+      captured = url;
+      signal = init?.signal;
+      return new Response(JSON.stringify({ branches: ['main'] }), { status: 200 });
+    });
+    await api.gitBranches('/path with space', controller.signal, 'box a');
+    expect(captured).toBe('/api/git/branches?dir=%2Fpath%20with%20space&remoteId=box%20a');
+    expect(signal).toBe(controller.signal);
+  });
+
   it('gitCheckout POSTs dir + branch', async () => {
     let capturedURL = '';
     let capturedBody: unknown = null;

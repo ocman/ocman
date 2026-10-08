@@ -1,0 +1,6 @@
+.content { display: grid; gap: 14px; min-width: 0; }
+.next { margin: 0; font-size: 12px; color: var(--text-dim); }
+.history { display: grid; gap: 10px; margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--border); min-width: 0; }
+.history h3 { margin: 0; font-size: 14px; }
+.history td small { display: block; margin-top: 4px; }
+.error { color: var(--danger); }

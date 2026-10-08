@@ -1,3 +1,5 @@
+import './OpenInBrowser.css';
+
 interface OpenInBrowserProps {
   /** Destination URL (PR or Issue web page on the forge). */
   url: string;

@@ -66,10 +66,10 @@ beforeEach(() => {
   }) as unknown as ReturnType<typeof useGitInfo>);
 });
 
-it('keeps the PR list when switching to another session of the same project', async () => {
+it('refreshes the retained PR list when switching to another session of the same project', async () => {
   const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
   expect(await screen.findByText('PR 1')).toBeInTheDocument();
-  await userEvent.click(screen.getByTestId('upstream-filter-closed'));
+  await userEvent.click(screen.getByRole('radio', { name: 'closed' }));
   await waitFor(() => expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(2));
   await screen.findByText('PR 1');
 
@@ -78,12 +78,28 @@ it('keeps the PR list when switching to another session of the same project', as
   rerender(panel(session('s2', '/wt/repo/b', 'proj')));
 
   expect(screen.getByText('PR 1')).toBeInTheDocument();
-  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
   await waitFor(() =>
     expect(screen.getByText('PR 2').closest('li')).toHaveClass('current-branch'),
   );
   expect(screen.getByText('PR 1').closest('li')).not.toHaveClass('current-branch');
   expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(3));
+});
+
+it('refreshes on a same-directory session switch only after the new session resolves', async () => {
+  const { rerender } = render(panel(session('s1', '/repo', 'proj')));
+  await screen.findByText('PR 1');
+  rerender(panel(undefined, 's2'));
+  rerender(panel(session('s1', '/repo', 'proj'), 's2'));
+  expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(1);
+  vi.mocked(upstreamApi.fetchPRs).mockResolvedValue({
+    prs: [pr(3, 'feat-c')], pagination: { page: 1, hasMore: false }, rateLimit: { limited: false },
+  });
+  rerender(panel(session('s2', '/repo', 'proj')));
+  await screen.findByText('PR 3');
+  expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(2);
+  rerender(panel(session('s2', '/repo', 'proj')));
   expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(2);
 });
 
@@ -95,6 +111,15 @@ it('reloads for a session of a different project', async () => {
 
   await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(2));
   expect(vi.mocked(upstreamApi.fetchUpstreams).mock.calls[1][0]).toBe('/other');
+  await waitFor(() => expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(2));
+});
+
+it('does not fetch PR lists on session switches when the upstream pane is closed', async () => {
+  useUiStore.setState({ changesSidebarOpenTabs: ['bookmarks'] });
+  const { rerender } = render(panel(session('s1', '/repo', 'proj')));
+  rerender(panel(session('s2', '/repo', 'proj')));
+  await act(async () => {});
+  expect(upstreamApi.fetchPRs).not.toHaveBeenCalled();
 });
 
 it('keeps upstream controls during detection and hides them only for an unsupported project', async () => {
@@ -104,13 +129,13 @@ it('keeps upstream controls during detection and hides them only for an unsuppor
   const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
   await screen.findByText('PR 1');
   await userEvent.click(screen.getByRole('tab', { name: 'Issues' }));
-  await userEvent.click(screen.getByTestId('upstream-filter-closed'));
+  await userEvent.click(screen.getByRole('radio', { name: 'closed' }));
   let resolve!: (upstreams: upstreamApi.Upstream[]) => void;
   vi.mocked(upstreamApi.fetchUpstreams).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
 
   rerender(panel(session('s2', '/other', 'other-proj')));
   expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
-  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
   expect(screen.queryByText('No supported upstream detected')).not.toBeInTheDocument();
   await act(async () => resolve([]));
   expect(screen.getByText('No supported upstream detected')).toBeInTheDocument();
@@ -119,7 +144,7 @@ it('keeps upstream controls during detection and hides them only for an unsuppor
   rerender(panel(session('s3', '/third', 'third-proj')));
   await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(3));
   expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
-  expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
 });
 
 it('does not flash upstream detection during a fast project switch', async () => {
@@ -186,7 +211,7 @@ it('disables launches while the next session is unresolved', async () => {
   expect(postHandle).toHaveBeenCalledWith(expect.objectContaining({ dir: '/wt/repo/b', number: 1 }));
 });
 
-it('keeps loaded CI checks across a sibling switch', async () => {
+it('keeps loaded CI checks visible while refreshing across a sibling switch', async () => {
   vi.mocked(upstreamApi.fetchPRs).mockResolvedValue({
     prs: [{ ...pr(1, 'feat-a'), headSha: 'abc' }],
     pagination: { page: 1, hasMore: false },
@@ -202,5 +227,5 @@ it('keeps loaded CI checks across a sibling switch', async () => {
   rerender(panel(session('s2', '/wt/repo/b', 'proj')));
 
   expect(screen.getByText('build')).toBeInTheDocument();
-  expect(fetchChecks).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(fetchChecks).toHaveBeenCalledTimes(2));
 });

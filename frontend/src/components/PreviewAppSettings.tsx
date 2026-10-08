@@ -4,7 +4,7 @@ import { loadPreviewApps, removePreviewApp, savePreviewApp } from '../lib/previe
 import type { PreviewApp, PreviewAppKind, PreviewApps } from '../lib/previews';
 import { Button, SelectField, TextField } from './Control';
 import { CopyButton } from './CopyButton';
-import { SettingRow } from './SettingRow';
+import { SettingRow, SettingDescription } from './SettingRow';
 
 const appName = (kind: PreviewAppKind | undefined, app: { kind: string; host?: string }) =>
   (kind?.name ?? app.kind) + (app.host ? ` (${app.host})` : '');
@@ -35,7 +35,7 @@ export function PreviewAppSettings() {
       .finally(() => setBusy(false));
   };
 
-  if (!data) return error ? <p role="alert">{error}</p> : <p className="settings-row-desc" role="status">Loading sign-in apps…</p>;
+  if (!data) return error ? <p role="alert">{error}</p> : <SettingDescription role="status">Loading sign-in apps…</SettingDescription>;
 
   const kindOf = (kind: string) => data.kinds.find((k) => k.kind === kind);
   const kind = kindOf(draft.kind);

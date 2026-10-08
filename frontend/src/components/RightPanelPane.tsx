@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangesSidebarTab } from '../lib/uiStore';
 import { SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
@@ -99,6 +99,16 @@ export function Pane({
   const onRefreshClick = useCallback(() => {
     refreshRef.current?.();
   }, []);
+  const previousUpstreamSession = useRef<{ id: string; owner: string; directory: string | undefined } | null>(null);
+  useEffect(() => {
+    if (tab !== 'upstream' || session?.id !== sessionId) return;
+    const previous = previousUpstreamSession.current;
+    // ponytail: new projects already fetch; only refresh a retained list.
+    if (previous && previous.id !== sessionId && previous.owner === upstreamTarget.remoteId && previous.directory === upstreamTarget.directory) {
+      refreshRef.current?.();
+    }
+    previousUpstreamSession.current = { id: sessionId, owner: upstreamTarget.remoteId, directory: upstreamTarget.directory };
+  }, [tab, session?.id, sessionId, upstreamTarget.remoteId, upstreamTarget.directory]);
   // Mirror the embedded sidebar's loading flag so the refresh button
   // in the pane header can spin its icon while a request is in flight.
   const [loading, setLoading] = useState(false);

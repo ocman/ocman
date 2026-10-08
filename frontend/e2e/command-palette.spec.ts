@@ -132,12 +132,37 @@ test('typing "stat" filters results to the Stats command alias', async ({ mocked
 });
 
 test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) => {
+  await page.route('**/api/worktree/default-base-ref?**', (route) => route.fulfill({ json: { baseRef: 'main' } }));
+  let submissions = 0;
+  await page.route('**/api/worktree/create-and-launch', (route) => {
+    submissions++;
+    return route.fulfill({ status: 409, json: { error: 'Test submission' } });
+  });
   await page.goto('/sessions');
   await openPaletteStore(page);
   await page.fill('.oc-cmd-input', '>wt');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.oc-wt-modal')).toBeVisible();
-  await expect(page.locator('.oc-wt-modal', { hasText: 'New worktree session' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'New worktree session', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New worktree session', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Project', exact: true }).click();
+  await page.getByRole('option', { name: '/home/user/projects/myapp', exact: true }).click();
+  const base = page.getByRole('textbox', { name: 'Base ref', exact: true });
+  await expect(base).toHaveValue('main');
+  await base.fill('refs/remotes/origin/develop');
+  const branch = page.getByRole('textbox', { name: 'Branch', exact: true });
+  await branch.fill('feature/custom');
+  await page.getByRole('combobox', { name: 'Project', exact: true }).click();
+  const search = page.getByRole('textbox', { name: 'Search projects' });
+  await search.fill('myapp');
+  await search.press('Enter');
+  expect(submissions).toBe(0);
+  await search.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'New worktree session', exact: true })).toBeVisible();
+  await expect(branch).toHaveValue('feature/custom');
+  await expect(base).toHaveValue('refs/remotes/origin/develop');
+  await branch.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Test submission');
+  expect(submissions).toBe(1);
 });
 
 test('"> " prefix shows only command items (no session status indicators)', async ({

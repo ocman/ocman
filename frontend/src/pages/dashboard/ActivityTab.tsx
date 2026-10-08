@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import './ActivityTab.css';
+import { InlineAlert } from '../../components/InlineAlert';
 import { Bar, Line } from 'react-chartjs-2';
 import type { ActivityDay, SessionConcurrency } from '../../lib/api';
 import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS, CHART_COLORS } from '../../lib/chartConfig';
@@ -22,7 +24,7 @@ export function ActivityTab() {
   return (
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} />
-      {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
+      {errors.map((error) => <InlineAlert key={error.message}>{error.message}</InlineAlert>)}
       {activityQ.isLoading && !activityQ.data && <ChartSkeletons labels={['Loading activity heatmap']} />}
       {(activityQ.data?.length ?? 0) > 0 && <HeatmapChart activity={activityQ.data ?? []} />}
       <ChartSlot isLoading={concurrencyQ.isLoading} label="Loading parallel sessions">

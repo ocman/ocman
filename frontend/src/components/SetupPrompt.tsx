@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { DoctorCheck } from '../lib/api.types';
-import './SetupPrompt.css';
+import { Button, ButtonGroup } from './Control';
+import { IconButton } from './IconButton';
+import { ErrorState } from './ErrorState';
+import styles from './SetupPrompt.module.css';
 
 const DISMISS_STORAGE_KEY = 'ocman.setup-banner-dismissed';
 
@@ -33,13 +36,13 @@ function saveDismissed(key: string) {
 
 function CheckList({ checks }: { checks: DoctorCheck[] }) {
   return (
-    <ul className="oc-setup-list">
+    <ul className={styles.list}>
       {checks.map((c) => (
         <li key={c.id}>
           <strong>{c.label}</strong>
           {UNLOCKS[c.id] && <> — unlocks {UNLOCKS[c.id]}</>}
-          {c.detail && <div className="oc-setup-detail">{c.detail}</div>}
-          {c.hint && <div className="oc-setup-hint">{c.hint}</div>}
+          {c.detail && <div className={styles.detail}>{c.detail}</div>}
+          {c.hint && <div className={styles.hint}>{c.hint}</div>}
         </li>
       ))}
     </ul>
@@ -63,21 +66,20 @@ export function SetupPrompt() {
   const failing = (q.data?.checks ?? []).filter((c) => !c.ok);
   if (failing.length === 0) return null;
   const recheck = (
-    <button type="button" data-testid="setup-recheck" disabled={q.isFetching} onClick={() => void q.refetch()}>
+    <Button type="button" size="small" data-testid="setup-recheck" aria-busy={q.isFetching} disabled={q.isFetching} onClick={() => void q.refetch()}>
       {q.isFetching ? 'Checking…' : 'Re-check'}
-    </button>
+    </Button>
   );
 
   const required = failing.filter((c) => c.required);
   if (required.length > 0) {
     return (
-      <div className="oc-setup-panel" data-testid="setup-panel" role="alertdialog" aria-label="Setup required">
-        <div className="oc-error-boundary">
-          <h2>ocman needs a few things before it can start</h2>
+      <div className={styles.panel} data-testid="setup-panel" role="alertdialog" aria-label="Setup required">
+        <ErrorState title="ocman needs a few things before it can start">
           <CheckList checks={required} />
-          {q.data?.logPath && <p>Log: <code>{q.data.logPath}</code></p>}
+          {q.data?.logPath && <p className={styles.log}>Log: <code>{q.data.logPath}</code></p>}
           {recheck}
-        </div>
+        </ErrorState>
       </div>
     );
   }
@@ -87,18 +89,20 @@ export function SetupPrompt() {
   const optional = failing.filter((c) => c.id !== 'login-shell-path');
   const pathCheck = failing.find((c) => c.id === 'login-shell-path');
   return (
-    <div className="oc-error-banner oc-setup-banner" data-testid="setup-banner" role="status">
-      <div>
+    <div className={styles.banner} data-testid="setup-banner" role="status">
+      <div className={styles.message}>
         {optional.length > 0 && <>Some optional tools are missing:<CheckList checks={optional} /></>}
         {pathCheck && (
           <div>
             Could not read your login shell PATH, so tools in your shell may not be found. Launched from Finder? Apps started that way get a minimal PATH.
-            {pathCheck.detail && <div className="oc-setup-detail">{pathCheck.detail}</div>}
+            {pathCheck.detail && <div className={styles.detail}>{pathCheck.detail}</div>}
           </div>
         )}
       </div>
-      {recheck}
-      <button type="button" aria-label="Dismiss" onClick={() => { saveDismissed(key); setDismissed(key); }}>×</button>
+      <ButtonGroup label="Setup actions">
+        {recheck}
+        <IconButton label="Dismiss" icon="bi-x-lg" onClick={() => { saveDismissed(key); setDismissed(key); }} />
+      </ButtonGroup>
     </div>
   );
 }

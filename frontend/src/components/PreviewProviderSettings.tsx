@@ -5,7 +5,7 @@ import {
 } from '../lib/previews';
 import type { PreviewConfig, PreviewConnection, PreviewProvider } from '../lib/previews';
 import { Button, SelectField, TextField } from './Control';
-import { SettingRow } from './SettingRow';
+import { SettingRow, SettingDescription } from './SettingRow';
 
 const account = (c: PreviewConnection) => {
   const where = [c.workspaceName || c.workspaceId, ...c.sites.map((s) => s.name)].filter(Boolean).join(', ');
@@ -35,7 +35,7 @@ function TokenForm({ provider, label, help, onDone }: { provider: () => string; 
       .finally(() => setBusy(false));
   };
   return <form onSubmit={submit} aria-label={label} className="preview-token-form">
-    {help && <p className="settings-row-desc">{help}</p>}
+    {help && <SettingDescription>{help}</SettingDescription>}
     <TextField aria-label={`${label} token`} type="password" autoComplete="off" placeholder="Token"
       value={token} onChange={(e) => setToken(e.target.value)} />
     <Button type="submit" variant="accent" disabled={busy || !token.trim()}>Save token</Button>
@@ -96,7 +96,7 @@ export function PreviewProviderSettings() {
     action().catch((err: unknown) => setError(err instanceof Error ? err.message : String(err))).finally(() => setBusy(false));
   };
 
-  if (config === null) return error ? <p role="alert">{error}</p> : <p className="settings-row-desc" role="status">Loading providers…</p>;
+  if (config === null) return error ? <p role="alert">{error}</p> : <SettingDescription role="status">Loading providers…</SettingDescription>;
   const kind = config.hostKinds.find((k) => k.kind === hostKind);
   return <>
     {config.providers.map((p) => <ProviderRow key={p.id} p={p} busy={busy} run={run} />)}

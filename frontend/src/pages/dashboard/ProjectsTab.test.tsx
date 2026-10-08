@@ -39,6 +39,7 @@ function renderTab(ctx: Partial<DashboardCtx>) {
   dashboardCtx.mockReturnValue({
     projects: [],
     projectsLoading: false,
+    projectsFetching: false,
     projectsError: null,
     refetchProjects: vi.fn(),
     dirScope: '',
@@ -63,11 +64,22 @@ describe('ProjectsTab', () => {
     renderTab({ projectsError: 'backend is not responding', refetchProjects });
 
     expect(screen.getByText(/backend is not responding/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('backend is not responding');
+    expect(screen.getByRole('button', { name: /retry/i })).toHaveClass('oc-button');
     // A failure must not be reported as "you have no projects yet".
     expect(screen.queryByTestId('getting-started-empty')).not.toBeInTheDocument();
 
     screen.getByRole('button', { name: /retry/i }).click();
     expect(refetchProjects).toHaveBeenCalled();
+  });
+
+  it('keeps existing projects visible and disables retry during a failed refresh', () => {
+    renderTab({ projects: [makeProject({ directory: '/tmp/alpha' })], projectsError: 'Refresh failed', projectsLoading: false, projectsFetching: true });
+    expect(screen.getByRole('alert')).toHaveTextContent('Refresh failed');
+    expect(screen.getByText('tmp/alpha')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /retry/i })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByTestId('getting-started-empty')).not.toBeInTheDocument();
   });
 
   it('shows the getting-started state only when the query succeeded and is empty', () => {

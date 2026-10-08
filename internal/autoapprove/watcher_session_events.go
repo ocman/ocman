@@ -3,9 +3,10 @@ package autoapprove
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/db"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -58,9 +59,16 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 				return
 			}
 			if err != nil {
+				if errors.Is(err, db.ErrSessionNotFound) {
+					// Keep deleted/hidden helpers seen. RefreshSession leaves
+					// them dirty so the incremental pass evicts stale rows
+					// without forcing a full scan on the next list request.
+					log.WithError(err).WithField("session_id", sessionID).Debug("new session has no list row")
+					return
+				}
 				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh new session")
 				w.forgetSession(sessionID)
-				opencode.InvalidateSessionsCache()
+				w.invalidateSessionsCache()
 			}
 			if w.svc.deps.BroadcastSessionChanged != nil {
 				w.svc.deps.BroadcastSessionChanged(sessionID)
@@ -68,7 +76,7 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 		}()
 		return
 	}
-	opencode.InvalidateSessionsCache()
+	w.invalidateSessionsCache()
 	if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
 		w.svc.deps.BroadcastSessionChanged(sessionID)
 	}
@@ -90,6 +98,11 @@ func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, 
 	go func() {
 		if refresh := w.svc.deps.RefreshSession; refresh != nil {
 			if err := refresh(ctx, sessionID); err != nil && ctx.Err() == nil {
+				if errors.Is(err, db.ErrSessionNotFound) {
+					// Keep the title deduplicated for deleted/hidden rows.
+					log.WithError(err).WithField("session_id", sessionID).Debug("renamed session has no list row")
+					return
+				}
 				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh renamed session")
 			}
 		}

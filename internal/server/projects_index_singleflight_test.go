@@ -90,7 +90,7 @@ func TestRefreshProjectsIndex_ConcurrentCallersShareOneRefresh(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		errs[0] = srv.refreshProjectsIndex()
+		errs[0] = srv.refreshProjectsIndex(t.Context())
 	}()
 
 	// Only start the other nine once the first refresh is inside the
@@ -102,7 +102,7 @@ func TestRefreshProjectsIndex_ConcurrentCallersShareOneRefresh(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			arrived.Add(1)
-			errs[i] = srv.refreshProjectsIndex()
+			errs[i] = srv.refreshProjectsIndex(t.Context())
 		}(i)
 	}
 	for arrived.Load() < callers-1 {
@@ -146,7 +146,7 @@ func TestRefreshProjectsIndex_EventDuringRunRunsOneFollowUp(t *testing.T) {
 			followUp.Add(1)
 			go func() {
 				defer followUp.Done()
-				if err := srv.refreshProjectsIndex(); err != nil {
+				if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 					t.Errorf("follow-up requester: %v", err)
 				}
 			}()
@@ -155,7 +155,7 @@ func TestRefreshProjectsIndex_EventDuringRunRunsOneFollowUp(t *testing.T) {
 		return []db.ProjectStats{{Directory: "/repo"}}, nil
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("refreshProjectsIndex: %v", err)
 	}
 	followUp.Wait()
@@ -189,7 +189,7 @@ func TestRefreshProjectsIndex_EventDuringFollowUpRunsOneMore(t *testing.T) {
 			requesters.Add(1)
 			go func() {
 				defer requesters.Done()
-				if err := srv.refreshProjectsIndex(); err != nil {
+				if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 					t.Errorf("follow-up requester: %v", err)
 				}
 			}()
@@ -198,7 +198,7 @@ func TestRefreshProjectsIndex_EventDuringFollowUpRunsOneMore(t *testing.T) {
 		return []db.ProjectStats{{Directory: "/repo"}}, nil
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("refreshProjectsIndex: %v", err)
 	}
 	requesters.Wait()
@@ -237,7 +237,7 @@ func TestRefreshProjectsIndex_FailureRetainsSnapshotAndDirty(t *testing.T) {
 					waiters.Add(1)
 					go func(i int) {
 						defer waiters.Done()
-						waiterErrs[i] = srv.refreshProjectsIndex()
+						waiterErrs[i] = srv.refreshProjectsIndex(t.Context())
 					}(i)
 				}
 				waitProjectsDirty(t, srv)
@@ -248,12 +248,12 @@ func TestRefreshProjectsIndex_FailureRetainsSnapshotAndDirty(t *testing.T) {
 		return []db.ProjectStats{{Directory: "/good"}}, nil
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("seeding refresh: %v", err)
 	}
 
 	mode.Store("fail")
-	if err := srv.refreshProjectsIndex(); !errors.Is(err, wantErr) {
+	if err := srv.refreshProjectsIndex(t.Context()); !errors.Is(err, wantErr) {
 		t.Fatalf("failed refresh error = %v, want %v", err, wantErr)
 	}
 	waiters.Wait()
@@ -290,7 +290,7 @@ func TestRefreshProjectsIndex_FailureRetainsSnapshotAndDirty(t *testing.T) {
 
 	// Still retryable.
 	mode.Store("ok")
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("retry after failure: %v", err)
 	}
 	if calls, _ := rec.counts(); calls != 3 {
@@ -308,7 +308,7 @@ func TestRefreshProjectsIndex_NoGoroutineLeak(t *testing.T) {
 	}
 
 	// Warm up once so lazily started runtime goroutines don't count.
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("warmup refresh: %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -319,7 +319,7 @@ func TestRefreshProjectsIndex_NoGoroutineLeak(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := srv.refreshProjectsIndex(); err != nil {
+			if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 				t.Errorf("refreshProjectsIndex: %v", err)
 			}
 		}()

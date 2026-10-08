@@ -14,6 +14,7 @@ vi.mock('../lib/uiStore', () => ({
 }));
 vi.mock('../lib/api', () => ({
   api: {
+    gitBranches: vi.fn().mockResolvedValue({ branches: ['main'] }),
     getWorktreeInheritPermissions: vi.fn(),
     approvedPermissions: vi.fn(),
     worktree: { defaultBaseRef: vi.fn().mockResolvedValue({ baseRef: 'main' }) },
@@ -22,9 +23,10 @@ vi.mock('../lib/api', () => ({
 vi.mock('../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
 }));
+const projectsLoader = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 vi.mock('../lib/apiStore', () => ({
   useApiStore: (sel: (s: Record<string, unknown>) => unknown) =>
-    sel({ getProjects: vi.fn().mockResolvedValue([]), seedNewSession: vi.fn() }),
+    sel({ getProjects: projectsLoader, seedNewSession: vi.fn() }),
 }));
 
 import { api } from '../lib/api';

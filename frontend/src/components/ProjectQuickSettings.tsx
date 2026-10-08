@@ -5,6 +5,7 @@ import { Button, SelectField } from './Control';
 import { SearchSelect, type SearchSelectOption } from './SearchSelect';
 import { SettingRow } from './SettingRow';
 import { Popover } from './Popover';
+import { PERMISSION_MODES } from '../lib/permissionModes';
 import './ProjectQuickSettings.css';
 
 export function ProjectQuickSettings({ directory, remoteId = 'local', children, className, title }: {
@@ -62,6 +63,7 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
   }} onSubmit={async (event) => {
     event.preventDefault();
     if (!defaults || saving) return;
+    if (defaults.permissionMode === 'yolo' && !window.confirm('Use YOLO for new conversations in this project? The agent will run edits and commands without asking.')) return;
     setSaving(true); setError('');
     try {
       await postJSON('/api/project/settings', { directory, remoteId, defaults });
@@ -84,6 +86,13 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
         <SettingRow block label={<label htmlFor={`${id}-worktree`}>Default worktree behavior</label>}>
           <SelectField id={`${id}-worktree`} value={defaults.worktree} onChange={(event) => setDefaults({ ...defaults, worktree: event.target.value as ProjectDefaults['worktree'] })}>
             <option value="">Use inherited default</option><option value="worktree">New worktree when available</option><option value="current">Current checkout</option>
+          </SelectField>
+        </SettingRow>
+        <SettingRow block label={<label htmlFor={`${id}-permission`}>Default permission mode</label>}
+          desc={PERMISSION_MODES.find((mode) => mode.id === defaults.permissionMode)?.description}>
+          <SelectField id={`${id}-permission`} value={defaults.permissionMode === 'default' ? '' : defaults.permissionMode || ''} onChange={(event) => setDefaults({ ...defaults, permissionMode: event.target.value as ProjectDefaults['permissionMode'] })}>
+            <option value="">Use inherited default</option>
+            {PERMISSION_MODES.filter((mode) => mode.id !== 'default').map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
           </SelectField>
         </SettingRow>
       </fieldset>

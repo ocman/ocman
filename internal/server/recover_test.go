@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -69,7 +70,7 @@ func TestAutoArchiveLoop_SurvivesPanic(t *testing.T) {
 	defer func() { autoArchiveTickFn = prev }()
 
 	var ticks int32
-	autoArchiveTickFn = func(*Server) {
+	autoArchiveTickFn = func(context.Context, *Server) {
 		n := atomic.AddInt32(&ticks, 1)
 		if n == 1 {
 			panic("simulated panic on first tick")
@@ -83,8 +84,8 @@ func TestAutoArchiveLoop_SurvivesPanic(t *testing.T) {
 	// Simulate two iterations of the loop body. We don't run the
 	// real ticker — that would slow the test down — but we exercise
 	// the same runWithRecover wrapping the loop uses.
-	runWithRecover("auto-archive", func() { autoArchiveTickFn(nil) })
-	runWithRecover("auto-archive", func() { autoArchiveTickFn(nil) })
+	runWithRecover("auto-archive", func() { autoArchiveTickFn(t.Context(), nil) })
+	runWithRecover("auto-archive", func() { autoArchiveTickFn(t.Context(), nil) })
 
 	if got := atomic.LoadInt32(&ticks); got != 2 {
 		t.Fatalf("ticks = %d, want 2 (loop must survive the panicking first tick)", got)
@@ -108,7 +109,7 @@ func TestProjectsIndexLoop_SurvivesPanic(t *testing.T) {
 	defer func() { projectsIndexTickFn = prev }()
 
 	var ticks int32
-	projectsIndexTickFn = func(*Server) {
+	projectsIndexTickFn = func(context.Context, *Server) {
 		n := atomic.AddInt32(&ticks, 1)
 		if n == 1 {
 			panic("simulated panic on first tick")
@@ -118,8 +119,8 @@ func TestProjectsIndexLoop_SurvivesPanic(t *testing.T) {
 	hook := logtest.NewLocal(logrus.StandardLogger())
 	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
 
-	runWithRecover("projects-index", func() { projectsIndexTickFn(nil) })
-	runWithRecover("projects-index", func() { projectsIndexTickFn(nil) })
+	runWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
+	runWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
 
 	if got := atomic.LoadInt32(&ticks); got != 2 {
 		t.Fatalf("ticks = %d, want 2", got)

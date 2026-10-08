@@ -23,7 +23,6 @@ vi.mock('../lib/queries', () => ({
 }));
 
 beforeEach(() => { history.sessions = history.sessions.filter(s => !s.id.startsWith('unrelated-')); });
-vi.mock('../lib/useTmux', () => ({ useTmux: () => ({ findSession: () => undefined, clients: [] }) }));
 vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => true }));
 vi.mock('../components/SessionTable', () => ({
   SessionTable: ({ sessions }: { sessions: { id: string; title: string }[] }) => (
@@ -39,6 +38,7 @@ it('filters project sessions by search and portals actions into the header', () 
     </MemoryRouter>,
   );
   expect(screen.getByTestId('header-slot')).toHaveTextContent('Worktrees');
+  expect(screen.queryByRole('button', { name: 'VS Code' })).not.toBeInTheDocument();
   expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(['Fix header', 'Add search', 'Remote change']);
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'search' } });
   expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Add search']);

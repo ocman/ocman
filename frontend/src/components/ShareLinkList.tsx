@@ -1,58 +1,45 @@
-import type { ReactNode } from 'react';
 import { type ShareLinkLike, type useShareLinks } from '../lib/useShareLinks';
+import { TextField } from './Control';
+import { EmptyState } from './EmptyState';
+import { InlineAlert } from './InlineAlert';
+import { LoadingState } from './LoadingState';
+import { ShareLinkActions } from './ShareLinkActions';
+import styles from './ShareLinkList.module.css';
 
 interface ShareLinkListProps<T extends ShareLinkLike> {
   state: ReturnType<typeof useShareLinks<T>>;
   emptyText: string;
   urlLabel: string;
   copyLabel?: string;
-  /** Rendered before the Copy button (e.g. an Inspect link). */
-  renderLeading?: (link: T) => ReactNode;
-  /** Rendered under the action row (e.g. link age). */
-  renderFooter?: (link: T) => ReactNode;
 }
 
 /** ShareLinkList renders the error, empty state, and link rows for a share-link list. */
 export function ShareLinkList<T extends ShareLinkLike>({
-  state, emptyText, urlLabel, copyLabel = 'Copy', renderLeading, renderFooter,
+  state, emptyText, urlLabel, copyLabel = 'Copy',
 }: ShareLinkListProps<T>) {
-  const { links, loaded, busy, error, copied, copy, revoke } = state;
+  const { links, loaded, error } = state;
   return (
     <>
       {error && (
-        <div className="oc-share-menu-error" role="alert">{error}</div>
+        <InlineAlert>{error}</InlineAlert>
       )}
       {loaded && links.length === 0 && (
-        <div className="oc-share-menu-empty">{emptyText}</div>
+        <EmptyState>{emptyText}</EmptyState>
       )}
+      {!loaded && !error && <LoadingState>Loading share links...</LoadingState>}
       {links.length > 0 && (
-        <ul className="oc-share-menu-links">
+        <ul className={styles.links}>
           {links.map((link) => (
-            <li key={link.token} className="oc-share-menu-link">
-              <input
+            <li key={link.token} className={styles.link}>
+              <TextField
                 type="text"
                 readOnly
                 value={link.url}
-                className="oc-share-menu-url"
+                className={styles.url}
                 aria-label={urlLabel}
                 onFocus={(e) => e.currentTarget.select()}
               />
-              <div className="oc-share-menu-link-actions">
-                {renderLeading?.(link)}
-                <button type="button" onClick={() => void copy(link)} data-testid="share-copy-link">
-                  {copied === link.token ? 'Copied!' : copyLabel}
-                </button>
-                <button
-                  type="button"
-                  className="oc-share-menu-revoke"
-                  onClick={() => void revoke(link)}
-                  disabled={busy}
-                  data-testid="share-revoke-link"
-                >
-                  Revoke
-                </button>
-              </div>
-              {renderFooter?.(link)}
+              <ShareLinkActions state={state} link={link} copyLabel={copyLabel} />
             </li>
           ))}
         </ul>

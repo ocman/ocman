@@ -3,7 +3,8 @@ import * as Toast from '@radix-ui/react-toast';
 import { useToastNotify, type ToastEntry } from '../lib/useToastNotify';
 import { useGlobalEvents } from '../lib/useGlobalEvents';
 import { cleanTitle } from '../lib/format';
-import './PromptToastNotify.css';
+import { Button } from './Control';
+import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
 
 /**
  * Renders an in-app Radix toast for every session that's blocking on
@@ -58,9 +59,8 @@ export function PromptToastNotify() {
       {toasts.map((t) => {
         const { heading, body } = describe(t);
         return (
-          <Toast.Root
+          <PromptToast
             key={t.toastId}
-            className="oc-prompt-toast"
             data-kind={t.kind}
             // Radix infers open from prop; we control it via the array
             // membership so dismiss() removing the entry collapses the
@@ -71,36 +71,28 @@ export function PromptToastNotify() {
             }}
             duration={Infinity}
           >
-            <Toast.Close asChild>
-              <button
-                type="button"
-                className="oc-prompt-toast-close"
-                aria-label="Dismiss"
-              >
-                ×
-              </button>
-            </Toast.Close>
-            <Toast.Title className="oc-prompt-toast-heading">
+            <PromptToastClose />
+            <PromptToastHeading>
               {heading}
-            </Toast.Title>
-            <Toast.Description className="oc-prompt-toast-body">
+            </PromptToastHeading>
+            <PromptToastBody truncate>
               {body}
-            </Toast.Description>
-            <div className="oc-prompt-toast-actions">
+            </PromptToastBody>
+            <PromptToastActions label="Session notification actions">
               <Toast.Action
                 asChild
                 altText="Open session"
                 onClick={() => handleOpen(t)}
               >
-                <button type="button" className="oc-prompt-toast-open">
+                <Button type="button" size="small" variant="accent">
                   Open session
-                </button>
+                </Button>
               </Toast.Action>
-            </div>
-          </Toast.Root>
+            </PromptToastActions>
+          </PromptToast>
         );
       })}
-      <Toast.Viewport className="oc-prompt-toast-viewport" />
+      <PromptToastViewport />
     </Toast.Provider>
   );
 }

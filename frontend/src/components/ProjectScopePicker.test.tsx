@@ -64,11 +64,10 @@ describe('ProjectScopePicker', () => {
   });
 
   it('hides the visible caption by default and shows it with showLabel', () => {
-    const bare = renderToStaticMarkup(<ProjectScopePicker projects={[]} value="" onChange={() => {}} />);
-    expect(bare).not.toContain('<span>Project scope</span>');
-
-    const labelled = renderToStaticMarkup(<ProjectScopePicker projects={[]} value="" onChange={() => {}} showLabel />);
-    expect(labelled).toContain('<span>Project scope</span>');
+    const { rerender } = render(<ProjectScopePicker projects={[]} value="" onChange={() => {}} />);
+    expect(screen.queryByText('Project scope', { exact: true })).not.toBeInTheDocument();
+    rerender(<ProjectScopePicker projects={[]} value="" onChange={() => {}} showLabel />);
+    expect(screen.getByText('Project scope', { exact: true })).toBeVisible();
   });
 
   it('marks the active scope as selected', () => {

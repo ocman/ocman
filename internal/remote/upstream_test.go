@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -95,12 +96,72 @@ func TestUpstreamCacheRemoteChangeReflectedWithinTTL(t *testing.T) {
 	if _, err := cache.upstreams(t.Context(), dir); err != nil {
 		t.Fatal(err)
 	}
+	config := filepath.Join(dir, ".git", "config")
+	before, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := gitexec.Output(t.Context(), dir, "remote", "set-url", "origin", "https://host/new.git"); err != nil {
+		t.Fatal(err)
+	}
+	// Coarse overlayfs timestamps can keep two immediate edits at the same mtime.
+	modified := before.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(config, modified, modified); err != nil {
 		t.Fatal(err)
 	}
 	got, err := cache.upstreams(t.Context(), dir)
 	if err != nil || !slices.Equal(got.keys, []string{"host/new"}) {
 		t.Fatalf("remote change not reflected in warm cache: %+v, %v", got, err)
+	}
+}
+
+func TestUpstreamCacheConfigReplacementWithSameMtime(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	cache := newOriginCache()
+	config := filepath.Join(dir, ".git", "config")
+	before, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.upstreams(t.Context(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitexec.Output(t.Context(), dir, "remote", "set-url", "origin", "https://host/new.git"); err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce coarse filesystem timestamps without relying on runner timing.
+	if err := os.Chtimes(config, before.ModTime(), before.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cache.upstreams(t.Context(), dir)
+	if err != nil || got.origin != "https://host/new.git" {
+		t.Fatalf("replacement with unchanged mtime retained stale remote: %+v, %v", got, err)
+	}
+}
+
+func TestUpstreamCacheConfigSizeWithSameMtime(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	cache := newOriginCache()
+	before, err := cache.upstreams(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := os.ReadFile(before.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = []byte(strings.ReplaceAll(string(config), "host/old.git", "host/new-longer.git"))
+	if err := os.WriteFile(before.configPath, config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(before.configPath, before.configStat.ModTime(), before.configStat.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cache.upstreams(t.Context(), dir)
+	if err != nil || got.origin != "https://host/new-longer.git" {
+		t.Fatalf("size change with unchanged mtime retained stale remote: %+v, %v", got, err)
 	}
 }
 

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Label, ForgeUser } from '../../lib/upstreamApi';
 import { styleForLabel } from './labelStyle';
 import { RelativeTime } from '../RelativeTime';
+import './RowMeta.css';
 
 interface RowMetaProps {
   author: string;

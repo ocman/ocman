@@ -46,6 +46,14 @@ vi.mock('../../lib/usePwaInstall', () => ({
 }));
 
 describe('SettingsTab actions', () => {
+  it('selects a group from the compact navigation and clears the search view', () => {
+    render(<SettingsTab />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'plugins' } });
+    expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
+    expect(screen.getByText('Plugin management')).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('plugins');
+  });
   it('opens plugin management from the Settings navigation', () => {
     render(<SettingsTab />);
     expect(screen.queryByText('Plugin management')).not.toBeInTheDocument();

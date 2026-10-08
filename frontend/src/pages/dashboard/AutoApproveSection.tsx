@@ -2,73 +2,19 @@
  * Auto-approve settings section and its prompt-section editor, split out
  * of SettingsSections to keep both files within the size budget.
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { SaveStatus } from '../../components/SaveStatus';
 import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../components/SettingRow';
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
-import { Button, CheckboxField, TextareaField, TextField } from '../../components/Control';
-import { IconButton } from '../../components/IconButton';
+import { Button } from '../../components/Control';
+import { ReviewerPromptSectionEditor, type PromptSection } from './ReviewerPromptSectionEditor';
+import styles from './AutoApproveSection.module.css';
 
-type PromptSection = { title: string; content: string; enabled?: boolean };
 // ---------------------------------------------------------------------------
 // Auto-approve (+ its prompt-section editor)
 // ---------------------------------------------------------------------------
-
-function PromptSectionEditor({
-  section,
-  onChange,
-  onRemove,
-}: {
-  section: PromptSection;
-  onChange: (s: PromptSection) => void;
-  onRemove: () => void;
-}) {
-  // Track textarea height so it grows with content.
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Missing `enabled` (legacy rows) is treated as enabled.
-  const enabled = section.enabled !== false;
-  return (
-    <div className="settings-prompt-section">
-      <div className="settings-prompt-section-header">
-        <label className="settings-toggle">
-          <CheckboxField
-            checked={enabled}
-            aria-label="Enable rule"
-            onChange={(e) => onChange({ ...section, enabled: e.target.checked })}
-          />
-          <span className="settings-toggle-track" aria-hidden="true" />
-        </label>
-        <TextField
-          type="text"
-          className="settings-prompt-section-title"
-          placeholder="Section title"
-          aria-label="Section title"
-          value={section.title}
-          onChange={(e) => onChange({ ...section, title: e.target.value })}
-        />
-        <IconButton icon="bi-x-lg" label="Remove section" variant="danger" onClick={onRemove} />
-      </div>
-      <TextareaField
-        ref={textareaRef}
-        className="settings-prompt-section-content"
-        aria-label="Section content"
-        placeholder="Describe the rule in plain language. The AI reviewer will follow this as an additional instruction."
-        value={section.content}
-        rows={3}
-        onChange={(e) => {
-          onChange({ ...section, content: e.target.value });
-          // Auto-grow: reset height first so shrinking works too.
-          if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-          }
-        }}
-      />
-    </div>
-  );
-}
 
 export function AutoApproveSection() {
   const autoApproveDefault = useUiStore((s) => s.autoApproveDefault);
@@ -163,11 +109,12 @@ export function AutoApproveSection() {
           </>
         }
       >
-        <div className="settings-prompt-sections">
+        <div className={styles.sections}>
           {promptSections.map((section, i) => (
-            <PromptSectionEditor
+            <ReviewerPromptSectionEditor
               key={i}
               section={section}
+              number={i + 1}
               onChange={(updated) => {
                 const next = [...promptSections];
                 next[i] = updated;
@@ -178,6 +125,8 @@ export function AutoApproveSection() {
           ))}
           <Button
             type="button"
+            variant="accent"
+            className={styles.add}
             onClick={() => saveSections([...promptSections, { title: '', content: '' }])}
           >
             + Add section

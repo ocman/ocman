@@ -1,7 +1,8 @@
-import { type ReactNode } from 'react';
+import { type ComponentProps, type ReactNode } from 'react';
 import { SaveStatus } from './SaveStatus';
-import './SettingRow.css';
-import { CheckboxField, TextField } from './Control';
+import styles from './SettingRow.module.css';
+import { TextField } from './Control';
+import { ToggleField } from './ToggleField';
 import { SearchSelect, type SearchSelectOption } from './SearchSelect';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { settingAnchor, settingEntry, type SettingId } from '../lib/settingsCatalog';
@@ -15,6 +16,10 @@ import { settingAnchor, settingEntry, type SettingId } from '../lib/settingsCata
  */
 
 type Save = ReturnType<typeof useSettingSave>;
+
+export function SettingDescription({ className = '', ...props }: ComponentProps<'p'>) {
+  return <p {...props} className={`${styles.description} ${className}`} />;
+}
 
 /**
  * A configurable setting passes `setting`: its title, description and example
@@ -44,14 +49,14 @@ export function SettingRow({
   return (
     <div
       id={setting ? settingAnchor(setting) : undefined}
-      className={block ? 'settings-row settings-row--block' : 'settings-row'}
+      className={block ? `settings-row settings-row--block ${styles.row} ${styles.block}` : `settings-row ${styles.row}`}
     >
-      <div className="settings-row-info">
-        <div className="settings-row-label">{label ?? entry?.title}</div>
-        {description != null && <div className="settings-row-desc">{description}</div>}
-        {detail != null && <div className="settings-row-desc">{detail}</div>}
+      <div className={styles.info}>
+        <div className={styles.label}>{label ?? entry?.title}</div>
+        {description != null && <div className={styles.description}>{description}</div>}
+        {detail != null && <div className={styles.description}>{detail}</div>}
         {entry && (
-          <details className="settings-row-example">
+          <details className={styles.example}>
             <summary>Example</summary>
             <p>{entry.example}</p>
           </details>
@@ -81,24 +86,21 @@ export function SettingToggle({
   disabled?: boolean;
   save: Save;
   onSave: (next: boolean) => void | Promise<unknown>;
-  ariaLabel?: string;
+  ariaLabel: string;
   testId?: string;
 }) {
   return (
     <>
-      <label className="settings-toggle">
-        <CheckboxField
-          aria-label={ariaLabel}
-          data-testid={testId}
-          checked={checked}
-          disabled={disabled}
-          onChange={(e) => {
-            const next = e.target.checked;
-            void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
-          }}
-        />
-        <span className="settings-toggle-track" />
-      </label>
+      <ToggleField
+        label={ariaLabel}
+        data-testid={testId}
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = e.target.checked;
+          void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
+        }}
+      />
       <SaveStatus state={save.state} />
     </>
   );
@@ -132,8 +134,8 @@ export function SettingNumber({
   disabled?: boolean;
 }) {
   return (
-    <div className="settings-delay-input">
-      <TextField
+    <div className={styles.numberInput}>
+      <TextField className={styles.number}
         type="number"
         min={min}
         max={max}
@@ -147,7 +149,7 @@ export function SettingNumber({
           void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
         }}
       />
-      <span className="settings-delay-unit">{unit}</span>
+      <span className={styles.unit}>{unit}</span>
       <SaveStatus state={save.state} />
     </div>
   );
@@ -182,8 +184,9 @@ export function SettingSelect({
   const known = !value || options.some((option) => option.value === value);
   const all = known ? options : [...options, { value, label: value }];
   return (
-    <div className="settings-select-input">
+    <div className={styles.selectInput}>
       <SearchSelect
+        className={styles.picker}
         value={value}
         options={all}
         ariaLabel={ariaLabel}
@@ -227,8 +230,8 @@ export function SettingText({
     void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
   };
   return (
-    <div className="settings-text-input">
-      <TextField
+    <div className={styles.textInput}>
+      <TextField className={styles.text}
         key={value}
         type={type}
         aria-label={ariaLabel}

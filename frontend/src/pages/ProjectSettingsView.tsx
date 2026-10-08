@@ -6,10 +6,13 @@ import { shortPath } from '../lib/format';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { SettingRow, SettingSelect, SettingToggle } from '../components/SettingRow';
 import { SaveStatus } from '../components/SaveStatus';
-import type { SearchSelectOption } from '../components/SearchSelect';
-import { Button } from '../components/Control';
+import { InlineAlert } from '../components/InlineAlert';
+import { EmptyState } from '../components/EmptyState';
+import { LoadingState } from '../components/LoadingState';
+import { Button, ButtonGroup } from '../components/Control';
 import { IconButton } from '../components/IconButton';
-import './Dashboard.css';
+import type { SearchSelectOption } from '../components/SearchSelect';
+import styles from './ProjectSettingsView.module.css';
 
 /** Model choices: the catalogue of any session in the project, else the
  *  models the project has historically used. */
@@ -43,6 +46,7 @@ export function ProjectSettingsView() {
   const listSave = useSettingSave();
   const addSave = useSettingSave();
   const offSave = useSettingSave();
+  const saving = listSave.state === 'saving' || addSave.state === 'saving' || offSave.state === 'saving';
 
   useEffect(() => {
     if (!directory) return;
@@ -82,39 +86,39 @@ export function ProjectSettingsView() {
   };
 
   if (!loaded) {
-    return <div className="settings-section">{error ? <div role="alert">{error}</div> : 'Loading…'}</div>;
+    return <div className={styles.section}>{error ? <InlineAlert>{error}</InlineAlert> : <LoadingState>Loading project settings…</LoadingState>}</div>;
   }
 
   return (
-    <div className="settings-section" data-testid="project-settings">
-      {error && <div className="oc-share-menu-error" role="alert">{error}</div>}
+    <div className={styles.section} data-testid="project-settings">
+      {error && <InlineAlert>{error}</InlineAlert>}
       <SettingRow block setting="project-models">
         {models.length === 0 ? (
-          <div className="oc-share-menu-empty" data-testid="project-models-empty">
+          <EmptyState data-testid="project-models-empty">
             No models configured. Sessions use OpenCode's own default model and never switch provider when one runs out of tokens.
-          </div>
+          </EmptyState>
         ) : (
-          <ol className="settings-prompt-sections" aria-label="Project models">
+          <ol className={styles.models} aria-label="Project models">
             {models.map((m, i) => (
-              <li key={m} className="settings-prompt-section">
-                <span className="mono">{m}</span>
+              <li key={m} className={styles.model}>
+                <span className={styles.name}>{m}</span>
                 {i === 0 && <small data-testid="project-default-badge">Project default</small>}
-                <div>
-                  <IconButton icon="bi-arrow-up" label={`Move ${m} up`} disabled={i === 0} onClick={() => move(i, -1)} />
-                  <IconButton icon="bi-arrow-down" label={`Move ${m} down`} disabled={i === models.length - 1} onClick={() => move(i, 1)} />
-                  <Button type="button" size="small" variant="danger" aria-label={`Remove ${m}`} onClick={() => edit(models.filter((x) => x !== m))}>
+                <ButtonGroup label={`Actions for ${m}`}>
+                  <IconButton label={`Move ${m} up`} icon="bi-arrow-up" disabled={saving || i === 0} onClick={() => move(i, -1)} />
+                  <IconButton label={`Move ${m} down`} icon="bi-arrow-down" disabled={saving || i === models.length - 1} onClick={() => move(i, 1)} />
+                  <Button type="button" size="small" variant="danger" aria-label={`Remove ${m}`} disabled={saving} onClick={() => edit(models.filter((x) => x !== m))}>
                     Remove
                   </Button>
-                </div>
+                </ButtonGroup>
               </li>
             ))}
           </ol>
         )}
         {models.length > 0 && (
-          <div>
-            <Button type="button" size="small" variant="danger" onClick={() => edit([])}>Clear list</Button>
+          <ButtonGroup label="Project model list actions">
+            <Button type="button" size="small" variant="danger" disabled={saving} onClick={() => edit([])}>Clear list</Button>
             <SaveStatus state={listSave.state} />
-          </div>
+          </ButtonGroup>
         )}
       </SettingRow>
       <SettingRow setting="project-add-model">
@@ -126,7 +130,7 @@ export function ProjectSettingsView() {
           ariaLabel="Add model"
           placeholder="Add a model…"
           searchLabel="Search models"
-          disabled={models.length >= 10}
+          disabled={saving || models.length >= 10}
         />
       </SettingRow>
       <SettingRow setting="project-disable-fallthrough">
@@ -134,7 +138,7 @@ export function ProjectSettingsView() {
           testId="project-fallthrough-off"
           ariaLabel="Disable fallthrough"
           checked={off}
-          disabled={models.length === 0}
+          disabled={saving || models.length === 0}
           save={offSave}
           onSave={(next) => persist(models, next)}
         />

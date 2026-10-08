@@ -3,12 +3,20 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import { InlineAlert } from './InlineAlert';
+import styles from './InlineAlert.module.css';
 
 it('announces a message without inventing an action', () => {
   render(<InlineAlert>Could not load <strong>logs</strong>.</InlineAlert>);
   const alert = screen.getByRole('alert');
   expect(alert).toHaveTextContent('Could not load logs.');
   expect(within(alert).queryByRole('button')).not.toBeInTheDocument();
+});
+
+it('preserves compact recovery notices using owned styles', () => {
+  render(<InlineAlert compact onRetry={vi.fn()}>Could not load recovery.</InlineAlert>);
+  expect(screen.getByRole('alert')).toHaveClass(styles.compact);
+  expect(screen.getByRole('alert')).toHaveAttribute('data-inline-alert');
+  expect(screen.getByRole('button', { name: 'Retry' })).toHaveClass(styles.action);
 });
 
 it('retries from the keyboard without submitting a surrounding form', async () => {

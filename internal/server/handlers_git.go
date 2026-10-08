@@ -97,19 +97,25 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 // the composer's branch switcher.
 //
 // Query parameters:
-//   - `dir` (required): absolute path inside a git git.
+//   - `dir` (required): absolute path inside a git repository.
+//   - `remoteId` (optional): explicit owner; disconnected owners fail closed.
 //
 // Status codes:
 //
 //	200 OK         — {"branches": ["main", "feature", ...]}
 //	400 Bad Req    — `dir` missing or relative
 //	502 Bad Gateway — git invocation failed
+//	503 Service Unavailable — explicit owner is disconnected
 func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
 	dir, ok := parseAbsDir(w, r)
 	if !ok {
 		return
 	}
-	branches, err := s.router().ForDir(dir).GitBranches(r.Context(), dir)
+	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
+	branches, err := host.GitBranches(r.Context(), dir)
 	if err != nil {
 		log.WithError(err).Warn("git branches failed")
 		http.Error(w, "git branches failed", http.StatusBadGateway)

@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { SessionComposerSlot } from './SessionComposerSlot';
 import { useFactoryGraphIssues, useResolveFactoryRecoveryGate, useWorkEpics } from '../../lib/queries';
 import { FactoryRecoveryActions } from '../../components/FactoryRecoveryActions';
+import alertStyles from '../../components/InlineAlert.module.css';
 
 vi.mock('../../lib/queries', () => ({ useFactoryGraphIssues: vi.fn(), useResolveFactoryRecoveryGate: vi.fn(), useWorkEpics: vi.fn() }));
 vi.mock('../../lib/draftStartClaims', () => ({ readDraftStart: async () => undefined }));
@@ -86,7 +87,7 @@ it.each(['epics', 'issues'])('lets the user retry failed %s loading', (source) =
   else vi.mocked(useFactoryGraphIssues).mockReturnValue([{ isError: true, refetch }] as never);
   show();
   expect(screen.getByRole('alert')).toHaveTextContent('Could not load Factory recovery.');
-  expect(screen.getByRole('alert')).toHaveClass('oc-error-banner', 'oc-error-banner--compact');
+  expect(screen.getByRole('alert')).toHaveClass(alertStyles.root, alertStyles.compact);
   expect(screen.getByRole('alert')).not.toHaveClass('factory-plan-approval');
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(refetch).toHaveBeenCalled();

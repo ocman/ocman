@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import './WorktreeFormModal.css';
+import styles from './WorktreeFormModal.module.css';
 import { api } from '../lib/api';
 import type { Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { Modal } from './Modal';
+import { ModalHeader } from './ModalHeader';
+import { ModalFooter } from './ModalFooter';
+import { Button, TextField } from './Control';
+import { CheckboxField } from './CheckboxField';
+import { InlineAlert } from './InlineAlert';
+import { SearchSelect } from './SearchSelect';
 
 // Submit progress states surfaced to the user. The modal stays open
 // across all of them so submit feels like a single waiting step rather
@@ -28,7 +34,7 @@ type SubmitStage =
  * Submission flow:
  *   1. Validate locally; submit POST.
  *   2. Show "Creating worktree…" while in-flight.
- *   3. On success, switch tmux to the returned session and close.
+ *   3. On success, open the returned session and close.
  *   4. On 4xx, surface the error inline; leave the form open.
  *
  * Implementation note: the outer `WorktreeFormModal` handles the
@@ -57,19 +63,17 @@ export function WorktreeFormModal() {
     // rather than failing on the API call.
     return (
       <Modal
-        backdropClassName="oc-wt-backdrop"
-        dialogClassName="oc-wt-modal"
         label="Worktree sessions unavailable"
         onClose={close}
       >
-        <header><h2>Worktree sessions unavailable</h2></header>
-        <div className="oc-wt-body">
+        <ModalHeader title="Worktree sessions unavailable" onClose={close} closeLabel="Close unavailable worktree dialog" />
+        <div className={styles.body}>
           <p>
             The /wt feature requires git, tmux, and opencode on PATH,
             plus an OpenCode platform adapter registered.
           </p>
         </div>
-        <footer><button type="button" onClick={close}>Close</button></footer>
+        <ModalFooter label="Unavailable worktree actions"><Button type="button" onClick={close}>Close</Button></ModalFooter>
       </Modal>
     );
   }
@@ -114,6 +118,8 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   const [branch, setBranch] = useState(initialBranch ?? '');
   const [newBranch, setNewBranch] = useState(true);
   const [baseRef, setBaseRef] = useState('');
+  const [refError, setRefError] = useState<string | null>(null);
+  const [refRevision, setRefRevision] = useState(0);
   const [stage, setStage] = useState<SubmitStage>('idle');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -123,14 +129,17 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   const branchInputRef = useRef<HTMLInputElement>(null);
 
   const submitting = stage !== 'idle';
+  const owner = remoteId || 'local';
+  const projectOptions = [...new Set([
+    projectDir,
+    ...projectList.filter((project) => (project.remoteId || 'local') === owner).map((project) => project.directory),
+  ].filter(Boolean))].map((value) => ({ value, label: value }));
 
   // Focus the branch input and load the project list on mount.
   useEffect(() => {
     requestAnimationFrame(() => branchInputRef.current?.focus());
-    if (!initialProject) {
-      projectsLoader().then(setProjectList).catch(() => setProjectList([]));
-    }
-  }, [initialProject, projectsLoader]);
+    projectsLoader().then(setProjectList).catch(() => setProjectList([]));
+  }, [projectsLoader]);
 
   // Once we know which project we're working with, fetch its default
   // base ref to pre-fill the input. setState inside `.then()` is fine
@@ -138,14 +147,17 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   useEffect(() => {
     if (!projectDir) return;
     const ctrl = new AbortController();
-    api.worktree
-      .defaultBaseRef(projectDir, remoteId, ctrl.signal)
-      .then((r) => setBaseRef(r.baseRef))
+    api.worktree.defaultBaseRef(projectDir, owner, ctrl.signal)
+      .then((result) => {
+        if (ctrl.signal.aborted) return;
+        setBaseRef((current) => current || result.baseRef);
+        setRefError(null);
+      })
       .catch(() => {
-        // Non-fatal: leave the field empty; user can fill it in.
+        if (!ctrl.signal.aborted) setRefError('Could not load base refs.');
       });
     return () => ctrl.abort();
-  }, [projectDir, remoteId]);
+  }, [projectDir, owner, refRevision]);
 
   // When launched from a session, look up how many always-allow
   // permissions would be inherited (#101) so the form can show a hint.
@@ -200,7 +212,7 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
         newBranch,
         baseRef: newBranch ? baseRef.trim() : undefined,
         parentSessionId,
-        remoteId,
+        remoteId: owner,
       });
     } catch (err) {
       setStage('idle');
@@ -228,7 +240,7 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
     close();
     if (resp.sessionId) {
       const platform = resp.platform ?? '';
-      seedNewSession(resp.sessionId, resp.worktreePath, platform, branch.trim(), resp.remoteId ?? remoteId ?? 'local');
+      seedNewSession(resp.sessionId, resp.worktreePath, platform, branch.trim(), resp.remoteId ?? owner);
       navigate(`/session/${encodeURIComponent(resp.sessionId)}${platform ? `?platform=${encodeURIComponent(platform)}` : ''}`);
     } else {
       navigate(`/project/${encodeURIComponent(resp.worktreePath)}`);
@@ -241,50 +253,28 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
 
   return (
     <Modal
-      backdropClassName="oc-wt-backdrop"
-      dialogClassName="oc-wt-modal"
       label="New worktree session"
       onClose={handleClose}
       canClose={!submitting}
     >
-      <form className="oc-wt-form" onSubmit={onSubmit}>
-        <header>
-          <h2>New worktree session</h2>
-          <kbd className="oc-wt-kbd">ESC</kbd>
-        </header>
+      <form className={styles.form} onSubmit={onSubmit}>
+        <ModalHeader title="New worktree session" onClose={handleClose} canClose={!submitting} closeLabel="Close worktree session dialog" />
 
-        <div className="oc-wt-body">
-          {/* Project: read-only when pre-filled, dropdown when not */}
-          <label className="oc-wt-field">
+        <div className={styles.body}>
+          <div className={styles.field}>
             <span>Project</span>
-            {initialProject ? (
-              <input
-                type="text"
-                value={initialProject}
-                readOnly
-                aria-label="Project directory"
-              />
-            ) : (
-              <select
-                value={projectDir}
-                onChange={(e) => setProjectDir(e.target.value)}
-                disabled={submitting}
-                aria-label="Pick a project"
-              >
-                <option value="">— pick a project —</option>
-                {projectList.map((p) => (
-                  <option key={p.directory} value={p.directory}>
-                    {p.directory}
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
+            <SearchSelect ariaLabel="Project" searchLabel="Search projects" placeholder="Pick a project"
+              value={projectDir} title={projectDir} options={projectOptions} disabled={submitting} onChange={(directory) => {
+                if (directory === projectDir) return;
+                setProjectDir(directory); setBaseRef(''); setRefError(null);
+              }} />
+          </div>
 
-          <label className="oc-wt-field">
+          <label className={styles.field}>
             <span>Branch</span>
-            <input
+            <TextField
               ref={branchInputRef}
+              data-autofocus
               type="text"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
@@ -295,42 +285,34 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
             />
           </label>
 
-          <label className="oc-wt-checkbox">
-            <input
-              type="checkbox"
-              checked={newBranch}
-              onChange={(e) => setNewBranch(e.target.checked)}
-              disabled={submitting}
-            />
-            <span>Create new branch</span>
-          </label>
+          <CheckboxField
+            label="Create new branch"
+            checked={newBranch}
+            onChange={(e) => setNewBranch(e.target.checked)}
+            disabled={submitting}
+          />
 
           {newBranch && (
-            <label className="oc-wt-field">
+            <label className={styles.field}>
               <span>Base ref</span>
-              <input
-                type="text"
-                value={baseRef}
-                onChange={(e) => setBaseRef(e.target.value)}
-                placeholder="main"
-                disabled={submitting}
-                autoComplete="off"
-                spellCheck={false}
-              />
+              <TextField value={baseRef} onChange={(event) => setBaseRef(event.target.value)}
+                placeholder="Branch, tag, commit or revision" disabled={submitting} autoComplete="off" spellCheck={false} />
             </label>
           )}
 
+          {newBranch && refError && <InlineAlert onRetry={() => setRefRevision((revision) => revision + 1)}>{refError}</InlineAlert>}
+
           {inheritCount !== null && inheritCount > 0 && (
-            <div className="oc-wt-hint" data-testid="worktree-inherit-hint">
+            <div className={styles.hint} data-testid="worktree-inherit-hint">
               Will inherit {inheritCount} approved{' '}
               {inheritCount === 1 ? 'permission' : 'permissions'} from the current session.
             </div>
           )}
 
-          {error && <div className="oc-wt-error" role="alert">{error}</div>}
+          {error && <InlineAlert><span className={styles.message}>{error}</span></InlineAlert>}
           {warning && (
             <div
-              className="oc-wt-warning"
+              className={styles.warning}
               role="status"
               data-testid="worktree-warning"
             >
@@ -338,29 +320,29 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
             </div>
           )}
           {submitting && stageLabel && (
-            <div className="oc-wt-spinner" aria-live="polite">
+            <div className={styles.progress} aria-live="polite">
               {stageLabel}
             </div>
           )}
         </div>
 
-        <footer>
-          <button
+        <ModalFooter label="Create worktree actions">
+          <Button
             type="button"
             onClick={handleClose}
             disabled={submitting}
-            className="oc-wt-btn oc-wt-btn--secondary"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
             disabled={submitting || !branch.trim() || !projectDir}
-            className="oc-wt-btn oc-wt-btn--primary"
+            variant="accent"
+            aria-busy={submitting}
           >
             {submitting ? 'Creating…' : 'Create & launch'}
-          </button>
-        </footer>
+          </Button>
+        </ModalFooter>
       </form>
     </Modal>
   );

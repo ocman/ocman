@@ -1,0 +1,8 @@
+.oc-upstream-row-meta { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin-top: 4px; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--text-dim); }
+.oc-upstream-row-author { color: var(--subtext0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.oc-upstream-row-time { margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+.oc-upstream-row-labels { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.oc-upstream-row-label { display: inline-block; padding: 1px 6px; border-radius: 0; border: 1px solid transparent; font-family: 'SF Mono', Consolas, monospace; font-size: 10px; background: var(--surface1); color: var(--text); }
+.oc-upstream-row-assignees { display: inline-flex; gap: 2px; flex-shrink: 0; }
+.oc-upstream-row-assignee { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--surface0); border: 1px solid var(--border); font-family: 'SF Mono', Consolas, monospace; font-size: 9px; font-weight: 600; color: var(--subtext0); }
+.oc-upstream-row-assignee-more { font-family: 'SF Mono', Consolas, monospace; font-size: 10px; color: var(--text-dim); align-self: center; }

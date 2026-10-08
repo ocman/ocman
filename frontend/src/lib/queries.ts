@@ -15,6 +15,8 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 export * from './factoryQueries';
 import { api } from './api';
 import { useActivityScope } from './activityScopes';
+import { withDeadline } from './coalescedRefresh';
+import { queryEventRefresh } from './queryEventRefresh';
 import type {
   Session,
   Project,
@@ -33,12 +35,30 @@ import type {
   InboxItem,
 } from './api';
 
+/** Bounds one inbox request so a stalled fetch cannot freeze later refreshes. */
+export const INBOX_TIMEOUT_MS = 20_000;
+
 export function useInbox(archived = false) {
   return useQuery<InboxResponse>({
     queryKey: archived ? ['inbox', 'archived'] : ['inbox'],
-    queryFn: ({ signal }) => api.inbox(signal, archived),
+    queryFn: ({ signal }) => withDeadline(INBOX_TIMEOUT_MS, (deadline) => api.inbox(deadline, archived), signal),
     refetchInterval: 10_000,
   });
+}
+
+/** Trailing window that folds an ocman.inbox.changed burst into one fetch. */
+export const INBOX_EVENT_DELAY_MS = 150;
+
+/**
+ * Refreshes the inbox on server events without cancelling a request in
+ * flight: permission ask/resolve pairs arrive milliseconds apart under
+ * auto-approve, and the default invalidate aborted each previous fetch
+ * (~450 client-cancelled /api/inbox requests a day). A fetch already
+ * running (the poll) may predate the event, so it is awaited and followed
+ * by one fresh fetch.
+ */
+export function inboxEventRefresh(client: QueryClient) {
+  return queryEventRefresh(client, ['inbox']).schedule;
 }
 
 export function useMarkInboxItemRead() {

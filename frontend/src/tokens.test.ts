@@ -32,8 +32,8 @@ function definedIn(selector: string): string[] {
 
 describe('stylesheet ownership', () => {
   it.each([
-    ['.oc-error-banner', ['shared.css']],
-    ['.oc-error-boundary', ['shared.css']],
+    ['.oc-error-banner', []], // Migrated to InlineAlert.module.css.
+    ['.oc-error-boundary', []], // Migrated to ErrorState.module.css.
     // Print coordinates hiding app chrome across component boundaries.
     ['.main-nav', ['components/MainNav.css', 'print.css']],
     ['.app-header', ['components/AppHeader.css', 'print.css']],

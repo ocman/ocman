@@ -1,10 +1,11 @@
 import { useCallback } from 'react';
 import { api } from '../lib/api';
-import { copyToClipboard } from '../lib/clipboard';
 import { Modal } from './Modal';
+import { ModalHeader } from './ModalHeader';
+import { ModalFooter } from './ModalFooter';
+import { Button } from './Control';
 import { ShareLinkList } from './ShareLinkList';
 import { useShareLinks } from '../lib/useShareLinks';
-import './ShareExportMenu.css';
 
 interface ShareLinkModalProps {
   sessionId: string;
@@ -20,7 +21,7 @@ interface ShareLinkModalProps {
 export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
   const load = useCallback(() => api.listShareLinks(sessionId), [sessionId]);
   const state = useShareLinks(load, (link) => api.revokeShareLink(sessionId, link.token));
-  const { busy, setLinks, setLoaded, run, flashCopied } = state;
+  const { busy, setLinks, setLoaded, run } = state;
 
   const handleCreate = () =>
     run(async () => {
@@ -28,32 +29,30 @@ export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
       setLinks((prev) => [link, ...prev]);
       setLoaded(true);
       // Best-effort copy of the freshly minted link.
-      await copyToClipboard(link.url);
-      flashCopied(link.token);
+      await state.copy(link);
     }, 'Failed to create share link');
 
   return (
     <Modal
-      backdropClassName="oc-share-modal-backdrop"
       backdropTestId="share-link-backdrop"
-      dialogClassName="oc-share-modal"
       dialogTestId="share-link-modal"
       label="Public share link"
       onClose={onClose}
+      canClose={!busy}
     >
-      <div className="oc-share-menu-label">Public share link</div>
-      <p className="oc-share-menu-hint">
-        Anyone with the link can view this conversation read-only.
-      </p>
-      <button
+      <ModalHeader title="Public share link" closeLabel="Close share link dialog" onClose={onClose} canClose={!busy}
+        description="Anyone with the link can view this conversation read-only." />
+      <Button
         type="button"
-        className="oc-share-menu-item oc-share-menu-create"
+        variant="accent"
         onClick={() => void handleCreate()}
         disabled={busy}
+        aria-busy={busy}
+        data-autofocus
         data-testid="share-create-link"
       >
         {busy ? 'Working…' : 'Create share link'}
-      </button>
+      </Button>
 
       <ShareLinkList
         state={state}
@@ -61,6 +60,7 @@ export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
         urlLabel="Relay share URL"
         copyLabel="Copy relay link"
       />
+      <ModalFooter label="Share link dialog actions"><Button type="button" disabled={busy} onClick={onClose}>Close</Button></ModalFooter>
     </Modal>
   );
 }

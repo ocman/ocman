@@ -10,16 +10,17 @@ import { useAuthStore } from '../../lib/authStore';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
-import { SettingRow, SettingToggle } from '../../components/SettingRow';
+import { SettingRow, SettingToggle, SettingDescription } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
 import { getOpenInChrome, isIOS, setOpenInChrome } from '../../lib/externalLinks';
-import { Button, SearchField } from '../../components/Control';
+import { Button, SearchField, SelectField } from '../../components/Control';
 import { SettingsSearchResults } from '../../components/SettingsSearch';
 import { useRevealSetting, type RevealRequest } from '../../lib/useRevealSetting';
 import { settingEntry, type SettingId, type SettingsGroupId } from '../../lib/settingsCatalog';
 import { LinkPreviewTabs } from '../../components/LinkPreviewTabs';
 import { NotificationsSection, SessionsSection } from './SettingsSections';
 import { AutoApproveSection } from './AutoApproveSection';
+import styles from './SettingsTab.module.css';
 
 export function SettingsTab() {
   usePageTitle('Settings');
@@ -82,93 +83,106 @@ export function SettingsTab() {
     setActive(settingEntry(id).group);
     setTarget((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
   };
+  const selectGroup = (id: SettingsGroupId) => {
+    setQuery('');
+    setTarget(null);
+    setActive(id);
+  };
 
   return (
-    <div className="settings-page">
-      <nav className="settings-nav" aria-label="Settings groups">
+    <div className={styles.page}>
+      <nav className={styles.nav} aria-label="Settings groups">
         <SearchField
-          className="settings-search"
+          className={styles.search}
           aria-label="Search settings"
           placeholder="Search settings"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
         />
-        {groups.map((g) => (
-          <Button variant="ghost"
+        <label className={styles.compact}>
+          <span className={styles.caption}>Settings group</span>
+          <SelectField aria-label="Settings group" value={searching ? '' : active} onChange={(event) => selectGroup(event.target.value as SettingsGroupId)}>
+            {searching && <option value="" disabled>Search results</option>}
+            {groups.map((group) => <option key={group.id} value={group.id}>{group.label}</option>)}
+          </SelectField>
+        </label>
+        <div className={styles.groups}>{groups.map((g) => (
+          <Button
             key={g.id}
             type="button"
-            className={`settings-nav-item${active === g.id && !searching ? ' active' : ''}`}
+            className={styles.group}
+            variant={active === g.id && !searching ? 'accent' : 'ghost'}
             aria-current={active === g.id && !searching ? 'page' : undefined}
-            onClick={() => { setQuery(''); setTarget(null); setActive(g.id); }}
+            onClick={() => selectGroup(g.id)}
           >
             {g.label}
           </Button>
-        ))}
+        ))}</div>
       </nav>
-      <div className="settings-content">
+      <div className={styles.content}>
         {searching && <SettingsSearchResults query={query} groupLabels={groupLabels} onPick={pick} />}
         <div hidden={searching}>
         {missing?.requires && (
-          <p className="settings-row-desc" role="status">
+          <SettingDescription role="status">
             <strong>{missing.title}</strong> is not shown right now. {missing.requires}
-          </p>
+          </SettingDescription>
         )}
-        {active === 'plugins' && <div className="settings-section">
-          <h2 className="settings-section-title">Plugins</h2>
+        {active === 'plugins' && <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Plugins</h2>
           <PluginSettings />
         </div>}
-        {active === 'maintenance' && <div className="settings-section">
-          <h2 className="settings-section-title">Maintenance</h2>
+        {active === 'maintenance' && <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Maintenance</h2>
           <MaintenanceSettings />
         </div>}
-        <div className="settings-section" hidden={active !== 'notifications'}>
-          <h2 className="settings-section-title">Notifications</h2>
+        <div className={styles.section} hidden={active !== 'notifications'}>
+          <h2 className={styles.sectionTitle}>Notifications</h2>
           <NotificationsSection />
         </div>
 
-        <div className="settings-section" hidden={active !== 'sessions'}>
-          <h2 className="settings-section-title">Sessions</h2>
+        <div className={styles.section} hidden={active !== 'sessions'}>
+          <h2 className={styles.sectionTitle}>Sessions</h2>
           <SessionsSection />
         </div>
 
-        <div className="settings-section" hidden={active !== 'remotes'}>
-          <h2 className="settings-section-title">Remotes</h2>
+        <div className={styles.section} hidden={active !== 'remotes'}>
+          <h2 className={styles.sectionTitle}>Remotes</h2>
           <SettingRow block setting="remotes">
             <RemoteSettings />
           </SettingRow>
         </div>
 
-        <div className="settings-section" hidden={active !== 'auto-approve'}>
-          <h2 className="settings-section-title">Auto-approve</h2>
+        <div className={styles.section} hidden={active !== 'auto-approve'}>
+          <h2 className={styles.sectionTitle}>Auto-approve</h2>
           <AutoApproveSection />
         </div>
 
-        <div className="settings-section" hidden={active !== 'sharing'}>
-          <h2 className="settings-section-title">Sharing</h2>
+        <div className={styles.section} hidden={active !== 'sharing'}>
+          <h2 className={styles.sectionTitle}>Sharing</h2>
           <SharingSettings />
         </div>
 
-        {active === 'webhooks' && <div className="settings-section">
-          <h2 className="settings-section-title">Webhooks</h2>
+        {active === 'webhooks' && <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Webhooks</h2>
           <WebhookRelaySettings />
         </div>}
 
-        <div className="settings-section" hidden={active !== 'templates'}>
-          <h2 className="settings-section-title">PR &amp; Issue templates</h2>
+        <div className={styles.section} hidden={active !== 'templates'}>
+          <h2 className={styles.sectionTitle}>PR &amp; Issue templates</h2>
           <SettingRow block setting="launch-prompt-templates">
             <PromptTemplateSettings />
           </SettingRow>
         </div>
 
-        {active === 'link-previews' && <div className="settings-section">
-          <h2 className="settings-section-title">Link previews</h2>
+        {active === 'link-previews' && <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Link previews</h2>
           <LinkPreviewTabs key={target?.seq ?? ''} tab={target ? settingEntry(target.id).tab : undefined} />
         </div>}
 
         {showBehaviour && (
-          <div className="settings-section" hidden={active !== 'behaviour'}>
-            <h2 className="settings-section-title">Behaviour</h2>
+          <div className={styles.section} hidden={active !== 'behaviour'}>
+            <h2 className={styles.sectionTitle}>Behaviour</h2>
             <SettingRow setting="open-links-in-chrome">
               <SettingToggle
                 ariaLabel="Open external links in Chrome"
@@ -181,16 +195,17 @@ export function SettingsTab() {
         )}
 
         {showAppSection && (
-          <div className="settings-section" hidden={active !== 'app'}>
-            <h2 className="settings-section-title">App</h2>
+          <div className={styles.section} hidden={active !== 'app'}>
+            <h2 className={styles.sectionTitle}>App</h2>
             <SettingRow
               setting="install-app"
               desc={installed
                 ? 'ocman is installed as an app on this device. Launch it from your dock or app launcher to use it in its own window.'
                 : undefined}
             >
-              <Button size="small"
+              <Button
                 type="button"
+                size="small"
                 disabled={installed || !canInstall}
                 onClick={() => { void promptInstall(); }}
               >
@@ -201,11 +216,12 @@ export function SettingsTab() {
         )}
 
         {authRequired && (
-          <div className="settings-section" hidden={active !== 'account'}>
-            <h2 className="settings-section-title">Account</h2>
+          <div className={styles.section} hidden={active !== 'account'}>
+            <h2 className={styles.sectionTitle}>Account</h2>
             <SettingRow setting="sign-out">
-              <Button size="small"
+              <Button
                 type="button"
+                size="small"
                 onClick={() => { void logout(); }}
               >
                 Sign out

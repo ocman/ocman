@@ -1,0 +1,17 @@
+.settings { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; }
+.table { min-width: 760px; }
+.name { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.meta { margin-top: 2px; color: var(--text-dim); font: 12px/1.5 var(--font-conversation-mono); overflow-wrap: anywhere; }
+.actions { flex-wrap: nowrap; }
+.health { padding: 1px 6px; border: 1px solid var(--border); color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.health[data-health="connected"] { color: var(--accent2); border-color: color-mix(in srgb, var(--accent2) 40%, transparent); }
+.health:is([data-health="offline"], [data-health="auth-failed"], [data-health="duplicate-identity"], [data-health="incompatible-version"]) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.health[data-health="disabled"] { opacity: .7; }
+.form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); }
+.title { width: 100%; font-size: 14px; font-weight: 600; }
+.input { flex: 1 1 180px; min-width: 140px; }
+.token { width: 280px; max-width: 100%; font-family: var(--font-conversation-mono); }
+.error { width: 100%; color: var(--danger); font-size: 13px; }
+.editForm { display: grid; gap: 18px; }
+.field { display: grid; gap: 6px; color: var(--text-dim); font-size: 12px; }
+.help { font-size: 12px; }

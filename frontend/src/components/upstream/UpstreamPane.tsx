@@ -8,6 +8,7 @@ import { UpstreamRemoteGroup } from './UpstreamRemoteGroup';
 import { clearPRChecksCache } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
+import { UpstreamFilters } from './UpstreamFilters';
 import { onGitCommand } from '../../lib/useGlobalEvents';
 import { Spinner } from '../Spinner';
 
@@ -239,7 +240,7 @@ function UpstreamTabContent({
   // strip is hidden along with the lists).
   return (
     <div className="oc-upstream-tab-content">
-      <FilterStrip
+      <UpstreamFilters
         state={state}
         onStateChange={onStateChange}
         mine={mine}
@@ -268,43 +269,6 @@ function UpstreamTabContent({
           currentBranch={currentBranch}
         />
       ))}
-    </div>
-  );
-}
-
-interface FilterStripProps {
-  state: StateFilter;
-  onStateChange: (s: StateFilter) => void;
-  mine: boolean;
-  onMineChange: (m: boolean) => void;
-}
-
-function FilterStrip({ state, onStateChange, mine, onMineChange }: FilterStripProps) {
-  return (
-    <div className="oc-upstream-filters" role="toolbar">
-      <div className="oc-upstream-filter-group" role="radiogroup" aria-label="State">
-        {(['open', 'closed', 'all'] as StateFilter[]).map((s) => (
-          <button
-            key={s}
-            role="radio"
-            aria-checked={state === s}
-            className={`oc-upstream-filter${state === s ? ' active' : ''}`}
-            onClick={() => onStateChange(s)}
-            data-testid={`upstream-filter-${s}`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-      <label className="oc-upstream-mine">
-        <input
-          type="checkbox"
-          checked={mine}
-          onChange={(e) => onMineChange(e.target.checked)}
-          data-testid="upstream-filter-mine"
-        />
-        Mine
-      </label>
     </div>
   );
 }

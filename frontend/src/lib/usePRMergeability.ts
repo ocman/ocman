@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react';
 import { fetchPRMergeability } from './upstreamApi';
 import type { PR } from './upstreamApi';
+import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 
 export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote: string, visible: boolean) {
   const { number, status, mergeable, headSha, updatedAt } = pr;
-  const key = `${remoteId}\0${dir}\0${remote}\0${number}\0${headSha}\0${updatedAt}`;
+  const [generation, setGeneration] = useState(0);
+  const repository = `${pr.host}/${pr.repo}`;
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      const repositories = (event as CustomEvent<string[]>).detail;
+      if (!repositories || repositories.includes(repository)) setGeneration((g) => g + 1);
+    };
+    window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
+    return () => window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
+  }, [repository]);
+  const key = `${remoteId}\0${dir}\0${remote}\0${number}\0${headSha}\0${updatedAt}\0${generation}`;
   const [resolved, setResolved] = useState<{ key: string; value: boolean }>();
   useEffect(() => {
     if (!visible || status !== 'open' || mergeable != null) return;

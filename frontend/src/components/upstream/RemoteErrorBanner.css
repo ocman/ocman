@@ -1,0 +1,7 @@
+.oc-upstream-error { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin: 6px 10px; background: rgba(243, 139, 168, .1); border: 1px solid var(--danger); border-radius: 0; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--danger); }
+.oc-upstream-error-rate-limited { background: rgba(249, 226, 175, .1); border-color: var(--yellow); color: var(--yellow); }
+.oc-upstream-error-auth { background: rgba(137, 180, 250, .1); border-color: var(--accent); color: var(--accent); }
+.oc-upstream-error code { font-family: inherit; background: var(--crust); padding: 1px 4px; }
+.oc-upstream-error button { margin-left: auto; background: transparent; border: 1px solid currentColor; border-radius: 0; color: inherit; padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 11px; flex-shrink: 0; }
+.oc-upstream-error button:hover:not(:disabled) { background: rgba(255, 255, 255, .05); }
+.oc-upstream-error button:disabled { opacity: .4; cursor: not-allowed; }

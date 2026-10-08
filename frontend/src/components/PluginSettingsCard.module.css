@@ -1,0 +1,5 @@
+.card { margin-top: 20px; padding: 16px; border: 1px solid var(--border); background: var(--bg-card); }
+.title { margin-bottom: 8px; font-size: 16px; }
+.checksum { overflow-wrap: anywhere; }
+.management { min-width: 0; border: 0; padding: 0; }
+.logs { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-conversation-mono); }

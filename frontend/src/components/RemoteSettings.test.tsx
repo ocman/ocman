@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { RemoteSettings } from './RemoteSettings';
 
 vi.mock('../lib/api', () => ({
@@ -30,6 +30,65 @@ function seed(remotes: unknown[] = []) {
 }
 
 describe('RemoteSettings', () => {
+  it('lists machines in a shared table and edits in a drawer without replacing the row', async () => {
+    seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
+    render(<RemoteSettings />);
+    await screen.findByText('Box');
+    expect(screen.getByRole('table', { name: 'Machines' })).toHaveClass('oc-data-table');
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Machine', 'Connection', 'Status', 'Actions']);
+    expect(screen.getByText('Box').closest('tr')).toHaveTextContent('ws:8230');
+    expect(screen.getByText('This machine').closest('tr')).toHaveTextContent('0.0.0.0:8230');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const drawer = screen.getByRole('dialog', { name: 'Edit remote' });
+    expect(within(drawer).getByDisplayValue('Box')).toBeInTheDocument();
+    expect(screen.getByText('Box').closest('tr')).toHaveTextContent('connected');
+    expect(screen.getByDisplayValue('Box').closest('td')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByText('Box').closest('tr')).toHaveTextContent('connected');
+  });
+
+  it('keeps the edit drawer and values after a failed save, then allows retry', async () => {
+    seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
+    m.updateRemote.mockRejectedValueOnce(new Error('connection failed')).mockResolvedValueOnce({ ok: true });
+    render(<RemoteSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByDisplayValue('Box'), { target: { value: 'Renamed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to save remote.');
+    expect(screen.getByDisplayValue('Renamed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(m.updateRemote).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks drawer dismissal and repeat edits while saving', async () => {
+    seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
+    let resolve!: (value: unknown) => void;
+    m.updateRemote.mockImplementation(() => new Promise((done) => { resolve = done; }));
+    render(<RemoteSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByDisplayValue('Box')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Close Edit remote' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => { resolve({ ok: true }); });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('uses shared action controls and fields throughout the add and edit forms', async () => {
+    seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
+    render(<RemoteSettings />);
+    await screen.findByText('Box');
+    for (const button of screen.getAllByRole('button')) expect(button).toHaveClass('oc-button');
+    for (const field of screen.getAllByRole('textbox')) expect(field).toHaveClass('oc-field');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    for (const button of screen.getAllByRole('button')) expect(button).toHaveClass('oc-button');
+    for (const field of screen.getAllByRole('textbox')) expect(field).toHaveClass('oc-field');
+    expect(screen.getByRole('checkbox', { name: 'Enabled' })).toBeChecked();
+  });
+
   it.each([true, false])('toggles an enabled=%s remote without replacing its connection settings', async (enabled) => {
     const remote = {
       localId: 1, remoteId: 'abc', displayName: 'Box', address: 'grpc://ws:8230',

@@ -24,6 +24,7 @@ describe('BackendStatusBanner', () => {
   it('forced mode renders and Retry invokes the handler', () => {
     const onRetry = vi.fn();
     render(<BackendStatusBanner force onRetry={onRetry} />);
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveClass('oc-button');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledOnce();
   });

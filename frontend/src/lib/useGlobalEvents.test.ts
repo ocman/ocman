@@ -245,6 +245,9 @@ describe('useGlobalEvents resolved handler', () => {
     );
     expect(notifyPromptDismissed).toHaveBeenCalledWith('sess-1');
     expect(recheckNotifyData).toHaveBeenCalledTimes(1);
+    expect(recheckNotifyData).toHaveBeenCalledWith({
+      platform: 'opencode', sessionId: 'sess-1', requestId: 'p1', kind: 'permission',
+    });
   });
 
   it('dismisses the toast for a resolved question payload', () => {
@@ -253,6 +256,21 @@ describe('useGlobalEvents resolved handler', () => {
     );
     expect(notifyPromptDismissed).toHaveBeenCalledWith('sess-q');
     expect(recheckNotifyData).toHaveBeenCalledTimes(1);
+    expect(recheckNotifyData).toHaveBeenCalledWith({
+      platform: 'opencode', sessionId: 'sess-q', requestId: 'r1', kind: 'question',
+    });
+  });
+
+  it('retains the owner on remote resolution identities', () => {
+    __handleResolvedForTests(JSON.stringify({ sessionID: 'child', permissionId: 'p1', platform: 'r-box:opencode' }));
+    expect(recheckNotifyData).toHaveBeenCalledWith({
+      platform: 'r-box:opencode', sessionId: 'child', requestId: 'p1', kind: 'permission',
+    });
+  });
+
+  it('only schedules a refresh when a resolution has no request identity', () => {
+    __handleResolvedForTests(JSON.stringify({ sessionID: 'same', platform: 'opencode' }));
+    expect(recheckNotifyData).toHaveBeenCalledWith(undefined);
   });
 
   it('ignores malformed JSON', () => {

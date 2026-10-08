@@ -7,10 +7,12 @@ import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
+import { api } from '../lib/api';
 import { newSessionPath } from '../lib/newSessionPath';
 import { usePluginActions } from '../lib/usePluginActions';
 import type { PluginActionRequest } from '../lib/plugins';
 import { PluginActionDialog } from './PluginActionDialog';
+import { InlineAlert } from './InlineAlert';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string; run?: () => void };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
@@ -168,6 +170,9 @@ export function CommandPalette() {
   const openShortcuts = useUiStore((s) => s.openShortcuts);
   const mode = paletteMode;
   const [actionInvocation, setActionInvocation] = useState<{ label: string; request: PluginActionRequest } | null>(null);
+  const [worktreeError, setWorktreeError] = useState<string | null>(null);
+  const worktreeLookup = useRef<AbortController | null>(null);
+  useEffect(() => () => { worktreeLookup.current?.abort(); }, [location.key, paletteOpen]);
 
   const [projectList, setProjectList] = useState<Project[]>([]);
   const [projectListLoading, setProjectListLoading] = useState(false);
@@ -190,6 +195,7 @@ export function CommandPalette() {
     setProjectListLoading(false);
     setProjectListLoaded(false);
     setProjectListError(null);
+    setWorktreeError(null);
     resetProjectBrowser();
     rawClosePalette();
   }, [rawClosePalette, resetProjectBrowser]);
@@ -524,7 +530,7 @@ export function CommandPalette() {
     navigate(newSessionPath({ directory: projectDir, remoteId: opts?.remoteId || 'local', platform: opts?.platform }));
   }
 
-  function handleSelect(item: ResultItem) {
+  async function handleSelect(item: ResultItem) {
     if (item.kind === 'session') {
       closePalette();
       navigate(`/session/${item.session.id}`);
@@ -555,13 +561,32 @@ export function CommandPalette() {
       closePalette();
       useUiStore.getState().dispatchCommand({ kind: 'scoped', id: item.id, label: item.label, description: item.description });
     } else if (item.kind === 'command') {
+      if (item.id === 'cmd.worktree') {
+        worktreeLookup.current?.abort();
+        const controller = new AbortController();
+        worktreeLookup.current = controller;
+        setWorktreeError(null);
+        const params = new URLSearchParams(location.search);
+        const routeID = location.pathname.startsWith('/session/') ? location.pathname.split('/')[2] : undefined;
+        try {
+          const session = routeID && routeID !== 'new'
+            ? sessions?.find((s) => s.id === routeID && (!params.get('platform') || s.platform === params.get('platform')))
+              ?? (await api.session(routeID, 1, 0, controller.signal, params.get('platform') ?? undefined)).session : undefined;
+          if (routeID && routeID !== 'new' && !session) throw new Error('Session unavailable');
+          if (controller.signal.aborted) return;
+          closePalette();
+          openWorktreeForm({ projectDir: session?.directory ?? (routeID === 'new' ? params.get('dir') ?? undefined : inferredProjectDir),
+            remoteId: session?.remoteId ?? params.get('remoteId') ?? 'local' });
+        } catch {
+          if (!controller.signal.aborted) setWorktreeError('Could not resolve worktree project. Try again.');
+        }
+        return;
+      }
       closePalette();
       if (item.run) {
         item.run();
       } else if (item.id === 'cmd.shortcuts') {
         openShortcuts();
-      } else if (item.id === 'cmd.worktree') {
-        openWorktreeForm({ projectDir: inferredProjectDir });
       } else if (item.id === 'cmd.sessions') {
         navigate('/sessions');
       } else if (item.id === 'cmd.projects') {
@@ -635,6 +660,7 @@ export function CommandPalette() {
           <kbd className="oc-cmd-kbd">ESC</kbd>
         </div>
         {contributions.unavailable && <p role="status">Some plugin actions are unavailable.</p>}
+        {worktreeError && <InlineAlert>{worktreeError}</InlineAlert>}
         {mode === 'project' && projectBrowser.open && (
           <div className="oc-cmd-browser-bar">
             <button

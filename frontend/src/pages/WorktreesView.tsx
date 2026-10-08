@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { WorktreeEntry } from '../lib/api';
 import { api } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { usePageTitle } from '../lib/headerContext';
-import { openVSCode } from '../lib/shortcuts';
 import { relativeTime, shortPath } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
@@ -13,9 +12,11 @@ import { WorktreesTableSkeleton } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { RefreshButton } from '../components/RefreshButton';
+import { InlineAlert } from '../components/InlineAlert';
+import { EmptyState } from '../components/EmptyState';
+import { Button, ButtonGroup, RouteButton } from '../components/Control';
 import { HeaderPortal } from './session-detail/MobileHeaderControls';
-import './Dashboard.css';
-import './WorktreesView.css';
+import styles from './WorktreesView.module.css';
 
 export function WorktreesView() {
   const { dir } = useParams();
@@ -119,7 +120,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
   if (!allowed) {
     return (
       <div>
-        <div className="oc-list-error">Worktree sessions are unavailable on this host.</div>
+        <InlineAlert>Worktree sessions are unavailable on this host.</InlineAlert>
       </div>
     );
   }
@@ -127,25 +128,28 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
   return (
     <div>
       <HeaderPortal>
-        <Link className="oc-time-range-btn" to={`/project/${encodeURIComponent(projectDir)}${ownerQuery}`}>
-          Back to project
-        </Link>
-        <RefreshButton size="small" variant="default" onClick={() => void load()} loading={loading} />
-        <button
-          className="oc-time-range-btn active"
-          type="button"
-          onClick={() => openWorktreeForm({ projectDir, remoteId })}
-        >
-          New worktree session
-        </button>
+        <ButtonGroup label="Worktree actions">
+          <RouteButton size="small" to={`/project/${encodeURIComponent(projectDir)}${ownerQuery}`}>
+            Back to project
+          </RouteButton>
+          <RefreshButton size="small" variant="default" onClick={() => void load()} loading={loading} />
+          <Button size="small" variant="accent"
+            type="button"
+            onClick={() => openWorktreeForm({ projectDir, remoteId })}
+          >
+            New worktree session
+          </Button>
+        </ButtonGroup>
       </HeaderPortal>
 
       {loading ? (
         <WorktreesTableSkeleton rows={3} />
       ) : error ? (
-        <div className="oc-list-error">{error}</div>
+        <InlineAlert onRetry={() => { void load(); }} retrying={loading}>{error}</InlineAlert>
+      ) : rows.length === 0 ? (
+        <EmptyState>No worktrees found</EmptyState>
       ) : (
-        <DataTable>
+        <DataTable framed className={styles.table}>
           <thead>
             <tr>
               <th>Branch</th>
@@ -156,25 +160,18 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="oc-worktrees-empty">
-                  No worktrees found
-                </td>
-              </tr>
-            ) : (
-              rows.map(({ wt, stats }) => (
+            {rows.map(({ wt, stats }) => (
                 <tr key={wt.path}>
                   <td>
-                    <div className="oc-worktrees-branch">
+                    <div className={styles.branch}>
                       <span>{wt.branch || '(detached)'}</span>
-                      {wt.main && <span className="oc-worktrees-chip">main</span>}
-                      {wt.locked && <span className="oc-worktrees-chip">locked</span>}
+                      {wt.main && <span className={styles.chip}>main</span>}
+                      {wt.locked && <span className={styles.chip}>locked</span>}
                     </div>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <ProjectLabel path={wt.path} style={{ color: 'var(--accent)', fontWeight: 500 }} />
+                    <div className={styles.path}>
+                      <ProjectLabel path={wt.path} className={styles.project} />
                     </div>
                   </td>
                   <td title={stats.sessions.map((s) => s.id).join(', ')}>
@@ -182,18 +179,9 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
                   </td>
                   <td>{stats.lastActivity ? relativeTime(stats.lastActivity) : '—'}</td>
                   <td>
-                    <div className="oc-worktrees-row-actions">
-                      <button
+                    <ButtonGroup label={`Actions for ${wt.branch || 'detached worktree'}`} className={styles.actions}>
+                      <Button size="small"
                         type="button"
-                        className="vscode-btn"
-                        title="Open in VS Code"
-                        onClick={() => openVSCode(wt.path)}
-                      >
-                        VS Code
-                      </button>
-                      <button
-                        type="button"
-                        className="oc-time-range-btn"
                         disabled={stats.sessions.length === 0}
                         onClick={() => {
                           if (stats.sessions.length === 0) return;
@@ -202,31 +190,28 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
                         }}
                       >
                         Open session
-                      </button>
+                      </Button>
                       {!wt.main &&
                         (dirtyPath === wt.path ? (
-                          <button
+                          <Button size="small" variant="danger"
                             type="button"
-                            className="oc-time-range-btn oc-worktree-delete-force"
                             disabled={removing === wt.path}
                             title="Worktree has uncommitted changes — discard them and delete"
                             onClick={() => void remove(wt, true)}
                           >
                             Force delete
-                          </button>
+                          </Button>
                         ) : confirmPath === wt.path ? (
-                          <button
+                          <Button size="small" variant="danger" aria-busy={removing === wt.path}
                             type="button"
-                            className="oc-time-range-btn oc-worktree-delete-confirm"
                             disabled={removing === wt.path}
                             onClick={() => void remove(wt, false)}
                           >
                             {removing === wt.path ? 'Deleting…' : 'Confirm delete'}
-                          </button>
+                          </Button>
                         ) : (
-                          <button
+                          <Button size="small" variant="danger"
                             type="button"
-                            className="oc-time-range-btn"
                             onClick={() => {
                               setError(null);
                               setDirtyPath(null);
@@ -234,13 +219,12 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
                             }}
                           >
                             Delete
-                          </button>
+                          </Button>
                         ))}
-                    </div>
+                    </ButtonGroup>
                   </td>
                 </tr>
-              ))
-            )}
+              ))}
           </tbody>
         </DataTable>
       )}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { SettingRow, SettingToggle, SettingNumber, SettingText } from './SettingRow';
+import { SettingRow, SettingToggle, SettingNumber, SettingText, SettingDescription } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
 
 // Wrappers so the control uses the live hook value (state updates re-render).
@@ -35,6 +35,10 @@ describe('SettingToggle', () => {
 });
 
 describe('SettingNumber', () => {
+  it('uses the shared field for its numeric input', () => {
+    render(<NumberFixture onSave={() => {}} />);
+    expect(screen.getByRole('spinbutton', { name: 'n' })).toHaveClass('oc-field');
+  });
   it('parses the raw value before saving', async () => {
     let saved: number | null = null;
     render(<NumberFixture onSave={(next) => { saved = next; }} />);
@@ -49,6 +53,10 @@ function TextFixture({ onSave }: { onSave: (next: string) => void }) {
 }
 
 describe('SettingText', () => {
+  it('uses the shared field for its text input', () => {
+    render(<TextFixture onSave={() => {}} />);
+    expect(screen.getByRole('textbox', { name: 'x' })).toHaveClass('oc-field');
+  });
   it('saves changed values on blur and Enter only', async () => {
     const saved: string[] = [];
     render(<TextFixture onSave={(next) => { saved.push(next); }} />);
@@ -63,6 +71,13 @@ describe('SettingText', () => {
 });
 
 describe('SettingRow', () => {
+  it('shares descriptive copy while preserving paragraph semantics and attributes', () => {
+    render(<SettingDescription role="status" className="extra">Loading providers</SettingDescription>);
+    const description = screen.getByRole('status');
+    expect(description.tagName).toBe('P');
+    expect(description).toHaveTextContent('Loading providers');
+    expect(description).toHaveClass('extra');
+  });
   it('renders catalog copy with a collapsed example and a jump anchor', () => {
     const { container } = render(<SettingRow setting="bell-sound"><span /></SettingRow>);
     expect(screen.getByText('Bell sound')).toBeTruthy();

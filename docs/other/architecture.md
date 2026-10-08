@@ -562,8 +562,11 @@ flowchart TD
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
 - **PR checks.** `lib/usePRChecks` polls only visible rows/cards until every
-  check settles. Both views use `lib/prChecksCache`'s bounded localStorage
-  cache, keyed by host/repository/SHA. Sidebar refresh also restarts checks
+  check settles, or three empty reads spaced 30s apart confirm no CI. Errors
+  back off from 5s to 60s across viewport changes. Sidebar polls respect forge
+  rate-limit deadlines; cards rely on resolver-side upstream backoff. Hidden
+  documents pause polling. Both views use `lib/prChecksCache`'s
+  bounded localStorage cache, keyed by host/repository/SHA. Sidebar refresh also restarts checks
   on mounted conversation cards. Preview checks use the existing preview
   resolver endpoint so the conversation owner and preview credentials remain
   authoritative, including PR links outside the active project's repository.
@@ -686,8 +689,9 @@ flowchart TD
   override a newer route or clear its draft. Prepare/start preserve the
   localhost host-control guard. Afterwards the host has the
   `title` agent (its `small_model` or Haiku, in a temporary tool-denied
-  session) title the bare prompt and renames the branch to that slug in
-  place; the session title is left to OpenCode's own first-message titling.
+  session) name the delimited task under branch-naming instructions and
+  renames the branch to that slug in place; the session title is left to
+  OpenCode's own first-message titling.
   Naming failures keep `session-<suffix>`. Non-repository directories and
   directories already inside a linked worktree use the current checkout.
   Existing linked worktrees are also selectable. New conversations started

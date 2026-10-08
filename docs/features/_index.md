@@ -76,12 +76,18 @@ and tool time counts as active. Idle gaps and unfinished messages are excluded.
 models appear without a restart.
 
 Click the project name in the header to open **Project defaults**. Choose a
-default model, agent, and whether new conversations use a new worktree or the
-current checkout, then Save. These preferences belong to that project on that
-machine and are shared by its sibling worktrees. A composer choice overrides
+default model, agent, permission mode, and whether new conversations use a new
+worktree or the current checkout, then Save. These preferences belong to that
+project on that machine and are shared by its sibling worktrees. A composer choice overrides
 the default for that conversation. **Use inherited default** clears an override.
 Worktrees are used only when the project supports them. The startup model
 preference does not change the project's model fallback list.
+
+Permission modes are **Plan only**, which denies edits and shell commands;
+**Auto-accept edits**, which allows edits and asks for shell commands; and
+**YOLO**, which allows everything without asking. Saving YOLO requires
+confirmation. The saved mode applies before the first prompt in new checkout
+and worktree conversations. Existing conversations keep their current permissions.
 
 ## Worktrees and parallel work
 
@@ -113,6 +119,18 @@ has finished, the result is remembered for that commit (also across reloads)
 and not fetched again. If CI is re-run on the same commit, press the pane's
 refresh button: it forgets the remembered results and checks every visible PR
 again.
+
+A commit with no checks is confirmed twice more, 30 seconds apart, before its
+empty result is remembered. Failed requests retry with delays from 5 to 60
+seconds and honor forge rate-limit deadlines. Polling pauses when the browser
+tab is hidden; scrolling a row away and back preserves its retry deadline.
+
+The circle's colour shows CI status. A diagonal slash marks a draft or a PR
+the forge reports as unmergeable. Hover over the circle for both statuses.
+Unknown mergeability stays unslashed. When the PR list omits mergeability,
+visible open rows fetch it separately and retry while the forge computes it.
+The pane's refresh button also rechecks those mergeability lookups, even when
+the PR head has not changed.
 
 ## Guides
 

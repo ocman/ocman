@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { renderModel } from '../../lib/format';
 import { useMetrics } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
+import { InlineAlert } from '../../components/InlineAlert';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { ChartSkeletons } from './shared';
@@ -20,7 +21,7 @@ export function PerformanceTab() {
   return (
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} agent={agent} onAgentChange={setAgent} agentOptions={agentOptions} model={model} onModelChange={setModel} modelOptions={modelOptions} />
-      {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
+      {metricsQ.error instanceof Error && <InlineAlert>{metricsQ.error.message}</InlineAlert>}
       {metricsQ.isLoading && !metrics && <ChartSkeletons labels={['Loading waiting time', 'Loading throughput', 'Loading request latency', 'Loading error rate', 'Loading cache efficiency', 'Loading stop reasons']} />}
       {metrics && <><PerformanceSummaryCards metrics={metrics} /><PerformanceCharts metrics={metrics} /></>}
     </div>

@@ -4,60 +4,16 @@ import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import { TimeRangeControl } from '../components/TimeRangeControl';
-import { useTmux } from '../lib/useTmux';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
-import { useClickOutside } from '../lib/useClickOutside';
-import { cleanTitle, fuzzyMatch, shortPath } from '../lib/format';
+import { cleanTitle, fuzzyMatch } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { useProjects, useSessions } from '../lib/queries';
 import { projectIdentityIndex } from '../lib/projectIdentity';
-import { remoteLog } from '../lib/remoteLog';
-import type { TmuxClient } from '../lib/api';
-// ProjectDetail is mounted outside DashboardLayout, so we need to pull in
-// Dashboard.css explicitly to get the .oc-time-range / .oc-time-range-btn
-// styles used by the filter bar below.
-import './Dashboard.css';
+import { Button, ButtonGroup, SearchField } from '../components/Control';
+import styles from './ProjectDetail.module.css';
 
 const DEFAULT_TIME_RANGE = 168; // 7d
-
-// Popover shown when a non-local tmux has multiple attached clients and
-// the user must pick which one to switch. Extracted from ProjectDetail
-// to keep that component within the size budget.
-function TmuxClientPicker({
-  pickerRef,
-  pos,
-  clients,
-  onSelect,
-}: {
-  pickerRef: React.RefObject<HTMLDivElement | null>;
-  pos: { top: number; left: number };
-  clients: TmuxClient[];
-  onSelect: (tty: string) => void;
-}) {
-  return (
-    <div
-      ref={pickerRef}
-      className="tmux-client-popover"
-      style={{ top: pos.top, left: pos.left }}
-    >
-      <div className="tmux-client-picker-header">
-        <span>Select tmux client</span>
-      </div>
-      {clients.map((c) => (
-        <div
-          key={c.tty}
-          className="tmux-client-picker-item"
-          onClick={() => onSelect(c.tty)}
-        >
-          <span className="tmux-client-tty">{c.tty}</span>
-          <span className="tmux-client-session">{shortPath(c.session)}</span>
-          <span className="tmux-client-size">{c.width}&times;{c.height}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function ProjectDetail() {
   const { dir } = useParams();
@@ -65,11 +21,6 @@ export function ProjectDetail() {
   const projectName = directory?.split('/').pop() || 'Project';
   usePageTitle(projectName);
   const navigate = useNavigate();
-  const tmux = useTmux();
-  const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
-  const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
-  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
 
   // Filter state (mirrors the dashboard Sessions tab) — persisted in the
   // URL so refresh / back-forward keep the user's view. Default to 7d
@@ -96,8 +47,6 @@ export function ProjectDetail() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  useClickOutside(pickerRef, !!pendingTmuxSession, () => setPendingTmuxSession(null));
-
   // TanStack Query handles dedup, cancellation, stale-while-revalidate,
   // and visibility pausing automatically (Wave 3 / P4+P5 fix).
   // sinceHours produces a stable query key; the actual timestamp is
@@ -117,28 +66,6 @@ export function ProjectDetail() {
   const filteredSessions = q
     ? sessions.filter((s) => fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`))
     : sessions;
-
-  const handleTmuxSwitch = useCallback((anchor?: HTMLElement | null) => {
-    if (!matchingTmuxSession) return;
-    if (tmux.isLocal) {
-      tmux.switchSession(matchingTmuxSession.name).catch(err => remoteLog.error('tmux switch failed', err));
-      return;
-    }
-    if (tmux.clients.length === 1) {
-      tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty).catch(err => remoteLog.error('tmux switch failed', err));
-      return;
-    }
-
-    const rect = anchor?.getBoundingClientRect();
-    setPickerPos(rect ? { top: rect.bottom + 4, left: rect.right } : { top: 88, left: Math.min(window.innerWidth - 24, 420) });
-    setPendingTmuxSession(matchingTmuxSession.name);
-  }, [matchingTmuxSession, tmux]);
-
-  const handleClientSelect = useCallback((clientTTY: string) => {
-    if (!pendingTmuxSession) return;
-    tmux.switchSession(pendingTmuxSession, clientTTY).catch(err => remoteLog.error('tmux switch failed', err));
-    setPendingTmuxSession(null);
-  }, [pendingTmuxSession, tmux]);
 
   const handleOpenVSCode = useCallback(() => {
     if (!directory) return;
@@ -163,64 +90,44 @@ export function ProjectDetail() {
 
   return (
     <div>
-      {pendingTmuxSession && pickerPos && (
-        <TmuxClientPicker
-          pickerRef={pickerRef}
-          pos={pickerPos}
-          clients={tmux.clients}
-          onSelect={handleClientSelect}
-        />
-      )}
       <HeaderPortal>
-        {matchingTmuxSession && (
-          <button
-            type="button"
-            className="tmux-switch-btn"
-            onClick={(e) => handleTmuxSwitch(e.currentTarget)}
-            title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
-          >tmux</button>
-        )}
-        {directory && (
-          <button type="button" className="vscode-btn" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</button>
-        )}
-        {directory && launchAllowed && (
-          <button
-            type="button"
-            className="oc-time-range-btn"
-            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees${ownerQuery}`)}
-            title="View project worktrees"
-          >
-            Worktrees
-          </button>
-        )}
-        {directory && (
-          <button
-            type="button"
-            className="oc-time-range-btn"
-            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/settings`)}
-            title="Project settings"
-          >
-            Settings
-          </button>
-        )}
+        <ButtonGroup label="Project actions">
+          {directory && launchAllowed && (
+            <Button
+              type="button"
+              size="small"
+              onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees${ownerQuery}`)}
+              title="View project worktrees"
+            >
+              Worktrees
+            </Button>
+          )}
+          {directory && (
+            <Button
+              type="button"
+              size="small"
+              onClick={() => navigate(`/project/${encodeURIComponent(directory)}/settings`)}
+              title="Project settings"
+            >
+              Settings
+            </Button>
+          )}
+        </ButtonGroup>
       </HeaderPortal>
-      <div className="metrics-filters oc-projects-toolbar">
-        <input
-          type="search"
-          className="oc-project-search"
+      <div className={styles.searchBar}>
+        <SearchField className={styles.search}
           placeholder="Search sessions…"
           aria-label="Search sessions"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      <div className="oc-time-range">
+      <ButtonGroup label="Project session filters" className={styles.range}>
         <TimeRangeControl value={timeRange} onChange={setTimeRange} />
-        <button
-          className={`oc-time-range-btn${excludeArchived ? ' active' : ''}`}
+        <Button type="button" size="small" variant={excludeArchived ? 'accent' : 'default'} aria-pressed={excludeArchived}
           onClick={() => setExcludeArchived(!excludeArchived)}
-        >Exclude archived</button>
-      </div>
+        >Exclude archived</Button>
+      </ButtonGroup>
       <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
     </div>
   );

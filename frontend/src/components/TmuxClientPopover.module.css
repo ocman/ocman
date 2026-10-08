@@ -1,0 +1,7 @@
+.root { position: fixed; z-index: 200; transform: translateX(-100%); width: min(360px, calc(100vw - 24px)); left: clamp(min(372px, calc(100vw - 12px)), var(--tmux-anchor-x), calc(100vw - 12px)); background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 4px 16px rgb(0 0 0 / 40%); }
+.heading { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.clients { display: grid; gap: 6px; padding: 8px; }
+.client { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; width: 100%; height: auto; min-height: 38px; text-align: left; }
+.tty { color: var(--accent); }
+.session { color: var(--text-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.size { color: var(--text-dim); font-size: 10px; }

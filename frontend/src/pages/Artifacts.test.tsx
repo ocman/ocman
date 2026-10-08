@@ -76,6 +76,17 @@ describe('Artifacts page', () => {
     expect(await screen.findByText('Report new')).toBeInTheDocument();
   });
 
+  it('retries a failed read without showing a false empty state', async () => {
+    vi.mocked(artifactsApi.list).mockRejectedValueOnce(new Error('List unavailable')).mockResolvedValue({ artifacts: [artifact('recovered')], nextCursor: '' });
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('List unavailable');
+    expect(screen.queryByText('No artifacts yet.')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('link', { name: 'Report recovered' })).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(artifactsApi.list).toHaveBeenLastCalledWith({ directory: '', q: '' }, expect.anything());
+  });
+
   it('formats byte sizes', () => {
     expect(formatBytes(12)).toBe('12 B');
     expect(formatBytes(1536)).toBe('1.5 KiB');

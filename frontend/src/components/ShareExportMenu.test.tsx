@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShareLinkModal } from './ShareExportMenu';
 
@@ -20,6 +20,44 @@ describe('ShareLinkModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     copyToClipboard.mockResolvedValue(true);
+  });
+
+  it('uses the shared modal, header, buttons and read-only URL field', async () => {
+    vi.mocked(api.listShareLinks).mockResolvedValue([relayLink]);
+    render(<ShareLinkModal sessionId="s1" onClose={() => {}} />);
+    const dialog = screen.getByRole('dialog', { name: 'Public share link' });
+    expect(dialog).toHaveClass('oc-modal');
+    expect(within(dialog).getByTestId('modal-header')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Relay share URL')).toHaveClass('oc-field');
+    for (const button of within(dialog).getAllByRole('button')) expect(button).toHaveClass('oc-button');
+    expect(screen.getByRole('button', { name: 'Revoke' })).toHaveClass('oc-button--danger');
+  });
+
+  it('keeps a newly created link available when automatic copying fails', async () => {
+    vi.mocked(api.listShareLinks).mockResolvedValue([]);
+    vi.mocked(api.createShareLink).mockResolvedValue(relayLink);
+    copyToClipboard.mockResolvedValue(false);
+    render(<ShareLinkModal sessionId="s1" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }));
+    expect(await screen.findByLabelText('Relay share URL')).toHaveValue(relayLink.url);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not copy to clipboard');
+    expect(screen.getByTestId('share-copy-link')).not.toHaveTextContent('Copied!');
+  });
+
+  it('keeps the dialog open while a new encrypted link is being created', async () => {
+    let finish!: (value: typeof relayLink) => void;
+    vi.mocked(api.listShareLinks).mockResolvedValue([]);
+    vi.mocked(api.createShareLink).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const onClose = vi.fn();
+    render(<ShareLinkModal sessionId="s1" onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }));
+    expect(screen.getByRole('button', { name: 'Close share link dialog' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByTestId('share-link-backdrop'));
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { finish(relayLink); });
+    expect(screen.getByLabelText('Relay share URL')).toHaveValue(relayLink.url);
+    expect(screen.getByRole('button', { name: 'Close share link dialog' })).toBeEnabled();
   });
 
   // A failed publish is nearly always operational (relay down, over the

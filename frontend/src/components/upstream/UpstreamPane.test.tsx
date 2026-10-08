@@ -107,21 +107,34 @@ describe('UpstreamPane owner-scoped resources', () => {
       expect(gitHints.size).toBe(0);
     } finally { vi.useRealTimers(); }
   });
+  it('uses native state radios with arrow-key selection and a shared Mine checkbox', async () => {
+    const user = userEvent.setup();
+    render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
+    const open = screen.getByRole('radio', { name: 'open' });
+    expect(open).toHaveAttribute('type', 'radio');
+    await user.click(open);
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
+    expect(useUpstreamPreferences.getState().preferences.prState).toBe('closed');
+    await user.click(screen.getByRole('checkbox', { name: 'Mine' }));
+    expect(useUpstreamPreferences.getState().preferences.prMine).toBe(true);
+  });
+
   it('keeps the selected tab and independent filters across projects and pane reopening', async () => {
     const user = userEvent.setup();
     const { unmount } = render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
-    await user.click(screen.getByTestId('upstream-filter-closed'));
+    await user.click(screen.getByRole('radio', { name: 'closed' }));
     await user.click(screen.getByTestId('upstream-filter-mine'));
     await user.click(screen.getByRole('tab', { name: 'Issues' }));
-    await user.click(screen.getByTestId('upstream-filter-all'));
+    await user.click(screen.getByRole('radio', { name: 'all' }));
     unmount();
 
     render(<UpstreamPane directory="/other" remoteId="other-box" upstreams={upstreams} />);
     expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByTestId('upstream-filter-all')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'all' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Mine' })).not.toBeChecked();
     await user.click(screen.getByRole('tab', { name: 'PRs' }));
-    expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Mine' })).toBeChecked();
   });
 
@@ -129,14 +142,14 @@ describe('UpstreamPane owner-scoped resources', () => {
     const user = userEvent.setup();
     const { rerender } = render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
     await user.click(screen.getByRole('tab', { name: 'Issues' }));
-    await user.click(screen.getByTestId('upstream-filter-closed'));
+    await user.click(screen.getByRole('radio', { name: 'closed' }));
 
     rerender(<UpstreamPane directory="/unsupported" remoteId="box" upstreams={[]} />);
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
     rerender(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
     expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByTestId('upstream-filter-closed')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
   });
 
   it('hides pagination on the only page', () => {
@@ -179,7 +192,7 @@ describe('UpstreamPane owner-scoped resources', () => {
   it('activates with the keyboard and preserves each tab’s filters across remounts', async () => {
     const user = userEvent.setup();
     render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
-    await user.click(screen.getByTestId('upstream-filter-closed'));
+    await user.click(screen.getByRole('radio', { name: 'closed' }));
     await user.click(screen.getByRole('tab', { name: 'PRs' }));
     await user.keyboard('{ArrowRight}');
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Issues' })).toHaveFocus());
@@ -187,9 +200,9 @@ describe('UpstreamPane owner-scoped resources', () => {
     await user.keyboard('{Enter}');
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     expect(screen.getByRole('tabpanel', { name: 'Issues' })).toBeInTheDocument();
-    expect(screen.getByTestId('upstream-filter-open')).toHaveClass('active');
+    expect(screen.getByRole('radio', { name: 'open' })).toBeChecked();
     await user.click(screen.getByRole('tab', { name: 'PRs' }));
-    expect(screen.getByTestId('upstream-filter-closed')).toHaveClass('active');
+    expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
   });
 
   it('reuses forge identities when switching tabs', async () => {

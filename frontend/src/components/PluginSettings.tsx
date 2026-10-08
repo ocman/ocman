@@ -4,7 +4,7 @@ import type { HostCapabilityEntry } from '../lib/api.types';
 import { plugins, type PluginRegistration } from '../lib/plugins';
 import { SettingRow } from './SettingRow';
 import { PluginSettingsCard } from './PluginSettingsCard';
-import { Button, SelectField } from './Control';
+import { Button, ButtonGroup, SelectField } from './Control';
 
 export function PluginSettings() {
   const [hosts, setHosts] = useState<HostCapabilityEntry[] | null>(null);
@@ -21,12 +21,14 @@ export function PluginSettings() {
   const selected = owner || hosts?.[0]?.remoteId || '';
   const host = hosts?.find((entry) => entry.remoteId === selected);
   return <>
-    <SettingRow setting="plugin-owner">
+    <SettingRow setting="plugin-owner" block>
+      <ButtonGroup label="Plugin owner controls">
       <SelectField aria-label="Plugin owner" value={selected} onChange={(event) => setOwner(event.target.value)}>
         {hosts?.map((entry) => <option key={entry.remoteId} value={entry.remoteId}>{entry.remoteName}</option>)}
         {owner && !host && <option value={owner}>{owner} (unavailable)</option>}
       </SelectField>
-      <Button type="button" size="small" onClick={() => setRevision((n) => n + 1)}>Refresh owners</Button>
+      <Button type="button" onClick={() => setRevision((n) => n + 1)}>Refresh owners</Button>
+      </ButtonGroup>
     </SettingRow>
     {error ? <p role="alert">Could not load plugin owners. Refresh owners to retry.</p>
       : !hosts ? <p role="status">Loading plugin owners…</p>
@@ -61,9 +63,11 @@ function PluginCatalog({ owner }: { owner: string }) {
   }
 
   return <>
-    <SettingRow setting="plugin-discovery">
-      <Button type="button" size="small" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(true); }}>Rescan plugins</Button>
-      <Button type="button" size="small" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(); }}>Refresh health</Button>
+    <SettingRow setting="plugin-discovery" block>
+      <ButtonGroup label="Plugin discovery actions">
+      <Button type="button" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(true); }}>Rescan plugins</Button>
+      <Button type="button" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(); }}>Refresh health</Button>
+      </ButtonGroup>
     </SettingRow>
     {discovery.map((failure) => <p role="alert" key={failure.filename}>{failure.filename}: {failure.error}</p>)}
     {error ? <p role="alert">Could not load plugins for this owner. Refresh health to retry.</p>

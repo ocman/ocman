@@ -1,0 +1,6 @@
+.branch { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.table { min-width: 760px; }
+.actions { flex-wrap: nowrap; white-space: nowrap; }
+.chip { font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); color: var(--text-dim); background: var(--bg-card); }
+.path { display: flex; flex-direction: column; gap: 4px; }
+.project { color: var(--accent); font-weight: 500; }

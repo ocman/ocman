@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { loadLinkPreviewRules, saveLinkPreviewRules } from '../lib/linkPreviewRules';
 import type { LinkPreviewRule } from '../lib/linkPreviewRules';
 import { Button, TextField } from './Control';
+import { SettingDescription } from './SettingRow';
 
 export function LinkPreviewSettings() {
   const [rules, setRules] = useState<LinkPreviewRule[]>([]);
@@ -36,7 +37,7 @@ export function LinkPreviewSettings() {
   };
 
   return <div>
-    <p className="settings-row-desc">Match text in a conversation and show a link card below it. Use <code>$&amp;</code> for the whole match or <code>$1</code> for the first capture group. For example, <code>ABC-\d+</code> with <code>https://tracker.example.com/issues/$&amp;</code>.</p>
+    <SettingDescription>Match text in a conversation and show a link card below it. Use <code>$&amp;</code> for the whole match or <code>$1</code> for the first capture group. For example, <code>ABC-\d+</code> with <code>https://tracker.example.com/issues/$&amp;</code>.</SettingDescription>
     {rules.map((rule, index) => <div className="settings-prompt-template" key={index}>
       <label>Regular expression {index + 1}
         <TextField type="text" value={rule.pattern} onChange={(e) => update(index, 'pattern', e.target.value)} placeholder="ABC-\d+" spellCheck={false} />

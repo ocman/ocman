@@ -9,8 +9,13 @@ const FOCUSABLE = [
   'input:not([disabled])',
   'select:not([disabled])',
   'textarea:not([disabled])',
+  'summary',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
+
+function focusableItems(dialog: HTMLElement) {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((item) => !item.matches(':disabled'));
+}
 
 export function Modal({
   children,
@@ -63,7 +68,7 @@ export function Modal({
     for (let node: HTMLElement | null = backdrop; node && node !== document.body; node = node.parentElement) {
       for (const sibling of Array.from(node.parentElement?.children ?? [])) {
         if (sibling === node || !(sibling instanceof HTMLElement)) continue;
-        if (sibling.matches('.oc-prompt-toast-viewport') || sibling.querySelector('.oc-prompt-toast-viewport')) continue;
+        if (sibling.matches('[data-prompt-toast-viewport]') || sibling.querySelector('[data-prompt-toast-viewport]')) continue;
         if (sibling.hasAttribute('inert')) continue;
         sibling.setAttribute('inert', '');
         inerted.push(sibling);
@@ -73,7 +78,7 @@ export function Modal({
     if (!dialog.contains(document.activeElement)) {
       // `data-autofocus` marks the default control. React's autoFocus is
       // not enough: a closing sibling modal can restore focus after it.
-      (dialog.querySelector<HTMLElement>('[data-autofocus]') ?? dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus();
+      (dialog.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)') ?? focusableItems(dialog)[0] ?? dialog).focus();
     }
 
     return () => {
@@ -90,7 +95,7 @@ export function Modal({
     if (event.key !== 'Tab') return;
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+    const items = focusableItems(dialog);
     if (items.length === 0) {
       event.preventDefault();
       dialog.focus();

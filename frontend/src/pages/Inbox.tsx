@@ -6,6 +6,8 @@ import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { EmptyState } from '../components/EmptyState';
+import { InlineAlert } from '../components/InlineAlert';
+import { LoadingState } from '../components/LoadingState';
 import { ArchiveButton } from '../components/ArchiveButton';
 import { IconButton } from '../components/IconButton';
 import { useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, usePinInboxItem, useRespondInboxPermission } from '../lib/queries';
@@ -141,10 +143,10 @@ export function Inbox() {
   });
 
   return <main className="inbox-page">
-    {archive.isError && <p role="alert">Could not archive messages. Please try again.</p>}
-    {markRead.isError && <p role="alert">Could not mark the message as read. Open it again to retry.</p>}
-    {markUnread.isError && <p role="alert">Could not mark the message as unread. Please try again.</p>}
-    {pin.isError && <p role="alert">Could not update the pinned message. Please try again.</p>}
+    {archive.isError && <InlineAlert>Could not archive messages. Please try again.</InlineAlert>}
+    {markRead.isError && <InlineAlert>Could not mark the message as read. Open it again to retry.</InlineAlert>}
+    {markUnread.isError && <InlineAlert>Could not mark the message as unread. Please try again.</InlineAlert>}
+    {pin.isError && <InlineAlert>Could not update the pinned message. Please try again.</InlineAlert>}
     <div className={`inbox-workspace${activeItem ? ' has-active-message' : ''}`}>
       <section className="inbox-mailbox" aria-label="Inbox messages">
         <div className="inbox-filters">
@@ -164,8 +166,8 @@ export function Inbox() {
           </div>
         </div>
         <div className="inbox-list">
-          {inbox.isLoading && <p className="oc-empty" role="status">Loading inbox…</p>}
-          {inbox.isError && <p className="oc-empty" role="alert">Could not load inbox.</p>}
+          {inbox.isLoading && <LoadingState>Loading inbox…</LoadingState>}
+          {inbox.isError && <InlineAlert onRetry={() => { void inbox.refetch(); }} retrying={inbox.isFetching}>Could not load inbox.</InlineAlert>}
           {inbox.isSuccess && !visibleItems.length && <EmptyState>{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</EmptyState>}
           {visibleItems.map((item) => <article key={itemKey(item)} className={`inbox-message${item.readAt ? '' : ' unread'}${activeKey === itemKey(item) ? ' active' : ''}`}>
             {/* The category icon doubles as the selection checkbox: clicking it

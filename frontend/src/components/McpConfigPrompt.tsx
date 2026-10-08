@@ -3,7 +3,8 @@ import * as Toast from '@radix-ui/react-toast';
 import { api } from '../lib/api';
 import type { McpConfigStatus } from '../lib/api.types';
 import { remoteLog } from '../lib/remoteLog';
-import './PromptToastNotify.css';
+import { SubmitButton } from './Control';
+import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
 
 // Dismissal is persisted per *endpoint URL*, so moving the MCP port
 // re-prompts once (the stored config is then stale) while a user who
@@ -79,16 +80,14 @@ export function McpConfigPrompt() {
   if (installed !== null) {
     return (
       <Toast.Provider swipeDirection="right" duration={Infinity}>
-        <Toast.Root className="oc-prompt-toast" open duration={Infinity}>
-          <Toast.Close asChild>
-            <button type="button" className="oc-prompt-toast-close" aria-label="Dismiss">×</button>
-          </Toast.Close>
-          <Toast.Title className="oc-prompt-toast-heading">ocman MCP installed</Toast.Title>
-          <Toast.Description className="oc-prompt-toast-body" data-testid="mcp-config-installed">
+        <PromptToast open duration={Infinity} onOpenChange={(open) => { if (!open) { dismiss(); setInstalled(null); } }}>
+          <PromptToastClose />
+          <PromptToastHeading>ocman MCP installed</PromptToastHeading>
+          <PromptToastBody data-testid="mcp-config-installed">
             Restart OpenCode to load it. {installed}
-          </Toast.Description>
-        </Toast.Root>
-        <Toast.Viewport className="oc-prompt-toast-viewport" />
+          </PromptToastBody>
+        </PromptToast>
+        <PromptToastViewport />
       </Toast.Provider>
     );
   }
@@ -96,44 +95,39 @@ export function McpConfigPrompt() {
   const stale = !!status.currentUrl;
   return (
     <Toast.Provider swipeDirection="right" duration={Infinity}>
-      <Toast.Root
-        className="oc-prompt-toast"
+      <PromptToast
         data-kind="permission"
         open
         onOpenChange={(open) => { if (!open) dismiss(); }}
         duration={Infinity}
       >
-        <Toast.Close asChild>
-          <button type="button" className="oc-prompt-toast-close" aria-label="Not now">×</button>
-        </Toast.Close>
-        <Toast.Title className="oc-prompt-toast-heading">
+        <PromptToastClose label="Not now" />
+        <PromptToastHeading>
           {status.unavailable ? 'ocman MCP unavailable' : stale ? 'ocman MCP is out of date' : 'ocman MCP not configured'}
-        </Toast.Title>
-        <Toast.Description className="oc-prompt-toast-body" data-testid="mcp-config-prompt">
+        </PromptToastHeading>
+        <PromptToastBody data-testid="mcp-config-prompt">
           {status.unavailable ? status.reason : status.editable
             ? <>Register <code>{status.wantUrl}</code> in {status.path}?</>
             : <>Add <code>{status.wantUrl}</code> to {status.path} by hand — {status.reason}</>}
-        </Toast.Description>
+        </PromptToastBody>
         {error && (
-          <Toast.Description className="oc-prompt-toast-body" data-testid="mcp-config-error">
+          <PromptToastBody data-testid="mcp-config-error">
             {error}
-          </Toast.Description>
+          </PromptToastBody>
         )}
         {status.editable && (
-          <div className="oc-prompt-toast-actions">
-            <Toast.Action asChild altText="Install the ocman MCP server" onClick={(e) => {
-              // Keep the toast open so the result is visible.
-              e.preventDefault();
-              void install();
-            }}>
-              <button type="button" className="oc-prompt-toast-open" disabled={installing}>
-                {installing ? 'Installing…' : 'Install'}
-              </button>
+          <PromptToastActions label="MCP setup actions">
+            <Toast.Action asChild altText="Install the ocman MCP server">
+              <SubmitButton type="button" size="small" variant="accent" pending={installing} pendingLabel="Installing…" onClick={(e) => {
+                // Keep the toast open so the result is visible.
+                e.preventDefault();
+                return install();
+              }}>Install</SubmitButton>
             </Toast.Action>
-          </div>
+          </PromptToastActions>
         )}
-      </Toast.Root>
-      <Toast.Viewport className="oc-prompt-toast-viewport" />
+      </PromptToast>
+      <PromptToastViewport />
     </Toast.Provider>
   );
 }

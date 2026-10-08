@@ -33,6 +33,14 @@ Platforms are wired through a common `Platform` adapter interface
 new adapter + registry entry; see
 `spec/multi-agent-support/architecture.md` for the design.
 
+Project quick settings persist startup defaults under an owner + folded project
+root in the hub's `state.db`. The default permission mode selects inherited
+permissions, Plan only, Auto-accept edits, or YOLO; saving YOLO requires browser
+confirmation. `/api/sessions/start` reads it after resolving the owner and passes
+the rules to `sessionsvc.CreateConfigured` or `Host.CreateWorktreeSession`, so
+permissions are applied before publication and the first prompt. Existing
+sessions keep their current rules.
+
 A new conversation is a client-only route (`/session/new?dir=…&remoteId=…
 &platform=…`) until its first prompt: no OpenCode session, worktree or
 placeholder exists before that, so the machine and target can still change
@@ -99,8 +107,8 @@ prevents duplicate first submissions across tabs and reloads. Tests get a fresh
 fake IndexedDB per case (`vitest.setup.ts`).
 The composer and its machine/target controls stay locked while a start is pending.
 The owner then
-names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) titles the
-bare prompt and the title is slugged into the branch (`git branch -m`, the path
+names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) names the
+delimited task under branch-naming instructions and the title is slugged into the branch (`git branch -m`, the path
 stays). The session keeps OpenCode's default title so OpenCode titles it from
 the first message; the branch name is never used as the title. A naming
 failure keeps the provisional name. The naming session is titled
@@ -229,8 +237,12 @@ directory; the menu offers "new worktree" instead, which checks out
 the PR's source branch into a fresh worktree (or fetches the PR head
 ref into `ocman/pr-<n>` for cross-fork PRs after explicit
 confirmation). A PR row fetches its CI checks once it is visible and polls
-every 5s until every check has finished (a rate-limited response never
-counts); the settled result is cached in localStorage by `host/repo@sha`
+every 5s until every check has finished. Empty results settle after three
+successful responses spaced 30s apart; errors back off from 5s to 60s,
+respecting rate-limit retry times across viewport changes. Polling pauses while
+the document is hidden.
+A rate-limited response never counts as settled. The settled result is cached
+in localStorage by `host/repo@sha`
 (newest 1000, `frontend/src/lib/prChecksCache.ts`) and the pane's refresh
 button clears it. The prompt sent to the new session is rendered from a
 user-customizable template under Settings → "PR & Issue templates",

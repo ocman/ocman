@@ -18,7 +18,7 @@ import { test, expect } from './fixtures';
 test('bypasses auth gate when authRequired=false', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
   await expect(page.getByRole('button', { name: 'Collapse navigation' })).toBeVisible();
-  await expect(page.locator('.oc-login')).toHaveCount(0);
+  await expect(page.getByRole('form', { name: 'Sign in' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Sessions' })).toBeVisible();
 });
 
@@ -40,22 +40,22 @@ test.describe('auth required', () => {
 
   test('shows login page when unauthenticated', async ({ mockedPage: page }) => {
     await page.goto('/');
-    await expect(page.locator('.oc-login-card')).toBeVisible();
-    await expect(page.locator('h2.oc-login-title')).toContainText('ocman');
-    await expect(page.locator('input[type="password"]')).toBeVisible();
-    await expect(page.locator('button.oc-login-submit')).toBeVisible();
+    await expect(page.getByRole('form', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'ocman' })).toBeVisible();
+    await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Sessions' })).toHaveCount(0);
   });
 
   test('submit button is disabled when password field is empty', async ({ mockedPage: page }) => {
     await page.goto('/');
-    await expect(page.locator('button.oc-login-submit')).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeDisabled();
   });
 
   test('submit button enables when password is typed', async ({ mockedPage: page }) => {
     await page.goto('/');
-    await page.fill('input[type="password"]', 'hunter2');
-    await expect(page.locator('button.oc-login-submit')).toBeEnabled();
+    await page.getByLabel('Password', { exact: true }).fill('hunter2');
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
   });
 
   test('successful login navigates to the dashboard', async ({ mockedPage: page }) => {
@@ -82,12 +82,12 @@ test.describe('auth required', () => {
     );
 
     await page.goto('/sessions');
-    await page.fill('input[type="password"]', 'correctpassword');
+    await page.getByLabel('Password', { exact: true }).fill('correctpassword');
     loginDone = true;
-    await page.click('button.oc-login-submit');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // The login form should disappear and the dashboard should appear
-    await expect(page.locator('.oc-login')).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.getByRole('form', { name: 'Sign in' })).toHaveCount(0, { timeout: 5_000 });
     await expect(page.getByRole('link', { name: 'Sessions' })).toBeVisible();
   });
 
@@ -101,12 +101,12 @@ test.describe('auth required', () => {
     );
 
     await page.goto('/');
-    await page.fill('input[type="password"]', 'wrongpassword');
-    await page.click('button.oc-login-submit');
+    await page.getByLabel('Password', { exact: true }).fill('wrongpassword');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
-    await expect(page.locator('.oc-error-banner')).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 3_000 });
     // Still on the login page
-    await expect(page.locator('.oc-login-card')).toBeVisible();
+    await expect(page.getByRole('form', { name: 'Sign in' })).toBeVisible();
   });
 
   test('sign-out button appears in settings tab when authRequired=true and authenticated', async ({
@@ -155,6 +155,6 @@ test.describe('auth required', () => {
     await expect(accountNav).toBeVisible();
     await accountNav.click();
     await page.getByRole('button', { name: 'Sign out' }).click();
-    await expect(page.locator('.oc-login-card')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('form', { name: 'Sign in' })).toBeVisible({ timeout: 5_000 });
   });
 });
