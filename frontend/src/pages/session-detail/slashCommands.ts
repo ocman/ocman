@@ -62,8 +62,12 @@ export interface SlashCommand {
 }
 
 const archive: SlashCommand = {
-  run: async ({ session, recentSessionsRef, archiveSession, navigateToSession, navigate, loadNavigationSessions, isCurrent }) => {
-    await loadNavigationSessions?.();
+  run: async ({ session, recentSessionsRef, archiveSession, navigateToSession, navigate, loadNavigationSessions, isCurrent, setRestartToastMessage }) => {
+    try { await loadNavigationSessions?.(); }
+    catch (error) {
+      if (isCurrent?.() !== false) setRestartToastMessage(`Could not load session navigation: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return;
+    }
     if (isCurrent?.() === false) return;
     // Same choice as the sidebar's archive button, among the rows it shows.
     const nextSession = pickNextSessionAfterArchive(

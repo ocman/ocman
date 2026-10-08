@@ -66,7 +66,7 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
   const [error, setError] = useState('');
   const mounted = useRef(true);
   const refreshRequest = useRef<AbortController | null>(null);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; refreshRequest.current?.abort(); }; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; refreshRequest.current?.abort(); refreshRequest.current = null; }; }, []);
   useEffect(() => {
     if (!visible) { refreshRequest.current?.abort(); refreshRequest.current = null; }
   }, [visible]);

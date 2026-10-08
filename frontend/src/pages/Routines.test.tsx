@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
+import { StrictMode } from 'react';
 import { formatDateTimeShort } from '../lib/format';
 import type { RoutineRun, WebhookInbox } from '../lib/api.types';
 
@@ -45,6 +46,14 @@ describe('Routines', () => {
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('replays the initial history request after StrictMode aborts the first', async () => {
+    vi.mocked(api.routines.history).mockReturnValueOnce(new Promise(() => {}));
+    render(<StrictMode><MemoryRouter><RoutineHistoryDrawer routine={routine} refreshKey={0} onClose={vi.fn()} /></MemoryRouter></StrictMode>);
+    expect(await screen.findByText('manual')).toBeInTheDocument();
+    expect(api.routines.history).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.routines.history).mock.calls[0][2]?.aborted).toBe(true);
+  });
 
   it('resumes history independently when the inbox-list refresh fails', async () => {
     let hidden = false;

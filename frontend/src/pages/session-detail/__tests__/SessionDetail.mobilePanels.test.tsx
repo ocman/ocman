@@ -43,6 +43,24 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it.each(['archive', 'next'] as const)('reports a failed cold navigation read for %s without redirecting', async (action) => {
+    vi.stubGlobal('innerWidth', 390);
+    try {
+      const { store } = renderSessionPage({ sessionId: 'sess_1', storeOverrides: { getSessions: vi.fn().mockRejectedValue(new Error('offline')) } });
+      const input = await screen.findByRole('textbox');
+      if (action === 'archive') {
+        await userEvent.type(input, '/archive');
+        fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      } else {
+        const dispatcher = renderHook(() => useShortcutDispatcher());
+        input.blur();
+        fireEvent.keyDown(window, { key: 'j', code: 'KeyJ', altKey: true });
+        dispatcher.unmount();
+      }
+      expect(await screen.findByText('Could not load session navigation: offline')).toBeInTheDocument();
+      expect(store.archiveSession).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
   it.each(['archive', 'next'] as const)('loads cold-mobile navigation candidates on demand for %s', async (action) => {
     vi.stubGlobal('innerWidth', 390);
     useUiStore.setState({ sidebarView: 'recent' });
