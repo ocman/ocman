@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { maintenance, type MaintenanceStatus } from '../lib/maintenance';
 import { SubmitButton } from './Control';
 import { SettingRow } from './SettingRow';
@@ -23,13 +23,17 @@ export function MaintenanceSettings() {
   const visible = useDocumentVisible();
   const [status, setStatus] = useState<MaintenanceStatus | null>(null);
   const [error, setError] = useState('');
-  const refresh = useCallback((signal?: AbortSignal) => maintenance.status(signal).then((next) => {
-    if (signal?.aborted) return;
-    setStatus(next);
-    setError('');
-  }).catch((err: unknown) => {
-    if (!signal?.aborted) setError(err instanceof Error ? err.message : String(err));
-  }), []);
+  const generation = useRef(0);
+  const refresh = useCallback((signal?: AbortSignal) => {
+    const current = ++generation.current;
+    return maintenance.status(signal).then((next) => {
+      if (signal?.aborted || current !== generation.current) return;
+      setStatus(next);
+      setError('');
+    }).catch((err: unknown) => {
+      if (!signal?.aborted && current === generation.current) setError(err instanceof Error ? err.message : String(err));
+    });
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -49,7 +53,9 @@ export function MaintenanceSettings() {
   async function act(question: string, action: () => Promise<MaintenanceStatus>) {
     if (!window.confirm(question)) return;
     try {
-      setStatus(await action());
+      const next = await action();
+      generation.current += 1;
+      setStatus(next);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

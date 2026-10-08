@@ -36,6 +36,27 @@ afterEach(() => {
 });
 
 describe('MaintenanceSettings', () => {
+  it('ignores an idle resume read after cleanup starts and keeps polling', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    let finish!: (value: MaintenanceStatus) => void;
+    m.status.mockResolvedValueOnce(status())
+      .mockReturnValueOnce(new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValue(status({}, { job: 'cleanup', running: true }));
+    m.cleanup.mockResolvedValue(status({}, { job: 'cleanup', running: true }));
+    const view = render(<MaintenanceSettings />);
+    try {
+      await act(async () => {});
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clean up' })); });
+      await act(async () => { finish(status()); });
+      expect(screen.getByRole('button', { name: 'Clean up' })).toBeDisabled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(m.status).toHaveBeenCalledTimes(3);
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
   it('ignores a pre-hide poll that arrives after fresh completion on resume', async () => {
     vi.useFakeTimers();
     let hidden = false;

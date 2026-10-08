@@ -46,14 +46,24 @@ for (const width of [1280, 390]) {
 
   test(`backend notification retries the connection at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
-    let offline = true;
-    await page.route('/api/**', route => offline && !route.request().url().endsWith('/api/auth/me')
-      ? route.fulfill({ status: 502, json: { error: 'Backend gateway unavailable' } })
-      : route.fallback());
+    // Keep automatic reads offline until the actual gesture, otherwise a
+    // background success can dismiss the toast before Playwright clicks it.
+    await page.addInitScript(() => {
+      document.addEventListener('click', event => {
+        if ((event.target as Element).closest('[data-testid="backend-status-banner"] button')) {
+          document.documentElement.dataset.backendRetry = 'clicked';
+        }
+      }, true);
+    });
+    await page.route('/api/**', async route => {
+      const retried = await page.evaluate(() => document.documentElement.dataset.backendRetry === 'clicked');
+      return !retried && !route.request().url().endsWith('/api/auth/me')
+        ? route.fulfill({ status: 502, json: { error: 'Backend gateway unavailable' } })
+        : route.fallback();
+    });
     await page.goto('/sessions');
     const banner = page.getByTestId('backend-status-banner');
     await expect(banner).toBeVisible();
-    offline = false;
     await banner.getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(banner).toBeHidden();
   });

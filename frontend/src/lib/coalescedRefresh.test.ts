@@ -1,7 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { withDeadline } from './coalescedRefresh';
 
 describe('withDeadline', () => {
+  it('rejects a stalled operation even when it ignores cancellation', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal!: AbortSignal;
+      const pending = withDeadline(15_000, (s) => { signal = s; return new Promise(() => {}); });
+      const rejected = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+      await vi.advanceTimersByTimeAsync(15_000);
+      await rejected;
+      expect(signal.aborted).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
   it('forwards a parent abort, including one that already happened', async () => {
     const parent = new AbortController();
     const seen: AbortSignal[] = [];

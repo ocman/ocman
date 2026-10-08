@@ -46,6 +46,24 @@ beforeEach(() => {
 });
 
 describe('SessionTerminalDock gating', () => {
+  it('ignores an older empty discovery after resume finds an existing shell', async () => {
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    let finish!: (value: { windows: TermWindow[] }) => void;
+    listWindows.mockResolvedValueOnce({ windows: [{ name: 'existing', title: 'shell' }] })
+      .mockReturnValueOnce(new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValue({ windows: [{ name: 'existing', title: 'shell' }] });
+    const view = render(<SessionTerminalDock tmuxAvailable directory={DIR} />);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { finish({ windows: [] }); });
+      expect(screen.getByRole('tab', { name: 'shell' })).toBeInTheDocument();
+      expect(createWindow).not.toHaveBeenCalled();
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
   it('requires fresh discovery when reopened after creation finishes while closed', async () => {
     let finishCreate!: (value: { window: string }) => void;
     let finishDiscovery!: (value: { windows: TermWindow[] }) => void;

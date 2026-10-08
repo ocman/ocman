@@ -28,7 +28,7 @@ it('docks a terminal below a new conversation, on its directory and machine', as
   await act(async () => page.navigate('/session/new?dir=%2Frepo&remoteId=box'));
   expect(await screen.findByTestId('new-conversation')).toBeInTheDocument();
   expect(screen.getByTestId('terminal-dock')).toBeInTheDocument();
-  await waitFor(() => expect(term.listWindows).toHaveBeenCalledWith('/repo', 'box'));
+  await waitFor(() => expect(term.listWindows).toHaveBeenCalledWith('/repo', 'box', expect.any(AbortSignal)));
 });
 
 it('drops a pending terminal from the previous machine after a machine switch', async () => {

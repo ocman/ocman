@@ -97,29 +97,38 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     }
     const generation = ++discoveryGeneration.current;
     let cancelled = false;
+    let request = 0;
+    let controller: AbortController | undefined;
     const refresh = async () => {
       if (document.hidden) return;
+      const current = ++request;
+      controller?.abort();
+      controller = new AbortController();
       try {
-        const { windows: live } = await api.term.listWindows(directory, remoteId);
-        if (cancelled) return;
+        const { windows: live } = await api.term.listWindows(directory, remoteId, controller.signal);
+        if (cancelled || current !== request || document.hidden) return;
         setWindows(live);
         setDiscoveredGeneration(generation);
         setActive((prev) =>
           prev && live.some((w) => w.name === prev) ? prev : live[0]?.name ?? null,
         );
       } catch (e) {
-        if (!cancelled) remoteLog.error('terminal: listing windows failed', e);
+        if (!cancelled && current === request) remoteLog.error('terminal: listing windows failed', e);
       }
     };
     void refresh();
     // Poll for live titles only while the panel is open (avoids work
     // when the terminal isn't visible).
     const id = open ? window.setInterval(refresh, TITLE_POLL_MS) : undefined;
-    const onVisibility = () => { if (!document.hidden) void refresh(); };
+    const onVisibility = () => {
+      if (document.hidden) { request += 1; controller?.abort(); setDiscoveredGeneration(null); }
+      else void refresh();
+    };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       cancelled = true;
+      controller?.abort();
       discoveryGeneration.current += 1;
       if (id !== undefined) window.clearInterval(id);
     };
@@ -131,7 +140,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
   // the panel stuck on "Loading…".
   const creatingRef = useRef(false);
   useEffect(() => {
-    if (!open || !directory || !tmuxAvailable || discoveredGeneration !== discoveryGeneration.current || windows.length > 0 || creatingRef.current) return;
+    if (!open || document.hidden || !directory || !tmuxAvailable || discoveredGeneration !== discoveryGeneration.current || windows.length > 0 || creatingRef.current) return;
     let cancelled = false;
     (async () => {
       creatingRef.current = true;

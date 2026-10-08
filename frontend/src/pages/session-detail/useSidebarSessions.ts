@@ -12,6 +12,7 @@ import { useActivityScope } from '../../lib/activityScopes';
 import { useSidebarFilter } from './useSidebarFilter';
 import { flushSync } from 'react-dom';
 import { eventRefresh } from '../../lib/eventRefresh';
+import { withDeadline } from '../../lib/coalescedRefresh';
 
 /**
  * Reconciliation backstop for events missed while disconnected. Normal
@@ -142,7 +143,7 @@ export function useSidebarSessions({
       if (force && !recentRequest.current.force) return recentRequest.current.promise.catch(() => {}).then(() => loadRecentSessions(signal, true));
       return recentRequest.current.promise;
     }
-    const promise = (async () => {
+    const promise = withDeadline(15_000, async (signal) => {
       const requestStart = useApiStore.getState().recentSessions;
       const pendingReads = useApiStore.getState().pendingInterruptionReads;
       try {
@@ -194,7 +195,7 @@ export function useSidebarSessions({
         if (e instanceof DOMException && e.name === 'AbortError') return;
         throw e;
       }
-    })();
+    }, signal);
     const request = { key, signal, force, promise };
     recentRequest.current = request;
     void promise.finally(() => { if (recentRequest.current === request) recentRequest.current = null; }).catch(() => {});

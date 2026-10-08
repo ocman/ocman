@@ -48,11 +48,17 @@ export async function withDeadline<T>(ms: number, run: (signal: AbortSignal) => 
   const abort = () => controller.abort();
   if (parent?.aborted) abort();
   parent?.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(abort, ms);
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new DOMException('Request timed out. Try again.', 'TimeoutError'));
+      abort();
+    }, ms);
+  });
   try {
-    return await run(controller.signal);
+    return await Promise.race([run(controller.signal), timeout]);
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer!);
     parent?.removeEventListener('abort', abort);
   }
 }

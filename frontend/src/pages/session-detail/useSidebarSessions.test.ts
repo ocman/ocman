@@ -44,6 +44,39 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('recovers on resume after a stalled pre-hide read times out', async () => {
+    vi.useFakeTimers();
+    const row = { id: 'fresh', platform: 'opencode', status: 'done', timeUpdated: Date.now() } as Session;
+    const getSessions = vi.fn().mockReturnValueOnce(new Promise(() => {})).mockResolvedValue([row]);
+    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    const options = { id: undefined, sessionId: 'open', collapsedProjects: [], sidebarView: 'recent' as const,
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
+    const view = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: true } });
+    try {
+      view.rerender({ enabled: false });
+      view.rerender({ enabled: true });
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(getSessions).toHaveBeenCalledTimes(2);
+      expect(view.result.current.recentSessions.map(s => s.id)).toEqual(['fresh']);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+  it.each(['list', 'fallback'])('surfaces forced %s timeouts and releases the request slot', async (read) => {
+    vi.useFakeTimers();
+    const getSessions = vi.fn().mockResolvedValue([]);
+    const getSession = vi.fn().mockResolvedValue({ session: { id: 'outside' } });
+    (read === 'list' ? getSessions : getSession).mockReturnValueOnce(new Promise(() => {}));
+    useApiStore.setState({ getSessions, getSession, recentSessions: [], recentSessionsHash: '' });
+    const view = renderHook(() => useSidebarSessions({ enabled: false, id: read === 'fallback' ? 'outside' : undefined, sessionId: undefined,
+      collapsedProjects: [], sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    try {
+      const pending = view.result.current.loadRecentSessions(undefined, true);
+      const rejected = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      await rejected;
+      await act(async () => { await view.result.current.loadRecentSessions(undefined, true); });
+      expect(getSessions).toHaveBeenCalledTimes(2);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
   it('does not start an open-session fallback after the sidebar closes mid-read', async () => {
     let finish!: (rows: Session[]) => void;
     const getSessions = vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; }));
