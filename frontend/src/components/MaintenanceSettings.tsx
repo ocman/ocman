@@ -25,8 +25,9 @@ export function MaintenanceSettings() {
   const [status, setStatus] = useState<MaintenanceStatus | null>(null);
   const [error, setError] = useState('');
   const generation = useRef(0);
+  const visibilityController = useRef<AbortController | null>(null);
   const inFlight = useRef<{ signal?: AbortSignal; promise: Promise<void> } | null>(null);
-  const refresh = useCallback((signal?: AbortSignal) => {
+  const refresh = useCallback((signal = visibilityController.current?.signal) => {
     if (inFlight.current && !inFlight.current.signal?.aborted) return inFlight.current.promise;
     const current = ++generation.current;
     const promise = withDeadline(15_000, (readSignal) => maintenance.status(readSignal), signal).then((next) => {
@@ -45,6 +46,7 @@ export function MaintenanceSettings() {
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
+    visibilityController.current = controller;
     void refresh(controller.signal);
     return () => controller.abort();
   }, [refresh, visible]);

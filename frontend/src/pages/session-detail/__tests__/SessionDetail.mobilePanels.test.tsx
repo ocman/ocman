@@ -45,6 +45,25 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it.each(['j', 'k'])('does not navigate after leaving during a pending Alt+%s read', async (key) => {
+    vi.stubGlobal('innerWidth', 390);
+    const current = makeSession({ id: 'sess_1' });
+    const rows = [makeSession({ id: 'previous' }), current, makeSession({ id: 'next' })];
+    const getSessions = vi.fn((_params, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+    }));
+    const page = renderSessionPage({ sessionId: current.id, storeOverrides: { getSessions, recentSessions: rows } });
+    const dispatcher = renderHook(() => useShortcutDispatcher());
+    try {
+      const input = await screen.findByRole('textbox');
+      input.blur();
+      fireEvent.keyDown(window, { key, code: `Key${key.toUpperCase()}`, altKey: true });
+      expect(getSessions).toHaveBeenCalledTimes(1);
+      await act(async () => { page.navigate('/outside'); await flushPromises(); });
+      expect(screen.queryByTestId('session-layout')).not.toBeInTheDocument();
+      expect(vi.mocked(page.api.session).mock.calls.some(([id]) => id === 'previous' || id === 'next')).toBe(false);
+    } finally { dispatcher.unmount(); page.result.unmount(); vi.unstubAllGlobals(); }
+  });
   it('keeps branch-only search and archive candidates when the mobile drawer closes', async () => {
     vi.stubGlobal('innerWidth', 390);
     useUiStore.setState({ sidebarView: 'recent' });

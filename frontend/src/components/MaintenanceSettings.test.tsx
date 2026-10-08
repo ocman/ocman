@@ -36,6 +36,26 @@ afterEach(() => {
 });
 
 describe('MaintenanceSettings', () => {
+  it('cancels a manual refresh on hide and reads fresh running status on resume', async () => {
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    let finish!: (value: MaintenanceStatus) => void;
+    m.status.mockResolvedValueOnce(status())
+      .mockReturnValueOnce(new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValue(status({}, { job: 'cleanup', running: true }));
+    const view = render(<MaintenanceSettings />);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      const signal = m.status.mock.calls[1][0] as AbortSignal;
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(signal.aborted).toBe(true);
+      expect(m.status).toHaveBeenCalledTimes(3);
+      await act(async () => { finish(status()); });
+      expect(screen.getByRole('button', { name: 'Clean up' })).toBeDisabled();
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
   it('allows status reads slower than the poll interval to finish', async () => {
     vi.useFakeTimers();
     let finish!: (value: MaintenanceStatus) => void;
