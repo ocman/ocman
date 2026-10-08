@@ -42,9 +42,11 @@ for (const width of [1280, 390]) {
     await expect(list.getByRole('listitem')).toHaveCount(2);
     await expect(list.getByRole('listitem').first()).toContainText(second);
     await page.getByRole('button', { name: 'Clear list', exact: true }).click();
+    await expect.poll(() => writes.length).toBe(3);
+    await expect(page.getByRole('combobox', { name: 'Add model', exact: true })).toBeEnabled();
+    await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByTestId('project-models-empty')).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Disable fallthrough', exact: true })).toBeDisabled();
-    expect(writes.at(-1)!.models).toEqual([]);
-    expect(writes.at(-1)!.off).toBe(true);
+    expect(writes[2]).toEqual({ directory: MOCK_PROJECT.directory, models: [], off: true });
   });
 }

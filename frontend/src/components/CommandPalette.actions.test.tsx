@@ -84,12 +84,68 @@ describe('plugin command contributions', () => {
     expect(useUiStore.getState().worktreeFormRemoteId).toBe('B');
     useUiStore.getState().closeWorktreeForm();
   });
-  it('does not open a local worktree while the active session owner is unresolved', async () => {
+  it('resolves an uncached session on its compound platform before opening a worktree', async () => {
+    mocks.launchAllowed = true;
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.pathname === '/api/session/old') {
+        expect(url.searchParams.get('platform')).toBe('r-B:opencode');
+        return json({ session: { id: 'old', directory: '/repo', remoteId: 'B', platform: 'r-B:opencode' }, messages: [], parts: [] });
+      }
+      if (url.pathname === '/api/plugins/actions') return json([]);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    renderPalette('/session/old?platform=r-B%3Aopencode');
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '>wt' } });
+    fireEvent.click(await screen.findByRole('option', { name: /wt/ }));
+    await waitFor(() => expect(useUiStore.getState().worktreeFormOpen).toBe(true));
+    expect(useUiStore.getState().worktreeFormProject).toBe('/repo');
+    expect(useUiStore.getState().worktreeFormRemoteId).toBe('B');
+    useUiStore.getState().closeWorktreeForm();
+  });
+  it('uses the directory and owner of a client-only new conversation', async () => {
+    mocks.launchAllowed = true;
+    renderPalette('/session/new?dir=%2Frepo&remoteId=B');
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '>wt' } });
+    fireEvent.click(await screen.findByRole('option', { name: /wt/ }));
+    expect(useUiStore.getState().worktreeFormProject).toBe('/repo');
+    expect(useUiStore.getState().worktreeFormRemoteId).toBe('B');
+    expect(useUiStore.getState().worktreeFormOpen).toBe(true);
+    useUiStore.getState().closeWorktreeForm();
+  });
+  it.each(['failure', 'missing'])('shows %s lookup results without opening a local worktree', async (outcome) => {
     mocks.launchAllowed = true;
     useUiStore.getState().closeWorktreeForm();
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).includes('/api/session/')) {
+        if (outcome === 'failure') throw new Error('Owner offline');
+        return json({ session: null, messages: [], parts: [] });
+      }
+      return json([]);
+    });
     renderPalette('/session/missing?platform=r-B%3Aopencode');
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '>wt' } });
     fireEvent.click(await screen.findByRole('option', { name: /wt/ }));
+    expect(useUiStore.getState().worktreeFormOpen).toBe(false);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not resolve worktree project');
+  });
+  it('ignores a worktree target lookup after the route changes', async () => {
+    mocks.launchAllowed = true;
+    let resolve!: (response: Response) => void;
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.pathname === '/api/session/old' && url.searchParams.has('platform')) {
+        return new Promise<Response>((done) => { resolve = done; });
+      }
+      if (url.pathname === '/api/session/old') return json({ session: null });
+      return json([]);
+    });
+    renderPalette('/session/old?platform=r-B%3Aopencode');
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '>wt' } });
+    fireEvent.click(await screen.findByRole('option', { name: /wt/ }));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
+    fireEvent.click(screen.getByRole('button', { name: 'Change context' }));
+    await act(async () => resolve(json({ session: { id: 'old', directory: '/repo', remoteId: 'B' } })));
     expect(useUiStore.getState().worktreeFormOpen).toBe(false);
   });
   it('discovers, filters, confirms with the same operation, and renders text, links and owner-routed downloads', async () => {
