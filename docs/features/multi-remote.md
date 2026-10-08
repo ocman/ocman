@@ -120,12 +120,13 @@ list with its host badge.
   instance is relaunched on the machine that owns the session, never on
   another machine that happens to have the same directory.
 
-New conversations appear in the sidebar's **Drafts** section immediately. You
-can prepare several, switch between them, and discard one with its close button.
+New conversations appear alongside sessions in the sidebar immediately, at the
+top of their project in grouped view. You can prepare several, switch between
+them, and discard one with its archive-style button.
 Their text, machine, target, model and agent selections are saved separately in
 this browser and survive a reload. Preparing a draft does not start an agent or
 create a worktree. Sending its first prompt creates the real session and removes
-that draft from the section, even if you have switched to another draft while
+that draft from the list, even if you have switched to another draft while
 it starts. Reopening a pending draft shows its submitted prompt and keeps the
 composer and machine/target controls locked until that start finishes. Two tabs
 opening the same draft share one start and its completion, including after a

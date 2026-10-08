@@ -6,3 +6,8 @@
   color: var(--text);
   text-align: left;
 }
+
+.session-sidebar-draft:focus-within .session-sidebar-actions {
+  display: flex;
+  visibility: visible;
+}

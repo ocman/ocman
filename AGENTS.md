@@ -68,7 +68,7 @@ preparation asks for an explicit target. Legacy recovery uses the same preparati
 The composer's machine selector only
 re-points the route; each draft has its own `draftId` query parameter (`draftKey`
 prop) and survives. Browser-local prepared conversations appear in the sidebar's
-Drafts section before any session exists. All draft state (composer text,
+session list, at the top of their project in grouped view, before any session exists. All draft state (composer text,
 prepared-conversation metadata, start and first-delivery receipts) lives in one
 IndexedDB database (`lib/draftDb`, `ocman.drafts.v1`). Every lifecycle step
 (claim, failure, completion with retire-or-relocate, discard) is one readwrite

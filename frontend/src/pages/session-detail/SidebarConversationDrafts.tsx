@@ -2,19 +2,21 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Control';
-import { IconButton } from '../../components/IconButton';
+import { ArchiveButton } from '../../components/ArchiveButton';
+import { StatusBadge } from '../../components/StatusBadge';
 import { InlineAlert } from '../../components/InlineAlert';
-import { shortPath, fuzzyMatch } from '../../lib/format';
+import { shortPath, fuzzyMatch, relativeTime } from '../../lib/format';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { forgetConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import './SidebarConversationDrafts.css';
 
-export function SidebarConversationDrafts({ searchQuery }: { searchQuery: string }) {
-  const drafts = useNewConversationDrafts((state) => state.drafts);
-  return drafts.length ? <DraftRows drafts={drafts} searchQuery={searchQuery} /> : null;
+export function SidebarConversationDrafts({ searchQuery, drafts: supplied, inGroup = false }: { searchQuery: string; drafts?: ConversationDraft[]; inGroup?: boolean }) {
+  const stored = useNewConversationDrafts((state) => state.drafts);
+  const drafts = supplied ?? stored;
+  return drafts.length ? <DraftRows drafts={drafts} searchQuery={supplied ? '' : searchQuery} inGroup={inGroup} /> : null;
 }
 
-function DraftRows({ drafts, searchQuery }: { drafts: ConversationDraft[]; searchQuery: string }) {
+function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft[]; searchQuery: string; inGroup: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentLocation = useRef<typeof location | undefined>(location);
@@ -39,18 +41,25 @@ function DraftRows({ drafts, searchQuery }: { drafts: ConversationDraft[]; searc
   const visible = drafts.filter((draft) => draft.draftId === activeId || !searchQuery.trim() ||
     fuzzyMatch(searchQuery.trim(), `${draft.title || ''} ${draft.directory} ${draft.remoteId || 'local'}`));
   if (!visible.length) return null;
-  return <div className="session-sidebar-group" aria-label="Prepared sessions">
-    <div className="session-sidebar-group-header-row">
-      <div className="session-sidebar-group-header"><span className="session-sidebar-group-label">Drafts</span></div>
-    </div>
-    {visible.map((draft) => <div key={draft.draftId} className={`session-sidebar-item flat${draft.draftId === activeId ? ' active' : ''}`}>
+  return <>
+    {visible.map((draft) => <div key={draft.draftId} aria-selected={draft.draftId === activeId}
+      className={`session-sidebar-item session-sidebar-draft ${inGroup ? 'in-group' : 'flat'}${draft.draftId === activeId ? ' active' : ''}`}>
+      {inGroup && <StatusBadge status="done" compact draft seen />}
       <Button variant="ghost" className="session-sidebar-item-body session-sidebar-draft-open" aria-current={draft.draftId === activeId ? 'page' : undefined}
         onClick={() => navigate(newSessionPath(draft))}>
-        <span className="session-sidebar-title">{draft.title || `New session ${drafts.indexOf(draft) + 1}`}</span>
-        <span className="session-sidebar-project">{shortPath(draft.directory)}{draft.remoteId && draft.remoteId !== 'local' ? ` · ${draft.remoteId}` : ''}</span>
+        {!inGroup && <span className="session-sidebar-project"><StatusBadge status="done" compact draft seen />
+          <span className="session-sidebar-project-path">{shortPath(draft.directory)}{draft.remoteId && draft.remoteId !== 'local' ? ` · ${draft.remoteId}` : ''}</span>
+          {draft.createdAt && <span className="session-sidebar-time">{relativeTime(draft.createdAt).replace('just now', 'now').replace(' ago', '')}</span>}
+        </span>}
+        <span className="session-sidebar-title">{draft.title || `New session ${useNewConversationDrafts.getState().drafts.findIndex((entry) => entry.draftId === draft.draftId) + 1}`}</span>
+        {!inGroup && <span className="session-sidebar-git-slot" />}
       </Button>
-      <IconButton label="Discard draft" icon="bi-x-lg" disabled={discarding === draft.draftId} onClick={() => void discard(draft)} />
+      <span className="session-sidebar-meta">
+        {inGroup && draft.createdAt && <span className="session-sidebar-time">{relativeTime(draft.createdAt).replace('just now', 'now').replace(' ago', '')}</span>}
+        <span className="session-sidebar-actions">
+        <ArchiveButton className="session-sidebar-archive-btn" label="Discard draft" disabled={discarding === draft.draftId} onClick={() => void discard(draft)} />
+      </span></span>
       {failed?.draftId === draft.draftId && <InlineAlert compact retrying={discarding === draft.draftId} onRetry={() => void discard(draft)}>{failed.message}</InlineAlert>}
     </div>)}
-  </div>;
+  </>;
 }

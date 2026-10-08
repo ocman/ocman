@@ -5,6 +5,8 @@ import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import type { GitInfo, Session } from '../../lib/api';
 import { useWorkEpics } from '../../lib/queries';
 import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
+import { MemoryRouter } from 'react-router-dom';
+import { rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 
 vi.mock('../../components/BackendStats', () => ({
   BackendStats: () => null,
@@ -49,7 +51,7 @@ function renderSidebar(
   groups: SidebarProjectGroup[] = [group],
 ) {
   return render(
-    <SessionSidebar
+    <MemoryRouter><SessionSidebar
       activeId="s"
       sidebarWidth={300}
       sidebarView={sidebarView}
@@ -85,14 +87,54 @@ function renderSidebar(
       onClientSelect={vi.fn()}
       onNewSessionInDirectory={onNewSessionInDirectory}
       onArchiveProject={vi.fn()}
-    />,
+    /></MemoryRouter>,
   );
 }
 
 describe('SessionSidebar', () => {
   beforeEach(() => {
     localStorage.clear();
+    useNewConversationDrafts.setState({ drafts: [] });
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
+  });
+
+  it.each(['recent', 'projects'] as const)('includes drafts in the %s session list without a drafts header', (view) => {
+    rememberConversationDraft({ draftId: 'draft', directory: '/repo', title: 'Prepared task' });
+    const group: SidebarProjectGroup = { directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' } };
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), view);
+    expect(screen.queryByText('Drafts')).not.toBeInTheDocument();
+    const draft = screen.getByText('Prepared task').closest('.session-sidebar-item')!;
+    const saved = screen.getByText('Fix thing').closest('.session-sidebar-item')!;
+    expect(draft.compareDocumentPosition(saved) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    if (view === 'projects') expect(draft.closest('.session-sidebar-group')).toBe(saved.closest('.session-sidebar-group'));
+    expect(screen.getByRole('button', { name: 'Discard draft' })).toHaveClass('session-sidebar-archive-btn');
+  });
+
+  it('groups draft-only projects by owner and includes them in the project filter', () => {
+    rememberConversationDraft({ draftId: 'local', directory: '/repo', title: 'Local draft' });
+    rememberConversationDraft({ draftId: 'remote', directory: '/repo', remoteId: 'box', title: 'Remote draft' });
+    const group: SidebarProjectGroup = { directory: '/repo', sessions: [], lastUpdated: 1, aggregate: { kind: 'none' } };
+    renderSidebar(group, {});
+    expect(screen.getByText('Local draft').closest('.session-sidebar-group')).not.toBe(screen.getByText('Remote draft').closest('.session-sidebar-group'));
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Project' }), { target: { value: '/repo' } });
+    expect(screen.getByText('Local draft')).toBeInTheDocument();
+    expect(screen.queryByText('Remote draft')).not.toBeInTheDocument();
+  });
+
+  it.each(['recent', 'projects'] as const)('keeps matching worktree drafts in their project during %s search', (view) => {
+    rememberConversationDraft({ draftId: 'draft', directory: '/src/.worktrees/repo/task', title: 'Prepared task' });
+    rememberConversationDraft({ draftId: 'other', directory: '/other', title: 'Other draft' });
+    const group: SidebarProjectGroup = { key: 'git:repo', directory: '/src/repo', sessions: [session({ directory: '/src/repo' })], lastUpdated: 1, aggregate: { kind: 'none' } };
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), view);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'Prepared' } });
+    expect(screen.getByText('Prepared task')).toBeInTheDocument();
+    expect(screen.queryByText('Other draft')).not.toBeInTheDocument();
+    if (view === 'projects') expect(screen.getByText('Prepared task').closest('.session-sidebar-group')?.textContent).toContain('repo');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: '/src/repo' } });
+    expect(screen.getByText('Prepared task')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'missing' } });
+    expect(screen.queryByText('Prepared task')).not.toBeInTheDocument();
   });
 
   it.each(['recent', 'projects'] as const)('filters %s sessions, including pinned and active rows, by project', (view) => {
@@ -561,7 +603,7 @@ describe('SessionSidebar', () => {
 
   it('leaves collapsed project groups out of the archive candidates', () => {
     render(
-      <SessionSidebar
+      <MemoryRouter><SessionSidebar
         activeId="a" sidebarWidth={300} sidebarView="projects" setSidebarView={vi.fn()}
         showArchivedRecent={false} setShowArchivedRecent={vi.fn()} loadingRecentSessions={false}
         recentSessions={[session({ id: 'a' }), session({ id: 'b', directory: '/other' })]}
@@ -575,7 +617,7 @@ describe('SessionSidebar', () => {
         tmux={{ available: false, isLocal: true, sessions: [], clients: [], switchSession: vi.fn(), findSession: vi.fn(), launchOpencode: vi.fn() }}
         onNavigateToSession={vi.fn()} onArchiveSession={vi.fn()} onPinSession={vi.fn()} onNewSession={vi.fn()}
         onClientSelect={vi.fn()} onNewSessionInDirectory={vi.fn()} onArchiveProject={vi.fn()}
-      />,
+      /></MemoryRouter>,
     );
     expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a']);
   });

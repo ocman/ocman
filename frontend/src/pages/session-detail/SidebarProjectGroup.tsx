@@ -14,7 +14,7 @@ import { ArchiveIcon } from '../../components/ArchiveButton';
 import type { SidebarProjectGroup as ProjectGroup } from './SessionSidebar';
 
 export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleCollapsedProject,
-  onNewSessionInDirectory, onArchiveProject, renderRow,
+  onNewSessionInDirectory, onArchiveProject, renderRow, draftRows,
 }: {
   group: ProjectGroup;
   collapsed: boolean;
@@ -23,6 +23,7 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
   onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void;
   onArchiveProject: (directory: string, remoteId?: string) => void;
   renderRow: (session: Session, inGroup: boolean, depth: number) => ReactNode;
+  draftRows?: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: group.key ?? (group.directory || '__empty__') });
@@ -76,6 +77,7 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
             }}><ArchiveIcon /></button>
         </>}
       </div>
+      {!collapsed && draftRows}
       {!collapsed && dirs.map((dirKey) => {
         const sessions = byDir.get(dirKey) ?? [];
         const checkout = sessions[0];

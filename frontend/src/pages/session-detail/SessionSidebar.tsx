@@ -38,12 +38,14 @@ import type { GitInfo } from '../../lib/api';
 import { checkoutKey } from '../../lib/projectIdentity';
 import { trackRender } from '../../lib/renderRateMonitor';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
-import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import type { ConversationDraft } from '../../lib/newConversationDrafts';
+import { useSidebarDraftGroups } from './useSidebarDraftGroups';
 
 export interface SidebarProjectGroup {
   key?: string;
   directory: string;
   sessions: Session[];
+  drafts?: ConversationDraft[];
   lastUpdated: number;
   aggregate: ReturnType<typeof rollupGroupStatus>;
   isPinned?: boolean;
@@ -120,15 +122,16 @@ export function SessionSidebar({
   onArchiveProject,
 }: SessionSidebarProps) {
   trackRender('SessionSidebar');
-  const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, allProjectGroups);
+  const [searchQuery, setSearchQuery] = useState('');
+  const draftGroups = useSidebarDraftGroups(allProjectGroups, searchQuery);
+  const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, draftGroups);
+  const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
   const [showChildren, setShowChildren] = useSidebarFilter('children', true);
   const [showFactory, setShowFactory] = useSidebarFilter('factory', false);
   const [showRoutines, setShowRoutines] = useSidebarFilter('routines', false);
-  const [searchQuery, setSearchQuery] = useState('');
   const draftSessionIds = useDraftSessionIds();
-  const hasPreparedDrafts = useNewConversationDrafts((state) => state.drafts.length > 0);
   const { data: workEpics } = useWorkEpics();
   // Sessions hidden by the Factory/routine filters, including descendants.
   const hiddenSessions = useMemo(() => {
@@ -165,8 +168,7 @@ export function SessionSidebar({
     if (!activeId || loadingRecentSessions) return;
     const container = sidebarListRef.current;
     if (!container) return;
-    // Run on the next frame so any just-expanded group has finished laying
-    // out before we measure offsets.
+    // Wait for expanded groups to finish layout before measuring.
     const raf = requestAnimationFrame(() => {
       const active = container.querySelector('[aria-selected="true"]') as HTMLElement | null;
       if (!active) return;
@@ -181,8 +183,7 @@ export function SessionSidebar({
     return () => cancelAnimationFrame(raf);
   }, [activeId, sidebarView, loadingRecentSessions]);
 
-  // Shared row renderer — used by both the pinned and grouped views so
-  // all live-status / archive / navigation behaviour stays identical.
+  // Share live status, archive and navigation across every session view.
   const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => (
     <SidebarSessionRow
       key={sib.id}
@@ -203,8 +204,7 @@ export function SessionSidebar({
     />
   );
 
-  // The pinned group always renders first and is never reorderable;
-  // the remaining project groups are drag-sortable.
+  // Pinned rows come first; only project groups are reorderable.
   const filteredProjectGroups = useMemo(() => {
     const query = searchQuery.trim();
     if (showChildren && hiddenSessions.size === 0 && !query) return sidebarProjectGroups;
@@ -216,7 +216,7 @@ export function SessionSidebar({
         (showChildren || !session.parentId) &&
         (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
       );
-      return query && !projectMatches && sessions.length === 0 ? [] : [{ ...group, sessions }];
+      return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
     });
   }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId]);
 
@@ -250,9 +250,8 @@ export function SessionSidebar({
           .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory))
           .map((group) => group.sessions),
       ];
-    // Pinned rows also sit in their project group; keep the first so a
-    // duplicate can never be picked as the archived session's successor.
     const seen = new Set<string>();
+    // Pinned sessions also appear in project groups; keep their first row.
     visibleSidebarSessions.current = sections
       .flatMap((rows) => nestSessions(rows).map(({ session }) => session))
       .filter((session) => {
@@ -324,6 +323,7 @@ export function SessionSidebar({
               onNewSessionInDirectory={onNewSessionInDirectory}
               onArchiveProject={onArchiveProject}
               renderRow={renderRow}
+              draftRows={<SidebarConversationDrafts drafts={group.drafts} searchQuery={searchQuery} inGroup />}
             />
           ))}
         </SortableContext>
@@ -335,6 +335,7 @@ export function SessionSidebar({
     const unpinned = flatUnpinned;
     return (
       <>
+        <SidebarConversationDrafts drafts={preparedDrafts} searchQuery={searchQuery} />
         {filteredPinnedSessions.length > 0 && (
           <div className="session-sidebar-flat-pinned">
             {renderPinnedRows(filteredPinnedSessions)}
@@ -373,15 +374,14 @@ export function SessionSidebar({
         <TmuxClientPopover pickerRef={pickerRef} pos={pickerPos} clients={tmux.clients} onSelect={onClientSelect} />
       )}
       <div className="session-sidebar-list" ref={sidebarListRef}>
-        <SidebarConversationDrafts searchQuery={searchQuery} />
         {loadingRecentSessions ? (
           <SessionSidebarListSkeleton rows={5} />
-        ) : sidebarView === 'recent' && allRecentSessions.length === 0 ? (
-          !hasPreparedDrafts && <GettingStartedEmpty compact />
+        ) : sidebarView === 'recent' && allRecentSessions.length === 0 && !preparedDrafts.length ? (
+          <GettingStartedEmpty compact />
         ) : sidebarView === 'recent' ? (
           renderFlatView()
-        ) : allProjectGroups.length === 0 ? (
-          !hasPreparedDrafts && <GettingStartedEmpty compact />
+        ) : draftGroups.length === 0 ? (
+          <GettingStartedEmpty compact />
         ) : (
           renderProjectsView()
         )}

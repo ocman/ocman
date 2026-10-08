@@ -32,7 +32,7 @@ it('shows empty prepared conversations and navigates with the same draft identit
   fireEvent.click(screen.getAllByRole('button', { name: 'Discard draft' })[1]);
   await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Frepo&draftId=a'));
   fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
-  await waitFor(() => expect(screen.queryByLabelText('Prepared sessions')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument());
   expect(screen.getByTestId('location')).toHaveTextContent('/');
 });
 
@@ -51,7 +51,7 @@ it('filters drafts by project, title and owner, while keeping the selected draft
 it('renders no section when the search matches no drafts', () => {
   rememberConversationDraft({ draftId: 'a', directory: '/repo' });
   mount('missing');
-  expect(screen.queryByLabelText('Prepared sessions')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
 });
 
 it('keeps the draft and offers a retry when discarding cannot be stored', async () => {
@@ -78,7 +78,7 @@ it('does not leave a newer route when an earlier discard commits', async () => {
   mount('', newSessionPath({ draftId: 'old', directory: '/old' }));
   const discard = vi.spyOn(draftsModule, 'forgetConversationDraft');
   fireEvent.click(within(screen.getByRole('button', { name: /Old/ }).parentElement!).getByRole('button', { name: 'Discard draft' }));
-  fireEvent.click(screen.getByRole('button', { name: /New\/new/ }));
+  fireEvent.click(screen.getByText('New').closest('button')!);
   await act(async () => { await discard.mock.results[0].value; });
   expect(getConversationDraft('old')).toBeUndefined();
   expect(screen.getByTestId('location')).toHaveTextContent('draftId=z-new');
