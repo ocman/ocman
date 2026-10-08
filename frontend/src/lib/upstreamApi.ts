@@ -99,6 +99,7 @@ export interface ErrorEnvelope {
     code: string;
     message: string;
     status?: number;
+    upstreamStatus?: number;
     retryAfter?: string;
     fetchTarget?: string;
   };

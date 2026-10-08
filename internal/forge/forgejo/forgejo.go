@@ -120,7 +120,7 @@ func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOption
 		return nil, rl, nil
 	}
 	if status != http.StatusOK {
-		return nil, rl, fmt.Errorf("forgejo %s: status %d", path, status)
+		return nil, rl, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 
 	var raw []fjPR
@@ -223,7 +223,7 @@ func (c *Client) ListIssues(ctx context.Context, repo string, opts forge.ListOpt
 		return nil, rl, nil
 	}
 	if status != http.StatusOK {
-		return nil, rl, fmt.Errorf("forgejo %s: status %d", path, status)
+		return nil, rl, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 
 	var raw []fjIssue
@@ -274,10 +274,7 @@ func (c *Client) CurrentUser(ctx context.Context) (forge.CurrentUser, error) {
 		return forge.CurrentUser{}, forge.ErrUnauthenticated
 	}
 	if status != http.StatusOK {
-		if rl.Limited {
-			return forge.CurrentUser{}, &forgehttp.ResponseError{Status: status, RateLimit: rl}
-		}
-		return forge.CurrentUser{}, fmt.Errorf("forgejo /user: status %d", status)
+		return forge.CurrentUser{}, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 	var raw struct {
 		Login string `json:"login"`

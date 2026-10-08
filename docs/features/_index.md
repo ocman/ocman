@@ -101,6 +101,11 @@ and not fetched again. If CI is re-run on the same commit, press the pane's
 refresh button: it forgets the remembered results and checks every visible PR
 again.
 
+A commit with no checks is confirmed twice more, 30 seconds apart, before its
+empty result is remembered. Failed requests retry with delays from 5 to 60
+seconds and honor forge rate-limit deadlines. Polling pauses when the browser
+tab is hidden; scrolling a row away and back preserves its retry deadline.
+
 ## Guides
 
 {{< cards >}}

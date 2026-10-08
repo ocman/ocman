@@ -46,5 +46,7 @@ func writeProjectForgeError(w http.ResponseWriter, r *http.Request, rem forge.Re
 	}
 	// Do not log the error/body: forge responses may contain credentials.
 	log.WithFields(log.Fields{"forge_host": rem.Host, "repo": rem.Repo, "route": r.URL.Path, "upstream_status": upstreamStatus}).Warn("forge request failed")
-	writeProjectListError(w, http.StatusBadGateway, "upstream_status", "forge request failed")
+	writeJSONStatus(w, http.StatusBadGateway, map[string]any{
+		"error": map[string]any{"code": "upstream_status", "message": "forge request failed", "status": http.StatusBadGateway, "upstreamStatus": upstreamStatus},
+	})
 }

@@ -89,6 +89,55 @@ it('honors a rate-limit retry time beyond the error backoff cap', async () => {
   expect(getCachedPRChecks('host/repo@sha')).toEqual(done);
 });
 
+it('preserves rate-limit deadlines when a row leaves and reenters the viewport', async () => {
+  const fetch = vi.fn().mockRejectedValueOnce(new UpstreamApiError({ error: { code: 'rate_limited', message: 'limited', retryAfter: new Date(Date.now() + 120_000).toISOString() } }, 429)).mockResolvedValue(done);
+  const hook = renderHook(({ visible }) => usePRChecks('host/repo@sha', 'owner/sha', visible, fetch), { initialProps: { visible: true } });
+  await advance(0);
+  hook.rerender({ visible: false });
+  await advance(20_000);
+  hook.rerender({ visible: true });
+  await advance(99_999);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await advance(1);
+  expect(getCachedPRChecks('host/repo@sha')).toEqual(done);
+});
+
+it('preserves error backoff across viewport toggles but resets it for a new request', async () => {
+  const fetch = vi.fn().mockRejectedValue(new Error('offline'));
+  const hook = renderHook(({ visible, key }) => usePRChecks('host/repo@' + key, key, visible, fetch), { initialProps: { visible: true, key: 'a' } });
+  await advance(5_000);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  hook.rerender({ visible: false, key: 'a' });
+  await advance(2_000);
+  hook.rerender({ visible: true, key: 'a' });
+  await advance(7_999);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await advance(1);
+  expect(fetch).toHaveBeenCalledTimes(3);
+  hook.rerender({ visible: true, key: 'b' });
+  await advance(0);
+  expect(fetch).toHaveBeenCalledTimes(4);
+  await advance(5_000);
+  expect(fetch).toHaveBeenCalledTimes(5);
+});
+
+it('preserves empty-result confirmations across viewport toggles', async () => {
+  const fetch = vi.fn().mockResolvedValue(empty);
+  const hook = renderHook(({ visible }) => usePRChecks('host/repo@sha', 'owner/sha', visible, fetch), { initialProps: { visible: true } });
+  await advance(30_000);
+  hook.rerender({ visible: false });
+  await advance(10_000);
+  hook.rerender({ visible: true });
+  await advance(19_999);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await advance(1);
+  expect(getCachedPRChecks('host/repo@sha')).toEqual(empty);
+  hook.rerender({ visible: false });
+  hook.rerender({ visible: true });
+  await advance(120_000);
+  expect(fetch).toHaveBeenCalledTimes(3);
+});
+
 it('pauses while hidden and resumes when the document becomes visible', async () => {
   const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
   const fetch = vi.fn().mockResolvedValue(pending);

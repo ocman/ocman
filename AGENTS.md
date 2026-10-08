@@ -215,7 +215,8 @@ ref into `ocman/pr-<n>` for cross-fork PRs after explicit
 confirmation). A PR row fetches its CI checks once it is visible and polls
 every 5s until every check has finished. Empty results settle after three
 successful responses spaced 30s apart; errors back off from 5s to 60s,
-respecting rate-limit retry times. Polling pauses while the document is hidden.
+respecting rate-limit retry times across viewport changes. Polling pauses while
+the document is hidden.
 A rate-limited response never counts as settled. The settled result is cached
 in localStorage by `host/repo@sha`
 (newest 1000, `frontend/src/lib/prChecksCache.ts`) and the pane's refresh
