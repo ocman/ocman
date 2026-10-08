@@ -192,14 +192,22 @@ export function useSidebarSessions({
     return promise;
   }, [getSessions, getSession, id, storeSetRecentSessions]);
 
+  const reconcileRecentSessions = useCallback(async (signal?: AbortSignal) => {
+    const pending = recentRequest.current;
+    const key = JSON.stringify([id, sidebarRecentHoursRef.current]);
+    if (pending?.key === key && !pending.signal?.aborted) await pending.promise.catch(() => {});
+    if (!signal?.aborted) await loadRecentSessions(signal);
+  }, [id, loadRecentSessions]);
+
   // Initial load when the active session changes (or is set the
   // first time).
   useEffect(() => {
     if (!sessionId || !enabled) return;
-    void loadRecentSessions(abortSignalRef.current?.signal);
+    void reconcileRecentSessions(abortSignalRef.current?.signal)
+      .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
     // abortSignalRef is intentionally read at call-time, not as a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, loadRecentSessions, enabled]);
+  }, [sessionId, reconcileRecentSessions, enabled]);
 
   // Re-fetch when the user toggles the archived view (skip the very
   // first render — the sessionId effect above already loaded once).
@@ -314,7 +322,7 @@ export function useSidebarSessions({
     const start = () => {
       if (refreshId !== null) return;
       refreshId = window.setInterval(() => {
-        loadRecentSessions(abortSignalRef.current?.signal)
+        reconcileRecentSessions(abortSignalRef.current?.signal)
           .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
       }, SIDEBAR_REFRESH_MS);
     };
@@ -329,7 +337,7 @@ export function useSidebarSessions({
       } else {
         // Fire once immediately on re-focus so the user sees fresh
         // data without waiting a full interval, then resume polling.
-        loadRecentSessions(abortSignalRef.current?.signal)
+        reconcileRecentSessions(abortSignalRef.current?.signal)
           .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
         start();
       }
@@ -341,7 +349,7 @@ export function useSidebarSessions({
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadRecentSessions, enabled]);
+  }, [loadRecentSessions, reconcileRecentSessions, enabled]);
 
   // Cleanup any outstanding archive timers on unmount.
   useEffect(() => () => {

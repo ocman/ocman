@@ -117,7 +117,11 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 	if detail.Session != nil {
 		detail.Session.ProjectDefaultModel = s.projectDefaultModel(r.Context(), detail.Session.Directory)
-		detail.Session.FactoryAttemptID = s.factoryAttemptID(r.Context(), string(adapter.ID()), sessionID, detail.Session.ParentID)
+		detail.Session.FactoryAttemptID, err = s.factoryAttemptID(r.Context(), string(adapter.ID()), sessionID, detail.Session.ParentID)
+		if err != nil {
+			serverError(w, "fetching Factory session tag", err)
+			return
+		}
 	}
 
 	// Opening a session unarchives it (and its project) so the sidebar

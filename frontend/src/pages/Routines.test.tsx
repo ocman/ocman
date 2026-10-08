@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
+import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
 import { formatDateTimeShort } from '../lib/format';
 import type { RoutineRun, WebhookInbox } from '../lib/api.types';
 
@@ -44,6 +45,55 @@ describe('Routines', () => {
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('cancels a pending history refresh before it reads older running pages', async () => {
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const all = Array.from({ length: 60 }, (_, i) => mkRun(`run-${60 - i}`, 100_000 - i * 1000, i === 55 ? { state: 'running' } : {}));
+    vi.mocked(api.routines.history).mockImplementation(async (_id, page) => {
+      const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
+      return all.slice(from, from + page.limit);
+    });
+    const drawer = (refreshKey: number) => <MemoryRouter><RoutineHistoryDrawer routine={routine} refreshKey={refreshKey} onClose={vi.fn()} /></MemoryRouter>;
+    const view = render(drawer(0));
+    try {
+      await userEvent.click(await screen.findByRole('button', { name: 'Load older runs' }));
+      await screen.findByText('running');
+      vi.mocked(api.routines.history).mockClear();
+      let finish!: (rows: RoutineRun[]) => void;
+      vi.mocked(api.routines.history).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+      view.rerender(drawer(1));
+      const signal = vi.mocked(api.routines.history).mock.calls[0][2];
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(signal?.aborted).toBe(true);
+      await act(async () => { finish(all.slice(0, 50)); });
+      expect(api.routines.history).toHaveBeenCalledTimes(1);
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      view.rerender(drawer(2));
+      await waitFor(() => expect(api.routines.history).toHaveBeenCalledTimes(3));
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
+
+  it('does not start history reads from a list response arriving after hide', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const view = render(<MemoryRouter><Routines /></MemoryRouter>);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByText('Morning check'));
+      await act(async () => {});
+      let finish!: (rows: Routine[]) => void;
+      vi.mocked(api.routines.list).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      vi.mocked(api.routines.history).mockClear();
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { finish([routine]); });
+      expect(api.routines.history).not.toHaveBeenCalled();
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(api.routines.history).toHaveBeenCalled();
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
 
   it('pauses list and open-history requests when hidden and refreshes on return', async () => {
     vi.useFakeTimers();
@@ -514,7 +564,7 @@ describe('Routines', () => {
     await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
     const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
     await waitFor(() => expect(within(dialog).getAllByText('manual')).toHaveLength(50));
-    expect(api.routines.history).toHaveBeenCalledWith(routine.id, { limit: 50 });
+    expect(api.routines.history).toHaveBeenCalledWith(routine.id, { limit: 50 }, expect.any(AbortSignal));
     expect(within(dialog).getAllByText('manual')).toHaveLength(50);
 
     await user.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
@@ -624,7 +674,7 @@ describe('Routines', () => {
     expect(within(dialog).getByText('agent stopped')).toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/late-session?platform=opencode');
     expect(api.routines.history).toHaveBeenCalledTimes(2);
-    expect(api.routines.history).toHaveBeenLastCalledWith(routine.id, { limit: 50, before: expect.objectContaining({ id: 'run-11' }) });
+    expect(api.routines.history).toHaveBeenLastCalledWith(routine.id, { limit: 50, before: expect.objectContaining({ id: 'run-11' }) }, expect.any(AbortSignal));
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(api.routines.history).toHaveBeenCalledTimes(3);

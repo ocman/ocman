@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDocumentVisible } from '../lib/usePanelVisible';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/Control';
 import { DataTable } from '../components/DataTable';
@@ -33,11 +34,11 @@ function mergeNewestPage(newest: RoutineRun[], shown: Shown): Shown {
  * the newest page are otherwise never refetched, so re-read the pages covering
  * any still-running ones (one bounded request per 50 rows), oldest-first cursor.
  */
-async function refetchRunning(routineId: string, runs: RoutineRun[], from: number): Promise<Map<string, RoutineRun>> {
+async function refetchRunning(routineId: string, runs: RoutineRun[], from: number, signal: AbortSignal): Promise<Map<string, RoutineRun>> {
   const updates = new Map<string, RoutineRun>();
   let i = runs.findIndex((run, index) => index >= from && run.state === 'running');
-  while (i > 0) {
-    const page = await api.routines.history(routineId, { limit: HISTORY_PAGE_SIZE, before: runs[i - 1] });
+  while (i > 0 && !signal.aborted && !document.hidden) {
+    const page = await api.routines.history(routineId, { limit: HISTORY_PAGE_SIZE, before: runs[i - 1] }, signal);
     for (const run of page) updates.set(run.id, run);
     if (page.length < HISTORY_PAGE_SIZE) break;
     const covered = i + page.length;
@@ -55,6 +56,7 @@ type Props = {
 
 // Mount with key={routine.id} so switching routines starts a fresh history.
 export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
+  const visible = useDocumentVisible();
   const [shown, setShown] = useState<Shown>({ runs: [], exhausted: false });
   const { runs, exhausted } = shown;
   const shownRef = useRef(shown);
@@ -63,26 +65,30 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
   const mounted = useRef(true);
-  const refreshing = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const refreshRequest = useRef<AbortController | null>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; refreshRequest.current?.abort(); }; }, []);
+  useEffect(() => {
+    if (!visible) { refreshRequest.current?.abort(); refreshRequest.current = null; }
+  }, [visible]);
 
   // One newest-page fetch at a time: a refresh that lands mid-flight is skipped
   // (the next one catches up), so a slow response is never discarded.
   useEffect(() => {
-    if (refreshing.current) return;
-    refreshing.current = true;
+    if (document.hidden || refreshRequest.current) return;
+    const controller = new AbortController();
+    refreshRequest.current = controller;
     const refresh = async () => {
-      const newest = await api.routines.history(routine.id, { limit: HISTORY_PAGE_SIZE });
-      if (!mounted.current) return;
+      const newest = await api.routines.history(routine.id, { limit: HISTORY_PAGE_SIZE }, controller.signal);
+      if (!mounted.current || controller.signal.aborted || document.hidden) return;
       const merged = mergeNewestPage(newest, shownRef.current);
       setShown((current) => mergeNewestPage(newest, current));
       setLoaded(true);
       setError('');
-      const updates = await refetchRunning(routine.id, merged.runs, newest.length);
-      if (mounted.current && updates.size > 0) setShown((current) => ({ ...current, runs: current.runs.map((run) => updates.get(run.id) ?? run) }));
+      const updates = await refetchRunning(routine.id, merged.runs, newest.length, controller.signal);
+      if (mounted.current && !controller.signal.aborted && updates.size > 0) setShown((current) => ({ ...current, runs: current.runs.map((run) => updates.get(run.id) ?? run) }));
     };
-    refresh().catch((err: unknown) => { if (mounted.current) setError(err instanceof Error ? err.message : 'Could not load history.'); })
-      .finally(() => { refreshing.current = false; });
+    refresh().catch((err: unknown) => { if (mounted.current && !controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load history.'); })
+      .finally(() => { if (refreshRequest.current === controller) refreshRequest.current = null; });
   }, [routine.id, refreshKey]);
 
   const loadOlder = async () => {

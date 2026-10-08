@@ -71,6 +71,8 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
   const [windows, setWindows] = useState<TermWindow[]>([]);
+  const [discoveredKey, setDiscoveredKey] = useState('');
+  const discoveryKey = `${remoteId ?? 'local'}\0${directory ?? ''}\0${open}`;
   const [active, setActive] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -100,6 +102,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
         const { windows: live } = await api.term.listWindows(directory, remoteId);
         if (cancelled) return;
         setWindows(live);
+        setDiscoveredKey(discoveryKey);
         setActive((prev) =>
           prev && live.some((w) => w.name === prev) ? prev : live[0]?.name ?? null,
         );
@@ -111,14 +114,14 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     // Poll for live titles only while the panel is open (avoids work
     // when the terminal isn't visible).
     const id = open ? window.setInterval(refresh, TITLE_POLL_MS) : undefined;
-    const onVisibility = () => { if (open && !document.hidden) void refresh(); };
+    const onVisibility = () => { if (!document.hidden) void refresh(); };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       cancelled = true;
       if (id !== undefined) window.clearInterval(id);
     };
-  }, [directory, open, remoteId, tmuxAvailable]);
+  }, [directory, open, remoteId, tmuxAvailable, discoveryKey]);
 
   // Opening the panel with no terminals yet creates the first one. The
   // in-flight guard is a ref, not `busy`: depending on `busy` re-ran this
@@ -126,7 +129,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
   // the panel stuck on "Loading…".
   const creatingRef = useRef(false);
   useEffect(() => {
-    if (!open || !directory || windows.length > 0 || creatingRef.current) return;
+    if (!open || !directory || !tmuxAvailable || discoveredKey !== discoveryKey || windows.length > 0 || creatingRef.current) return;
     let cancelled = false;
     (async () => {
       creatingRef.current = true;
@@ -144,7 +147,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
       }
     })();
     return () => { cancelled = true; };
-  }, [open, directory, windows.length, remoteId]);
+  }, [open, directory, windows.length, remoteId, tmuxAvailable, discoveredKey, discoveryKey]);
 
   const handleAdd = useCallback(async () => {
     if (!directory || busy) return;

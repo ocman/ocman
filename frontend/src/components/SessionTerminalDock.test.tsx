@@ -46,6 +46,34 @@ beforeEach(() => {
 });
 
 describe('SessionTerminalDock gating', () => {
+  it('discovers existing tabs after hidden startup without opening the dock', async () => {
+    let hidden = true;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    listWindows.mockResolvedValue({ windows: [{ name: 'existing', title: 'Existing shell' }] });
+    const view = render(<SessionTerminalDock tmuxAvailable directory={DIR} />);
+    try {
+      await act(async () => {});
+      expect(listWindows).not.toHaveBeenCalled();
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      await screen.findByRole('tab', { name: 'Existing shell' });
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      await act(async () => {});
+      expect(createWindow).not.toHaveBeenCalled();
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
+
+  it('waits for existing-window discovery before auto-creating a terminal', async () => {
+    let finish!: (value: { windows: TermWindow[] }) => void;
+    listWindows.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const view = render(<SessionTerminalDock tmuxAvailable directory={DIR} />);
+    try {
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      await act(async () => {});
+      expect(createWindow).not.toHaveBeenCalled();
+      await act(async () => { finish({ windows: [{ name: 'existing', title: 'Existing shell' }] }); });
+      expect(createWindow).not.toHaveBeenCalled();
+    } finally { view.unmount(); }
+  });
   it('pauses title requests when hidden, resumes immediately, and stops when closed', async () => {
     vi.useFakeTimers();
     let hidden = false;

@@ -44,6 +44,22 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('performs a fresh reconciliation after a pre-hide request finishes', async () => {
+    let finish!: (rows: Session[]) => void;
+    const old = { id: 'old', platform: 'opencode', status: 'done', timeUpdated: 1 } as Session;
+    const fresh = { ...old, id: 'new' };
+    const getSessions = vi.fn().mockReturnValueOnce(new Promise<Session[]>((resolve) => { finish = resolve; })).mockResolvedValue([fresh]);
+    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    const options = { id: undefined, sessionId: 'open', collapsedProjects: [], sidebarView: 'recent' as const,
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
+    const { result, rerender } = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: true } });
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+    expect(getSessions).toHaveBeenCalledTimes(1);
+    await act(async () => { finish([old]); });
+    await waitFor(() => expect(getSessions).toHaveBeenCalledTimes(2));
+    expect(result.current.recentSessions.map((row) => row.id)).toEqual(['new']);
+  });
   it('keeps a Factory tag-only change from a later session list read', async () => {
     const row = { id: 'factory', platform: 'opencode', status: 'done', timeUpdated: 1 } as Session;
     const getSessions = vi.fn().mockResolvedValue([row]);

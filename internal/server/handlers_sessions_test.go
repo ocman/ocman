@@ -914,6 +914,22 @@ func TestHandleSession_TagsFactoryChildDetailsAndPeeks(t *testing.T) {
 	}
 }
 
+func TestHandleSession_FactoryTagLookupFailure(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	row := db.Session{ID: "session", Platform: "opencode", Directory: "/repo"}
+	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{row}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		return &platforms.SessionDetail{Session: &row}, nil
+	}})
+	if err := srv.stateDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/session?platform=opencode", nil))
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("tag lookup failure = %d %s", rr.Code, rr.Body)
+	}
+}
+
 // --- POST /api/session/{id}/auto-approve ---
 
 func TestPromptSessionIDPrefersIssuingChild(t *testing.T) {
