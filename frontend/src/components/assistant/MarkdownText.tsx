@@ -267,7 +267,7 @@ function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'bloc
   const blocks: ReactNode[] = Children.toArray(children);
   const firstIndex = blocks.findIndex(child => isValidElement(child));
   const first = blocks[firstIndex];
-  if (!isValidElement<{ children?: ReactNode }>(first) || first.type !== 'p') return <blockquote {...props}>{children}</blockquote>;
+  if (!isValidElement<{ children?: ReactNode }>(first) || (first.type !== 'p' && first.type !== MarkdownParagraph)) return <blockquote {...props}>{children}</blockquote>;
   const label = Children.toArray(first.props.children)[0];
   if (!isValidElement(label) || label.type !== 'strong' || !/^(Thinking|Thought):$/.test(nodeText(label))) {
     return <blockquote {...props}>{children}</blockquote>;
@@ -287,7 +287,20 @@ function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'bloc
   );
 }
 
-const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable, blockquote: MarkdownQuote };
+function containsFactoryCard(children: ReactNode): boolean {
+  return Children.toArray(children).some((child) => {
+    if (!isValidElement<{ href?: string; children?: ReactNode; 'data-ocman-card'?: string }>(child)) return false;
+    return Boolean(child.props['data-ocman-card'] || factoryActionFromHref(child.props.href) || containsFactoryCard(child.props.children));
+  });
+}
+
+// Factory approval cards include block Markdown; a paragraph cannot contain them.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function MarkdownParagraph({ children, node: _node, ...props }: ComponentProps<'p'> & ExtraProps) {
+  return containsFactoryCard(children) ? <div {...props}>{children}</div> : <p {...props}>{children}</p>;
+}
+
+const MARKDOWN_COMPONENTS = { p: MarkdownParagraph, pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable, blockquote: MarkdownQuote };
 
 // One independently parsed chunk. memo: while an answer streams only the
 // last chunk's text changes, so earlier chunks skip re-parsing.

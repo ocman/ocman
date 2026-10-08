@@ -352,6 +352,15 @@ immutable revision of the updated graph and shows an approval card. Review it
 in the card or Epic page. Approval must match the exact revision and hash;
 another edit makes an older approval stale.
 
+Agents submit the complete change in one call. The `mutation_json` payload uses
+`action: "batch"`, the Epic's `epicId`, an ordered `mutations` array, and
+`rationaleMarkdown` explaining what changed and why. Each edit inherits the
+outer Epic and actor. All edits commit together as one approval revision;
+an invalid edit rolls back the entire batch. The Markdown rationale appears
+beside the approval controls in both the conversation card and the Epic page.
+Nested batches and edits to another Epic are rejected. Single edits remain
+supported for existing callers.
+
 The approval preview uses that frozen graph, including parent groups and
 dependencies on other Epics. External endpoints are labelled with their Epic
 ID. The initial proposal must materialize before an agent can edit live work;

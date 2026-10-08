@@ -213,11 +213,8 @@ func (s *NativeService) MutateGraph(ctx context.Context, mutation GraphMutation)
 	if err != nil {
 		return err
 	}
-	if mutation.Action == "create" || mutation.Project != "" {
-		mutation.Project, err = s.canonicalIssueProject(ctx, epic, mutation.Project)
-		if err != nil {
-			return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
-		}
+	if err := s.canonicalMutationProjects(ctx, epic, &mutation); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 	err = store.MutateFactoryGraph(ctx, mutation)
 	if errors.Is(err, model.ErrInvalidGraphMutation) {

@@ -337,7 +337,7 @@ Leave the worktree clean and pushed, then call factory complete_attempt with att
 		model = l.verificationModel(ctx, session, model)
 	}
 	if !req.Delivery && !req.Verification {
-		prompt += "\n\nIf you discover missing work, use factory issues to find the implementation parent and mutate_graph to propose tickets or dependency changes. The revised graph needs human approval before new work runs. Finish only your assigned Issue; use request_recovery if the gap prevents you from continuing. Never approve the graph yourself."
+		prompt += "\n\nIf you discover missing work, use factory issues to find the implementation parent and mutate_graph to propose tickets or dependency changes. Submit the complete change in one call with action batch, epicId, mutations, and rationaleMarkdown summarizing what changed and why in Markdown. The rationale is shown beside graph approval. The revised graph needs human approval before new work runs. Finish only your assigned Issue; use request_recovery if the gap prevents you from continuing. Never approve the graph yourself."
 	}
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: model})
 }

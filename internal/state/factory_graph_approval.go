@@ -15,7 +15,7 @@ import (
 
 // reopenFactoryGraphApprovalTx freezes the edited graph and invalidates its old
 // approval in the mutation transaction. Reuse the plan gate and its human UI.
-func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string, baseIssues []model.NativeIssue) error {
+func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string, baseIssues []model.NativeIssue, amendmentRationale ...string) error {
 	var gateID, project, rationale string
 	err := tx.QueryRowContext(ctx, `SELECT i.id, i.project_path FROM factory_plan_gate g JOIN factory_issue i ON i.id = g.issue_id WHERE g.epic_id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)`, epicID).Scan(&gateID, &project)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -29,6 +29,9 @@ func reopenFactoryGraphApprovalTx(ctx context.Context, tx *sql.Tx, epicID string
 	err = tx.QueryRowContext(ctx, `SELECT rationale_markdown FROM factory_proposal_revision WHERE epic_id = ? ORDER BY revision DESC LIMIT 1`, epicID).Scan(&rationale)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
+	}
+	if len(amendmentRationale) > 0 && amendmentRationale[0] != "" {
+		rationale = amendmentRationale[0]
 	}
 	var baseline int
 	err = tx.QueryRowContext(ctx, `SELECT CASE WHEN g.resolution = 'approved' THEN g.proposal_revision ELSE COALESCE(json_extract(p.manifest_json, '$.baseRevision'), 0) END FROM factory_plan_gate g LEFT JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ?`, epicID).Scan(&baseline)

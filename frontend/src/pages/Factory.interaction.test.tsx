@@ -794,6 +794,8 @@ describe('Factory interactions', () => {
     expect(within(preview).getByText('Ship UI')).toBeInTheDocument();
     expect(within(preview).queryByText('Stale node')).not.toBeInTheDocument();
     expect(within(preview).getByText('Rationale')).toBeInTheDocument();
+    expect(within(preview).getByRole('region', { name: 'Rationale' })).toHaveClass('oc-md');
+    expect(within(preview).getByText('Because reasons.')).toBeVisible();
     expect(actions.compareDocumentPosition(screen.getByText('Proposal revision: 2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

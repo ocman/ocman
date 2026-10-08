@@ -9,6 +9,7 @@ import { FactoryPlanGraph } from './FactoryPlanGraph';
 import { proposalIssues } from '../pages/factoryGraph';
 import { useFactoryImplementationModel } from './useFactoryImplementationModel';
 import './FactoryEpicCard.css';
+import { MarkdownContent } from './assistant/MarkdownText';
 
 function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate }) {
 	const epicID = epic.id;
@@ -19,16 +20,17 @@ function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate 
   // The gate decides one exact revision; draw that one, not whatever is newest.
   const proposal = (proposals.data ?? (epic.proposal ? [epic.proposal] : [])).find((candidate) => candidate.revision === gate.proposalRevision);
   const planIssues = useMemo(() => proposal && proposalIssues(proposal.manifest), [proposal]);
-  return <span className="oc-factory-action-issue">
+  return <div className="oc-factory-action-issue">
     <span>Plan revision {gate.proposalRevision}. Approval starts implementation.</span>
     {planIssues && <FactoryPlanGraph issues={planIssues} />}
+    {proposal?.rationaleMarkdown && <section className="oc-md" aria-label="Rationale"><MarkdownContent text={proposal.rationaleMarkdown} /></section>}
     <label>Plan feedback<TextField value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>
     <FactoryImplementationModel {...implementation} />
     <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess || (action === 'approve' && implementation.loading)} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback, ...(action === 'approve' && implementation.approvalModel) })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>
     {decide.isPending && <span role="status">Saving decision…</span>}
     {decide.isSuccess && <span role="status">Plan decision saved.</span>}
     {decide.isError && <span role="alert">{decide.error.message}</span>}
-  </span>;
+  </div>;
 }
 
 function AuthorityActions({ gate }: { gate: FactoryAuthorityEscalationGate }) {
@@ -117,7 +119,7 @@ function EpicActions({ epic, issues, issueID }: { epic: FactoryEpic; issues: Fac
   </>;
 }
 
-// Inline elements only: markdown links can be children of a paragraph.
+// Markdown paragraphs containing Factory actions render as block containers.
 export function FactoryActionCard({ epicID, issueID = '', requestedAction, children = 'Factory actions' }: { epicID: string; issueID?: string; requestedAction?: string; children?: ReactNode }) {
   const epic = useWorkEpic(epicID);
   const issues = useFactoryIssues(epicID);
@@ -128,12 +130,12 @@ export function FactoryActionCard({ epicID, issueID = '', requestedAction, child
     {(epic.isError || issues.isError) && <span role="alert">Could not load Factory actions. {link} <Button type="button" onClick={() => { void epic.refetch(); void issues.refetch(); }}>Retry</Button></span>}
   </>;
   if (!requiresHumanAction(epic.data, issues.data, issueID, requestedAction)) return null;
-  return <span className="oc-epic-card oc-factory-action-card" aria-label="Factory human actions">
+  return <div className="oc-epic-card oc-factory-action-card" aria-label="Factory human actions">
     <Link className="oc-epic-card-goal" to={to}>{epic.data?.goal || epicID || 'Factory action inbox'}</Link>
     {epic.isSuccess && issues.isSuccess && <EpicActions epic={epic.data} issues={issues.data} issueID={issueID} />}
     <span className="oc-factory-action-buttons">
       {epicID && <Link to={to}>Manage graph</Link>}
       <Link to="/factory/overview">Open action inbox</Link>
     </span>
-  </span>;
+  </div>;
 }

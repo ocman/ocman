@@ -383,8 +383,15 @@ func TestFactoryToolMutateGraphUsesStrictInput(t *testing.T) {
 	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": mutation}); got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "action=approve_plan") || !strings.Contains(resultText(got), "awaiting_approval") {
 		t.Fatalf("mutate = %q", resultText(got))
 	}
-	if svc.mutation != (factory.GraphMutation{Action: "link", EpicID: "epic-1", IssueID: "epic-1.1", DependsOnID: "other-1.1", DependencyType: "blocks", Project: "/other", Actor: "mcp"}) {
+	if !reflect.DeepEqual(svc.mutation, factory.GraphMutation{Action: "link", EpicID: "epic-1", IssueID: "epic-1.1", DependsOnID: "other-1.1", DependencyType: "blocks", Project: "/other", Actor: "mcp"}) {
 		t.Fatalf("mutation = %#v", svc.mutation)
+	}
+	batch := `{"action":"batch","epicId":"epic-1","rationaleMarkdown":"## Changes\nAdd coverage.\n\n## Why\nMissing cases.","mutations":[{"action":"create","parentId":"epic-1.1","kind":"task","title":"Coverage"}]}`
+	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": batch}); got.IsError || len(svc.mutation.Mutations) != 1 || svc.mutation.RationaleMarkdown == "" || svc.mutation.Actor != "mcp" {
+		t.Fatalf("batch = %q, %#v", resultText(got), svc.mutation)
+	}
+	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"batch","epicId":"epic-1","mutations":[{"action":"delete","unexpected":true}]}`}); !got.IsError {
+		t.Fatal("unknown batch fields accepted")
 	}
 	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"delete","issueId":"x","unexpected":true}`}); !got.IsError || resultText(got) != "mutation_json is invalid" {
 		t.Fatalf("unknown mutation field = %q", resultText(got))

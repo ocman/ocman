@@ -117,18 +117,20 @@ type FactoryDeliveryObservation struct {
 }
 
 type GraphMutation struct {
-	Action         string `json:"action"`
-	EpicID         string `json:"epicId"`
-	IssueID        string `json:"issueId"`
-	ParentID       string `json:"parentId"`
-	DependsOnID    string `json:"dependsOnId"`
-	DependencyType string `json:"dependencyType"`
-	Kind           string `json:"kind"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	Requirement    string `json:"requirement"`
-	Project        string `json:"project,omitempty"`
-	Actor          string `json:"actor"`
+	Action            string          `json:"action"`
+	EpicID            string          `json:"epicId"`
+	IssueID           string          `json:"issueId"`
+	ParentID          string          `json:"parentId"`
+	DependsOnID       string          `json:"dependsOnId"`
+	DependencyType    string          `json:"dependencyType"`
+	Kind              string          `json:"kind"`
+	Title             string          `json:"title"`
+	Description       string          `json:"description"`
+	Requirement       string          `json:"requirement"`
+	Project           string          `json:"project,omitempty"`
+	Actor             string          `json:"actor"`
+	RationaleMarkdown string          `json:"rationaleMarkdown,omitempty"`
+	Mutations         []GraphMutation `json:"mutations,omitempty"`
 }
 
 type NativeProposalRevision struct {

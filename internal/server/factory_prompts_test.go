@@ -43,6 +43,13 @@ func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
 			if (stage == "implementation" || stage == "verification") && (!strings.Contains(sent.Message, "mutate_graph") || !strings.Contains(sent.Message, "human approval")) {
 				t.Fatal("implementation prompt omits graph proposal protocol")
 			}
+			if stage == "implementation" || stage == "verification" {
+				for _, text := range []string{"complete change in one call", "action batch", "rationaleMarkdown", "what changed and why", "beside graph approval"} {
+					if !strings.Contains(sent.Message, text) {
+						t.Fatalf("missing %q in %q", text, sent.Message)
+					}
+				}
+			}
 		})
 	}
 }

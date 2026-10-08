@@ -12,18 +12,9 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
-// MutateFactoryGraph applies graph edits atomically. In-progress and closed
-// Issues are immutable; all other lifecycle states remain editable.
-func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) error {
-	if m.Action == "approve_step" || m.Action == "reject_step" {
-		return d.decideWorkflowStep(ctx, m)
-	}
+func mutateFactoryGraphTx(ctx context.Context, tx *sql.Tx, m model.GraphMutation, requiresApproval bool) error {
 	invalid := func(message string) error { return fmt.Errorf("%w: %s", model.ErrInvalidGraphMutation, message) }
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
+	var err error
 	if m.EpicID == "" {
 		return invalid("factory epic is required for structural mutation")
 	}
@@ -44,18 +35,6 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		}
 		if unmaterialized {
 			return invalid("revise the initial proposal before editing live work")
-		}
-	}
-	var pendingGraph bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, m.EpicID).Scan(&pendingGraph); err != nil {
-		return err
-	}
-	requiresApproval := m.Actor == "mcp" || pendingGraph
-	var baseIssues []model.NativeIssue
-	if requiresApproval {
-		baseIssues, err = factoryAmendmentBaselineTx(ctx, tx, m.EpicID)
-		if err != nil {
-			return err
 		}
 	}
 	if m.Action == "create" && m.Project == "" {
@@ -277,16 +256,11 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	if err != nil {
 		return err
 	}
-	if requiresApproval {
-		if err := reopenFactoryGraphApprovalTx(ctx, tx, m.EpicID, baseIssues); err != nil {
-			return err
-		}
-	}
 	details, _ := json.Marshal(m)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, actor, action, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`, m.EpicID, m.IssueID, m.Actor, "graph."+m.Action, string(details), time.Now().UnixMilli()); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 // closeHandBuiltMaterializationTx satisfies an approved epic's open

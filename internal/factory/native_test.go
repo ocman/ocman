@@ -291,7 +291,7 @@ func TestCreateWorkEpicKeepsGoalAShortTitle(t *testing.T) {
 func TestNativeServiceMutatesGraphThroughTypedStore(t *testing.T) {
 	store := &nativeStoreFake{}
 	mutation := GraphMutation{Action: "edit", EpicID: "epic-1", IssueID: "epic-1.1", Title: "Rename"}
-	if err := NewNative(store).MutateGraph(context.Background(), mutation); err != nil || store.mutation != mutation {
+	if err := NewNative(store).MutateGraph(context.Background(), mutation); err != nil || !reflect.DeepEqual(store.mutation, mutation) {
 		t.Fatalf("MutateGraph = %#v, %v", store.mutation, err)
 	}
 	if err := NewNative(struct{ nativeStore }{&nativeStoreFake{}}).MutateGraph(context.Background(), mutation); !errors.Is(err, ErrFactoryUnavailable) {

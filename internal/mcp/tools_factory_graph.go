@@ -10,6 +10,15 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 )
 
+var factoryGraphAction = factoryAction{
+	name:        "mutate_graph",
+	description: "Creates, edits, reparents, links, unlinks, or soft-deletes local Factory Issues unless they are in progress or closed. Propose the complete change in one call using action batch, epicId, mutations, and rationaleMarkdown. The Markdown rationale must summarize what changed and why; it is rendered beside graph approval. Batch edits run in order, inherit the outer epicId and actor, and commit atomically as one proposal revision. Use issues to inspect IDs first; create assigns the next child ID under parentId. Nested batches and cross-Epic edits are rejected. Single edits remain supported. New work cannot run until the user approves the exact revision. Dependency types are blocks, on_failure, and merge_gated; merge_gated must target another project's Delivery.",
+	example:     `{"action":"mutate_graph","mutation_json":"{\"action\":\"batch\",\"epicId\":\"epic-1\",\"rationaleMarkdown\":\"## Changes\\nAdd a regression task.\\n\\n## Why\\nVerification found an uncovered case.\",\"mutations\":[{\"action\":\"create\",\"parentId\":\"epic-1.1\",\"kind\":\"task\",\"title\":\"Cover the missing case\"}]}"}`,
+	required:    []string{"mutation_json"},
+	output:      map[string]string{"status": "awaiting_approval"},
+	errors:      []string{"mutation_json is required", "mutation_json is invalid", "factory request failed"},
+}
+
 func (t *factoryTools) handleGraphAction(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	epicID := req.GetString("epic_id", "")
 	var result *mcplib.CallToolResult

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -372,7 +373,7 @@ func TestDedicatedMCPFactoryServiceAllowsGraphMutations(t *testing.T) {
 		if err := service.MutateGraph(t.Context(), mutation); err != nil {
 			t.Fatalf("%s: %v", action, err)
 		}
-		if underlying.mutation != mutation {
+		if !reflect.DeepEqual(underlying.mutation, mutation) {
 			t.Fatalf("mutation = %+v, want %+v", underlying.mutation, mutation)
 		}
 	}
