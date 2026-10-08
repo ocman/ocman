@@ -160,3 +160,75 @@ func TestSessionsRefreshFloorUrgentPaths(t *testing.T) {
 		})
 	}
 }
+
+type slowFloorStore struct {
+	*fakeSessionStore
+	fullDelay, summaryDelay time.Duration
+}
+
+func (s *slowFloorStore) leavePending(delay time.Duration) {
+	if delay == 0 {
+		return
+	}
+	time.Sleep(delay)
+	MarkSessionDirty("s-mid")
+	// Exercise the timer without an event wake masking its deadline.
+	<-sessionsRefreshWake
+}
+
+func (s *slowFloorStore) GetSessions(ctx context.Context, dir string, since int64) ([]db.Session, error) {
+	out, err := s.fakeSessionStore.GetSessions(ctx, dir, since)
+	s.leavePending(s.fullDelay)
+	return out, err
+}
+
+func (s *slowFloorStore) GetSessionSummary(ctx context.Context, id string) (db.Session, error) {
+	out, err := s.fakeSessionStore.GetSessionSummary(ctx, id)
+	if s.summaryReads.Load() == 1 {
+		s.leavePending(s.summaryDelay)
+	}
+	return out, err
+}
+
+func TestSessionsRefreshFloorPreservesSlowPassBudget(t *testing.T) {
+	for _, full := range []bool{true, false} {
+		t.Run(map[bool]string{true: "full", false: "incremental"}[full], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				resetSessionsCache()
+				defer resetSessionsCache()
+				wake := sessionsRefreshWake
+				sessionsRefreshWake = make(chan struct{}, 1)
+				defer func() { sessionsRefreshWake = wake }()
+				store := &slowFloorStore{fakeSessionStore: newFakeSessionStore(dirtyFixture...)}
+				if full {
+					store.fullDelay = 3 * time.Second
+				} else {
+					store.summaryDelay = 3 * time.Second
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer func() { cancel(); drainSessionsRefresh() }()
+				StartSessionsRefresher(ctx, store, nil)
+				if !full {
+					synctest.Wait()
+					MarkSessionDirty("s-mid")
+				}
+				time.Sleep(3 * time.Second)
+				synctest.Wait()
+				want := int64(1)
+				if full {
+					want = 0
+				}
+				time.Sleep(time.Second)
+				synctest.Wait()
+				if got := store.summaryReads.Load(); got != want {
+					t.Fatalf("timer bypassed slow-pass budget: summary reads=%d, want %d", got, want)
+				}
+				time.Sleep(2 * time.Second)
+				synctest.Wait()
+				if got := store.summaryReads.Load(); got != want+1 || len(dirtyIDs()) != 0 {
+					t.Fatalf("budget expiry lost pending work: reads=%d dirty=%v", got, dirtyIDs())
+				}
+			})
+		})
+	}
+}

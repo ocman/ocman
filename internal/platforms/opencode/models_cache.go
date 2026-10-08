@@ -543,7 +543,11 @@ func nextSessionsReconcileDelay() time.Duration {
 	defer sessionsMu.RUnlock()
 	delay := time.Until(lastFullRefresh.Add(sessionsReconcileInterval))
 	if len(sessionsDirty) > 0 {
-		delay = min(delay, time.Until(lastIncrementalRefresh.Add(sessionsIncrementalInterval)))
+		// Pending work must respect both the streaming floor and the measured
+		// query cost, including dirty marks arriving during a slow full scan.
+		pendingDelay := max(time.Until(lastIncrementalRefresh.Add(sessionsIncrementalInterval)),
+			time.Until(lastRefreshEnd.Add(lastRefreshCost)))
+		delay = min(delay, pendingDelay)
 	}
 	if delay < 0 {
 		return 0
