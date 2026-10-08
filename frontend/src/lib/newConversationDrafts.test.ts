@@ -361,6 +361,23 @@ it('retains the source when replacement relocation fails at quota', async () => 
   } finally { write.mockRestore(); }
 });
 
+it.each(['commit', 'auxiliary'])('preserves retained text when source clear %s writes fail during relocation', async (failure) => {
+  const id = `clear-failure-${failure}`;
+  rememberConversationDraft({ draftId: id, directory: '/repo' });
+  saveDraft(id, 'only recoverable retained text');
+  useNewConversationDrafts.setState({ starts: { [id]: { version: getDraftVersion(id), text: 'submitted' } } });
+  const original = Storage.prototype.setItem;
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (failure === 'commit' ? key.startsWith(`ocman.composerDraftClear.v1:${id}:`) : key === `ocman.composerDraftClear.v1:${id}`) throw new Error('source clear failed');
+    original.call(this, key, value);
+  });
+  try {
+    await completeConversationStart(id, { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' }, false);
+    const target = useNewConversationDrafts.getState().starts[id].replacementDraftId;
+    expect(target ? getDraft(target) : getDraft(id)).toBe('only recoverable retained text');
+  } finally { write.mockRestore(); }
+});
+
 it('retains late edits when their relocation fails after the completion receipt commits', async () => {
   const id = 'late-quota';
   rememberConversationDraft({ draftId: id, directory: '/repo', agent: 'plan' });

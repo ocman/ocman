@@ -5,7 +5,7 @@ import { FirstSubmissionNotice } from './FirstSubmissionNotice';
 import { discardFirstSubmission, reconcileFirstSubmission } from './firstSubmission';
 
 vi.mock('./firstSubmission', () => ({
-  useFirstSubmission: (select: (state: unknown) => unknown) => select({ entries: { orphan: { text: 'payload', pending: true, error: 'Unknown outcome' } } }),
+  useFirstSubmission: (select: (state: unknown) => unknown) => select({ entries: { orphan: { text: 'payload', pending: true, error: 'Unknown outcome', canRelease: true } } }),
   discardFirstSubmission: vi.fn(), reconcileFirstSubmission: vi.fn(), startFirstSubmission: vi.fn(),
 }));
 

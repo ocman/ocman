@@ -8,6 +8,7 @@ interface Submission {
   pending: boolean;
   error?: string;
   execute?: () => Promise<void>;
+  canRelease?: boolean;
 }
 
 const PREFIX = 'ocman.firstSubmission.v1:';
@@ -30,7 +31,8 @@ function adopt(id: string, record: DraftStart | undefined) {
     const next = { ...entries };
     if (!record || record.deliveryState === 'done') delete next[id];
     else next[id] = { text: record.text, pending: record.deliveryState !== 'failed',
-      error: record.error, execute: executions.get(record.attemptId || '') };
+      error: record.error, execute: executions.get(record.attemptId || ''),
+      canRelease: record.deliveryState === 'interrupted' || record.deliveryState === 'failed' };
     return { entries: next, ready: { ...ready, [id]: true } };
   });
 }
@@ -95,11 +97,17 @@ export function useSessionFirstSubmission(id: string) {
   const entry = useFirstSubmission((state) => state.entries[id]);
   const ready = useFirstSubmission((state) => state.ready[id]);
   useEffect(() => {
-    const reconcile = () => void reconcileFirstSubmission(id).catch((error: unknown) => {
-      useFirstSubmission.setState(({ entries }) => ({ entries: { ...entries, [id]: {
-        text: '', pending: true, error: error instanceof Error ? error.message : String(error),
-      } } }));
-    });
+    const reconcile = () => {
+      const before = records.get(id);
+      const beforeView = getFirstSubmission(id);
+      void reconcileFirstSubmission(id).catch((error: unknown) => {
+        if (outcomeKey(records.get(id)) !== outcomeKey(before) || getFirstSubmission(id) !== beforeView) return;
+        useFirstSubmission.setState(({ entries }) => ({ entries: { ...entries, [id]: {
+          ...entries[id], text: entries[id]?.text || '', pending: true,
+          error: error instanceof Error ? error.message : String(error),
+        } } }));
+      });
+    };
     reconcile();
     const timer = setInterval(() => { if (getFirstSubmission(id)?.pending) reconcile(); }, 5000);
     return () => clearInterval(timer);

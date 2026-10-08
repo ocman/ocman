@@ -562,8 +562,10 @@ flowchart TD
   creates a session. `lib/newConversationDrafts` stores each draft's target and
   selections in per-draft browser localStorage keys, while `lib/composerDraft` stores text
   in immutable per-edit bodies with small per-draft head references. Each clear
-  permanently marks its own edit identity and deletes that immutable body; it
-  cannot erase a concurrent source save or reverse a newer discard. Superseded
+  commits the authoritative mark for its edit before reclaiming that immutable
+  body. Auxiliary cleanup failures
+  cannot roll back a committed relocation or delete its recoverable destination.
+  A clear cannot erase a concurrent source save or reverse a newer discard. Superseded
   bodies and explicitly cleared legacy entries are reclaimed. Older per-draft
   and shared-map text formats remain readable.
   `SidebarConversationDrafts` lists these prepared
@@ -659,6 +661,9 @@ flowchart TD
   the authoritative transaction result, fenced against newer live attempts.
   Equivalent durable terminal values are adopted without another write or
   notification, so IndexedDB's cloned objects cannot cause cross-tab ping-pong.
+  Receipt-read failures preserve the current payload/execution and cannot expose
+  release controls for an active delivery. Rejections are fenced against newer
+  lifecycle and view state.
   The originating tab
   owns the browser Files or command closure. An owner-presence probe detects a
   closed/reloaded tab. The unknown outcome remains blocked until the user explicitly

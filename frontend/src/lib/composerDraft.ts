@@ -115,11 +115,11 @@ function writeEntry(id: string, text: string) {
 }
 
 function clearEntry(id: string, entry: string) {
-  try { localStorage.removeItem(valueKey(id, entry)); } catch { /* The tombstone still hides an unreclaimed body. */ }
   // Monotonic per-edit tombstones cannot be reversed by a delayed older clear.
   localStorage.setItem(ownerKey(id, entry), '1');
-  localStorage.setItem(CLEAR_PREFIX + id, entry);
   try {
+    localStorage.removeItem(valueKey(id, entry));
+    localStorage.setItem(CLEAR_PREFIX + id, entry);
     localStorage.setItem(ownerKey(id, 'legacy'), '1');
     localStorage.removeItem(TEXT_PREFIX + id);
     pruneLegacyDrafts();

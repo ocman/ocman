@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { discardFirstSubmission, getFirstSubmission, reconcileFirstSubmission, startFirstSubmission, useFirstSubmission, useSessionFirstSubmission } from './firstSubmission';
 import { claimDraftStart, persistDraftStart, readDraftStart } from '../../lib/draftStartClaims';
 const stored = vi.hoisted(() => new Map<string, import('../../lib/draftStartClaims').DraftStart>());
@@ -146,6 +146,36 @@ it('fails closed on a hydration error and recovers after a successful read', asy
   await waitFor(() => expect(result.current).toBeUndefined());
   await discardFirstSubmission('no-record');
   expect(getFirstSubmission('no-record')).toBeUndefined();
+});
+
+it('preserves an executing delivery when a receipt read fails', async () => {
+  let finish!: () => void;
+  const delivery = new Promise<void>((resolve) => { finish = resolve; });
+  const execute = () => delivery;
+  await startFirstSubmission('active-read-error', 'owned payload', execute);
+  vi.mocked(readDraftStart).mockRejectedValueOnce(new Error('read failed'));
+  const { result } = renderHook(() => useSessionFirstSubmission('active-read-error'));
+  await waitFor(() => expect(result.current?.error).toBe('read failed'));
+  expect(result.current).toMatchObject({ pending: true, text: 'owned payload', execute });
+  expect(result.current?.canRelease).toBe(false);
+  finish();
+  await waitFor(() => expect(getFirstSubmission('active-read-error')).toBeUndefined());
+});
+
+it('does not let a rejected old read overwrite a newly executing delivery', async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(readDraftStart).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  const { result } = renderHook(() => useSessionFirstSubmission('stale-read-error'));
+  let finish!: () => void;
+  const delivery = new Promise<void>((resolve) => { finish = resolve; });
+  const execute = () => delivery;
+  await act(async () => startFirstSubmission('stale-read-error', 'new payload', execute));
+  await act(async () => reject(new Error('old read failed')));
+  expect(result.current).toMatchObject({ pending: true, text: 'new payload', execute });
+  expect(result.current?.canRelease).toBe(false);
+  expect(result.current?.error).toBeUndefined();
+  finish();
+  await waitFor(() => expect(getFirstSubmission('stale-read-error')).toBeUndefined());
 });
 
 it('keeps a live owner pending when an independent tab probes its execution', async () => {
