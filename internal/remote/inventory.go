@@ -27,7 +27,7 @@ const (
 	// tick. It only bounds changes invisible to gitConfigProbe (e.g.
 	// remotes pulled in from global config); remote edits in the
 	// repository config are picked up on the next tick via the file's
-	// modification time.
+	// identity, size and modification time.
 	upstreamTTL = time.Hour
 	// nonRepoRecheck bounds how long a directory last seen as a
 	// non-repository stays cached before a git init in it is detected.
@@ -39,7 +39,7 @@ const (
 
 // originCache caches all fetch remotes per directory. Positive entries
 // live for upstreamTTL and are invalidated cheaply by the repository
-// config's mtime; absent directories are cached until os.Stat sees the
+// config's stat metadata; absent directories are cached until os.Stat sees the
 // directory again, so deleted checkouts stop costing a subprocess each.
 type originCache struct {
 	mu      sync.Mutex
@@ -57,11 +57,11 @@ type cachedUpstreams struct {
 	// cache without a git call; when the directory reappears it is
 	// re-probed on the next call.
 	gone bool
-	// configPath/configMod record the file holding the remotes and its
-	// mtime at probe time; a change re-probes on the next call. An
+	// configPath/configStat record the file holding the remotes and its
+	// metadata at probe time; a change re-probes on the next call. An
 	// empty path (unresolvable) falls back to TTL expiry only.
 	configPath string
-	configMod  time.Time
+	configStat os.FileInfo
 }
 
 func newOriginCache() *originCache { return &originCache{m: make(map[string]cachedUpstreams)} }
@@ -75,7 +75,7 @@ func (c *originCache) upstreams(ctx context.Context, dir string) (cachedUpstream
 
 // fresh reports whether a cached entry may be served without a git call.
 // Deleted directories stay cached until the directory reappears; remote
-// edits invalidate a positive entry through the config file's mtime.
+// edits invalidate a positive entry through the config file's stat metadata.
 func (c *originCache) fresh(e cachedUpstreams, dir string) bool {
 	_, statErr := os.Stat(dir)
 	if e.gone {
@@ -85,7 +85,7 @@ func (c *originCache) fresh(e cachedUpstreams, dir string) bool {
 		return false
 	}
 	if e.configPath != "" {
-		if st, err := os.Stat(e.configPath); err != nil || !st.ModTime().Equal(e.configMod) {
+		if st, err := os.Stat(e.configPath); err != nil || e.configStat == nil || !os.SameFile(st, e.configStat) || st.Size() != e.configStat.Size() || !st.ModTime().Equal(e.configStat.ModTime()) {
 			return false
 		}
 	}
@@ -130,7 +130,7 @@ func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams
 		}
 		v := previous
 		v.gone = gone
-		v.configPath, v.configMod = "", time.Time{}
+		v.configPath, v.configStat = "", nil
 		if !gone {
 			v.expires = time.Now().Add(nonRepoRecheck)
 		}
@@ -154,7 +154,7 @@ func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams
 	}
 	slices.Sort(v.keys)
 	v.keys = slices.Compact(v.keys)
-	v.configPath, v.configMod = gitConfigProbe(cctx, dir)
+	v.configPath, v.configStat = gitConfigProbe(cctx, dir)
 
 	c.mu.Lock()
 	c.m[dir] = v
@@ -167,19 +167,19 @@ func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams
 // main repository's config) and repository subdirectories resolve
 // correctly. An empty path means git could not answer and the entry
 // falls back to TTL expiry.
-func gitConfigProbe(ctx context.Context, dir string) (string, time.Time) {
+func gitConfigProbe(ctx context.Context, dir string) (string, os.FileInfo) {
 	common, err := gitexec.Output(ctx, dir, "rev-parse", "--git-common-dir")
 	if err != nil || common == "" {
-		return "", time.Time{}
+		return "", nil
 	}
 	if !filepath.IsAbs(common) {
 		common = filepath.Join(dir, common)
 	}
 	path := filepath.Join(common, "config")
 	if st, err := os.Stat(path); err == nil {
-		return path, st.ModTime()
+		return path, st
 	}
-	return "", time.Time{}
+	return "", nil
 }
 
 var projectUpstreamsCache = newOriginCache()
