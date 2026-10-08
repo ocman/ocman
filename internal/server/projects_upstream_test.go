@@ -48,7 +48,7 @@ func TestProjectsRefreshRetainsSnapshotOnDiscoveryFailure(t *testing.T) {
 		}
 		return nil
 	}
-	if err := srv.refreshProjectsIndex(); !errors.Is(err, context.Canceled) {
+	if err := srv.refreshProjectsIndex(t.Context()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("discovery error lost: %v", err)
 	}
 	got, loaded, dirty := srv.projectsSnapshotState()
@@ -56,7 +56,7 @@ func TestProjectsRefreshRetainsSnapshotOnDiscoveryFailure(t *testing.T) {
 		t.Fatalf("failed discovery published a partial snapshot: %+v", got)
 	}
 	fail = false
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	got, _, dirty = srv.projectsSnapshotState()

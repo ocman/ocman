@@ -166,7 +166,7 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 		t.Fatalf("seeding first project session: %v", err)
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("initial projects refresh: %v", err)
 	}
 
@@ -193,7 +193,7 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 		t.Fatalf("expected stale in-memory index with one project, got %+v", projects)
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("second projects refresh: %v", err)
 	}
 
@@ -233,7 +233,7 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	})
 	srv.registry = reg
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("initial projects refresh: %v", err)
 	}
 	sub, unsubscribe := srv.broadcastHub.subscribe()

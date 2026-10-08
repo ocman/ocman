@@ -142,7 +142,7 @@ func TestProjectArchive_OverlayAndAutoUnarchive(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("projects refresh: %v", err)
 	}
 
@@ -161,7 +161,7 @@ func TestProjectArchive_OverlayAndAutoUnarchive(t *testing.T) {
 	); err != nil {
 		t.Fatalf("bumping activity: %v", err)
 	}
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("projects refresh 2: %v", err)
 	}
 	projects = getProjects(t, srv)
@@ -187,7 +187,7 @@ func TestProjectArchive_FoldsWorktreeToRoot(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("projects refresh: %v", err)
 	}
 
@@ -295,7 +295,7 @@ func TestProjectArchive_IsPerHost(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("projects refresh: %v", err)
 	}
 	remoteLastUsed := int64(100)
@@ -325,7 +325,7 @@ func TestProjectArchive_IsPerHost(t *testing.T) {
 	if _, err := rawDB.Exec(`UPDATE session SET time_updated = 9999999999999 WHERE id = 's-1'`); err != nil {
 		t.Fatalf("bumping activity: %v", err)
 	}
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("projects refresh 2: %v", err)
 	}
 	byRemote = map[string]db.ProjectStats{}

@@ -109,7 +109,7 @@ func TestProjectsIndexLoop_SurvivesPanic(t *testing.T) {
 	defer func() { projectsIndexTickFn = prev }()
 
 	var ticks int32
-	projectsIndexTickFn = func(*Server) {
+	projectsIndexTickFn = func(context.Context, *Server) {
 		n := atomic.AddInt32(&ticks, 1)
 		if n == 1 {
 			panic("simulated panic on first tick")
@@ -119,8 +119,8 @@ func TestProjectsIndexLoop_SurvivesPanic(t *testing.T) {
 	hook := logtest.NewLocal(logrus.StandardLogger())
 	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
 
-	runWithRecover("projects-index", func() { projectsIndexTickFn(nil) })
-	runWithRecover("projects-index", func() { projectsIndexTickFn(nil) })
+	runWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
+	runWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
 
 	if got := atomic.LoadInt32(&ticks); got != 2 {
 		t.Fatalf("ticks = %d, want 2", got)

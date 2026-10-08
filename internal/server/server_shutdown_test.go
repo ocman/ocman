@@ -99,3 +99,43 @@ func TestServerShutdownCancelsBlockedArchiveRPC(t *testing.T) {
 		t.Fatal("archive RPC has no bounded deadline")
 	}
 }
+
+func TestServerShutdownCancelsBlockedProjectRefresh(t *testing.T) {
+	t.Setenv("OCMAN_PLUGIN_DIR", t.TempDir())
+	srv := testServer(t)
+	entered, release := make(chan context.Context, 1), make(chan struct{})
+	srv.projects.fetch = func() ([]db.ProjectStats, error) { return nil, nil }
+	srv.projects.enrich = func(ctx context.Context, _ []db.ProjectStats) error {
+		entered <- ctx
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return context.Canceled
+		}
+	}
+	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"projects"}, TTLMS: 45_000}); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	t.Cleanup(func() { cancel(); close(release); <-done })
+	go func() { err := srv.StartOnListener(ctx, ln); done <- err; close(done) }()
+	refreshCtx := <-entered
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("shutdown hung on blocked project refresh")
+	}
+	if deadline, ok := refreshCtx.Deadline(); !ok || time.Until(deadline) > time.Minute {
+		t.Fatal("project refresh has no bounded deadline")
+	}
+}

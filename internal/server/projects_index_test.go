@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -10,6 +11,57 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
+
+func TestProjectsRefreshWaiterCanCancel(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	started, release := make(chan struct{}), make(chan struct{})
+	var once atomic.Bool
+	srv.projects.fetch = func() ([]db.ProjectStats, error) {
+		if !once.Swap(true) {
+			close(started)
+		}
+		<-release
+		return nil, nil
+	}
+	driverDone := make(chan error, 1)
+	go func() { driverDone <- srv.refreshProjectsIndex(t.Context()) }()
+	t.Cleanup(func() { close(release); <-driverDone })
+	<-started
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	waiterDone := make(chan error, 1)
+	go func() { waiterDone <- srv.refreshProjectsIndex(ctx) }()
+	select {
+	case err := <-waiterDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waiter error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled waiter blocked on the active refresh")
+	}
+}
+
+func TestProjectsAsyncRefreshUsesServerCancellation(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	srv.pluginCtx = ctx
+	srv.projects.fetch = func() ([]db.ProjectStats, error) { return nil, nil }
+	entered := make(chan context.Context, 1)
+	srv.projects.enrich = func(ctx context.Context, _ []db.ProjectStats) error { entered <- ctx; <-ctx.Done(); return ctx.Err() }
+	srv.triggerProjectsIndexRefresh()
+	refreshCtx := <-entered
+	if deadline, ok := refreshCtx.Deadline(); !ok || time.Until(deadline) > time.Minute {
+		t.Fatal("async refresh has no bounded deadline")
+	}
+	cancel()
+	waitProjectsRefresh(t, srv)
+	srv.projects.mu.RLock()
+	defer srv.projects.mu.RUnlock()
+	if !errors.Is(srv.projects.err, context.Canceled) {
+		t.Fatalf("refresh error=%v", srv.projects.err)
+	}
+}
 
 // TestRefreshProjectsIndex_SetsLoadedFlag asserts that after a successful
 // refresh the loaded flag is true and projectsSnapshot reports loaded.
@@ -21,7 +73,7 @@ func TestRefreshProjectsIndex_SetsLoadedFlag(t *testing.T) {
 		t.Fatal("expected loaded=false before first refresh")
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("refreshProjectsIndex: %v", err)
 	}
 
@@ -39,14 +91,14 @@ func TestProjectsBackgroundRefreshRequiresDemand(t *testing.T) {
 		return nil, nil
 	}
 
-	srv.runProjectsIndexTick()
+	srv.runProjectsIndexTick(t.Context())
 	srv.refreshProjectsIndexAsync()
 	time.Sleep(20 * time.Millisecond)
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("background refreshes without demand = %d, want 0", got)
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if got := calls.Load(); got != 1 {
@@ -56,7 +108,7 @@ func TestProjectsBackgroundRefreshRequiresDemand(t *testing.T) {
 	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"projects"}, TTLMS: 45_000}); err != nil {
 		t.Fatal(err)
 	}
-	srv.runProjectsIndexTick()
+	srv.runProjectsIndexTick(t.Context())
 	if got := calls.Load(); got != 2 {
 		t.Fatalf("background refreshes with demand = %d, want 2", got)
 	}
@@ -99,7 +151,7 @@ func TestHostProjectsRefreshesAfterSkippedTick(t *testing.T) {
 	srv.projects.loaded = true
 	srv.projects.data = []db.ProjectStats{{Directory: "/stale"}}
 
-	srv.runProjectsIndexTick()
+	srv.runProjectsIndexTick(t.Context())
 	projects, err := srv.hostProjects(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +195,7 @@ func TestRefreshProjectsIndexPersistsCache(t *testing.T) {
 	srv.projects.fetch = func() ([]db.ProjectStats, error) {
 		return []db.ProjectStats{{Directory: "/fresh", SessionCount: 2}}, nil
 	}
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -163,7 +215,7 @@ func TestRefreshProjectsIndexBroadcastsOnlyChanges(t *testing.T) {
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -175,7 +227,7 @@ func TestRefreshProjectsIndexBroadcastsOnlyChanges(t *testing.T) {
 		t.Fatal("timed out waiting for projects changed event")
 	}
 
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -204,7 +256,7 @@ func waitProjectsRefresh(t *testing.T, srv *Server) {
 // no database, refreshProjectsIndex must return nil without panicking.
 func TestRefreshProjectsIndex_NilDB(t *testing.T) {
 	srv := &Server{}
-	if err := srv.refreshProjectsIndex(); err != nil {
+	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Errorf("expected nil error with nil db, got %v", err)
 	}
 }

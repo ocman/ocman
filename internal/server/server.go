@@ -360,7 +360,15 @@ func (s *Server) triggerProjectsIndexRefresh() {
 	st.mu.Unlock()
 
 	go runWithRecover("projects-index-async", func() {
-		if err := s.driveProjectsRefresh(done); err != nil {
+		s.pluginMu.Lock()
+		ctx := s.pluginCtx
+		s.pluginMu.Unlock()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(ctx, time.Minute)
+		defer cancel()
+		if err := s.driveProjectsRefresh(ctx, done); err != nil {
 			log.WithError(err).Warn("refreshing projects index")
 		}
 	})
