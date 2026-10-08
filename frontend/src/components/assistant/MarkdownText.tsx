@@ -1,7 +1,7 @@
 // Markdown rendering for assistant text parts and tool output:
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
-import { Children, Fragment, isValidElement, memo, useEffect, useId, useState } from 'react';
+import { Children, cloneElement, Fragment, isValidElement, memo, useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import type { ExtraProps } from 'react-markdown';
@@ -239,9 +239,24 @@ const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
 let highlightTransformer: ReturnType<typeof rehypeHighlight> | undefined;
 const sharedRehypeHighlight = () => (highlightTransformer ??= rehypeHighlight());
 const REHYPE_PLUGINS = [sharedRehypeHighlight];
+
+function removeTrailingDuration(node: ReactNode, duration: string): ReactNode {
+  if (typeof node === 'string') {
+    const end = node.trimEnd().length;
+    return node.slice(0, end - duration.length) + node.slice(end);
+  }
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return cloneElement(node, { children: removeTrailingDuration(node.props.children, duration) });
+  }
+  const children: ReactNode[] = Children.toArray(node);
+  const last = children.findLastIndex(child => nodeText(child).trim());
+  if (last >= 0) children[last] = removeTrailingDuration(children[last], duration);
+  return children;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'blockquote'> & ExtraProps) {
-  const blocks = Children.toArray(children);
+  const blocks: ReactNode[] = Children.toArray(children);
   const firstIndex = blocks.findIndex(child => isValidElement(child));
   const first = blocks[firstIndex];
   if (!isValidElement<{ children?: ReactNode }>(first) || first.type !== 'p') return <blockquote {...props}>{children}</blockquote>;
@@ -249,10 +264,15 @@ function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'bloc
   if (!isValidElement(label) || label.type !== 'strong' || !/^(Thinking|Thought):$/.test(nodeText(label))) {
     return <blockquote {...props}>{children}</blockquote>;
   }
+  const lastIndex = blocks.findLastIndex(child => isValidElement(child));
+  const duration = lastIndex > firstIndex
+    ? nodeText(blocks[lastIndex]).trimEnd().match(/ · \d+(?:\.\d+)?[smhd](?: \d+[smhd])?$/)?.[0]
+    : undefined;
+  if (duration) blocks[lastIndex] = removeTrailingDuration(blocks[lastIndex], duration);
   return (
     <blockquote className="oc-reasoning">
       <details>
-        <summary>{first.props.children}</summary>
+        <summary>{first.props.children}{duration}</summary>
         {blocks.slice(firstIndex + 1)}
       </details>
     </blockquote>
@@ -264,18 +284,13 @@ const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownI
 // One independently parsed chunk. memo: while an answer streams only the
 // last chunk's text changes, so earlier chunks skip re-parsing.
 const MarkdownBlock = memo(function MarkdownBlock({ text, preserveLineBreaks }: { text: string; preserveLineBreaks: boolean }) {
-  // Keep the generated timer in the first paragraph, which becomes the collapsed preview.
-  const previewText = text.replace(
-    /^(> \*\*(?:Thinking|Thought):\*\* [^\n]*(?:\n> [^\n]+)*)(\n> ?\n(?:>[^\n]*\n)*>[^\n]*?)( · \d+(?:\.\d+)?[smhd](?: \d+[smhd])?)$/gm,
-    '$1$3$2',
-  );
   return (
     <ReactMarkdown
       remarkPlugins={preserveLineBreaks ? REMARK_PLUGINS_WITH_BREAKS : REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}
       components={MARKDOWN_COMPONENTS}
     >
-      {previewText}
+      {text}
     </ReactMarkdown>
   );
 });

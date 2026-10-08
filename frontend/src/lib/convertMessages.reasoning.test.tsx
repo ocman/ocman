@@ -54,6 +54,19 @@ it.each(['0s', '7.8s', '1m 5s', '2h 3m', '1d 2h'])(
   },
 );
 
+it('keeps the timer visible when a list interrupts the preview without a blank line', () => {
+  const { container } = render(<MarkdownContent text={'> **Thought:** Preview.\n> - First item\n> - Last *item*. · 11s'} />);
+  expect(container.querySelector('summary')).toHaveTextContent('Thought: Preview. · 11s');
+  expect(container.querySelector('li:last-child')).toHaveTextContent('Last item.');
+  expect(container.querySelector('li:last-child')).not.toHaveTextContent('· 11s');
+});
+
+it('preserves literal reasoning examples in fenced code', () => {
+  const code = '> **Thought:** Preview.\n>\n> Hidden reasoning. · 11s';
+  const { container } = render(<MarkdownContent text={`\`\`\`text\n${code}\n\`\`\``} />);
+  expect(container.querySelector('pre code')?.textContent).toBe(`${code}\n`);
+});
+
 it.each(['**Note:** First paragraph.', 'First paragraph.', '# Heading'])('leaves ordinary blockquotes expanded: %s', (first) => {
   const { container } = render(<MarkdownContent text={`> ${first}\n>\n> Second paragraph.`} />);
   expect(container.querySelector('details')).not.toBeInTheDocument();
