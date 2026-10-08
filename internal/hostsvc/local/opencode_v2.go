@@ -58,13 +58,21 @@ func (h *Host) ensureMachine(ctx context.Context, projectDir string,
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("creating OpenCode v2 working directory: %w", err)
 	}
-	res, err := h.sfDoDetached(ctx, root, fn)
+	res, err := h.sfDoDetached(ctx, root, func(flightCtx context.Context, root string) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		res, err := fn(flightCtx, root)
+		if err != nil {
+			// An inconclusive probe preserves only previously validated routing.
+			// Cleanup handles (cold, rejected or stopped) authorize nothing.
+			h.publishMachineServer(h.authorizedEndpoint(root))
+			return nil, err
+		}
+		// Publication belongs to the detached flight, not a cancelled waiter.
+		h.publishMachineServer(res.Endpoint)
+		return res, nil
+	})
 	if err != nil {
-		// Don't keep routing every directory to a server that is gone.
-		h.publishMachineServer("")
 		return nil, err
 	}
-	h.publishMachineServer(res.Endpoint)
 	out := *res
 	out.RepoRoot = projectDir
 	if projectDir != "" {

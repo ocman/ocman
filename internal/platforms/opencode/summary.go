@@ -18,6 +18,7 @@ func (a *Adapter) SessionSummary(ctx context.Context, id string) (*db.Session, e
 	row.Platform = string(a.ID())
 	port := portForDirectory(discoverOpenCodePorts(), row.Directory)
 	row.Status = a.settleStatusOnPort(id, port, row.Status)
+	row.Notice = a.sessionNoticeOnPort(id, port)
 	row.LiveConnection = port != ""
 	permissions, questions := a.prompts.pendingSessionIDs()
 	row.PendingPermission = bubbleUpPromptsToParent(ctx, permissions, a.db)[id]

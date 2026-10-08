@@ -43,8 +43,8 @@ func TestRoutineRunningIndexMigration(t *testing.T) {
 			if err := migrate(raw); err != nil {
 				t.Fatal(err)
 			}
-			if version, err := currentSchemaVersion(raw); err != nil || version != previousVersion+1 {
-				t.Fatalf("schema version = %d, %v; want %d", version, err, previousVersion+1)
+			if version, err := currentSchemaVersion(raw); err != nil || version != latestSchemaVersion {
+				t.Fatalf("schema version = %d, %v; want %d", version, err, latestSchemaVersion)
 			}
 			assertRoutineRunningPlan(t, raw)
 			if err := migrate(raw); err != nil {

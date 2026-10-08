@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	log "github.com/sirupsen/logrus"
@@ -161,7 +162,11 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			if ocAdapter == nil {
 				return
 			}
-			if ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, statusType) {
+			var notice *db.SessionNotice
+			if statusType == "retry" {
+				notice = opencode.RetryNotice(status.Message, status.Next, status.Attempt)
+			}
+			if ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, statusType, notice) {
 				w.broadcastSessionStatus(ocAdapter, port, sessionID, statusType)
 			}
 		},

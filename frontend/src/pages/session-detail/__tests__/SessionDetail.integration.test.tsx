@@ -1638,7 +1638,7 @@ describe('SessionDetail — status badge follows the backend', () => {
 });
 
 describe('SessionDetail — rate-limit notice', () => {
-  it('renders without maximum-update-depth when session has a notice', async () => {
+  it.each(['error', 'busy'] as const)('renders a %s session notice without maximum-update-depth', async (status) => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const notice = {
@@ -1647,7 +1647,7 @@ describe('SessionDetail — rate-limit notice', () => {
       retryAt: Date.now() + 300_000,
       attempt: 1,
     };
-    const sess = makeSession({ id: 'sess_rl', status: 'error', notice });
+    const sess = makeSession({ id: 'sess_rl', status, notice });
     const detail = makeSessionDetail(sess);
 
     const handle = renderSessionPage({

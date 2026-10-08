@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { api } from '../lib/api';
+import { api, type InboxItem } from '../lib/api';
 import { useShortcutDispatcher } from '../lib/shortcutRegistry';
 import { Inbox } from './Inbox';
 
@@ -65,19 +65,19 @@ describe('Inbox', () => {
 
     fireEvent.keyDown(document.body, { code: 'Backspace', key: 'Backspace' });
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
-    // The reader is cleared, so a second Delete can't re-archive it.
+    await within(reader).findByRole('heading', { name: 'Remote note' });
     vi.mocked(api.archiveInboxItems).mockClear();
     fireEvent.keyDown(document.body, { code: 'Delete', key: 'Delete' });
-    expect(api.archiveInboxItems).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '2', remoteId: 'laptop' }]));
   });
 
-  it('archives a row from its inline button and closes the reader when it was open', async () => {
+  it('archives a row from its inline button and opens the next message', async () => {
     renderInbox();
     const row = (await screen.findByRole('button', { name: /Build.*finished/ })).closest('article')!;
     await within(screen.getByRole('region', { name: 'Message body' })).findByTestId('inbox-message-header');
     fireEvent.click(within(row).getByRole('button', { name: 'Archive' }));
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
-    await waitFor(() => expect(screen.queryByTestId('inbox-message-header')).toBeNull());
+    await screen.findByRole('heading', { name: 'Remote note' });
     // Archived rows can't be re-archived.
     fireEvent.click(statusFilter('Archived'));
     await waitFor(() => expect(screen.getByRole('button', { name: /Remote note/ })).toBeInTheDocument());
@@ -192,13 +192,99 @@ describe('Inbox', () => {
     expect(within(reader).getByText('Select a message')).toBeInTheDocument();
   });
 
-  it('archives the open message and clears the reader when it disappears', async () => {
+  it('archives the last message and opens the message above', async () => {
     renderInbox();
     fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
     vi.mocked(api.inbox).mockResolvedValue({ items: [items[0]], unreadTotal: 1 });
     fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '2', remoteId: 'laptop' }]));
+    await screen.findByRole('heading', { name: 'Build finished' });
+  });
+
+  it.each(['row', 'reader', 'keyboard'])('opens the next filtered message when archiving through %s', async (action) => {
+    const next = { ...items[0], id: '3', title: 'Build next', body: 'Next body' };
+    vi.mocked(api.inbox).mockResolvedValue({ items: [...items, next], unreadTotal: 2 });
+    renderInbox();
+    await screen.findByRole('button', { name: /Build.*finished/ });
+    fireEvent.click(screen.getByRole('radio', { name: 'Primary' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search inbox' }), { target: { value: 'Build' } });
+    const first = await screen.findByRole('button', { name: /Build.*finished/ });
+    fireEvent.click(first);
+    vi.mocked(api.markInboxItemRead).mockClear();
+    if (action === 'row') fireEvent.click(within(first.closest('article')!).getByRole('button', { name: 'Archive' }));
+    else if (action === 'reader') fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
+    else fireEvent.keyDown(document.body, { code: 'Delete', key: 'Delete' });
+    await screen.findByRole('heading', { name: 'Build next' });
+    expect(screen.getByRole('button', { name: /Build next/ })).toHaveAttribute('aria-current', 'true');
+    await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('3', 'local'));
+  });
+
+  it('clears the reader when no other filtered message remains', async () => {
+    renderInbox();
+    await screen.findByRole('button', { name: /Build.*finished/ });
+    fireEvent.click(screen.getByRole('radio', { name: 'Primary' }));
+    fireEvent.click(screen.getByRole('button', { name: /Build.*finished/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
     await screen.findByText('Select a message');
+    expect(api.markInboxItemRead).not.toHaveBeenCalledWith('2', 'laptop');
+  });
+
+  it('keeps the open message when another row is archived', async () => {
+    renderInbox();
+    const other = (await screen.findByRole('button', { name: /Remote note/ })).closest('article')!;
+    await screen.findByRole('heading', { name: 'Build finished' });
+    fireEvent.click(within(other).getByRole('button', { name: 'Archive' }));
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalled());
+    expect(screen.getByRole('heading', { name: 'Build finished' })).toBeInTheDocument();
+  });
+
+  it('uses the unread filter even when reading hides the current row', async () => {
+    const next = { ...items[0], id: '3', title: 'Unread next' };
+    let currentItems: InboxItem[] = [...items, next];
+    vi.mocked(api.inbox).mockImplementation(async () => ({ items: currentItems, unreadTotal: 2 }));
+    vi.mocked(api.markInboxItemRead).mockImplementation(async (id) => {
+      currentItems = currentItems.map((item) => item.id === id ? { ...item, readAt: Date.now() } : item);
+    });
+    renderInbox();
+    await screen.findByRole('heading', { name: 'Build finished' });
+    fireEvent.click(statusFilter('Unread'));
+    fireEvent.click(await screen.findByRole('button', { name: /Unread next/ }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Unread next/ })).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
+    await screen.findByText('Select a message');
+    expect(screen.queryByRole('heading', { name: 'Remote note' })).toBeNull();
+  });
+
+  it.each([['C', 'D'], ['D', 'C']])('archives hidden unread row %s and opens its neighbor %s', async (target, expected) => {
+    let currentItems: InboxItem[] = ['A', 'B', 'C', 'D'].map((title) => ({ ...items[0], id: title, title }));
+    vi.mocked(api.inbox).mockImplementation(async () => ({ items: currentItems, unreadTotal: 4 }));
+    vi.mocked(api.markInboxItemRead).mockImplementation(async (id) => {
+      currentItems = currentItems.map((item) => item.id === id ? { ...item, readAt: Date.now() } : item);
+    });
+    renderInbox();
+    await screen.findByRole('heading', { name: 'A' });
+    fireEvent.click(statusFilter('Unread'));
+    const list = within(screen.getByRole('region', { name: 'Inbox messages' }));
+    fireEvent.click((await list.findByText(target)).closest('button')!);
+    await waitFor(() => expect(list.queryByText(target)).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
+    await screen.findByRole('heading', { name: expected });
+  });
+
+  it.each(['open another', 'change filter'])('preserves navigation during a pending archive: %s', async (action) => {
+    let complete!: () => void;
+    vi.mocked(api.archiveInboxItems).mockImplementation(() => new Promise<void>((resolve) => { complete = resolve; }));
+    renderInbox();
+    await screen.findByRole('heading', { name: 'Build finished' });
+    fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalled());
+    if (action === 'open another') fireEvent.click(screen.getByRole('button', { name: /Remote note/ }));
+    else fireEvent.click(screen.getByRole('radio', { name: 'Factory' }));
+    complete();
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Archive' })[0]).not.toBeDisabled());
+    const reader = screen.getByRole('region', { name: 'Message body' });
+    if (action === 'open another') expect(within(reader).getByRole('heading', { name: 'Remote note' })).toBeInTheDocument();
+    else expect(within(reader).getByText('Select a message')).toBeInTheDocument();
   });
 
   it('keeps matching IDs from different sources independent and allows deselection', async () => {
@@ -243,13 +329,14 @@ describe('Inbox', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('reports read and archive failures while keeping the message open', async () => {
+  it.each(['reader', 'keyboard'])('reports read and archive failures while keeping the message open through %s', async (action) => {
     vi.mocked(api.markInboxItemRead).mockRejectedValue(new Error('offline'));
     vi.mocked(api.archiveInboxItems).mockRejectedValue(new Error('offline'));
     renderInbox();
     fireEvent.click(await screen.findByRole('button', { name: /Build.*finished/ }));
     await screen.findByText('Could not mark the message as read. Open it again to retry.');
-    fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
+    if (action === 'reader') fireEvent.click(screen.getByRole('button', { name: 'Archive message' }));
+    else fireEvent.keyDown(document.body, { code: 'Delete', key: 'Delete' });
     await screen.findByText('Could not archive messages. Please try again.');
     expect(screen.getByRole('link', { name: 'details' })).toBeInTheDocument();
   });

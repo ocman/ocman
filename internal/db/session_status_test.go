@@ -55,7 +55,7 @@ func TestGetSessionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := d.GetSessionLifecycle(t.Context(), "s")
-	want := SessionLifecycle{Directory: "/repo", Status: StatusWaiting, LatestMessageID: "z", LatestMessageCreated: 2, LatestMessageRole: "assistant"}
+	want := SessionLifecycle{Directory: "/repo", Status: StatusWaiting, LatestMessageID: "z", LatestMessageCreated: 2, LatestMessageRole: "assistant", LatestMessageFinish: "stop"}
 	if err != nil || got != want {
 		t.Fatalf("lifecycle = %+v, %v; want %+v", got, err, want)
 	}

@@ -2,9 +2,14 @@ package ocruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/tmux"
@@ -110,15 +115,61 @@ func (r *NativeRuntime) Probe(ctx context.Context, inst *Instance) error {
 	return probeIdentity(ctx, client, inst.Endpoint, inst.RepoRoot)
 }
 
-// Stop kills the tmux session backing the instance.
+// Stop kills the owned tmux session. An already-missing session also requires
+// endpoint evidence before it can be confirmed stopped.
 func (r *NativeRuntime) Stop(ctx context.Context, inst *Instance) error {
-	if inst == nil || inst.ID == "" {
+	if inst == nil {
+		return fmt.Errorf("ocruntime: Stop requires an instance with an ID")
+	}
+	if inst.ID == "" {
+		if r.endpointAbsent(ctx, inst) {
+			return nil
+		}
 		return fmt.Errorf("ocruntime: Stop requires an instance with an ID")
 	}
 	if err := r.kill(ctx, inst.ID); err != nil {
+		if missingNativeSession(err) && r.endpointAbsent(ctx, inst) {
+			return nil
+		}
 		return fmt.Errorf("ocruntime: stop native tmux opencode: %w", err)
 	}
-	return nil
+	if inst.Endpoint == "" {
+		return nil
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		if r.endpointAbsent(stopCtx, inst) {
+			return nil
+		}
+		select {
+		case <-stopCtx.Done():
+			return fmt.Errorf("ocruntime: endpoint still available after tmux stop: %w", stopCtx.Err())
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func (r *NativeRuntime) endpointAbsent(ctx context.Context, inst *Instance) bool {
+	if inst.Endpoint == "" {
+		return false
+	}
+	err := r.Probe(ctx, inst)
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, ErrProbeIdentityMismatch)
+}
+
+func missingNativeSession(err error) bool {
+	var exited *exec.ExitError
+	if !errors.As(err, &exited) {
+		return false
+	}
+	message := string(exited.Stderr)
+	if message == "" {
+		message = err.Error()
+	}
+	message = strings.ToLower(message)
+	return strings.Contains(message, "can't find session:") || strings.Contains(message, "no server running") ||
+		(strings.Contains(message, "error connecting to") && strings.Contains(message, "no such file or directory"))
 }
 
 // compile-time assurance NativeRuntime satisfies Runtime.

@@ -186,6 +186,21 @@ func TestParseProviderOverloadNotice_UnrelatedError(t *testing.T) {
 
 // --- deriveSessionNotice tests ---
 
+func TestDeriveSessionNotice_PreservesLiveRetry(t *testing.T) {
+	notice := &db.SessionNotice{Kind: "rate_limit", Message: "rate limited", RetryAt: 42, Attempt: 2}
+	for _, platform := range []string{"opencode", "r-owner:opencode"} {
+		s := db.Session{Platform: platform, Status: db.StatusBusy, Notice: notice}
+		rows := []db.Session{s}
+		applySessionNotice(rows)
+		if rows[0].Notice != notice {
+			t.Fatalf("%s list notice overwritten: %+v", platform, rows[0].Notice)
+		}
+		if got := deriveSessionNotice(s); got != notice {
+			t.Fatalf("%s live notice overwritten: %+v", platform, got)
+		}
+	}
+}
+
 func TestDeriveSessionNotice_ErroredWithRateLimit(t *testing.T) {
 	s := db.Session{
 		Status:           "error",

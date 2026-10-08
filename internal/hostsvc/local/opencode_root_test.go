@@ -2,6 +2,8 @@ package local
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -9,6 +11,19 @@ import (
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
+
+func TestManagedOpencodeRootMissingDirectoryAndCancellation(t *testing.T) {
+	h := New(Deps{Runtime: &fakeRuntime{}})
+	dir := filepath.Join(t.TempDir(), "removed")
+	if _, err := h.ManagedOpencodeRoot(t.Context(), dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing directory was not classified: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := h.ManagedOpencodeRoot(ctx, dir); !errors.Is(err, context.Canceled) {
+		t.Fatalf("missing directory masked cancellation: %v", err)
+	}
+}
 
 // A bare repository has no main checkout: its linked worktree keys the
 // instance by its own root rather than the bare directory's parent.
@@ -30,8 +45,13 @@ func TestProjectOpencodeRoot_BareRepoKeepsWorktreeRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := projectOpencodeRoot(context.Background(), wt)
+	rt := &fakeRuntime{}
+	h := New(Deps{Runtime: rt})
+	got, err := h.ManagedOpencodeRoot(context.Background(), wt)
 	if err != nil || got != want {
 		t.Fatalf("projectOpencodeRoot = %q, %v; want %q", got, err, want)
+	}
+	if rt.launchCount() != 0 || rt.stopCount() != 0 {
+		t.Fatal("membership lookup mutated runtime")
 	}
 }

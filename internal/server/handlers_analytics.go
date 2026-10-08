@@ -2,9 +2,22 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+func (s *Server) handleSessionConcurrency(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	data, err := s.db.GetSessionConcurrency(r.Context(), parseSinceParam(r), time.Now().UnixMilli(), normaliseDirParam(r.URL.Query().Get("dir")))
+	if err != nil {
+		serverError(w, "fetching session concurrency", err)
+		return
+	}
+	writeJSON(w, data)
+}
 
 type analyticsOverview struct {
 	InventoryScope   string `json:"inventoryScope"`

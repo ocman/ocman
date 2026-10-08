@@ -38,8 +38,9 @@ import (
 const statusSnapshotTimeout = 2 * time.Second
 
 type liveStatusEntry struct {
-	port string
-	busy bool
+	port   string
+	busy   bool
+	notice *db.SessionNotice
 	// seq is the registry sequence at which this entry was written by an
 	// event. A snapshot only overwrites entries with a lower seq than the
 	// snapshot's token, so an event that raced the in-flight fetch is
@@ -97,8 +98,8 @@ func (a *Adapter) StatusPortGeneration(port string) uint64 {
 }
 
 // ObserveSessionStatus records one session.status event from an instance and
-// reports whether its running state changed, to coalesce paired idle events.
-func (a *Adapter) ObserveSessionStatus(port string, generation uint64, sessionID, statusType string) bool {
+// reports whether its running state or retry notice changed.
+func (a *Adapter) ObserveSessionStatus(port string, generation uint64, sessionID, statusType string, notices ...*db.SessionNotice) bool {
 	if a == nil || a.turns == nil || sessionID == "" {
 		return false
 	}
@@ -108,16 +109,21 @@ func (a *Adapter) ObserveSessionStatus(port string, generation uint64, sessionID
 		return false
 	}
 	previous, observed := a.turns.entries[sessionID]
+	var notice *db.SessionNotice
+	if statusType == "retry" && len(notices) > 0 {
+		notice = notices[0]
+	}
 	a.turns.seq++
 	// Idle is recorded rather than deleted so the entry keeps naming the
 	// port that owns this session: that is what lets TurnState tell
 	// "settled on a live instance" apart from "no instance at all".
 	a.turns.entries[sessionID] = liveStatusEntry{
-		port: port,
-		busy: turnRunning(statusType),
-		seq:  a.turns.seq,
+		port:   port,
+		busy:   turnRunning(statusType),
+		notice: notice,
+		seq:    a.turns.seq,
 	}
-	return !observed || previous.port != port || previous.busy != turnRunning(statusType)
+	return !observed || previous.port != port || previous.busy != turnRunning(statusType) || !sameNotice(previous.notice, notice)
 }
 
 // statusSeq reads the current sequence. Captured before a snapshot fetch so
@@ -141,7 +147,7 @@ func (a *Adapter) statusSeq() uint64 {
 // clobbered and the session could read settled while a turn runs, until the
 // next transition happened to correct it. Pass 0 to keep every
 // event-observed entry and replace only what an earlier snapshot wrote.
-func (a *Adapter) SeedSessionStatus(port string, generation, seq uint64, statuses map[string]string) {
+func (a *Adapter) SeedSessionStatus(port string, generation, seq uint64, statuses map[string]string, notices ...map[string]*db.SessionNotice) {
 	if a == nil || a.turns == nil || port == "" {
 		return
 	}
@@ -162,7 +168,11 @@ func (a *Adapter) SeedSessionStatus(port string, generation, seq uint64, statuse
 		if superseded(sessionID) {
 			continue
 		}
-		a.turns.entries[sessionID] = liveStatusEntry{port: port, busy: turnRunning(statusType)}
+		entry := liveStatusEntry{port: port, busy: turnRunning(statusType)}
+		if statusType == "retry" && len(notices) > 0 {
+			entry.notice = notices[0][sessionID]
+		}
+		a.turns.entries[sessionID] = entry
 	}
 	a.turns.seeded[port] = a.turns.portGen[port]
 }
@@ -271,7 +281,7 @@ func portForDirectory(ports map[string]string, directory string) string {
 // directory; worktree sessions need their own directory-scoped read. The
 // bool reports whether the snapshot can be trusted; on false the caller must
 // not mark the port seeded, or every session on it would read as settled.
-func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (map[string]string, bool) {
+func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (map[string]liveSessionStatus, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, statusSnapshotTimeout)
 	defer cancel()
 	endpoint := fmt.Sprintf("http://127.0.0.1:%s/session/status", port)
@@ -290,17 +300,11 @@ func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (ma
 	if resp.StatusCode != http.StatusOK {
 		return nil, false
 	}
-	var raw map[string]struct {
-		Type string `json:"type"`
-	}
+	var raw map[string]liveSessionStatus
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, false
 	}
-	out := make(map[string]string, len(raw))
-	for sessionID, status := range raw {
-		out[sessionID] = status.Type
-	}
-	return out, true
+	return raw, true
 }
 
 // statusActiveWindow bounds which worktree sessions get a scoped status read
@@ -381,6 +385,14 @@ func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string
 		}
 		maps.Copy(statuses, scoped)
 	}
-	a.SeedSessionStatus(port, generation, seq, statuses)
+	types := make(map[string]string, len(statuses))
+	notices := make(map[string]*db.SessionNotice)
+	for id, status := range statuses {
+		types[id] = status.Type
+		if status.Type == "retry" {
+			notices[id] = RetryNotice(status.Message, status.Next, status.Attempt)
+		}
+	}
+	a.SeedSessionStatus(port, generation, seq, types, notices)
 	return true
 }

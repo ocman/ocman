@@ -65,6 +65,13 @@ Parallel tools count once within each request. Tool time includes permission
 and question waits; incomplete timings appear as unknown. Totals sum request
 durations, so they are not elapsed session time when sessions run in parallel.
 
+Analytics → Activity shows active parallel sessions over time, following the
+project and date filters. Each point is the peak simultaneous session count
+within its bucket, starting at one hour and widening for longer ranges.
+Completed assistant timings reconstruct the history on the local machine.
+Overlapping messages in one session count once, subagents count separately,
+and tool time counts as active. Idle gaps and unfinished messages are excluded.
+
 **Model picker.** Per-platform favourites and a refreshable catalog, so new
 models appear without a restart.
 
