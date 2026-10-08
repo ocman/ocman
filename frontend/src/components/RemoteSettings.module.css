@@ -1,4 +1,4 @@
-.settings { display: flex; flex-direction: column; gap: 8px; }
+.settings { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; }
 .table { min-width: 760px; }
 .name { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
 .meta { margin-top: 2px; color: var(--text-dim); font: 12px/1.5 var(--font-conversation-mono); overflow-wrap: anywhere; }

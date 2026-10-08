@@ -12,9 +12,10 @@ import { CommandPalette } from './CommandPalette';
 const mocks = vi.hoisted(() => ({
   cachedSessions: [] as Session[],
   refreshCachedSessions: vi.fn(async () => []),
+  launchAllowed: false,
 }));
 vi.mock('../lib/apiStore', () => ({ useApiStore: (selector: (state: typeof mocks) => unknown) => selector(mocks) }));
-vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => false }));
+vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => mocks.launchAllowed }));
 vi.mock('../lib/useTmux', () => ({ useTmux: () => ({ available: false }) }));
 
 const contribution = (placement: PluginAction['action']['placement'] = 'global', pluginId = 'org.example.report'): PluginAction => ({
@@ -51,6 +52,7 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   useUiStore.getState().openCommandPalette();
   mocks.cachedSessions = [];
+  mocks.launchAllowed = false;
   requests = [];
   list = () => json([contribution()]);
   invoke = () => json({ results: [{ kind: 'notice', text: 'Report ready' }] });
@@ -69,6 +71,27 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('plugin command contributions', () => {
+  it.each(['project', 'session'])('opens a worktree on the %s owner despite an identical local path', async (route) => {
+    mocks.launchAllowed = true;
+    mocks.cachedSessions = [
+      { id: 'ses-local', directory: '/repo', platform: 'opencode' },
+      { id: 'ses-remote', directory: '/repo', platform: 'r-B:opencode', remoteId: 'B' },
+    ] as Session[];
+    renderPalette(route === 'project' ? '/project/%2Frepo?remoteId=B' : '/session/ses-remote?platform=r-B%3Aopencode');
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '>wt' } });
+    fireEvent.click(await screen.findByRole('option', { name: /wt/ }));
+    expect(useUiStore.getState().worktreeFormProject).toBe('/repo');
+    expect(useUiStore.getState().worktreeFormRemoteId).toBe('B');
+    useUiStore.getState().closeWorktreeForm();
+  });
+  it('does not open a local worktree while the active session owner is unresolved', async () => {
+    mocks.launchAllowed = true;
+    useUiStore.getState().closeWorktreeForm();
+    renderPalette('/session/missing?platform=r-B%3Aopencode');
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '>wt' } });
+    fireEvent.click(await screen.findByRole('option', { name: /wt/ }));
+    expect(useUiStore.getState().worktreeFormOpen).toBe(false);
+  });
   it('discovers, filters, confirms with the same operation, and renders text, links and owner-routed downloads', async () => {
     invoke = (request) => request.confirmationToken
       ? json({ results: [

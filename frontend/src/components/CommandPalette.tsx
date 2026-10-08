@@ -561,7 +561,13 @@ export function CommandPalette() {
       } else if (item.id === 'cmd.shortcuts') {
         openShortcuts();
       } else if (item.id === 'cmd.worktree') {
-        openWorktreeForm({ projectDir: inferredProjectDir });
+        const params = new URLSearchParams(location.search);
+        const sessionID = location.pathname.startsWith('/session/')
+          ? location.pathname.slice('/session/'.length).split('/')[0] : undefined;
+        const session = sessions?.find((s) => s.id === sessionID && (!params.get('platform') || s.platform === params.get('platform')));
+        if (sessionID && !session) return;
+        openWorktreeForm({ projectDir: session?.directory ?? inferredProjectDir,
+          remoteId: session?.remoteId ?? params.get('remoteId') ?? 'local' });
       } else if (item.id === 'cmd.sessions') {
         navigate('/sessions');
       } else if (item.id === 'cmd.projects') {

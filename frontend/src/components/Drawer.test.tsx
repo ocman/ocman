@@ -2,6 +2,20 @@
 import { expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Drawer } from './Drawer';
+import * as Toast from '@radix-ui/react-toast';
+import { PromptToastViewport } from './PromptToast';
+
+it('isolates the application root with the real notification viewport mounted', () => {
+  const { container } = render(<Toast.Provider>
+    <button>Background action</button>
+    <PromptToastViewport />
+    <Drawer title="Edit" onClose={vi.fn()}>Content</Drawer>
+  </Toast.Provider>);
+  expect(container).toHaveAttribute('inert');
+  const viewport = document.querySelector<HTMLElement>('[data-prompt-toast-viewport]')!;
+  expect(container).not.toContainElement(viewport);
+  expect(viewport.closest('[inert]')).toBeNull();
+});
 
 it('renders outside its owner and uses modal focus and dismissal behavior', () => {
   const onClose = vi.fn();

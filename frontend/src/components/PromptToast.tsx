@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react';
+import { createPortal } from 'react-dom';
 import * as Toast from '@radix-ui/react-toast';
 import { ButtonGroup } from './Control';
 import { IconButton } from './IconButton';
@@ -25,5 +26,5 @@ export function PromptToastClose({ label = 'Dismiss' }: { label?: string }) {
 }
 
 export function PromptToastViewport() {
-  return <Toast.Viewport className={styles.viewport} data-prompt-toast-viewport="" />;
+  return createPortal(<Toast.Viewport className={styles.viewport} data-prompt-toast-viewport="" />, document.body);
 }

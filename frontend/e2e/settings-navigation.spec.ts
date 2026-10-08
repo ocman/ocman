@@ -1,6 +1,20 @@
 import { test, expect } from './fixtures';
 
 for (const width of [1280, 390]) {
+  test(`Remotes table scrolls inside Settings at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/settings');
+    if (width === 390) await page.getByRole('combobox', { name: 'Settings group', exact: true }).selectOption('remotes');
+    else await page.getByRole('button', { name: 'Remotes', exact: true }).click();
+    const settings = page.getByTestId('remote-settings');
+    await expect(settings).toBeVisible();
+    const bounds = await settings.boundingBox();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    expect(bounds!.width).toBeLessThanOrEqual(640);
+    const frame = page.getByRole('table', { name: 'Machines' }).locator('..');
+    expect(await frame.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  });
   test(`settings group navigation and search share the same selection at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.route('/api/settings/prompt-sections', route => route.fulfill({ json: [{ title: 'Project safety', content: 'Review commands before approving changes outside this project.' }] }));

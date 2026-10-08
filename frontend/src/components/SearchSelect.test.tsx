@@ -4,6 +4,25 @@ import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import { SearchSelect } from './SearchSelect';
 
+it('consumes picker Escape and prevents search Enter from submitting its form', async () => {
+  const user = userEvent.setup();
+  const submit = vi.fn((event) => event.preventDefault());
+  const escape = vi.fn();
+  render(<form onSubmit={submit} onKeyDown={(event) => { if (event.key === 'Escape') escape(); }}>
+    <SearchSelect value="a" options={[{ value: 'a', label: 'A' }]} ariaLabel="Pick" placeholder="Pick" searchLabel="Search" onChange={vi.fn()} />
+    <button type="submit">Submit</button>
+  </form>);
+  await user.click(screen.getByRole('combobox'));
+  await user.type(screen.getByRole('textbox'), 'a{Enter}');
+  expect(submit).not.toHaveBeenCalled();
+  await user.keyboard('{Escape}');
+  expect(escape).not.toHaveBeenCalled();
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox')).toHaveFocus();
+  await user.keyboard('{Escape}');
+  expect(escape).toHaveBeenCalledOnce();
+});
+
 it('renders custom labels while searching and selecting by the full project path', async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();

@@ -118,7 +118,6 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   const [branch, setBranch] = useState(initialBranch ?? '');
   const [newBranch, setNewBranch] = useState(true);
   const [baseRef, setBaseRef] = useState('');
-  const [baseRefs, setBaseRefs] = useState<string[]>([]);
   const [refError, setRefError] = useState<string | null>(null);
   const [refRevision, setRefRevision] = useState(0);
   const [stage, setStage] = useState<SubmitStage>('idle');
@@ -148,14 +147,10 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   useEffect(() => {
     if (!projectDir) return;
     const ctrl = new AbortController();
-    Promise.all([
-      api.worktree.defaultBaseRef(projectDir, owner, ctrl.signal),
-      api.gitBranches(projectDir, ctrl.signal, owner).catch(() => ({ branches: [] })),
-    ])
-      .then(([result, { branches }]) => {
+    api.worktree.defaultBaseRef(projectDir, owner, ctrl.signal)
+      .then((result) => {
         if (ctrl.signal.aborted) return;
-        setBaseRef(result.baseRef);
-        setBaseRefs([...new Set([result.baseRef, ...branches].filter(Boolean))]);
+        setBaseRef((current) => current || result.baseRef);
         setRefError(null);
       })
       .catch(() => {
@@ -271,7 +266,7 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
             <SearchSelect ariaLabel="Project" searchLabel="Search projects" placeholder="Pick a project"
               value={projectDir} title={projectDir} options={projectOptions} disabled={submitting} onChange={(directory) => {
                 if (directory === projectDir) return;
-                setProjectDir(directory); setBaseRef(''); setBaseRefs([]); setRefError(null);
+                setProjectDir(directory); setBaseRef(''); setRefError(null);
               }} />
           </div>
 
@@ -298,12 +293,11 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
           />
 
           {newBranch && (
-            <div className={styles.field}>
+            <label className={styles.field}>
               <span>Base ref</span>
-              <SearchSelect ariaLabel="Base ref" searchLabel="Search base refs" placeholder="Select a base ref"
-                value={baseRef} options={baseRefs.map((value) => ({ value, label: value }))}
-                onChange={setBaseRef} disabled={submitting || baseRefs.length === 0} />
-            </div>
+              <TextField value={baseRef} onChange={(event) => setBaseRef(event.target.value)}
+                placeholder="Branch, tag, commit or revision" disabled={submitting} autoComplete="off" spellCheck={false} />
+            </label>
           )}
 
           {newBranch && refError && <InlineAlert onRetry={() => setRefRevision((revision) => revision + 1)}>{refError}</InlineAlert>}
