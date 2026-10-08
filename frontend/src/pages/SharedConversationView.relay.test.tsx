@@ -66,6 +66,22 @@ describe('SharedConversationView (relay)', () => {
     } finally { view.unmount(); }
   });
 
+  it('restores the retained conversation after a timeout and an empty successful poll', async () => {
+    vi.useFakeTimers();
+    readRelayShare.mockResolvedValueOnce({ chunks: [chunk({ session: { id: 's1', title: 'Retained' } as never })], last: 0 })
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValue({ chunks: [], last: -1 });
+    const view = renderRelayView();
+    try {
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(18_000); });
+      expect(screen.getByTestId('shared-error')).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Retained');
+      expect(readRelayShare).toHaveBeenLastCalledWith('share-1', 'the-key', 1, expect.any(AbortSignal));
+    } finally { view.unmount(); }
+  });
+
   it('does not poll hidden shares and refreshes immediately on return', async () => {
     vi.useFakeTimers();
     let hidden = true;

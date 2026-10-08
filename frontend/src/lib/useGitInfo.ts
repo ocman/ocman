@@ -106,7 +106,7 @@ export function _resetForTests(): void { /* intentionally empty */ }
  * never observed completing. Keying on the string fixes it because
  * `buildDirsQueryParam` is deterministic on the input contents.
  */
-export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGitInfoResult {
+export function useGitInfo(dirs: string[] | undefined, remoteId: string, enabled = true): UseGitInfoResult {
   // Compute the canonical query param fresh on every render. It's
   // O(n) in the dir count, which is small (a sidebar's worth), so
   // skipping useMemo here is fine and avoids the array-identity
@@ -120,6 +120,7 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
   const [activeKey, setActiveKey] = useState(requestKey);
 
   const abortRef = useRef<AbortController | null>(null);
+  const lastRequestKey = useRef(requestKey);
 
   useEffect(() => {
     // No dirs to track — stand down. State (infos/loading/error)
@@ -129,7 +130,7 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
     // trigger a setState during the post-render commit phase,
     // which the React Compiler flags as a cascading-renders
     // antipattern.
-    if (queryParam === null) return;
+    if (queryParam === null || !enabled) return;
 
     const dirList = decodeURIComponent(queryParam).split(',');
     const releaseScopes = dirList.map((dir) => acquireActivityScope(`git-status:${dir}`));
@@ -138,7 +139,10 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
       setInfos({});
       setError(null);
     };
-    reset();
+    if (lastRequestKey.current !== requestKey) {
+      lastRequestKey.current = requestKey;
+      reset();
+    }
 
     const runFetch = () => {
       if (typeof document !== 'undefined' && document.hidden) {
@@ -189,9 +193,9 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
         document.removeEventListener('visibilitychange', onVisibility);
       }
     };
-  }, [queryParam, remoteId, requestKey]);
+  }, [queryParam, remoteId, requestKey, enabled]);
 
   if (queryParam === null) return { infos: {}, loading: false, error: null };
-  if (activeKey !== requestKey) return { infos: {}, loading: true, error: null };
-  return { infos, loading, error };
+  if (activeKey !== requestKey) return { infos: {}, loading: enabled, error: null };
+  return { infos, loading: enabled && loading, error };
 }

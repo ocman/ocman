@@ -3,7 +3,25 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useGitInfo } from './useGitInfo';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+it('retains same-owner branch data while paused and during resume refresh', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ '/repo': { branch: 'task' } }), { status: 200 }))
+    .mockReturnValue(new Promise(() => {}));
+  vi.stubGlobal('fetch', fetcher);
+  const view = renderHook(({ enabled }) => useGitInfo(['/repo'], 'local', enabled), { initialProps: { enabled: true } });
+  await waitFor(() => expect(view.result.current.infos['/repo']?.branch).toBe('task'));
+  vi.useFakeTimers();
+  try {
+    view.rerender({ enabled: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(view.result.current.infos['/repo']?.branch).toBe('task');
+    view.rerender({ enabled: true });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(view.result.current.infos['/repo']?.branch).toBe('task');
+  } finally { view.unmount(); }
+});
 
 it('clears branch data when the owner changes', async () => {
   const snapshots: Array<{ owner: string; branch?: string }> = [];

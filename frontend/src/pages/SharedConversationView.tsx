@@ -39,8 +39,8 @@ function pollRelayShare(token: string, key: string, signal: AbortSignal, setStat
       if (result.chunks.length > 0) {
         current = mergeRelayChunks(current, result.chunks);
         next = result.last + 1;
-        setState({ status: 'ready', data: current });
       }
+      if (current) setState({ status: 'ready', data: current });
     } catch (err) {
       if (signal.aborted || err instanceof DOMException && err.name === 'AbortError') return;
       setState({ status: 'error', message: 'Failed to load or decrypt the shared conversation.' });

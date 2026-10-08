@@ -14,6 +14,8 @@ import userEvent from '@testing-library/user-event';
 import { flushPromises, makeSession, makeSessionDetail, renderSessionPage } from './harness';
 import { useUiStore } from '../../../lib/uiStore';
 import type { SessionInfo, FileChange } from '../../../lib/api';
+import * as gitInfoHook from '../../../lib/useGitInfo';
+import { visibleSidebarSessions } from '../../../lib/sidebarHelpers';
 
 let slot: HTMLDivElement;
 let navigationSlot: HTMLSpanElement;
@@ -43,6 +45,30 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it('keeps branch-only search and archive candidates when the mobile drawer closes', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    useUiStore.setState({ sidebarView: 'recent' });
+    vi.spyOn(gitInfoHook, 'useGitInfo').mockImplementation((dirs) => ({
+      infos: dirs?.includes('/branch') ? { '/branch': { branch: 'feature-only' } as never } : {}, loading: false, error: null,
+    }));
+    const current = makeSession({ id: 'sess_1', directory: '/current', title: 'Current', timeCreated: 300, timeUpdated: 300 });
+    const next = makeSession({ id: 'branch-session', directory: '/branch', title: 'Matching branch', timeCreated: 200, timeUpdated: 200 });
+    const other = makeSession({ id: 'other-session', directory: '/other', title: 'Other', timeCreated: 100, timeUpdated: 100 });
+    try {
+      const { api } = renderSessionPage({ sessionId: current.id, detail: makeSessionDetail(current), sessions: [current, next, other] });
+      await screen.findByRole('textbox');
+      fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
+      await screen.findByText('Matching branch');
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'feature-only' } });
+      await waitFor(() => expect(visibleSidebarSessions.current?.map(row => row.id)).toEqual([current.id, next.id]));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(visibleSidebarSessions.current?.map(row => row.id)).toEqual([current.id, next.id]);
+      const input = screen.getByRole('textbox');
+      await userEvent.type(input, '/archive');
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      await waitFor(() => expect(vi.mocked(api.session).mock.calls.some(([id]) => id === next.id)).toBe(true));
+    } finally { vi.unstubAllGlobals(); }
+  });
   it.each(['archive', 'next'] as const)('reports a forced current-session fallback failure for %s', async (action) => {
     vi.stubGlobal('innerWidth', 390);
     try {
