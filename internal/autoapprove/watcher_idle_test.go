@@ -83,3 +83,31 @@ func TestWatcherForwardsRetryStatus(t *testing.T) {
 		t.Fatalf("retries = %+v", got)
 	}
 }
+
+func TestWatcherBroadcastsRetryNoticeChanges(t *testing.T) {
+	server := newFakeOpenCodeEventServer([]string{
+		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"busy"}}}` + "\n\n",
+		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"retry","message":"rate limited","attempt":1,"next":42}}}` + "\n\n",
+		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"retry","message":"rate limited","attempt":1,"next":42}}}` + "\n\n",
+		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"retry","message":"rate limited","attempt":2,"next":100}}}` + "\n\n",
+		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"busy"}}}` + "\n\n",
+	})
+	defer server.close()
+	adapter := opencode.New(nil, nil)
+	broadcasts := 0
+	svc := NewService(Deps{
+		OpencodePlatform: func() platforms.Platform { return adapter },
+		BroadcastSessionStatus: func(id string, status db.SessionStatus) {
+			if id != "ses-1" || status != db.StatusBusy {
+				t.Fatalf("unexpected status: %s %s", id, status)
+			}
+			broadcasts++
+		},
+	})
+	if err := newAutoApproveWatcher(svc).streamOnce(t.Context(), server.port()); err != nil {
+		t.Fatal(err)
+	}
+	if broadcasts != 4 {
+		t.Fatalf("broadcasts = %d, want busy, retry, updated retry, resumed busy", broadcasts)
+	}
+}
