@@ -196,6 +196,15 @@ type Server struct {
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 
+	// Stats gauge refresher (see metrics_stats.go): statsSnapshot holds the
+	// last successful GetStats result for the OTel callback, guarded by
+	// statsMu. getStats / statsRefreshEvery are test seams overriding
+	// db.GetStats / statsRefreshInterval.
+	getStats          func(context.Context) (*db.Stats, error)
+	statsRefreshEvery time.Duration
+	statsMu           sync.Mutex
+	statsSnapshot     *db.Stats
+
 	projectUpstreamsMu      sync.Mutex
 	projectUpstreams        map[string]projectUpstreamsCacheEntry
 	projectUpstreamsPending map[string]*projectUpstreamsPending
@@ -551,9 +560,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 
 	// Register observable gauges for the top-line stats (session /
 	// message / project counts, lifetime tokens and cost). The
-	// callback runs once per OTel collection interval; it's a no-op
-	// when telemetry is disabled or the OpenCode DB is absent.
-	if reg, err := s.registerStatsMetrics(telemetry.Meter()); err != nil {
+	// callback only observes what runStatsRefreshLoop last computed
+	// (every statsRefreshInterval); it's a no-op when telemetry is
+	// disabled or the OpenCode DB is absent.
+	if reg, err := s.registerStatsMetrics(ctx, telemetry.Meter()); err != nil {
 		log.WithError(err).Warn("failed to register stats metrics")
 	} else if reg != nil {
 		defer reg.Unregister()
