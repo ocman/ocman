@@ -28,13 +28,14 @@ it.each([undefined, 11000])('keeps multiline reasoning inside its quote with end
   expect(quote).toHaveTextContent('Second paragraph.');
   expect(quote).toContainElement(container.querySelector('li'));
   expect(quote).toContainElement(container.querySelector('pre'));
-  expect(quote).toHaveTextContent('Last paragraph. · 11s');
+  expect(quote).toHaveTextContent('Last paragraph.');
   expect(quote).not.toHaveTextContent('Actual answer.');
   expect(container).toHaveTextContent('Actual answer.');
   const details = quote!.querySelector('details')!;
   const summary = details.querySelector('summary')!;
   expect(details).not.toHaveAttribute('open');
-  expect(summary).toHaveTextContent('First paragraph.');
+  expect(summary).toHaveTextContent('First paragraph. · 11s');
+  expect(quote!.textContent?.match(/· 11s/g)).toHaveLength(1);
   expect(summary).not.toHaveTextContent('Second paragraph.');
   expect(summary).not.toHaveTextContent('Last paragraph.');
   fireEvent.click(summary);
@@ -42,6 +43,16 @@ it.each([undefined, 11000])('keeps multiline reasoning inside its quote with end
   fireEvent.click(summary);
   expect(details).not.toHaveAttribute('open');
 });
+
+it.each(['0s', '7.8s', '1m 5s', '2h 3m', '1d 2h'])(
+  'keeps duration %s after the visible preview with formatted reasoning', (duration) => {
+    const { container } = render(<MarkdownContent text={`> **Thought:** First **paragraph**.\n> Another line.\n>\n> Last *paragraph*. · ${duration}`} />);
+    expect(container.querySelector('summary')).toHaveTextContent(`Thought: First paragraph. Another line. · ${duration}`);
+    expect(container.querySelector('summary strong:last-child')).toHaveTextContent('paragraph');
+    expect(container.querySelector('details > p')).toHaveTextContent('Last paragraph.');
+    expect(container.querySelector('details > p')).not.toHaveTextContent(`· ${duration}`);
+  },
+);
 
 it.each(['**Note:** First paragraph.', 'First paragraph.', '# Heading'])('leaves ordinary blockquotes expanded: %s', (first) => {
   const { container } = render(<MarkdownContent text={`> ${first}\n>\n> Second paragraph.`} />);

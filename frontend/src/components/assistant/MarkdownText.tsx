@@ -264,13 +264,18 @@ const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownI
 // One independently parsed chunk. memo: while an answer streams only the
 // last chunk's text changes, so earlier chunks skip re-parsing.
 const MarkdownBlock = memo(function MarkdownBlock({ text, preserveLineBreaks }: { text: string; preserveLineBreaks: boolean }) {
+  // Keep the generated timer in the first paragraph, which becomes the collapsed preview.
+  const previewText = text.replace(
+    /^(> \*\*(?:Thinking|Thought):\*\* [^\n]*(?:\n> [^\n]+)*)(\n> ?\n(?:>[^\n]*\n)*>[^\n]*?)( · \d+(?:\.\d+)?[smhd](?: \d+[smhd])?)$/gm,
+    '$1$3$2',
+  );
   return (
     <ReactMarkdown
       remarkPlugins={preserveLineBreaks ? REMARK_PLUGINS_WITH_BREAKS : REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}
       components={MARKDOWN_COMPONENTS}
     >
-      {text}
+      {previewText}
     </ReactMarkdown>
   );
 });
