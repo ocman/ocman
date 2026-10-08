@@ -36,6 +36,14 @@ function send(level: Level, message: string, data?: unknown) {
   void api.debugLog(level, message, serialisable);
 }
 
+// Cancellation (an aborted fetch, Safari dropping requests when the tab is
+// backgrounded) is control flow, and an unreachable backend during a
+// restart is expected; neither should be reported as an error.
+function errorName(data: unknown): string | undefined {
+  const value = data && typeof data === 'object' && 'reason' in data ? (data as { reason: unknown }).reason : data;
+  return value && typeof value === 'object' && 'name' in value ? String((value as { name: unknown }).name) : undefined;
+}
+
 export const remoteLog = {
   debug(message: string, data?: unknown) {
     console.debug(message, data);
@@ -50,6 +58,15 @@ export const remoteLog = {
     send('warn', message, data);
   },
   error(message: string, data?: unknown) {
+    const name = errorName(data);
+    if (name === 'AbortError') {
+      console.debug(message, data);
+      return;
+    }
+    if (name === 'BackendUnavailableError') {
+      remoteLog.warn(message, data);
+      return;
+    }
     console.error(message, data);
     send('error', message, data);
   },

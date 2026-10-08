@@ -76,12 +76,18 @@ and tool time counts as active. Idle gaps and unfinished messages are excluded.
 models appear without a restart.
 
 Click the project name in the header to open **Project defaults**. Choose a
-default model, agent, and whether new conversations use a new worktree or the
-current checkout, then Save. These preferences belong to that project on that
-machine and are shared by its sibling worktrees. A composer choice overrides
+default model, agent, permission mode, and whether new conversations use a new
+worktree or the current checkout, then Save. These preferences belong to that
+project on that machine and are shared by its sibling worktrees. A composer choice overrides
 the default for that conversation. **Use inherited default** clears an override.
 Worktrees are used only when the project supports them. The startup model
 preference does not change the project's model fallback list.
+
+Permission modes are **Plan only**, which denies edits and shell commands;
+**Auto-accept edits**, which allows edits and asks for shell commands; and
+**YOLO**, which allows everything without asking. Saving YOLO requires
+confirmation. The saved mode applies before the first prompt in new checkout
+and worktree conversations. Existing conversations keep their current permissions.
 
 ## Worktrees and parallel work
 

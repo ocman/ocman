@@ -33,6 +33,14 @@ Platforms are wired through a common `Platform` adapter interface
 new adapter + registry entry; see
 `spec/multi-agent-support/architecture.md` for the design.
 
+Project quick settings persist startup defaults under an owner + folded project
+root in the hub's `state.db`. The default permission mode selects inherited
+permissions, Plan only, Auto-accept edits, or YOLO; saving YOLO requires browser
+confirmation. `/api/sessions/start` reads it after resolving the owner and passes
+the rules to `sessionsvc.CreateConfigured` or `Host.CreateWorktreeSession`, so
+permissions are applied before publication and the first prompt. Existing
+sessions keep their current rules.
+
 A new conversation is a client-only route (`/session/new?dir=…&remoteId=…
 &platform=…`) until its first prompt: no OpenCode session, worktree or
 placeholder exists before that, so the machine and target can still change

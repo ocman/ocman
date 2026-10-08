@@ -57,8 +57,9 @@ sequenceDiagram
     Q->>I: commit run outcome and Routine Inbox notification
     I-->>S: local state or owner-routed remote RPC
     B->>S: REST Inbox list/read/archive and session permission reply
-    S-->>B: categorized Inbox JSON with permission actions
+    S-->>B: categorized Inbox JSON with owner-local metadata titles
     E-->>B: SSE (ocman.inbox.changed); polling fallback
+    Note over B,S: inbox/notify event bursts coalesce;<br/>in-flight requests finish before one follow-up
     B->>S: POST /api/sessions/start (startId)
     S->>E: step progress via hostsvc.WithProgress
     E-->>B: SSE (ocman.session.start.progress)
@@ -69,6 +70,13 @@ sequenceDiagram
     O->>E: ocman.session.changed for affected sessions
 ```
 
+- Inbox titles are indexed session-metadata reads on the owning machine,
+  including native children. Remote owners enrich the existing Inbox RPC;
+  the hub does not fetch a session list or transcript for a title. Notify
+  snapshots carry owner-qualified prompt request IDs so a resolution received
+  mid-fetch clears only that request, including a child's prompt surfaced on
+  an ancestor. Periodic polling pauses in hidden tabs, but event refreshes
+  remain active for background notifications.
 - A new conversation's first submission sends a random `startId`. The server
   reports each start step (OpenCode, worktree, session, prompt) through the
   request context's progress callback and broadcasts it as

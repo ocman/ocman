@@ -7,6 +7,7 @@ import { AppRoutes } from './App';
 import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from './lib/queries';
 
 vi.mock('./lib/queries', () => ({
+  inboxEventRefresh: () => () => {},
   useSessions: vi.fn(),
   useWorkEpics: vi.fn(),
   useWorkEpic: vi.fn(),

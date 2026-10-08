@@ -39,6 +39,10 @@ type httpCache struct {
 
 	flight singleflight.Group
 
+	sharedMu  sync.Mutex
+	shared    map[string]*sharedFetch
+	sharedSeq uint64
+
 	// metrics is the per-cache instrumentation handle. Zero value
 	// (empty Name) makes every Record* call a no-op so the cache
 	// works fine in tests that construct it via newHTTPCache without
@@ -199,6 +203,37 @@ func (c *httpCache) getOrFetch(port, path string, fetcher func() ([]byte, bool))
 }
 
 func (c *httpCache) getOrFetchContext(ctx context.Context, port, path string, fetcher func() ([]byte, bool)) ([]byte, bool) {
+	return c.fetchFlight(ctx, port, path, "", fetcher)
+}
+
+// sharedFetch is one upstream request shared by every caller waiting on
+// it. It runs on its own context, cancelled only when the last waiter
+// leaves: one caller's cancellation never fails the others, while an
+// abandoned request still stops its upstream work.
+type sharedFetch struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	waiters int
+	id      uint64
+}
+
+// getOrFetchShared is getOrFetchContext for fetchers that honour a
+// context; fetch receives the shared request's context, not ctx.
+func (c *httpCache) getOrFetchShared(ctx context.Context, port, path string, fetch func(context.Context) ([]byte, bool)) ([]byte, bool) {
+	if ctx.Err() != nil {
+		return nil, false
+	}
+	key := port + "|" + path
+	shared := c.joinShared(ctx, key)
+	defer c.leaveShared(key, shared)
+	// The id keeps a newcomer off a flight whose waiters all left (and
+	// which is therefore being cancelled).
+	return c.fetchFlight(ctx, port, path, fmt.Sprintf("#%d", shared.id), func() ([]byte, bool) {
+		return fetch(shared.ctx)
+	})
+}
+
+func (c *httpCache) fetchFlight(ctx context.Context, port, path, flightSuffix string, fetcher func() ([]byte, bool)) ([]byte, bool) {
 	if ctx.Err() != nil {
 		return nil, false
 	}
@@ -209,7 +244,7 @@ func (c *httpCache) getOrFetchContext(ctx context.Context, port, path string, fe
 	c.metrics.RecordMiss(ctx)
 
 	generation := c.generation(port)
-	key := fmt.Sprintf("%d|%s|%s", generation, port, path)
+	key := fmt.Sprintf("%d|%s|%s%s", generation, port, path, flightSuffix)
 	result := c.flight.DoChan(key, func() (interface{}, error) {
 		// Re-check inside the singleflight body in case another
 		// caller filled the cache between our miss and acquiring
@@ -238,6 +273,36 @@ func (c *httpCache) getOrFetchContext(ctx context.Context, port, path string, fe
 		}
 		body, _ := result.Val.([]byte)
 		return body, body != nil
+	}
+}
+
+func (c *httpCache) joinShared(ctx context.Context, key string) *sharedFetch {
+	c.sharedMu.Lock()
+	defer c.sharedMu.Unlock()
+	if c.shared == nil {
+		c.shared = map[string]*sharedFetch{}
+	}
+	shared := c.shared[key]
+	if shared == nil {
+		c.sharedSeq++
+		// WithoutCancel keeps the first caller's trace parent.
+		sharedCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		shared = &sharedFetch{ctx: sharedCtx, cancel: cancel, id: c.sharedSeq}
+		c.shared[key] = shared
+	}
+	shared.waiters++
+	return shared
+}
+
+func (c *httpCache) leaveShared(key string, shared *sharedFetch) {
+	c.sharedMu.Lock()
+	defer c.sharedMu.Unlock()
+	if shared.waiters--; shared.waiters > 0 {
+		return
+	}
+	shared.cancel()
+	if c.shared[key] == shared {
+		delete(c.shared, key)
 	}
 }
 

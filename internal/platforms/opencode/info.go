@@ -134,7 +134,7 @@ func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms
 	go func() {
 		defer wg.Done()
 		p := srvtiming.Begin(ctx, "live_tier")
-		liveTier, liveOK = alwaysOnTierFromOpenCode(port, sessionID, a.pricing)
+		liveTier, liveOK = alwaysOnTierFromOpenCode(ctx, port, sessionID, a.pricing)
 		p.EndWithDesc("GET /session/{id}/message + aggregate")
 	}()
 	wg.Wait()
@@ -247,8 +247,8 @@ func alwaysOnTierFromDB(ctx context.Context, database *db.DB, sessionID string, 
 // This is the consolidated single fetch that replaces the legacy
 // pattern (DB walk for tokens/messages/todos/cost + a separate live
 // fetch only for the context-token rollup). One round-trip, one walk.
-func alwaysOnTierFromOpenCode(port, sessionID string, pricing CostCalculator) (alwaysOnTier, bool) {
-	raw, err := fetchOpenCodeMessages(port, sessionID)
+func alwaysOnTierFromOpenCode(ctx context.Context, port, sessionID string, pricing CostCalculator) (alwaysOnTier, bool) {
+	raw, err := fetchOpenCodeMessages(ctx, port, sessionID)
 	if err != nil {
 		return alwaysOnTier{}, false
 	}

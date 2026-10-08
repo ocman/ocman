@@ -13,6 +13,7 @@ export interface ProjectDefaults {
   model: string;
   agent: string;
   worktree: '' | 'worktree' | 'current';
+  permissionMode?: '' | 'default' | 'plan' | 'auto-edit' | 'yolo';
 }
 
 const cache = new Map<string, Promise<CachedProjectSettings>>();
