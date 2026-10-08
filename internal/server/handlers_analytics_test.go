@@ -7,8 +7,40 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+func TestSessionConcurrencyRoute(t *testing.T) {
+	srv := testServer(t)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/session-concurrency?days=1&dir=/repo", nil))
+	var got db.SessionConcurrency
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil || len(got.Series) < 24 || len(got.Series) > 25 {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/analytics/session-concurrency", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST = %d", rec.Code)
+	}
+	srv.db.Close()
+	rec = httptest.NewRecorder()
+	srv.handleSessionConcurrency(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/session-concurrency", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("closed database = %d", rec.Code)
+	}
+	srv.db = nil
+	rec = httptest.NewRecorder()
+	srv.handleSessionConcurrency(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/session-concurrency", nil))
+	if rec.Code == http.StatusOK {
+		t.Fatal("expected missing database error")
+	}
+}
 
 func TestAnalyticsOverviewRoute(t *testing.T) {
 	srv := testServer(t)

@@ -10,6 +10,7 @@ import { remoteLog } from '../../lib/remoteLog';
 import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { useActivityScope } from '../../lib/activityScopes';
 import { useSidebarFilter } from './useSidebarFilter';
+import { eventRefresh } from '../../lib/eventRefresh';
 
 /**
  * Reconciliation backstop for events missed while disconnected. Normal
@@ -127,54 +128,63 @@ export function useSidebarSessions({
     openSessionFallbackRef.current = null;
   }, [id]);
 
-  const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
-    const requestStart = useApiStore.getState().recentSessions;
-    const pendingReads = useApiStore.getState().pendingInterruptionReads;
-    try {
-      const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
-      // /api/sessions can serialize a Go nil slice as JSON `null`;
-      // coerce here so .find() / filterVisibleSessions never see null.
-      const result = (await getSessions({ since, limit: 0 }, signal)) ?? [];
-      if (signal?.aborted) return;
-      // Child sessions are useful while active; completed output has
-      // already bubbled up to the parent.
-      const rooted = filterInactiveChildren(result, id);
-      const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
-      // When the open session is older than the recent window, fetch it once
-      // by id so it is always present in the sidebar.
-      const fallback = openSessionFallbackRef.current;
-      const liveFallback = fallback && useApiStore.getState().recentSessions.find(s => s.id === fallback.id && s.platform === fallback.platform);
-      if (fallback && liveFallback) {
-        openSessionFallbackRef.current = { ...fallback, seen: liveFallback.seen, seenTimeUpdated: liveFallback.seenTimeUpdated };
-      }
-      const resolved = await resolveOpenSession({
-        id,
-        fetched: result,
-        cached: openSessionFallbackRef.current,
-        fetchById: async (sid) => (await getSession(sid, 1, 0, signal)).session,
-        onError: (err) => remoteLog.warn('sidebar open-session fallback fetch failed', { sessionID: id, error: err }),
-      });
-      if (signal?.aborted) return;
-      openSessionFallbackRef.current = resolved.cache;
-      const current = resolved.session;
-      const candidates = current && !visible.some((s) => s.id === current.id)
-        ? [current, ...visible]
-        : visible;
-      const merged = mergeSidebarSessions(
-        candidates,
-        useApiStore.getState().recentSessions,
-        id,
-        requestStart,
-        { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads },
-      );
+  const recentRequest = useRef<{ key: string; signal?: AbortSignal; promise: Promise<void> } | null>(null);
+  const loadRecentSessions = useCallback((signal?: AbortSignal): Promise<void> => {
+    const key = JSON.stringify([id, sidebarRecentHoursRef.current]);
+    if (recentRequest.current?.key === key && !recentRequest.current.signal?.aborted) return recentRequest.current.promise;
+    const promise = (async () => {
+      const requestStart = useApiStore.getState().recentSessions;
+      const pendingReads = useApiStore.getState().pendingInterruptionReads;
+      try {
+        const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
+        // /api/sessions can serialize a Go nil slice as JSON `null`;
+        // coerce here so .find() / filterVisibleSessions never see null.
+        const result = (await getSessions({ since, limit: 0 }, signal)) ?? [];
+        if (signal?.aborted) return;
+        // Child sessions are useful while active; completed output has
+        // already bubbled up to the parent.
+        const rooted = filterInactiveChildren(result, id);
+        // When the open session is older than the recent window, fetch it once
+        // by id so it is always present in the sidebar.
+        const fallback = openSessionFallbackRef.current;
+        const liveFallback = fallback && useApiStore.getState().recentSessions.find(s => s.id === fallback.id && s.platform === fallback.platform);
+        if (fallback && liveFallback) {
+          openSessionFallbackRef.current = { ...fallback, seen: liveFallback.seen, seenTimeUpdated: liveFallback.seenTimeUpdated };
+        }
+        const resolved = await resolveOpenSession({
+          id,
+          fetched: result,
+          cached: openSessionFallbackRef.current,
+          fetchById: async (sid) => (await getSession(sid, 1, 0, signal)).session,
+          onError: (err) => remoteLog.warn('sidebar open-session fallback fetch failed', { sessionID: id, error: err }),
+        });
+        if (signal?.aborted) return;
+        openSessionFallbackRef.current = resolved.cache;
+        const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
+        const current = resolved.session;
+        const candidates = current && !visible.some((s) => s.id === current.id)
+          ? [current, ...visible]
+          : visible;
+        const merged = mergeSidebarSessions(
+          candidates,
+          useApiStore.getState().recentSessions,
+          id,
+          requestStart,
+          { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads },
+        );
 
-      const hash = computeSidebarHash(merged);
-      storeSetRecentSessions(merged, hash);
-      setLoadingRecentSessions(false);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
-      throw e;
-    }
+        const hash = computeSidebarHash(merged);
+        storeSetRecentSessions(merged, hash);
+        setLoadingRecentSessions(false);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+        throw e;
+      }
+    })();
+    const request = { key, signal, promise };
+    recentRequest.current = request;
+    void promise.finally(() => { if (recentRequest.current === request) recentRequest.current = null; }).catch(() => {});
+    return promise;
   }, [getSessions, getSession, id, storeSetRecentSessions]);
 
   // Initial load when the active session changes (or is set the
@@ -203,9 +213,14 @@ export function useSidebarSessions({
   // reconcile events missed during the gap.
   useEffect(() => {
     const refresh = () => {
-      loadRecentSessions(abortSignalRef.current?.signal)
+      return loadRecentSessions(abortSignalRef.current?.signal)
         .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
     };
+    const refreshAfterCurrent = async () => {
+      await recentRequest.current?.promise.catch(() => {});
+      if (subscribed) await refresh();
+    };
+    const changedRefresh = eventRefresh(refreshAfterCurrent);
     let subscribed = true;
     const unsubscribeChanged = onSessionChanged((sessionID, _session, patch, platform) => {
       const matches = useApiStore.getState().recentSessions.filter(s => s.id === sessionID && (!platform || s.platform === platform));
@@ -232,9 +247,9 @@ export function useSidebarSessions({
         }).catch((err) => remoteLog.error('Failed to refresh completed session', err));
         return;
       }
-      refresh();
+      changedRefresh.schedule();
     });
-    const unsubscribeConnect = onSseConnect(refresh);
+    const unsubscribeConnect = onSseConnect(() => { void refreshAfterCurrent(); });
     const pendingActivity = new Map<string, number>();
     const hiddenSessions = new Set<string>();
     const unsubscribeActivity = onSessionActivity((sessionID, timeUpdated) => {
@@ -280,6 +295,7 @@ export function useSidebarSessions({
       unsubscribeConnect();
       unsubscribeActivity();
       subscribed = false;
+      changedRefresh.dispose();
     };
   }, [loadRecentSessions, abortSignalRef, patchRecentSession, peekSession, id, storeSetRecentSessions]);
 

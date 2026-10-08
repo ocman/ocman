@@ -13,6 +13,7 @@ import {
   usePermissionStats,
   useProjects,
   useSessions,
+  useSessionConcurrency,
 } from './queries';
 import { useGitInfo } from './useGitInfo';
 import { __resetForTests as resetNotify, useNotifyStore } from './useNotifyData';
@@ -28,6 +29,7 @@ vi.mock('./api', () => ({
     models: vi.fn(() => new Promise(() => {})),
     hourly: vi.fn(() => new Promise(() => {})),
     hourlyTokens: vi.fn(() => new Promise(() => {})),
+    sessionConcurrency: vi.fn(() => new Promise(() => {})),
   },
   fetchJSON: vi.fn(() => new Promise(() => {})),
 }));
@@ -87,6 +89,7 @@ describe('activity scope wiring', () => {
       useModels();
       useHourly();
       useHourlyTokens();
+      useSessionConcurrency({ days: 30 });
       useActivity(undefined, { enabled: false });
     }, { wrapper });
 

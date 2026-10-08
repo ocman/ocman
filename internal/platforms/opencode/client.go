@@ -27,10 +27,20 @@ var openCodeClient = &http.Client{
 	Transport: otelhttp.NewTransport(ocapi.New("").Transport(http.DefaultTransport)),
 }
 
+// openCodeLLMClient serves the calls whose upstream request blocks
+// until a model replies (the title agent, slash commands, summarize):
+// the caller's context bounds the wait instead of the read timeout. Same
+// transport chain (otelhttp → auth → ocv2.Wrap) as openCodeClient.
+var openCodeLLMClient = &http.Client{
+	Transport: openCodeClient.Transport,
+}
+
 func configureHTTPAuth(auth ocapi.Auth) {
 	// Keep auth inside instrumentation so even opt-in HTTP header capture
 	// observes the original request without Authorization.
-	openCodeClient.Transport = otelhttp.NewTransport(auth.Transport(http.DefaultTransport))
+	transport := otelhttp.NewTransport(auth.Transport(http.DefaultTransport))
+	openCodeClient.Transport = transport
+	openCodeLLMClient.Transport = transport
 }
 
 // --- Fetching session data from the OpenCode HTTP API ---

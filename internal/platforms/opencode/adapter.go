@@ -165,6 +165,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 			resolvedPorts[directory] = port
 		}
 		sessions[i].Status = a.settleStatusOnPort(sessions[i].ID, port, sessions[i].Status)
+		sessions[i].Notice = a.sessionNoticeOnPort(sessions[i].ID, port)
 		sessions[i].LiveConnection = port != ""
 	}
 	sessions = db.FilterInactiveChildren(sessions)

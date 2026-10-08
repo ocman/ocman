@@ -646,11 +646,15 @@ describe('useSession — initial load', () => {
     });
   });
 
-  it('adds session notices to the message history', async () => {
+  it.each([
+    ['error', 'error', 'connection refused'],
+    ['busy', 'rate_limit', "This request would exceed your account's rate limit. Please try again later."],
+  ] as const)('adds %s session %s notices to the message history', async (status, kind, message) => {
     const detail = makeDetail({
       session: {
         ...makeDetail().session,
-        notice: { kind: 'error', message: 'connection refused', retryAt: 0, attempt: 0 },
+        status,
+        notice: { kind, message, retryAt: 0, attempt: 0 },
       },
     });
     const fetchSession = vi.fn().mockResolvedValue(detail);
@@ -662,7 +666,7 @@ describe('useSession — initial load', () => {
     });
     expect(result.current.parts.find((p) => p.messageId === `ocman-session-notice-${SID}`)?.data).toEqual({
       type: 'text',
-      text: 'connection refused',
+      text: message,
     });
   });
 });

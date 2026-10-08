@@ -187,6 +187,15 @@ type Server struct {
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 
+	// Stats gauge refresher (see metrics_stats.go): statsSnapshot holds the
+	// last successful GetStats result for the OTel callback, guarded by
+	// statsMu. getStats / statsRefreshEvery are test seams overriding
+	// db.GetStats / statsRefreshInterval.
+	getStats          func(context.Context) (*db.Stats, error)
+	statsRefreshEvery time.Duration
+	statsMu           sync.Mutex
+	statsSnapshot     *db.Stats
+
 	projectUpstreamsMu      sync.Mutex
 	projectUpstreams        map[string]projectUpstreamsCacheEntry
 	projectUpstreamsPending map[string]*projectUpstreamsPending

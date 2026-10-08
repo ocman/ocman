@@ -23,6 +23,25 @@ OpenCode started without `--port` are readable but not drivable. Launch
 sessions from ocman (or start OpenCode with `opencode --port 0`) to get the
 composer, permission replies and abort.
 
+## Why did several sessions stop together?
+
+Worktree sessions share their project's managed OpenCode server. With OpenCode
+v2, all projects on a machine share one server. Replacing that server can
+interrupt several turns at once.
+
+Ocman logs failed health checks and restarts at warning level, including the
+endpoint and restart reason. A timeout or temporary API error fails the request
+without stopping the server. Replacement prepares durable history before stopping
+the server and exposes the interruption notices only after a successful stop.
+A failed stop keeps the existing instance and aborts replacement. A process that
+disappears without saving an error gets a notice when its interrupted history is
+opened. Notices stay in
+ocman's state database and are restored after refreshes and follow-ups.
+
+Check the warning logs to distinguish a restart from a model-provider failure.
+Once the server is available, send a follow-up to continue. Ocman does not replay
+an interrupted prompt automatically.
+
 ## Do I need tmux?
 
 Only for the in-app terminals and for ocman-managed OpenCode instances on the

@@ -3,8 +3,10 @@ import type { CIState, PR } from '../../lib/upstreamApi';
 import { fetchPRChecks } from '../../lib/upstreamApi';
 import { prChecksCacheKey } from '../../lib/prChecksCache';
 import { CI_LABEL, usePRChecks } from '../../lib/usePRChecks';
+import { usePRMergeability } from '../../lib/usePRMergeability';
 import type { ChecksState } from '../../lib/usePRChecks';
 import { ExpandableRow } from './ExpandableRow';
+import './PRRow.css';
 
 interface PRRowProps {
   pr: PR;
@@ -41,6 +43,10 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
   const sha = pr.headSha ?? '';
   const loadChecks = useCallback((signal: AbortSignal) => fetchPRChecks({ dir: checksDirectory, remoteId, remote, sha, signal }), [checksDirectory, remoteId, remote, sha]);
   const checks = usePRChecks(prChecksCacheKey(pr.host, pr.repo, sha), `${remoteId}\0${checksDirectory}\0${remote}\0${sha}`, visible && !!sha, loadChecks);
+  const mergeable = usePRMergeability(pr, checksDirectory, remoteId, remote, visible);
+  const active = pr.status === 'open' || pr.status === 'draft';
+  const unmergeable = active && (pr.status === 'draft' || mergeable === false);
+  const mergeLabel = active ? (unmergeable ? 'Not mergeable' : mergeable === true ? 'Mergeable' : 'Mergeability unknown') : undefined;
 
   // Cross-fork PRs share their head branch name with the user's
   // local tree by coincidence at best (different repo entirely), so
@@ -73,8 +79,8 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
       remote={remote}
       crossFork={pr.crossFork}
       className={isCurrentBranch ? 'current-branch' : undefined}
-      onVisibleChange={canFetchCI ? setVisible : undefined}
-      summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} />}
+      onVisibleChange={setVisible}
+      summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} unmergeable={unmergeable} mergeLabel={mergeLabel} />}
       summarySuffix={isCurrentBranch ? (
         <span
           className="oc-upstream-row-current-branch"
@@ -94,12 +100,13 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
   );
 }
 
-function CIDot({ state, prNumber }: { state: CIState; prNumber: number }) {
+function CIDot({ state, prNumber, unmergeable, mergeLabel }: { state: CIState; prNumber: number; unmergeable: boolean; mergeLabel?: string }) {
+  const label = [CI_LABEL[state], mergeLabel].filter(Boolean).join(' · ');
   return (
     <span
-      className={`oc-upstream-ci-dot oc-upstream-ci-dot-${state}`}
-      title={CI_LABEL[state]}
-      aria-label={CI_LABEL[state]}
+      className={`oc-upstream-ci-dot oc-upstream-ci-dot-${state}${unmergeable ? ' oc-upstream-ci-dot-unmergeable' : ''}`}
+      title={label}
+      aria-label={label}
       role="img"
       data-testid={`pr-row-${prNumber}-ci`}
     />

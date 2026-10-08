@@ -66,12 +66,11 @@ describe('SessionComposerSlot', () => {
     expect(screen.getByText('composer')).toBeInTheDocument();
   });
 
-  it('shows the unread pill and jumps to the first unread message', () => {
-    const p = renderSlot({ firstUnreadMessageId: 'm7', unreadMessageCount: 3 });
-    const pill = screen.getByTestId('jump-to-first-unread');
-    expect(pill).toHaveTextContent('3 new messages');
-    fireEvent.click(pill);
-    expect(p.onJumpToUnread).toHaveBeenCalledWith('m7');
+  it('does not show a new-message count above the composer', () => {
+    renderSlot({ firstUnreadMessageId: 'm7', unreadMessageCount: 3, composer });
+    expect(screen.queryByTestId('jump-to-first-unread')).toBeNull();
+    expect(screen.queryByText(/new messages?/)).toBeNull();
+    expect(screen.getByText('composer')).toBeInTheDocument();
   });
 
   it.each([

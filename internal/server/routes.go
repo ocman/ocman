@@ -35,6 +35,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/plugins/panes", s.get(s.handlePluginPanes))
 	mux.HandleFunc("/api/plugins/panes/read", s.get(s.handlePluginPaneRead))
 	mux.HandleFunc("/api/analytics/overview", s.get(s.handleAnalyticsOverview))
+	mux.HandleFunc("/api/analytics/session-concurrency", s.get(s.handleSessionConcurrency))
 	mux.HandleFunc("/api/analytics/database-sizes", s.get(s.handleDatabaseSizes))
 	mux.HandleFunc("/api/subscription-usage", requireGET(s.requireLocalhost(s.handleSubscriptionUsage)))
 	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))
@@ -106,6 +107,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/project/prs", requireGET(s.requireLocalhost(s.handleProjectPRs)))
 	mux.HandleFunc("/api/project/issues", requireGET(s.requireLocalhost(s.handleProjectIssues)))
 	mux.HandleFunc("/api/project/pr-checks", requireGET(s.requireLocalhost(s.handleProjectPRChecks)))
+	mux.HandleFunc("/api/project/pr-mergeability", requireGET(s.requireLocalhost(s.handleProjectPRMergeability)))
 	mux.HandleFunc("/api/project/forge-user", requireGET(s.requireLocalhost(s.handleProjectForgeUser)))
 	// Project archive state (own state.db; no launch), same auth posture
 	// as the per-session archive endpoint.

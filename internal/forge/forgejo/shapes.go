@@ -7,7 +7,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge"
 )
 
-// Forgejo's API is Gitea-compatible. These fields cover what the sidebar needs.
+// Forgejo's API is Gitea-compatible. These are the fields the sidebar reads.
 type fjPR struct {
 	Number             int       `json:"number"`
 	Title              string    `json:"title"`
@@ -15,6 +15,7 @@ type fjPR struct {
 	State              string    `json:"state"`
 	Draft              bool      `json:"draft"`
 	Merged             bool      `json:"merged"`
+	Mergeable          *bool     `json:"mergeable"`
 	UpdatedAt          time.Time `json:"updated_at"`
 	HTMLURL            string    `json:"html_url"`
 	User               fjUser    `json:"user"`
@@ -76,6 +77,7 @@ func (r fjPR) toForge(host, repo string) forge.PR {
 		Body:       r.Body,
 		Author:     r.User.Login,
 		Status:     status,
+		Mergeable:  r.Mergeable,
 		UpdatedAt:  r.UpdatedAt,
 		Branch:     branch,
 		BaseBranch: r.Base.Ref,

@@ -315,6 +315,10 @@ const sessionsReconcileInterval = 5 * time.Minute
 // can shorten it.
 var sessionsDemandRetry = 4 * time.Second
 
+// sessionsIncrementalInterval coalesces streamed deltas even when a row read
+// is cheap. A var so scheduling tests can inject a shorter interval.
+var sessionsIncrementalInterval = time.Second
+
 // sessionsFlightKey is the single singleflight slot for the snapshot
 // refresh. One constant key is correct because there is exactly one
 // snapshot; see the one-database note on sessionsSnapshot.
@@ -372,8 +376,9 @@ var (
 	// limit how often it runs: on a multi-GB OpenCode DB a pass takes
 	// seconds, and anything that triggers passes faster than that pins a
 	// core and exhausts the read pool.
-	lastRefreshEnd  time.Time
-	lastRefreshCost time.Duration
+	lastRefreshEnd         time.Time
+	lastRefreshCost        time.Duration
+	lastIncrementalRefresh time.Time
 	// sessionsDirty holds the IDs of sessions whose row may have
 	// changed, as reported by the OpenCode event stream. The refresher
 	// drains it by recomputing exactly those rows (db.GetSessionSummary
@@ -537,6 +542,13 @@ func nextSessionsReconcileDelay() time.Duration {
 	sessionsMu.RLock()
 	defer sessionsMu.RUnlock()
 	delay := time.Until(lastFullRefresh.Add(sessionsReconcileInterval))
+	if len(sessionsDirty) > 0 {
+		// Pending work must respect both the streaming floor and the measured
+		// query cost, including dirty marks arriving during a slow full scan.
+		pendingDelay := max(time.Until(lastIncrementalRefresh.Add(sessionsIncrementalInterval)),
+			time.Until(lastRefreshEnd.Add(lastRefreshCost)))
+		delay = min(delay, pendingDelay)
+	}
 	if delay < 0 {
 		return 0
 	}
@@ -631,6 +643,7 @@ func ResetCachesForTests() {
 	sessionsFullDirty = false
 	lastRefreshEnd = time.Time{}
 	lastRefreshCost = 0
+	lastIncrementalRefresh = time.Time{}
 	lastFullRefresh = time.Time{}
 	sessionsMu.Unlock()
 	select {
@@ -796,6 +809,15 @@ func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Sess
 	return doSessionsFlight(ctx, func() ([]db.Session, error) {
 		ctx := context.WithoutCancel(ctx)
 		sessionsMu.Lock()
+		// Leave work queued until the floor. Never sleep in the shared flight:
+		// exact new-session reads and full scans must be able to run immediately.
+		if sessionsHave && !sessionsFullDirty &&
+			time.Since(lastFullRefresh) < sessionsReconcileInterval &&
+			time.Since(lastIncrementalRefresh) < sessionsIncrementalInterval {
+			out := sessionsSnapshot
+			sessionsMu.Unlock()
+			return out, nil
+		}
 		ids, fullDirty := takeDirty()
 		// An explicit invalidation is deliberately NOT a reason to
 		// escalate to a full scan here. It is answered by the blocking
@@ -857,6 +879,7 @@ func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Sess
 		sessionsSnapshot = merged
 		sessionsHave = true
 		lastRefreshEnd = time.Now()
+		lastIncrementalRefresh = lastRefreshEnd
 		lastRefreshCost = lastRefreshEnd.Sub(started)
 		extendSnapshotFreshness()
 		sessionsMu.Unlock()

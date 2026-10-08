@@ -288,6 +288,7 @@ type ghPR struct {
 	Body               string    `json:"body"`
 	State              string    `json:"state"` // "open" | "closed"
 	Draft              bool      `json:"draft"`
+	Mergeable          *bool     `json:"mergeable"`
 	MergedAt           *string   `json:"merged_at"` // non-nil => merged
 	UpdatedAt          time.Time `json:"updated_at"`
 	HTMLURL            string    `json:"html_url"`
@@ -347,6 +348,7 @@ func (r ghPR) toForge(repo string) forge.PR {
 		Body:       r.Body,
 		Author:     r.User.Login,
 		Status:     status,
+		Mergeable:  r.Mergeable,
 		UpdatedAt:  r.UpdatedAt,
 		Branch:     r.Head.Ref,
 		BaseBranch: r.Base.Ref,

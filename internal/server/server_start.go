@@ -119,9 +119,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 
 	// Register observable gauges for the top-line stats (session /
 	// message / project counts, lifetime tokens and cost). The
-	// callback runs once per OTel collection interval; it's a no-op
-	// when telemetry is disabled or the OpenCode DB is absent.
-	if reg, err := s.registerStatsMetrics(telemetry.Meter()); err != nil {
+	// callback only observes what runStatsRefreshLoop last computed
+	// (every statsRefreshInterval); it's a no-op when telemetry is
+	// disabled or the OpenCode DB is absent.
+	if reg, err := s.registerStatsMetrics(ctx, telemetry.Meter()); err != nil {
 		log.WithError(err).Warn("failed to register stats metrics")
 	} else if reg != nil {
 		defer reg.Unregister()

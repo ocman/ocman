@@ -1,8 +1,14 @@
 import { useRef, useState } from 'react';
 import { useClickOutside } from '../../lib/useClickOutside';
 import { ArchiveFilterIcon } from './SidebarIcons';
+import { SelectField } from '../../components/Control';
+import { shortPath } from '../../lib/format';
+import type { SidebarProjectGroup } from './SessionSidebar';
 
 export interface SidebarHeaderProps {
+  projects: SidebarProjectGroup[];
+  projectFilter: string;
+  setProjectFilter: (key: string) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   showArchivedRecent: boolean;
@@ -20,6 +26,9 @@ export interface SidebarHeaderProps {
 
 /** Sidebar search and controls. */
 export function SidebarHeader({
+  projects,
+  projectFilter,
+  setProjectFilter,
   searchQuery,
   setSearchQuery,
   showArchivedRecent,
@@ -85,6 +94,17 @@ export function SidebarHeader({
         </button>
         {filtersOpen && (
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
+            <SelectField aria-label="Project" style={{ width: '100%' }} value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+              <option value="">All projects</option>
+              {projectFilter && !projects.some((group) => (group.key ?? group.directory) === projectFilter) && (
+                <option value={projectFilter} disabled>Unavailable project</option>
+              )}
+              {projects.map((group) => (
+                <option key={group.key ?? group.directory} value={group.key ?? group.directory}>
+                  {shortPath(group.directory)}{group.remoteName ? ` · ${group.remoteName}` : ''}
+                </option>
+              ))}
+            </SelectField>
             <label>
               <input
                 type="checkbox"

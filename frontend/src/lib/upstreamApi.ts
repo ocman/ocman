@@ -30,6 +30,7 @@ export interface PR {
   body: string;
   author: string;
   status: 'open' | 'draft' | 'merged' | 'closed';
+  mergeable?: boolean | null;
   updatedAt: string; // ISO timestamp
   labels: Label[] | null;
   assignees: ForgeUser[] | null;
@@ -201,6 +202,18 @@ export async function fetchIssues(opts: {
     throw new UpstreamApiError(env, resp.status);
   }
   return readJSON<ListIssuesResponse>(resp);
+}
+
+export async function fetchPRMergeability(opts: {
+  dir: string;
+  remoteId: string;
+  remote: string;
+  number: number;
+  signal: AbortSignal;
+}): Promise<boolean | null> {
+  const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
+  const result = await fetchJSON<{ mergeable: boolean | null }>(`/api/project/pr-mergeability?${q}`, opts.signal);
+  return result.mergeable;
 }
 
 // fetchPRChecks returns the combined CI/build status for a PR's head

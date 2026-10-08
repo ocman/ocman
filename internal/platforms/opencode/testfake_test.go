@@ -35,6 +35,7 @@ type opencodeFake struct {
 	// OpenCode SessionStatus discriminator ("busy", "retry", "idle").
 	// turnStatusCode overrides the response status; zero = 200.
 	turnStatus     map[string]string
+	turnStatusJSON json.RawMessage
 	turnStatusCode int
 	// turnStatusByDir answers GET /session/status?directory=X, mirroring
 	// OpenCode's per-directory status scope. turnStatusDirCode fails
@@ -86,6 +87,7 @@ func (f *opencodeFake) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		status := f.turnStatusCode
 		turns := f.turnStatus
+		raw := f.turnStatusJSON
 		if directory := r.URL.Query().Get("directory"); directory != "" {
 			f.dirHits = append(f.dirHits, directory)
 			turns = f.turnStatusByDir[directory]
@@ -104,6 +106,10 @@ func (f *opencodeFake) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := map[string]map[string]string{}
+		if raw != nil {
+			_, _ = w.Write(raw)
+			return
+		}
 		for sessionID, statusType := range turns {
 			out[sessionID] = map[string]string{"type": statusType}
 		}

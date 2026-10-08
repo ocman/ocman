@@ -131,6 +131,25 @@ describe('PRRow detail slots', () => {
   });
 });
 
+describe('PRRow merge status', () => {
+  it.each([
+    [false, 'open', true, 'Not mergeable'],
+    [true, 'open', false, 'Mergeable'],
+    [undefined, 'open', false, 'Mergeability unknown'],
+    [true, 'draft', true, 'Not mergeable'],
+    [false, 'merged', false, undefined],
+    [false, 'closed', false, undefined],
+  ] as const)('renders mergeable=%s status=%s', (mergeable, status, slashed, label) => {
+    render(<PRRow pr={makePR({ mergeable, status })} directory="/repo" remoteId="local" remote="origin" />);
+    const dot = screen.getByTestId('pr-row-42-ci');
+    expect(dot.classList.contains('oc-upstream-ci-dot-unmergeable')).toBe(slashed);
+    if (label) {
+      expect(dot.getAttribute('aria-label')).toContain(label);
+      expect(dot.getAttribute('title')).toContain(label);
+    }
+  });
+});
+
 describe('PRRow CI build-status indicator', () => {
   // Rows observed by the stubbed IntersectionObserver; `show` flips visibility.
   let observers: Array<{ cb: (e: { isIntersecting: boolean }[]) => void; disconnected: boolean }>;
@@ -141,6 +160,7 @@ describe('PRRow CI build-status indicator', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(api, 'fetchPRMergeability').mockResolvedValue(true);
     localStorage.clear();
     clearPRChecksCache();
     observers = [];

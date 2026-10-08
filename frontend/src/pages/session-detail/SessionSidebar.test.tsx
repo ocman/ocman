@@ -46,6 +46,7 @@ function renderSidebar(
   sidebarView: 'recent' | 'projects' = 'projects',
   setSidebarView: (view: 'recent' | 'projects') => void = vi.fn(),
   onNewSession: () => void = vi.fn(),
+  groups: SidebarProjectGroup[] = [group],
 ) {
   return render(
     <SessionSidebar
@@ -57,7 +58,7 @@ function renderSidebar(
       setShowArchivedRecent={setShowArchivedRecent}
       loadingRecentSessions={false}
       recentSessions={group.sessions}
-      sidebarProjectGroups={[group]}
+      sidebarProjectGroups={groups}
       onReorderProjects={vi.fn()}
       archivingSessionIds={new Set()}
       collapsedProjectSet={new Set()}
@@ -92,6 +93,28 @@ describe('SessionSidebar', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
+  });
+
+  it.each(['recent', 'projects'] as const)('filters %s sessions, including pinned and active rows, by project', (view) => {
+    const selected = session({ id: 'chosen', title: 'Selected worktree', directory: '/worktree', platform: 'r-other:opencode' });
+    const pinned = session({ id: 'pinned', title: 'Other pinned', pinned: true });
+    const groups: SidebarProjectGroup[] = [
+      { key: 'git:selected', directory: '/selected', sessions: [selected], lastUpdated: 1, aggregate: { kind: 'none' } },
+      { directory: '/repo', sessions: [session(), pinned], lastUpdated: 1, aggregate: { kind: 'none' } },
+      { directory: '__pinned__', sessions: [pinned], isPinned: true, lastUpdated: 1, aggregate: { kind: 'none' } },
+    ];
+    renderSidebar({ ...groups[0], sessions: [session(), pinned, selected] }, {}, vi.fn(), vi.fn(), vi.fn(), view, vi.fn(), vi.fn(), groups);
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    const selector = screen.getByRole('combobox', { name: 'Project' });
+    expect(screen.queryByRole('option', { name: '__pinned__' })).not.toBeInTheDocument();
+    fireEvent.change(selector, { target: { value: 'git:selected' } });
+    expect(screen.getByText('Selected worktree')).toBeInTheDocument();
+    expect(screen.queryByText('Fix thing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Other pinned')).not.toBeInTheDocument();
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['chosen']);
+    fireEvent.change(selector, { target: { value: '' } });
+    expect(screen.getAllByText('Fix thing').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Other pinned').length).toBeGreaterThan(0);
   });
 
   it('keeps same-path checkout buttons and branch labels scoped to their owner', () => {
