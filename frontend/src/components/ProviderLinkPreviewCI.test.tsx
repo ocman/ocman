@@ -100,7 +100,7 @@ it('does not settle rate-limited stale checks and retries errors', async () => {
   expect(screen.getByLabelText('Failed to load checks')).toBeInTheDocument();
   await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
   expect(getCachedPRChecks(key)).toBeUndefined();
-  await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS * 2); });
   expect(getCachedPRChecks(key)).toEqual(done);
 });
 

@@ -69,7 +69,7 @@ func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOption
 		return nil, rl, nil
 	}
 	if status != http.StatusOK {
-		return nil, rl, fmt.Errorf("github api %s: status %d", path, status)
+		return nil, rl, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 
 	var raw []ghPR
@@ -189,7 +189,7 @@ func (c *Client) ListIssues(ctx context.Context, repo string, opts forge.ListOpt
 		return nil, rl, nil
 	}
 	if status != http.StatusOK {
-		return nil, rl, fmt.Errorf("github api %s: status %d", path, status)
+		return nil, rl, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 
 	var raw []ghIssue
@@ -238,7 +238,7 @@ func (c *Client) CurrentUser(ctx context.Context) (forge.CurrentUser, error) {
 		return forge.CurrentUser{}, forge.ErrUnauthenticated
 	}
 
-	body, _, status, err := c.fetch(ctx, "/user")
+	body, rl, status, err := c.fetch(ctx, "/user")
 	if err != nil {
 		return forge.CurrentUser{}, err
 	}
@@ -246,7 +246,7 @@ func (c *Client) CurrentUser(ctx context.Context) (forge.CurrentUser, error) {
 		return forge.CurrentUser{}, forge.ErrUnauthenticated
 	}
 	if status != http.StatusOK {
-		return forge.CurrentUser{}, fmt.Errorf("github /user: status %d", status)
+		return forge.CurrentUser{}, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 
 	var raw struct {
@@ -288,6 +288,7 @@ type ghPR struct {
 	Body               string    `json:"body"`
 	State              string    `json:"state"` // "open" | "closed"
 	Draft              bool      `json:"draft"`
+	Mergeable          *bool     `json:"mergeable"`
 	MergedAt           *string   `json:"merged_at"` // non-nil => merged
 	UpdatedAt          time.Time `json:"updated_at"`
 	HTMLURL            string    `json:"html_url"`
@@ -347,6 +348,7 @@ func (r ghPR) toForge(repo string) forge.PR {
 		Body:       r.Body,
 		Author:     r.User.Login,
 		Status:     status,
+		Mergeable:  r.Mergeable,
 		UpdatedAt:  r.UpdatedAt,
 		Branch:     r.Head.Ref,
 		BaseBranch: r.Base.Ref,

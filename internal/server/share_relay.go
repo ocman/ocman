@@ -163,6 +163,10 @@ func (s *Server) publishCompletedTurn(ctx context.Context, adapter platforms.Pla
 	if err != nil {
 		return err
 	}
+	if len(links) == 0 {
+		// Unshared sessions need no transcript, including deleted helpers.
+		return nil
+	}
 	detail, err := adapter.Session(ctx, sessionID, exportFetchLimit, 0)
 	if err != nil {
 		return err

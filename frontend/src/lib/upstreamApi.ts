@@ -30,6 +30,7 @@ export interface PR {
   body: string;
   author: string;
   status: 'open' | 'draft' | 'merged' | 'closed';
+  mergeable?: boolean | null;
   updatedAt: string; // ISO timestamp
   labels: Label[] | null;
   assignees: ForgeUser[] | null;
@@ -99,6 +100,7 @@ export interface ErrorEnvelope {
     code: string;
     message: string;
     status?: number;
+    upstreamStatus?: number;
     retryAfter?: string;
     fetchTarget?: string;
   };
@@ -200,6 +202,23 @@ export async function fetchIssues(opts: {
     throw new UpstreamApiError(env, resp.status);
   }
   return readJSON<ListIssuesResponse>(resp);
+}
+
+export async function fetchPRMergeability(opts: {
+  dir: string;
+  remoteId: string;
+  remote: string;
+  number: number;
+  signal: AbortSignal;
+}): Promise<boolean | null> {
+  const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
+  const resp = await fetchResponse(`/api/project/pr-mergeability?${q}`, { signal: opts.signal });
+  if (!resp.ok) {
+    const env = await safeError(resp);
+    if (sessionExpired(resp, env)) throw raiseAuthError();
+    throw new UpstreamApiError(env, resp.status);
+  }
+  return (await readJSON<{ mergeable: boolean | null }>(resp)).mergeable;
 }
 
 // fetchPRChecks returns the combined CI/build status for a PR's head

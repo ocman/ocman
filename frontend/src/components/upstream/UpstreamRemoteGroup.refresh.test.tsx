@@ -22,26 +22,30 @@ it('keeps an expanded PR row and its CI status mounted through list and checks r
     .mockImplementationOnce(() => new Promise((resolve) => { finishList = resolve; }));
   vi.spyOn(api, 'fetchPRChecks').mockResolvedValueOnce({ state: 'success', checks: [{ name: 'build', state: 'success' }] })
     .mockImplementationOnce(() => new Promise((resolve) => { finishChecks = resolve; }));
+  vi.spyOn(api, 'fetchPRMergeability').mockResolvedValueOnce(true).mockResolvedValueOnce(false);
   let refresh!: () => void;
   render(<UpstreamRemoteGroup kind="prs" directory="/repo" launchDirectory="/repo" remoteId="local"
     upstream={{ remote: 'origin', host: 'github.com', type: 'github', repo: 'a/repo' }}
     state="open" mine={false} showHeader={false} onLoadingChange={() => {}}
     registerRefresh={(fn) => { refresh = fn; return () => {}; }} />);
   const row = await screen.findByTestId('pr-row-7');
-  const badge = await screen.findByRole('img', { name: 'All checks passed' });
+  const badge = await screen.findByRole('img', { name: /All checks passed/ });
+  await waitFor(() => expect(badge).toHaveAttribute('aria-label', 'All checks passed · Mergeable'));
   fireEvent.click(screen.getByRole('button', { expanded: false }));
   const details = screen.getByTestId('pr-detail-7');
   act(() => { clearPRChecksCache(); refresh(); });
   await waitFor(() => expect(api.fetchPRChecks).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2));
+  expect(badge).toHaveClass('oc-upstream-ci-dot-unmergeable');
   expect(screen.getByTestId('pr-row-7')).toBe(row);
-  expect(screen.getByRole('img', { name: 'All checks passed' })).toBe(badge);
+  expect(screen.getByRole('img', { name: /All checks passed/ })).toBe(badge);
   expect(screen.getByTestId('pr-detail-7')).toBe(details);
   expect(screen.getByRole('button', { name: 'Next ›' })).toBeEnabled();
   await act(async () => finishList({ ...initial, prs: [{ ...pr, title: 'Updated change' }] }));
   expect(screen.getByTestId('pr-row-7')).toBe(row);
   expect(screen.getByTestId('pr-detail-7')).toBe(details);
-  expect(screen.getByRole('img', { name: 'All checks passed' })).toBe(badge);
+  expect(screen.getByRole('img', { name: /All checks passed/ })).toBe(badge);
   expect(screen.getByText('Updated change')).toBeInTheDocument();
   await act(async () => finishChecks({ state: 'failure', checks: [{ name: 'build', state: 'failure' }] }));
-  expect(screen.getByRole('img', { name: 'Some checks failed' })).toBe(badge);
+  expect(screen.getByRole('img', { name: /Some checks failed/ })).toBe(badge);
 });

@@ -159,6 +159,15 @@ describe('analytics sections', () => {
     expect(screen.getByText(/Peak per 1-hour bucket/)).toBeInTheDocument();
   });
 
+  it('shows a visible marker for a single concurrency bucket', () => {
+    useSessionConcurrency.mockReturnValue(query({ bucketMs: 3_600_000, series: [{ timestamp: 1000, sessions: 2 }] }));
+    renderTab(<ActivityTab />);
+    const card = screen.getByText('Active Parallel Sessions').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.datasets[0].data).toEqual([{ x: 1000, y: 2 }]);
+    expect(chart.datasets[0].pointRadius).toBeGreaterThan(0);
+  });
+
   it('shows partial activity query failures', () => {
     useActivity.mockReturnValueOnce(query([])).mockReturnValueOnce({ ...query([]), error: new Error('daily failed') });
     renderTab(<ActivityTab />);

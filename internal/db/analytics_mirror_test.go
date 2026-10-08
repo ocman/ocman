@@ -372,6 +372,58 @@ func TestAnalyticsMirrorIncrementalFailureFallsBack(t *testing.T) {
 	}
 }
 
+// TestAnalyticsMirrorUnsettledWindowCap: an interrupted turn older than
+// mirrorUnsettledMaxAge must not keep the incremental window open (it cost
+// hours of re-copying per sync on the ocman-dev instance); a still-recent
+// unfinished turn keeps extending the window as before.
+func TestAnalyticsMirrorUnsettledWindowCap(t *testing.T) {
+	d, _ := openMirrored(t)
+	now := time.Now().UnixMilli()
+	hour := int64(time.Hour / time.Millisecond)
+	if _, err := d.mirror.db.Exec(`INSERT INTO message (id, session_id, time_created, settled, data) VALUES
+		('a-newest', 's1', ?, 1, '{"role":"assistant","finish":"stop"}'),
+		('a-interrupted', 's1', ?, 0, '{"role":"assistant"}')`, now, now-2*hour); err != nil {
+		t.Fatal(err)
+	}
+	since, err := d.mirror.windowStart(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if since < now-mirrorSlack.Milliseconds()-time.Second.Milliseconds() {
+		t.Fatalf("window start %d reaches back past the cap to the 2h-old interrupted turn (now=%d)", since, now)
+	}
+	if _, err := d.mirror.db.Exec(`INSERT INTO message (id, session_id, time_created, settled, data) VALUES
+		('a-running', 's1', ?, 0, '{"role":"assistant"}')`, now-30*60*1000); err != nil {
+		t.Fatal(err)
+	}
+	since, err = d.mirror.windowStart(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if since > now-30*60*1000 {
+		t.Fatalf("window start %d does not reach back to the 30min-old unfinished turn", since)
+	}
+}
+
+// TestAnalyticsMirrorSyncCtxFailureServesStaleMirror: when the reader's own
+// context expires mid-sync, reading OpenCode with that same dead context can
+// only fail too, so the stale (consistent) mirror is served instead.
+func TestAnalyticsMirrorSyncCtxFailureServesStaleMirror(t *testing.T) {
+	now := time.Now().UnixMilli()
+	d, _ := openMirrored(t)
+	seedMirrorSource(t, d, now)
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	forceStale(d)
+	expired, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-expired.Done()
+	if h := d.analytics(expired); h != d.mirror.db {
+		t.Fatal("a sync failed by the reader's expired context should serve the stale mirror")
+	}
+}
+
 func TestEnableAnalyticsMirrorBadPath(t *testing.T) {
 	d := openTestDB(t)
 	defer d.Close()

@@ -3,9 +3,12 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,26 +18,207 @@ import (
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
-func TestUpstreamCacheMissingCheckoutRetainsSuccessWithoutCachingAbsence(t *testing.T) {
-	dir := t.TempDir()
-	for _, args := range [][]string{{"init"}, {"remote", "add", "origin", "https://host/old.git"}} {
+// countingRunner forwards to the real git binary and records how many
+// subprocesses ran, and how many ran at once.
+type countingRunner struct {
+	mu       sync.Mutex
+	probes   int
+	inflight int
+	max      int
+	delay    time.Duration
+}
+
+func (r *countingRunner) read(ctx context.Context, dir string) (string, error) {
+	r.mu.Lock()
+	r.probes++
+	r.inflight++
+	if r.inflight > r.max {
+		r.max = r.inflight
+	}
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		r.inflight--
+		r.mu.Unlock()
+	}()
+	if r.delay > 0 {
+		time.Sleep(r.delay)
+	}
+	return gitexec.Output(ctx, dir, "remote", "-v")
+}
+
+func (r *countingRunner) counts() (probes, max int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.probes, r.max
+}
+
+func initRepoWithRemote(t *testing.T, dir, url string) {
+	t.Helper()
+	for _, args := range [][]string{{"init"}, {"remote", "add", "origin", url}} {
 		if _, err := gitexec.Output(t.Context(), dir, args...); err != nil {
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestUpstreamCacheUnchangedRepoNotReprobedWithinTTL(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	runner := &countingRunner{}
 	cache := newOriginCache()
+	cache.read = runner.read
+	for range 2 {
+		got, err := cache.upstreams(t.Context(), dir)
+		if err != nil || !slices.Equal(got.keys, []string{"host/old"}) {
+			t.Fatalf("upstreams = %+v, %v", got, err)
+		}
+	}
+	if probes, _ := runner.counts(); probes != 1 {
+		t.Fatalf("git probes for unchanged repo = %d, want 1", probes)
+	}
+	// The tick is 5 minutes (server.projectsScanInterval); an entry that
+	// expires on or before the next tick is rebuilt every refresh.
+	cache.mu.Lock()
+	ttl := time.Until(cache.m[dir].expires)
+	cache.mu.Unlock()
+	if ttl <= 5*time.Minute {
+		t.Fatalf("cache TTL %v never outlives the 5m refresh tick", ttl)
+	}
+}
+
+func TestUpstreamCacheRemoteChangeReflectedWithinTTL(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	runner := &countingRunner{}
+	cache := newOriginCache()
+	cache.read = runner.read
 	if _, err := cache.upstreams(t.Context(), dir); err != nil {
 		t.Fatal(err)
 	}
-	entry := cache.m[dir]
-	entry.expires = time.Time{}
-	cache.m[dir] = entry
+	config := filepath.Join(dir, ".git", "config")
+	before, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitexec.Output(t.Context(), dir, "remote", "set-url", "origin", "https://host/new.git"); err != nil {
+		t.Fatal(err)
+	}
+	// Coarse overlayfs timestamps can keep two immediate edits at the same mtime.
+	modified := before.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(config, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cache.upstreams(t.Context(), dir)
+	if err != nil || !slices.Equal(got.keys, []string{"host/new"}) {
+		t.Fatalf("remote change not reflected in warm cache: %+v, %v", got, err)
+	}
+}
+
+func TestUpstreamCacheConfigReplacementWithSameMtime(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	cache := newOriginCache()
+	config := filepath.Join(dir, ".git", "config")
+	before, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.upstreams(t.Context(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitexec.Output(t.Context(), dir, "remote", "set-url", "origin", "https://host/new.git"); err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce coarse filesystem timestamps without relying on runner timing.
+	if err := os.Chtimes(config, before.ModTime(), before.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cache.upstreams(t.Context(), dir)
+	if err != nil || got.origin != "https://host/new.git" {
+		t.Fatalf("replacement with unchanged mtime retained stale remote: %+v, %v", got, err)
+	}
+}
+
+func TestUpstreamCacheConfigSizeWithSameMtime(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	cache := newOriginCache()
+	before, err := cache.upstreams(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := os.ReadFile(before.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = []byte(strings.ReplaceAll(string(config), "host/old.git", "host/new-longer.git"))
+	if err := os.WriteFile(before.configPath, config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(before.configPath, before.configStat.ModTime(), before.configStat.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cache.upstreams(t.Context(), dir)
+	if err != nil || got.origin != "https://host/new-longer.git" {
+		t.Fatalf("size change with unchanged mtime retained stale remote: %+v, %v", got, err)
+	}
+}
+
+func TestUpstreamCacheLinkedWorktreeAndSubdirectory(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	linked := filepath.Join(t.TempDir(), "linked")
+	for _, args := range [][]string{
+		{"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "initial"},
+		{"worktree", "add", "-b", "linked", linked},
+	} {
+		if _, err := gitexec.Output(t.Context(), dir, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	subdir := filepath.Join(dir, "subdir")
+	if err := os.Mkdir(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cache := newOriginCache()
+	for _, target := range []string{linked, subdir} {
+		if got, err := cache.upstreams(t.Context(), target); err != nil || got.origin != "https://host/old.git" {
+			t.Fatalf("initial upstream for %s = %+v, %v", target, got, err)
+		}
+	}
+	if _, err := gitexec.Output(t.Context(), dir, "remote", "set-url", "origin", "https://host/new.git"); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{linked, subdir} {
+		if got, err := cache.upstreams(t.Context(), target); err != nil || got.origin != "https://host/new.git" {
+			t.Fatalf("changed upstream for %s = %+v, %v", target, got, err)
+		}
+	}
+}
+
+func TestUpstreamCacheMissingCheckoutCachesAbsenceAndRedetectsRestore(t *testing.T) {
+	dir := t.TempDir()
+	initRepoWithRemote(t, dir, "https://host/old.git")
+	runner := &countingRunner{}
+	cache := newOriginCache()
+	cache.read = runner.read
+	if _, err := cache.upstreams(t.Context(), dir); err != nil {
+		t.Fatal(err)
+	}
 	parked := filepath.Join(t.TempDir(), "parked")
 	if err := os.Rename(dir, parked); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := cache.upstreams(t.Context(), dir); err != nil || !slices.Equal(got.keys, entry.keys) || !cache.m[dir].expires.IsZero() {
-		t.Fatalf("missing checkout erased known keys or cached absence: %+v, %v", got, err)
+	for range 3 {
+		got, err := cache.upstreams(t.Context(), dir)
+		if err != nil || !slices.Equal(got.keys, []string{"host/old"}) {
+			t.Fatalf("missing checkout erased known keys: %+v, %v", got, err)
+		}
+	}
+	// One extra probe classifies the deletion; the absence is then cached.
+	if probes, _ := runner.counts(); probes != 2 {
+		t.Fatalf("missing checkout was re-probed every call: %d git calls", probes)
 	}
 	if err := os.Rename(parked, dir); err != nil {
 		t.Fatal(err)
@@ -42,8 +226,101 @@ func TestUpstreamCacheMissingCheckoutRetainsSuccessWithoutCachingAbsence(t *test
 	if _, err := gitexec.Output(t.Context(), dir, "remote", "set-url", "origin", "https://host/new.git"); err != nil {
 		t.Fatal(err)
 	}
+	got, err := cache.upstreams(t.Context(), dir)
+	if err != nil || !slices.Equal(got.keys, []string{"host/new"}) {
+		t.Fatalf("restored checkout not re-detected: %+v, %v", got, err)
+	}
+}
+
+func TestUpstreamCacheNonRepoDirectoryCachedUntilRecheck(t *testing.T) {
+	dir := t.TempDir()
+	runner := &countingRunner{}
+	cache := newOriginCache()
+	cache.read = runner.read
+	for range 3 {
+		got, err := cache.upstreams(t.Context(), dir)
+		if err != nil || len(got.keys) != 0 {
+			t.Fatalf("non-repo directory = %+v, %v", got, err)
+		}
+	}
+	if probes, _ := runner.counts(); probes != 1 {
+		t.Fatalf("non-repo directory was re-probed every call: %d git calls", probes)
+	}
+	if entry := cache.m[dir]; entry.gone || time.Since(entry.expires.Add(-nonRepoRecheck)) > time.Minute {
+		t.Fatalf("non-repo recheck interval not applied: %+v", entry)
+	}
+	initRepoWithRemote(t, dir, "https://host/new.git")
+	if _, err := cache.upstreams(t.Context(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if probes, _ := runner.counts(); probes != 1 {
+		t.Fatalf("recreated repository probed before recheck interval: %d", probes)
+	}
+	cache.mu.Lock()
+	entry := cache.m[dir]
+	entry.expires = time.Time{}
+	cache.m[dir] = entry
+	cache.mu.Unlock()
 	if got, err := cache.upstreams(t.Context(), dir); err != nil || !slices.Equal(got.keys, []string{"host/new"}) {
-		t.Fatalf("restored checkout could not retry immediately: %+v, %v", got, err)
+		t.Fatalf("recreated repository not picked up on recheck: %+v, %v", got, err)
+	}
+}
+
+func TestEnrichProjectStatsBoundedParallelismAndDeterministic(t *testing.T) {
+	prev := projectUpstreamsCache
+	defer func() { projectUpstreamsCache = prev }()
+	projectUpstreamsCache = newOriginCache()
+
+	const dirs = 24
+	base := t.TempDir()
+	var stats []db.ProjectStats
+	for i := range dirs {
+		dir := filepath.Join(base, fmt.Sprintf("repo-%02d", i))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		initRepoWithRemote(t, dir, fmt.Sprintf("https://host/repo-%02d.git", i))
+		stats = append(stats, db.ProjectStats{Directory: dir})
+	}
+	runner := &countingRunner{delay: 10 * time.Millisecond}
+	projectUpstreamsCache.read = runner.read
+	if err := EnrichProjectStats(t.Context(), stats); err != nil {
+		t.Fatal(err)
+	}
+	probes, max := runner.counts()
+	if probes != dirs {
+		t.Fatalf("probes = %d, want %d", probes, dirs)
+	}
+	if max < 2 || max > enrichParallelism {
+		t.Fatalf("max concurrent git lookups = %d, want 2..%d", max, enrichParallelism)
+	}
+	for i, p := range stats {
+		want := fmt.Sprintf("host/repo-%02d", i)
+		if !slices.Equal(p.UpstreamKeys, []string{want}) || p.UpstreamOrigin != want {
+			t.Fatalf("stats[%d] = %+v, want %q", i, p, want)
+		}
+	}
+	if err := EnrichProjectStats(t.Context(), stats); err != nil {
+		t.Fatal(err)
+	}
+	if probes, _ := runner.counts(); probes != dirs {
+		t.Fatalf("warm refresh launched additional git lookups: %d", probes)
+	}
+
+	// Deterministic: a second cold enrichment matches the first.
+	second := make([]db.ProjectStats, len(stats))
+	copy(second, stats)
+	for i := range second {
+		second[i].UpstreamKeys = nil
+		second[i].UpstreamOrigin = ""
+	}
+	projectUpstreamsCache = newOriginCache()
+	projectUpstreamsCache.read = runner.read
+	if err := EnrichProjectStats(t.Context(), second); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stats, second) {
+		t.Fatal("cold and warm enrichments disagree")
 	}
 }
 
@@ -204,8 +481,8 @@ func TestUpstreamInventoryCache(t *testing.T) {
 	// Consumers cannot modify the cache's upstream slice.
 	got[0].UpstreamKeys[0] = "modified"
 	run("remote", "set-url", "upstream", "https://github.com/Org/Changed.git")
-	if warm, err := cache.upstreams(t.Context(), dir); err != nil || !slices.Equal(warm.keys, want) {
-		t.Fatal("warm cache changed before expiry")
+	if warm, err := cache.upstreams(t.Context(), dir); err != nil || !slices.Contains(warm.keys, "github.com/org/changed") {
+		t.Fatalf("config change not reflected in warm cache: %+v, %v", warm, err)
 	}
 	cache.mu.Lock()
 	entry := cache.m[dir]

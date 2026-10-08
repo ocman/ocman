@@ -41,15 +41,15 @@ type projectsIndexState struct {
 // projectsIndexTickFn is the refresh body of runProjectsIndexLoop,
 // lifted to a package-level variable so tests can inject a panicking
 // implementation (FR-11) and assert the loop survives.
-var projectsIndexTickFn = func(s *Server) {
-	if err := s.refreshProjectsIndex(); err != nil {
+var projectsIndexTickFn = func(ctx context.Context, s *Server) {
+	if err := s.refreshProjectsIndex(ctx); err != nil {
 		log.WithError(err).Warn("refreshing projects index")
 	}
 }
 
-func (s *Server) runProjectsIndexTick() {
+func (s *Server) runProjectsIndexTick(ctx context.Context) {
 	if s.HasDemand("projects") {
-		projectsIndexTickFn(s)
+		projectsIndexTickFn(ctx, s)
 		return
 	}
 	s.projects.mu.Lock()
@@ -62,7 +62,7 @@ func (s *Server) runProjectsIndexLoop(ctx context.Context) {
 		return
 	}
 
-	runWithRecover("projects-index", s.runProjectsIndexTick)
+	runWithRecover("projects-index", func() { s.runProjectsIndexTick(ctx) })
 
 	ticker := time.NewTicker(projectsScanInterval)
 	defer ticker.Stop()
@@ -72,7 +72,7 @@ func (s *Server) runProjectsIndexLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			runWithRecover("projects-index", s.runProjectsIndexTick)
+			runWithRecover("projects-index", func() { s.runProjectsIndexTick(ctx) })
 		}
 	}
 }
@@ -86,15 +86,17 @@ var errProjectsRefreshAborted = errors.New("projects index refresh aborted")
 // refreshProjectsIndex runs one project inventory refresh for this
 // owner, singleflighted with a dirty follow-up (FR-8).
 //
-// The caller that finds no refresh running drives the cycle inline;
-// every other caller joins it and receives the same result. Because a
+// The first caller starts a bounded server-lifetime worker; every caller
+// waits independently and receives its result. Because a
 // joining caller may have observed state the running query already read
 // past, joining also marks the cycle dirty, which makes the driver run
 // exactly one follow-up query afterwards — a request is never silently
 // cleared by the completion of an older refresh. A failed cycle keeps
 // the previous snapshot and the dirty indication, and stops instead of
 // looping, so the next event or 5-minute tick retries without spinning.
-func (s *Server) refreshProjectsIndex() error {
+func (s *Server) refreshProjectsIndex(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 	if s.db == nil && s.projects.fetch == nil {
 		return nil
 	}
@@ -102,26 +104,45 @@ func (s *Server) refreshProjectsIndex() error {
 	st := &s.projects
 	st.mu.Lock()
 	st.dirty = true
-	if st.running {
-		done := st.done
-		st.mu.Unlock()
-		<-done
-		st.mu.RLock()
-		defer st.mu.RUnlock()
-		return st.err
+	if !st.running {
+		st.running = true
+		st.done = make(chan struct{})
+		go s.runProjectsRefresh(st.done)
 	}
-	st.running = true
-	st.done = make(chan struct{})
 	done := st.done
 	st.mu.Unlock()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return st.err
+}
 
-	return s.driveProjectsRefresh(done)
+// Shared scans belong to the server, while every caller waits independently.
+func (s *Server) runProjectsRefresh(done chan struct{}) {
+	// Plugin cleanup must not erase the lifetime of queued shared work.
+	s.pluginMu.Lock()
+	ctx := s.lifetimeCtx
+	s.pluginMu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	runWithRecover("projects-index", func() {
+		if err := s.driveProjectsRefresh(ctx, done); err != nil {
+			log.WithError(err).Warn("refreshing projects index")
+		}
+	})
 }
 
 // driveProjectsRefresh runs refresh iterations until one completes with
 // no newer request pending, then settles the cycle and releases every
 // joined caller. See refreshProjectsIndex for the state machine.
-func (s *Server) driveProjectsRefresh(done chan struct{}) error {
+func (s *Server) driveProjectsRefresh(ctx context.Context, done chan struct{}) error {
 	st := &s.projects
 	settled := false
 	defer func() {
@@ -143,7 +164,7 @@ func (s *Server) driveProjectsRefresh(done chan struct{}) error {
 		st.dirty = false
 		st.mu.Unlock()
 
-		err := s.refreshProjectsIndexOnce()
+		err := s.refreshProjectsIndexOnce(ctx)
 
 		// The dirty check and the settle must share one lock hold:
 		// otherwise a request slipping in between would join a cycle
@@ -165,8 +186,8 @@ func (s *Server) driveProjectsRefresh(done chan struct{}) error {
 	}
 }
 
-func (s *Server) refreshProjectsIndexOnce() error {
-	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.projects_index.refresh")
+func (s *Server) refreshProjectsIndexOnce(ctx context.Context) error {
+	ctx, span := telemetry.Tracer().Start(ctx, "ocman.projects_index.refresh")
 	defer span.End()
 
 	start := time.Now()

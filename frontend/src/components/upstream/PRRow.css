@@ -15,3 +15,18 @@
 a.oc-upstream-ci-check-name { color: var(--accent); text-decoration: none; }
 a.oc-upstream-ci-check-name:hover { text-decoration: underline; }
 .oc-upstream-ci-check-state { color: var(--text-dim); flex-shrink: 0; }
+.oc-upstream-ci-dot-unmergeable {
+  position: relative;
+}
+
+.oc-upstream-ci-dot-unmergeable::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  background: var(--text);
+  box-shadow: 0 0 0 1px var(--bg);
+  transform: translate(-50%, -50%) rotate(-45deg);
+}

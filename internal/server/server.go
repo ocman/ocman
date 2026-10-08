@@ -3,16 +3,10 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -21,18 +15,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
-	"github.com/NoUseFreak/ocman/internal/term"
-	"github.com/NoUseFreak/ocman/internal/webhook"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
@@ -142,6 +131,7 @@ type Server struct {
 	pluginRecovered bool
 	pluginDiscovery []pluginDiscoveryFailure
 	pluginCtx       context.Context
+	lifetimeCtx     context.Context // guarded by pluginMu; retained through plugin cleanup
 	// webhookCtx outlives requests so pollers for newly created inboxes keep running.
 	webhookCtx context.Context
 	// webhookKeyMu serializes relay-side inbox mutations (key resets, secret
@@ -195,6 +185,15 @@ type Server struct {
 	factoryUnblockTokens sync.Map
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
+
+	// Stats gauge refresher (see metrics_stats.go): statsSnapshot holds the
+	// last successful GetStats result for the OTel callback, guarded by
+	// statsMu. getStats / statsRefreshEvery are test seams overriding
+	// db.GetStats / statsRefreshInterval.
+	getStats          func(context.Context) (*db.Stats, error)
+	statsRefreshEvery time.Duration
+	statsMu           sync.Mutex
+	statsSnapshot     *db.Stats
 
 	projectUpstreamsMu      sync.Mutex
 	projectUpstreams        map[string]projectUpstreamsCacheEntry
@@ -368,11 +367,7 @@ func (s *Server) triggerProjectsIndexRefresh() {
 	done := st.done
 	st.mu.Unlock()
 
-	go runWithRecover("projects-index-async", func() {
-		if err := s.driveProjectsRefresh(done); err != nil {
-			log.WithError(err).Warn("refreshing projects index")
-		}
-	})
+	go s.runProjectsRefresh(done)
 }
 
 // SessionService returns the session mutation service so main.go can
@@ -454,387 +449,6 @@ func (s *Server) SetRemoteManager(m *remote.Manager) { s.remotes = m }
 // HasDemand reports whether a visible client currently leases scope.
 func (s *Server) HasDemand(scope string) bool {
 	return s.activity == nil || s.activity.HasDemand(scope)
-}
-
-// Start starts the HTTP server. It blocks until the context is cancelled,
-// then gracefully shuts down the server.
-func (s *Server) Start(ctx context.Context) error {
-	ln, err := net.Listen("tcp", s.addr)
-	if err != nil {
-		return fmt.Errorf("listen %s: %w", s.addr, err)
-	}
-	return s.StartOnListener(ctx, ln)
-}
-
-// StartOnListener starts the HTTP server on an already-bound listener. It
-// blocks until the context is cancelled, then gracefully shuts down.
-// This variant is used by the GUI mode, which picks the port before handing
-// the listener here so Wails can point its proxy at the correct address.
-func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
-	// Build the host router on this goroutine, before any background loop
-	// or handler can reach it. router() assigns lazily, and the loops
-	// started below race that assignment otherwise.
-	s.router()
-	s.loadProjectsIndexCache(context.WithoutCancel(ctx))
-	s.pluginMu.Lock()
-	s.pluginCtx = ctx
-	s.pluginMu.Unlock()
-	defer s.stopPluginProcesses()
-	if _, err := s.RescanPlugins(ctx); err != nil {
-		log.WithError(err).Warn("plugin discovery failed")
-	}
-	if s.stateDB != nil && s.routineSvc == nil {
-		s.routineSvc = routines.New(routines.Deps{
-			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,
-		})
-	}
-	if s.remotes != nil {
-		s.remotes.SetWebhookDispatcher(s.routineSvc)
-	}
-	if s.db != nil {
-		if _, ok := s.registry.Get(opencode.PlatformID); ok {
-			opencode.StartSessionsRefresher(ctx, s.db, s.HasDemand)
-		}
-	}
-	// Seed the cached judge delay so the first permission event has it
-	// available without a DB round-trip.
-	if s.stateDB != nil {
-		if d, err := s.stateDB.GetJudgeDelayMs(ctx); err == nil {
-			s.aaSvc().SetJudgeDelayMs(d)
-		} else {
-			s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
-		}
-	} else {
-		s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
-	}
-
-	if s.routineSvc != nil {
-		if err := s.routineSvc.Recover(context.WithoutCancel(ctx)); err != nil {
-			return fmt.Errorf("recovering routines: %w", err)
-		}
-	}
-	if s.stateDB != nil {
-		inboxes, err := s.stateDB.ListWebhookInboxes(context.WithoutCancel(ctx))
-		if err != nil {
-			return fmt.Errorf("loading webhook inboxes: %w", err)
-		}
-		s.webhookCtx = ctx
-		for _, inbox := range inboxes {
-			go (&webhook.Poller{Store: s.stateDB, Inbox: inbox, Routines: s.routineSvc}).Run(ctx)
-		}
-		go s.runWebhookHistoryCleanup(ctx)
-	}
-
-	go s.runAutoArchiveLoop(ctx)
-	go s.runProjectsIndexLoop(ctx)
-	go s.runLLMMetricsLoop(ctx)
-	go s.runDatabaseSizeLoop(ctx)
-	go s.runQueueSweep(ctx)
-	go ocv2.WatchInstalledVersion(ctx)
-	// OpenCode v2 runs one server per machine; keep it online.
-	if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
-		go sup.RunMachineSupervisor(ctx)
-	}
-	// Replays conversation replies left unacknowledged by a disconnect or a
-	// crash, and is the clock for their bounded retries.
-	go s.runConversationDeliveryPump(ctx)
-	go s.runConversationReplyReconciliation(ctx)
-	go s.runRoutines(ctx)
-	go s.runPermissionInboxReconciliation(ctx)
-	// Headless auto-approve: subscribe directly to each OpenCode
-	// instance's /event SSE stream so permission.asked events drive
-	// the judge even when no browser tab is open. Without this, the
-	// auto-approve pipeline only fires when a frontend SSE connection
-	// happens to be active for some session in the same OpenCode
-	// process.
-	go s.aaSvc().RunWatcher(ctx)
-
-	// Register observable gauges for the top-line stats (session /
-	// message / project counts, lifetime tokens and cost). The
-	// callback runs once per OTel collection interval; it's a no-op
-	// when telemetry is disabled or the OpenCode DB is absent.
-	if reg, err := s.registerStatsMetrics(telemetry.Meter()); err != nil {
-		log.WithError(err).Warn("failed to register stats metrics")
-	} else if reg != nil {
-		defer reg.Unregister()
-	}
-
-	mux, err := s.routes()
-	if err != nil {
-		return err
-	}
-
-	// Wrap the mux with the request-timing middleware so every API
-	// request emits a "METHOD path -> status (Nms)" debug log line. SSE
-	// and the debug-log sink are skipped inside the middleware (see
-	// noiseSkip) to keep the log readable.
-	//
-	// Layering (outer -> inner): host allowlist -> security headers ->
-	// request timing -> OTel -> mux. The allowlist is outermost so a
-	// DNS-rebound Host never reaches a route, authenticated or not.
-	// otelhttp sits closest to the mux so its server span wraps just
-	// the route handlers; withRequestTiming wraps the whole thing so
-	// Server-Timing captures otelhttp's overhead too. otelhttp is a
-	// no-op when telemetry is disabled (its global TracerProvider is
-	// the SDK noop in that case).
-	httpServer := newHTTPServer(ln.Addr().String(), s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux)))))
-
-	// The MCP endpoint also gets its own loopback-only listener so local
-	// MCP clients work without a cookie, without exposing the tools
-	// through a reverse proxy on the main port.
-	stopMCP := s.startMCPListener()
-	if err := s.factory.Start(ctx); err != nil {
-		stopMCP()
-		return fmt.Errorf("starting Factory: %w", err)
-	}
-	defer s.factory.Close()
-	defer stopMCP()
-
-	// Sweep orphaned ephemeral terminal-viewer sessions left by an
-	// earlier process (e.g. after an air rebuild / crash). They can
-	// never belong to a live connection at boot, so this self-heals the
-	// old per-viewer session leak. Cheap and safe when tmux is absent.
-	term.SweepLegacySessions(ctx)
-
-	// Start the server in a goroutine so we can wait for the context.
-	errCh := make(chan error, 1)
-	go func() {
-		// Surface the auth posture in the boot log so operators
-		// can tell at a glance whether and how clients are gated.
-		authMode := "disabled"
-		if s.auth != nil {
-			if s.auth.TrustsLocalhost() {
-				authMode = "password (localhost exempt)"
-			} else {
-				authMode = "password (all clients)"
-			}
-		}
-		log.WithFields(log.Fields{
-			"addr": ln.Addr().String(),
-			"auth": authMode,
-		}).Info("ocman server started")
-		if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		}
-		close(errCh)
-	}()
-	// Wait for context cancellation (signal) or server error.
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		log.Info("shutting down server...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
-	}
-}
-
-func newHTTPServer(addr string, handler http.Handler) *http.Server {
-	return &http.Server{
-		Addr:              addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
-	}
-}
-
-// autoArchiveTickFn is the per-tick body of runAutoArchiveLoop, lifted
-// to a package-level variable so tests can inject a panicking
-// implementation (FR-11) and assert the loop survives.
-var autoArchiveTickFn = func(s *Server) {
-	s.autoArchiveInactiveSessions()
-	s.autoArchiveInactiveProjects()
-	if removed := sweepComposerAttachments(composerAttachmentRoot(), composerAttachmentTTL); removed > 0 {
-		log.WithField("removed", removed).Info("swept expired composer attachments")
-	}
-}
-
-func (s *Server) runAutoArchiveLoop(ctx context.Context) {
-	runWithRecover("auto-archive", func() { autoArchiveTickFn(s) })
-
-	ticker := time.NewTicker(autoArchiveInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runWithRecover("auto-archive", func() { autoArchiveTickFn(s) })
-		}
-	}
-}
-
-func (s *Server) autoArchiveInactiveSessions() {
-	// Each tick is its own root span so the trace tree corresponds
-	// to one independent auto-archive pass. Background work doesn't
-	// belong under any HTTP request.
-	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.auto_archive.tick")
-	defer span.End()
-	settings, err := s.getAutoArchiveSettings(ctx)
-	if err != nil {
-		span.RecordError(err)
-		log.WithError(err).Error("reading auto-archive settings")
-		return
-	}
-	if !settings.Enabled {
-		return
-	}
-	cutoff := time.Now().Add(-time.Duration(settings.TTLDays) * 24 * time.Hour).UnixMilli()
-
-	if autoArchiveRuns != nil {
-		autoArchiveRuns.Add(ctx, 1)
-	}
-
-	archivedCount := 0
-
-	// Sessions the user deliberately brought back more recently than the
-	// inactivity cutoff. Without this the loop — which runs at boot and
-	// re-derives archive state purely from inactivity — silently re-hid
-	// anything unarchived just to look at it.
-	keep, err := s.stateDB.SessionsUnarchivedSince(ctx, cutoff)
-	if err != nil {
-		span.RecordError(err)
-		log.WithError(err).Error("listing recently unarchived sessions")
-		keep = nil
-	}
-
-	for _, adapter := range s.registry.Platforms() {
-		if !adapter.Available(ctx) {
-			continue
-		}
-		sessions, err := adapter.SessionsInactiveBefore(ctx, cutoff)
-		if err != nil {
-			span.RecordError(err)
-			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
-				Error("listing inactive sessions for auto-archive")
-			continue
-		}
-		for _, session := range sessions {
-			if keep[state.Key{Platform: string(adapter.ID()), SessionID: session.ID}] {
-				continue
-			}
-			if err := s.stateDB.ArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
-				span.RecordError(err)
-				log.WithFields(log.Fields{
-					"platform":  adapter.ID(),
-					"sessionID": session.ID,
-					"error":     err,
-				}).Error("auto-archiving inactive session")
-				continue
-			}
-			archivedCount++
-			if autoArchiveSessions != nil {
-				autoArchiveSessions.Add(ctx, 1, metric.WithAttributes(
-					attribute.String("platform", string(adapter.ID())),
-				))
-			}
-		}
-	}
-
-	span.SetAttributes(
-		attribute.Int64("ocman.archived_count", int64(archivedCount)),
-		attribute.Int64("ocman.cutoff_ms", cutoff),
-	)
-
-	log.WithFields(log.Fields{
-		"cutoff":   cutoff,
-		"archived": archivedCount,
-	}).Info("auto-archive pass completed")
-}
-
-// autoArchiveInactiveProjects archives local projects whose most recent
-// session activity is older than the configured auto-archive TTL. Archive state
-// is keyed by folded project root; already-archived roots are skipped.
-// A project auto-unarchives later (in applyProjectArchiveState) once it
-// sees fresh activity, so this is safe to re-run.
-func (s *Server) autoArchiveInactiveProjects() {
-	if s.stateDB == nil || s.db == nil {
-		return
-	}
-	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.auto_archive_projects.tick")
-	defer span.End()
-	settings, err := s.getAutoArchiveSettings(ctx)
-	if err != nil {
-		span.RecordError(err)
-		log.WithError(err).Error("reading auto-archive settings")
-		return
-	}
-	if !settings.Enabled {
-		return
-	}
-	cutoff := time.Now().Add(-time.Duration(settings.TTLDays) * 24 * time.Hour).UnixMilli()
-
-	projects, err := s.router().Local().Projects(ctx)
-	if err != nil {
-		span.RecordError(err)
-		log.WithError(err).Error("listing projects for auto-archive")
-		return
-	}
-
-	archived, err := s.stateDB.ArchivedProjects(ctx)
-	if err != nil {
-		span.RecordError(err)
-		log.WithError(err).Error("listing archived projects for auto-archive")
-		return
-	}
-
-	// Newest activity per folded root. This loop only sees the hub's own
-	// projects (router().Local()), so every key is the local host.
-	newest := map[string]int64{}
-	for _, p := range projects {
-		root := projectRootForDirectory(p.Directory)
-		if p.LastUsed > newest[root] {
-			newest[root] = p.LastUsed
-		}
-	}
-
-	// Same guard as sessions: don't undo a deliberate unarchive.
-	keep, err := s.stateDB.ProjectsUnarchivedSince(ctx, cutoff)
-	if err != nil {
-		span.RecordError(err)
-		log.WithError(err).Error("listing recently unarchived projects")
-		keep = nil
-	}
-
-	archivedCount := 0
-	for root, last := range newest {
-		if last >= cutoff {
-			continue
-		}
-		key := state.ProjectKey{RemoteID: state.LocalRemoteID, Root: root}
-		if _, ok := archived[key]; ok {
-			continue
-		}
-		if keep[key] {
-			continue
-		}
-		// Best-effort, same as the manual archive handler: a dead tmux
-		// session or missing directory must not block auto-archiving.
-		if err := s.router().Local().StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
-			span.RecordError(err)
-			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
-				Warn("stopping opencode for auto-archived project")
-		}
-		if err := s.stateDB.ArchiveProject(ctx, state.LocalRemoteID, root); err != nil {
-			span.RecordError(err)
-			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
-				Error("auto-archiving inactive project")
-			continue
-		}
-		archivedCount++
-	}
-
-	span.SetAttributes(
-		attribute.Int64("ocman.archived_count", int64(archivedCount)),
-		attribute.Int64("ocman.cutoff_ms", cutoff),
-	)
-	log.WithFields(log.Fields{
-		"cutoff":   cutoff,
-		"archived": archivedCount,
-	}).Info("project auto-archive pass completed")
 }
 
 // requireMethod wraps a handler to only allow the given HTTP method.

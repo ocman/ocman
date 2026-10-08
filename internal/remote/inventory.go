@@ -4,20 +4,43 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
-// originCache caches all fetch remotes for five minutes so inventory reads
-// avoid repeated subprocesses while remote configuration changes take effect.
+const (
+	// upstreamTTL sits far above the 5-minute projects-index tick so an
+	// unchanged repository is probed once per hour instead of once per
+	// tick. It only bounds changes invisible to gitConfigProbe (e.g.
+	// remotes pulled in from global config); remote edits in the
+	// repository config are picked up on the next tick via the file's
+	// identity, size and modification time.
+	upstreamTTL = time.Hour
+	// nonRepoRecheck bounds how long a directory last seen as a
+	// non-repository stays cached before a git init in it is detected.
+	nonRepoRecheck = 15 * time.Minute
+	// enrichParallelism caps concurrent git lookups per inventory
+	// refresh; gitexec additionally caps machine-wide concurrency.
+	enrichParallelism = 8
+)
+
+// originCache caches all fetch remotes per directory. Positive entries
+// live for upstreamTTL and are invalidated cheaply by the repository
+// config's stat metadata; absent directories are cached until os.Stat sees the
+// directory again, so deleted checkouts stop costing a subprocess each.
 type originCache struct {
 	mu      sync.Mutex
 	m       map[string]cachedUpstreams
@@ -29,6 +52,16 @@ type cachedUpstreams struct {
 	origin  string
 	keys    []string
 	expires time.Time
+	// gone marks a directory the last probe could not access (deleted
+	// checkout). While os.Stat keeps failing the entry is served from
+	// cache without a git call; when the directory reappears it is
+	// re-probed on the next call.
+	gone bool
+	// configPath/configStat record the file holding the remotes and its
+	// metadata at probe time; a change re-probes on the next call. An
+	// empty path (unresolvable) falls back to TTL expiry only.
+	configPath string
+	configStat os.FileInfo
 }
 
 func newOriginCache() *originCache { return &originCache{m: make(map[string]cachedUpstreams)} }
@@ -40,17 +73,37 @@ func (c *originCache) upstreams(ctx context.Context, dir string) (cachedUpstream
 	return value.(cachedUpstreams), err
 }
 
+// fresh reports whether a cached entry may be served without a git call.
+// Deleted directories stay cached until the directory reappears; remote
+// edits invalidate a positive entry through the config file's stat metadata.
+func (c *originCache) fresh(e cachedUpstreams, dir string) bool {
+	_, statErr := os.Stat(dir)
+	if e.gone {
+		return statErr != nil
+	}
+	if statErr != nil || !time.Now().Before(e.expires) {
+		return false
+	}
+	if e.configPath != "" {
+		if st, err := os.Stat(e.configPath); err != nil || e.configStat == nil || !os.SameFile(st, e.configStat) || st.Size() != e.configStat.Size() || !st.ModTime().Equal(e.configStat.ModTime()) {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams, error) {
 	c.mu.Lock()
 	previous, ok := c.m[dir]
-	if ok && time.Now().Before(previous.expires) {
-		c.mu.Unlock()
+	c.mu.Unlock()
+	if ok && c.fresh(previous, dir) {
 		return previous, nil
 	}
-	c.mu.Unlock()
 
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+	cctx, span := telemetry.Tracer().Start(cctx, "ocman.projects_index.git_lookup")
+	defer span.End()
 	var out string
 	var err error
 	if c.read != nil {
@@ -64,19 +117,29 @@ func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams
 		}
 		// Historic sessions can refer to non-repositories or deleted checkouts.
 		// Known absences use the last value, or directory identity on a first
-		// miss. Do not cache absence: a checkout may be restored at any time.
+		// miss, and are cached: a deleted directory is re-probed only once
+		// os.Stat sees it again, a non-repository every nonRepoRecheck.
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) {
 			return previous, err
 		}
-		missing := strings.Contains(string(exit.Stderr), "not a git repository") ||
-			(strings.Contains(string(exit.Stderr), "cannot change to") && strings.Contains(string(exit.Stderr), "No such file or directory"))
-		if !missing {
+		stderr := string(exit.Stderr)
+		gone := strings.Contains(stderr, "cannot change to") && strings.Contains(stderr, "No such file or directory")
+		if !gone && !strings.Contains(stderr, "not a git repository") {
 			return previous, err
 		}
-		return previous, nil
+		v := previous
+		v.gone = gone
+		v.configPath, v.configStat = "", nil
+		if !gone {
+			v.expires = time.Now().Add(nonRepoRecheck)
+		}
+		c.mu.Lock()
+		c.m[dir] = v
+		c.mu.Unlock()
+		return v, nil
 	}
-	v := cachedUpstreams{expires: time.Now().Add(5 * time.Minute)}
+	v := cachedUpstreams{expires: time.Now().Add(upstreamTTL)}
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 3 || fields[2] != "(fetch)" {
@@ -91,6 +154,7 @@ func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams
 	}
 	slices.Sort(v.keys)
 	v.keys = slices.Compact(v.keys)
+	v.configPath, v.configStat = gitConfigProbe(cctx, dir)
 
 	c.mu.Lock()
 	c.m[dir] = v
@@ -98,17 +162,55 @@ func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams
 	return v, nil
 }
 
+// gitConfigProbe locates the config file that defines the directory's
+// remotes via git itself, so linked worktrees (whose remotes live in the
+// main repository's config) and repository subdirectories resolve
+// correctly. An empty path means git could not answer and the entry
+// falls back to TTL expiry.
+func gitConfigProbe(ctx context.Context, dir string) (string, os.FileInfo) {
+	common, err := gitexec.Output(ctx, dir, "rev-parse", "--git-common-dir")
+	if err != nil || common == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(dir, common)
+	}
+	path := filepath.Join(common, "config")
+	if st, err := os.Stat(path); err == nil {
+		return path, st
+	}
+	return "", nil
+}
+
 var projectUpstreamsCache = newOriginCache()
 
 // EnrichProjectStats runs on the owning host, including for remote inventories.
 func EnrichProjectStats(ctx context.Context, stats []db.ProjectStats) error {
+	if len(stats) == 0 {
+		return nil
+	}
+	ctx, span := telemetry.Tracer().Start(ctx, "ocman.projects_index.git_lookups")
+	defer span.End()
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(enrichParallelism)
 	for i := range stats {
-		upstreams, err := projectUpstreamsCache.upstreams(ctx, stats[i].Directory)
-		if err != nil {
-			return fmt.Errorf("discovering project upstreams: %w", err)
-		}
-		stats[i].UpstreamKeys = slices.Clone(upstreams.keys)
-		stats[i].UpstreamOrigin = NormalizeUpstream(upstreams.origin)
+		g.Go(func() error {
+			upstreams, err := projectUpstreamsCache.upstreams(ctx, stats[i].Directory)
+			if err != nil {
+				return err
+			}
+			stats[i].UpstreamKeys = slices.Clone(upstreams.keys)
+			stats[i].UpstreamOrigin = NormalizeUpstream(upstreams.origin)
+			return nil
+		})
+	}
+	err := g.Wait()
+	span.SetAttributes(
+		attribute.Int("ocman.projects.directories", len(stats)),
+	)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("discovering project upstreams: %w", err)
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ describe('RemoteErrorBanner', () => {
   it.each([
     new UpstreamApiError(null, 404),
     new UpstreamApiError({ error: { code: 'upstream_status', status: 404, message: 'Not found' } }, 502),
+    new UpstreamApiError({ error: { code: 'upstream_status', status: 502, upstreamStatus: 404, message: 'forge request failed' } }, 502),
     new UpstreamApiError({ error: { code: 'upstream_status', message: 'github /repos/owner/repo/pulls: status 404' } }, 502),
   ])('renders a not-found response as a muted retryable notice', (error) => {
     const retry = vi.fn();

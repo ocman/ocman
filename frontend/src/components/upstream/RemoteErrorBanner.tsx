@@ -23,7 +23,7 @@ export function RemoteErrorBanner({ error, onRetry }: RemoteErrorBannerProps) {
 
   // List endpoints wrap forge HTTP failures in a 502 upstream_status message.
   if (error instanceof UpstreamApiError && (
-    error.status === 404 || env?.error.status === 404 ||
+    error.status === 404 || env?.error.status === 404 || env?.error.upstreamStatus === 404 ||
     (code === 'upstream_status' && /: status 404$/.test(error.message))
   )) {
     return (

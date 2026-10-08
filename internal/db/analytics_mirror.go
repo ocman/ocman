@@ -59,8 +59,10 @@ const (
 	// rows committed slightly out of time_created order.
 	mirrorSlack = 10 * time.Minute
 	// mirrorUnsettledMaxAge stops re-reading a turn that never finished
-	// (crashed or interrupted); the full rebuild still refreshes it.
-	mirrorUnsettledMaxAge = 24 * time.Hour
+	// (crashed or interrupted); the full rebuild still refreshes it. It
+	// must stay short: an interrupted turn at the cap holds the whole
+	// incremental window (including the tool-timings copy) open that long.
+	mirrorUnsettledMaxAge = 1 * time.Hour
 	// mirrorRetryAfter spaces out full-build attempts after one fails, so a
 	// persistent failure (full disk, unwritable file) does not re-copy the
 	// database on every read.
@@ -166,6 +168,12 @@ func (d *DB) analytics(ctx context.Context) *sql.DB {
 	case err == nil, errors.Is(err, errMirrorBusy):
 		return m.db
 	default:
+		if ctx.Err() != nil {
+			// The reader's own context died mid-sync. OpenCode cannot be
+			// read with it either, so serve the last consistent (stale)
+			// mirror instead of selecting a source fallback that cannot succeed.
+			return m.db
+		}
 		log.WithError(err).Warn("syncing analytics mirror; reading OpenCode directly")
 		return d.db
 	}

@@ -44,7 +44,7 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 	}
 	// The " subagent)" title suffix hides a parentless internal session from
 	// every listing (db.scanSessionRow), like the auto-approve judge's.
-	created, err := postJSONReturning(ctx, port, "/session"+query, []byte(`{"title":"(worktree-name subagent)","permission":[{"permission":"*","pattern":"*","action":"deny"}]}`))
+	created, err := postJSONReturningLLM(ctx, port, "/session"+query, []byte(`{"title":"(worktree-name subagent)","permission":[{"permission":"*","pattern":"*","action":"deny"}]}`))
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +81,7 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 	if err != nil {
 		return "", err
 	}
-	answer, err := postJSONReturning(ctx, port, path+"/message"+query, payload)
+	answer, err := postJSONReturningLLM(ctx, port, path+"/message"+query, payload)
 	if err != nil {
 		return "", err
 	}

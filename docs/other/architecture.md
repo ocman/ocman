@@ -561,8 +561,11 @@ flowchart TD
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
 - **PR checks.** `lib/usePRChecks` polls only visible rows/cards until every
-  check settles. Both views use `lib/prChecksCache`'s bounded localStorage
-  cache, keyed by host/repository/SHA. Sidebar refresh also restarts checks
+  check settles, or three empty reads spaced 30s apart confirm no CI. Errors
+  back off from 5s to 60s across viewport changes. Sidebar polls respect forge
+  rate-limit deadlines; cards rely on resolver-side upstream backoff. Hidden
+  documents pause polling. Both views use `lib/prChecksCache`'s
+  bounded localStorage cache, keyed by host/repository/SHA. Sidebar refresh also restarts checks
   on mounted conversation cards. Preview checks use the existing preview
   resolver endpoint so the conversation owner and preview credentials remain
   authoritative, including PR links outside the active project's repository.
