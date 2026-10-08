@@ -45,6 +45,31 @@ describe('Routines', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('pauses list and open-history requests when hidden and refreshes on return', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const view = render(<MemoryRouter><Routines /></MemoryRouter>);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByText('Morning check'));
+      await act(async () => {});
+      expect(api.routines.history).toHaveBeenCalled();
+      vi.mocked(api.routines.list).mockClear();
+      vi.mocked(api.routines.history).mockClear();
+      vi.mocked(api.webhookInboxes.list).mockClear();
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(api.routines.list).not.toHaveBeenCalled();
+      expect(api.routines.history).not.toHaveBeenCalled();
+      expect(api.webhookInboxes.list).not.toHaveBeenCalled();
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(api.routines.list).toHaveBeenCalledTimes(1);
+      expect(api.webhookInboxes.list).toHaveBeenCalledTimes(1);
+      expect(api.routines.history).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
+
   it('creates a targeted timeout routine and exposes every schedule form', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);

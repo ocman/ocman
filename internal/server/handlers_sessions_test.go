@@ -18,6 +18,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -257,6 +258,41 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 	}
 	if byID["routine"].RoutineID != "rt" || byID["pin"].RoutineID != "" {
 		t.Errorf("routine tags = %q/%q, want rt/empty", byID["routine"].RoutineID, byID["pin"].RoutineID)
+	}
+}
+
+func TestHandleSessions_StateOverlay_TagsFactorySessions(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{
+		mkSession("fake", "factory", "a", 1000),
+		mkSession("fake", "plain", "b", 1000),
+		{ID: "child", Platform: "fake", ParentID: "factory", TimeUpdated: 1000},
+		{ID: "orphan", Platform: "fake", ParentID: "gone", TimeUpdated: 1000},
+	}})
+	attempt, err := srv.stateDB.CreatePreparedFactoryAttempt(t.Context(), "epic", "work", model.FactoryAttemptPolicy{Repository: "/a", Profile: "factory-implement/v1"}, time.UnixMilli(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := srv.stateDB.ActivateFactoryAttempt(t.Context(), attempt.ID, model.PlanningSession{Platform: "fake", ID: "factory"}, time.UnixMilli(1)); err != nil || !changed {
+		t.Fatalf("activate = %v, %v", changed, err)
+	}
+
+	rr := httptest.NewRecorder()
+	srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
+	}
+	var got []db.Session
+	mustUnmarshal(t, rr.Body.Bytes(), &got)
+	byID := map[string]db.Session{}
+	for _, s := range got {
+		byID[s.ID] = s
+	}
+	if byID["factory"].FactoryAttemptID != attempt.ID || byID["plain"].FactoryAttemptID != "" {
+		t.Errorf("factory tags = %q/%q, want %s/empty", byID["factory"].FactoryAttemptID, byID["plain"].FactoryAttemptID, attempt.ID)
+	}
+	if byID["child"].FactoryAttemptID != attempt.ID || byID["orphan"].FactoryAttemptID != "" {
+		t.Errorf("child tags = %q/%q, want %s/empty", byID["child"].FactoryAttemptID, byID["orphan"].FactoryAttemptID, attempt.ID)
 	}
 }
 
@@ -821,6 +857,33 @@ func TestHandleSession_SurfacesProjectDefaultModel(t *testing.T) {
 	srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1", nil))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"projectDefaultModel":"prov/a"`) {
 		t.Fatalf("status = %d body = %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSession_TagsFactoryAttempt(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	sess := &db.Session{ID: "s1", Platform: "opencode", Directory: "/src/foo"}
+	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{*sess}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		cp := *sess
+		return &platforms.SessionDetail{Session: &cp}, nil
+	}})
+	get := func() string {
+		rr := httptest.NewRecorder()
+		srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1", nil))
+		return rr.Body.String()
+	}
+	if body := get(); strings.Contains(body, "factoryAttemptId") {
+		t.Fatalf("untagged session body = %s", body)
+	}
+	attempt, err := srv.stateDB.CreatePreparedFactoryAttempt(t.Context(), "epic", "work", model.FactoryAttemptPolicy{Repository: "/src/foo", Profile: "factory-implement/v1"}, time.UnixMilli(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := srv.stateDB.ActivateFactoryAttempt(t.Context(), attempt.ID, model.PlanningSession{Platform: "opencode", ID: "s1"}, time.UnixMilli(1)); err != nil || !changed {
+		t.Fatalf("activate = %v, %v", changed, err)
+	}
+	if body := get(); !strings.Contains(body, `"factoryAttemptId":"`+attempt.ID+`"`) {
+		t.Fatalf("tagged session body = %s", body)
 	}
 }
 

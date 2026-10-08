@@ -24,9 +24,17 @@ beforeEach(() => {
   vi.mocked(useResolveFactoryRecoveryGate).mockReturnValue({ mutate } as never);
 });
 
-function show(platformId = session.platform, sessionId = session.id) {
-  return render(<MemoryRouter><SessionComposerSlot sessionId={sessionId} platformId={platformId} factoryEpicID="" firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={vi.fn()} composer={{ isRunning: false } as never} /></MemoryRouter>);
+function show(platformId = session.platform, sessionId = session.id, factorySession = true) {
+  return render(<MemoryRouter><SessionComposerSlot sessionId={sessionId} platformId={platformId} factoryEpicID="" factorySession={factorySession} firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={vi.fn()} composer={{ isRunning: false } as never} /></MemoryRouter>);
 }
+
+it('does not poll Factory Epics for a session no attempt ran in', () => {
+  show(session.platform, session.id, false);
+  expect(useWorkEpics).not.toHaveBeenCalled();
+  expect(useFactoryGraphIssues).not.toHaveBeenCalled();
+  expect(screen.queryByText('Which API?')).not.toBeInTheDocument();
+  expect(screen.getByText('Conversation composer')).toBeInTheDocument();
+});
 
 it('shows recovery choices beside the stuck conversation without a Factory query parameter', () => {
   show();

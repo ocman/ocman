@@ -6,6 +6,28 @@ import (
 	"fmt"
 )
 
+// FactorySessions maps each session a Factory attempt ran in to that attempt's
+// ID, so the session list can tag Factory sessions without the Epic payload.
+// ponytail: full scan of factory_attempt per session list; index (session_platform, session_id) if attempts grow large.
+func (d *DB) FactorySessions(ctx context.Context) (map[Key]string, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT session_platform, session_id, id FROM factory_attempt
+		WHERE session_id <> '' ORDER BY created_at, id`)
+	if err != nil {
+		return nil, fmt.Errorf("listing Factory sessions: %w", err)
+	}
+	defer rows.Close()
+	sessions := make(map[Key]string)
+	for rows.Next() {
+		var key Key
+		var attemptID string
+		if err := rows.Scan(&key.Platform, &key.SessionID, &attemptID); err != nil {
+			return nil, fmt.Errorf("scanning Factory session: %w", err)
+		}
+		sessions[key] = attemptID
+	}
+	return sessions, rows.Err()
+}
+
 // archiveFactorySessionsTx archives the sessions of the Factory attempts
 // matched by where (a predicate over factory_attempt). The stored update time
 // is MaxInt64 so an agent's trailing reply cannot auto-unarchive the session.

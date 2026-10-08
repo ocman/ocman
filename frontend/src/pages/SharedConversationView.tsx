@@ -17,16 +17,18 @@ type LoadState =
   | { status: 'ready'; data: SharedConversation }
   | { status: 'artifact'; data: ArtifactShare };
 
-/** Polls a relay share into state, returning the interval to clear. */
-function pollRelayShare(token: string, key: string, signal: AbortSignal, setState: (s: LoadState) => void): number {
+/** Polls a visible relay share into state, returning its cleanup. */
+function pollRelayShare(token: string, key: string, signal: AbortSignal, setState: (s: LoadState) => void): () => void {
   let current: SharedConversation | null = null;
   let next = 0;
   const poll = async () => {
+    if (document.hidden) return;
     try {
       const result = await readRelayShare(token, key, next, signal);
       if (result.artifact) {
         // Artifact shares are written once; nothing to poll for.
         window.clearInterval(timer);
+        document.removeEventListener('visibilitychange', poll);
         setState({ status: 'artifact', data: result.artifact });
         return;
       }
@@ -41,8 +43,9 @@ function pollRelayShare(token: string, key: string, signal: AbortSignal, setStat
     }
   };
   const timer = window.setInterval(() => void poll(), relayPollMs);
+  document.addEventListener('visibilitychange', poll);
   void poll();
-  return timer;
+  return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', poll); };
 }
 
 /** Everything the viewer shows before (or instead of) a conversation. */
@@ -100,9 +103,9 @@ export function SharedConversationView({ relay = false }: { relay?: boolean }) {
         queueMicrotask(() => setState({ status: 'error', message: 'Missing share decryption key.' }));
         return;
       }
-      const timer = pollRelayShare(token, key, controller.signal, setState);
+      const stopPolling = pollRelayShare(token, key, controller.signal, setState);
       return () => {
-        window.clearInterval(timer);
+        stopPolling();
         controller.abort();
       };
     }

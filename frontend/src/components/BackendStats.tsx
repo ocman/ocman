@@ -15,7 +15,7 @@ interface PerformanceWithMemory extends Performance {
   memory?: PerformanceMemory;
 }
 
-export function BackendStats() {
+export function BackendStats({ enabled = true }: { enabled?: boolean }) {
   const [backendMemory, setBackendMemory] = useState<number | null>(null);
   const [uptime, setUptime] = useState<number | null>(null);
   const [frontendMemory, setFrontendMemory] = useState<number | null>(null);
@@ -25,6 +25,7 @@ export function BackendStats() {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     const load = () => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -81,7 +82,7 @@ export function BackendStats() {
       stop();
       abortRef.current?.abort();
     };
-  }, [getSystemStats]);
+  }, [getSystemStats, enabled]);
 
   if (backendMemory === null) return null;
 

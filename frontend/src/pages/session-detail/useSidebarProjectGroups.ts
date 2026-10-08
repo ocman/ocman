@@ -11,6 +11,7 @@ import { remoteLog } from '../../lib/remoteLog';
 import type { SidebarProjectGroup } from './SessionSidebar';
 
 export interface UseSidebarProjectGroupsOptions {
+  enabled?: boolean;
   /** Active session id from the URL. */
   id: string | undefined;
   recentSessions: Session[];
@@ -33,6 +34,7 @@ export interface UseSidebarProjectGroupsResult {
  * optimistic project-archive hide and the drag-and-drop reorder.
  */
 export function useSidebarProjectGroups({
+  enabled = true,
   id,
   recentSessions,
   displayStatus,
@@ -42,7 +44,7 @@ export function useSidebarProjectGroups({
   const expandProjects = useUiStore((state) => state.expandProjects);
   // All known projects — the sidebar "projects" view lists every
   // unarchived project, even ones with no session in the recent window.
-  const projectsQuery = useProjects();
+  const projectsQuery = useProjects({ enabled });
   const allProjects = projectsQuery.data;
   const identity = useMemo(() => projectIdentityIndex(allProjects ?? []), [allProjects]);
   const expanded = useRef('');

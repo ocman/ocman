@@ -25,7 +25,6 @@ import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus, visibleSidebarSessions } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { useDraftSessionIds } from '../../lib/composerDraft';
-import { useWorkEpics } from '../../lib/queries';
 import { SidebarProjectGroup as ProjectGroup } from './SidebarProjectGroup';
 import { SidebarSessionRow } from './SidebarSessionRow';
 import { useSidebarReorder } from './useSidebarReorder';
@@ -61,6 +60,7 @@ export interface SidebarProjectGroup {
 }
 
 export interface SessionSidebarProps {
+  visible?: boolean;
   /** Currently active session id from the URL. */
   activeId: string | undefined;
   sidebarWidth: number;
@@ -93,6 +93,7 @@ export interface SessionSidebarProps {
 }
 
 export function SessionSidebar({
+  visible = true,
   activeId,
   sidebarWidth,
   sidebarView,
@@ -132,18 +133,16 @@ export function SessionSidebar({
   const [showFactory, setShowFactory] = useSidebarFilter('factory', false);
   const [showRoutines, setShowRoutines] = useSidebarFilter('routines', false);
   const draftSessionIds = useDraftSessionIds();
-  const { data: workEpics } = useWorkEpics();
   // Sessions hidden by the Factory/routine filters, including descendants.
   const hiddenSessions = useMemo(() => {
     const all = [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)];
     const keys = new Set<string>();
-    if (!showFactory) {
-      for (const epic of workEpics ?? []) {
-        for (const { session } of epic.attempts ?? []) keys.add(`${session.platform}\0${session.id}`);
+    // Tags come with the session list, so hiding Factory sessions needs no
+    // /api/factory/epics poll.
+    for (const session of all) {
+      if ((!showFactory && session.factoryAttemptId) || (!showRoutines && session.routineId)) {
+        keys.add(`${session.platform}\0${session.id}`);
       }
-    }
-    if (!showRoutines) {
-      for (const session of all) if (session.routineId) keys.add(`${session.platform}\0${session.id}`);
     }
     const children = new Map<string, string[]>();
     for (const session of all) {
@@ -160,7 +159,7 @@ export function SessionSidebar({
       }
     }
     return keys;
-  }, [workEpics, recentSessions, sidebarProjectGroups, showFactory, showRoutines]);
+  }, [recentSessions, sidebarProjectGroups, showFactory, showRoutines]);
 
   // Reveal the selection on navigation or initial load. Live activity must
   // not repeatedly pull the user away from a manually scrolled position.
@@ -386,7 +385,7 @@ export function SessionSidebar({
           renderProjectsView()
         )}
       </div>
-      <BackendStats />
+      <BackendStats enabled={visible} />
     </div>
   );
 }

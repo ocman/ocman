@@ -44,6 +44,27 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('makes no list or peek requests while closed, then refreshes on open', async () => {
+    const row = { id: 'open', platform: 'opencode', directory: '/repo', status: 'done', timeUpdated: 1 } as Session;
+    const getSessions = vi.fn().mockResolvedValue([row]);
+    const peekSession = vi.fn();
+    useApiStore.setState({ getSessions, peekSession, recentSessions: [], recentSessionsHash: '' });
+    const options = { id: row.id, sessionId: row.id, collapsedProjects: [], sidebarView: 'recent' as const,
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
+    const { rerender, result } = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: false } });
+    await act(async () => { await result.current.loadRecentSessions(); });
+    expect(getSessions).not.toHaveBeenCalled();
+    expect(peekSession).not.toHaveBeenCalled();
+    expect(sessionChanged).toBeUndefined();
+    rerender({ enabled: true });
+    await waitFor(() => expect(getSessions).toHaveBeenCalledTimes(1));
+    const changed = sessionChanged;
+    rerender({ enabled: false });
+    act(() => changed?.('unknown'));
+    await act(async () => { await result.current.loadRecentSessions(); });
+    expect(getSessions).toHaveBeenCalledTimes(1);
+    expect(peekSession).not.toHaveBeenCalled();
+  });
   it('performs a fresh reconnect read after the pre-reconnect request settles', async () => {
     let finish!: (rows: Session[]) => void;
     const row = { id: 'new', platform: 'opencode', timeUpdated: Date.now() } as Session;

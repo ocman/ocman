@@ -103,7 +103,7 @@ describe('SessionSidebar', () => {
     localStorage.clear();
     useNewConversationDrafts.setState({ drafts: [] });
     useUiStore.setState({ projectOrder: [] });
-    vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
+    vi.mocked(useWorkEpics).mockClear().mockReturnValue({ data: [] } as never);
   });
 
   it('persists reordering draft-only projects and restores their saved order', () => {
@@ -504,22 +504,15 @@ describe('SessionSidebar', () => {
   describe.each(['projects', 'recent'] as const)('always-visible sessions in the %s view', (sidebarView) => {
     it.each(['children', 'factory', 'factory descendants', 'routines', 'search'] as const)('keeps opened and pinned sessions despite the %s filter', (filter) => {
       const overrides: Partial<Session> = filter === 'children' ? { parentId: 'parent' }
+        : filter === 'factory' ? { factoryAttemptId: 'attempt' }
         : filter === 'factory descendants' ? { parentId: 'factory' }
         : filter === 'routines' ? { routineId: 'rt' } : {};
       const rows = [
         session({ ...overrides, title: 'Opened task' }),
         session({ ...overrides, id: 'pin', title: 'Pinned task', pinned: true, pinnedAt: 1 }),
         session({ ...overrides, id: 'other', title: 'Hidden task' }),
+        ...(filter === 'factory descendants' ? [session({ id: 'factory', title: 'Hidden parent', factoryAttemptId: 'attempt' })] : []),
       ];
-      if (filter === 'factory') {
-        vi.mocked(useWorkEpics).mockReturnValue({
-          data: [{ attempts: rows.map(({ id, platform }) => ({ session: { id, platform } })) }],
-        } as never);
-      } else if (filter === 'factory descendants') {
-        vi.mocked(useWorkEpics).mockReturnValue({
-          data: [{ attempts: [{ session: { id: 'factory', platform: 'opencode' } }] }],
-        } as never);
-      }
       renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' } },
         {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
       if (filter === 'children') {
@@ -535,17 +528,14 @@ describe('SessionSidebar', () => {
     });
   });
 
-  it.each(['projects', 'recent'] as const)('hides Factory sessions until enabled in the %s view', (sidebarView) => {
-    vi.mocked(useWorkEpics).mockReturnValue({
-      data: [{ attempts: [{ session: { platform: 'opencode', id: 'factory' } }] }],
-    } as never);
+  it.each(['projects', 'recent'] as const)('hides Factory sessions until enabled in the %s view without fetching Epics', (sidebarView) => {
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [
         session(),
         session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child' }),
         session({ id: 'child', title: 'Factory child', parentId: 'factory' }),
-        session({ id: 'factory', title: 'Factory task' }),
+        session({ id: 'factory', title: 'Factory task', factoryAttemptId: 'attempt' }),
         session({ id: 'normal-child', title: 'Normal child', parentId: 's' }),
         session({ id: 'remote-child', title: 'Remote child', parentId: 'factory', platform: 'r-box:opencode' }),
       ],
@@ -572,10 +562,11 @@ describe('SessionSidebar', () => {
     fireEvent.click(showFactory);
     expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
     expect(screen.queryByText('Factory grandchild')).not.toBeInTheDocument();
+    // The session rows carry the tag; the sidebar never polls /api/factory/epics.
+    expect(useWorkEpics).not.toHaveBeenCalled();
   });
 
   it.each(['projects', 'recent'] as const)('hides routine sessions until enabled in the %s view', (sidebarView) => {
-    vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [
@@ -649,15 +640,14 @@ describe('SessionSidebar', () => {
   });
 
   it.each(['projects', 'recent'] as const)('hides Factory descendants when the attempt is absent in the %s view', (sidebarView) => {
-    vi.mocked(useWorkEpics).mockReturnValue({
-      data: [{ attempts: [{ session: { platform: 'opencode', id: 'factory' } }] }],
-    } as never);
+    // The server tags direct children of an attempt session; deeper
+    // descendants are hidden through the parent chain.
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [
         session(),
         session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child' }),
-        session({ id: 'child', title: 'Factory child', parentId: 'factory' }),
+        session({ id: 'child', title: 'Factory child', parentId: 'factory', factoryAttemptId: 'attempt' }),
       ],
       lastUpdated: 1,
       aggregate: { kind: 'none' },

@@ -81,6 +81,7 @@ import { SessionModals, type MessageJumpHistory } from './SessionModals';
 import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
 import { useSessionModal } from './useSessionModal';
 import { SessionSidebar } from './SessionSidebar';
+import { useDocumentVisible, usePanelOpen, usePanelVisible } from '../../lib/usePanelVisible';
 import { SessionEmptyDetail, SessionLoadError } from './SessionStatusViews';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
@@ -156,6 +157,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [navigate]);
 
   const { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel } = useMobilePanel(id);
+  const sidebarVisible = usePanelVisible(mobilePanel === 'sidebar');
+  const detailsVisible = usePanelOpen(mobilePanel === 'details');
+  const documentVisible = useDocumentVisible();
   // Selecting a session from the drawer should reveal the conversation.
   // The drawer click path closes synchronously here (no flicker frame);
   // useMobilePanel's id-keyed effect covers every other navigation source
@@ -369,6 +373,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const {
     recentSessions,
     recentSessionsRef,
+    loadRecentSessions,
     loadingRecentSessions,
     archivingSessionIds,
     showArchivedRecent,
@@ -378,6 +383,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handlePinSession,
     collapsedProjectSet,
   } = useSidebarSessions({
+    enabled: sidebarVisible,
     id,
     // Fall back to the URL id so the sidebar's initial load fires even
     // when no session resolves (the `new` sentinel after archiving the
@@ -389,6 +395,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
     navigate,
   });
   const sessionTree = view.sessionTree;
+  const loadNavigationSessions = useCallback(async () => {
+    if (!sidebarVisible || recentSessionsRef.current.length === 0) {
+      await loadRecentSessions(abortControllerRef.current?.signal, true);
+    }
+  }, [sidebarVisible, recentSessionsRef, loadRecentSessions]);
   const parentSession = session?.parentId
     ? sessionTree.find((candidate) => candidate.id === session.parentId)
       ?? recentSessions.find((candidate) => candidate.id === session.parentId)
@@ -414,6 +425,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       .map((candidate) => candidate.directory)
       .filter(Boolean),
     gitInfoRemoteId,
+    sidebarVisible,
   );
   const siblingGitInfos = useMemo(() => Object.fromEntries(Object.entries(ownerGitInfos)
     .map(([directory, info]) => [checkoutKey(directory, gitInfoRemoteId), info])), [ownerGitInfos, gitInfoRemoteId]);
@@ -643,6 +655,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     selectedReasoning,
     activeAgent,
     recentSessionsRef,
+    loadNavigationSessions,
     messagesRef,
     partsRef,
     isRunningRef,
@@ -708,13 +721,22 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [handleThreadBoundaryRetry, id]);
 
   // Alt+J / Alt+K: navigate between recent sessions.
-  const jumpToSession = useCallback((direction: 1 | -1) => {
+  const navigationSessionRef = useSyncRef(session);
+  const reportNavigationError = toasts.setters.setRestartToastMessage;
+  const jumpToSession = useCallback(async (direction: 1 | -1) => {
+    const signal = abortControllerRef.current?.signal;
+    try { await loadNavigationSessions(); }
+    catch (error) {
+      if (!signal?.aborted && navigationSessionRef.current?.id === id) reportNavigationError(`Could not load session navigation: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return;
+    }
+    if (signal?.aborted || navigationSessionRef.current?.id !== id) return;
     const sessions = recentSessionsRef.current;
     const currentIndex = sessions.findIndex((s) => s.id === id);
     if (currentIndex === -1) return;
     const target = sessions[currentIndex + direction];
     if (target) navigateToSession(target.id);
-  }, [id, navigateToSession, recentSessionsRef]);
+  }, [id, navigateToSession, recentSessionsRef, loadNavigationSessions, navigationSessionRef, reportNavigationError]);
 
   // Refs for the palette dispatcher / shortcut handlers.
   usePaletteCommands({
@@ -835,7 +857,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     sidebarProjectGroups,
     handleReorderProjects,
     handleArchiveProjectFromSidebar,
-  } = useSidebarProjectGroups({ id, recentSessions, displayStatus });
+  } = useSidebarProjectGroups({ id, recentSessions, displayStatus, enabled: sidebarVisible || (modal.openModal === 'move' && documentVisible) });
 
   return (
     <PerfProfiler id="SessionPage">
@@ -851,6 +873,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         />
         <PerfProfiler id="SessionSidebar">
         <SessionSidebar
+          visible={sidebarVisible}
           activeId={id}
           sidebarWidth={sidebarWidth}
           sidebarView={sidebarView}
@@ -990,6 +1013,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       directory={session.directory}
                       remoteId={session.remoteId}
                       factoryEpicID={factoryEpicID}
+                      factorySession={!!session.factoryAttemptId}
                       firstUnreadMessageId={firstUnreadMessageId}
                       unreadMessageCount={unreadMessageCount}
                       onJumpToUnread={(messageId) => setScrollToMessageBookmark({
@@ -1130,6 +1154,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         {id && (
           <PerfProfiler id="RightPanel">
           <RightPanel
+            visible={detailsVisible}
             sessionId={id}
             platformId={session?.platform}
             directory={session?.directory}

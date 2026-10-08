@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { TermWindow } from '../lib/api';
 
@@ -46,6 +46,33 @@ beforeEach(() => {
 });
 
 describe('SessionTerminalDock gating', () => {
+  it('pauses title requests when hidden, resumes immediately, and stops when closed', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    listWindows.mockResolvedValue({ windows: [{ name: 'term-1', title: 'shell' }] });
+    const view = render(<SessionTerminalDock tmuxAvailable directory={DIR} />);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      await act(async () => {});
+      listWindows.mockClear();
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(listWindows).not.toHaveBeenCalled();
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(listWindows).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByTitle('Hide terminal'));
+      await act(async () => {});
+      listWindows.mockClear();
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(listWindows).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
+  });
   it('renders nothing when tmux is unavailable', () => {
     const { container } = render(
       <SessionTerminalDock tmuxAvailable={false} directory={DIR} />,

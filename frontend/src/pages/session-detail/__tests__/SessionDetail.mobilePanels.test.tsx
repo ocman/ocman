@@ -41,6 +41,21 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it('loads the session list only after the mobile sidebar opens', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    try {
+      const { store } = renderSessionPage({ sessionId: 'sess_1' });
+      await flushPromises();
+      expect(store.getSessions).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
+      await waitFor(() => expect(store.getSessions).toHaveBeenCalledTimes(1));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
+      await waitFor(() => expect(store.getSessions).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('toggles the sessions drawer and closes it on Escape', async () => {
     renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();

@@ -432,6 +432,8 @@ export interface Session {
   pinnedAt: number;
   /** Routine that launched this session; absent for other sessions. */
   routineId?: string;
+  /** Factory attempt that ran in this session; absent for other sessions. */
+  factoryAttemptId?: string;
   /**
    * The session's timeUpdated at the moment the user last viewed it.
    * Zero when the user has never opened the session. Used to compute

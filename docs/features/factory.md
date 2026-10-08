@@ -3,6 +3,14 @@ title: Factory delivery
 weight: 9
 ---
 
+## Factory sessions
+
+The session list tags every session a Factory attempt ran in (and its direct
+subagents) with `factoryAttemptId`. The session sidebar hides those sessions and
+their children until you check **Show factory** under **Filter sessions**, and a
+conversation loads Factory recovery choices only when it carries the tag. The
+sidebar never polls the Epic list; regular conversations no longer poll it either.
+
 ## Cost and token usage
 
 The Epic page shows input, output, cache-read and cache-write tokens, recorded

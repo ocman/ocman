@@ -16,6 +16,7 @@ export interface SessionComposerSlotProps {
   directory?: string;
   remoteId?: string;
   factoryEpicID: string;
+  factorySession?: boolean;
   firstUnreadMessageId: string | null;
   unreadMessageCount: number;
   onJumpToUnread: (messageId: string) => void;
@@ -41,6 +42,7 @@ export function SessionComposerSlot({
   directory,
   remoteId,
   factoryEpicID,
+  factorySession,
   pendingPrompt,
   composer,
 }: SessionComposerSlotProps) {
@@ -48,7 +50,7 @@ export function SessionComposerSlot({
   return (
     <ErrorBoundary name="session:composer" inline resetKey={sessionId}>
       <FactoryPlanApproval epicID={factoryEpicID} platformID={platformId} sessionID={sessionId} />
-      <FactorySessionRecovery key={`${platformId}/${sessionId}`} platformID={platformId} sessionID={sessionId} />
+      {factorySession && <FactorySessionRecovery key={`${platformId}/${sessionId}`} platformID={platformId} sessionID={sessionId} />}
       {/* Above the prompt branches: a launch can start while a prompt is shown. */}
       <LaunchProgressCard directory={directory} remoteId={remoteId} />
       {!pendingPrompt && composer ? (

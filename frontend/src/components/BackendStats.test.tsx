@@ -54,6 +54,18 @@ afterEach(() => {
 });
 
 describe('BackendStats visibility gating (FR-10)', () => {
+  it('does not request stats for a closed sidebar and refreshes when opened', async () => {
+    const { rerender } = render(<BackendStats enabled={false} />);
+    await flush();
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(getSystemStats).not.toHaveBeenCalled();
+    rerender(<BackendStats enabled />);
+    await flush();
+    expect(getSystemStats).toHaveBeenCalledTimes(1);
+    rerender(<BackendStats enabled={false} />);
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(getSystemStats).toHaveBeenCalledTimes(1);
+  });
   it('issues no requests and samples no heap while the document is hidden', async () => {
     hidden = true;
     render(<BackendStats />);

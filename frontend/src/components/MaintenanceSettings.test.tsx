@@ -36,6 +36,22 @@ afterEach(() => {
 });
 
 describe('MaintenanceSettings', () => {
+  it('pauses job polling while hidden and refreshes on return', async () => {
+    vi.useFakeTimers();
+    let hidden = true;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    m.status.mockResolvedValue(status({}, { running: true }));
+    const view = render(<MaintenanceSettings />);
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(m.status).not.toHaveBeenCalled();
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(m.status).toHaveBeenCalledTimes(1);
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(m.status).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); visibility.mockRestore(); }
+  });
   it('shows the database and disables restore without a dump', async () => {
     m.status.mockResolvedValue(status());
     render(<MaintenanceSettings />);

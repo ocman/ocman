@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
+import { useDocumentVisible } from './usePanelVisible';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
 import type { PreviewConfig, PreviewProvider, PreviewResult } from './previews';
@@ -21,6 +22,7 @@ interface Resolved {
  * never sent.
  */
 export function useProviderPreviews(text: string): { previews: PreviewResult[]; providers: PreviewProvider[]; loading: boolean; refreshChecks: boolean } {
+  const visible = useDocumentVisible();
   const owner = useContext(PreviewOwnerContext);
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const [pending, setPending] = useState(false);
@@ -51,6 +53,7 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
   }, [text, owner]);
 
   useEffect(() => {
+    if (!visible) return;
     const abort = new AbortController();
     const timer = setTimeout(() => {
       // Without app access the catalog is refused, but public forge links
@@ -75,7 +78,7 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
       });
     }, refreshPending.current ? 0 : RESOLVE_DELAY_MS);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [text, owner, generation]);
+  }, [text, owner, generation, visible]);
 
   // Never show results for other text or another owner while reloading.
   const current = resolved && resolved.text === text && resolved.owner === owner ? resolved : null;

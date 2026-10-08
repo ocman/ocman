@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDocumentVisible } from '../lib/usePanelVisible';
 import { useSearchParams } from 'react-router-dom';
 import { Button, ButtonGroup } from '../components/Control';
 import { EmptyState } from '../components/EmptyState';
@@ -17,6 +18,7 @@ import { usePageTitle } from '../lib/headerContext';
 import styles from './Routines.module.css';
 
 export function Routines() {
+  const visible = useDocumentVisible();
   usePageTitle('Routines');
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === 'inboxes' ? 'inboxes' : 'routines';
@@ -37,13 +39,15 @@ export function Routines() {
   };
 
   useEffect(() => {
+    if (!visible) return;
     let active = true;
     let refreshing = false;
+    const controller = new AbortController();
     const refresh = async () => {
       if (refreshing) return;
       refreshing = true;
       try {
-        const [items, inboxItems] = await Promise.all([api.routines.list(), api.webhookInboxes.list()]);
+        const [items, inboxItems] = await Promise.all([api.routines.list(controller.signal), api.webhookInboxes.list(controller.signal)]);
         if (active) { setRoutines(items); setInboxes(inboxItems); setRefreshKey((key) => key + 1); }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Could not load routines.');
@@ -54,8 +58,8 @@ export function Routines() {
     };
     void refresh();
     const interval = window.setInterval(() => void refresh(), 5_000);
-    return () => { active = false; window.clearInterval(interval); };
-  }, []);
+    return () => { active = false; controller.abort(); window.clearInterval(interval); };
+  }, [visible]);
 
   const openCreate = () => {
     setHistoryId(undefined); setEditing(undefined); setShowForm(true); setError('');

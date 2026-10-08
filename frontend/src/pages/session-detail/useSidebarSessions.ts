@@ -24,6 +24,7 @@ const SIDEBAR_REFRESH_MS = 3 * 60 * 1000;
 const ARCHIVE_ANIMATION_MS = 220;
 
 export interface UseSidebarSessionsOptions {
+  enabled?: boolean;
   /** The active session id from the URL. */
   id: string | undefined;
   /** Resolved session id once the page has loaded the detail. */
@@ -81,6 +82,7 @@ export interface UseSidebarSessionsResult {
  * they win over any concurrent poll replace.
  */
 export function useSidebarSessions({
+  enabled = true,
   id,
   sessionId,
   collapsedProjects,
@@ -88,7 +90,9 @@ export function useSidebarSessions({
   abortSignalRef,
   navigate,
 }: UseSidebarSessionsOptions): UseSidebarSessionsResult {
-  useActivityScope('sessions');
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  useActivityScope(enabled ? 'sessions' : undefined);
   const getSessions = useApiStore((s) => s.getSessions);
   const getSession = useApiStore((s) => s.getSession);
   const peekSession = useApiStore((s) => s.peekSession);
@@ -130,6 +134,7 @@ export function useSidebarSessions({
 
   const recentRequest = useRef<{ key: string; signal?: AbortSignal; promise: Promise<void> } | null>(null);
   const loadRecentSessions = useCallback((signal?: AbortSignal): Promise<void> => {
+    if (!enabledRef.current || document.hidden) return Promise.resolve();
     const key = JSON.stringify([id, sidebarRecentHoursRef.current]);
     if (recentRequest.current?.key === key && !recentRequest.current.signal?.aborted) return recentRequest.current.promise;
     const promise = (async () => {
@@ -190,11 +195,11 @@ export function useSidebarSessions({
   // Initial load when the active session changes (or is set the
   // first time).
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !enabled) return;
     void loadRecentSessions(abortSignalRef.current?.signal);
     // abortSignalRef is intentionally read at call-time, not as a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, loadRecentSessions]);
+  }, [sessionId, loadRecentSessions, enabled]);
 
   // Re-fetch when the user toggles the archived view (skip the very
   // first render — the sessionId effect above already loaded once).
@@ -212,6 +217,7 @@ export function useSidebarSessions({
   // SSE is the primary invalidation path. Re-fetch after reconnecting to
   // reconcile events missed during the gap.
   useEffect(() => {
+    if (!enabled) return;
     const refresh = () => {
       return loadRecentSessions(abortSignalRef.current?.signal)
         .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
@@ -223,6 +229,7 @@ export function useSidebarSessions({
     const changedRefresh = eventRefresh(refreshAfterCurrent);
     let subscribed = true;
     const unsubscribeChanged = onSessionChanged((sessionID, _session, patch, platform) => {
+      if (!enabledRef.current || document.hidden) return;
       const matches = useApiStore.getState().recentSessions.filter(s => s.id === sessionID && (!platform || s.platform === platform));
       // Older unqualified events are safe only when the owner is unambiguous.
       if (patch && matches.length === 1) {
@@ -253,6 +260,7 @@ export function useSidebarSessions({
     const pendingActivity = new Map<string, number>();
     const hiddenSessions = new Set<string>();
     const unsubscribeActivity = onSessionActivity((sessionID, timeUpdated) => {
+      if (!enabledRef.current || document.hidden) return;
       const session = useApiStore.getState().recentSessions.find((s) => s.id === sessionID);
       if (session) {
         // Activity arrives per token; only refresh the relative-time label
@@ -297,10 +305,11 @@ export function useSidebarSessions({
       subscribed = false;
       changedRefresh.dispose();
     };
-  }, [loadRecentSessions, abortSignalRef, patchRecentSession, peekSession, id, storeSetRecentSessions]);
+  }, [loadRecentSessions, abortSignalRef, patchRecentSession, peekSession, id, storeSetRecentSessions, enabled]);
 
   // Slow reconciliation loop, paused while the tab is hidden.
   useEffect(() => {
+    if (!enabled) return;
     let refreshId: number | null = null;
     const start = () => {
       if (refreshId !== null) return;
@@ -332,7 +341,7 @@ export function useSidebarSessions({
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadRecentSessions]);
+  }, [loadRecentSessions, enabled]);
 
   // Cleanup any outstanding archive timers on unmount.
   useEffect(() => () => {

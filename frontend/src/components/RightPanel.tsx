@@ -35,6 +35,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 interface RightPanelProps {
+  visible?: boolean;
   sessionId: string;
   platformId: string | undefined;
   directory: string | undefined;
@@ -75,6 +76,7 @@ interface RightPanelProps {
 // Designed to scale to N views: adding a third entry to
 // DEFAULT_TAB_ORDER + a render branch is enough.
 export function RightPanel({
+  visible = true,
   sessionId,
   platformId,
   directory,
@@ -105,8 +107,8 @@ export function RightPanel({
   // discoverable without cluttering projects that genuinely have
   // no upstream.
   const upstreamTarget = useProjectTarget(directory, session);
-  const upstreamsResult = useUpstreams(openTabs.includes('upstream') ? upstreamTarget.directory : undefined, upstreamTarget.remoteId);
-  const pluginPanesResult = usePluginPanes(session ? session.remoteId || 'local' : undefined);
+  const upstreamsResult = useUpstreams(visible && openTabs.includes('upstream') ? upstreamTarget.directory : undefined, upstreamTarget.remoteId);
+  const pluginPanesResult = usePluginPanes(visible && session ? session.remoteId || 'local' : undefined);
   const pluginPanes = useMemo(() => pluginPanesResult.isError ? [] : pluginPanesResult.data ?? [], [pluginPanesResult.data, pluginPanesResult.isError]);
   const tabLabels = useMemo(() => ({ ...TAB_LABELS, ...Object.fromEntries(pluginPanes.map((pane) => [pluginPaneTab(pane), pane.pane.label])) }), [pluginPanes]);
 
@@ -241,7 +243,7 @@ export function RightPanel({
             <Button variant="ghost" onClick={() => void pluginPanesResult.refetch()}>Retry plugin panes</Button>
           </EmptyState>
         )}
-        {orderedOpenTabs.map((tab, idx) => (
+        {visible && orderedOpenTabs.map((tab, idx) => (
           <Pane
             key={tab}
             tab={tab}

@@ -27,8 +27,9 @@ const pr = (number: number, branch: string): upstreamApi.PR => ({
 const session = (id: string, directory: string, projectId: string) =>
   ({ id, directory, projectId, remoteId: '' }) as Session;
 
-const panel = (s: Session | undefined, id = s?.id ?? 'pending') => (
+const panel = (s: Session | undefined, id = s?.id ?? 'pending', visible = true) => (
   <RightPanel
+    visible={visible}
     sessionId={id}
     platformId="opencode"
     directory={s?.directory}
@@ -101,6 +102,19 @@ it('refreshes on a same-directory session switch only after the new session reso
   expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(2);
   rerender(panel(session('s2', '/repo', 'proj')));
   expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(2);
+});
+
+it('does not load a CSS-hidden mobile details drawer until opened', async () => {
+  const s = session('mobile', '/mobile/repo', 'mobile');
+  const { rerender } = render(panel(s, s.id, false));
+  expect(upstreamApi.fetchUpstreams).not.toHaveBeenCalled();
+  expect(upstreamApi.fetchPRs).not.toHaveBeenCalled();
+  rerender(panel(s));
+  await screen.findByText('PR 1');
+  expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(1);
+  expect(upstreamApi.fetchPRs).toHaveBeenCalledTimes(1);
+  rerender(panel(s, s.id, false));
+  expect(screen.queryByText('PR 1')).not.toBeInTheDocument();
 });
 
 it('reloads for a session of a different project', async () => {

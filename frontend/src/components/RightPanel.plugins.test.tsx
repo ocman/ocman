@@ -40,6 +40,20 @@ it('makes no data requests while closed, including project switches and focus', 
   expect(fetch.mock.calls.every(([url]) => !String(url).includes('/panes/read'))).toBe(true);
 });
 
+it('makes no discovery or tree requests for a hidden mobile drawer', async () => {
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) =>
+    new Response(JSON.stringify(String(url).includes('/panes/read') ? tree : [pane])));
+  useUiStore.setState({ changesSidebarOpenTabs: [pluginPaneTab(pane)] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (visible: boolean) => <QueryClientProvider client={client}><RightPanel {...props} visible={visible} /></QueryClientProvider>;
+  const { rerender } = render(view(false));
+  await act(async () => {});
+  expect(fetch).not.toHaveBeenCalled();
+  rerender(view(true));
+  await screen.findByText('item-1');
+  expect(fetch.mock.calls.some(([url]) => String(url).includes('/panes/read'))).toBe(true);
+});
+
 it('reads only after opening, refreshes, and aborts a read when closed', async () => {
   let reads = 0;
   let pendingSignal: AbortSignal | undefined;

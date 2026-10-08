@@ -3,6 +3,7 @@ import { maintenance, type MaintenanceStatus } from '../lib/maintenance';
 import { SubmitButton } from './Control';
 import { SettingRow } from './SettingRow';
 import './MaintenanceSettings.css';
+import { useDocumentVisible } from '../lib/usePanelVisible';
 
 const POLL_MS = 1000;
 
@@ -19,6 +20,7 @@ const stepIcon: Record<string, string> = {
 };
 
 export function MaintenanceSettings() {
+  const visible = useDocumentVisible();
   const [status, setStatus] = useState<MaintenanceStatus | null>(null);
   const [error, setError] = useState('');
   const refresh = useCallback((signal?: AbortSignal) => maintenance.status(signal).then((next) => {
@@ -29,17 +31,18 @@ export function MaintenanceSettings() {
   }), []);
 
   useEffect(() => {
+    if (!visible) return;
     const controller = new AbortController();
     void refresh(controller.signal);
     return () => controller.abort();
-  }, [refresh]);
+  }, [refresh, visible]);
 
   const running = status?.job.running ?? false;
   useEffect(() => {
-    if (!running) return;
+    if (!running || !visible) return;
     const id = window.setInterval(() => { void refresh(); }, POLL_MS);
     return () => window.clearInterval(id);
-  }, [running, refresh]);
+  }, [running, refresh, visible]);
 
   async function act(question: string, action: () => Promise<MaintenanceStatus>) {
     if (!window.confirm(question)) return;

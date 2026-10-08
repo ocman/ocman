@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { SharedConversationView } from './SharedConversationView';
 import type { SharedConversation } from '../lib/api.types';
@@ -44,6 +44,23 @@ describe('SharedConversationView (relay)', () => {
   afterEach(() => {
     vi.useRealTimers();
     window.location.hash = '';
+  });
+
+  it('does not poll hidden shares and refreshes immediately on return', async () => {
+    vi.useFakeTimers();
+    let hidden = true;
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    readRelayShare.mockResolvedValue({ chunks: [], last: -1 });
+    const view = renderRelayView();
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(readRelayShare).not.toHaveBeenCalled();
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      expect(readRelayShare).toHaveBeenCalledTimes(1);
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(readRelayShare).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); visibility.mockRestore(); }
   });
 
   it('decrypts with the key from the fragment, which is never sent to the relay', async () => {

@@ -475,6 +475,12 @@ diagram covering session reads, SSE activity updates, remote streams, and
 routine dispatch. Sidebar activity updates arrive over global SSE without
 changing row order. Terminal status events fetch the owner-qualified session's
 durable completion timestamp, which ranks rows newest first.
+Session list/detail responses carry `factoryAttemptId` from a single state.db
+attempt lookup. The sidebar filters these tagged rows and their descendants
+without requesting `/api/factory/epics`. Only tagged conversations mount Factory
+recovery queries. On mobile, closed drawers disable sidebar list/git/stats reads
+and unmount right-panel content. Document visibility pauses these reads and
+pending PR check polls; reopening refreshes the visible content.
 Settled agent bash commands also produce `ocman.git.command` refresh hints for
 the owning project's PR/Issue pane.
 
@@ -488,7 +494,7 @@ flowchart TD
     Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
-    Stores --> API[lib/ API client]
+    Stores -->|visible pane reads; session rows carry Factory tags| API[lib/ API client]
     Stores --> SSE[SSE subscription]
     Pages --> Scopes[Ref-counted activity scopes]
     Comp --> Scopes

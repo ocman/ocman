@@ -95,6 +95,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     }
     let cancelled = false;
     const refresh = async () => {
+      if (document.hidden) return;
       try {
         const { windows: live } = await api.term.listWindows(directory, remoteId);
         if (cancelled) return;
@@ -110,7 +111,10 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     // Poll for live titles only while the panel is open (avoids work
     // when the terminal isn't visible).
     const id = open ? window.setInterval(refresh, TITLE_POLL_MS) : undefined;
+    const onVisibility = () => { if (open && !document.hidden) void refresh(); };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
       cancelled = true;
       if (id !== undefined) window.clearInterval(id);
     };

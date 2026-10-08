@@ -186,6 +186,10 @@ type Session struct {
 	// RoutineID names the routine that launched this session, empty
 	// otherwise. Populated by applySessionState.
 	RoutineID string `json:"routineId,omitempty"`
+	// FactoryAttemptID names the Factory attempt that ran in this session
+	// (or in its direct parent), empty otherwise. Populated by
+	// applySessionState.
+	FactoryAttemptID string `json:"factoryAttemptId,omitempty"`
 	// SeenTimeUpdated is the session's time_updated at the moment the
 	// user last viewed it (0 when never seen). Used by the frontend to
 	// compute a "first unread" marker and a per-session unread badge
