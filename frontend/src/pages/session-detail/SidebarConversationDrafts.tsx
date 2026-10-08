@@ -24,9 +24,10 @@ function DraftRows({ drafts, searchQuery }: { drafts: ConversationDraft[]; searc
     setDiscarding(draft.draftId);
     try {
       // Only a stored discard moves on; a failure keeps the draft, its text and files.
-      await forgetConversationDraft(draft.draftId);
-      const next = drafts.find((entry) => entry.draftId !== draft.draftId);
-      if (draft.draftId === activeId) flushSync(() => navigate(next ? newSessionPath(next) : '/', { replace: true }));
+      await forgetConversationDraft(draft.draftId, () => {
+        const next = drafts.find((entry) => entry.draftId !== draft.draftId);
+        if (draft.draftId === activeId) flushSync(() => navigate(next ? newSessionPath(next) : '/', { replace: true }));
+      });
     } catch (error) {
       setFailed({ draftId: draft.draftId, message: `Could not discard the draft: ${error instanceof Error ? error.message : String(error)}` });
     } finally { setDiscarding(undefined); }

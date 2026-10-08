@@ -126,7 +126,7 @@ export function rememberConversationDraft(params: ConversationDraft) {
  * Discard a prepared draft. Live state (metadata, text, browser Files) is
  * dropped only after the tombstone commits; a failure rejects and keeps it.
  */
-export async function forgetConversationDraft(draftId: string) {
+export async function forgetConversationDraft(draftId: string, afterCommit?: () => void) {
   const revision = getDraftVersion(draftId);
   const cleared = await transact(['texts', 'drafts'], 'readwrite', async (tx) => {
     const text = await tx.get<TextRecord>('texts', draftId);
@@ -135,12 +135,18 @@ export async function forgetConversationDraft(draftId: string) {
     tx.put('texts', draftId, next);
     return next;
   });
-  unsaved.delete(draftId);
-  draftSeq.set(draftId, (draftSeq.get(draftId) || 0) + 1);
-  applyDrafts([[draftId, undefined]]);
-  settleText(draftId, cleared);
-  forgetDraftAttachments(draftId);
-  publishDraftChange({ drafts: [draftId], texts: [draftId] });
+  try {
+    // The initiating view can leave the route before deletion is published to
+    // lifecycle observers. Other tabs still redirect when they learn of deletion.
+    afterCommit?.();
+  } finally {
+    unsaved.delete(draftId);
+    draftSeq.set(draftId, (draftSeq.get(draftId) || 0) + 1);
+    applyDrafts([[draftId, undefined]]);
+    settleText(draftId, cleared);
+    forgetDraftAttachments(draftId);
+    publishDraftChange({ drafts: [draftId], texts: [draftId] });
+  }
 }
 
 export async function beginConversationStart(draftId: string, routeKey: string, text = ''): Promise<number | null> {
