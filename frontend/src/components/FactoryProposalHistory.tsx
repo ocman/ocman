@@ -16,7 +16,7 @@ export function FactoryProposalHistory({ proposals, gate, disabled, approving, o
         {current && <p>{{ open: 'Awaiting approval', approved: 'Approved', revision_requested: 'Revision requested', rejected: 'Rejected' }[gate.resolution] ?? gate.resolution}</p>}
         {pending && <Button type="button" variant="accent" disabled={disabled} aria-busy={approving} onClick={() => onApprove(proposal)}>{approving ? `Approving revision ${proposal.revision}…` : `Approve revision ${proposal.revision}`}</Button>}
         <p>Content hash: {proposal.contentHash}</p><pre>{JSON.stringify(proposal.manifest, null, 2)}</pre>
-        {proposal.rationaleMarkdown && <MarkdownContent text={proposal.rationaleMarkdown} />}
+        {proposal.rationaleMarkdown && <div className="oc-md"><MarkdownContent text={proposal.rationaleMarkdown} factoryCards={false} /></div>}
       </details>;
     })}
   </>;

@@ -254,7 +254,7 @@ export function FactoryEpicDetail() {
     <section className="factory-epic-actions" aria-label="Epic actions">
       {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate">
         <h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p>
-        {gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview changes={changes} />{gatedProposal.rationaleMarkdown && <section className="factory-proposal oc-md" aria-label="Rationale"><h4>Rationale</h4><MarkdownContent text={gatedProposal.rationaleMarkdown} /></section>}</div>}
+        {gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview changes={changes} />{gatedProposal.rationaleMarkdown && <section className="factory-proposal oc-md" aria-label="Rationale"><h4>Rationale</h4><MarkdownContent text={gatedProposal.rationaleMarkdown} factoryCards={false} /></section>}</div>}
         <FactoryImplementationModel {...implementation} />
         <label>Feedback<textarea value={feedback} disabled={decideGate.isPending} placeholder="Changes to request or a reason for rejecting the plan" onChange={(event) => setFeedback(event.target.value)} /></label>
         <ButtonGroup label="Plan approval actions">{([

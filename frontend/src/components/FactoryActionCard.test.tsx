@@ -63,7 +63,7 @@ describe('Factory human action cards', () => {
   it('draws the gated plan revision and expands it into a modal', async () => {
     vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 2, proposalHash: 'hash' } });
     const manifest = (title: string) => ({ epicId: 'ship', molId: 'mol', project: '/repo', nodes: [{ key: 'api', type: 'implementation', requirement: 'required', title }, { key: 'ui', type: 'implementation', requirement: 'required', title: 'Build UI', dependsOn: ['api'] }] });
-    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'old', manifest: manifest('Old API'), rationaleMarkdown: 'Old rationale' }, { revision: 2, contentHash: 'hash', manifest: manifest('Build API'), rationaleMarkdown: '## Changes\n- Add **regression coverage**.\n\n## Why\nVerification found missing cases.' }, { revision: 3, contentHash: 'new', manifest: manifest('New API'), rationaleMarkdown: 'New rationale' }]);
+    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'old', manifest: manifest('Old API'), rationaleMarkdown: 'Old rationale' }, { revision: 2, contentHash: 'hash', manifest: manifest('Build API'), rationaleMarkdown: '## Changes\n- Add **regression coverage**.\n\n## Why\nVerification found missing cases.\n\n[[ocman:card type=factory-epic epic=ship action=approve_plan]]\n\n[Review](/factory/epics/ship?human=1)' }, { revision: 3, contentHash: 'new', manifest: manifest('New API'), rationaleMarkdown: 'New rationale' }]);
     renderCard('[[ocman:card type=factory-epic epic=ship action=approve_plan]]');
     const thumbnail = await screen.findByRole('button', { name: 'Expand plan graph' });
     expect(screen.getByRole('group', { name: 'Plan graph with 2 steps' }).querySelectorAll('line')).toHaveLength(1);
@@ -73,6 +73,9 @@ describe('Factory human action cards', () => {
     expect(within(rationale).getByRole('heading', { name: 'Changes' })).toBeVisible();
     expect(within(rationale).getByText('regression coverage').tagName).toBe('STRONG');
     expect(within(rationale).getByText('Verification found missing cases.')).toBeVisible();
+    expect(within(rationale).getByText('[[ocman:card type=factory-epic epic=ship action=approve_plan]]')).toBeVisible();
+    expect(within(rationale).getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/factory/epics/ship?human=1');
+    expect(screen.getAllByRole('button', { name: 'Approve plan' })).toHaveLength(1);
     expect(screen.queryByText(/Old rationale|New rationale/)).not.toBeInTheDocument();
     fireEvent.click(thumbnail);
     expect(screen.getByRole('dialog', { name: 'Plan graph' })).toBeInTheDocument();

@@ -204,14 +204,14 @@ function CodeBlockPre(props: any) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { node: _node, href: originalHref, children, ...rest } = props;
+  const { node: _node, href: originalHref, children, factoryCards = true, ...rest } = props;
   const href = relativeFileURL(originalHref);
   const routed = useInRouterContext();
-  if (props['data-ocman-card'] && routed) {
+  if (factoryCards && props['data-ocman-card'] && routed) {
     return <FactoryMarkerCard epicID={props['data-ocman-epic']} issueID={props['data-ocman-issue']} action={props['data-ocman-action']}>{children}</FactoryMarkerCard>;
   }
   const action = factoryActionFromHref(href);
-  if (action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action}>{children}</FactoryActionCard>;
+  if (factoryCards && action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action}>{children}</FactoryActionCard>;
   const internal = href?.startsWith('/') && !href.startsWith('//') && !/^\/api(?:\/|$)/.test(href);
   // In-app paths must not reload the page; anchors and externals stay plain.
   if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;
@@ -233,6 +233,8 @@ function MarkdownTable({ node: _node, ...props }: ComponentProps<'table'> & { no
 // internal unified-processor cache on every streaming chunk.
 const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards];
 const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
+const PROSE_PLUGINS = [remarkGfm];
+const PROSE_PLUGINS_WITH_BREAKS = [...PROSE_PLUGINS, remarkBreaks];
 // rehype-highlight builds a lowlight instance and registers ~37 languages
 // each time it is attached, and react-markdown attaches plugins on every
 // render; reuse one transformer.
@@ -302,28 +304,37 @@ function MarkdownParagraph({ children, node: _node, ...props }: ComponentProps<'
 
 const MARKDOWN_COMPONENTS = { p: MarkdownParagraph, pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable, blockquote: MarkdownQuote };
 
+function ProseMarkdownLink(props: ComponentProps<'a'> & ExtraProps) {
+  return <MarkdownLink {...props} factoryCards={false} />;
+}
+
+const PROSE_COMPONENTS = { ...MARKDOWN_COMPONENTS, a: ProseMarkdownLink };
+type MarkdownContentProps = { text: string; preserveLineBreaks?: boolean; factoryCards?: boolean };
+
 // One independently parsed chunk. memo: while an answer streams only the
 // last chunk's text changes, so earlier chunks skip re-parsing.
-const MarkdownBlock = memo(function MarkdownBlock({ text, preserveLineBreaks }: { text: string; preserveLineBreaks: boolean }) {
+const MarkdownBlock = memo(function MarkdownBlock({ text, preserveLineBreaks, factoryCards }: Required<MarkdownContentProps>) {
+  const plugins = factoryCards ? REMARK_PLUGINS : PROSE_PLUGINS;
+  const pluginsWithBreaks = factoryCards ? REMARK_PLUGINS_WITH_BREAKS : PROSE_PLUGINS_WITH_BREAKS;
   return (
     <ReactMarkdown
-      remarkPlugins={preserveLineBreaks ? REMARK_PLUGINS_WITH_BREAKS : REMARK_PLUGINS}
+      remarkPlugins={preserveLineBreaks ? pluginsWithBreaks : plugins}
       rehypePlugins={REHYPE_PLUGINS}
-      components={MARKDOWN_COMPONENTS}
+      components={factoryCards ? MARKDOWN_COMPONENTS : PROSE_COMPONENTS}
     >
       {text}
     </ReactMarkdown>
   );
 });
 
-export const MarkdownContent: FC<{ text: string; preserveLineBreaks?: boolean }> = ({ text, preserveLineBreaks = false }) => {
+export const MarkdownContent: FC<MarkdownContentProps> = ({ text, preserveLineBreaks = false, factoryCards = true }) => {
   if (!text.trim()) return null;
   // The '\n' between chunks is the whitespace node a single parse emits
   // between top-level blocks, so the DOM is identical.
   return splitMarkdownBlocks(text).map((block, i) => (
     <Fragment key={i}>
       {i > 0 && '\n'}
-      <MarkdownBlock text={block} preserveLineBreaks={preserveLineBreaks} />
+      <MarkdownBlock text={block} preserveLineBreaks={preserveLineBreaks} factoryCards={factoryCards} />
     </Fragment>
   ));
 };

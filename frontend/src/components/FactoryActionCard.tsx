@@ -23,7 +23,7 @@ function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate 
   return <div className="oc-factory-action-issue">
     <span>Plan revision {gate.proposalRevision}. Approval starts implementation.</span>
     {planIssues && <FactoryPlanGraph issues={planIssues} />}
-    {proposal?.rationaleMarkdown && <section className="oc-md" aria-label="Rationale"><MarkdownContent text={proposal.rationaleMarkdown} /></section>}
+    {proposal?.rationaleMarkdown && <section className="oc-md" aria-label="Rationale"><MarkdownContent text={proposal.rationaleMarkdown} factoryCards={false} /></section>}
     <label>Plan feedback<TextField value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>
     <FactoryImplementationModel {...implementation} />
     <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess || (action === 'approve' && implementation.loading)} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback, ...(action === 'approve' && implementation.approvalModel) })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>

@@ -778,7 +778,7 @@ describe('Factory interactions', () => {
     vi.mocked(api.factoryIssues).mockResolvedValue([]);
     vi.mocked(api.factoryProposals).mockResolvedValue([
       { revision: 1, contentHash: 'sha256:old', manifest: { nodes: [{ key: 'old', type: 'implementation', requirement: 'required', title: 'Stale node' }] }, rationaleMarkdown: 'old' },
-      { revision: 2, contentHash: 'sha256:abc123', manifest: { nodes: [{ key: 'api', type: 'implementation', requirement: 'required', title: 'Ship API' }, { key: 'ui', type: 'implementation', requirement: 'required', title: 'Ship UI', dependsOn: ['api'] }] }, rationaleMarkdown: 'Because reasons.' },
+      { revision: 2, contentHash: 'sha256:abc123', manifest: { nodes: [{ key: 'api', type: 'implementation', requirement: 'required', title: 'Ship API' }, { key: 'ui', type: 'implementation', requirement: 'required', title: 'Ship UI', dependsOn: ['api'] }] }, rationaleMarkdown: 'Because reasons.\n\n[[ocman:card type=factory-epic epic=epic-1 action=approve_plan]]\n\n[Review](/factory/epics/epic-1?human=1)' },
     ] as never);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
@@ -796,6 +796,9 @@ describe('Factory interactions', () => {
     expect(within(preview).getByText('Rationale')).toBeInTheDocument();
     expect(within(preview).getByRole('region', { name: 'Rationale' })).toHaveClass('oc-md');
     expect(within(preview).getByText('Because reasons.')).toBeVisible();
+    expect(within(preview).getByText('[[ocman:card type=factory-epic epic=epic-1 action=approve_plan]]')).toBeVisible();
+    expect(screen.getAllByRole('link', { name: 'Review' })).toHaveLength(2);
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
     expect(actions.compareDocumentPosition(screen.getByText('Proposal revision: 2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
