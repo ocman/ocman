@@ -103,7 +103,7 @@ export function RoutineEditorDrawer({ routine, inboxes, onClose, onSaved, onRefr
       if (!source) { setCatalog({ agents: [], models: [] }); return; }
       setCatalogLoading(true);
       Promise.all([api.agents(source.id, undefined, source.platform), api.sessionModels(source.id, source.platform)]).then(
-        ([agents, models]) => { if (active) setCatalog({ agents: agents.map((agent) => agent.name), models: models.models.filter((model) => model.isAvailable !== false).map((model) => `${model.provider}/${model.model}`) }); },
+        ([agents, models]) => { if (active) setCatalog({ agents: agents.map((agent) => agent.name), models: models.models.filter((model) => !models.hasProviders || model.isAvailable !== false).map((model) => `${model.provider}/${model.model}`) }); },
         () => { if (active) setCatalog({ agents: [], models: [] }); },
       ).finally(() => { if (active) setCatalogLoading(false); });
     };
