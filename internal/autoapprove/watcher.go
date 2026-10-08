@@ -87,6 +87,10 @@ type autoApproveWatcher struct {
 	// tests, which must not touch that package's global state.
 	markSessionDirty  func(sessionID string)
 	markSessionsDirty func()
+	// invalidateSessionsCache expires the shared list snapshot so the
+	// next read pays for a full scan. Seam for tests, same ceiling as
+	// the mark* seams above.
+	invalidateSessionsCache func()
 
 	// rescanInterval and reconnectDelay are exposed so tests can run
 	// the loops on tight timings without changing the production
@@ -131,17 +135,18 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 		auth = svc.deps.OpenCodeAuth
 	}
 	w := &autoApproveWatcher{
-		svc:               svc,
-		discoverPorts:     opencode.DiscoverOpenCodePorts,
-		httpClient:        &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
-		rescanInterval:    autoApproveRescanInterval,
-		reconnectDelay:    autoApproveReconnectDelay,
-		idleTimeout:       platforms.SSEIdleTimeout,
-		subs:              make(map[string]context.CancelFunc),
-		seenSessions:      make(map[string]struct{}),
-		titles:            make(map[string]string),
-		markSessionDirty:  opencode.MarkSessionDirty,
-		markSessionsDirty: opencode.MarkSessionsDirty,
+		svc:                     svc,
+		discoverPorts:           opencode.DiscoverOpenCodePorts,
+		httpClient:              &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
+		rescanInterval:          autoApproveRescanInterval,
+		reconnectDelay:          autoApproveReconnectDelay,
+		idleTimeout:             platforms.SSEIdleTimeout,
+		subs:                    make(map[string]context.CancelFunc),
+		seenSessions:            make(map[string]struct{}),
+		titles:                  make(map[string]string),
+		markSessionDirty:        opencode.MarkSessionDirty,
+		markSessionsDirty:       opencode.MarkSessionsDirty,
+		invalidateSessionsCache: opencode.InvalidateSessionsCache,
 	}
 
 	// Default onPermission routes through Ensure, which
