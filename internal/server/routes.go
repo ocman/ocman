@@ -35,6 +35,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/plugins/panes", s.get(s.handlePluginPanes))
 	mux.HandleFunc("/api/plugins/panes/read", s.get(s.handlePluginPaneRead))
 	mux.HandleFunc("/api/analytics/overview", s.get(s.handleAnalyticsOverview))
+	mux.HandleFunc("/api/analytics/session-concurrency", s.get(s.handleSessionConcurrency))
 	mux.HandleFunc("/api/analytics/database-sizes", s.get(s.handleDatabaseSizes))
 	mux.HandleFunc("/api/subscription-usage", requireGET(s.requireLocalhost(s.handleSubscriptionUsage)))
 	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))

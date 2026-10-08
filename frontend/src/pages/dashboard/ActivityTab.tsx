@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Bar } from 'react-chartjs-2';
-import type { ActivityDay } from '../../lib/api';
-import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS } from '../../lib/chartConfig';
-import { useActivity, useHourly } from '../../lib/queries';
+import { Bar, Line } from 'react-chartjs-2';
+import type { ActivityDay, SessionConcurrency } from '../../lib/api';
+import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS, CHART_COLORS } from '../../lib/chartConfig';
+import { useActivity, useHourly, useSessionConcurrency } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
@@ -11,11 +11,13 @@ export function ActivityTab() {
   const { dirScope } = useDashboard();
   const [days, setDays] = useState(30);
   const dir = dirScope || undefined;
+  const params = { days: days || undefined, dir };
   const activityQ = useActivity({ days: 365, dir });
-  const dailyQ = useActivity({ days: days || undefined, dir });
-  const hourlyQ = useHourly({ days: days || undefined, dir });
+  const dailyQ = useActivity(params);
+  const hourlyQ = useHourly(params);
+  const concurrencyQ = useSessionConcurrency(params);
   const daily = dailyQ.data?.slice(-days);
-  const errors = queryErrors(activityQ.error, dailyQ.error, hourlyQ.error);
+  const errors = queryErrors(activityQ.error, dailyQ.error, hourlyQ.error, concurrencyQ.error);
 
   return (
     <div>
@@ -23,6 +25,9 @@ export function ActivityTab() {
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
       {activityQ.isLoading && !activityQ.data && <ChartSkeletons labels={['Loading activity heatmap']} />}
       {(activityQ.data?.length ?? 0) > 0 && <HeatmapChart activity={activityQ.data ?? []} />}
+      <ChartSlot isLoading={concurrencyQ.isLoading} label="Loading parallel sessions">
+        <ParallelSessionsChart data={concurrencyQ.data} />
+      </ChartSlot>
       <div className="analytics-chart-pair">
         <ChartSlot isLoading={dailyQ.isLoading} label="Loading daily messages"><ChartCard title="Daily Messages">
             <Bar data={{ labels: daily?.map((day) => day.date.slice(5)) ?? [], datasets: [
@@ -36,6 +41,24 @@ export function ActivityTab() {
       </div>
     </div>
   );
+}
+
+function ParallelSessionsChart({ data }: { data?: SessionConcurrency }) {
+  return <>
+    <ChartCard title="Active Parallel Sessions">
+      <Line aria-label="Peak active parallel sessions over time" role="img" data={{
+        datasets: [{ label: 'Peak simultaneous sessions', data: data?.series.map((point) => ({ x: point.timestamp, y: point.sessions })) ?? [], borderColor: CHART_COLORS[0], pointRadius: 0, stepped: true }],
+      }} options={{
+        ...BAR_OPTIONS_HOURLY,
+        scales: {
+          x: { type: 'linear', grid: { display: false }, ticks: { maxTicksLimit: 10, callback: (value) => new Date(Number(value)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' }) } },
+          y: { beginAtZero: true, ticks: { precision: 0 } },
+        },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items) => items.length ? new Date(Number(items[0].parsed.x)).toLocaleString() : '' } } },
+      }} />
+    </ChartCard>
+    <p className="analytics-scope-note">Peak per {data?.bucketMs ? data.bucketMs / 3_600_000 : 1}-hour bucket, reconstructed from completed assistant timings on this machine. Includes tools and subagents; excludes idle gaps and unfinished messages.</p>
+  </>;
 }
 
 function queryErrors(...errors: unknown[]) {

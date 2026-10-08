@@ -219,6 +219,14 @@ export function useActivity(
   });
 }
 
+export function useSessionConcurrency(params: { days?: number; dir?: string }) {
+  useActivityScope('metrics');
+  return useQuery({
+    queryKey: ['sessionConcurrency', params],
+    queryFn: ({ signal }) => api.sessionConcurrency(params, signal),
+  });
+}
+
 export function useModels(
   params?: { days?: number; dir?: string },
   options?: { enabled?: boolean },

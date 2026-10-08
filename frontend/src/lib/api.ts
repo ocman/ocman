@@ -16,6 +16,10 @@ import type {
 
 // Keep existing consumers on the same public module.
 export type * from './api.types';
+export interface SessionConcurrency {
+  bucketMs: number;
+  series: { timestamp: number; sessions: number }[];
+}
 export { APIError, AuthError, BackendUnavailableError, fetchJSON, postJSON,
   registerAuthErrorHandler, raiseAuthError, raiseForUnauthorized } from './api.requests';
 
@@ -37,6 +41,8 @@ export const api = {
   metrics: (params?: { agent?: string; model?: string; days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsPerformance>(`/api/metrics/performance${queryString(params)}`, signal),
   analyticsOverview: (signal?: AbortSignal) => fetchJSON<AnalyticsOverview>('/api/analytics/overview', signal),
+  sessionConcurrency: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<SessionConcurrency>(`/api/analytics/session-concurrency${queryString(params)}`, signal),
   databaseSizes: (params?: { days?: number }, signal?: AbortSignal) =>
     fetchJSON<DatabaseSizeSample[]>(`/api/analytics/database-sizes${queryString(params)}`, signal),
   subscriptionUsage: (signal?: AbortSignal) => fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
