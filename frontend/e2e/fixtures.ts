@@ -74,6 +74,7 @@ export async function installDefaultRoutes(page: Page) {
   );
 
   const zeroUsage = { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0, estCost: 0 };
+  await page.route(/\/api\/factory\/epics(\?|$)/, (route) => route.fulfill({ json: [] }));
   await page.route(/\/api\/factory\/epics\/[^/]+\/usage$/, (route) => route.fulfill({ json: {
     total: zeroUsage, phases: { plan: zeroUsage, implement: zeroUsage, verify: zeroUsage, deliver: zeroUsage }, attempts: [], incomplete: false,
   } }));
