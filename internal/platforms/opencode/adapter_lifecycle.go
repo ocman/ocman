@@ -9,9 +9,9 @@ import (
 )
 
 // SessionLifecycle implements platforms.LifecycleReader: one bounded
-// latest-message query settled against the live turn state, the same rule
-// Session applies, without loading messages, parts, the session tree or
-// costs.
+// latest-message read settled against the live turn state. Unclosed assistant
+// messages check scalar terminal-part metadata to recognize completed shells;
+// messages, parts, the session tree and costs are not loaded.
 func (a *Adapter) SessionLifecycle(ctx context.Context, sessionID string) (*platforms.SessionLifecycle, error) {
 	if a.db == nil {
 		return nil, platforms.ErrNotFound

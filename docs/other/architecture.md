@@ -166,7 +166,7 @@ flowchart TD
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Server -->|Factory usage via platforms.UsageReader| OC
     Registry -->|session detail, summary + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
-    Router --> Local[hostsvc/local + composerattachments<br/>host operations + attachment cache]
+    Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
     Inbox --> State
@@ -297,7 +297,11 @@ flowchart TD
   an opaque `ocruntime.Instance`. The owning host may use discovery once to
   adopt a healthy instance that started before its managed registry entry
   existed. `RestartProjectOpencode` stops and relaunches the tracked
-  instance. `ReloadOpencode` requires a readable, matching server-default v2
+  instance. Owner-local replacement callbacks use the read-only
+  `ManagedRootReader.ManagedOpencodeRoot` view of that same main-checkout
+  identity, so external linked worktrees share membership and nested independent
+  repositories do not. This view neither launches a server nor requires a new RPC.
+  `ReloadOpencode` requires a readable, matching server-default v2
   location directory before it calls the owning machine's v2
   `/api/location/reload` endpoint through the same Host/gRPC seam, retaining
   the process and running turns while refreshing configuration and the owner's

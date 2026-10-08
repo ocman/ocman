@@ -24,6 +24,7 @@ import (
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // stateSetup describes the state.db rows a test wants pre-populated
@@ -857,6 +858,30 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 		sessionID    = "ses-toggle"
 		permissionID = "perm-pending"
 	)
+	// The handler owns the settings write. This worker fixture has no Store,
+	// so its detached audit writes cannot outlive the handler's temporary DB.
+	done := make(chan struct{})
+	srv.aaOnce.Do(func() {
+		srv.aaSvcCached = autoapprove.NewService(autoapprove.Deps{
+			DefaultEnabled: true,
+			PromptNeedsUser: func(platform, session, kind, request string) {
+				if platform == "opencode" && session == sessionID && kind == "permission" && request == permissionID {
+					close(done)
+				}
+			},
+		})
+	})
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("pending permission never reached auto-approve worker")
+			return
+		}
+		testutil.WaitFor(t, 5*time.Second, "auto-approve worker to release its slot", func() bool {
+			return !srv.aaSvc().DeferPermissionNotification(sessionID, permissionID)
+		})
+	})
 
 	listCalls := 0
 	fp := &fakePlatform{
@@ -905,24 +930,7 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 		t.Errorf("ListPermissions calls = %d, want 1 (resume path must fire on toggle ON)", listCalls)
 	}
 
-	// 3. ensureAutoApprove must have either claimed the slot OR
-	//    recorded a verdict for the pending permission. With s.db nil
-	//    and no judge wired, the spawned goroutine bails inside
-	//    backgroundAutoApprove and releaseAutoApprove drops the
-	//    record, but the claim is observable as a transient entry —
-	//    so we settle for proving the call reached the dedup cache by
-	//    waiting for the goroutine to settle and confirming no panic.
-	//    The functional contract checked here is the listPermissionsFn
-	//    call count above; this assertion guards against a regression
-	//    where someone moves the resume into a path that never reaches
-	//    ensureAutoApprove (e.g. wraps it in a condition that never
-	//    fires for this fake-adapter setup).
-	// The per-permission state now lives inside the autoapprove
-	// service; the map may be empty (goroutine already released its
-	// slot) — both outcomes are acceptable. The test asserts on
-	// ListPermissions being invoked, which is the proxy for "resume
-	// path executed".
-	_ = srv.aaSvc()
+	// Cleanup observes actual worker execution and waits for its slot release.
 }
 
 // TestHandleSessionAutoApproveSet_DisablingDoesNotResume is the

@@ -88,3 +88,23 @@ func (d *DB) DeleteManagedOpencode(ctx context.Context, repoRoot string) error {
 	}
 	return nil
 }
+
+// Confirmation runs under the owner's root singleflight. Retire its stopped
+// inventory row before clearing the proof, in the same publication transaction.
+// A saved handle must match; a newer/different row or another root is preserved.
+// Legacy confirmation has no handle but still conveys closure of its pending
+// root. A repeated confirmation of an already-confirmed attempt retires nothing.
+func retireReplacementRuntime(ctx context.Context, tx *sql.Tx, platform, root string) error {
+	if platform != "opencode" {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM managed_opencode WHERE repo_root=? AND EXISTS(
+		SELECT 1 FROM session_replacement r WHERE r.platform=? AND r.replacement_root=?
+		AND r.phase IN ('prepared','stopping','stopped')
+		AND (r.stop_runtime_json='' OR (
+			managed_opencode.endpoint=COALESCE(json_extract(r.stop_runtime_json,'$.Endpoint'),'')
+			AND managed_opencode.kind=COALESCE(json_extract(r.stop_runtime_json,'$.Kind'),'')
+			AND managed_opencode.runtime_id=COALESCE(json_extract(r.stop_runtime_json,'$.RuntimeID'),'')
+			AND managed_opencode.pid=COALESCE(json_extract(r.stop_runtime_json,'$.PID'),0))))`, root, platform, root)
+	return err
+}

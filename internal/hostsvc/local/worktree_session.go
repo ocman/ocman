@@ -62,7 +62,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	ensuredCh := make(chan ensureResult, 1)
 	hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
 	go func() {
-		res, err := h.sfDoDetached(ctx, repoRoot, h.ensureLocked)
+		res, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repoRoot})
 		hostsvc.FinishStep(ctx, hostsvc.StepOpencode, err)
 		ensuredCh <- ensureResult{res, err}
 	}()

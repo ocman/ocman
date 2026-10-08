@@ -49,15 +49,23 @@ type Instance struct {
 
 var ErrProbeUnreachable = errors.New("OpenCode instance is unreachable")
 
+// ErrProbeNotReady means the API answered but cannot currently serve requests.
+var ErrProbeNotReady = errors.New("OpenCode instance is temporarily unavailable")
+
+// ErrProbeIdentityMismatch positively rejects the server answering this endpoint.
+var ErrProbeIdentityMismatch = errors.New("OpenCode endpoint identity does not match")
+
 // Runtime hosts a project's OpenCode instance.
 type Runtime interface {
 	// Launch starts an instance for spec and returns its handle. The
 	// caller-allocated spec.Port is threaded to the process.
 	Launch(ctx context.Context, spec LaunchSpec) (*Instance, error)
 	// Probe returns nil when the instance is serving, ErrAuthentication
-	// for a credential mismatch, or ErrProbeUnreachable otherwise.
+	// for a credential mismatch, ErrProbeNotReady for temporary API failures,
+	// or ErrProbeUnreachable otherwise. Transport errors preserve their cause.
 	Probe(ctx context.Context, inst *Instance) error
-	// Stop tears the instance down.
+	// Stop returns nil only when the instance is stopped or known absent.
+	// An error must not be treated as confirmation that active turns ended.
 	Stop(ctx context.Context, inst *Instance) error
 }
 
@@ -96,6 +104,9 @@ func probeConfig(ctx context.Context, client *http.Client, endpoint string) erro
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return fmt.Errorf("%w: %w: upstream HTTP %d", ErrProbeUnreachable, ErrProbeNotReady, resp.StatusCode)
+		}
 		return fmt.Errorf("%w: upstream HTTP %d", ErrProbeUnreachable, resp.StatusCode)
 	}
 	return nil
@@ -131,7 +142,7 @@ func probeIdentity(ctx context.Context, client *http.Client, endpoint, repoRoot 
 	if sameDir(payload.Worktree, repoRoot) {
 		return nil
 	}
-	return fmt.Errorf("%w: endpoint serves %q, expected %q", ErrProbeUnreachable, payload.Worktree, repoRoot)
+	return fmt.Errorf("%w: %w: endpoint serves %q, expected %q", ErrProbeUnreachable, ErrProbeIdentityMismatch, payload.Worktree, repoRoot)
 }
 
 // ProbeV2Identity requires a readable, matching server-default location before

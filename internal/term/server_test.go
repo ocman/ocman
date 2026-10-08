@@ -24,6 +24,8 @@ func isolateTmux(t *testing.T) string {
 	t.Setenv("TMUX_TMPDIR", dir)
 	t.Setenv("TMUX", "")
 	t.Setenv("TERM", "xterm-256color")
+	// Terminal fixtures must not run a developer's interactive shell startup.
+	t.Setenv("SHELL", "/bin/sh")
 	script := fmt.Sprintf("#!/bin/sh\nexec %q -f /dev/null \"$@\"\n", bin)
 	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
