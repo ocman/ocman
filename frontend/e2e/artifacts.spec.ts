@@ -33,6 +33,41 @@ test('browses, previews and deletes an artifact', async ({ mockedPage: page }) =
 });
 
 for (const width of [1280, 390]) {
+  test(`artifact sharing owns alerts and link controls at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const shared = { ...artifact, items: [...artifact.items, { kind: 'link', url: 'https://ci.example/releases/long-build-reference-with-deployment-notes-and-follow-up-checks', label: 'Deployment notes' }] };
+    const old = { id: 'old', url: 'https://relay.example/v/old-report#key=example-only', createdAt: 1 };
+    const created = { id: 'new', url: 'https://relay.example/v/new-report#key=example-only', createdAt: 2 };
+    let attempts = 0;
+    let revoked = false;
+    await page.route('/api/artifacts/art-1', route => route.fulfill({ json: shared }));
+    await page.route('/api/artifacts/art-1/files/0', route => route.fulfill({ contentType: 'text/plain', body: 'Build successful.' }));
+    await page.route('/api/artifacts/art-1/shares', route => route.fulfill({ json: { relayConfigured: true, maxShareBytes: 32 * 1024 * 1024, shares: [old] } }));
+    await page.route('/api/artifacts/art-1/share', route => {
+      attempts++;
+      if (attempts === 1) return route.fulfill({ status: 503, contentType: 'text/plain', body: 'Share relay temporarily unavailable.' });
+      return route.fulfill({ json: created });
+    });
+    await page.route('/api/artifacts/art-1/share/old', route => { revoked = true; return route.fulfill({ status: 204 }); });
+    await page.goto('/artifacts/art-1');
+    await page.getByRole('button', { name: 'Share', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Share artifact', exact: true });
+    await expect(dialog.getByRole('textbox', { name: 'Share link', exact: true })).toHaveValue(old.url);
+    expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await dialog.getByRole('button', { name: 'Create share link', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('Share relay temporarily unavailable');
+    await dialog.getByRole('button', { name: 'Create share link', exact: true }).click();
+    await expect(dialog.getByRole('textbox', { name: 'Share link', exact: true })).toHaveCount(2);
+    await expect(dialog.getByRole('textbox', { name: 'Share link', exact: true }).first()).toHaveValue(created.url);
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Revoke', exact: true }).nth(1).click();
+    await expect(dialog.getByRole('textbox', { name: 'Share link', exact: true })).toHaveCount(1);
+    expect(revoked).toBe(true);
+    await dialog.getByRole('button', { name: 'Close share dialog', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Share', exact: true })).toBeFocused();
+  });
+
   test(`artifact list filters, retry and table fit at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
     let failed = true;

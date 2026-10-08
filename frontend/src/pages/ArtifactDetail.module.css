@@ -1,0 +1,6 @@
+.page { flex: 1; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; color: var(--text); background: var(--bg); }
+.page > button { justify-self: start; }
+.header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; overflow-wrap: anywhere; }
+.header p { margin: 0; color: var(--text-dim); }
+.header h2 { margin: 0 0 4px; }
+.header p a { color: inherit; }

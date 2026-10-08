@@ -3,7 +3,6 @@ import { artifactBytes, formatBytes, useKnownSessionIds, type Artifact } from '.
 import { formatDateTimeShort } from '../lib/format';
 import { DataTable } from './DataTable';
 import { ProjectLabel } from './ProjectLabel';
-import './Artifacts.css';
 import styles from './ArtifactList.module.css';
 
 export function ArtifactSessionLink({ artifact, known }: { artifact: Artifact; known?: Set<string> }) {

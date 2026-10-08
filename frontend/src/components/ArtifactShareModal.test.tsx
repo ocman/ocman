@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { artifactsApi, type Artifact } from '../lib/artifactsApi';
 import { copyTextToClipboard } from '../lib/clipboard';
 import { ArtifactShareModal } from './ArtifactShareModal';
+import styles from './ArtifactShareModal.module.css';
 
 vi.mock('../lib/artifactsApi', async (orig) => ({
   ...(await orig<typeof import('../lib/artifactsApi')>()),
@@ -29,6 +30,19 @@ describe('ArtifactShareModal', () => {
     });
   });
 
+  it('announces loading and reports a missing relay through the shared alert', async () => {
+    let finish!: () => void;
+    vi.mocked(artifactsApi.shares).mockReturnValueOnce(new Promise(resolve => {
+      finish = () => resolve({ relayConfigured: false, maxShareBytes: 0, shares: [] });
+    }));
+    render(<ArtifactShareModal artifact={artifact} onClose={() => {}} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading shares');
+    expect(screen.getByRole('button', { name: 'Create share link' })).toBeDisabled();
+    await act(async () => finish());
+    expect(await screen.findByRole('alert')).toHaveTextContent('No share relay is configured.');
+    expect(screen.getByRole('button', { name: 'Create share link' })).toBeDisabled();
+  });
+
   it('lists exposed links and sizes against the limit, and creates, copies and revokes shares', async () => {
     const user = userEvent.setup();
     vi.mocked(artifactsApi.share).mockResolvedValue({ id: 's2', url: 'https://relay.test/v/r2#k=new', createdAt: 3 });
@@ -38,7 +52,7 @@ describe('ArtifactShareModal', () => {
     expect(screen.getByText('https://ci.test/run/1')).toBeInTheDocument();
     expect(screen.getByText(/big\.bin · 40 MiB/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByLabelText('Share link')).toHaveLength(1));
-    expect(screen.getByTestId('artifact-share-size')).toHaveClass('artifact-error');
+    expect(screen.getByTestId('artifact-share-size')).toHaveClass(styles.error);
     expect(screen.getByTestId('artifact-share-size')).toHaveTextContent('of the 32 MiB default relay limit');
 
     await user.click(screen.getByRole('button', { name: 'Create share link' }));

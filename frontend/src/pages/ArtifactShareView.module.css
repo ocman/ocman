@@ -1,0 +1,1 @@
+.content { flex: 1; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; color: var(--text); background: var(--bg); }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArtifactContent } from '../components/ArtifactContent';
 import type { ArtifactShare } from '../lib/artifactShare';
+import styles from './ArtifactShareView.module.css';
 
 /** Read-only rendering of an artifact decrypted from a relay share. */
 export function ArtifactShareView({ artifact }: { artifact: ArtifactShare }) {
@@ -24,7 +25,7 @@ export function ArtifactShareView({ artifact }: { artifact: ArtifactShare }) {
           <span className="oc-shared-badge">shared artifact</span>
         </div>
       </header>
-      <main className="artifact-page">
+      <main className={styles.content}>
         <ArtifactContent description={artifact.description} links={links} files={files} />
       </main>
     </div>
