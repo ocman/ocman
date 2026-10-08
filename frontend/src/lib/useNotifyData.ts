@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { api, type NotifyEntry } from './api';
+import { api, type NotifyEntry, type NotifyPrompt } from './api';
 import { acquireActivityScope } from './activityScopes';
+import { coalescedRefresh, withDeadline } from './coalescedRefresh';
 
 /**
  * Shared notify-data store that coalesces the four independent
@@ -35,35 +36,65 @@ type NotifyDataState = {
   /** Unsubscribe a consumer — stops polling if last. */
   unsubscribe: () => void;
   /** Force an immediate refetch (e.g. after marking a session seen). */
-  recheck: () => void;
+  /** Pass the complete identity of the prompt just resolved, if any. */
+  recheck: (resolved?: ResolvedPrompt) => void;
 };
 
-let intervalId: ReturnType<typeof setInterval> | null = null;
-let abortController: AbortController | null = null;
-let releaseActivityScope: (() => void) | null = null;
+export type ResolvedPrompt = NotifyPrompt & { kind: 'permission' | 'question' };
 
-async function fetchNotify(set: (partial: Partial<NotifyDataState>) => void) {
-  // Abort any in-flight request so we never have two concurrent fetches.
-  abortController?.abort();
-  abortController = new AbortController();
-  try {
-    const data = await api.sessionsNotify(
-      { since: Date.now() - LOOKBACK_MS, limit: LIMIT },
-      abortController.signal,
-    );
-    set({ data, lastFetched: Date.now() });
-  } catch {
-    // Network errors and aborts are silently ignored — the next poll
-    // will retry. We intentionally don't clear `data` so consumers
-    // keep rendering the last known state.
-  }
+function promptKey(prompt: NotifyPrompt, kind: ResolvedPrompt['kind']): string {
+  return JSON.stringify([prompt.platform, prompt.sessionId, prompt.requestId, kind]);
 }
 
-function startPolling(set: (partial: Partial<NotifyDataState>) => void) {
+/** Trailing window that folds a burst of resolve events into one fetch. */
+export const NOTIFY_RECHECK_DELAY_MS = 150;
+/** Bounds one request so a stalled fetch cannot block every later refresh. */
+export const NOTIFY_TIMEOUT_MS = 20_000;
+
+let intervalId: ReturnType<typeof setInterval> | null = null;
+// Prompt resolutions are numbered; `resolvedAt` maps a session to the
+// number of its latest one, so a response can tell which resolutions it
+// may predate.
+let resolutions = 0;
+const resolvedAt = new Map<string, number>();
+let releaseActivityScope: (() => void) | null = null;
+
+// One request at a time, never aborted: a recheck during a fetch queues
+// one follow-up instead of cancelling it (the old abort produced ~320
+// client-cancelled requests a day). Errors are ignored; the next poll
+// retries and consumers keep the last known `data`.
+const fetcher = coalescedRefresh(async () => {
+  // A queued follow-up may fire after the last consumer left. Event-driven
+  // rechecks still run while the tab is hidden; only polling pauses.
+  if (useNotifyStore.getState().refCount === 0) return;
+  const startedAfter = resolutions;
+  const data = await withDeadline(NOTIFY_TIMEOUT_MS, (signal) =>
+    api.sessionsNotify({ since: Date.now() - LOOKBACK_MS, limit: LIMIT }, signal));
+  // Reconcile by owner, prompting session and request identity, rather than
+  // the visible ancestor's id. Other outstanding prompts remain visible.
+  useNotifyStore.setState({
+    data: data.map((entry) => {
+      const keep = (kind: ResolvedPrompt['kind']) => (prompt: NotifyPrompt) =>
+        (resolvedAt.get(promptKey(prompt, kind)) ?? 0) <= startedAfter;
+      const permissions = entry.permissions?.filter(keep('permission'));
+      const questions = entry.questions?.filter(keep('question'));
+      return {
+        ...entry,
+        ...(permissions && { permissions, pendingPermission: permissions.length > 0 }),
+        ...(questions && { questions, pendingQuestion: questions.length > 0 }),
+      };
+    }).filter((entry) => entry.pendingPermission || entry.pendingQuestion ||
+      (!entry.seen && !entry.suppressTerminal && ['waiting', 'error', 'interrupted'].includes(entry.status))),
+    lastFetched: Date.now(),
+  });
+  for (const [id, at] of resolvedAt) if (at <= startedAfter) resolvedAt.delete(id);
+}, NOTIFY_RECHECK_DELAY_MS);
+
+function startPolling() {
   if (intervalId !== null) return;
   // Immediate fetch on start.
-  void fetchNotify(set);
-  intervalId = setInterval(() => void fetchNotify(set), POLL_INTERVAL_MS);
+  fetcher.now();
+  intervalId = setInterval(fetcher.now, POLL_INTERVAL_MS);
 }
 
 function stopPolling() {
@@ -71,17 +102,15 @@ function stopPolling() {
     clearInterval(intervalId);
     intervalId = null;
   }
-  abortController?.abort();
-  abortController = null;
 }
 
-function onVisibilityChange(set: (partial: Partial<NotifyDataState>) => void) {
+function onVisibilityChange() {
   if (document.hidden) {
     // Tab hidden — stop polling to save resources.
     stopPolling();
   } else {
     // Tab visible — resume polling with an immediate fetch.
-    startPolling(set);
+    startPolling();
   }
 }
 
@@ -100,9 +129,9 @@ export const useNotifyStore = create<NotifyDataState>((set) => ({
       releaseActivityScope = acquireActivityScope('sessions');
       // First consumer — start polling and listen for visibility.
       if (!document.hidden) {
-        startPolling(set);
+        startPolling();
       }
-      visibilityHandler = () => onVisibilityChange(set);
+      visibilityHandler = onVisibilityChange;
       document.addEventListener('visibilitychange', visibilityHandler);
     }
   },
@@ -122,9 +151,10 @@ export const useNotifyStore = create<NotifyDataState>((set) => ({
     }
   },
 
-  recheck: () => {
+  recheck: (resolved) => {
     if (useNotifyStore.getState().refCount > 0) {
-      void fetchNotify(set);
+      if (resolved) resolvedAt.set(promptKey(resolved, resolved.kind), ++resolutions);
+      fetcher.schedule();
     }
   },
 }));
@@ -146,8 +176,8 @@ export function useNotifyData(): NotifyEntry[] | null {
 
 // Re-export for consumers that need to trigger a recheck (e.g. after
 // marking a session seen).
-export function recheckNotifyData() {
-  useNotifyStore.getState().recheck();
+export function recheckNotifyData(resolved?: ResolvedPrompt) {
+  useNotifyStore.getState().recheck(resolved);
 }
 
 /**
@@ -157,6 +187,8 @@ export function __resetForTests() {
   releaseActivityScope?.();
   releaseActivityScope = null;
   stopPolling();
+  fetcher.reset();
+  resolvedAt.clear();
   if (visibilityHandler) {
     document.removeEventListener('visibilitychange', visibilityHandler);
     visibilityHandler = null;

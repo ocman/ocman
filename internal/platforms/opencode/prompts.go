@@ -15,7 +15,7 @@ import (
 // directory. Filters out prompts for other sessions — the frontend
 // only cares about those it could act on.
 func (a *Adapter) ListPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	return a.listObservedPrompts(ctx, "permission", sessionID), nil
+	return a.listObservedPromptsChecked(ctx, "permission", sessionID)
 }
 
 // RefreshPermissions obtains an authoritative snapshot before durable Inbox
@@ -43,7 +43,7 @@ func (a *Adapter) ListQuestions(ctx context.Context, sessionID string) ([]platfo
 			return nil, fmt.Errorf("refreshing pending questions: %w", platforms.ErrPlatformUnreachable)
 		}
 	}
-	return a.listObservedPrompts(ctx, "question", sessionID), nil
+	return a.listObservedPromptsChecked(ctx, "question", sessionID)
 }
 
 func (a *Adapter) descendantDirectories(ctx context.Context, sessionID string) []string {
@@ -72,16 +72,21 @@ func (a *Adapter) descendantDirectories(ctx context.Context, sessionID string) [
 	return uniqueStrings(directories)
 }
 
-func (a *Adapter) listObservedPrompts(ctx context.Context, kind, sessionID string) []platforms.LivePrompt {
-	entries := a.observedPromptEntries(ctx, kind, sessionID)
+func (a *Adapter) listObservedPromptsChecked(ctx context.Context, kind, sessionID string) ([]platforms.LivePrompt, error) {
+	entries, err := a.observedPromptEntriesChecked(ctx, kind, sessionID)
 	out := make([]platforms.LivePrompt, 0, len(entries))
 	for _, entry := range entries {
 		out = append(out, entry.prompt)
 	}
-	return out
+	return out, err
 }
 
 func (a *Adapter) observedPromptEntries(ctx context.Context, kind, sessionID string) []livePromptEntry {
+	entries, _ := a.observedPromptEntriesChecked(ctx, kind, sessionID)
+	return entries
+}
+
+func (a *Adapter) observedPromptEntriesChecked(ctx context.Context, kind, sessionID string) ([]livePromptEntry, error) {
 	entries := a.prompts.listEntries(kind)
 	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -89,8 +94,9 @@ func (a *Adapter) observedPromptEntries(ctx context.Context, kind, sessionID str
 		ids = append(ids, promptString(prompt, "sessionID"))
 	}
 	parents := map[string]string{}
+	var lookupErr error
 	if a.db != nil {
-		parents, _ = a.db.GetSessionParentIDs(ctx, ids)
+		parents, lookupErr = a.db.GetSessionParentIDs(ctx, ids)
 	}
 	out := make([]livePromptEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -101,7 +107,7 @@ func (a *Adapter) observedPromptEntries(ctx context.Context, kind, sessionID str
 			out = append(out, entry)
 		}
 	}
-	return out
+	return out, lookupErr
 }
 
 func uniqueStrings(values []string) []string {

@@ -35,7 +35,7 @@ import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
-import { useSessions, insertProvisionalSession } from './lib/queries';
+import { useSessions, insertProvisionalSession, inboxEventRefresh } from './lib/queries';
 import { queryEventRefresh } from './lib/queryEventRefresh';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
@@ -359,7 +359,7 @@ onProjectsChanged(() => {
   void queryClient.invalidateQueries({ queryKey: ['projects'] });
 });
 
-onInboxChanged(() => { void queryClient.invalidateQueries({ queryKey: ['inbox'] }); });
+onInboxChanged(inboxEventRefresh(queryClient));
 
 export default function App() {
   return (

@@ -3,15 +3,12 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func (s *Server) inboxSessionContext(ctx context.Context, source string, items []state.InboxItem) []state.InboxItem {
 	items = append([]state.InboxItem(nil), items...)
-	ctx, cancel := context.WithTimeout(ctx, remoteFanoutTimeout)
-	defer cancel()
 	titles := map[[2]string]string{}
 	for i := range items {
 		item := &items[i]
@@ -24,20 +21,20 @@ func (s *Server) inboxSessionContext(ctx context.Context, source string, items [
 			continue
 		}
 		if source != "local" {
+			// The owner enriched this row in the existing InboxItems RPC.
 			session.Platform = remote.CompoundPlatformID(source, session.Platform)
-		}
-		key := [2]string{session.Platform, session.SessionID}
-		title, loaded := titles[key]
-		if !loaded && s.registry != nil {
-			if adapter, ok := s.registry.Get(platforms.ID(session.Platform)); ok {
-				if detail, err := adapter.Session(ctx, session.SessionID, 1, 0); err == nil && detail != nil && detail.Session != nil {
-					title = detail.Session.Title
+		} else if s.db != nil {
+			key := [2]string{session.Platform, session.SessionID}
+			title, loaded := titles[key]
+			if !loaded {
+				if row, err := s.db.GetSession(ctx, session.SessionID); err == nil {
+					title = row.Title
 				}
+				titles[key] = title
 			}
-			titles[key] = title
-		}
-		if title != "" {
-			session.Title = title
+			if title != "" {
+				session.Title = title
+			}
 		}
 		item.Session = &session
 		if item.Permission != nil {

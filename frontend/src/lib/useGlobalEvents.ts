@@ -82,7 +82,11 @@ function handleResolved(raw: string): void {
   const sessionId = parsed?.sessionID;
   if (!sessionId) return;
   notifyPromptDismissed(sessionId);
-  recheckNotifyData();
+  const requestId = parsed?.permissionId ?? parsed?.requestId;
+  recheckNotifyData(requestId ? {
+    platform: parsed?.platform ?? 'opencode', sessionId, requestId,
+    kind: parsed?.permissionId ? 'permission' : 'question',
+  } : undefined);
 }
 
 /**

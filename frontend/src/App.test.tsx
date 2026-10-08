@@ -10,6 +10,7 @@ import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
 
 vi.mock('./lib/queries', () => ({
+  inboxEventRefresh: () => () => {},
   useSessions: vi.fn(),
   useInbox: vi.fn(),
   useSubscriptionUsage: vi.fn(),
