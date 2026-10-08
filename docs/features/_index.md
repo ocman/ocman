@@ -89,6 +89,9 @@ filter in the URL. Settings shows inherited defaults and project overrides in
 a table; **Edit defaults** opens the same editor as the project name. The ordered
 fallback model list remains separate, with reorder, remove, clear, and fallthrough
 controls. Wide tables scroll within the page on phones.
+Fallback lists are currently shared by project path and can only be edited from
+the local machine. Remote project pages show them read-only; startup defaults
+remain editable for the selected machine.
 
 Permission modes are **Plan only**, which denies edits and shell commands;
 **Auto-accept edits**, which allows edits and asks for shell commands; and

@@ -2,6 +2,7 @@
 .model { background: var(--bg-card); border: 1px solid var(--border); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .name { font-family: var(--font-conversation-mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
 .section { display: grid; gap: 16px; min-width: 0; margin-bottom: 32px; }
+.note { margin: 0; color: var(--text-dim); font-size: 13px; }
 .table { min-width: 640px; }
 .table th { text-align: left; }
 .table th[scope='row'] { width: 180px; }

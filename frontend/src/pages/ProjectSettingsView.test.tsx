@@ -24,7 +24,10 @@ afterEach(() => vi.clearAllMocks());
 
 function seed(models: string[], off = false) {
   m.projectSettings.mockResolvedValue({ models, off });
-  m.setProjectSettings.mockResolvedValue({ ok: true });
+  m.setProjectSettings.mockImplementation(async (_directory, nextModels, nextOff) => {
+    m.projectSettings.mockResolvedValue({ models: nextModels, off: nextOff });
+    return { ok: true };
+  });
   m.prepareSession.mockResolvedValue({ agents: [], commands: [], models: {
     hasProviders: true, models: [
       { provider: 'anthropic', model: 'claude', modelName: 'Claude' },
@@ -51,6 +54,41 @@ const items = () => within(screen.getByRole('list', { name: 'Project models' }))
   .getAllByRole('listitem').map((li) => li.querySelector(`.${styles.name}`)?.textContent);
 
 describe('ProjectSettingsView', () => {
+  it('accepts external fallback revisions while idle and preserves them in the next write', async () => {
+    seed(['a/one']);
+    renderUI();
+    await screen.findByRole('button', { name: 'Remove a/one' });
+    m.projectSettings.mockResolvedValue({ models: ['a/one', 'external/model'], off: true });
+    act(() => clearSettingsCache());
+    await screen.findByRole('button', { name: 'Remove external/model' });
+    expect(screen.getByTestId('project-fallthrough-off')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove a/one' }));
+    await waitFor(() => expect(m.setProjectSettings).toHaveBeenCalledWith(DIR, ['external/model'], true, 'local'));
+  });
+
+  it('makes every remote fallback mutation read-only while leaving startup defaults editable', async () => {
+    seed(['a/one', 'b/two']);
+    renderUI('B');
+    await screen.findByRole('table', { name: 'Project settings' });
+    expect(screen.getByRole('note')).toHaveTextContent('Fallback model lists are shared by project path');
+    for (const button of screen.getAllByRole('button', { name: /Move |Remove |Clear list/ })) expect(button).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Add model' })).toBeDisabled();
+    expect(screen.getByTestId('project-fallthrough-off')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit project defaults' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear list' }));
+    expect(m.setProjectSettings).not.toHaveBeenCalled();
+    expect(m.prepareSession).not.toHaveBeenCalled();
+  });
+
+  it('reconciles after a failed save without hiding the failure', async () => {
+    seed(['a/one']);
+    m.setProjectSettings.mockRejectedValue(new Error('Save failed'));
+    renderUI();
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear list' }));
+    await waitFor(() => expect(m.projectSettings).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('alert')).toHaveTextContent('Save failed');
+    expect(items()).toEqual(['a/one']);
+  });
   it('shows explicit and inherited defaults in the shared settings table and updates after a defaults save', async () => {
     seed([]);
     m.projectSettings.mockResolvedValue({ models: [], off: false, defaults: { model: 'custom/model', agent: '', worktree: 'current', permissionMode: 'plan' } });
@@ -67,13 +105,13 @@ describe('ProjectSettingsView', () => {
     expect(within(table).getByRole('row', { name: /Default worktree behavior/ })).toHaveTextContent('New worktree when available');
   });
 
-  it('reads catalogs and writes fallback models on the explicit owner', async () => {
+  it('reads catalogs and writes fallback models explicitly on the local owner', async () => {
     seed(['a/one']);
-    renderUI('B');
+    renderUI();
     fireEvent.click(await screen.findByRole('button', { name: 'Clear list' }));
-    await waitFor(() => expect(m.setProjectSettings).toHaveBeenCalledWith(DIR, [], false, 'B'));
-    expect(m.projectSettings).toHaveBeenCalledWith(DIR, expect.any(AbortSignal), 'B');
-    expect(m.prepareSession).toHaveBeenCalledWith({ directory: DIR, remoteId: 'B' }, expect.any(AbortSignal));
+    await waitFor(() => expect(m.setProjectSettings).toHaveBeenCalledWith(DIR, [], false, 'local'));
+    expect(m.projectSettings).toHaveBeenCalledWith(DIR, expect.any(AbortSignal), 'local');
+    expect(m.prepareSession).toHaveBeenCalledWith({ directory: DIR, remoteId: 'local' }, expect.any(AbortSignal));
   });
 
   it('remounts rows and catalog state when the owner changes at the same path', async () => {
@@ -102,8 +140,8 @@ describe('ProjectSettingsView', () => {
       catalog({ models: { models: [{ provider: 'local', model: 'choice' }] } });
     });
     expect(items()).toEqual(['remote/model']);
-    fireEvent.click(screen.getByRole('combobox', { name: 'Add model' }));
-    expect(await screen.findByRole('option', { name: 'remote / choice' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Add model' })).toBeDisabled();
+    expect(m.prepareSession.mock.calls.every((call) => call[0].remoteId === 'local')).toBe(true);
     expect(screen.queryByRole('option', { name: 'local / choice' })).not.toBeInTheDocument();
   });
 
@@ -118,8 +156,30 @@ describe('ProjectSettingsView', () => {
     await waitFor(() => expect(m.projectSettings).toHaveBeenCalledTimes(2));
     expect(items()).toEqual(['b/two']);
     expect(screen.getByRole('button', { name: 'Edit project defaults' })).toBeDisabled();
+    m.projectSettings.mockResolvedValue({ models: ['b/two'], off: false });
     await act(async () => finish());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit project defaults' })).toBeEnabled());
+  });
+
+  it('fences a read started before a mutation and reconciles after it settles', async () => {
+    seed(['a/one', 'b/two']);
+    renderUI();
+    await screen.findByRole('button', { name: 'Remove a/one' });
+    let read!: (value: unknown) => void;
+    let finish!: () => void;
+    m.projectSettings.mockImplementationOnce(() => new Promise((resolve) => { read = resolve; }));
+    m.setProjectSettings.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    act(() => clearSettingsCache());
+    await waitFor(() => expect(read).toBeTypeOf('function'));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove a/one' }));
+    await act(async () => read({ models: ['a/one', 'b/two'], off: true }));
+    expect(items()).toEqual(['b/two']);
+    expect(screen.getByTestId('project-fallthrough-off')).not.toBeChecked();
+    m.projectSettings.mockResolvedValue({ models: ['b/two', 'external/model'], off: true });
+    await act(async () => finish());
+    await screen.findByRole('button', { name: 'Remove external/model' });
+    expect(items()).toEqual(['b/two', 'external/model']);
+    expect(screen.getByTestId('project-fallthrough-off')).toBeChecked();
   });
 
   it('retries a disconnected owner without reading or writing local settings', async () => {
@@ -136,11 +196,11 @@ describe('ProjectSettingsView', () => {
   it('surfaces catalog errors and retries on the same owner', async () => {
     seed([]);
     m.prepareSession.mockRejectedValueOnce(new Error('Catalog unavailable'));
-    renderUI('B');
+    renderUI();
     expect(await screen.findByRole('alert')).toHaveTextContent('Catalog unavailable');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(m.prepareSession.mock.calls.every((call) => call[0].remoteId === 'B')).toBe(true);
+    expect(m.prepareSession.mock.calls.every((call) => call[0].remoteId === 'local')).toBe(true);
   });
   it('explains the empty state and adds a model from the session catalogue', async () => {
     seed([]);
@@ -185,6 +245,7 @@ describe('ProjectSettingsView', () => {
     expect(screen.getByTestId('project-fallthrough-off')).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Clear list' }));
     expect(m.setProjectSettings).toHaveBeenCalledOnce();
+    m.projectSettings.mockResolvedValue({ models: ['b/two', 'a/one'], off: false });
     finish();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Clear list' })).toBeEnabled());
   });

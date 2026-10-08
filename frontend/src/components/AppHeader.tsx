@@ -9,7 +9,14 @@ import { HostBadge } from './HostBadge';
 import { IconButton } from './IconButton';
 import { ExploreModal } from './ExploreModal';
 import { ProjectQuickSettings } from './ProjectQuickSettings';
+import { useProjects } from '../lib/queries';
 import './AppHeader.css';
+
+function ProjectMachinePill({ remoteId }: { remoteId: string }) {
+  const { data: projects } = useProjects({ enabled: remoteId !== 'local' });
+  const name = remoteId === 'local' ? 'Local' : projects?.find((project) => project.remoteId === remoteId)?.remoteName || remoteId;
+  return <HostBadge alwaysShow className="header-machine-pill" remoteId={remoteId} remoteName={name} />;
+}
 
 export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
   const location = useLocation();
@@ -64,7 +71,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
         <span className="header-breadcrumb">{breadcrumb}</span>
       </h1>
       <div className="header-right">
-        {projectDir && <HostBadge alwaysShow className="header-machine-pill" remoteId={projectOwner} remoteName={projectOwner === 'local' ? 'Local' : projectOwner} />}
+        {projectDir && <ProjectMachinePill remoteId={projectOwner} />}
         {exploreDir && (
           <IconButton icon="bi-folder2-open" label="Explore files" variant="ghost" size="compact" onClick={() => setExploring(true)} />
         )}

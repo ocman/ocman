@@ -27,7 +27,7 @@ export function ProjectSettingsView() {
 
 function ProjectSettingsContent({ directory, remoteId }: { directory: string; remoteId: string }) {
   const revision = useSettingsRevision();
-  const initialized = useRef(false);
+  const mutation = useRef({ generation: 0, pending: false });
   const [attempt, setAttempt] = useState(0);
   const [defaults, setDefaults] = useState<ProjectDefaults>();
 
@@ -35,6 +35,7 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
   const [off, setOff] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [options, setOptions] = useState<SearchSelectOption[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogAttempt, setCatalogAttempt] = useState(0);
@@ -42,25 +43,29 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
   const addSave = useSettingSave();
   const offSave = useSettingSave();
   const saving = listSave.state === 'saving' || addSave.state === 'saving' || offSave.state === 'saving';
+  // ponytail: enable remote edits after fallback storage, cache, and runtime selection become owner-scoped.
+  const fallbackReadOnly = remoteId !== 'local';
+  const fallbackDisabled = saving || fallbackReadOnly;
 
   useEffect(() => {
     if (!directory) return;
     const ac = new AbortController();
+    const generation = mutation.current.generation;
     api.projectSettings(directory, ac.signal, remoteId).then((ps) => {
       if (ac.signal.aborted) return;
-      if (!initialized.current) {
+      if (generation === mutation.current.generation && !mutation.current.pending) {
         setModels(ps.models);
         setOff(ps.off);
-        initialized.current = true;
       }
       setDefaults(ps.defaults);
       setLoaded(true);
-      setError(null);
-    }).catch((err) => { if (!ac.signal.aborted) setError(String(err?.message ?? err)); });
+      setLoadError(null);
+    }).catch((err) => { if (!ac.signal.aborted) setLoadError(String(err?.message ?? err)); });
     return () => ac.abort();
   }, [directory, remoteId, revision, attempt]);
 
   useEffect(() => {
+    if (fallbackReadOnly) return;
     const controller = new AbortController();
     api.prepareSession({ directory, remoteId }, controller.signal).then((catalog) => {
       if (controller.signal.aborted) return;
@@ -68,11 +73,14 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
       setCatalogError(null);
     }).catch((err) => { if (!controller.signal.aborted) setCatalogError(err instanceof Error ? err.message : String(err)); });
     return () => controller.abort();
-  }, [directory, remoteId, catalogAttempt]);
+  }, [directory, remoteId, catalogAttempt, fallbackReadOnly]);
 
   // Optimistic write of the whole settings blob; revert on failure.
   const persist = async (nextModels: string[], nextOff: boolean) => {
+    if (fallbackReadOnly) throw new Error('Remote fallback settings are read-only.');
     const prev = { models, off };
+    mutation.current.generation++;
+    mutation.current.pending = true;
     setModels(nextModels);
     setOff(nextOff);
     setError(null);
@@ -84,6 +92,10 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
       setOff(prev.off);
       setError(err instanceof Error ? err.message : String(err));
       throw err;
+    } finally {
+      mutation.current.generation++;
+      mutation.current.pending = false;
+      setAttempt((value) => value + 1);
     }
   };
 
@@ -97,12 +109,14 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
   };
 
   if (!loaded) {
-    return <div className={styles.section}>{error ? <InlineAlert onRetry={() => setAttempt((value) => value + 1)}>{error}</InlineAlert> : <LoadingState>Loading project settings…</LoadingState>}</div>;
+    return <div className={styles.section}>{loadError ? <InlineAlert onRetry={() => setAttempt((value) => value + 1)}>{loadError}</InlineAlert> : <LoadingState>Loading project settings…</LoadingState>}</div>;
   }
 
   return (
     <div className={styles.section} data-testid="project-settings">
-      {error && <InlineAlert onRetry={() => setAttempt((value) => value + 1)}>{error}</InlineAlert>}
+      {error && <InlineAlert>{error}</InlineAlert>}
+      {loadError && <InlineAlert onRetry={() => setAttempt((value) => value + 1)}>{loadError}</InlineAlert>}
+      {fallbackReadOnly && <p role="note" className={styles.note}>Fallback model lists are shared by project path. Edit them on the local machine. Startup defaults remain specific to this machine.</p>}
       {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
       <DataTable framed className={styles.table} aria-label="Project settings">
         <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Actions</th></tr></thead>
@@ -127,9 +141,9 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
                 <span className={styles.name}>{m}</span>
                 {i === 0 && <small data-testid="project-default-badge">Project default</small>}
                 <ButtonGroup label={`Actions for ${m}`}>
-                  <IconButton label={`Move ${m} up`} icon="bi-arrow-up" disabled={saving || i === 0} onClick={() => move(i, -1)} />
-                  <IconButton label={`Move ${m} down`} icon="bi-arrow-down" disabled={saving || i === models.length - 1} onClick={() => move(i, 1)} />
-                  <Button type="button" size="small" variant="danger" aria-label={`Remove ${m}`} disabled={saving} onClick={() => edit(models.filter((x) => x !== m))}>
+                  <IconButton label={`Move ${m} up`} icon="bi-arrow-up" disabled={fallbackDisabled || i === 0} onClick={() => move(i, -1)} />
+                  <IconButton label={`Move ${m} down`} icon="bi-arrow-down" disabled={fallbackDisabled || i === models.length - 1} onClick={() => move(i, 1)} />
+                  <Button type="button" size="small" variant="danger" aria-label={`Remove ${m}`} disabled={fallbackDisabled} onClick={() => edit(models.filter((x) => x !== m))}>
                     Remove
                   </Button>
                 </ButtonGroup>
@@ -139,7 +153,7 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
         )}
         </td><td>{models.length > 0 && (
           <ButtonGroup label="Project model list actions">
-            <Button type="button" size="small" variant="danger" disabled={saving} onClick={() => edit([])}>Clear list</Button>
+            <Button type="button" size="small" variant="danger" disabled={fallbackDisabled} onClick={() => edit([])}>Clear list</Button>
             <SaveStatus state={listSave.state} />
           </ButtonGroup>
         )}</td></tr>
@@ -148,7 +162,7 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
           testId="project-fallthrough-off"
           ariaLabel="Disable fallthrough"
           checked={off}
-          disabled={saving || models.length === 0}
+          disabled={fallbackDisabled || models.length === 0}
           save={offSave}
           onSave={(next) => persist(models, next)}
         />
@@ -163,7 +177,7 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
           ariaLabel="Add model"
           placeholder="Add a model…"
           searchLabel="Search models"
-          disabled={saving || models.length >= 10}
+          disabled={fallbackDisabled || models.length >= 10}
         />
       </SettingRow>
     </div>

@@ -82,9 +82,13 @@ Verify each slice and present desktop/phone screenshots before proceeding.
 - Project identity appears once in the app header, with the machine in a pill.
 - Worktree rows and destructive confirmations remain keyed by owner and project.
 - The Settings table separates inherited defaults from overrides and opens the
-  existing defaults editor. Catalog preparation, settings reads, and fallback
-  writes carry an explicit owner; defaults refresh through settings-cache revision.
+  existing owner-scoped defaults editor. Legacy fallback storage and runtime
+  selection still key by project path, so remote fallback controls are read-only
+  until those backend paths support ownership. Local catalogs and writes use
+  the explicit local owner; settings-cache revisions refresh idle fallback values.
 - Fallback edits retain optimistic rollback and block overlapping changes.
   Successful writes invalidate the settings cache used by new conversations.
+  Mutation generations fence old reads, and each settled save reconciles again
+  without clearing a visible save failure.
 - Desktop and phone browser checks cover tab history, retained filters, shared
   defaults editing, wide table containment, and model-save completion.

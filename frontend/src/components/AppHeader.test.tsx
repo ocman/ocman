@@ -1,10 +1,24 @@
 // @vitest-environment jsdom
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { HeaderContext, type HeaderInfo } from '../lib/headerContext';
 import { AppHeader } from './AppHeader';
+
+const inventory = vi.hoisted(() => ({ projects: [] as { directory: string; remoteId?: string; remoteName?: string }[] }));
+vi.mock('../lib/queries', () => ({ useProjects: () => ({ data: inventory.projects }) }));
+beforeEach(() => { inventory.projects = []; });
+
+it('uses the configured owner name rather than its ID or an identical-path local project', () => {
+  inventory.projects = [
+    { directory: '/repo', remoteId: 'local', remoteName: 'Wrong machine' },
+    { directory: '/repo', remoteId: 'B', remoteName: 'Build machine' },
+  ];
+  render(<MemoryRouter initialEntries={['/project/%2Frepo?remoteId=B']}><AppHeader onOpenNav={vi.fn()} /></MemoryRouter>);
+  expect(within(screen.getByRole('banner')).getByLabelText('Build machine')).toHaveAttribute('title', 'Build machine');
+  expect(screen.queryByLabelText('Wrong machine')).not.toBeInTheDocument();
+});
 
 it.each(['local', 'B'])('shows the %s project owner as a header pill', (owner) => {
   render(<MemoryRouter initialEntries={[`/project/%2Frepo/settings?remoteId=${owner}`]}><AppHeader onOpenNav={vi.fn()} /></MemoryRouter>);

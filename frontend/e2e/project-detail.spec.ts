@@ -4,8 +4,9 @@ for (const width of [1280, 390]) {
   test(`project settings share the owner defaults editor at ${width}px`, async ({ mockedPage: page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
     let defaults = { model: 'historical/model', agent: '', worktree: 'current', permissionMode: '' };
-    let models = ['historical/model'];
+    const models = ['historical/model'];
     const writes: unknown[] = [];
+    await page.route('/api/projects', route => route.fulfill({ json: [MOCK_PROJECT, { ...MOCK_PROJECT, remoteId: 'B', remoteName: 'Build machine' }] }));
     await page.route('/api/project/settings*', route => {
       if (route.request().method() === 'GET') {
         expect(new URL(route.request().url()).searchParams.get('remoteId')).toBe('B');
@@ -13,9 +14,10 @@ for (const width of [1280, 390]) {
       }
       const payload = route.request().postDataJSON();
       expect(payload.remoteId).toBe('B');
+      expect(payload.defaults).toBeDefined();
+      expect(payload.models).toBeUndefined();
       writes.push(payload);
       if (payload.defaults) defaults = payload.defaults;
-      if (payload.models) models = payload.models;
       return route.fulfill({ json: { ok: true } });
     });
     await page.route('/api/sessions/prepare', route => {
@@ -25,7 +27,12 @@ for (const width of [1280, 390]) {
     await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}/settings?remoteId=B&q=login&t=0&a=1`);
     const table = page.getByRole('table', { name: 'Project settings' });
     await expect(page.getByTitle(MOCK_PROJECT.directory)).toHaveCount(1);
-    await expect(page.getByRole('banner').getByLabel('B', { exact: true })).toHaveCSS('border-radius', '999px');
+    await expect(page.getByRole('banner').getByLabel('Build machine', { exact: true })).toHaveCSS('border-radius', '999px');
+    await expect(page.getByRole('note')).toContainText('Fallback model lists are shared by project path');
+    await expect(page.getByRole('button', { name: 'Remove historical/model', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Clear list', exact: true })).toBeDisabled();
+    await expect(page.getByRole('checkbox', { name: 'Disable fallthrough', exact: true })).toBeDisabled();
+    await expect(page.getByRole('combobox', { name: 'Add model', exact: true })).toBeDisabled();
     await expect(table.getByRole('row', { name: /Default model/ })).toContainText('historical/model');
     await page.getByRole('button', { name: 'Edit project defaults' }).click();
     const dialog = page.getByRole('dialog', { name: 'Project quick settings' });
@@ -36,11 +43,6 @@ for (const width of [1280, 390]) {
     await expect(dialog).toBeHidden();
     await expect(table.getByRole('row', { name: /Default model/ })).toContainText('openai/gpt-5');
     expect(writes).toHaveLength(1);
-    await page.getByRole('combobox', { name: 'Add model', exact: true }).click();
-    await page.getByRole('option', { name: 'OpenAI / GPT-5', exact: true }).click();
-    await expect(page.getByRole('list', { name: 'Project models' })).toContainText('openai/gpt-5');
-    await expect(page.getByRole('combobox', { name: 'Add model', exact: true })).toBeEnabled();
-    expect(writes).toHaveLength(2);
     await table.locator('..').evaluate((element) => { element.scrollLeft = 0; });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({ path: testInfo.outputPath('project-settings.png') });
