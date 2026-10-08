@@ -563,7 +563,9 @@ flowchart TD
   selections in per-draft browser localStorage keys, while `lib/composerDraft` stores text
   in immutable per-edit bodies with small per-draft head references. Each clear
   commits the authoritative mark for its edit before reclaiming that immutable
-  body. Auxiliary cleanup failures
+  body. Without room for that mark, the clear deletes only its exact immutable
+  body (or shrinks the legacy map), which frees space and still reads empty.
+  Auxiliary cleanup failures
   cannot roll back a committed relocation or delete its recoverable destination.
   A clear cannot erase a concurrent source save or reverse a newer discard. Superseded
   bodies and explicitly cleared legacy entries are reclaimed. Older per-draft
@@ -618,7 +620,12 @@ flowchart TD
   source available with an explicit retry.
   Replacement owner/selections must persist before checked text relocation;
   a failed relocation keeps
-  the completed claim and original draft with a safe retry. Validated terminal
+  the completed claim and original draft with a safe retry. Retry commits the
+  replacement receipt, with a retirement snapshot, before retiring the source,
+  and accepts a replacement already created by an interrupted attempt.
+  Peer completion or release drops the originating tab's retained delivery
+  payload, and reconciliation failures during Retry surface without re-running it.
+  Validated terminal
   mirrors for the current attempt can be adopted and repaired by already-open
   peer tabs. Submitted model/agent/reasoning/target selections participate in
   retirement ownership, so changed selections are retained under a new identity.

@@ -361,6 +361,45 @@ it('retains the source when replacement relocation fails at quota', async () => 
   } finally { write.mockRestore(); }
 });
 
+it('keeps relocation retry replayable when its completion receipt fails to commit, then finishes after reload', async () => {
+  const id = 'retry-receipt';
+  rememberConversationDraft({ draftId: id, directory: '/repo', agent: 'plan' });
+  saveDraft(id, 'retained retry text');
+  const createdSession = { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' };
+  const pending = { version: getDraftVersion(id), text: '', sessionId: 'created', createdSession, attemptId: 'retry-attempt',
+    pendingReplacementId: 'retry-target', relocationError: 'Could not preserve the retained draft.' };
+  useNewConversationDrafts.setState({ starts: { [id]: pending } });
+  localStorage.setItem(`ocman.newConversationStarts.v1:${id}`, JSON.stringify(pending));
+  const claims = await import('./draftStartClaims');
+  const persist = vi.spyOn(claims, 'persistDraftStart').mockRejectedValueOnce(new Error('receipt write failed'));
+  try { await expect(retryDraftRelocation(id)).rejects.toThrow('receipt write failed'); } finally { persist.mockRestore(); }
+  // The interrupted attempt moved text, but the source and its error receipt remain retryable.
+  expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === id)).toBe(true);
+  expect(getDraft('retry-target')).toBe('retained retry text');
+  vi.mocked(readDraftStart).mockImplementation(async (draftId) => draftId === id ? pending : undefined);
+  vi.resetModules();
+  const reloaded = await import('./newConversationDrafts');
+  await reloaded.retryDraftRelocation(id);
+  expect(reloaded.useNewConversationDrafts.getState().starts[id]).toMatchObject({ replacementDraftId: 'retry-target', relocationError: undefined });
+  expect(reloaded.useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['retry-target']);
+  expect(getDraft('retry-target')).toBe('retained retry text');
+});
+
+it('replays a committed relocation retry after a crash before source retirement', async () => {
+  const id = 'retry-crash';
+  rememberConversationDraft({ draftId: id, directory: '/repo' });
+  rememberConversationDraft({ draftId: 'crash-target', directory: '/repo' });
+  saveDraft('crash-target', 'moved text');
+  const committed = { version: getDraftVersion(id), text: '', sessionId: 'created', attemptId: 'crash',
+    createdSession: { sessionId: 'created', platform: 'opencode', remoteId: 'local', directory: '/repo' },
+    replacementDraftId: 'crash-target', retirement: JSON.stringify([useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === id), getDraftVersion(id), getDraftEntryId(id)]) };
+  vi.mocked(readDraftStart).mockImplementation(async (draftId) => draftId === id ? committed : undefined);
+  vi.resetModules();
+  const reloaded = await import('./newConversationDrafts');
+  await waitFor(() => expect(reloaded.useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).toEqual(['crash-target']));
+  expect(getDraft('crash-target')).toBe('moved text');
+});
+
 it.each(['commit', 'auxiliary'])('preserves retained text when source clear %s writes fail during relocation', async (failure) => {
   const id = `clear-failure-${failure}`;
   rememberConversationDraft({ draftId: id, directory: '/repo' });

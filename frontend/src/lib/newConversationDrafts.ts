@@ -164,10 +164,17 @@ export async function retryDraftRelocation(draftId: string) {
   const receipt = useNewConversationDrafts.getState().starts[draftId];
   const saved = getConversationDraft(draftId);
   const target = receipt?.pendingReplacementId;
-  if (!receipt || !saved || !target) return;
-  if (!relocateRetainedDraft(draftId, target, saved)) throw new Error(receipt.relocationError);
-  retireConversationDraft(draftId, getDraftClearId(draftId) || 'legacy');
-  await saveTerminalStart(draftId, { ...receipt, relocationError: undefined, pendingReplacementId: undefined, replacementDraftId: target, text: '' });
+  if (!receipt || !target) return;
+  // An interrupted retry may already have created the replacement and emptied its source.
+  if (saved && !relocateRetainedDraft(draftId, target, saved)) throw new Error(receipt.relocationError);
+  if (!getConversationDraft(target)) throw new Error(receipt.relocationError);
+  // Commit replayable completion before retirement: reload must never resurrect the error receipt.
+  const next = { ...receipt, relocationError: undefined, pendingReplacementId: undefined, replacementDraftId: target,
+    text: '', retirement: retirementSnapshot(draftId), persistenceError: undefined, committed: true };
+  const persisted = await persistDraftStart(draftId, next);
+  if (persisted?.attemptId !== next.attemptId || persisted?.replacementDraftId !== target) throw new Error('The completion receipt changed. Reload and retry.');
+  publishStart(draftId, persisted);
+  if (getConversationDraft(draftId)) retireConversationDraft(draftId, getDraftClearId(draftId) || 'legacy');
 }
 
 function relocateRetainedDraft(from: string, to: string, saved: ConversationDraft) {

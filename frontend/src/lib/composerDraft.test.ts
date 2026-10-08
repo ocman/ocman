@@ -99,6 +99,30 @@ describe('composerDraft', () => {
     expect(getDraft('other')).toBe('untouched');
   });
 
+  it('clears and reclaims owned text when storage has no room for a tombstone', () => {
+    saveDraft('quota-clear', 'sent prompt under quota');
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+    try {
+      discardDraft('quota-clear');
+      expect(getDraft('quota-clear')).toBe('');
+    } finally { write.mockRestore(); }
+    for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('sent prompt under quota');
+    saveDraft('quota-clear', 'newer prompt');
+    expect(getDraft('quota-clear')).toBe('newer prompt');
+  });
+
+  it('clears legacy text under quota by shrinking only the shared map', () => {
+    localStorage.setItem('ocman.composerDrafts.v1', JSON.stringify({ old: 'legacy sent prompt', other: 'kept' }));
+    const original = localStorage.setItem;
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key !== 'ocman.composerDrafts.v1') throw new Error('quota');
+      original(key, value);
+    });
+    try { clearDraft('old'); } finally { write.mockRestore(); }
+    expect(getDraft('old')).toBe('');
+    expect(getDraft('other')).toBe('kept');
+  });
+
   it.each(['null', 'invalid'])('ignores malformed legacy text maps: %s', (raw) => {
     localStorage.setItem('ocman.composerDrafts.v1', raw);
     expect(getDraft('missing')).toBe('');

@@ -24,9 +24,13 @@ const outcomeKey = (record?: DraftStart) => JSON.stringify([record?.attemptId, r
 // IndexedDB reserves a delivery before any upload/command or completion publication.
 export const useFirstSubmission = create<{ entries: Record<string, Submission>; ready: Record<string, boolean> }>(() => ({ entries: {}, ready: {} }));
 export const getFirstSubmission = (id: string) => useFirstSubmission.getState().entries[id];
+/** Whether this tab still holds an attempt's Files/command closure. */
+export const retainsFirstSubmission = (attemptId: string) => executions.has(attemptId);
 
 function adopt(id: string, record: DraftStart | undefined) {
   if (record) records.set(id, record);
+  // A peer's done/release ends this attempt; drop its retained Files and command closure.
+  if (record?.deliveryState === 'done') executions.delete(record.attemptId || '');
   useFirstSubmission.setState(({ entries, ready }) => {
     const next = { ...entries };
     if (!record || record.deliveryState === 'done') delete next[id];
@@ -118,8 +122,8 @@ export function useSessionFirstSubmission(id: string) {
 export async function startFirstSubmission(id: string, text: string, execute: () => Promise<void>) {
   if (getFirstSubmission(id)?.pending) return;
   if (records.get(id)?.deliveryState === 'failed') {
-    try { await reconcileFirstSubmission(id); }
-    catch { return; } // Preserve the original execution until its known failure is durable.
+    // A rejection preserves the original execution and surfaces through the caller's recovery error.
+    await reconcileFirstSubmission(id);
     if (getFirstSubmission(id)?.pending || records.get(id)?.deliveryState === 'done') return;
   }
   const previousAttempt = records.get(id)?.attemptId;

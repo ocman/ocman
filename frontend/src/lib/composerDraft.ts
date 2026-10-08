@@ -54,7 +54,11 @@ function readEntry(sessionId: string): TextEntry {
 
 export const getDraftEntryId = (id: string) => { try { return readEntry(id).id; } catch { return 'legacy'; } };
 export const getDraftClearId = (id: string) => {
-  try { const head = localStorage.getItem(HEAD_PREFIX + id); return head && localStorage.getItem(ownerKey(id, head)) ? head : localStorage.getItem(CLEAR_PREFIX + id); }
+  try {
+    const head = localStorage.getItem(HEAD_PREFIX + id);
+    // A reclaimed body without a tombstone (quota fallback) is cleared as well.
+    return head && (localStorage.getItem(ownerKey(id, head)) || localStorage.getItem(valueKey(id, head)) === null) ? head : localStorage.getItem(CLEAR_PREFIX + id);
+  }
   catch { return null; }
 };
 
@@ -116,7 +120,17 @@ function writeEntry(id: string, text: string) {
 
 function clearEntry(id: string, entry: string) {
   // Monotonic per-edit tombstones cannot be reversed by a delayed older clear.
-  localStorage.setItem(ownerKey(id, entry), '1');
+  try { localStorage.setItem(ownerKey(id, entry), '1'); }
+  catch (error) {
+    // Quota fallback: deleting frees space and only touches this exact immutable edit.
+    if (entry !== 'legacy') { localStorage.removeItem(valueKey(id, entry)); return; }
+    if (localStorage.getItem(HEAD_PREFIX + id)) throw error;
+    localStorage.removeItem(TEXT_PREFIX + id);
+    const drafts = loadDrafts();
+    delete drafts[id];
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); // A smaller value fits under quota.
+    return;
+  }
   try {
     localStorage.removeItem(valueKey(id, entry));
     localStorage.setItem(CLEAR_PREFIX + id, entry);
