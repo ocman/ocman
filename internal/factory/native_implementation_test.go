@@ -968,13 +968,9 @@ func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Dispatch performs SQLite work; coverage under CI load can exceed one second.
-	// Assert the notification-driven launch, using the test's overall budget.
-	waitCtx := t.Context()
-	if deadline, ok := t.Deadline(); ok {
-		var cancel context.CancelFunc
-		waitCtx, cancel = context.WithDeadline(waitCtx, deadline)
-		defer cancel()
-	}
+	// Stay below the five-minute recovery tick so only notification dispatch passes.
+	waitCtx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
 	select {
 	case <-launcher.launched:
 	case <-waitCtx.Done():

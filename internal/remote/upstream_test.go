@@ -95,7 +95,17 @@ func TestUpstreamCacheRemoteChangeReflectedWithinTTL(t *testing.T) {
 	if _, err := cache.upstreams(t.Context(), dir); err != nil {
 		t.Fatal(err)
 	}
+	config := filepath.Join(dir, ".git", "config")
+	before, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := gitexec.Output(t.Context(), dir, "remote", "set-url", "origin", "https://host/new.git"); err != nil {
+		t.Fatal(err)
+	}
+	// Coarse overlayfs timestamps can keep two immediate edits at the same mtime.
+	modified := before.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(config, modified, modified); err != nil {
 		t.Fatal(err)
 	}
 	got, err := cache.upstreams(t.Context(), dir)

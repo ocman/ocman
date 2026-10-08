@@ -86,8 +86,8 @@ var errProjectsRefreshAborted = errors.New("projects index refresh aborted")
 // refreshProjectsIndex runs one project inventory refresh for this
 // owner, singleflighted with a dirty follow-up (FR-8).
 //
-// The caller that finds no refresh running drives the cycle inline;
-// every other caller joins it and receives the same result. Because a
+// The first caller starts a bounded server-lifetime worker; every caller
+// waits independently and receives its result. Because a
 // joining caller may have observed state the running query already read
 // past, joining also marks the cycle dirty, which makes the driver run
 // exactly one follow-up query afterwards — a request is never silently
@@ -104,24 +104,39 @@ func (s *Server) refreshProjectsIndex(ctx context.Context) error {
 	st := &s.projects
 	st.mu.Lock()
 	st.dirty = true
-	if st.running {
-		done := st.done
-		st.mu.Unlock()
-		select {
-		case <-done:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-		st.mu.RLock()
-		defer st.mu.RUnlock()
-		return st.err
+	if !st.running {
+		st.running = true
+		st.done = make(chan struct{})
+		go s.runProjectsRefresh(st.done)
 	}
-	st.running = true
-	st.done = make(chan struct{})
 	done := st.done
 	st.mu.Unlock()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return st.err
+}
 
-	return s.driveProjectsRefresh(ctx, done)
+// Shared scans belong to the server, while every caller waits independently.
+func (s *Server) runProjectsRefresh(done chan struct{}) {
+	// StartOnListener installs the server lifetime in pluginCtx.
+	s.pluginMu.Lock()
+	ctx := s.pluginCtx
+	s.pluginMu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	runWithRecover("projects-index", func() {
+		if err := s.driveProjectsRefresh(ctx, done); err != nil {
+			log.WithError(err).Warn("refreshing projects index")
+		}
+	})
 }
 
 // driveProjectsRefresh runs refresh iterations until one completes with

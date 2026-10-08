@@ -37,7 +37,17 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	ctx, cancelWorkers := context.WithCancel(ctx)
 	var workers sync.WaitGroup
 	// Workers must finish before callers close databases or remove their files.
-	defer func() { cancelWorkers(); workers.Wait() }()
+	defer func() {
+		cancelWorkers()
+		workers.Wait()
+		// A shared scan may outlive the project worker's canceled wait.
+		s.projects.mu.RLock()
+		done, running := s.projects.done, s.projects.running
+		s.projects.mu.RUnlock()
+		if running {
+			<-done
+		}
+	}()
 	defer ln.Close()
 	// Build the host router on this goroutine, before any background loop
 	// or handler can reach it. router() assigns lazily, and the loops

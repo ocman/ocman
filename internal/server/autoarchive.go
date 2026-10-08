@@ -17,8 +17,6 @@ import (
 // to a package-level variable so tests can inject a panicking
 // implementation (FR-11) and assert the loop survives.
 var autoArchiveTickFn = func(ctx context.Context, s *Server) {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
 	s.autoArchiveInactiveSessions(ctx)
 	s.autoArchiveInactiveProjects(ctx)
 	if ctx.Err() != nil {
@@ -46,6 +44,8 @@ func (s *Server) runAutoArchiveLoop(ctx context.Context) {
 }
 
 func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 	// Each tick has an independent span while retaining server cancellation.
 	ctx, span := telemetry.Tracer().Start(ctx, "ocman.auto_archive.tick")
 	defer span.End()
@@ -81,7 +81,9 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 		if !adapter.Available(ctx) {
 			continue
 		}
-		sessions, err := adapter.SessionsInactiveBefore(ctx, cutoff)
+		rpcCtx, cancelRPC := context.WithTimeout(ctx, 10*time.Second)
+		sessions, err := adapter.SessionsInactiveBefore(rpcCtx, cutoff)
+		cancelRPC()
 		if err != nil {
 			span.RecordError(err)
 			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
@@ -127,6 +129,8 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 // A project auto-unarchives later (in applyProjectArchiveState) once it
 // sees fresh activity, so this is safe to re-run.
 func (s *Server) autoArchiveInactiveProjects(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 	if s.stateDB == nil || s.db == nil {
 		return
 	}

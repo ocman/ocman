@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
@@ -368,19 +366,7 @@ func (s *Server) triggerProjectsIndexRefresh() {
 	done := st.done
 	st.mu.Unlock()
 
-	go runWithRecover("projects-index-async", func() {
-		s.pluginMu.Lock()
-		ctx := s.pluginCtx
-		s.pluginMu.Unlock()
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		ctx, cancel := context.WithTimeout(ctx, time.Minute)
-		defer cancel()
-		if err := s.driveProjectsRefresh(ctx, done); err != nil {
-			log.WithError(err).Warn("refreshing projects index")
-		}
-	})
+	go s.runProjectsRefresh(done)
 }
 
 // SessionService returns the session mutation service so main.go can

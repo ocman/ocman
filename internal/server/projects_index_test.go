@@ -5,12 +5,47 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
+
+func TestProjectsSharedRefreshSurvivesInitiatorCancellation(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	var released sync.Once
+	srv.projects.fetch = func() ([]db.ProjectStats, error) { return []db.ProjectStats{{Directory: "/repo"}}, nil }
+	srv.projects.enrich = func(ctx context.Context, _ []db.ProjectStats) error {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return nil
+		}
+	}
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	first, second := make(chan error, 1), make(chan error, 1)
+	t.Cleanup(func() { cancelFirst(); released.Do(func() { close(release) }); <-first; <-second })
+	go func() { first <- srv.refreshProjectsIndex(firstCtx); close(first) }()
+	<-entered
+	go func() { second <- srv.refreshProjectsIndex(t.Context()); close(second) }()
+	waitProjectsDirty(t, srv)
+	cancelFirst()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatalf("initiator error=%v", err)
+	}
+	released.Do(func() { close(release) })
+	if err := <-second; err != nil {
+		t.Fatalf("another client's cancellation poisoned shared work: %v", err)
+	}
+}
 
 func TestProjectsRefreshWaiterCanCancel(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
