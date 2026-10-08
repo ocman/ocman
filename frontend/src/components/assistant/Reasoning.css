@@ -1,0 +1,9 @@
+.oc-md blockquote.oc-reasoning {
+  border: 0;
+  margin: 0 0 3px;
+  padding: 0;
+  color: var(--overlay0);
+}
+.oc-reasoning summary { cursor: pointer; }
+.oc-reasoning summary > strong:first-child { color: var(--yellow); font-weight: 400; }
+.oc-reasoning summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
