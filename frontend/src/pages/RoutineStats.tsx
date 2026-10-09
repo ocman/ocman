@@ -12,13 +12,15 @@ export function RoutineStats({ routineId, refreshKey }: { routineId: string; ref
   const [stats, setStats] = useState<RoutineStatsData>();
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
+  const refreshedAt = useRef<number | null>(null);
   useEffect(() => () => { request.current?.abort(); request.current = null; }, [routineId, visible]);
   useEffect(() => {
-    if (!visible || request.current) return;
+    // Billing scans lifetime usage, so refresh at most every 30s while open.
+    if (!visible || request.current || (refreshedAt.current !== null && Date.now() - refreshedAt.current < 30_000)) return;
     const controller = new AbortController();
     request.current = controller;
     api.routines.stats(routineId, controller.signal).then((data) => {
-      if (!controller.signal.aborted) { setStats(data); setError(''); }
+      if (!controller.signal.aborted) { refreshedAt.current = Date.now(); setStats(data); setError(''); }
     }).catch((err: Error) => { if (!controller.signal.aborted) setError(err.message); })
       .finally(() => { if (request.current === controller) request.current = null; });
   }, [routineId, refreshKey, visible]);

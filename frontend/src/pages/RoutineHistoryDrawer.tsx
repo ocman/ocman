@@ -121,6 +121,11 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose, inboxes = [
     }
   };
 
+  const saved = () => {
+    if (mounted.current) onSaved();
+    else void onRefresh().catch(() => undefined);
+  };
+
   return (
     <Drawer title={routine.name} onClose={onClose} canClose={!busy} closeLabel="Close routine history" backdropTestId="routine-drawer-backdrop">
       <Tabs value={tab} onValueChange={(value) => { setLocalTab(value); onTabChange?.(value); }}>
@@ -139,7 +144,7 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose, inboxes = [
           </div>
         </TabsContent>
         <TabsContent value="settings" forceMount hidden={tab !== 'settings'}>
-          {(settingsOpened || tab === 'settings') && <RoutineEditorForm routine={routine} inboxes={inboxes} onClose={onClose} onBusyChange={setBusy} onRefresh={onRefresh} onSaved={onSaved} />}
+          {(settingsOpened || tab === 'settings') && <RoutineEditorForm routine={routine} inboxes={inboxes} onClose={onClose} onBusyChange={setBusy} onRefresh={onRefresh} onSaved={saved} />}
         </TabsContent>
         <TabsContent value="stats"><RoutineStats routineId={routine.id} refreshKey={refreshKey} /></TabsContent>
       </Tabs>

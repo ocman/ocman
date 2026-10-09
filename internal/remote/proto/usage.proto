@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package ocman.remote.v1;
+
+option go_package = "github.com/NoUseFreak/ocman/internal/remote/proto;remotepb";
+
+import "internal/remote/proto/remote.proto";
+
+// Usage extends the remote contract over the same authenticated connection.
+// Older owners return Unimplemented, leaving billing explicitly unavailable.
+service Usage {
+  rpc SessionUsage(SessionRef) returns (JsonResp); // map[sessionID]platforms.Usage
+}

@@ -175,8 +175,8 @@ flowchart TD
     MCP -->|webhook inbox actions, in-process| Server
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
-    Server -->|Factory usage via platforms.UsageReader| OC
-    Registry -->|session detail, summary + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
+    Server -->|Factory + routine usage via platforms.UsageReader| OC
+    Registry -->|session detail, summary, lifecycle + usage reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
@@ -205,6 +205,14 @@ flowchart TD
   The server deduplicates owner-qualified session IDs for Epic phase totals,
   retains retry history per Attempt, and flags unavailable reads as incomplete.
   Epic and Queue views poll these totals every ten seconds.
+- **Owner-local session usage.** Both Factory and routine statistics read
+  `platforms.UsageReader`. Remote adapters forward to `Usage.SessionUsage` over
+  the existing token-authenticated connection, returning the owner's recorded
+  and estimated costs keyed by session ID, including descendants. The additive
+  service lives in `internal/remote/proto/usage.proto`; older owners report
+  usage unsupported without falling back to hub-local sessions. Routine stats
+  retain all-run counts and average duration and refresh billing at most every
+  30 seconds while their tab is open.
 - **Follow-up queue.** `internal/queuesvc` drains one held message per turn.
   Each decision uses `platforms.LifecycleReader` for settled status and the
   latest message identity. The local adapter reads one session and its newest

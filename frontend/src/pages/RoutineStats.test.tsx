@@ -1,12 +1,25 @@
 // @vitest-environment jsdom
 import { act, render, screen, within } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { api, type RoutineStatsData } from '../lib/api';
 import { RoutineStats } from './RoutineStats';
 
 vi.mock('../lib/api', () => ({ api: { routines: { stats: vi.fn() } } }));
 const stats: RoutineStatsData = { totalRuns: 60, states: { success: 40, failure: 20 }, averageDurationMs: 1500, totalCost: 1, totalEstCost: 2, costSessions: 2, missingSessions: 1 };
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.routines.stats).mockResolvedValue(stats); });
+afterEach(() => vi.useRealTimers());
+
+it('refreshes lifetime billing at most every 30 seconds', async () => {
+  const view = render(<RoutineStats routineId="r" refreshKey={0} />);
+  await screen.findByText('Total runs');
+  vi.mocked(api.routines.stats).mockClear();
+  view.rerender(<RoutineStats routineId="r" refreshKey={1} />);
+  expect(api.routines.stats).not.toHaveBeenCalled();
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.now() + 30_000);
+  await act(async () => view.rerender(<RoutineStats routineId="r" refreshKey={2} />));
+  expect(api.routines.stats).toHaveBeenCalledOnce();
+});
 
 it('shows all-run totals, duration and clearly scoped session costs', async () => {
   render(<RoutineStats routineId="r" refreshKey={0} />);

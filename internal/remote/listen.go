@@ -82,6 +82,7 @@ func NewListener(cfg ListenConfig, srv *Server) (*Listener, error) {
 
 	gs := grpc.NewServer(opts...)
 	pb.RegisterOcmanServer(gs, srv)
+	pb.RegisterUsageServer(gs, &usageServer{owner: srv})
 
 	return &Listener{grpc: gs, ln: ln, addr: ln.Addr().String(), tls: useTLS}, nil
 }

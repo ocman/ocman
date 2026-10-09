@@ -74,11 +74,12 @@ export function Routines() {
   const openSettings = (routine: Routine) => {
     selectRoutine(routine.id, 'settings'); setInboxDrawer(undefined); setShowForm(false); setError('');
   };
+  const refreshAfterSave = () => load().catch((err: Error) => setError(err.message));
   const saved = () => {
     // Close before refreshing: a failed refresh must not invite a duplicate Create.
     setShowForm(false);
     selectRoutine();
-    void load().catch((err: Error) => setError(err.message));
+    void refreshAfterSave();
   };
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true); setError('');
@@ -92,8 +93,8 @@ export function Routines() {
     <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'inboxes' ? { tab: value } : {}, { replace: true })} className={styles.tabs}>
       <TabsList aria-label="Routine views"><TabsTrigger value="routines">Routines</TabsTrigger><TabsTrigger value="inboxes">Webhook inboxes</TabsTrigger></TabsList>
       {error && !showForm && <p role="alert" className={styles.error}>{error}</p>}
-      {showForm && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={load} />}
-      {historyRoutine && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} inboxes={inboxes} activeTab={detailTab} onTabChange={(view) => selectRoutine(historyRoutine.id, view)} refreshKey={refreshKey} onRefresh={load} onSaved={saved} onClose={() => selectRoutine()} />}
+      {showForm && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
+      {historyRoutine && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} inboxes={inboxes} activeTab={detailTab} onTabChange={(view) => selectRoutine(historyRoutine.id, view)} refreshKey={refreshKey} onRefresh={refreshAfterSave} onSaved={saved} onClose={() => selectRoutine()} />}
       {historyId && !historyRoutine && !loading && !error && <p role="alert">This routine is unavailable.</p>}
       {inboxDrawer !== undefined && <WebhookInboxDrawer key={inboxDrawer} inbox={inboxes.find((inbox) => inbox.id === inboxDrawer) ?? null} routines={routines} onClose={() => setInboxDrawer(undefined)} onChange={() => void load().catch((err: Error) => setError(err.message))} onEditRoutine={openSettings} />}
 

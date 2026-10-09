@@ -50,6 +50,8 @@ Total and average session costs use recorded billing; estimated total cost uses
 token pricing. Linked sessions count once, including their subagents. Reused or
 existing sessions include their full lifetime usage, not only routine prompts.
 Missing or disconnected sessions are reported as unavailable rather than zero.
+Stats refresh at most every 30 seconds while open. Remote usage is read on the
+owning machine; older owners without the usage RPC report costs unavailable.
 
 When a run fails or is interrupted, ocman adds an Inbox item with the run
 status and the session's final assistant message. Successful runs stay out of

@@ -33,6 +33,31 @@ function LocationProbe() {
 }
 
 describe('Routines', () => {
+  it.each(['routine-1', 'routine-2'])('keeps the new %s drawer and draft when an earlier save finishes after navigation', async (nextID) => {
+    const other = { ...routine, id: 'routine-2', name: 'Evening check' };
+    vi.mocked(api.routines.list).mockResolvedValue([routine, other]);
+    let finish!: (value: Routine) => void;
+    vi.mocked(api.routines.update).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const user = userEvent.setup();
+    render(<MemoryRouter><LocationProbe /><Routines /></MemoryRouter>);
+    await user.click(within(await screen.findByRole('row', { name: `View ${routine.name} history` })).getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.routines.update).toHaveBeenCalledOnce());
+    // Browser Back bypasses the drawer's disabled close button.
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const next = nextID === routine.id ? routine : other;
+    await user.click(within(screen.getByRole('row', { name: `View ${next.name} history` })).getByRole('button', { name: 'Settings' }));
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'Unsaved second draft');
+    vi.mocked(api.webhookInboxes.list).mockRejectedValueOnce(new Error('Background refresh unavailable'));
+    await act(async () => finish(routine));
+    await waitFor(() => expect(api.routines.list).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('dialog', { name: next.name })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Unsaved second draft');
+    expect(screen.getByTestId('location')).toHaveTextContent(`routine=${nextID}&view=settings`);
+    expect(screen.getByRole('alert')).toHaveTextContent('Background refresh unavailable');
+  });
   it('opens direct routine links and tracks tabs, close and browser back in the URL', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/routines?routine=routine-1&view=settings']}><LocationProbe /><Routines /></MemoryRouter>);
@@ -360,7 +385,7 @@ describe('Routines', () => {
     vi.mocked(api.webhookInboxes.list).mockRejectedValueOnce(new Error('inboxes unavailable'));
     await user.click(within(screen.getByRole('group', { name: 'Routine form actions' })).getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('inboxes unavailable')).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Morning check' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Morning check' })).not.toBeInTheDocument());
   });
 
   it('shows missed timeout schedules as expired', async () => {
