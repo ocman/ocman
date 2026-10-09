@@ -36,7 +36,7 @@ export function EpicGraph({ issues, preview, changes }: { issues?: FactoryIssue[
         source: edge.source,
         target: edge.target,
         label: labels.filter(Boolean).join(' · ') || undefined,
-        animated: group.some((item) => item.kind === 'blocks' || item.kind === 'merge_gated'),
+        animated: false,
         className: `factory-edge factory-edge--${edge.kind}${added ? ' factory-edge--added' : ''}`,
         markerEnd: edge.kind === 'interrupts' || edge.kind === 'hierarchy' ? undefined : { type: MarkerType.ArrowClosed },
       };

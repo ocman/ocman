@@ -1,0 +1,12 @@
+.oc-button.oc-factory-issue-reference {
+  display: inline;
+  padding: 0;
+  min-height: 0;
+  font: inherit;
+  vertical-align: baseline;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.oc-factory-issue-preview { display: grid; gap: 8px; overflow-wrap: anywhere; }
+.oc-factory-issue-preview > span { color: var(--text-dim); }

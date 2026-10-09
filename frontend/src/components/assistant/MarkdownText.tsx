@@ -16,6 +16,8 @@ import { FactoryActionCard } from '../FactoryActionCard';
 import { FactoryMarkerCard } from '../FactoryMarkerCard';
 import { factoryActionFromHref } from '../factoryEpicStatus';
 import { remarkFactoryCards } from '../factoryCards';
+import { remarkFactoryIssueReferences } from '../factoryIssueReferences';
+import { FactoryIssueReference } from '../FactoryIssueReference';
 import { Modal } from '../Modal';
 import { CopyButton } from '../CopyButton';
 import { splitMarkdownBlocks } from './markdownBlocks';
@@ -212,6 +214,8 @@ function MarkdownLink(props: any) {
   }
   const action = factoryActionFromHref(href);
   if (factoryCards && action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action}>{children}</FactoryActionCard>;
+  const issue = href?.match(/^\/factory\/issues\/([a-z0-9-]+(?:\.\d+)+)$/);
+  if (issue && routed) return <FactoryIssueReference issueID={issue[1]}>{children}</FactoryIssueReference>;
   const internal = href?.startsWith('/') && !href.startsWith('//') && !/^\/api(?:\/|$)/.test(href);
   // In-app paths must not reload the page; anchors and externals stay plain.
   if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;
@@ -231,9 +235,9 @@ function MarkdownTable({ node: _node, ...props }: ComponentProps<'table'> & { no
 // Module-scoped to keep prop references stable across renders. Fresh
 // array/object literals here would invalidate react-markdown's
 // internal unified-processor cache on every streaming chunk.
-const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards];
+const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards, remarkFactoryIssueReferences];
 const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
-const PROSE_PLUGINS = [remarkGfm];
+const PROSE_PLUGINS = [remarkGfm, remarkFactoryIssueReferences];
 const PROSE_PLUGINS_WITH_BREAKS = [...PROSE_PLUGINS, remarkBreaks];
 // rehype-highlight builds a lowlight instance and registers ~37 languages
 // each time it is attached, and react-markdown attaches plugins on every

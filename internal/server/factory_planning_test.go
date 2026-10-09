@@ -291,6 +291,9 @@ func TestFactoryUnblockLauncherCreatesReadOnlyConversation(t *testing.T) {
 	if !strings.Contains(sent.Message, "before requesting tool permission approval") || strings.Contains(sent.Message, "shown beside graph approval") {
 		t.Fatalf("unblock rationale approval guidance = %q", sent.Message)
 	}
+	if !strings.Contains(sent.Message, "include the Issue title alongside its ID") {
+		t.Fatalf("unblock prompt omits human-readable Issue guidance: %q", sent.Message)
+	}
 	want := platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"}
 	projectRule := platforms.PermissionRule{Permission: "external_directory", Pattern: filepath.Join("/other", "**"), Action: "allow"}
 	if !slices.Contains(rules.Rules, want) || !slices.Contains(rules.Rules, projectRule) || slices.Contains(rules.Rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"}) {

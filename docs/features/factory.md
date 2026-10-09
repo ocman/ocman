@@ -146,6 +146,14 @@ from it. The delivery PR lists those departures first, then maps each change to
 its design item and acceptance criterion. Epics pinned to `ocman/tracer@3` keep
 their original prompts.
 
+Factory sessions include Issue titles alongside IDs in human-facing plans,
+summaries, questions, and change rationale. Across the app's Markdown views,
+references such as `upload-fix.1.2` or `#upload-fix.1.2` are underlined. Hover,
+focus, or tap one to see its title and an **Open issue** link. Titles load on
+demand. Code blocks and existing external links keep their original content.
+Factory graph connections are static to avoid continuous animation on large
+graphs.
+
 The first version supports one planning step, one implementation group, and one
 final delivery step. An initial plan approval must precede implementation. Add
 further human approvals before implementation or after checks, and any number

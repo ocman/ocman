@@ -23,6 +23,8 @@ import (
 
 type factoryPlanningLauncher struct{ server *Server }
 
+const factoryIssueProse = "In human-facing plans, summaries, questions, and rationaleMarkdown, include the Issue title alongside its ID, for example Fix attachment uploads (upload-fix.1.2). Never refer to an Issue by number or ID alone. Use factory issues to look up titles when needed. Keep exact IDs in tool arguments."
+
 func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req factory.PlanningSessionRequest) (factory.PlanningSession, error) {
 	return l.launchReadOnlySession(ctx, req, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 }
@@ -135,6 +137,7 @@ func (s *Server) launchFactoryUnblockSession(ctx context.Context, epicID, issueI
 	s.factoryUnblockTokens.Store(token, epic.ID)
 	evidence, _ := json.Marshal(issue)
 	prompt := fmt.Sprintf("Investigate why Factory Issue %s in Work Epic %s is blocked. The current evidence is:\n\n```json\n%s\n```\n\nInspect the admitted repositories without modifying files:\n- %s\n\nInspect Factory state too. Propose the smallest safe fix, explain it in the conversation, then invoke the factory_unblock MCP tool with that exact action and unblock_token %s. Its permission prompt supplies the user-facing Allow and Reject buttons, and the action cannot run before approval. Supported actions are reopen with epic_id and issue_id, or mutate_graph with epic_id and a strict GraphMutation JSON payload. For graph changes, submit the complete change in one call with action batch, epicId, mutations, and rationaleMarkdown summarizing what changed and why in Markdown. Explain this rationale in the conversation before requesting tool permission approval. After execution, explain what changed and why.", issue.ID, epic.ID, evidence, strings.Join(projects, "\n- "), token)
+	prompt += "\n\n" + factoryIssueProse
 	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt}); err != nil {
 		s.factoryUnblockTokens.Delete(token)
 		_ = launcher.StopPlanningSession(context.WithoutCancel(ctx), session)
@@ -299,6 +302,7 @@ func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, sess
 		body = factory.DefaultFormulaPrompts()[stage]
 	}
 	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the admitted repositories without modifying them. If this Epic's permission rules allow shell commands, use them only for research and inspection; do not write files:\n- %s\n\n%s\n\nFactory protocol: Submit the resulting issue graph with the factory MCP action %s using epic_id %s, attempt_id %s, and attempt_token %s. Give every manifest node a stable key, concise title, actionable description, and for implementation work acceptanceCriteria: 1–20 verifiable outcomes an independent validator will check. Add explicit edges from each dependent node to its blocker where ordering matters. Set a node's project when it targets a non-initial admitted repository; omission inherits the Epic's initial project. Do not link to /factory/epics/%s before submitting the full plan; that link renders an approve card. %s", req.EpicID, req.WorkID, strings.Join(req.Projects, "\n- "), body, action, req.EpicID, req.AttemptID, req.AgentToken, req.EpicID, ending)
+	prompt = factoryIssueProse + "\n\n" + prompt
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: planningModel})
 }
 

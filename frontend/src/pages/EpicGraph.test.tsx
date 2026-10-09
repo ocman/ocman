@@ -69,4 +69,15 @@ describe('workflow graph', () => {
     expect(updated.edges).toContainEqual(expect.objectContaining({ source: 'continuity', target: 'new-task' }));
     expect(updated.edges).toContainEqual(expect.objectContaining({ source: 'new-task', target: 'verify' }));
   });
+
+  it('keeps dependency and merge-gate lines static', () => {
+    render(<EpicGraph issues={[
+      { id: 'first', kind: 'delivery', epicId: 'epic', project: '/repo', title: 'First', status: 'open' },
+      { id: 'next', kind: 'implementation', epicId: 'epic', project: '/other', title: 'Next', status: 'open', dependsOn: [{ id: 'first', type: 'blocks' }, { id: 'first', type: 'merge_gated' }] },
+    ]} />);
+    const { edges } = vi.mocked(ReactFlow).mock.calls.at(-1)![0];
+    expect(edges).toHaveLength(1);
+    expect(edges![0]).toMatchObject({ animated: false, source: 'first', target: 'next', label: 'blocks · merge gated' });
+    expect(edges![0].markerEnd).toBeDefined();
+  });
 });

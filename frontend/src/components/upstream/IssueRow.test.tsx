@@ -3,6 +3,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { IssueRow } from './IssueRow';
 import type { Issue } from '../../lib/upstreamApi';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
   return {
@@ -59,6 +61,15 @@ describe('IssueRow', () => {
     );
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(screen.getByText('reproduce')).toBeInTheDocument();
+  });
+
+  it('uses the shared issue-reference renderer in forge descriptions', () => {
+    const client = new QueryClient();
+    render(<QueryClientProvider client={client}><MemoryRouter>
+      <IssueRow issue={makeIssue({ body: 'Follow up on **upload-fix.1.2**.' })} directory="/repo" remoteId="local" remote="origin" />
+    </MemoryRouter></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByRole('button', { name: 'upload-fix.1.2' })).toHaveClass('oc-factory-issue-reference');
   });
 
   it('shows "No description." when the body is empty', () => {

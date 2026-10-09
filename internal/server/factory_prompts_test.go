@@ -37,6 +37,11 @@ func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
 					t.Fatalf("missing %q in %q", text, sent.Message)
 				}
 			}
+			for _, text := range []string{"include the Issue title alongside its ID", "plans, summaries, questions, and rationaleMarkdown", "Never refer to an Issue by number or ID alone"} {
+				if !strings.Contains(sent.Message, text) {
+					t.Fatalf("missing human-readable Issue guidance %q in %q", text, sent.Message)
+				}
+			}
 			if fallback := factory.DefaultFormulaPrompts()[stage]; fallback != "" && strings.Contains(sent.Message, fallback) {
 				t.Fatal("custom prompt did not replace the default")
 			}

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownContent } from '../assistant/MarkdownText';
 import type { ForgeUser, Label } from '../../lib/upstreamApi';
 import { LaunchSplitButton } from './LaunchSplitButton';
 import { OpenInBrowser } from './OpenInBrowser';
@@ -110,9 +109,9 @@ export function ExpandableRow({
             View on {host}
           </a>
           {detailBeforeBody}
-          <div className="oc-upstream-row-body">
+          <div className="oc-upstream-row-body oc-md">
             {body ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+              <MarkdownContent text={body} factoryCards={false} />
             ) : (
               <em>No description.</em>
             )}
