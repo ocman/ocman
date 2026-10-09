@@ -3,6 +3,53 @@ title: Configuration
 weight: 3
 ---
 
+## Custom permission reviewer
+
+Settings → Auto-approve → **Reviewer endpoint** lets you use a self-hosted
+model or a provider API directly. Ocman does not install models or manage their
+servers. Choose an API format, enter its complete POST URL, supply a model ID,
+and optionally enter a Bearer API key. The URL is reached from the ocman backend,
+so `127.0.0.1` means the machine running ocman, not the browser's machine.
+
+| Reviewer API | Endpoint example | Model ID |
+| --- | --- | --- |
+| OpenCode | Uses your existing OpenCode provider setup | Uses the separate reviewer-model setting |
+| OpenAI-compatible chat completions | `http://127.0.0.1:8080/v1/chat/completions` | Required |
+| TypeSafe-compatible System One | `https://api.typesafe.ai/v1/systemone` | Optional; omitted to use the server default |
+
+The alternatives to Jev do not all use the same API. A server must implement one
+of the contracts below, or you must provide an adapter. Span-01 and a model that
+returns a single answer letter are not automatically compatible.
+
+- **OpenAI-compatible.** Ocman sends non-streaming `messages` with the existing
+  permission-review prompt and custom rules. The response must contain one
+  completed choice with `finish_reason: "stop"` and JSON text in
+  `choices[0].message.content`, such as
+  `{"verdict":"safe","reasoning":"Read-only repository inspection."}`.
+  Refusals, incomplete outputs and malformed verdicts require human review.
+- **TypeSafe-compatible.** Ocman sends the untrusted action, patterns and tool
+  metadata in `state`, and the reviewer policy in a `choice` question named
+  `verdict`. Its options are `safe`, `unsafe`, and `uncertain`. The response must
+  return `answers.verdict.choice` and a numeric `probabilities` distribution over
+  all three options. A safe answer is approved only when its safe probability
+  meets **Minimum safe probability**, which defaults to `0.99`. This is the
+  model's reported probability, not a measured error-rate guarantee. TypeSafe's
+  separate `confidence` statistic is not used. The approval explanation reports
+  the classification and probability because decision models do not generate
+  prose.
+
+Endpoint settings and keys persist in this instance's owner-only `state.db`.
+Settings responses never return a saved key. Leave the key field blank to keep
+it, or use **Remove stored API key** and save to delete it. Changing the URL
+clears the old key unless you supply a replacement. Keys are sent only as
+`Authorization: Bearer …`; redirects are not followed.
+
+Endpoint failures leave the permission for human review. Cached safe judgments
+are scoped to the endpoint configuration that produced them, including the
+model and probability threshold, even if settings change during a request.
+Choose **OpenCode** and save to return to the existing reviewer. Direct provider
+API calls use that provider's billing, independently of any ChatGPT subscription.
+
 ## Running ocman
 
 ```sh

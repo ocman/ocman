@@ -1,8 +1,20 @@
 import type { fetchJSON, postJSON } from './api';
 import type { ModelFallthroughSettings, SharingSettings, WebhookRelaySettings } from './api.types';
 
+export type JudgeEndpointSettings = {
+  format: '' | 'openai' | 'typesafe';
+  endpoint: string;
+  model: string;
+  minSafeProbability: number;
+  apiKeySet: boolean;
+};
+
 export function settingsApi(get: typeof fetchJSON, post: typeof postJSON) {
   return {
+    getJudgeEndpoint: (signal?: AbortSignal) =>
+      get<JudgeEndpointSettings>('/api/settings/judge-endpoint', signal),
+    setJudgeEndpoint: (input: Omit<JudgeEndpointSettings, 'apiKeySet'> & { apiKey?: string }) =>
+      post<JudgeEndpointSettings>('/api/settings/judge-endpoint', input),
     getSharingEnabled: (signal?: AbortSignal) =>
       get<SharingSettings>('/api/settings/sharing', signal),
     setSharingEnabled: (enabled: boolean) =>

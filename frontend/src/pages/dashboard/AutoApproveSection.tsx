@@ -10,6 +10,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { Button } from '../../components/Control';
 import { ReviewerPromptSectionEditor, type PromptSection } from './ReviewerPromptSectionEditor';
+import { JudgeEndpointSettings } from './JudgeEndpointSettings';
 import styles from './AutoApproveSection.module.css';
 
 // ---------------------------------------------------------------------------
@@ -84,7 +85,8 @@ export function AutoApproveSection() {
           }}
         />
       </SettingRow>
-      <SettingRow setting="reviewer-model">
+      <JudgeEndpointSettings />
+      <SettingRow setting="reviewer-model" desc="Model used when Reviewer API is OpenCode. Custom endpoints use their own model ID.">
         <SettingSelect
           ariaLabel="Auto-approve reviewer model"
           placeholder="Default"

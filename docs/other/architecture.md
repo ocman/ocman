@@ -58,7 +58,7 @@ flowchart LR
     Ocman -->|exec| Shell[git / tmux / lsof<br/>host tools]
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
-    Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage APIs]
+    Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage + reviewer APIs]
     Ocman <-->|gRPC + token: sessions, upstream identities, hosts, plugins| Remotes[Remote ocman<br/>instances]
     Ocman -->|encrypted webhook poll| Relay[ocman-relay<br/>ciphertext persistence]
     Ocman -.->|OTLP traces, metrics, logs, optional| Otel[Telemetry collector]
@@ -103,6 +103,14 @@ flowchart LR
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;
   provider tokens and account identifiers never reach the browser.
+- **Custom reviewer APIs.** `internal/autoapprove` can send permission judgments
+  directly to a user-configured OpenAI-compatible chat-completions or
+  TypeSafe-compatible System One endpoint instead of a temporary OpenCode
+  session. The endpoint's own Bearer key stays in this instance's `state.db`
+  and is never returned by settings reads. These calls use a separate HTTP
+  client from OpenCode authentication, reject redirects, bound response sizes,
+  and fall through to human review on failures. Cached safe verdicts include
+  the endpoint configuration used by the original judgment.
 - **Native plugin executables.** Startup and explicit rescans describe direct
   executables from the local plugin directory. Each describe has a fresh token,
   minimal environment, bounded output, and a fifteen-second deadline. Duplicate

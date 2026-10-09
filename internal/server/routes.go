@@ -179,6 +179,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/settings/prompt-sections", s.settingsHandler(s.requireAuth(s.handlePromptSections)))
 	mux.HandleFunc("/api/settings/judge-delay", s.settingsHandler(s.requireAuth(s.handleJudgeDelay)))
 	mux.HandleFunc("/api/settings/judge-model", s.settingsHandler(s.requireAuth(s.handleJudgeModel)))
+	mux.HandleFunc("/api/settings/judge-endpoint", s.settingsHandler(s.requireAuth(s.handleJudgeEndpoint)))
 	mux.HandleFunc("/api/settings/judge-model/options", s.requireAuth(s.get(s.handleJudgeModelOptions)))
 	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
 	// action. Stored in state.db's generic `setting` table (schema v12).

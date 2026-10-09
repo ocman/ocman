@@ -2,10 +2,7 @@ package autoapprove
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -307,169 +304,10 @@ func (s *Service) DeferPermissionNotification(sessionID, permissionID string) bo
 	return ok && status.manualResolvedAt == 0 && (status.cancel != nil || status.verdict == verdictSafe)
 }
 
-// --- Per-session safe-permission cache ---
-//
-// The autoApprove map above caches verdicts by the OpenCode-generated
-// permissionID, so resurrecting *the same prompt* short-circuits the
-// judge. But every fresh permission for the same logical action (e.g.
-// the user running `pnpm test` five times in a row) gets a new
-// permissionID, so the user pays for the judge each time.
-//
-// The safe-command cache fills that gap: when the judge returns "safe"
-// for a permission, we additionally remember the verdict under a SHA-256
-// key inside the session. Bash keys contain the exact command; other keys
-// contain the full request. A repeat with a new permissionID skips the LLM.
-//
-// Only **safe** verdicts are cached. Unsafe verdicts always re-run
-// through the judge so the user gets fresh reasoning if a flagged
-// command resurfaces (and so a one-off "unsafe" classification can't
-// permanently block a benign command).
-//
-// Per-session scope: the same command in a different session goes
-// through the judge again. This keeps the cache narrow and avoids
-// surprising cross-session approvals.
-//
-// In-memory, process lifetime — cleared on restart. The persisted
-// ApprovedPermission DB rows cover audit and notice replay; this
-// cache is purely a performance optimisation.
-
-// commandHash returns the domain-separated SHA-256 of metadata["command"] when present
-// and non-empty, or "" otherwise. Empty means "not cacheable" — callers
-// must not record or look up against an empty hash.
-//
-// Only Bash permission requests carry a "command" key; all other tools
-// (Edit/Write/Webfetch/…) return "" and fall through to the judge on
-// every request. This matches the design constraint that the cache is
-// keyed on the *exact* command string, which only makes sense for
-// shell commands.
-func commandHash(metadata map[string]any) string {
-	if len(metadata) == 0 {
-		return ""
-	}
-	raw, ok := metadata["command"]
-	if !ok {
-		return ""
-	}
-	cmd, ok := raw.(string)
-	if !ok || cmd == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte("command\x00" + cmd))
-	return hex.EncodeToString(sum[:])
-}
-
-func permissionHash(permission string, patterns []string, metadata map[string]any) string {
-	switch strings.ToLower(permission) {
-	case "bash", "bash command":
-		return commandHash(metadata)
-	}
-	payload, err := json.Marshal(struct {
-		Permission string         `json:"permission"`
-		Patterns   []string       `json:"patterns"`
-		Metadata   map[string]any `json:"metadata"`
-	}{permission, patterns, metadata})
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(append([]byte("permission\x00"), payload...))
-	return hex.EncodeToString(sum[:])
-}
-
-// lookupSafeCommandVerdict returns the cached safe-verdict reasoning
-// for (sessionID, hash) and ok=true if an entry exists. Returns
-// ("", false) on miss, nil receiver, or empty hash.
-func (s *Service) lookupSafeCommandVerdict(sessionID, hash string) (string, bool) {
-	if s == nil || hash == "" {
-		return "", false
-	}
-	s.safeCommandCacheMu.Lock()
-	defer s.safeCommandCacheMu.Unlock()
-	bySession, ok := s.safeCommandCache[sessionID]
-	if !ok {
-		return "", false
-	}
-	reasoning, ok := bySession[hash]
-	return reasoning, ok
-}
-
-// maxParentWalk caps how far up the parent chain
-// lookupInheritedSafeCommandVerdict walks. A child spawns a grandchild
-// rarely; the cap keeps a malformed/cyclic parent link from looping
-// forever without needing a visited-set.
-const maxParentWalk = 8
-
-// lookupInheritedSafeCommandVerdict is lookupSafeCommandVerdict plus
-// parent inheritance: on a miss for sessionID it walks up the
-// child->parent chain (via the ParentSessionID dep) and returns the
-// first ancestor's cached safe-verdict for the same command hash. This
-// lets a child session auto-approve a command the parent already had
-// approved — no fresh judge run, no user prompt.
-//
-// The returned reasoning is prefixed with "inherited from parent: " so
-// the origin is visible in the UI and DB audit row. Falls back to the
-// plain single-session behaviour when no resolver is wired.
-func (s *Service) lookupInheritedSafeCommandVerdict(ctx context.Context, sessionID, hash string) (string, bool) {
-	if s == nil || hash == "" {
-		return "", false
-	}
-	// Own session first — no prefix, it's a direct hit.
-	if reasoning, ok := s.lookupSafeCommandVerdict(sessionID, hash); ok {
-		return reasoning, true
-	}
-	cur := sessionID
-	for i := 0; i < maxParentWalk; i++ {
-		parent, ok := s.ResolveParentSessionID(ctx, cur)
-		if !ok || parent == "" || parent == cur {
-			return "", false
-		}
-		if reasoning, ok := s.lookupSafeCommandVerdict(parent, hash); ok {
-			return "inherited from parent: " + reasoning, true
-		}
-		cur = parent
-	}
-	return "", false
-}
-
-// recordSafeCommandVerdict stores reasoning for (sessionID, hash) in
-// the cache. No-op on nil receiver or empty hash. Overwrites any
-// existing entry — the latest verdict wins.
-func (s *Service) recordSafeCommandVerdict(sessionID, hash, reasoning string) {
-	if s == nil || hash == "" {
-		return
-	}
-	s.safeCommandCacheMu.Lock()
-	defer s.safeCommandCacheMu.Unlock()
-	if s.safeCommandCache == nil {
-		s.safeCommandCache = make(map[string]map[string]string)
-	}
-	bySession, ok := s.safeCommandCache[sessionID]
-	if !ok {
-		if len(s.safeCommandCache) >= maxSafeCommandSessions {
-			for oldSession := range s.safeCommandCache {
-				delete(s.safeCommandCache, oldSession)
-				break
-			}
-		}
-		bySession = make(map[string]string)
-		s.safeCommandCache[sessionID] = bySession
-	}
-	if _, exists := bySession[hash]; !exists && len(bySession) >= maxSafeCommandsPerSession {
-		for oldHash := range bySession {
-			delete(bySession, oldHash)
-			break
-		}
-	}
-	bySession[hash] = reasoning
-}
-
 // emitSessionSseEvent writes an SSE event to the currently-registered
 // writer for sessionID. If no client is connected, the call is a no-op.
 //
-// The sink is resolved on every call (not captured at goroutine start)
-// so a long-running judge whose client has disconnected mid-flight
-// silently drops follow-up events. The sink itself has a closed flag
-// guarded by its own mutex, so even a write that races with
-// UnregisterSink cannot dereference a recycled http.ResponseWriter.
+// Resolve sinks at send time; each sink protects its writer against closure.
 func (s *Service) emitSessionSseEvent(sessionID, eventType string, payload []byte) {
 	for _, sink := range s.lookupSinks(sessionID) {
 		sink.write(eventType, payload)
@@ -509,23 +347,7 @@ func (s *Service) emitPermissionPending(sessionID, permissionID string, judgeSta
 	s.emitSessionSseEvent(sessionID, "ocman.permission.pending", payload)
 }
 
-// replayAutoApproveState emits the most recent applicable
-// ocman.permission.* event for an already-known permission to the
-// currently-registered SSE sink.
-//
-// Why this exists: the headless autoApproveWatcher subscribes to
-// OpenCode's /global/event stream from server startup, so it routinely
-// observes (and claims, judges, or completes) permission.asked events
-// before any frontend tab is open. When the user later opens the
-// session, the REST resurrection path calls Ensure again —
-// which short-circuits because the work is already done. Without this
-// replay, the just-registered SSE sink would never receive the
-// pending / checking / flagged / auto-approved events that drive the
-// countdown UI, leaving the prompt frozen.
-//
-// The frontend reducer is idempotent against repeat events (it dedups
-// on permissionId / judgeStartsAt), so a replay during the same tab's
-// lifetime is harmless.
+// Replay work claimed by the headless watcher before a client connected.
 func (s *Service) replayAutoApproveState(sessionID, permissionID, permission string, patterns []string) {
 	st, ok := s.lookupAutoApproveStatus(sessionID, permissionID)
 	if !ok {

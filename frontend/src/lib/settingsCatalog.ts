@@ -29,6 +29,13 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'reviewer-endpoint': {
+    group: 'auto-approve',
+    title: 'Reviewer endpoint',
+    description: 'Use the existing OpenCode reviewer, or send permission requests directly to your own compatible API. You manage hosting and billing. Keys are stored on this ocman instance and never returned to the browser. Changing the URL clears the saved key unless you enter a replacement.',
+    example: 'Choose OpenAI-compatible with http://127.0.0.1:8080/v1/chat/completions, or TypeSafe-compatible with https://api.typesafe.ai/v1/systemone. Enter the full POST URL.',
+    keywords: 'judge self-hosted local Jev API key provider model probability',
+  },
   'default-agent': {
     group: 'sessions',
     title: 'Default agent',

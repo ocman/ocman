@@ -193,9 +193,11 @@ type Service struct {
 // NewService returns a Service wired against the real OpenCode port
 // discovery.
 func NewService(deps Deps) *Service {
+	judge := newPermissionJudge(deps.OpenCodeAuth)
+	judge.store = deps.Store
 	return &Service{
 		deps:             deps,
-		judge:            newPermissionJudge(deps.OpenCodeAuth),
+		judge:            judge,
 		sseSessions:      make(map[string]map[*Sink]struct{}),
 		autoApprove:      make(map[string]*autoApproveStatus),
 		safeCommandCache: make(map[string]map[string]string),

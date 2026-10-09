@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutoApproveSection } from './AutoApproveSection';
 
+vi.mock('./JudgeEndpointSettings', () => ({ JudgeEndpointSettings: () => null }));
+
 // An older or remote backend can answer the best-effort model lookups with a
 // body that lacks the expected fields. That must not take down Settings.
 const store = vi.hoisted(() => ({
