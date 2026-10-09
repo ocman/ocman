@@ -6,6 +6,11 @@ test('sidebar project options remain clickable over the conversation', async ({ 
   await page.route('/api/sessions*', (route) => route.fulfill({ json: [{ ...MOCK_SESSION, directory }] }));
   await page.goto(`/session/${MOCK_SESSION.id}`);
   await page.getByRole('button', { name: 'Filter sessions', exact: true }).click();
+  const filters = page.getByRole('group', { name: 'Session filters' });
+  const project = page.getByRole('combobox', { name: 'Project', exact: true });
+  const filtersBox = (await filters.boundingBox())!;
+  const projectBox = (await project.boundingBox())!;
+  expect(projectBox.x + projectBox.width).toBeLessThan(filtersBox.x + filtersBox.width);
   await page.getByRole('combobox', { name: 'Project', exact: true }).click();
   const option = page.getByRole('option', { name: label, exact: true });
   await expect(option).toBeVisible();
@@ -21,6 +26,9 @@ test('sidebar project options remain clickable over the conversation', async ({ 
   }, sidebarEdge)).toBe(true);
   await option.click();
   await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toContainText(label);
+  const selectedBox = (await project.boundingBox())!;
+  expect(selectedBox.x + selectedBox.width).toBeLessThan(filtersBox.x + filtersBox.width);
+  await page.screenshot({ path: testInfo.outputPath('project-filter-closed.png') });
   await expect(page.getByRole('group', { name: 'Session filters' })).toBeVisible();
   await page.getByRole('button', { name: 'Filter sessions', exact: true }).click();
   await expect(sidebar).toHaveCSS('overflow', 'hidden');

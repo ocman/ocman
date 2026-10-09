@@ -3,6 +3,10 @@
   z-index: 200;
 }
 
+.session-sidebar-filters > :first-child {
+  min-width: 0;
+}
+
 @media (width <= 768px) {
   .session-sidebar-filters .oc-search-select-menu {
     right: 0;
