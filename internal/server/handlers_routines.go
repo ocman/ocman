@@ -22,6 +22,8 @@ type routineRequest struct {
 	Model                      string                     `json:"model"`
 	SessionMode                string                     `json:"sessionMode"`
 	SessionID                  string                     `json:"sessionId"`
+	Worktree                   bool                       `json:"worktree"`
+	CleanupWorktree            bool                       `json:"cleanupWorktree"`
 	Schedule                   routineScheduleRequest     `json:"schedule"`
 	Enabled                    bool                       `json:"enabled"`
 	DeleteAfterSuccess         bool                       `json:"deleteAfterSuccess"`
@@ -44,6 +46,7 @@ func (req routineRequest) input() (routines.Input, error) {
 	}
 	return routines.Input{
 		Name: req.Name, Prompt: req.Prompt, Directory: req.Directory, RemoteID: req.RemoteID, Agent: req.Agent, Model: req.Model, SessionMode: req.SessionMode, SessionID: req.SessionID,
+		Worktree: req.Worktree, CleanupWorktree: req.CleanupWorktree,
 		Schedule: routines.Schedule{
 			Kind: req.Schedule.Kind, Timeout: time.Duration(req.Schedule.TimeoutMS) * time.Millisecond,
 			At: time.UnixMilli(req.Schedule.At), Cron: req.Schedule.Cron, Timezone: req.Schedule.Timezone,

@@ -10,6 +10,10 @@ type routinePublication struct {
 	pending map[chan struct{}]struct{}
 }
 
+// BeginRoutineCreation fences owner-created worktree sessions until run linkage
+// is durable, just like CreateRoutine's configured-session path.
+func (s *Service) BeginRoutineCreation() func() { return s.routinePublication.begin() }
+
 func (p *routinePublication) begin() func() {
 	done := make(chan struct{})
 	p.mu.Lock()

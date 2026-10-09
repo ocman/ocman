@@ -9,13 +9,13 @@ import (
 )
 
 const routineRunColumns = `id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, agent, model, session_mode, target_session_id, trigger,
-	platform, session_id, state, error, occurrence_at, created_at, started_at, finished_at, archive_session_after_success, notify_on_success`
+	platform, session_id, state, error, occurrence_at, created_at, started_at, finished_at, archive_session_after_success, notify_on_success, worktree, cleanup_worktree, worktree_path`
 
 func scanRoutineRun(row routineScanner) (RoutineRun, error) {
 	var run RoutineRun
 	err := row.Scan(&run.ID, &run.RoutineID, &run.RoutineUpdatedAt, &run.RoutineName, &run.Prompt, &run.Directory, &run.RemoteID,
 		&run.Agent, &run.Model, &run.SessionMode, &run.TargetSessionID, &run.Trigger, &run.Platform, &run.SessionID, &run.State, &run.Error, &run.OccurrenceAt,
-		&run.CreatedAt, &run.StartedAt, &run.FinishedAt, &run.ArchiveSessionAfterSuccess, &run.NotifyOnSuccess)
+		&run.CreatedAt, &run.StartedAt, &run.FinishedAt, &run.ArchiveSessionAfterSuccess, &run.NotifyOnSuccess, &run.Worktree, &run.CleanupWorktree, &run.WorktreePath)
 	return run, err
 }
 
@@ -37,10 +37,11 @@ func (d *DB) ClaimRoutineRun(ctx context.Context, run RoutineRun) (RoutineRun, b
 	}
 	run.RoutineUpdatedAt, run.RoutineName, run.Prompt, run.Directory, run.RemoteID, run.Agent, run.Model, run.SessionMode, run.TargetSessionID = routine.UpdatedAt, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID, routine.Agent, routine.Model, routine.SessionMode, routine.SessionID
 	run.ArchiveSessionAfterSuccess, run.NotifyOnSuccess = routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess
-	result, err := tx.ExecContext(ctx, `INSERT INTO routine_run (`+routineRunColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	run.Worktree, run.CleanupWorktree = routine.Worktree, routine.CleanupWorktree
+	result, err := tx.ExecContext(ctx, `INSERT INTO routine_run (`+routineRunColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING`, run.ID, run.RoutineID, run.RoutineUpdatedAt, run.RoutineName, run.Prompt,
 		run.Directory, run.RemoteID, run.Agent, run.Model, run.SessionMode, run.TargetSessionID, run.Trigger, run.Platform, run.SessionID, run.State, run.Error,
-		run.OccurrenceAt, run.CreatedAt, run.StartedAt, run.FinishedAt, run.ArchiveSessionAfterSuccess, run.NotifyOnSuccess)
+		run.OccurrenceAt, run.CreatedAt, run.StartedAt, run.FinishedAt, run.ArchiveSessionAfterSuccess, run.NotifyOnSuccess, run.Worktree, run.CleanupWorktree, run.WorktreePath)
 	if err != nil {
 		return RoutineRun{}, false, fmt.Errorf("claiming routine run: %w", err)
 	}

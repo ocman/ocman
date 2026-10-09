@@ -37,6 +37,12 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 	default:
 		return state.Routine{}, fmt.Errorf("invalid session mode: %w", ErrValidation)
 	}
+	if input.Worktree && sessionMode != SessionNew {
+		return state.Routine{}, fmt.Errorf("worktrees require a new session per run: %w", ErrValidation)
+	}
+	if input.CleanupWorktree && !input.Worktree {
+		return state.Routine{}, fmt.Errorf("cleanup requires a routine worktree: %w", ErrValidation)
+	}
 	var config string
 	var due int64
 	if !input.KeepSchedule {
@@ -57,6 +63,7 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 		Name: name, Prompt: input.Prompt, Directory: directory, RemoteID: remoteID,
 		Agent: strings.TrimSpace(input.Agent), Model: strings.TrimSpace(input.Model),
 		SessionMode: sessionMode, SessionID: sessionID,
+		Worktree: input.Worktree, CleanupWorktree: input.CleanupWorktree,
 		ScheduleKind: input.Schedule.Kind, ScheduleConfigJSON: config, NextDueAt: due,
 		Enabled: input.Enabled, DeleteAfterSuccess: input.DeleteAfterSuccess,
 		ArchiveSessionAfterSuccess: input.ArchiveSessionAfterSuccess,
@@ -139,6 +146,7 @@ func InputFromRoutine(routine state.Routine, now time.Time) (Input, error) {
 	return Input{
 		Name: routine.Name, Prompt: routine.Prompt, Directory: routine.Directory, RemoteID: routine.RemoteID,
 		Agent: routine.Agent, Model: routine.Model, SessionMode: routine.SessionMode, SessionID: routine.SessionID,
+		Worktree: routine.Worktree, CleanupWorktree: routine.CleanupWorktree,
 		Schedule: schedule, Enabled: routine.Enabled, DeleteAfterSuccess: routine.DeleteAfterSuccess,
 		ArchiveSessionAfterSuccess: routine.ArchiveSessionAfterSuccess, NotifyOnSuccess: routine.NotifyOnSuccess, PermissionRules: rules,
 	}, nil

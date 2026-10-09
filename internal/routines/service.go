@@ -60,6 +60,8 @@ type Input struct {
 	Model                      string
 	SessionMode                string
 	SessionID                  string
+	Worktree                   bool
+	CleanupWorktree            bool
 	Schedule                   Schedule
 	Enabled                    bool
 	DeleteAfterSuccess         bool
@@ -275,15 +277,11 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 		return s.store.LinkRoutineRun(ctx, run.ID, platformID, id, s.now().UnixMilli(), run.SessionMode == SessionReuse)
 	}
 	if sessionID == "" {
-		var rules []platforms.PermissionRule
-		if err := json.Unmarshal([]byte(routine.PermissionRulesJSON), &rules); err != nil || rules == nil {
-			rules = []platforms.PermissionRule{}
-		}
-		result, err := s.sessions.CreateRoutine(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: run.RoutineName + " " + s.now().Format("2006-01-02 15:04"), Port: ensured.Port()}, rules, run.RoutineID, link)
+		id, err := s.createRunSession(ctx, host, ensured, platformID, run, routine.PermissionRulesJSON, link)
 		if err != nil {
 			return s.failDispatch(ctx, run, err)
 		}
-		sessionID = result.ID
+		sessionID = id
 	} else {
 		platform, ok := s.platforms.Get(platforms.ID(platformID))
 		if !ok {
@@ -344,11 +342,13 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 		_, reply := db.LatestAssistantText(detail.Messages, detail.Parts)
 		switch detail.Session.Status {
 		case db.StatusDone, db.StatusWaiting:
+			if run.CleanupWorktree && s.now().UnixMilli()-detail.Session.TimeUpdated < settleQuietPeriod.Milliseconds() {
+				continue
+			}
 			if run.ArchiveSessionAfterSuccess {
 				// OpenCode writes once more after the turn goes idle; any newer
 				// write resurfaces the session, so wait until it's quiet, then
-				// stamp now. ponytail: heuristic, no upstream ordering bound; a
-				// write >5s late still resurfaces. Remote: owner clock, as-is.
+				// ponytail: writes >5s late still resurface. Remotes use the owner clock.
 				stamp := detail.Session.TimeUpdated
 				if remoteID, _ := remote.SplitPlatformID(run.Platform); remoteID == "" {
 					if stamp = s.now().UnixMilli(); stamp-detail.Session.TimeUpdated < settleQuietPeriod.Milliseconds() {
@@ -360,7 +360,7 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 					continue
 				}
 			}
-			result = errors.Join(result, s.finish(ctx, run, RunSuccess, "", reply))
+			result = errors.Join(result, s.finish(ctx, run, RunSuccess, s.cleanupRunWorktree(ctx, run, detail), reply))
 		case db.StatusError:
 			result = errors.Join(result, s.finish(ctx, run, RunFailure, detail.Session.Status.String(), reply))
 		case db.StatusInterrupted:

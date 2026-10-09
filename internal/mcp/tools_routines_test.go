@@ -98,6 +98,20 @@ func TestRoutineToolActions(t *testing.T) {
 	}
 }
 
+func TestRoutineToolWorkspaceOptions(t *testing.T) {
+	svc := &fakeRoutineService{}
+	srv := routineServer(t, svc)
+	created := callTool(t, srv, "routines", map[string]any{"action": "create", "name": "Isolated check", "prompt": "Inspect", "directory": "/repo", "worktree": true, "cleanup_worktree": true})
+	if created.IsError || !svc.input.Worktree || !svc.input.CleanupWorktree {
+		t.Fatalf("input = %#v, result = %s", svc.input, resultText(created))
+	}
+	svc.stored = &state.Routine{ID: "routine-1", Name: "Check", Prompt: "Inspect", Directory: "/repo", ScheduleKind: "none", Worktree: true, CleanupWorktree: true}
+	patched := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "cleanup_worktree": false})
+	if patched.IsError || !svc.input.Worktree || svc.input.CleanupWorktree {
+		t.Fatalf("patch = %#v, %s", svc.input, resultText(patched))
+	}
+}
+
 func TestRoutineToolValidationAndErrors(t *testing.T) {
 	svc := &fakeRoutineService{}
 	srv := routineServer(t, svc)

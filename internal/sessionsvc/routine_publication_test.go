@@ -8,7 +8,7 @@ import (
 
 func TestRoutinePublicationWaitsForAllCreatesAndHonorsCancellation(t *testing.T) {
 	s := &Service{}
-	first, second := s.routinePublication.begin(), s.routinePublication.begin()
+	first, second := s.BeginRoutineCreation(), s.BeginRoutineCreation()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := s.WaitForRoutineCreation(ctx); !errors.Is(err, context.Canceled) {

@@ -73,81 +73,13 @@ export interface ClientActivity {
   ttlMs: number;
 }
 
-export type RoutineScheduleKind = 'none' | 'timeout' | 'once' | 'cron';
-export type RoutineSessionMode = 'new' | 'reuse' | 'existing';
-
-export interface Routine {
-  id: string;
-  name: string;
-  prompt: string;
-  directory: string;
-  remoteId: string;
-  agent: string;
-  model: string;
-  sessionMode: RoutineSessionMode;
-  sessionId: string;
-  scheduleKind: RoutineScheduleKind;
-  scheduleConfigJSON: string;
-  permissionRulesJSON: string;
-  nextDueAt: number;
-  enabled: boolean;
-  deleted: boolean;
-  deleteAfterSuccess: boolean;
-  archiveSessionAfterSuccess: boolean;
-  notifyOnSuccess: boolean;
-  createdAt: number;
-  updatedAt: number;
-  deletedAt?: number;
-  expiredAt?: number;
-  /** Newest run, attached by the list endpoint. */
-  latestRun?: RoutineRun;
-}
+export type { Routine, RoutineInput, RoutineRun, RoutineScheduleKind, RoutineSessionMode } from './routine.types';
 
 export interface WebhookSubscription { id: string; inboxId: string; routineId: string; headerPredicates: string; jsonPredicates: string; createdAt: number }
 export interface WebhookRelaySettings { relayUrl: string; defaultRelayUrl: string; hasEnrollmentToken: boolean }
 export interface WebhookDispatchResult { routineId: string; state: string; error: string; platform: string; sessionId: string }
 export interface WebhookDelivery { deliveryId: string; accepted: boolean; acceptedAt: number; attempts: number; lastError: string; headers: string; body: string; dispatches: WebhookDispatchResult[] }
 export interface WebhookInbox { id: string; name: string; relayUrl: string; ingestionUrl: string; keyVersion: number; createdAt: number; secretHeader: string; secret: string; counts: Record<string, number>; subscriptions: WebhookSubscription[] }
-
-export interface RoutineRun {
-  id: string;
-  routineId: string;
-  routineUpdatedAt: number;
-  routineName: string;
-  prompt: string;
-  directory: string;
-  remoteId: string;
-  agent: string;
-  model: string;
-  sessionMode: RoutineSessionMode;
-  targetSessionId: string;
-  trigger: 'manual' | 'schedule';
-  platform?: string;
-  sessionId?: string;
-  state: 'running' | 'success' | 'failure' | 'interrupted';
-  error?: string;
-  occurrenceAt: number;
-  createdAt: number;
-  startedAt?: number;
-  finishedAt?: number;
-}
-
-export interface RoutineInput {
-  name: string;
-  prompt: string;
-  directory: string;
-  remoteId: string;
-  agent: string;
-  model: string;
-  sessionMode: RoutineSessionMode;
-  sessionId: string;
-  schedule: { kind: RoutineScheduleKind; timeoutMs?: number; at?: number; cron?: string; timezone?: string };
-  enabled: boolean;
-  deleteAfterSuccess: boolean;
-  archiveSessionAfterSuccess: boolean;
-  notifyOnSuccess: boolean;
-  permissionRules: PermissionRule[];
-}
 
 export interface FactoryEpic {
   id: string;

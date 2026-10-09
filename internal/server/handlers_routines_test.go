@@ -69,6 +69,26 @@ func doRoutineRequest(t *testing.T, handler http.Handler, method, path, body str
 
 const validRoutineBody = `{"name":"Daily check","prompt":"inspect","directory":"/repo","agent":"build","model":"openai/gpt-5.4","sessionMode":"new","schedule":{"kind":"none"},"enabled":true}`
 
+func TestRoutineHTTPWorkspaceOptions(t *testing.T) {
+	_, handler, _ := routineHTTPServer(t)
+	body := strings.TrimSuffix(validRoutineBody, "}") + `,"worktree":true,"cleanupWorktree":true}`
+	rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body.String())
+	}
+	var routine state.Routine
+	if err := json.Unmarshal(rec.Body.Bytes(), &routine); err != nil {
+		t.Fatal(err)
+	}
+	if !routine.Worktree || !routine.CleanupWorktree {
+		t.Fatalf("options lost: %#v", routine)
+	}
+	rec = doRoutineRequest(t, handler, http.MethodGet, "/api/routines/"+routine.ID, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"cleanupWorktree":true`) {
+		t.Fatalf("get = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRoutineHTTPLifecycle(t *testing.T) {
 	_, handler, sent := routineHTTPServer(t)
 	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines", ""); rec.Code != http.StatusOK || rec.Body.String() != "[]\n" {

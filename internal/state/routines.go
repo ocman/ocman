@@ -23,6 +23,8 @@ type Routine struct {
 	Model                      string `json:"model"`
 	SessionMode                string `json:"sessionMode"`
 	SessionID                  string `json:"sessionId"`
+	Worktree                   bool   `json:"worktree"`
+	CleanupWorktree            bool   `json:"cleanupWorktree"`
 	ScheduleKind               string `json:"scheduleKind"`
 	ScheduleConfigJSON         string `json:"scheduleConfigJSON"`
 	PermissionRulesJSON        string `json:"permissionRulesJSON"`
@@ -54,6 +56,9 @@ type RoutineRun struct {
 	Model                      string `json:"model"`
 	SessionMode                string `json:"sessionMode"`
 	TargetSessionID            string `json:"targetSessionId"`
+	Worktree                   bool   `json:"worktree"`
+	CleanupWorktree            bool   `json:"cleanupWorktree"`
+	WorktreePath               string `json:"worktreePath,omitempty"`
 	Trigger                    string `json:"trigger"`
 	Platform                   string `json:"platform,omitempty"`
 	SessionID                  string `json:"sessionId,omitempty"`
@@ -68,7 +73,7 @@ type RoutineRun struct {
 }
 
 const routineColumns = `id, name, prompt, directory, remote_id, agent, model, session_mode, session_id, schedule_kind, schedule_config_json, permission_rules_json,
-	next_due_at, enabled, deleted, delete_after_success, created_at, updated_at, deleted_at, expired_at, archive_session_after_success, notify_on_success`
+	next_due_at, enabled, deleted, delete_after_success, created_at, updated_at, deleted_at, expired_at, archive_session_after_success, notify_on_success, worktree, cleanup_worktree`
 
 type routineScanner interface{ Scan(...any) error }
 
@@ -76,15 +81,15 @@ func scanRoutine(row routineScanner) (Routine, error) {
 	var routine Routine
 	err := row.Scan(&routine.ID, &routine.Name, &routine.Prompt, &routine.Directory, &routine.RemoteID,
 		&routine.Agent, &routine.Model, &routine.SessionMode, &routine.SessionID, &routine.ScheduleKind, &routine.ScheduleConfigJSON, &routine.PermissionRulesJSON, &routine.NextDueAt, &routine.Enabled,
-		&routine.Deleted, &routine.DeleteAfterSuccess, &routine.CreatedAt, &routine.UpdatedAt, &routine.DeletedAt, &routine.ExpiredAt, &routine.ArchiveSessionAfterSuccess, &routine.NotifyOnSuccess)
+		&routine.Deleted, &routine.DeleteAfterSuccess, &routine.CreatedAt, &routine.UpdatedAt, &routine.DeletedAt, &routine.ExpiredAt, &routine.ArchiveSessionAfterSuccess, &routine.NotifyOnSuccess, &routine.Worktree, &routine.CleanupWorktree)
 	return routine, err
 }
 
 func (d *DB) CreateRoutine(ctx context.Context, routine Routine) error {
-	_, err := d.db.ExecContext(ctx, `INSERT INTO routine (`+routineColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := d.db.ExecContext(ctx, `INSERT INTO routine (`+routineColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		routine.ID, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID, routine.Agent, routine.Model, routine.SessionMode, routine.SessionID, routine.ScheduleKind,
 		routine.ScheduleConfigJSON, routine.PermissionRulesJSON, routine.NextDueAt, routine.Enabled, routine.Deleted, routine.DeleteAfterSuccess,
-		routine.CreatedAt, routine.UpdatedAt, routine.DeletedAt, routine.ExpiredAt, routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess)
+		routine.CreatedAt, routine.UpdatedAt, routine.DeletedAt, routine.ExpiredAt, routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess, routine.Worktree, routine.CleanupWorktree)
 	if err != nil {
 		return fmt.Errorf("creating routine: %w", err)
 	}
@@ -128,10 +133,10 @@ func (d *DB) UpdateRoutine(ctx context.Context, routine Routine) error {
 	result, err := d.db.ExecContext(ctx, `UPDATE routine SET name = ?, prompt = ?, directory = ?, remote_id = ?,
 		agent = ?, model = ?, session_mode = ?, session_id = CASE
 			WHEN ? = 'reuse' AND session_mode = 'reuse' AND directory = ? AND remote_id = ? THEN session_id ELSE ? END,
-		schedule_kind = ?, schedule_config_json = ?, permission_rules_json = ?, next_due_at = ?, enabled = ?, delete_after_success = ?, archive_session_after_success = ?, notify_on_success = ?, updated_at = ?, expired_at = 0
+		schedule_kind = ?, schedule_config_json = ?, permission_rules_json = ?, next_due_at = ?, enabled = ?, delete_after_success = ?, archive_session_after_success = ?, notify_on_success = ?, worktree = ?, cleanup_worktree = ?, updated_at = ?, expired_at = 0
 		WHERE id = ? AND deleted = 0`, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID,
 		routine.Agent, routine.Model, routine.SessionMode, routine.SessionMode, routine.Directory, routine.RemoteID, routine.SessionID, routine.ScheduleKind, routine.ScheduleConfigJSON, routine.PermissionRulesJSON, routine.NextDueAt, routine.Enabled, routine.DeleteAfterSuccess,
-		routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess, routine.UpdatedAt, routine.ID)
+		routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess, routine.Worktree, routine.CleanupWorktree, routine.UpdatedAt, routine.ID)
 	if err != nil {
 		return fmt.Errorf("updating routine: %w", err)
 	}

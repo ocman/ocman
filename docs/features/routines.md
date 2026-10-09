@@ -31,6 +31,18 @@ Name, prompt, project, schedule, and enabled status stay visible at the top.
 Expand **Session and model**, **After a run**, or **Permissions** for optional
 settings. These groups start collapsed when you create or edit a routine.
 
+Routines default to **Current checkout** on the selected machine. With **New
+session**, choose **Worktree** to create a separate `routine/<run-id>` branch
+and checkout for each run. Worktrees are not offered for reused or existing
+sessions.
+
+For a worktree, **Clean up worktree after a successful run** removes its checkout
+after the session settles. Its branch and session transcript remain available.
+Failed or interrupted runs keep their workspace. Cleanup never forces removal:
+uncommitted files, an active child session, or a changed workspace identity keep
+the worktree. A cleanup problem appears in the run history without changing the
+successful run result. Each run keeps the cleanup choice it started with.
+
 Use **Settings** to change any of these fields, then **Save changes**. The change applies to future runs.
 Existing history keeps the name, prompt, project, session behavior, agent,
 model, and trigger recorded when each run started.
