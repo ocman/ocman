@@ -144,7 +144,11 @@ func (p *Process) serve(attempt int) error {
 	}()
 	ready := false
 	var nextID uint64
-	readiness := time.NewTimer(p.policy.ready)
+	newReadyTimer := p.policy.newReadyTimer
+	if newReadyTimer == nil {
+		newReadyTimer = time.NewTimer
+	}
+	readiness := newReadyTimer(p.policy.ready)
 	defer readiness.Stop()
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()

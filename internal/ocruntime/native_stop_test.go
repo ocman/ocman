@@ -3,11 +3,11 @@ package ocruntime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -23,31 +23,22 @@ func TestMissingManagedSessionIsGoneOnlyWhenEndpointIsGone(t *testing.T) {
 			if !alive {
 				api.Close()
 			}
-			killErr := &exec.ExitError{Stderr: []byte("can't find session: owned")}
-			runtime := &NativeRuntime{httpClient: api.Client(), kill: func(context.Context, string) error { return killErr }}
-			err := runtime.Stop(t.Context(), &Instance{ID: "owned", Endpoint: endpoint})
-			if alive && err == nil {
-				t.Fatal("live endpoint was treated as stopped")
-			}
-			if !alive && err != nil {
-				t.Fatalf("already absent instance blocked recovery: %v", err)
+			// CombinedOutput wraps the exit error and puts diagnostics in the
+			// outer error, rather than ExitError.Stderr.
+			for _, killErr := range []error{
+				&exec.ExitError{Stderr: []byte("can't find session: owned")},
+				fmt.Errorf("tmux command failed: %w: can't find session: owned", &exec.ExitError{}),
+			} {
+				runtime := &NativeRuntime{httpClient: api.Client(), kill: func(context.Context, string) error { return killErr }}
+				err := runtime.Stop(t.Context(), &Instance{ID: "owned", Endpoint: endpoint})
+				if alive && err == nil {
+					t.Fatal("live endpoint was treated as stopped")
+				}
+				if !alive && err != nil {
+					t.Fatalf("already absent instance blocked recovery: %v", err)
+				}
 			}
 		})
-	}
-}
-
-func TestProductionKillRunnerPreservesMissingSessionDiagnostics(t *testing.T) {
-	api := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	endpoint := api.URL
-	api.Close()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\nprintf \"can't find session: owned\\n\" >&2\nexit 1\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir)
-	runtime := NewNativeRuntime()
-	if err := runtime.Stop(t.Context(), &Instance{ID: "owned", Endpoint: endpoint}); err != nil {
-		t.Fatalf("production runner discarded absence evidence: %v", err)
 	}
 }
 

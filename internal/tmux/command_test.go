@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -11,6 +12,17 @@ import (
 	"testing"
 	"time"
 )
+
+func TestProductionKillRunnerPreservesMissingSessionDiagnostics(t *testing.T) {
+	fakeTmux(t, "printf \"can't find session: owned\\n\" >&2\nexit 1")
+	// Test the production runner's diagnostics independently of its two-second
+	// operational deadline: fixture startup is unbounded on a loaded runner.
+	err := runCommand(t.Context(), time.Minute, "kill-session", "-t", "owned")
+	var exited *exec.ExitError
+	if !errors.As(err, &exited) || exited.ExitCode() != 1 || !strings.Contains(err.Error(), "can't find session: owned") {
+		t.Fatalf("production runner discarded absence evidence: %v", err)
+	}
+}
 
 func TestRunCommandDeadlineStopsBlockingTmux(t *testing.T) {
 	fakeTmux(t, "exec sleep 30")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestServeHelper(t *testing.T) {
 	e.Hello.Token = os.Getenv("OCMAN_PLUGIN_TOKEN")
 	switch mode {
 	case "no-hello":
-		time.Sleep(10 * time.Second)
+		_, _ = io.Copy(io.Discard, os.Stdin)
 		os.Exit(0)
 	case "bad-token":
 		e.Hello.Token = testToken
@@ -45,7 +46,8 @@ func TestServeHelper(t *testing.T) {
 		time.Sleep(4 * time.Second)
 	case "partial":
 		fmt.Print(`{"type":`)
-		time.Sleep(10 * time.Second)
+		_ = os.WriteFile("partial", []byte(strconv.Itoa(os.Getpid())), 0600)
+		_, _ = io.Copy(io.Discard, os.Stdin)
 		os.Exit(0)
 	}
 	enc := json.NewEncoder(os.Stdout)
@@ -184,7 +186,7 @@ func processFixture(t *testing.T, mode string) LaunchConfig {
 // Coverage-instrumented subprocesses need extra scheduling slack on loaded CI.
 func testProcess(t *testing.T, mode string, restarts int) (*Process, LaunchConfig) {
 	t.Helper()
-	return testProcessWith(t, mode, processPolicy{30 * time.Second, 3 * time.Second, 20 * time.Millisecond, 40 * time.Millisecond, restarts})
+	return testProcessWith(t, mode, processPolicy{30 * time.Second, 3 * time.Second, 20 * time.Millisecond, 40 * time.Millisecond, restarts, nil})
 }
 
 func testProcessWith(t *testing.T, mode string, policy processPolicy) (*Process, LaunchConfig) {
@@ -279,12 +281,55 @@ func TestProcessDefaultPolicyToleratesSlowStart(t *testing.T) {
 func TestProcessReadinessFailuresAndRestartCutoff(t *testing.T) {
 	for _, mode := range []string{"no-hello", "partial", "bad-token", "changed-offer", "crash"} {
 		t.Run(mode, func(t *testing.T) {
-			// The readiness timeout itself is under test here, so keep it short.
-			p, config := testProcessWith(t, mode, processPolicy{3 * time.Second, 500 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond, 1})
+			config := processFixture(t, mode)
+			policy := processPolicy{30 * time.Second, 500 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond, 1, nil}
+			timers := make(chan *time.Timer, 2)
+			if mode == "no-hello" || mode == "partial" {
+				policy.newReadyTimer = func(time.Duration) *time.Timer {
+					timer := time.NewTimer(time.Hour)
+					timer.Stop()
+					timers <- timer
+					return timer
+				}
+			}
+			p, err := startProcess(t.Context(), config, policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(p.Stop)
+			if policy.newReadyTimer != nil {
+				for starts := 1; starts <= 2; starts++ {
+					var timer *time.Timer
+					select {
+					case timer = <-timers:
+					case <-p.done:
+						t.Fatalf("process stopped before readiness expiry: %+v", p.Health())
+					case <-time.After(time.Minute):
+						t.Fatal("readiness timer was not created")
+					}
+					// Exec success alone does not mean the Go helper has started.
+					await(t, func() bool {
+						data, _ := os.ReadFile(filepath.Join(config.DataDir, "starts"))
+						pids := strings.Fields(string(data))
+						if len(pids) != starts {
+							return false
+						}
+						if mode == "partial" {
+							partial, _ := os.ReadFile(filepath.Join(config.DataDir, "partial"))
+							return string(partial) == pids[starts-1]
+						}
+						return true
+					})
+					timer.Reset(0)
+				}
+			}
 			await(t, func() bool { return p.Health().Status == "unhealthy" })
 			h := p.Health()
 			if h.RestartCount != 1 || h.LastError == "" {
 				t.Fatalf("health: %+v", h)
+			}
+			if policy.newReadyTimer != nil && h.LastError != ErrHandshake.Error() {
+				t.Fatalf("readiness did not expire: %+v", h)
 			}
 			data, err := os.ReadFile(filepath.Join(config.DataDir, "starts"))
 			if err != nil || len(strings.Fields(string(data))) != 2 {
@@ -476,7 +521,7 @@ func TestProcessBoundedBackoff(t *testing.T) {
 			starts = append(starts, time.Now())
 		}
 	}
-	p, err := startProcess(context.Background(), config, processPolicy{30 * time.Second, 3 * time.Second, 100 * time.Millisecond, 150 * time.Millisecond, 3})
+	p, err := startProcess(context.Background(), config, processPolicy{30 * time.Second, 3 * time.Second, 100 * time.Millisecond, 150 * time.Millisecond, 3, nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +548,7 @@ func TestProcessBoundedBackoff(t *testing.T) {
 func TestProcessRejectsUnapprovedAndInvalidCalls(t *testing.T) {
 	config := processFixture(t, "success")
 	config.Candidate.Checksum = strings.Repeat("0", 64)
-	p, err := startProcess(context.Background(), config, processPolicy{time.Second, time.Millisecond, time.Millisecond, time.Millisecond, 0})
+	p, err := startProcess(context.Background(), config, processPolicy{time.Second, time.Millisecond, time.Millisecond, time.Millisecond, 0, nil})
 	if err != nil {
 		t.Fatal(err)
 	}

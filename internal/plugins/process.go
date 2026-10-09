@@ -61,10 +61,11 @@ type invocation struct {
 type processPolicy struct {
 	ready, grace, backoff, maxBackoff time.Duration
 	restarts                          int
+	newReadyTimer                     func(time.Duration) *time.Timer // nil uses time.NewTimer; tests control expiry.
 }
 
 // Allow loaded hosts time to start the executable and acknowledge cancellation.
-var defaultProcessPolicy = processPolicy{ReadyTimeout, 3 * time.Second, 100 * time.Millisecond, 5 * time.Second, 5}
+var defaultProcessPolicy = processPolicy{ReadyTimeout, 3 * time.Second, 100 * time.Millisecond, 5 * time.Second, 5, time.NewTimer}
 
 // Process owns one plugin's lifecycle. Its owner must serialize enable/disable
 // and keep only one Process per plugin ID. Failures never replay calls.
