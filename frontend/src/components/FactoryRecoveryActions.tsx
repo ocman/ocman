@@ -8,7 +8,7 @@ import './FactoryEpicCard.css';
 
 export function FactoryRecoveryActions({ gate, attempts, inbox = false }: { gate: FactoryRecoveryGate; attempts?: FactoryAttempt[]; inbox?: boolean }) {
   const resolve = useResolveFactoryRecoveryGate();
-  useResetOnGateChange(gate, resolve);
+  const markSubmitted = useResetOnGateChange(gate, resolve);
   const [response, setResponse] = useState(gate.response ?? gate.choices?.[0] ?? '');
   const pending = gate.resolution === 'resume_pending';
   const answer = pending ? gate.response ?? response : response;
@@ -21,7 +21,7 @@ export function FactoryRecoveryActions({ gate, attempts, inbox = false }: { gate
     {!inbox && <FactoryActionText text={[gate.question, gate.reason].filter(Boolean).join('\n\n')} />}
     {session?.id && <Link to={`/session/${encodeURIComponent(session.id)}?factoryEpic=${encodeURIComponent(gate.epicId)}`}>Inspect recovery session</Link>}
     <label>Recovery response{gate.choices?.length ? <SelectField aria-label={label} value={answer} disabled={pending} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice}>{choice}</option>)}</SelectField> : <TextField aria-label={label} value={answer} disabled={pending} onChange={(event) => setResponse(event.target.value)} />}</label>
-    <span className="oc-factory-action-buttons">{actions.map((action) => <Button key={action} type="button" variant={inbox && action === 'resume' ? 'accent' : 'default'} disabled={resolve.isPending || resolve.isSuccess} onClick={() => resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? answer : '' })}>{resolve.isPending && resolve.variables?.action === action ? busyLabels[action] : labels[action]}</Button>)}</span>
+    <span className="oc-factory-action-buttons">{actions.map((action) => <Button key={action} type="button" variant={inbox && action === 'resume' ? 'accent' : 'default'} disabled={resolve.isPending || resolve.isSuccess} onClick={() => { markSubmitted(); resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? answer : '' }); }}>{resolve.isPending && resolve.variables?.action === action ? busyLabels[action] : labels[action]}</Button>)}</span>
     <RecoveryStatus gate={resolve.data ?? gate} pending={resolve.isPending} saved={resolve.isSuccess} />
     {resolve.isError && <span role="alert">{resolve.error.message}</span>}
   </div>;
@@ -34,15 +34,14 @@ function RecoveryStatus({ gate, pending, saved }: { gate: FactoryRecoveryGate; p
   return saved ? <span role="status">Recovery decision saved.</span> : null;
 }
 
-// Once the server reports a newer gate state (queued, then resume_pending on a
-// failed delivery), it drives status and buttons, not the finished request.
-// Errors stay visible.
+// Once the server reports a gate state newer than the one the request was made
+// from (queued, then resume_pending on a failed delivery), the gate drives status
+// and buttons, not the finished request. Errors stay visible.
 function useResetOnGateChange(gate: FactoryRecoveryGate, { isSuccess, reset }: { isSuccess: boolean; reset: () => void }) {
   const gateState = `${gate.resolution}|${gate.response ?? ''}`;
-  const seenState = useRef(gateState);
+  const submittedFrom = useRef(gateState);
   useEffect(() => {
-    if (seenState.current === gateState) return;
-    seenState.current = gateState;
-    if (isSuccess) reset();
+    if (isSuccess && submittedFrom.current !== gateState) reset();
   }, [gateState, isSuccess, reset]);
+  return () => { submittedFrom.current = gateState; };
 }
