@@ -100,6 +100,10 @@ func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.P
 	return raw.toForge(repo), nil
 }
 
+func (c *Client) PRApproval(ctx context.Context, repo string, number int) (bool, error) {
+	return forgehttp.ReviewApproval(ctx, c.fetch, fmt.Sprintf("/repos/%s/pulls/%d/reviews", repo, number), "per_page")
+}
+
 func (c *Client) ConvertPRToDraft(ctx context.Context, repo string, number int) error {
 	path := fmt.Sprintf("/repos/%s/pulls/%d", repo, number)
 	body, _, status, err := c.fetch(ctx, path)

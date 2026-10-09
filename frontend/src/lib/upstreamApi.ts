@@ -204,13 +204,18 @@ export async function fetchIssues(opts: {
   return readJSON<ListIssuesResponse>(resp);
 }
 
+export interface PRMergeability {
+  mergeable: boolean | null;
+  approved?: boolean | null;
+}
+
 export async function fetchPRMergeability(opts: {
   dir: string;
   remoteId: string;
   remote: string;
   number: number;
   signal: AbortSignal;
-}): Promise<boolean | null> {
+}): Promise<PRMergeability> {
   const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
   const resp = await fetchResponse(`/api/project/pr-mergeability?${q}`, { signal: opts.signal });
   if (!resp.ok) {
@@ -218,7 +223,7 @@ export async function fetchPRMergeability(opts: {
     if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
-  return (await readJSON<{ mergeable: boolean | null }>(resp)).mergeable;
+  return readJSON<PRMergeability>(resp);
 }
 
 // fetchPRChecks returns the combined CI/build status for a PR's head

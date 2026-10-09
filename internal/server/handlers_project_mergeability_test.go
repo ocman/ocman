@@ -16,6 +16,10 @@ func TestProjectPRMergeability(t *testing.T) {
 			srv := testServer(t)
 			dir := initGitHubRepo(t)
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/repos/alice/myproj/pulls/42/reviews" {
+					_, _ = w.Write([]byte(`[{"id":1,"user":{"login":"bob"},"state":"APPROVED"}]`))
+					return
+				}
 				if r.URL.Path != "/repos/alice/myproj/pulls/42" {
 					t.Errorf("unexpected lookup: %s", r.URL.Path)
 				}
@@ -36,6 +40,8 @@ func TestProjectPRMergeability(t *testing.T) {
 				}
 			} else if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"mergeable":`+value) {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			} else if !strings.Contains(rr.Body.String(), `"approved":true`) {
+				t.Fatalf("missing approval: %s", rr.Body.String())
 			}
 		})
 	}
@@ -60,5 +66,24 @@ func TestProjectPRMergeabilityInvalidTarget(t *testing.T) {
 		if rr.Code != tc.status {
 			t.Errorf("%s: status=%d want=%d body=%s", tc.query, rr.Code, tc.status, rr.Body.String())
 		}
+	}
+}
+
+func TestProjectPRMergeabilityReviewFailure(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/reviews") {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"mergeable":true}`))
+	}))
+	defer upstream.Close()
+	srv.integrations.GitHub = github.NewForTest(upstream.URL, "test-token", upstream.Client())
+	rr := httptest.NewRecorder()
+	srv.handleProjectPRMergeability(rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"mergeable":true`) || !strings.Contains(rr.Body.String(), `"approved":null`) {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 }

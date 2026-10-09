@@ -22,7 +22,7 @@ it('keeps an expanded PR row and its CI status mounted through list and checks r
     .mockImplementationOnce(() => new Promise((resolve) => { finishList = resolve; }));
   vi.spyOn(api, 'fetchPRChecks').mockResolvedValueOnce({ state: 'success', checks: [{ name: 'build', state: 'success' }] })
     .mockImplementationOnce(() => new Promise((resolve) => { finishChecks = resolve; }));
-  vi.spyOn(api, 'fetchPRMergeability').mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  vi.spyOn(api, 'fetchPRMergeability').mockResolvedValueOnce({ mergeable: true, approved: false }).mockResolvedValueOnce({ mergeable: false, approved: false });
   let refresh!: () => void;
   render(<UpstreamRemoteGroup kind="prs" directory="/repo" launchDirectory="/repo" remoteId="local"
     upstream={{ remote: 'origin', host: 'github.com', type: 'github', repo: 'a/repo' }}

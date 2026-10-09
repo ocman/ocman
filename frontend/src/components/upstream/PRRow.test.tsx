@@ -160,7 +160,7 @@ describe('PRRow CI build-status indicator', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(api, 'fetchPRMergeability').mockResolvedValue(true);
+    vi.spyOn(api, 'fetchPRMergeability').mockResolvedValue({ mergeable: true, approved: false });
     localStorage.clear();
     clearPRChecksCache();
     observers = [];

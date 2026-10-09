@@ -2,11 +2,12 @@
 .oc-upstream-row.current-branch.expanded { background: color-mix(in srgb, var(--accent) 10%, var(--mantle)); }
 .oc-upstream-row-current-branch { flex-shrink: 0; padding: 1px 6px; border: 1px solid var(--accent); border-radius: 0; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); font-family: 'SF Mono', Consolas, monospace; font-size: 10px; font-weight: 500; text-transform: lowercase; }
 .oc-upstream-row-fork-note { font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--accent4); margin-bottom: 8px; }
-.oc-upstream-ci-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--text-dim); }
+.oc-upstream-ci-dot { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--text-dim); }
 .oc-upstream-ci-dot-success { background: var(--accent2); }
 .oc-upstream-ci-dot-failure { background: var(--danger); }
 .oc-upstream-ci-dot-pending { background: var(--warning); }
-.oc-upstream-ci-dot-unknown { background: var(--text-dim); opacity: .5; }
+.oc-upstream-ci-dot-unknown { background: color-mix(in srgb, var(--text-dim) 50%, transparent); }
+.oc-upstream-ci-approved { position: absolute; right: -4px; bottom: -4px; z-index: 1; color: var(--accent2); }
 .oc-upstream-ci-checks { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; }
 .oc-upstream-ci-loading, .oc-upstream-ci-empty, .oc-upstream-ci-error { margin: 8px 0; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--text-dim); }
 .oc-upstream-ci-error { color: var(--danger); }

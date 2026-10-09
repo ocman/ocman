@@ -150,6 +150,10 @@ func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.P
 	return raw.toForge(c.host, repo), nil
 }
 
+func (c *Client) PRApproval(ctx context.Context, repo string, number int) (bool, error) {
+	return forgehttp.ReviewApproval(ctx, c.fetch, fmt.Sprintf("/api/v1/repos/%s/pulls/%d/reviews", repo, number), "limit")
+}
+
 func (c *Client) ConvertPRToDraft(ctx context.Context, repo string, number int) error {
 	current, err := c.LookupPR(ctx, repo, number)
 	if err != nil {

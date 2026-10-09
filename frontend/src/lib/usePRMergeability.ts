@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchPRMergeability } from './upstreamApi';
-import type { PR } from './upstreamApi';
+import type { PR, PRMergeability } from './upstreamApi';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 
 export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote: string, visible: boolean) {
@@ -16,19 +16,17 @@ export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote:
     return () => window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
   }, [repository]);
   const key = `${remoteId}\0${dir}\0${remote}\0${number}\0${headSha}\0${updatedAt}\0${generation}`;
-  const [resolved, setResolved] = useState<{ key: string; value: boolean }>();
+  const [resolved, setResolved] = useState<{ key: string; value: PRMergeability }>();
   useEffect(() => {
-    if (!visible || status !== 'open' || mergeable != null) return;
+    if (!visible) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
       try {
         const value = await fetchPRMergeability({ dir, remoteId, remote, number, signal: controller.signal });
         if (controller.signal.aborted) return;
-        if (value != null) {
-          setResolved({ key, value });
-          return;
-        }
+        setResolved({ key, value });
+        if (value.approved != null && (status !== 'open' || mergeable != null || value.mergeable != null)) return;
       } catch {
         // Keep unknown distinct from a confirmed conflict, and retry while visible.
       }
@@ -40,5 +38,6 @@ export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote:
       clearTimeout(timer);
     };
   }, [dir, key, mergeable, number, remote, remoteId, status, visible]);
-  return mergeable ?? (resolved?.key === key ? resolved.value : undefined);
+  const value = resolved?.key === key ? resolved.value : undefined;
+  return { mergeable: mergeable ?? value?.mergeable, approved: value?.approved };
 }

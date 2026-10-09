@@ -43,7 +43,7 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
   const sha = pr.headSha ?? '';
   const loadChecks = useCallback((signal: AbortSignal) => fetchPRChecks({ dir: checksDirectory, remoteId, remote, sha, signal }), [checksDirectory, remoteId, remote, sha]);
   const checks = usePRChecks(prChecksCacheKey(pr.host, pr.repo, sha), `${remoteId}\0${checksDirectory}\0${remote}\0${sha}`, visible && !!sha, loadChecks);
-  const mergeable = usePRMergeability(pr, checksDirectory, remoteId, remote, visible);
+  const { mergeable, approved } = usePRMergeability(pr, checksDirectory, remoteId, remote, visible);
   const active = pr.status === 'open' || pr.status === 'draft';
   const unmergeable = active && (pr.status === 'draft' || mergeable === false);
   const mergeLabel = active ? (unmergeable ? 'Not mergeable' : mergeable === true ? 'Mergeable' : 'Mergeability unknown') : undefined;
@@ -80,7 +80,7 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
       crossFork={pr.crossFork}
       className={isCurrentBranch ? 'current-branch' : undefined}
       onVisibleChange={setVisible}
-      summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} unmergeable={unmergeable} mergeLabel={mergeLabel} />}
+      summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} unmergeable={unmergeable} mergeLabel={mergeLabel} approved={approved === true} />}
       summarySuffix={isCurrentBranch ? (
         <span
           className="oc-upstream-row-current-branch"
@@ -100,8 +100,8 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
   );
 }
 
-function CIDot({ state, prNumber, unmergeable, mergeLabel }: { state: CIState; prNumber: number; unmergeable: boolean; mergeLabel?: string }) {
-  const label = [CI_LABEL[state], mergeLabel].filter(Boolean).join(' · ');
+function CIDot({ state, prNumber, unmergeable, mergeLabel, approved }: { state: CIState; prNumber: number; unmergeable: boolean; mergeLabel?: string; approved: boolean }) {
+  const label = [CI_LABEL[state], mergeLabel, approved ? 'Approved' : undefined].filter(Boolean).join(' · ');
   return (
     <span
       className={`oc-upstream-ci-dot oc-upstream-ci-dot-${state}${unmergeable ? ' oc-upstream-ci-dot-unmergeable' : ''}`}
@@ -109,7 +109,11 @@ function CIDot({ state, prNumber, unmergeable, mergeLabel }: { state: CIState; p
       aria-label={label}
       role="img"
       data-testid={`pr-row-${prNumber}-ci`}
-    />
+    >
+      {approved && <svg className="oc-upstream-ci-approved" width="9" height="9" viewBox="0 0 12 12" aria-hidden="true" data-testid={`pr-row-${prNumber}-approved`}>
+        <path d="m2 6 3 3 5-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>}
+    </span>
   );
 }
 
