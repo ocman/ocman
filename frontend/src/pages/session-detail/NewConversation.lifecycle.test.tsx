@@ -615,6 +615,7 @@ describe('new-conversation submission lifecycle', () => {
     await waitFor(() => expect(input).not.toBeDisabled());
     fireEvent.input(input, { target: { value: 'old task' } });
     fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByText('Leave draft'));
     const newer = screen.getByRole('textbox');
     fireEvent.input(newer, { target: { value: 'newer task' } });
