@@ -5,14 +5,8 @@ import (
 	"database/sql"
 )
 
-// GetDescendantMessages reads only message metadata for usage accounting.
-// UNION also bounds traversal if corrupt parent links contain a cycle.
-func (d *DB) GetDescendantMessages(ctx context.Context, sessionID string) ([]Message, error) {
-	var exists int
-	if err := d.db.QueryRowContext(ctx, `SELECT 1 FROM session WHERE id = ?`, sessionID).Scan(&exists); err != nil {
-		return nil, err
-	}
-	rows, err := d.db.QueryContext(ctx, `WITH RECURSIVE descendants(id) AS (
+// Keep descendants first: SQLite otherwise scans the entire message table per run.
+const descendantMessagesQuery = `WITH RECURSIVE descendants(id) AS (
 		SELECT id FROM session WHERE id = ?
 		UNION
 		SELECT s.id FROM session s JOIN descendants d ON s.parent_id = d.id
@@ -23,7 +17,16 @@ func (d *DB) GetDescendantMessages(ctx context.Context, sessionID string) ([]Mes
 		'modelID', json_extract(m.data, '$.modelID'),
 		'cost', json_extract(m.data, '$.cost'),
 		'tokens', json_extract(m.data, '$.tokens')
-	) END FROM message m JOIN descendants d ON m.session_id = d.id`, sessionID)
+	) END FROM descendants d CROSS JOIN message m WHERE m.session_id = d.id`
+
+// GetDescendantMessages reads only message metadata for usage accounting.
+// UNION also bounds traversal if corrupt parent links contain a cycle.
+func (d *DB) GetDescendantMessages(ctx context.Context, sessionID string) ([]Message, error) {
+	var exists int
+	if err := d.db.QueryRowContext(ctx, `SELECT 1 FROM session WHERE id = ?`, sessionID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	rows, err := d.db.QueryContext(ctx, descendantMessagesQuery, sessionID)
 	if err != nil {
 		return nil, err
 	}

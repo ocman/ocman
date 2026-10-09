@@ -7,6 +7,56 @@ import (
 	"testing"
 )
 
+func TestDescendantMessagesUsesSessionIndex(t *testing.T) {
+	for _, version := range []string{"v1", "v2"} {
+		t.Run(version, func(t *testing.T) { testDescendantMessagesUsesSessionIndex(t, version) })
+	}
+}
+
+func testDescendantMessagesUsesSessionIndex(t *testing.T, version string) {
+	database := openTestDB(t)
+	defer database.Close()
+	queries := []string{
+		`CREATE INDEX message_session_id_idx ON message(session_id)`,
+		`CREATE INDEX session_parent_id_idx ON session(parent_id)`,
+	}
+	if version == "v2" {
+		queries = append([]string{v2SchemaDDL}, v2ViewDDL...)
+		queries = append(queries,
+			`CREATE INDEX message_session_id_idx ON session_message(session_id)`,
+			`CREATE INDEX session_parent_id_idx ON session_v2(parent_id)`)
+	}
+	for _, query := range queries {
+		if _, err := database.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := database.db.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+descendantMessagesQuery, "root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var indexed bool
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		t.Log(detail)
+		if strings.Contains(detail, "SCAN m") {
+			t.Error("usage scans unrelated messages instead of looking up descendant sessions")
+		}
+		indexed = indexed || strings.Contains(detail, "SEARCH m USING INDEX message_session_id_idx")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !indexed {
+		t.Error("usage did not use the message session index")
+	}
+}
+
 func TestDescendantMessageMetadata(t *testing.T) {
 	database := openTestDB(t)
 	defer database.Close()
