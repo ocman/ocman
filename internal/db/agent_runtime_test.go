@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func TestAgentRunHoursIncludesToolsExcludesWaits(t *testing.T) {
@@ -66,6 +68,60 @@ func TestAgentRunHoursIncludesToolsExcludesWaits(t *testing.T) {
 	}
 }
 
+func TestAgentRunHoursMissedWaitResolutionAcrossRestart(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	hour := time.Hour.Milliseconds()
+	insertSession(t, d, "s", "session", "/repo", hour, 4*hour)
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := state.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StartAgentUserWait(t.Context(), "opencode", "s", "permission", "p", hour+hour/4); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Ocman is offline while the user answers and two assistant intervals finish.
+	for _, row := range []struct {
+		id         string
+		start, end int64
+	}{
+		{"owning", hour, 2 * hour}, {"later", 2*hour + hour/6, 3 * hour},
+	} {
+		insertMessage(t, d, row.id, "s", row.start, map[string]any{"role": "assistant", "time": map[string]any{"created": row.start, "completed": row.end}})
+	}
+	store, err = state.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	check := func(since int64, want []AgentRunHour) {
+		t.Helper()
+		observed, err := store.AgentUserWaits(t.Context(), "opencode", since, 4*hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waits := map[string][]RunInterval{}
+		for _, wait := range observed {
+			waits[wait.SessionID] = append(waits[wait.SessionID], RunInterval{wait.Start, wait.End})
+		}
+		got, err := d.GetAgentRunHours(t.Context(), since, 4*hour, "/repo", waits)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("runtime after restart = %v, %v; want %v", got, err, want)
+		}
+	}
+	check(hour, []AgentRunHour{{hour, 15}, {2 * hour, 50}, {3 * hour, 0}})
+	check(2*hour, []AgentRunHour{{2 * hour, 50}, {3 * hour, 0}})
+	// A later observed idle must not cement a subtraction from the later turn.
+	if err := store.ResolveSessionUserWaits(t.Context(), "opencode", "s", 3*hour); err != nil {
+		t.Fatal(err)
+	}
+	check(hour, []AgentRunHour{{hour, 15}, {2 * hour, 50}, {3 * hour, 0}})
+}
+
 func TestAgentRunBucketsCrossHoursAndEmpty(t *testing.T) {
 	hour := time.Hour.Milliseconds()
 	runs := map[string][]RunInterval{"a": {{hour + hour/2, 2*hour + hour/2}, {3 * hour, 3 * hour}}}
@@ -80,5 +136,21 @@ func TestAgentRunBucketsCrossHoursAndEmpty(t *testing.T) {
 	}
 	if got := agentRunBuckets(nil, nil, hour, 3*hour); !reflect.DeepEqual(got, []AgentRunHour{{hour, 0}, {2 * hour, 0}}) {
 		t.Fatal(got)
+	}
+}
+
+func TestBoundRunWaitsUsesUnclippedOwningIntervals(t *testing.T) {
+	runs := map[string][]RunInterval{"s": {{3000, 4000}, {1000, 2000}, {1200, 1500}}}
+	waits := map[string][]RunInterval{
+		"s":       {{1600, 5000}, {2500, 5000}},
+		"missing": {{1000, 5000}},
+	}
+	got := boundRunWaits(runs, waits)
+	want := map[string][]RunInterval{"s": {{1600, 2000}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bounded waits = %v, want %v", got, want)
+	}
+	if waits["s"][0].End != 5000 {
+		t.Fatal("mutated caller's wait")
 	}
 }

@@ -40,7 +40,6 @@ func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir strin
 			rows.Close()
 			return nil, err
 		}
-		interval.Start, interval.End = max(since, interval.Start), min(until, interval.End)
 		runs[session] = append(runs[session], interval)
 	}
 	err = rows.Err()
@@ -65,11 +64,11 @@ func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir strin
 	if err != nil {
 		return nil, err
 	}
-	// Copy caller-owned waits before appending question intervals.
-	blocked := make(map[string][]RunInterval, len(waits))
-	for session, intervals := range waits {
-		blocked[session] = append([]RunInterval(nil), intervals...)
-	}
+	// A successful timing snapshot reconciles missed reply/idle events: a human
+	// wait can block only the assistant interval in which it originated. Bind
+	// before clipping to the requested range, so old waits cannot spill into a
+	// later turn after restart. Failed snapshot reads return errors above.
+	blocked := boundRunWaits(runs, waits)
 	for rows.Next() {
 		var session string
 		var start, end *int64
@@ -86,7 +85,33 @@ func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir strin
 	if err != nil {
 		return nil, err
 	}
+	for session, intervals := range runs {
+		for i := range intervals {
+			intervals[i].Start = max(since, intervals[i].Start)
+			intervals[i].End = min(until, intervals[i].End)
+		}
+		runs[session] = intervals
+	}
 	return agentRunBuckets(runs, blocked, since, until), nil
+}
+
+func boundRunWaits(runs, waits map[string][]RunInterval) map[string][]RunInterval {
+	bounded := make(map[string][]RunInterval, len(waits))
+	for session, intervals := range waits {
+		owners := runs[session]
+		sort.Slice(owners, func(i, j int) bool { return owners[i].Start < owners[j].Start })
+		for _, wait := range intervals {
+			index := sort.Search(len(owners), func(i int) bool { return owners[i].Start > wait.Start }) - 1
+			for ; index >= 0; index-- {
+				owner := owners[index]
+				if wait.Start < owner.End {
+					bounded[session] = append(bounded[session], RunInterval{wait.Start, min(wait.End, owner.End)})
+					break
+				}
+			}
+		}
+	}
+	return bounded
 }
 
 func unionRunIntervals(intervals []RunInterval) []RunInterval {

@@ -52,7 +52,8 @@ export function UIUsageReporter() {
     window.addEventListener('focus', onFocus);
     window.addEventListener('blur', onStateChange);
     window.addEventListener('pagehide', onPageHide);
-    for (const event of ['pointerdown', 'keydown', 'scroll']) window.addEventListener(event, onInteraction, { passive: true });
+    for (const event of ['pointerdown', 'keydown']) window.addEventListener(event, onInteraction, { passive: true });
+    window.addEventListener('scroll', onInteraction, { passive: true, capture: true });
     const heartbeat = setInterval(() => { void send(); }, USAGE_HEARTBEAT_MS);
     void send();
     return () => {
@@ -63,7 +64,8 @@ export function UIUsageReporter() {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('blur', onStateChange);
       window.removeEventListener('pagehide', onPageHide);
-      for (const event of ['pointerdown', 'keydown', 'scroll']) window.removeEventListener(event, onInteraction);
+      for (const event of ['pointerdown', 'keydown']) window.removeEventListener(event, onInteraction);
+      window.removeEventListener('scroll', onInteraction, true);
     };
   }, []);
   return null;

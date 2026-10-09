@@ -94,4 +94,19 @@ describe('UIUsageReporter', () => {
     expect(payloads().at(-1)?.intervals).toEqual([{ start: 1_120_000, end: 1_180_000 }]);
     unmount();
   });
+
+  it('resumes usage when a nested scroll container dispatches a non-bubbling scroll', async () => {
+    const { unmount } = render(<UIUsageReporter />);
+    await flush();
+    await advance(420_000);
+    const idleCount = send.mock.calls.length;
+    const pane = document.createElement('div');
+    document.body.append(pane);
+    pane.dispatchEvent(new Event('scroll', { bubbles: false }));
+    await advance(60_000);
+    expect(send.mock.calls.length).toBeGreaterThan(idleCount);
+    expect(payloads().at(-1)?.intervals).toEqual([{ start: 1_420_000, end: 1_480_000 }]);
+    pane.remove();
+    unmount();
+  });
 });

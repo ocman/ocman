@@ -101,7 +101,11 @@ flowchart LR
   completed assistant intervals per session, includes other tools, subtracts
   recorded human waits from state.db, and sums subagents separately. Human
   waits are observed after the approval decision, even with autoapproval off;
-  resolution and idle edges close them. Older permission lifecycle records
+  resolution and idle edges close them. Each analytics read bounds a wait to
+  its originating completed assistant interval before applying the date filter,
+  so missed reply/idle events across a restart cannot remove later turns. Timing
+  read failures stay errors rather than reconciling against an empty snapshot.
+  Older permission lifecycle records
   fill in history when available. Missing historical observations remain unknown.
   TPS divides
   output tokens by completed message time minus the union of tool intervals,
