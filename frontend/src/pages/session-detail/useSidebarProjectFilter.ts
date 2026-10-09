@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Session } from '../../lib/api';
 import type { SidebarProjectGroup } from './SessionSidebar';
+import { matchesScope } from '../../lib/projectTree';
 
 export function useSidebarProjectFilter(sessions: Session[], groups: SidebarProjectGroup[]) {
   const [projectFilter, setProjectFilter] = useState('');
@@ -8,9 +9,9 @@ export function useSidebarProjectFilter(sessions: Session[], groups: SidebarProj
   const filtered = useMemo(() => {
     if (!projectFilter) return { recentSessions: sessions, sidebarProjectGroups: groups };
     const selected = projects.find((group) => (group.key ?? group.directory) === projectFilter);
-    const members = new Set(selected?.sessions.map((session) => `${session.platform}\0${session.id}`));
+    const sidebarProjectGroups = selected ? [selected] : projects.filter((group) => matchesScope(group.directory, projectFilter));
+    const members = new Set(sidebarProjectGroups.flatMap((group) => group.sessions.map((session) => `${session.platform}\0${session.id}`)));
     const recentSessions = sessions.filter((session) => members.has(`${session.platform}\0${session.id}`));
-    const sidebarProjectGroups = selected ? [selected] : [];
     return { recentSessions, sidebarProjectGroups };
   }, [sessions, groups, projects, projectFilter]);
   return { ...filtered, projects, projectFilter, setProjectFilter };

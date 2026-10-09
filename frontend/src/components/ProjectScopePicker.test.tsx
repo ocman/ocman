@@ -46,6 +46,22 @@ describe('flattenForOptions', () => {
 });
 
 describe('ProjectScopePicker', () => {
+  it('keeps same-directory project identities and machine labels distinct', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ProjectScopePicker projects={[
+      { directory: '/repo', key: 'git:local' },
+      { directory: '/repo', key: 'git:local' },
+      { directory: '/repo', key: 'git:remote', remoteName: 'Box' },
+    ]} value="git:remote" onChange={onChange} />);
+    const selector = screen.getByRole('combobox', { name: 'Project scope' });
+    expect(selector).toHaveTextContent('repo · Box');
+    await user.click(selector);
+    expect(screen.getAllByRole('option')).toHaveLength(3);
+    await user.click(screen.getByRole('option', { name: '/repo' }));
+    expect(onChange).toHaveBeenCalledWith('git:local');
+  });
+
   it('renders a default "All projects" option', () => {
     const html = renderToStaticMarkup(<ProjectScopePicker projects={[]} value="" onChange={() => {}} />);
     expect(html).toContain('All projects');

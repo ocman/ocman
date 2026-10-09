@@ -143,7 +143,8 @@ describe('SessionSidebar', () => {
     renderSidebar(group, {});
     expect(screen.getByText('Local draft').closest('.session-sidebar-group')).not.toBe(screen.getByText('Remote draft').closest('.session-sidebar-group'));
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Project' }), { target: { value: '/repo' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Project' }));
+    fireEvent.click(screen.getAllByRole('option', { name: '/repo' })[0]);
     expect(screen.getByText('Local draft')).toBeInTheDocument();
     expect(screen.queryByText('Remote draft')).not.toBeInTheDocument();
   });
@@ -175,12 +176,14 @@ describe('SessionSidebar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
     const selector = screen.getByRole('combobox', { name: 'Project' });
     expect(screen.queryByRole('option', { name: '__pinned__' })).not.toBeInTheDocument();
-    fireEvent.change(selector, { target: { value: 'git:selected' } });
+    fireEvent.click(selector);
+    fireEvent.click(screen.getByRole('option', { name: '/selected' }));
     expect(screen.getByText('Selected worktree')).toBeInTheDocument();
     expect(screen.queryByText('Fix thing')).not.toBeInTheDocument();
     expect(screen.queryByText('Other pinned')).not.toBeInTheDocument();
     expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['chosen']);
-    fireEvent.change(selector, { target: { value: '' } });
+    fireEvent.click(selector);
+    fireEvent.click(screen.getByRole('option', { name: 'All projects' }));
     expect(screen.getAllByText('Fix thing').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Other pinned').length).toBeGreaterThan(0);
   });

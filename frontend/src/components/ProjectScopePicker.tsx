@@ -6,7 +6,7 @@ import { FilterField } from './FilterField';
 
 /**
  * ProjectScopePicker — a single dropdown that lets the user scope the
- * Stats / Usage / Projects views to a project subtree.
+ * views and the session sidebar to a project subtree.
  *
  * The dropdown is populated from the current `/api/projects` payload by
  * walking the prefix trie produced by buildScopeTree(). Both leaf project
@@ -19,15 +19,15 @@ import { FilterField } from './FilterField';
 export interface ProjectScopePickerProps {
   /**
    * Current project list, e.g. from useDashboard().projects. The picker
-   * only reads `directory`; we type the prop on a structural minimum so
+   * reads `directory`, with optional project identity and machine label, so
    * tests (and any future callers with different project shapes) can
    * pass anything that exposes a directory field without needing to
    * fabricate the full Project shape.
    */
-  projects: Array<{ directory: string }>;
-  /** The active scope (URL ?dir=…). Empty string means "all projects". */
+  projects: Array<{ directory: string; key?: string; remoteName?: string }>;
+  /** The active scope or project key. Empty string means "all projects". */
   value: string;
-  /** Called with the new scope path, or '' when "All projects" is chosen. */
+  /** Called with the scope path or project key, or '' for "All projects". */
   onChange: (dir: string) => void;
   /**
    * Accessible label (aria-label). Defaults to 'Project scope'.
@@ -56,9 +56,18 @@ export function ProjectScopePicker({
   // Memoise so we don't rebuild the trie on every parent re-render. The
   // input list reference changes whenever `projects` is reloaded, which
   // is rare relative to render frequency.
-  const options = useMemo(() => flattenForOptions(buildScopeTree(projects)), [projects]);
+  const options = useMemo(() => flattenForOptions(buildScopeTree(projects)).flatMap((option) => {
+    const leaves = [...new Map(projects.filter((project) => project.directory === option.path)
+      .map((project) => [project.key ?? project.directory, project])).values()];
+    const label = `${INDENT.repeat(option.depth)}${shortPath(option.path)}${option.projectCount > 1 ? ` (${option.projectCount} projects)` : ''}`;
+    return leaves.length ? leaves.map((project) => ({
+      value: project.key ?? project.directory,
+      label: `${label}${project.remoteName ? ` · ${project.remoteName}` : ''}`,
+    })) : [{ value: option.path, label }];
+  }), [projects]);
 
-  const disabled = options.length === 0;
+  const unavailable = !!value && !options.some((option) => option.value === value);
+  const disabled = options.length === 0 && !value;
 
   return (
     <FilterField label={showLabel ? label : undefined}>
@@ -71,10 +80,8 @@ export function ProjectScopePicker({
         onChange={onChange}
         options={[
           { value: '', label: 'All projects' },
-          ...options.map((option) => ({
-            value: option.path,
-            label: `${INDENT.repeat(option.depth)}${shortPath(option.path)}${option.projectCount > 1 ? ` (${option.projectCount} projects)` : ''}`,
-          })),
+          ...(unavailable ? [{ value, label: 'Unavailable project', disabled: true }] : []),
+          ...options,
         ]}
       />
     </FilterField>
