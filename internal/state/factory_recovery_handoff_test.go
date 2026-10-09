@@ -61,6 +61,13 @@ func TestRecoveryCheckpointYieldsWorkspaceWithoutCompletingIssue(t *testing.T) {
 	if _, _, err := db.ResolveFactoryRecoveryGate(ctx, gate.IssueID, "resume", "Continue", now); !errors.Is(err, model.ErrRecoveryWorkspaceBusy) {
 		t.Fatalf("expected actionable workspace conflict, got %v", err)
 	}
+	// The service queues that decision; the gate stays open so the writer stays yielded.
+	if err := db.QueueFactoryRecoveryResume(ctx, gate.IssueID, "Continue", now); err != nil {
+		t.Fatal(err)
+	}
+	if queued, err := db.ListFactoryQueuedRecoveryResumes(ctx); err != nil || len(queued) != 1 || queued[0].IssueID != gate.IssueID || queued[0].Response != "Continue" {
+		t.Fatalf("queued resumes = %#v, %v", queued, err)
+	}
 	stored, found, err := db.GetFactoryAttempt(ctx, acceptance.ID)
 	if err != nil || !found || stored.Phase != model.FactoryAttemptActive || stored.Outcome != "" {
 		t.Fatalf("acceptance was completed by yielding: %#v, %v", stored, err)
@@ -73,5 +80,11 @@ func TestRecoveryCheckpointYieldsWorkspaceWithoutCompletingIssue(t *testing.T) {
 	}
 	if _, resumed, err := db.ResolveFactoryRecoveryGate(ctx, gate.IssueID, "resume", "Continue", now.Add(4*time.Second)); err != nil || resumed.FrozenPolicy.CheckpointSHA != "prerequisite-checkpoint" {
 		t.Fatalf("resume after workspace release: %v", err)
+	}
+	if queued, err := db.ListFactoryQueuedRecoveryResumes(ctx); err != nil || len(queued) != 0 {
+		t.Fatalf("resolved gate still queued: %#v, %v", queued, err)
+	}
+	if err := db.QueueFactoryRecoveryResume(ctx, gate.IssueID, "Continue", now); err == nil {
+		t.Fatal("queued a resume on a gate that is no longer open")
 	}
 }

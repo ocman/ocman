@@ -63,6 +63,47 @@ func (d *DB) RecordFactoryRecoveryCheckpoint(ctx context.Context, gateID string,
 	return tx.Commit()
 }
 
+// QueueFactoryRecoveryResume records a resume decision on a gate whose Epic
+// workspace is busy. An open gate carrying a response is a queued resume: the
+// gate stays open (so the writer stays yielded) until Dispatch delivers it.
+func (d *DB) QueueFactoryRecoveryResume(ctx context.Context, gateID, response string, at time.Time) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `UPDATE factory_recovery_gate SET response = ? WHERE issue_id = ? AND resolution = 'open'`, response, gateID)
+	if err != nil {
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil || n == 0 {
+		return errors.New("factory recovery gate is unavailable")
+	}
+	details, _ := json.Marshal(map[string]string{"response": response})
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) SELECT epic_id, work_item_id, attempt_id, 'user', 'recovery.resume_queued', ?, ? FROM factory_recovery_gate WHERE issue_id = ?`, string(details), at.UnixMilli(), gateID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ListFactoryQueuedRecoveryResumes returns open gates with a queued resume, oldest first.
+func (d *DB) ListFactoryQueuedRecoveryResumes(ctx context.Context) ([]model.RecoveryGate, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT issue_id, response FROM factory_recovery_gate WHERE resolution = 'open' AND response <> '' ORDER BY created_at, issue_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var gates []model.RecoveryGate
+	for rows.Next() {
+		var gate model.RecoveryGate
+		if err := rows.Scan(&gate.IssueID, &gate.Response); err != nil {
+			return nil, err
+		}
+		gates = append(gates, gate)
+	}
+	return gates, rows.Err()
+}
+
 func (d *DB) ResolveFactoryRecoveryGate(ctx context.Context, gateID, action, response string, at time.Time) (model.RecoveryGate, model.FactoryAttempt, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {

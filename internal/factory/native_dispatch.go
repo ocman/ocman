@@ -2,6 +2,7 @@ package factory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -30,6 +31,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			return err
 		}
 	}
+	s.resumeQueuedRecoveries(ctx)
 	type candidate struct {
 		issue model.NativeIssue
 		epic  model.NativeEpic
@@ -66,7 +68,9 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 	})
 	for _, next := range ready {
 		if err := s.handoffRecoveryWorkspace(ctx, next.epic.ID); err != nil {
-			logrus.WithError(err).WithField("epic", next.epic.ID).Warn("Factory recovery workspace handoff blocked")
+			if !errors.Is(err, errHandoffBlocked) {
+				logrus.WithError(err).WithField("epic", next.epic.ID).Warn("Factory recovery workspace handoff blocked")
+			}
 			continue
 		}
 		epic, attempt, err := store.ClaimFactoryImplementation(ctx, next.epic.ID, next.issue.ID, "factory-implement/v1", time.Now())

@@ -350,6 +350,18 @@ describe('Factory human action cards', () => {
     expect(api.resolveFactoryRecoveryGate).toHaveBeenCalledWith('ship.3', action, action === 'resume' ? 'B' : '');
   });
 
+  it('shows a resume queued behind a busy Epic workspace instead of an error', async () => {
+    const recovery = { issueId: 'ship.3', epicId: 'ship', attemptId: 'attempt', workId: 'ship.1', question: 'Which API?', reason: 'Both supported', choices: ['A', 'B'], resolution: 'open' };
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'gate', recovery }]);
+    vi.mocked(api.resolveFactoryRecoveryGate).mockResolvedValue({ ...recovery, response: 'A' });
+    renderCard();
+    await screen.findByText('Which API?');
+    expect(screen.queryByText(/Resume queued/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Resume work' }));
+    expect(await screen.findByText(/Resume queued/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('keeps a pending recovery limited to retrying resume and displays errors', async () => {
     const recovery = { issueId: 'ship.3', epicId: 'ship', attemptId: 'attempt', workId: 'ship.1', question: 'Which API?', reason: 'Both supported', choices: [], response: 'A', resolution: 'resume_pending' };
     vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, recovery }]);

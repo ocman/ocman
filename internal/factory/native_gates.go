@@ -266,7 +266,25 @@ func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action,
 	if pending && response != gate.Response {
 		return RecoveryGate{}, fmt.Errorf("%w: factory recovery response does not match the pending decision", ErrInvalidRequest)
 	}
+	queued := gate
 	gate, attempt, err := store.ResolveFactoryRecoveryGate(ctx, gateID, action, response, time.Now())
+	if errors.Is(err, model.ErrRecoveryWorkspaceBusy) && !pending {
+		// Another Issue holds the Epic workspace. Keep the decision; Dispatch
+		// delivers it once the workspace is released instead of asking the user
+		// to come back and click again.
+		if queue, ok := s.store.(nativeRecoveryQueueStore); ok {
+			if response == "" {
+				response = "Continue" // ponytail: a non-empty response marks the gate as queued; the delivered prompt is equivalent
+			}
+			if queued.Response != response { // Dispatch re-checks every pass; record the decision once
+				if err := queue.QueueFactoryRecoveryResume(ctx, gateID, response, time.Now()); err != nil {
+					return RecoveryGate{}, err
+				}
+				queued.Response = response
+			}
+			return queued, nil
+		}
+	}
 	if err != nil {
 		return RecoveryGate{}, err
 	}

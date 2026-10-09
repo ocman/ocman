@@ -230,6 +230,10 @@ type nativeRecoveryStore interface {
 	IsFactoryAttemptRecoveryPaused(context.Context, string) (bool, error)
 	GetFactoryRecoveryGate(context.Context, string) (model.RecoveryGate, bool, error)
 }
+type nativeRecoveryQueueStore interface {
+	QueueFactoryRecoveryResume(context.Context, string, string, time.Time) error
+	ListFactoryQueuedRecoveryResumes(context.Context) ([]model.RecoveryGate, error)
+}
 type nativeAuthorityStore interface {
 	IsFactoryImplementationSession(context.Context, string) (bool, error)
 	CreateFactoryAuthorityEscalationGate(context.Context, string, string, string, string, time.Time) (model.AuthorityEscalationGate, bool, error)
@@ -293,6 +297,7 @@ type NativeService struct {
 	checks            map[string]verificationCheck // in memory: a restart just reruns the checks
 	idleProbedAt      map[string]time.Time
 	nudged            map[string]bool
+	handoffBlocked    map[string]string // recovery gate -> last reason; writer already stopped (recoveryMu)
 	startOnce         sync.Once
 	closeOnce         sync.Once
 	dispatchWG        sync.WaitGroup

@@ -11,7 +11,7 @@ import (
 )
 
 func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
-	for _, failure := range []string{"", "stop", "checkpoint"} {
+	for _, failure := range []string{"", "stop", "checkpoint", "queued"} {
 		name := failure
 		if name == "" {
 			name = "success"
@@ -54,9 +54,22 @@ func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
 			if err := svc.Dispatch(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if failure != "" {
+			if failure == "stop" || failure == "checkpoint" {
 				if len(launcher.calls) != 1 {
 					t.Fatal("unsafe recovery launched another writer")
+				}
+				if failure == "checkpoint" {
+					// OpenCode answers an abort with session.idle, which wakes Dispatch.
+					// A blocked handoff must not abort the writer again on every wake.
+					stops := len(launcher.stops)
+					for range 3 {
+						if err := svc.Dispatch(t.Context()); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if len(launcher.stops) != stops {
+						t.Fatalf("blocked handoff re-aborted the writer: %d -> %d stops", stops, len(launcher.stops))
+					}
 				}
 				if failure == "stop" && launcher.handoffs != 0 {
 					t.Fatal("validated a checkpoint before stopping the writer")
@@ -72,13 +85,27 @@ func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
 			if !strings.Contains(strings.Join(launcher.prepared, " "), "/repo:abc123") {
 				t.Fatalf("checkpoint not forwarded: %v", launcher.prepared)
 			}
-			if _, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", "Continue"); err == nil {
-				t.Fatal("resumed while prerequisite owns workspace")
+			// A busy workspace queues the decision instead of failing the click.
+			if queued, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", "Continue"); err != nil || queued.Resolution != "open" || queued.Response != "Continue" || len(launcher.recoveries) != 0 {
+				t.Fatalf("busy resume = %#v, %v, recoveries %v", queued, err, launcher.recoveries)
+			}
+			if err := svc.Dispatch(t.Context()); err != nil || len(launcher.recoveries) != 0 {
+				t.Fatalf("queued resume delivered while prerequisite owns workspace: %v %v", err, launcher.recoveries)
 			}
 			second := launcher.calls[1]
 			launcher.checkpointSHA = "prerequisite-head"
 			if err := svc.CompleteAttempt(t.Context(), second.AttemptID, second.AgentToken, "Prerequisite fixed", ""); err != nil {
 				t.Fatal(err)
+			}
+			if failure == "queued" {
+				if err := svc.Dispatch(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				resumed, _, err := db.GetFactoryRecoveryGate(t.Context(), gate.IssueID)
+				if err != nil || resumed.Resolution != "resume" || len(launcher.recoveries) != 1 || !strings.HasSuffix(launcher.recoveries[0], ":Continue") {
+					t.Fatalf("queued resume after release = %#v, %v, recoveries %v", resumed, err, launcher.recoveries)
+				}
+				return
 			}
 			launcher.handoffErr = errors.New("factory handoff does not include the accepted checkpoint")
 			if _, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", "Continue"); err == nil || len(launcher.recoveries) != 0 {

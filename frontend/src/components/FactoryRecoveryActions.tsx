@@ -21,8 +21,14 @@ export function FactoryRecoveryActions({ gate, attempts, inbox = false }: { gate
     {session?.id && <Link to={`/session/${encodeURIComponent(session.id)}?factoryEpic=${encodeURIComponent(gate.epicId)}`}>Inspect recovery session</Link>}
     <label>Recovery response{gate.choices?.length ? <SelectField aria-label={label} value={answer} disabled={pending} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice}>{choice}</option>)}</SelectField> : <TextField aria-label={label} value={answer} disabled={pending} onChange={(event) => setResponse(event.target.value)} />}</label>
     <span className="oc-factory-action-buttons">{actions.map((action) => <Button key={action} type="button" variant={inbox && action === 'resume' ? 'accent' : 'default'} disabled={resolve.isPending || resolve.isSuccess} onClick={() => resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? answer : '' })}>{resolve.isPending && resolve.variables?.action === action ? busyLabels[action] : labels[action]}</Button>)}</span>
-    {resolve.isPending && <span role="status">Saving recovery decision…</span>}
-    {resolve.isSuccess && <span role="status">Recovery decision saved.</span>}
+    <RecoveryStatus gate={resolve.data ?? gate} pending={resolve.isPending} saved={resolve.isSuccess} />
     {resolve.isError && <span role="alert">{resolve.error.message}</span>}
   </div>;
+}
+
+function RecoveryStatus({ gate, pending, saved }: { gate: FactoryRecoveryGate; pending: boolean; saved: boolean }) {
+  if (pending) return <span role="status">Saving recovery decision…</span>;
+  // An open gate carrying a response is a resume waiting for the Epic workspace.
+  if (gate.resolution === 'open' && gate.response) return <span role="status">Resume queued. It continues automatically once the Epic workspace is free.</span>;
+  return saved ? <span role="status">Recovery decision saved.</span> : null;
 }
