@@ -6,6 +6,10 @@ import { DataTable } from '../components/DataTable';
 import { EmptyState } from '../components/EmptyState';
 import { Drawer } from '../components/Drawer';
 import { RoutineStateBadge } from '../components/RoutineStateBadge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/Tabs';
+import { RoutineEditorForm } from './RoutineEditorDrawer';
+import { RoutineStats } from './RoutineStats';
+import type { WebhookInbox } from '../lib/api.types';
 import { api, type Routine, type RoutineRun } from '../lib/api';
 import { formatDateTimeShort } from '../lib/format';
 import styles from './RoutineHistoryDrawer.module.css';
@@ -52,10 +56,20 @@ type Props = {
   /** Bumped by the page after each list refresh; refetches the newest page. */
   refreshKey: number;
   onClose: () => void;
+  inboxes?: WebhookInbox[];
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
+  onRefresh?: () => Promise<void>;
+  onSaved?: () => void;
 };
 
 // Mount with key={routine.id} so switching routines starts a fresh history.
-export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
+export function RoutineHistoryDrawer({ routine, refreshKey, onClose, inboxes = [], activeTab, onTabChange, onRefresh = async () => {}, onSaved = onClose }: Props) {
+  const [localTab, setLocalTab] = useState('history');
+  const tab = activeTab ?? localTab;
+  const [settingsOpened, setSettingsOpened] = useState(tab === 'settings');
+  useEffect(() => { if (tab === 'settings') setSettingsOpened(true); }, [tab]);
+  const [busy, setBusy] = useState(false);
   const visible = useDocumentVisible();
   const [shown, setShown] = useState<Shown>({ runs: [], exhausted: false });
   const { runs, exhausted } = shown;
@@ -108,18 +122,27 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
   };
 
   return (
-    <Drawer title={`${routine.name} history`} onClose={onClose} closeLabel="Close routine history" backdropTestId="routine-drawer-backdrop">
-      <div className={styles.content}>
-        <p className={styles.next}>Next run: {routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</p>
-        {error && <p role="alert" className={styles.error}>{error}</p>}
-        <section className={styles.history} aria-labelledby="routine-history-heading">
-          <h3 id="routine-history-heading">History</h3>
-          {!loaded && !error ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading history...</div> : runs.length === 0 ? <EmptyState>No runs yet.</EmptyState> : (
-            <DataTable framed><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><RoutineStateBadge state={run.state} />{run.error && <small className={styles.error}>{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></DataTable>
-          )}
-          {loaded && !exhausted && runs.length > 0 && <Button type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading...' : 'Load older runs'}</Button>}
-        </section>
-      </div>
+    <Drawer title={routine.name} onClose={onClose} canClose={!busy} closeLabel="Close routine history" backdropTestId="routine-drawer-backdrop">
+      <Tabs value={tab} onValueChange={(value) => { setLocalTab(value); onTabChange?.(value); }}>
+        <TabsList aria-label="Routine details"><TabsTrigger value="history" disabled={busy}>History</TabsTrigger><TabsTrigger value="settings" disabled={busy}>Settings</TabsTrigger><TabsTrigger value="stats" disabled={busy}>Stats</TabsTrigger></TabsList>
+        <TabsContent value="history">
+          <div className={styles.content}>
+            <p className={styles.next}>Next run: {routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</p>
+            {error && <p role="alert" className={styles.error}>{error}</p>}
+            <section className={styles.history} aria-labelledby="routine-history-heading">
+              <h3 id="routine-history-heading">History</h3>
+              {!loaded && !error ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading history...</div> : runs.length === 0 ? <EmptyState>No runs yet.</EmptyState> : (
+                <DataTable framed><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><RoutineStateBadge state={run.state} />{run.error && <small className={styles.error}>{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></DataTable>
+              )}
+              {loaded && !exhausted && runs.length > 0 && <Button type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading...' : 'Load older runs'}</Button>}
+            </section>
+          </div>
+        </TabsContent>
+        <TabsContent value="settings" forceMount hidden={tab !== 'settings'}>
+          {(settingsOpened || tab === 'settings') && <RoutineEditorForm routine={routine} inboxes={inboxes} onClose={onClose} onBusyChange={setBusy} onRefresh={onRefresh} onSaved={onSaved} />}
+        </TabsContent>
+        <TabsContent value="stats"><RoutineStats routineId={routine.id} refreshKey={refreshKey} /></TabsContent>
+      </Tabs>
     </Drawer>
   );
 }

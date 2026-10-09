@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
@@ -11,7 +11,7 @@ import { formatDateTimeShort } from '../lib/format';
 import type { RoutineRun, WebhookInbox } from '../lib/api.types';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
-vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn() }, webhookInboxes: { list: vi.fn(), deliveries: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
+vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn(), stats: vi.fn() }, webhookInboxes: { list: vi.fn(), deliveries: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
 
 const routine: Routine = {
   id: 'routine-1', name: 'Morning check', prompt: 'Inspect the build', directory: '/repo', remoteId: 'local',
@@ -26,9 +26,51 @@ const inbox: WebhookInbox = {
   subscriptions: [{ id: 'sub-1', inboxId: 'inbox-1', routineId: 'routine-1', headerPredicates: '{"x-forgejo-event":{"equals":"pull_request"}}', jsonPredicates: '{"/action":{"oneOf":["opened","synchronized"]}}', createdAt: 1 }],
 };
 
+function LocationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <><output data-testid="location">{location.pathname}{location.search}</output><button onClick={() => navigate(-1)}>Back</button></>;
+}
+
 describe('Routines', () => {
+  it('opens direct routine links and tracks tabs, close and browser back in the URL', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/routines?routine=routine-1&view=settings']}><LocationProbe /><Routines /></MemoryRouter>);
+    await screen.findByRole('dialog', { name: routine.name });
+    expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('tab', { name: 'Stats' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/routines?routine=routine-1&view=stats');
+    expect(await screen.findByRole('row', { name: 'Total runs 60' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close routine history' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/routines$/);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByRole('dialog', { name: routine.name })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Stats' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('reports an unavailable routine link', async () => {
+    render(<MemoryRouter initialEntries={['/routines?routine=missing']}><Routines /></MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('This routine is unavailable.');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it('keeps settings edits when switching between drawer tabs', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'Changed routine');
+    await user.click(screen.getByRole('tab', { name: 'History' }));
+    expect(screen.queryByRole('textbox', { name: 'Name' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect(screen.getByLabelText('Name')).toHaveValue('Changed routine');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ name: 'Changed routine' })));
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.routines.stats).mockResolvedValue({ totalRuns: 60, states: { success: 60 }, averageDurationMs: 1000, totalCost: 1, totalEstCost: 2, costSessions: 1, missingSessions: 0 });
     vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', archived: false } as never]);
     vi.mocked(api.sessions).mockResolvedValue([{ id: 'catalog', title: 'Catalog source', directory: '/repo', remoteId: 'local', archived: false } as never]);
     vi.mocked(api.agents).mockResolvedValue([{ name: 'build' }, { name: 'plan' }]);
@@ -247,7 +289,7 @@ describe('Routines', () => {
     vi.mocked(api.sessions).mockRejectedValueOnce(new Error('Project sessions unavailable'));
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
-    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    await user.click(await screen.findByRole('button', { name: 'Settings' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Project sessions unavailable');
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue(routine.name);
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(routine.prompt);
@@ -257,7 +299,7 @@ describe('Routines', () => {
     vi.mocked(api.agents).mockRejectedValueOnce(new Error('Catalog unavailable'));
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
-    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    await user.click(await screen.findByRole('button', { name: 'Settings' }));
     await user.click(screen.getByText('Session and model'));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Agent' })).toBeEnabled());
     expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent(routine.agent);
@@ -293,18 +335,19 @@ describe('Routines', () => {
     vi.mocked(api.routines.update).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
-    const edit = await screen.findByRole('button', { name: 'Edit' });
+    const edit = await screen.findByRole('button', { name: 'Settings' });
     await user.click(edit);
     const actions = screen.getByRole('group', { name: 'Routine form actions' });
     await user.click(within(actions).getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(api.routines.update).toHaveBeenCalled());
-    expect(screen.getByRole('button', { name: 'Close routine form' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Close routine history' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: 'History' })).toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'Name' })).toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeDisabled();
     expect(within(actions).getByRole('button', { name: 'Cancel' })).toBeDisabled();
     await user.keyboard('{Escape}');
     await user.click(screen.getByTestId('routine-drawer-backdrop'));
-    expect(screen.getByRole('dialog', { name: 'Edit routine' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Morning check' })).toBeInTheDocument();
     await act(async () => finish(routine));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(edit).toHaveFocus();
@@ -313,11 +356,11 @@ describe('Routines', () => {
   it('closes the form once saved even when the refresh fails', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
-    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    await user.click(await screen.findByRole('button', { name: 'Settings' }));
     vi.mocked(api.webhookInboxes.list).mockRejectedValueOnce(new Error('inboxes unavailable'));
     await user.click(within(screen.getByRole('group', { name: 'Routine form actions' })).getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('inboxes unavailable')).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Edit routine' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Morning check' })).not.toBeInTheDocument();
   });
 
   it('shows missed timeout schedules as expired', async () => {
@@ -346,7 +389,7 @@ describe('Routines', () => {
     expect(copy).toHaveBeenCalledWith('https://relay/i/inbox/token');
     // A subscriber jumps to the routine form.
     await user.click(screen.getByRole('button', { name: 'Morning check' }));
-    expect(screen.getByRole('dialog', { name: 'Edit routine' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Morning check' })).toBeInTheDocument();
   });
 
   it('opens the webhook inboxes tab from the URL', async () => {
@@ -364,7 +407,7 @@ describe('Routines', () => {
     vi.mocked(api.webhookInboxes.list).mockResolvedValue([inbox, other]);
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText('Morning check');
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByLabelText('Trigger')).toHaveValue('webhook:inbox-1');
     expect(screen.getByLabelText('Header conditions 1 header')).toHaveValue('x-forgejo-event');
     await user.selectOptions(screen.getByLabelText('Trigger'), 'webhook:inbox-2');
@@ -410,7 +453,7 @@ describe('Routines', () => {
     vi.mocked(api.webhookInboxes.list).mockResolvedValue([inbox]);
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText('Morning check');
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.selectOptions(screen.getByLabelText('Trigger'), 'none');
     expect(screen.queryByLabelText('Header conditions 1 header')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -431,14 +474,14 @@ describe('Routines', () => {
     vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', archived: false }, { directory: '/other', archived: false }] as never);
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
-    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    await user.click(await screen.findByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('combobox', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: '/other' }));
     expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent('Default agent');
     expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Default model');
   });
 
-  it('opens history from the row and the form from Edit', async () => {
+  it('opens history from the row and the settings tab from Settings', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     const row = (await screen.findByText(routine.name)).closest('tr')!;
@@ -447,19 +490,20 @@ describe('Routines', () => {
     expect(screen.queryByRole('columnheader', { name: 'Next run' })).not.toBeInTheDocument();
     const runButton = within(row).getByRole('button', { name: 'Run' });
     expect(runButton.querySelector('i')).toHaveClass('bi-play-fill');
-    expect(within(row).getByRole('button', { name: 'Edit' }).querySelector('i')).toHaveClass('bi-pencil');
+    expect(within(row).getByRole('button', { name: 'Settings' }).querySelector('i')).toHaveClass('bi-gear');
     expect(within(row).getByRole('button', { name: 'Delete' }).querySelector('i')).toHaveClass('bi-trash');
     runButton.focus();
     await user.keyboard('{Enter}');
     await waitFor(() => expect(api.routines.run).toHaveBeenCalledWith(routine.id));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await user.click(row);
-    expect(screen.getByRole('dialog', { name: 'Morning check history' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Morning check' })).toBeInTheDocument();
     expect(screen.getByText(/^Next run: /)).toHaveTextContent(`Next run: ${formatDateTimeShort(routine.nextDueAt)}`);
     expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/session-1?platform=opencode');
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Close routine history' }));
-    await user.click(within(row).getByRole('button', { name: 'Edit' }));
+    await user.click(within(row).getByRole('button', { name: 'Settings' }));
+    expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Session and model').closest('details')).not.toHaveAttribute('open');
     await user.click(screen.getByText('Session and model'));
     await user.click(screen.getByText('After a run'));
@@ -508,7 +552,7 @@ describe('Routines', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText(routine.name);
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ remoteId: 'local' })));
   });
@@ -588,7 +632,7 @@ describe('Routines', () => {
     });
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
-    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    const dialog = screen.getByRole('dialog', { name: 'Morning check' });
     await waitFor(() => expect(within(dialog).getAllByText('manual')).toHaveLength(50));
     expect(api.routines.history).toHaveBeenCalledWith(routine.id, { limit: 50 }, expect.any(AbortSignal));
     expect(within(dialog).getAllByText('manual')).toHaveLength(50);
@@ -617,7 +661,7 @@ describe('Routines', () => {
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     await act(async () => {});
-    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    const dialog = screen.getByRole('dialog', { name: 'Morning check' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
     await act(async () => {});
     expect(within(dialog).getAllByText('manual')).toHaveLength(55);
@@ -641,7 +685,7 @@ describe('Routines', () => {
     expect(api.routines.history).toHaveBeenCalledTimes(1);
 
     await act(async () => { resolve([mkRun('slow', 1_000, { state: 'failure' })]); });
-    expect(within(screen.getByRole('dialog', { name: 'Morning check history' })).getByText('failure')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog', { name: 'Morning check' })).getByText('failure')).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(api.routines.history).toHaveBeenCalledTimes(2);
   });
@@ -657,7 +701,7 @@ describe('Routines', () => {
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     await act(async () => {});
-    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    const dialog = screen.getByRole('dialog', { name: 'Morning check' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
     await act(async () => {});
     expect(within(dialog).getAllByText('manual')).toHaveLength(60);
@@ -686,7 +730,7 @@ describe('Routines', () => {
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     await act(async () => {});
-    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    const dialog = screen.getByRole('dialog', { name: 'Morning check' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
     await act(async () => {});
     expect(within(dialog).getAllByText('running')).toHaveLength(60);
@@ -712,7 +756,7 @@ describe('Routines', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
-    expect(await within(screen.getByRole('dialog', { name: 'Morning check history' })).findByRole('alert')).toHaveTextContent('history failed');
+    expect(await within(screen.getByRole('dialog', { name: 'Morning check' })).findByRole('alert')).toHaveTextContent('history failed');
   });
 
   it('updates Next run in the open drawer when the list refreshes', async () => {

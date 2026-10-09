@@ -61,9 +61,19 @@ function sessionKey(remoteId: string, id: string) {
   return `${encodeURIComponent(remoteId || 'local')}:${encodeURIComponent(id)}`;
 }
 
-export function RoutineEditorDrawer({ routine, inboxes, onClose, onSaved, onRefresh }: {
+type EditorProps = {
   routine?: Routine; inboxes: WebhookInbox[]; onClose: () => void; onSaved: () => void; onRefresh: () => Promise<void>;
-}) {
+  onBusyChange?: (busy: boolean) => void;
+};
+
+export function RoutineEditorDrawer(props: EditorProps) {
+  const [busy, setBusy] = useState(false);
+  return <Drawer title="New routine" onClose={props.onClose} canClose={!busy} closeLabel="Close routine form" backdropTestId="routine-drawer-backdrop">
+    <RoutineEditorForm {...props} onBusyChange={setBusy} />
+  </Drawer>;
+}
+
+export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefresh, onBusyChange }: EditorProps) {
   const [form, setForm] = useState<FormState>(() => routine ? formFor(routine) : emptyForm());
   const [editing, setEditing] = useState(routine?.id);
   const [rules, setRules] = useState(() => routine ? parsePermissionRules(routine.permissionRulesJSON) : []);
@@ -75,6 +85,7 @@ export function RoutineEditorDrawer({ routine, inboxes, onClose, onSaved, onRefr
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
   useEffect(() => {
     let active = true;
@@ -142,8 +153,7 @@ export function RoutineEditorDrawer({ routine, inboxes, onClose, onSaved, onRefr
   const agentOptions = ['', ...new Set([...catalog.agents, form.agent].filter(Boolean))].map((value) => ({ value, label: value || 'Default agent' }));
   const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((value) => ({ value, label: value || 'Default model' }));
 
-  return <Drawer title={editing ? 'Edit routine' : 'New routine'} onClose={onClose} canClose={!busy} closeLabel="Close routine form" backdropTestId="routine-drawer-backdrop">
-    <form onSubmit={submit}>
+  return <form onSubmit={submit}>
       {error && <InlineAlert>{error}</InlineAlert>}
       <fieldset disabled={busy} className={styles.fields}>
         <label className={styles.field}>Name<TextField required data-autofocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
@@ -192,6 +202,5 @@ export function RoutineEditorDrawer({ routine, inboxes, onClose, onSaved, onRefr
         </details>
         <ModalFooter label="Routine form actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} aria-busy={busy} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={onClose}>Cancel</Button></ModalFooter>
       </fieldset>
-    </form>
-  </Drawer>;
+    </form>;
 }

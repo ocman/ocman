@@ -14,6 +14,7 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
     return route.fulfill({ json: routines.map((routine) => ({ ...routine, latestRun: runs[0] })) });
   });
   await page.route('/api/routines/routine-1/history*', (route) => route.fulfill({ json: runs }));
+  await page.route('/api/routines/routine-1/stats', (route) => route.fulfill({ json: { totalRuns: 1, states: { running: 1 }, averageDurationMs: null, totalCost: 0.5, totalEstCost: 1, costSessions: 1, missingSessions: 0 } }));
   await page.route('/api/webhook-inboxes', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     await route.fulfill({ json: [] });
@@ -36,7 +37,30 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
   await expect(page.getByRole('dialog', { name: 'New routine' })).toBeHidden();
   await routine.getByRole('button', { name: 'Run' }).click();
   await routine.click();
-  await expect(page.getByRole('dialog', { name: 'Release check history' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Release check' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/routine-session?platform=opencode');
   await expect(routine.getByText('running')).toBeVisible();
+  await expect(page).toHaveURL(/routine=routine-1/);
+  await page.getByRole('tab', { name: 'Stats' }).click();
+  await expect(page).toHaveURL(/routine=routine-1&view=stats/);
+  await expect(page.getByRole('row', { name: 'Average session cost $0.5000' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('dialog', { name: 'Release check' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Stats' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: 'Close routine history' }).click();
+  await expect(page).toHaveURL(/\/routines$/);
 });
+
+for (const width of [1440, 768, 390]) {
+  test(`drawer uses the requested screen width at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route('/api/routines', (route) => route.fulfill({ json: [] }));
+    await page.route('/api/webhook-inboxes', (route) => route.fulfill({ json: [] }));
+    await page.goto('/routines');
+    await page.getByRole('button', { name: 'New routine' }).click();
+    const drawer = page.getByRole('dialog', { name: 'New routine' });
+    await expect(drawer).toBeVisible();
+    const bounds = await drawer.boundingBox();
+    expect(bounds!.width).toBeCloseTo(width * (width <= 640 ? 0.95 : 0.5), 0);
+  });
+}

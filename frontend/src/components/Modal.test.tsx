@@ -65,6 +65,16 @@ function Harness({ children }: { children?: React.ReactNode }) {
 }
 
 describe('Modal focus management', () => {
+  it('ignores controls in hidden tab panels when focusing and cycling', () => {
+    render(<Modal label="Tabs" onClose={() => {}}><div hidden><button data-autofocus>Hidden first</button></div><button>First</button><button>Last</button><div hidden><button>Hidden last</button></div></Modal>);
+    const first = screen.getByRole('button', { name: 'First' });
+    const last = screen.getByRole('button', { name: 'Last' });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+    fireEvent.keyDown(last, { key: 'Tab' });
+    expect(first).toHaveFocus();
+  });
   it('skips controls disabled by a fieldset and cycles to an expandable-group summary', () => {
     render(<Modal label="Saving" onClose={() => {}}><fieldset disabled><input aria-label="Disabled name" data-autofocus /></fieldset><details><summary>Options</summary></details><button type="button">Cancel</button></Modal>);
     const summary = screen.getByText('Options');

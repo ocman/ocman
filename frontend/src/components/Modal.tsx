@@ -14,7 +14,7 @@ const FOCUSABLE = [
 ].join(',');
 
 function focusableItems(dialog: HTMLElement) {
-  return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((item) => !item.matches(':disabled'));
+  return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((item) => !item.matches(':disabled') && !item.closest('[hidden]'));
 }
 
 export function Modal({
@@ -78,7 +78,8 @@ export function Modal({
     if (!dialog.contains(document.activeElement)) {
       // `data-autofocus` marks the default control. React's autoFocus is
       // not enough: a closing sibling modal can restore focus after it.
-      (dialog.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)') ?? focusableItems(dialog)[0] ?? dialog).focus();
+      const items = focusableItems(dialog);
+      (items.find((item) => item.hasAttribute('data-autofocus')) ?? items[0] ?? dialog).focus();
     }
 
     return () => {

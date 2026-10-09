@@ -29,12 +29,27 @@ Name, prompt, project, schedule, and enabled status stay visible at the top.
 Expand **Session and model**, **After a run**, or **Permissions** for optional
 settings. These groups start collapsed when you create or edit a routine.
 
-Use **Edit** to change any of these fields. The change applies to future runs.
+Use **Settings** to change any of these fields, then **Save changes**. The change applies to future runs.
 Existing history keeps the name, prompt, project, session behavior, agent,
 model, and trigger recorded when each run started.
 
-Select a routine row to open its editable settings and run history in the side
-drawer.
+Select a routine row to open its side drawer with **History**, **Settings**, and
+**Stats** tabs. History and stats are read-only. Settings replaces the edit form
+and keeps unsaved changes while you switch tabs. Drawers fill half the screen on
+desktop and iPad, and 95% on mobile.
+
+Each selection has a shareable URL, for example `/routines?routine=<id>` for
+history, or `/routines?routine=<id>&view=settings` and
+`/routines?routine=<id>&view=stats`. Reloading or opening the link restores the
+routine and tab. Closing the drawer returns to the list URL; browser Back
+restores the previous selection.
+
+Stats count all recorded runs and show successful, failed, interrupted, and
+running totals. Average duration uses finished runs with valid start/end times.
+Total and average session costs use recorded billing; estimated total cost uses
+token pricing. Linked sessions count once, including their subagents. Reused or
+existing sessions include their full lifetime usage, not only routine prompts.
+Missing or disconnected sessions are reported as unavailable rather than zero.
 
 When a run fails or is interrupted, ocman adds an Inbox item with the run
 status and the session's final assistant message. Successful runs stay out of

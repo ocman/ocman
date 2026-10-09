@@ -131,6 +131,7 @@ export const api = {
   hourlyTokens: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${queryString(params)}`, signal),
   capabilities: (signal?: AbortSignal) => fetchJSON<CapabilitiesResponse>('/api/capabilities', signal),
   routines: {
+    stats: (id: string, signal?: AbortSignal) => fetchJSON<RoutineStatsData>(`/api/routines/${encodeURIComponent(id)}/stats`, signal),
     list: (signal?: AbortSignal) => fetchJSON<Routine[]>('/api/routines', signal),
     create: (input: RoutineInput) => postJSON<Routine, RoutineInput>('/api/routines', input),
     update: (id: string, input: RoutineInput) => postJSON<Routine, RoutineInput>(`/api/routines/${encodeURIComponent(id)}`, input, { method: 'PUT' }),
@@ -160,4 +161,9 @@ export const api = {
   getJudgeModel: () => fetchJSON<{ model: string }>('/api/settings/judge-model').then((r) => r.model),
   setJudgeModel: (model: string): Promise<void> => postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
   getJudgeModelOptions: (signal?: AbortSignal) => fetchJSON<{ models: string[]; default: string }>('/api/settings/judge-model/options', signal),
+};
+
+export type RoutineStatsData = {
+  totalRuns: number; states: Record<string, number>; averageDurationMs: number | null;
+  totalCost: number; totalEstCost: number; costSessions: number; missingSessions: number;
 };

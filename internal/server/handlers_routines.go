@@ -72,6 +72,8 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch action {
+	case "stats":
+		requireGET(func(w http.ResponseWriter, r *http.Request) { s.handleRoutineStats(w, r, id) })(w, r)
 	case "":
 		s.handleRoutineItem(w, r, id)
 	case "run":
