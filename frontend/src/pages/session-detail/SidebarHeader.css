@@ -1,0 +1,11 @@
+.session-sidebar:has(.session-sidebar-filters) {
+  overflow: visible;
+  z-index: 200;
+}
+
+@media (width <= 768px) {
+  .session-sidebar-filters .oc-search-select-menu {
+    right: 0;
+    max-width: calc(100vw - 24px);
+  }
+}

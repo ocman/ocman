@@ -3,6 +3,7 @@ import { useClickOutside } from '../../lib/useClickOutside';
 import { ArchiveFilterIcon } from './SidebarIcons';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import type { SidebarProjectGroup } from './SessionSidebar';
+import './SidebarHeader.css';
 
 export interface SidebarHeaderProps {
   projects: SidebarProjectGroup[];
