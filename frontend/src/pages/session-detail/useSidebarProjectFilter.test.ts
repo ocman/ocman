@@ -5,6 +5,17 @@ import { useSidebarProjectFilter } from './useSidebarProjectFilter';
 import type { SidebarProjectGroup } from './SessionSidebar';
 import type { Session } from '../../lib/api';
 
+it('distinguishes a nested project scope from a path-valued individual project', () => {
+  const groups: SidebarProjectGroup[] = ['/src/org', '/src/org/child'].map((directory) => ({
+    directory, sessions: [], lastUpdated: 0, aggregate: { kind: 'none' },
+  }));
+  const { result } = renderHook(() => useSidebarProjectFilter([], groups));
+  act(() => result.current.setProjectFilter('scope:/src/org'));
+  expect(result.current.sidebarProjectGroups).toEqual(groups);
+  act(() => result.current.setProjectFilter('/src/org'));
+  expect(result.current.sidebarProjectGroups).toEqual([groups[0]]);
+});
+
 it('filters an organization prefix using project membership, including worktrees and drafts', () => {
   const scope = '/src/github.com/nousefreak';
   const groups: SidebarProjectGroup[] = [

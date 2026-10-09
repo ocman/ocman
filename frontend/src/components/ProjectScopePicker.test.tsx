@@ -46,6 +46,22 @@ describe('flattenForOptions', () => {
 });
 
 describe('ProjectScopePicker', () => {
+  it.each([undefined, 'git:parent'])('offers both the subtree and individual project for a project-bearing parent with key %s', async (key) => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ProjectScopePicker projects={[
+      { directory: '/src/org', key },
+      { directory: '/src/org/child', key: 'git:child' },
+    ]} value="" scopePrefix="scope:" onChange={onChange} />);
+    const selector = screen.getByRole('combobox', { name: 'Project scope' });
+    await user.click(selector);
+    await user.click(screen.getByRole('option', { name: 'src/org (2 projects)' }));
+    expect(onChange).toHaveBeenLastCalledWith('scope:/src/org');
+    await user.click(selector);
+    await user.click(screen.getByRole('option', { name: 'src/org' }));
+    expect(onChange).toHaveBeenLastCalledWith(key ?? '/src/org');
+  });
+
   it('keeps same-directory project identities and machine labels distinct', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

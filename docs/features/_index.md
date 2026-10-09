@@ -17,8 +17,11 @@ is the default and waits for done, waiting, error, or interrupted status;
 **Any activity** restores it even while it is running.
 
 Use **Filter sessions → Project** to select a project or return to **All projects**.
+Search the picker for a directory prefix such as `github.com/nousefreak`, then
+select its parent entry to include all projects beneath it. A project that also
+contains other projects has separate individual-project and subtree entries.
 The selection filters flat and grouped views, including opened and pinned sessions,
-and includes the project's worktrees and grouped remote checkouts.
+and includes matching projects' worktrees, prepared drafts and grouped remote checkouts.
 If the selected project disappears, the selector shows **Unavailable project**;
 choose **All projects** to clear it.
 

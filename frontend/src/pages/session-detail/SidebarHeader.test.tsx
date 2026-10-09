@@ -63,6 +63,6 @@ it('searches projects and selects an organization prefix', () => {
   fireEvent.change(screen.getByRole('textbox', { name: 'Search projects' }), { target: { value: 'github.com/nousefreak' } });
   expect(screen.queryByRole('option', { name: /another/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('option', { name: /nousefreak \(2 projects\)/ }));
-  expect(setProjectFilter).toHaveBeenCalledWith(scope);
+  expect(setProjectFilter).toHaveBeenCalledWith(`scope:${scope}`);
   expect(screen.getByRole('group', { name: 'Session filters' })).toBeInTheDocument();
 });

@@ -93,7 +93,7 @@ export function SidebarHeader({
         </button>
         {filtersOpen && (
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
-            <ProjectScopePicker projects={projects} value={projectFilter} onChange={setProjectFilter} label="Project" />
+            <ProjectScopePicker projects={projects} value={projectFilter} onChange={setProjectFilter} label="Project" scopePrefix="scope:" />
             <label>
               <input
                 type="checkbox"

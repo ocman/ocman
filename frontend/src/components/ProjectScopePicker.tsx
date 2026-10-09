@@ -29,6 +29,8 @@ export interface ProjectScopePickerProps {
   value: string;
   /** Called with the scope path or project key, or '' for "All projects". */
   onChange: (dir: string) => void;
+  /** Prefix scope values when individual project keys can also be paths. */
+  scopePrefix?: string;
   /**
    * Accessible label (aria-label). Defaults to 'Project scope'.
    */
@@ -50,6 +52,7 @@ export function ProjectScopePicker({
   projects,
   value,
   onChange,
+  scopePrefix = '',
   label = 'Project scope',
   showLabel = false,
 }: ProjectScopePickerProps) {
@@ -59,12 +62,15 @@ export function ProjectScopePicker({
   const options = useMemo(() => flattenForOptions(buildScopeTree(projects)).flatMap((option) => {
     const leaves = [...new Map(projects.filter((project) => project.directory === option.path)
       .map((project) => [project.key ?? project.directory, project])).values()];
-    const label = `${INDENT.repeat(option.depth)}${shortPath(option.path)}${option.projectCount > 1 ? ` (${option.projectCount} projects)` : ''}`;
-    return leaves.length ? leaves.map((project) => ({
+    const label = `${INDENT.repeat(option.depth)}${shortPath(option.path)}`;
+    const scope = { value: `${scopePrefix}${option.path}`, label: `${label}${option.projectCount > 1 ? ` (${option.projectCount} projects)` : ''}` };
+    const projectOptions = leaves.map((project) => ({
       value: project.key ?? project.directory,
       label: `${label}${project.remoteName ? ` · ${project.remoteName}` : ''}`,
-    })) : [{ value: option.path, label }];
-  }), [projects]);
+    }));
+    if (!scopePrefix && !leaves.some((project) => project.key)) return [scope];
+    return [...(!leaves.length || option.projectCount > 1 ? [scope] : []), ...projectOptions];
+  }), [projects, scopePrefix]);
 
   const unavailable = !!value && !options.some((option) => option.value === value);
   const disabled = options.length === 0 && !value;

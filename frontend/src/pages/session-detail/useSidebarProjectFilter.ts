@@ -8,8 +8,9 @@ export function useSidebarProjectFilter(sessions: Session[], groups: SidebarProj
   const projects = useMemo(() => groups.filter((group) => !group.isPinned), [groups]);
   const filtered = useMemo(() => {
     if (!projectFilter) return { recentSessions: sessions, sidebarProjectGroups: groups };
-    const selected = projects.find((group) => (group.key ?? group.directory) === projectFilter);
-    const sidebarProjectGroups = selected ? [selected] : projects.filter((group) => matchesScope(group.directory, projectFilter));
+    const scope = projectFilter.startsWith('scope:') ? projectFilter.slice(6) : null;
+    const selected = scope === null ? projects.find((group) => (group.key ?? group.directory) === projectFilter) : undefined;
+    const sidebarProjectGroups = selected ? [selected] : projects.filter((group) => matchesScope(group.directory, scope ?? projectFilter));
     const members = new Set(sidebarProjectGroups.flatMap((group) => group.sessions.map((session) => `${session.platform}\0${session.id}`)));
     const recentSessions = sessions.filter((session) => members.has(`${session.platform}\0${session.id}`));
     return { recentSessions, sidebarProjectGroups };
