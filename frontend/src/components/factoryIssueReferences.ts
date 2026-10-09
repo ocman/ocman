@@ -1,7 +1,7 @@
 // Factory IDs are epic slugs followed by child indices. Never expand URLs,
 // existing links, fenced code, or code snippets containing more than an ID.
 type MarkdownNode = { type: string; value?: string; children?: MarkdownNode[]; url?: string };
-const ISSUE = /(?<![\w/.-])#?([a-z][a-z0-9]*(?:-[a-z0-9]+)*\.\d+(?:\.\d+)*)(?![\w/-]|\.\w)/g;
+const ISSUE = /(?<![\w/.-])#?([a-z0-9]+(?:-[a-z0-9]+)*\.\d+(?:\.\d+)*)(?![\w/-]|\.\w)/g;
 
 export function remarkFactoryIssueReferences() {
   function transform(node: MarkdownNode) {
@@ -14,8 +14,8 @@ export function remarkFactoryIssueReferences() {
       const parts: MarkdownNode[] = [];
       let offset = 0;
       for (const match of matches) {
-        // ponytail: leave version-shaped text literal; explicit issue links still work.
-        if (/^v\d/.test(match[1])) continue;
+        // ponytail: leave versions and ordinary numbers literal; explicit issue links still work.
+        if (/^v?\d+(?:\.\d+)+$/.test(match[1])) continue;
         parts.push({ type: 'text', value: text.slice(offset, match.index) });
         parts.push({ type: 'link', url: `/factory/issues/${encodeURIComponent(match[1])}`, children: [{ type: child.type, value: match[0] }] });
         offset = match.index + match[0].length;

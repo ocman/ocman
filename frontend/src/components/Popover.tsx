@@ -27,8 +27,9 @@ export function Popover({ open, onClose, triggerRef, id, label, className = '', 
       // A nested picker handles its first Escape; the next closes the popover.
       if (event.key === 'Escape' && !panel.current?.querySelector('[role="combobox"][aria-expanded="true"]')) {
         event.stopPropagation();
+        const restoreFocus = panel.current?.contains(document.activeElement);
         close();
-        triggerRef.current?.focus();
+        if (restoreFocus) triggerRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', outside);

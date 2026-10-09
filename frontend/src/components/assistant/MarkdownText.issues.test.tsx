@@ -17,6 +17,24 @@ function markdown(text: string, factoryCards = true) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('Markdown issue references', () => {
+  it.each(['2026-migration-abcd.1', 'v2-migration-abcd.1', '2026-2345.1'])('recognizes generated slug %s', (id) => {
+    markdown(id);
+    expect(screen.getByRole('button', { name: id })).toHaveClass('oc-factory-issue-reference');
+  });
+
+  it('dismisses a hover-only preview with Escape without stealing focus or reopening', async () => {
+    vi.spyOn(api, 'factoryIssues').mockResolvedValue([issue]);
+    render(<button>Elsewhere</button>);
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+    act(() => elsewhere.focus());
+    markdown(issue.id);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: issue.id }));
+    await screen.findByText(issue.title);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(elsewhere).toHaveFocus();
+  });
+
   it.each([true, false])('adds references in every prose structure, factoryCards=%s', (factoryCards) => {
     const fetch = vi.spyOn(api, 'factoryIssues').mockResolvedValue([issue]);
     markdown('# upload-fix.1.2\n\n**#upload-fix.1.2** and `upload-fix.1.2`.\n\n- upload-fix.1.2\n\n> upload-fix.1.2\n\n| Issue |\n| --- |\n| upload-fix.1.2 |', factoryCards);
