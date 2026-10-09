@@ -136,6 +136,21 @@ describe('SessionSidebar', () => {
     expect(screen.getByRole('button', { name: 'Discard draft' })).toHaveClass('session-sidebar-archive-btn');
   });
 
+  it.each([true, false])('places drafts below pinned rows and the divider, with normal sessions: %s', (withNormal) => {
+    rememberConversationDraft({ draftId: 'draft', directory: '/repo', title: 'Prepared task' });
+    const pinned = session({ id: 'pinned', title: 'Pinned task', pinned: true });
+    const group: SidebarProjectGroup = {
+      directory: '/repo', sessions: withNormal ? [pinned, session()] : [pinned],
+      lastUpdated: 1, aggregate: { kind: 'none' },
+    };
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'recent');
+    const draft = screen.getByText('Prepared task');
+    const divider = screen.getByTestId('flat-pinned-divider');
+    expect(screen.getByText('Pinned task').compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(divider.compareDocumentPosition(draft) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    if (withNormal) expect(draft.compareDocumentPosition(screen.getByText('Fix thing')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('groups draft-only projects by owner and includes them in the project filter', () => {
     rememberConversationDraft({ draftId: 'local', directory: '/repo', title: 'Local draft' });
     rememberConversationDraft({ draftId: 'remote', directory: '/repo', remoteId: 'box', title: 'Remote draft' });

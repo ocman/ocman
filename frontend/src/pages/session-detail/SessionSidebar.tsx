@@ -334,15 +334,15 @@ export function SessionSidebar({
     const unpinned = flatUnpinned;
     return (
       <>
-        <SidebarConversationDrafts drafts={preparedDrafts} searchQuery={searchQuery} />
         {filteredPinnedSessions.length > 0 && (
           <div className="session-sidebar-flat-pinned">
             {renderPinnedRows(filteredPinnedSessions)}
           </div>
         )}
-        {filteredPinnedSessions.length > 0 && unpinned.length > 0 && (
+        {filteredPinnedSessions.length > 0 && (preparedDrafts.length > 0 || unpinned.length > 0) && (
           <div className="session-sidebar-flat-divider" data-testid="flat-pinned-divider" aria-hidden="true" />
         )}
+        <SidebarConversationDrafts drafts={preparedDrafts} searchQuery={searchQuery} />
         {nestSessions(unpinned).map(({ session, depth }) => renderRow(session, false, depth, true))}
       </>
     );
