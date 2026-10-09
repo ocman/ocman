@@ -1,16 +1,46 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import { getConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { transact } from '../../lib/draftDb';
 import * as draftsModule from '../../lib/newConversationDrafts';
+import { useEffect } from 'react';
+import { useApiStore } from '../../lib/apiStore';
+import { useUiStore } from '../../lib/uiStore';
+import type { Session } from '../../lib/api';
 
 beforeEach(() => {
   localStorage.clear();
   useNewConversationDrafts.setState({ drafts: [] });
+  useApiStore.setState({ recentSessions: [] });
+  useUiStore.setState({ lastOpenedSessionId: undefined });
+});
+
+it.each(['empty', 'previous', 'latest'])('keeps the session workspace mounted after discarding its last draft: %s', async (target) => {
+  rememberConversationDraft({ draftId: 'last', directory: '/repo' });
+  if (target !== 'empty') {
+    useApiStore.setState({ recentSessions: [
+      { id: 'latest', timeUpdated: 2, archived: false },
+      { id: 'previous', timeUpdated: 1, archived: false },
+      { id: 'archived', timeUpdated: 3, archived: true },
+    ] as Session[] });
+    useUiStore.setState({ lastOpenedSessionId: target === 'previous' ? 'previous' : 'archived' });
+  }
+  const unmount = vi.fn();
+  function Workspace() {
+    useEffect(() => () => { unmount(); }, []);
+    return <><SidebarConversationDrafts searchQuery="" /><Location /></>;
+  }
+  render(<MemoryRouter initialEntries={[newSessionPath({ draftId: 'last', directory: '/repo' })]}>
+    <Routes><Route path="/session/:id" element={<Workspace />} /><Route path="/" element={<div>Redirecting</div>} /></Routes>
+  </MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
+  await waitFor(() => expect(getConversationDraft('last')).toBeUndefined());
+  await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(target === 'empty' ? '/session/new' : `/session/${target}`));
+  expect(unmount).not.toHaveBeenCalled();
 });
 
 function Location() {
@@ -33,7 +63,7 @@ it('shows empty prepared conversations and navigates with the same draft identit
   await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Frepo&draftId=a'));
   fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument());
-  expect(screen.getByTestId('location')).toHaveTextContent('/');
+  expect(screen.getByTestId('location')).toHaveTextContent('/session/new');
 });
 
 it('filters drafts by project, title and owner, while keeping the selected draft visible', () => {
@@ -67,7 +97,7 @@ it('keeps the draft and offers a retry when discarding cannot be stored', async 
   } finally { fail.mockRestore(); }
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() => expect(getConversationDraft('stuck')).toBeUndefined());
-  expect(screen.getByTestId('location')).toHaveTextContent('/');
+  expect(screen.getByTestId('location')).toHaveTextContent('/session/new');
 });
 
 it('does not leave a newer route when an earlier discard commits', async () => {

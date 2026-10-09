@@ -6,6 +6,8 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { InlineAlert } from '../../components/InlineAlert';
 import { shortPath, fuzzyMatch, relativeTime } from '../../lib/format';
 import { newSessionPath } from '../../lib/newSessionPath';
+import { useApiStore } from '../../lib/apiStore';
+import { useUiStore } from '../../lib/uiStore';
 import { forgetConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import './SidebarConversationDrafts.css';
 import { SidebarRow } from './SidebarRow';
@@ -31,7 +33,12 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
       await forgetConversationDraft(draft.draftId, () => {
         if (currentLocation.current?.key !== location.key || draft.draftId !== activeId) return;
         const next = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId !== draft.draftId);
-        flushSync(() => navigate(next ? newSessionPath(next) : '/', { replace: true }));
+        const sessions = useApiStore.getState().recentSessions.filter((session) => !session.archived);
+        const lastOpened = sessions.find((session) => session.id === useUiStore.getState().lastOpenedSessionId);
+        const target = lastOpened ?? sessions.reduce<(typeof sessions)[number] | undefined>(
+          (latest, session) => !latest || session.timeUpdated > latest.timeUpdated ? session : latest, undefined);
+        // Stay on the session route: bouncing through / unmounts the workspace.
+        flushSync(() => navigate(next ? newSessionPath(next) : target ? `/session/${target.id}` : '/session/new', { replace: true }));
       });
     } catch (error) {
       setFailed({ draftId: draft.draftId, message: `Could not discard the draft: ${error instanceof Error ? error.message : String(error)}` });
