@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useWorkEpics).mockReturnValue({ refetch: vi.fn(), data: [{ id: 'epic', attempts: [{ id: 'stuck-attempt', workId: 'work', session }, { id: 'new-attempt', workId: 'work', session: { ...session, id: 'new-session' } }] }] } as never);
   vi.mocked(useFactoryGraphIssues).mockReturnValue([{ data: [{ id: 'gate', recovery: gate }] }] as never);
-  vi.mocked(useResolveFactoryRecoveryGate).mockReturnValue({ mutate } as never);
+  vi.mocked(useResolveFactoryRecoveryGate).mockReturnValue({ mutate, reset: vi.fn() } as never);
 });
 
 function show(platformId = session.platform, sessionId = session.id, factorySession = true) {

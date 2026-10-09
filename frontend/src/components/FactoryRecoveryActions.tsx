@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { FactoryAttempt, FactoryRecoveryGate } from '../lib/api';
 import { useResolveFactoryRecoveryGate } from '../lib/queries';
@@ -8,6 +8,7 @@ import './FactoryEpicCard.css';
 
 export function FactoryRecoveryActions({ gate, attempts, inbox = false }: { gate: FactoryRecoveryGate; attempts?: FactoryAttempt[]; inbox?: boolean }) {
   const resolve = useResolveFactoryRecoveryGate();
+  useResetOnGateChange(gate, resolve);
   const [response, setResponse] = useState(gate.response ?? gate.choices?.[0] ?? '');
   const pending = gate.resolution === 'resume_pending';
   const answer = pending ? gate.response ?? response : response;
@@ -31,4 +32,17 @@ function RecoveryStatus({ gate, pending, saved }: { gate: FactoryRecoveryGate; p
   // An open gate carrying a response is a resume waiting for the Epic workspace.
   if (gate.resolution === 'open' && gate.response) return <span role="status">Resume queued. It continues automatically once the Epic workspace is free.</span>;
   return saved ? <span role="status">Recovery decision saved.</span> : null;
+}
+
+// Once the server reports a newer gate state (queued, then resume_pending on a
+// failed delivery), it drives status and buttons, not the finished request.
+// Errors stay visible.
+function useResetOnGateChange(gate: FactoryRecoveryGate, { isSuccess, reset }: { isSuccess: boolean; reset: () => void }) {
+  const gateState = `${gate.resolution}|${gate.response ?? ''}`;
+  const seenState = useRef(gateState);
+  useEffect(() => {
+    if (seenState.current === gateState) return;
+    seenState.current = gateState;
+    if (isSuccess) reset();
+  }, [gateState, isSuccess, reset]);
 }

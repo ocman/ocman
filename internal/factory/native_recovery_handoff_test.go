@@ -1,9 +1,11 @@
 package factory
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -23,7 +25,8 @@ func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = db.Close() })
 			launcher := &fakeImplementationLauncher{}
-			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+			store := &racingQueueStore{DB: db}
+			svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			epic := createPouredWorkEpic(t, svc, "Paused acceptance")
 			mol := pouredIssueID(t, svc, epic.ID, "mol")
 			proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: mol, Project: "/repo", Nodes: []ManifestNode{
@@ -98,11 +101,17 @@ func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			if failure == "queued" {
+				// A newer decision lands between dispatch listing the queue and draining it.
+				store.afterList = func() {
+					if err := db.QueueFactoryRecoveryResume(t.Context(), gate.IssueID, "Newer", time.Now()); err != nil {
+						t.Error(err)
+					}
+				}
 				if err := svc.Dispatch(t.Context()); err != nil {
 					t.Fatal(err)
 				}
 				resumed, _, err := db.GetFactoryRecoveryGate(t.Context(), gate.IssueID)
-				if err != nil || resumed.Resolution != "resume" || len(launcher.recoveries) != 1 || !strings.HasSuffix(launcher.recoveries[0], ":Continue") {
+				if err != nil || resumed.Resolution != "resume" || len(launcher.recoveries) != 1 || !strings.HasSuffix(launcher.recoveries[0], ":Newer") {
 					t.Fatalf("queued resume after release = %#v, %v, recoveries %v", resumed, err, launcher.recoveries)
 				}
 				return
@@ -124,4 +133,18 @@ func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+type racingQueueStore struct {
+	*state.DB
+	afterList func()
+}
+
+func (s *racingQueueStore) ListFactoryQueuedRecoveryResumes(ctx context.Context) ([]model.RecoveryGate, error) {
+	gates, err := s.DB.ListFactoryQueuedRecoveryResumes(ctx)
+	if s.afterList != nil {
+		s.afterList()
+		s.afterList = nil
+	}
+	return gates, err
 }

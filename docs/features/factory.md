@@ -303,9 +303,11 @@ response available for retry.
 When another approved Issue is ready, a recovery-paused session can hand off
 the shared workspace. Factory first stops its running turn and validates a
 clean, pushed checkpoint. The paused Issue remains unfinished, and its recovery
-gate remains open. Dirty work or a failed stop keeps the workspace locked.
-Resume is rejected while another Issue owns the workspace, with a message
-identifying that Issue. Wait for it to release the workspace, then resume.
+gate remains open. Dirty work or a failed stop keeps the workspace locked;
+Factory stops the session once and logs the reason once, not on every pass.
+If another Issue owns the workspace, Resume saves your response and queues the
+continuation. Factory resumes automatically after that Issue releases the
+workspace; a failed delivery keeps the response available through Retry resume.
 Recovery action text renders as Markdown in a seven-line preview; click the
 text to expand or collapse it. After the other
 work finishes, Resume adopts its latest checkpoint so earlier accepted work

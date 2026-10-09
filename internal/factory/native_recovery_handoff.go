@@ -16,17 +16,22 @@ var errHandoffBlocked = errors.New("factory recovery workspace handoff blocked")
 // another Issue held the Epic workspace. Still busy means keep waiting.
 func (s *NativeService) resumeQueuedRecoveries(ctx context.Context) {
 	queue, ok := s.store.(nativeRecoveryQueueStore)
-	if !ok {
+	gates, recoverable := s.store.(nativeRecoveryStore)
+	if !ok || !recoverable {
 		return
 	}
-	gates, err := queue.ListFactoryQueuedRecoveryResumes(ctx)
+	queued, err := queue.ListFactoryQueuedRecoveryResumes(ctx)
 	if err != nil {
 		logrus.WithError(err).Warn("Factory could not list queued recovery resumes")
 		return
 	}
-	for _, gate := range gates {
+	for _, gate := range queued {
 		s.recoveryMu.Lock()
-		_, err := s.resolveRecoveryGate(ctx, gate.IssueID, "resume", gate.Response)
+		// Re-read under the lock: a newer decision may have replaced the listed one.
+		current, found, err := gates.GetFactoryRecoveryGate(ctx, gate.IssueID)
+		if err == nil && found && current.Resolution == "open" && current.Response != "" {
+			_, err = s.resolveRecoveryGate(ctx, current.IssueID, "resume", current.Response)
+		}
 		s.recoveryMu.Unlock()
 		if err != nil {
 			// A failed delivery leaves the gate resume_pending with a visible

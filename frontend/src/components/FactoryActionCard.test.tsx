@@ -354,12 +354,17 @@ describe('Factory human action cards', () => {
     const recovery = { issueId: 'ship.3', epicId: 'ship', attemptId: 'attempt', workId: 'ship.1', question: 'Which API?', reason: 'Both supported', choices: ['A', 'B'], resolution: 'open' };
     vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'gate', recovery }]);
     vi.mocked(api.resolveFactoryRecoveryGate).mockResolvedValue({ ...recovery, response: 'A' });
-    renderCard();
+    const client = renderCard();
     await screen.findByText('Which API?');
     expect(screen.queryByText(/Resume queued/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Resume work' }));
     expect(await screen.findByText(/Resume queued/)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // Automatic delivery failed: the same mounted gate turns resume_pending.
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'gate', recovery: { ...recovery, response: 'A', resolution: 'resume_pending' } }]);
+    await act(() => client.invalidateQueries());
+    await waitFor(() => expect(screen.queryByText(/Resume queued/)).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Resume work' })).toBeEnabled();
   });
 
   it('keeps a pending recovery limited to retrying resume and displays errors', async () => {
