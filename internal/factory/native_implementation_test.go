@@ -37,6 +37,8 @@ type fakeImplementationLauncher struct {
 	handoffErr     error
 	prErr          error
 	handoffs       int
+	checkpointSHA  string
+	checkpointRefs []string
 	store          *state.DB
 	branch         string
 	baseRef        string
@@ -180,8 +182,12 @@ func (f *fakeImplementationLauncher) ResolveImplementationWorkspace(_ context.Co
 	return branch, "main", f.branchErr
 }
 
-func (f *fakeImplementationLauncher) ValidateImplementationCheckpoint(context.Context, string, string, string) (string, error) {
+func (f *fakeImplementationLauncher) ValidateImplementationCheckpoint(_ context.Context, _, _, checkpoint string) (string, error) {
 	f.handoffs++
+	f.checkpointRefs = append(f.checkpointRefs, checkpoint)
+	if f.checkpointSHA != "" {
+		return f.checkpointSHA, f.handoffErr
+	}
 	return "abc123", f.handoffErr
 }
 

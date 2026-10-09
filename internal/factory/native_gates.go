@@ -235,7 +235,15 @@ func (s *NativeService) deliverProjectRejection(ctx context.Context, store nativ
 
 func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action, response string) (RecoveryGate, error) {
 	s.recoveryMu.Lock()
-	defer s.recoveryMu.Unlock()
+	gate, err := s.resolveRecoveryGate(ctx, gateID, action, response)
+	s.recoveryMu.Unlock()
+	if err == nil && action == "retry" {
+		_ = s.Dispatch(ctx)
+	}
+	return gate, err
+}
+
+func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action, response string) (RecoveryGate, error) {
 	store, ok := s.store.(nativeRecoveryStore)
 	if !ok {
 		return RecoveryGate{}, ErrFactoryUnavailable
@@ -266,6 +274,11 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 		if s.implementation == nil {
 			return RecoveryGate{}, errors.New("implementation launcher is unavailable")
 		}
+		if attempt.Result != nil && strings.HasPrefix(attempt.Result.Summary, "Recovery workspace checkpoint ") {
+			if _, err := s.implementation.ValidateImplementationCheckpoint(ctx, attempt.FrozenPolicy.Repository, attempt.FrozenPolicy.Branch, attempt.FrozenPolicy.CheckpointSHA); err != nil {
+				return RecoveryGate{}, fmt.Errorf("validate resumed Factory workspace: %w", err)
+			}
+		}
 		deliveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if err := s.implementation.ResumeImplementationSession(deliveryCtx, attempt.Session, gate.IssueID, gate.Response); err != nil {
@@ -275,9 +288,6 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 	}
 	if (action == "retry" || action == "cancel") && s.implementation != nil && attempt.Session.ID != "" {
 		_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session)
-	}
-	if action == "retry" {
-		_ = s.Dispatch(ctx)
 	}
 	s.wakeDispatch()
 	return gate, nil

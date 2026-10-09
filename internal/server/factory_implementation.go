@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -340,28 +339,6 @@ Leave the worktree clean and pushed, then call factory complete_attempt with att
 		prompt += "\n\nIf you discover missing work, use factory issues to find the implementation parent and mutate_graph to propose tickets or dependency changes. Submit the complete change in one call with action batch, epicId, mutations, and rationaleMarkdown summarizing what changed and why in Markdown. The rationale is shown beside graph approval. The revised graph needs human approval before new work runs. Finish only your assigned Issue; use request_recovery if the gap prevents you from continuing. Never approve the graph yourself."
 	}
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: model})
-}
-
-func (l factoryImplementationLauncher) ResumeImplementationSession(ctx context.Context, session factory.PlanningSession, gateID, response string) error {
-	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
-	if !ok {
-		return errors.New("implementation platform is unavailable")
-	}
-	marker := "Factory recovery response for gate " + gateID + ":"
-	detail, err := platform.Session(ctx, session.ID, 20, 0)
-	if err != nil {
-		return fmt.Errorf("check Factory recovery delivery: %w", err)
-	}
-	if detail == nil {
-		return errors.New("check Factory recovery delivery: session is unavailable")
-	}
-	for _, part := range detail.Parts {
-		if bytes.Contains(part.Data, []byte(marker)) {
-			return nil
-		}
-	}
-	prompt := fmt.Sprintf("%s\n\n%s\n\nContinue the existing Factory Issue using this response.", marker, response)
-	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
 }
 
 func (l factoryImplementationLauncher) StopImplementationSession(ctx context.Context, session factory.PlanningSession) error {

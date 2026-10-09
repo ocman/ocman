@@ -6,6 +6,7 @@ import { EmptyState } from '../components/EmptyState';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { useClaimFactoryPlan, useFactoryCapacityPolicy, useFactoryGraphIssues, useFactoryQueue, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useSessions, useWorkEpics } from '../lib/queries';
 import { FactoryRecoveryActions } from '../components/FactoryRecoveryActions';
+import { FactoryActionText } from '../components/FactoryActionText';
 import { FactoryUsage } from '../components/FactoryUsage';
 import type { FactoryEpic, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
@@ -16,7 +17,7 @@ import { DispatchExplanation, FactoryDataRow, FactoryPage, InventoryToolbar, Que
 
 function RecoveryGateItem({ issue, epic }: { issue: FactoryIssue; epic?: FactoryEpic }) {
 	const gate = issue.recovery!;
-	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<><strong>{gate.question || issue.title}</strong>{gate.reason && <span>{gate.reason}</span>}</>} actions={<FactoryRecoveryActions key={gate.issueId} gate={gate} attempts={epic?.attempts} inbox />} />;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<FactoryActionText text={[gate.question || issue.title, gate.reason].filter(Boolean).join('\n\n')} />} actions={<FactoryRecoveryActions key={gate.issueId} gate={gate} attempts={epic?.attempts} inbox />} />;
 }
 
 function AuthorityGateItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }) {

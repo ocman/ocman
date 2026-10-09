@@ -65,6 +65,10 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		return ready[i].issue.ID < ready[j].issue.ID
 	})
 	for _, next := range ready {
+		if err := s.handoffRecoveryWorkspace(ctx, next.epic.ID); err != nil {
+			logrus.WithError(err).WithField("epic", next.epic.ID).Warn("Factory recovery workspace handoff blocked")
+			continue
+		}
 		epic, attempt, err := store.ClaimFactoryImplementation(ctx, next.epic.ID, next.issue.ID, "factory-implement/v1", time.Now())
 		if err != nil {
 			continue

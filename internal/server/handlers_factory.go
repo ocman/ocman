@@ -301,6 +301,10 @@ func decodeFactoryRequest(w http.ResponseWriter, r *http.Request, value any) boo
 }
 
 func writeFactoryError(w http.ResponseWriter, err error) {
+	if errors.Is(err, model.ErrRecoveryWorkspaceBusy) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	if errors.Is(err, factory.ErrFormulaCorrupt) {
 		serverError(w, "reading Factory Formula", err)
 		return

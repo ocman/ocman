@@ -506,8 +506,8 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 		detail.Parts = []db.Part{{Data: []byte(request.Message)}}
 		return errors.New("response lost after acceptance")
 	}
-	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err == nil {
-		t.Fatal("ambiguous delivery returned success")
+	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err != nil {
+		t.Fatalf("confirmed delivery returned an error: %v", err)
 	}
 	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err != nil || sends != 2 {
 		t.Fatalf("ambiguous delivery retry = %v, total sends %d", err, sends)

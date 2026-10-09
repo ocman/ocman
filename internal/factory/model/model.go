@@ -19,6 +19,7 @@ var (
 	ErrEpicProjectNotFound         = errors.New("factory Epic project not found")
 	ErrInvalidGraphMutation        = errors.New("invalid factory graph mutation")
 	ErrEpicClosureBlocked          = errors.New("factory Epic closure is blocked")
+	ErrRecoveryWorkspaceBusy       = errors.New("factory Epic workspace is in use")
 )
 
 // PermissionRule mirrors platforms.PermissionRule. It is defined here to

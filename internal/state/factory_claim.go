@@ -80,7 +80,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	var epicActive int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM factory_attempt WHERE epic_id = ? AND phase IN ('prepared', 'active', 'stopping') AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1'`, epicID).Scan(&epicActive); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM factory_attempt a WHERE epic_id = ? AND phase IN ('prepared', 'active', 'stopping') AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1' AND NOT (`+factoryRecoveryYieldedSQL+`)`, epicID).Scan(&epicActive); err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	if epicActive != 0 {
@@ -169,8 +169,12 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		attemptPolicy.Model = epicModel
 	}
 	if !successorLineage {
-		if err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') FROM factory_attempt WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.repository') = ? AND terminal_outcome = 'succeeded' AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') <> '' ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID, project).Scan(&attemptPolicy.CheckpointSHA); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		head, err := latestFactoryCheckpoint(ctx, tx, epicID, project)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return model.NativeEpic{}, model.FactoryAttempt{}, err
+		}
+		if err == nil {
+			attemptPolicy.CheckpointSHA = head
 		}
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT

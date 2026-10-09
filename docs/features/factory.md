@@ -300,6 +300,17 @@ retry, and cancel controls appear above that session's composer, so you can
 inspect the conversation and decide there. A failed resume keeps the saved
 response available for retry.
 
+When another approved Issue is ready, a recovery-paused session can hand off
+the shared workspace. Factory first stops its running turn and validates a
+clean, pushed checkpoint. The paused Issue remains unfinished, and its recovery
+gate remains open. Dirty work or a failed stop keeps the workspace locked.
+Resume is rejected while another Issue owns the workspace, with a message
+identifying that Issue. Wait for it to release the workspace, then resume.
+Recovery action text renders as Markdown in a seven-line preview; click the
+text to expand or collapse it. After the other
+work finishes, Resume adopts its latest checkpoint so earlier accepted work
+cannot be discarded. Recovery checkpoints survive cancellation and retries.
+
 Implementation sessions run in the Issue's target project workspace. They may
 read other projects admitted to the Epic, but path-specific permission rules
 deny edits there. Shell access remains enabled, so these rules enforce agent
