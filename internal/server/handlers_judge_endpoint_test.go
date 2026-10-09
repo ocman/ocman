@@ -57,3 +57,42 @@ func TestJudgeEndpointNoDatabase(t *testing.T) {
 		t.Fatalf("status: %d", rec.Code)
 	}
 }
+
+func TestJudgeEndpointURLChangeDoesNotReuseCredentials(t *testing.T) {
+	for _, tc := range []struct{ name, keyField, wantKey string }{
+		{"omitted key", "", ""},
+		{"replacement key", `,"apiKey":"replacement-key"`, "replacement-key"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := openTestStateDB(t)
+			srv := &Server{stateDB: store}
+			call := func(method, body string) *httptest.ResponseRecorder {
+				t.Helper()
+				rec := httptest.NewRecorder()
+				srv.handleJudgeEndpoint(rec, httptest.NewRequest(method, "/api/settings/judge-endpoint", strings.NewReader(body)))
+				return rec
+			}
+			seed := call(http.MethodPost, `{"format":"typesafe","endpoint":"https://old.example/v1/systemone","apiKey":"original-key","minSafeProbability":0.99}`)
+			if seed.Code != http.StatusOK {
+				t.Fatalf("seed: %d %s", seed.Code, seed.Body)
+			}
+			post := call(http.MethodPost, `{"format":"typesafe","endpoint":"https://new.example/v1/systemone","minSafeProbability":0.99`+tc.keyField+`}`)
+			config, err := autoapprove.LoadJudgeEndpoint(t.Context(), store)
+			if err != nil || config.APIKey != tc.wantKey {
+				t.Fatalf("stored key = %q, error = %v", config.APIKey, err)
+			}
+			for _, rec := range []*httptest.ResponseRecorder{post, call(http.MethodGet, "")} {
+				if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "original-key") || strings.Contains(rec.Body.String(), "replacement-key") {
+					t.Fatalf("response not redacted: %d %s", rec.Code, rec.Body)
+				}
+				wantSet := `"apiKeySet":false`
+				if tc.wantKey != "" {
+					wantSet = `"apiKeySet":true`
+				}
+				if !strings.Contains(rec.Body.String(), wantSet) {
+					t.Fatalf("key status missing: %s", rec.Body)
+				}
+			}
+		})
+	}
+}

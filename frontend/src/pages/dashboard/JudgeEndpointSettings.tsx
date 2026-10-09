@@ -74,7 +74,7 @@ export function JudgeEndpointSettings() {
               {config.format === 'typesafe' && <>
                 <label>
                 Minimum safe probability
-                <TextField type="number" min={0.5} max={1} step={0.001} required value={config.minSafeProbability} onChange={(event) => update({ minSafeProbability: Number(event.target.value) })} />
+                <TextField type="number" min={0.5} max={1} step="any" required value={config.minSafeProbability} onChange={(event) => update({ minSafeProbability: Number(event.target.value) })} />
                 </label>
                 <p className={styles.description}>Only safe answers meeting this threshold are auto-approved. Validate the threshold on your workload; it is not an error-rate guarantee.</p>
               </>}
