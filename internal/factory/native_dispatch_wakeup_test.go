@@ -46,8 +46,8 @@ func TestFactoryDoesNotScanEverySecond(t *testing.T) {
 	}
 	t.Cleanup(svc.Close)
 	time.Sleep(2200 * time.Millisecond)
-	if scans := store.scans.Load(); scans != 1 {
-		t.Fatalf("idle Factory scanned %d times in 2.2s, want startup only", scans)
+	if scans := store.scans.Load(); scans != 2 {
+		t.Fatalf("idle Factory scanned %d times in 2.2s, want startup dispatch and attention scans only", scans)
 	}
 }
 

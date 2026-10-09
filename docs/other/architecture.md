@@ -179,7 +179,7 @@ flowchart TD
     Server --> Routines[internal/routines<br/>saved prompts + schedules]
     Server --> Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
-    Factory --> State
+    Factory -->|graph + action Inbox reconciliation| State
     State --> FactoryModel
     Factory --> Registry
     Factory --> Router
@@ -400,6 +400,11 @@ flowchart TD
   session service with an explicit platform, including remote compound IDs.
   Routine completion writes its notification in the same transaction as the run
   outcome, and Factory deliveries explicitly use the Factory category.
+  After dispatch, Factory reconciles outstanding human actions into durable,
+  deduplicated Inbox items and archives resolved ones. The browser's shared
+  Inbox query polls in the background for new Factory actions, displaying
+  in-app toasts and opt-in system notifications without replaying its initial
+  snapshot.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.

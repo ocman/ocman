@@ -1,6 +1,34 @@
 import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
 
 for (const width of [1280, 390]) {
+  test(`new Factory actions notify and open the action inbox at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.clock.install();
+    let pending = false;
+    await page.route('/api/inbox', route => route.fulfill({ json: {
+      items: pending ? [{ id: 'factory-action-ship:review', remoteId: 'local', category: 'factory', title: 'Factory needs attention: Ship notifications', body: 'Plan approval required', createdAt: Date.now() }] : [],
+      unreadTotal: pending ? 1 : 0,
+    } }));
+    const initialInbox = page.waitForResponse(response => new URL(response.url()).pathname === '/api/inbox');
+    await page.goto('/sessions');
+    await initialInbox;
+    await page.clock.runFor(100);
+    await expect(page.getByRole('button', { name: 'Open actions', exact: true })).toHaveCount(0);
+    pending = true;
+    await page.clock.fastForward(10_000);
+    await page.clock.runFor(100);
+    const action = page.getByRole('button', { name: 'Open actions', exact: true });
+    await expect(action).toBeVisible();
+    await expect(page.getByText('Factory action required', { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`factory-notification-${width}.png`) });
+    await page.clock.fastForward(10_000);
+    await page.clock.runFor(100);
+    await expect(action).toHaveCount(1);
+    await action.click();
+    await expect(page).toHaveURL(/\/factory\/overview$/);
+    await expect(action).toHaveCount(0);
+  });
+
   test(`MCP notification retries installation and dismisses success at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.route('/api/mcp/config', route => route.fulfill({ json: { configured: false, editable: true, wantUrl: 'http://127.0.0.1:8227/mcp', path: '/home/user/.config/opencode/opencode.json' } }));

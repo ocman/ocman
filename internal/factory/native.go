@@ -293,6 +293,7 @@ type NativeService struct {
 	authorityMu       sync.Mutex
 	projectRequestMu  sync.Mutex
 	mergeGateMu       sync.Mutex
+	attentionMu       sync.Mutex
 	checksMu          sync.Mutex
 	checks            map[string]verificationCheck // in memory: a restart just reruns the checks
 	idleProbedAt      map[string]time.Time

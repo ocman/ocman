@@ -16,6 +16,7 @@ import (
 // Dispatch admits ready executable Issues in deterministic order until
 // configured capacity is full. Plan and Materialization never enter this path.
 func (s *NativeService) Dispatch(ctx context.Context) error {
+	defer s.reconcileAttention(ctx)
 	store, ok := s.store.(nativePlanningStore)
 	if !ok || s.implementation == nil {
 		return nil

@@ -38,11 +38,12 @@ import type {
 /** Bounds one inbox request so a stalled fetch cannot freeze later refreshes. */
 export const INBOX_TIMEOUT_MS = 20_000;
 
-export function useInbox(archived = false) {
+export function useInbox(archived = false, background = false) {
   return useQuery<InboxResponse>({
     queryKey: archived ? ['inbox', 'archived'] : ['inbox'],
     queryFn: ({ signal }) => withDeadline(INBOX_TIMEOUT_MS, (deadline) => api.inbox(deadline, archived), signal),
     refetchInterval: 10_000,
+    refetchIntervalInBackground: background,
   });
 }
 

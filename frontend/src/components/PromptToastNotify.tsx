@@ -5,6 +5,7 @@ import { useGlobalEvents } from '../lib/useGlobalEvents';
 import { cleanTitle } from '../lib/format';
 import { Button } from './Control';
 import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
+import { FactoryActionNotify } from './FactoryActionNotify';
 
 /**
  * Renders an in-app Radix toast for every session that's blocking on
@@ -56,6 +57,7 @@ export function PromptToastNotify() {
 
   return (
     <Toast.Provider swipeDirection="right" duration={Infinity}>
+      <FactoryActionNotify />
       {toasts.map((t) => {
         const { heading, body } = describe(t);
         return (

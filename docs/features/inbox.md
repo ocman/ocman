@@ -48,6 +48,14 @@ Inbox. Question notifications still open the session.
 
 ## Other messages
 
+Factory actions needing your attention create a Factory Inbox message with a
+link to the epic. This includes plan review, recovery, permission and project
+scope decisions, planning, materialization, workflow approvals, and blocked work.
+New actions also show an in-app toast and, when enabled and permitted, a system
+notification. Refreshes and restarts do not duplicate messages. Resolved actions
+are archived automatically; a new plan revision or failed attempt gets a new
+message. Existing actions do not notify again when you open the app.
+
 Factory delivery notifications use the Factory category. Routine runs create a
 Routine message when they succeed, fail, or are interrupted.
 
