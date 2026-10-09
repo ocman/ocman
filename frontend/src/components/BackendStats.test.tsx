@@ -4,10 +4,11 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getSystemStats = vi.fn();
+let recentSessions: { status: string; platform?: string; parentId?: string }[] = [];
 
 vi.mock('../lib/apiStore', () => ({
-  useApiStore: (selector: (state: { getSystemStats: typeof getSystemStats }) => unknown) =>
-    selector({ getSystemStats }),
+  useApiStore: (selector: (state: { getSystemStats: typeof getSystemStats; recentSessions: typeof recentSessions }) => unknown) =>
+    selector({ getSystemStats, recentSessions }),
 }));
 
 vi.mock('../lib/useLongTaskMonitor', () => ({
@@ -35,6 +36,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   hidden = false;
   heapReads = 0;
+  recentSessions = [];
   getSystemStats.mockReset();
   getSystemStats.mockImplementation(() =>
     Promise.resolve({ memory: { heapAlloc: 42 * 1024 * 1024 }, uptime: 61 }));
@@ -54,6 +56,28 @@ afterEach(() => {
 });
 
 describe('BackendStats visibility gating (FR-10)', () => {
+  it('counts only running sessions and updates as their status changes', async () => {
+    recentSessions = [
+      { status: 'busy' },
+      { status: 'busy', platform: 'r-box:opencode' },
+      { status: 'busy', parentId: 'parent' },
+      { status: 'waiting' },
+      { status: 'done' },
+      { status: 'error' },
+      { status: 'interrupted' },
+    ];
+    const { rerender } = render(<BackendStats />);
+    await flush();
+    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 3as');
+    expect(screen.getByTitle('Backend memory usage')).toHaveTextContent('be: 42MB');
+    expect(screen.getByTitle('Time since the backend started')).toHaveTextContent('up: 1m 1s');
+
+    recentSessions = [{ status: 'done' }];
+    rerender(<BackendStats />);
+    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 0as');
+    expect(getSystemStats).toHaveBeenCalledTimes(1);
+  });
+
   it('does not request stats for a closed sidebar and refreshes when opened', async () => {
     const { rerender } = render(<BackendStats enabled={false} />);
     await flush();

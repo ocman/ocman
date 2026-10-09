@@ -21,6 +21,7 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
   const [frontendMemory, setFrontendMemory] = useState<number | null>(null);
   const longTasks = useLongTaskMonitor();
   const getSystemStats = useApiStore((s) => s.getSystemStats);
+  const runningSessions = useApiStore((s) => s.recentSessions.filter((session) => session.status === 'busy').length);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -129,7 +130,10 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <div className="backend-stats">
-      <span className="backend-stats-item">
+      <span className="backend-stats-item" title="Background activity: active sessions (as) currently running">
+        <span className="backend-stats-label">bg</span>: {runningSessions}as
+      </span>
+      <span className="backend-stats-item" title="Backend memory usage">
         <span className="backend-stats-label" title="Backend Memory">be</span>: {(backendMemory / (1024 * 1024)).toFixed(0)}MB
       </span>
       {frontendMemory !== null && (
@@ -152,7 +156,7 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
         </span>
       )}
       {uptime !== null && (
-        <span className="backend-stats-item backend-stats-uptime">
+        <span className="backend-stats-item backend-stats-uptime" title="Time since the backend started">
           <span className="backend-stats-label" title="Uptime">up</span>: {formatUptime(uptime)}
         </span>
       )}
