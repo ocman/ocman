@@ -10,6 +10,8 @@ subagents) with `factoryAttemptId`. The session sidebar hides those sessions and
 their children until you check **Show factory** under **Filter sessions**, and a
 conversation loads Factory recovery choices only when it carries the tag. The
 sidebar never polls the Epic list; regular conversations no longer poll it either.
+The default **Always show prompts** toggle keeps sessions awaiting permission or
+an answer visible even when Factory sessions are filtered out.
 
 ## Cost and token usage
 

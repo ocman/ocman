@@ -25,6 +25,12 @@ and includes matching projects' worktrees, prepared drafts and grouped remote ch
 If the selected project disappears, the selector shows **Unavailable project**;
 choose **All projects** to clear it.
 
+**Always show prompts** is enabled by default under **Filter sessions**.
+Sessions awaiting permission or an answer bypass the project, search, archived,
+child, Factory and routine filters in both sidebar views. Their project groups
+stay expanded while input is pending. Once answered, normal filtering resumes.
+The toggle is remembered across reloads.
+
 The session sidebar orders rows by their last completed assistant turn,
 including errors, newest first. Streaming output, sending a prompt and reading
 a session do not move it. Sessions without a completed turn use creation time;

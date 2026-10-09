@@ -56,6 +56,7 @@ function renderSidebar(
   onNewSession: () => void = vi.fn(),
   groups: SidebarProjectGroup[] = [group],
   onReorderProjects: (keys: string[]) => void = vi.fn(),
+  collapsedProjectSet: Set<string> = new Set(),
 ) {
   return render(
     <MemoryRouter><SessionSidebar
@@ -70,7 +71,7 @@ function renderSidebar(
       sidebarProjectGroups={groups}
       onReorderProjects={onReorderProjects}
       archivingSessionIds={new Set()}
-      collapsedProjectSet={new Set()}
+      collapsedProjectSet={collapsedProjectSet}
       toggleCollapsedProject={vi.fn()}
       siblingGitInfos={infos}
       activeDisplayStatus="done"
@@ -223,7 +224,7 @@ describe('SessionSidebar', () => {
     };
     const first = renderSidebar(group, {});
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    for (const name of ['Show children', 'Show factory', 'Show routines']) {
+    for (const name of ['Show children', 'Show factory', 'Show routines', 'Always show prompts']) {
       fireEvent.click(screen.getByRole('checkbox', { name }));
     }
     first.unmount();
@@ -232,6 +233,38 @@ describe('SessionSidebar', () => {
     expect(screen.getByRole('checkbox', { name: 'Show children' })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Show factory' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Show routines' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Always show prompts' })).not.toBeChecked();
+  });
+
+  it.each(['recent', 'projects'] as const)('lets prompts bypass project, search, child, factory and routine filters in %s view', (view) => {
+    localStorage.setItem('ocman:sidebar-filter:children', 'false');
+    const permission = session({ id: 'permission', title: 'Permission task', parentId: 'factory', factoryAttemptId: 'attempt', pendingPermission: true, archived: true });
+    const question = session({ id: 'question', title: 'Question task', routineId: 'routine', pendingQuestion: true });
+    const hidden = session({ id: 'hidden', title: 'Hidden task', factoryAttemptId: 'attempt' });
+    const groups: SidebarProjectGroup[] = [
+      { directory: '/repo', sessions: [permission, question, hidden], lastUpdated: 1, aggregate: { kind: 'none' } },
+      { directory: '/other', sessions: [], lastUpdated: 1, aggregate: { kind: 'none' } },
+    ];
+    renderSidebar(groups[0], {}, vi.fn(), vi.fn(), vi.fn(), view, vi.fn(), vi.fn(), groups, vi.fn(), new Set(['/repo']));
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    expect(screen.getByRole('checkbox', { name: 'Always show prompts' })).toBeChecked();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Project' }));
+    fireEvent.click(screen.getByRole('option', { name: '/other' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'unmatched' } });
+    expect(screen.getByText('Permission task')).toBeInTheDocument();
+    expect(screen.getByText('Question task')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden task')).not.toBeInTheDocument();
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['permission', 'question']);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Always show prompts' }));
+    expect(screen.queryByText('Permission task')).not.toBeInTheDocument();
+    expect(screen.queryByText('Question task')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Always show prompts' }));
+    expect(screen.getByText('Permission task')).toBeInTheDocument();
+    permission.pendingPermission = false;
+    question.pendingQuestion = false;
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'still unmatched' } });
+    expect(screen.queryByText('Permission task')).not.toBeInTheDocument();
+    expect(screen.queryByText('Question task')).not.toBeInTheDocument();
   });
 
   it('uses compact relative times', () => {

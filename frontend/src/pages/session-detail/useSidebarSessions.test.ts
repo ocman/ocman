@@ -237,6 +237,8 @@ describe('useSidebarSessions project visibility', () => {
       { id: 'pin-child', pinned: true, parentId: 'parent', status: 'done' as const },
       { id: 'hidden-archived', archived: true },
       { id: 'hidden-child', parentId: 'parent', status: 'done' as const },
+      { id: 'archived-permission', archived: true, pendingPermission: true },
+      { id: 'archived-question', archived: true, pendingQuestion: true },
     ];
     const rows = fixtures.map((row) => ({ platform: 'opencode', directory: '/repo', timeUpdated: 1,
       seen: false, seenTimeUpdated: 0, unreadCount: 0, ...row } as Session));
@@ -246,7 +248,7 @@ describe('useSidebarSessions project visibility', () => {
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     await act(async () => { await result.current.loadRecentSessions(); });
-    expect(result.current.recentSessions.map((row) => row.id)).toEqual(['open', 'pin-archived', 'pin-child']);
+    expect(result.current.recentSessions.map((row) => row.id)).toEqual(['archived-permission', 'archived-question', 'open', 'pin-archived', 'pin-child']);
   });
 
   it('keeps a quiet project after newer sessions, including when switching views', async () => {

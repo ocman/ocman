@@ -39,6 +39,7 @@ import { trackRender } from '../../lib/renderRateMonitor';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import type { ConversationDraft } from '../../lib/newConversationDrafts';
 import { useSidebarDraftGroups } from './useSidebarDraftGroups';
+import { hasPendingPrompt } from '../../lib/sessionVisibility';
 
 export interface SidebarProjectGroup {
   key?: string;
@@ -125,7 +126,8 @@ export function SessionSidebar({
   trackRender('SessionSidebar');
   const [searchQuery, setSearchQuery] = useState('');
   const draftGroups = useSidebarDraftGroups(allProjectGroups, searchQuery);
-  const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, draftGroups);
+  const [alwaysShowPrompts, setAlwaysShowPrompts] = useSidebarFilter('prompts', true);
+  const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, draftGroups, alwaysShowPrompts);
   const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
@@ -137,8 +139,6 @@ export function SessionSidebar({
   const hiddenSessions = useMemo(() => {
     const all = [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)];
     const keys = new Set<string>();
-    // Tags come with the session list, so hiding Factory sessions needs no
-    // /api/factory/epics poll.
     for (const session of all) {
       if ((!showFactory && session.factoryAttemptId) || (!showRoutines && session.routineId)) {
         keys.add(`${session.platform}\0${session.id}`);
@@ -206,18 +206,18 @@ export function SessionSidebar({
   // Pinned rows come first; only project groups are reorderable.
   const filteredProjectGroups = useMemo(() => {
     const query = searchQuery.trim();
-    if (showChildren && hiddenSessions.size === 0 && !query) return sidebarProjectGroups;
     return sidebarProjectGroups.flatMap((group) => {
       const projectMatches = !!query && fuzzyMatch(query, group.directory);
       const sessions = group.sessions.filter((session) =>
-        session.id === activeId || session.pinned ||
+        session.id === activeId || session.pinned || alwaysShowPrompts && hasPendingPrompt(session) ||
         !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
+        (showArchivedRecent || !session.archived) &&
         (showChildren || !session.parentId) &&
         (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
       );
       return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
     });
-  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId]);
+  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent]);
 
   const filteredPinnedSessions = useMemo(() => {
     return recentSessions
@@ -232,11 +232,12 @@ export function SessionSidebar({
     const query = searchQuery.trim();
     return recentSessions.filter((session) =>
       !session.pinned &&
-      (session.id === activeId || !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
+      (session.id === activeId || alwaysShowPrompts && hasPendingPrompt(session) || !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
+      (showArchivedRecent || !session.archived) &&
       (showChildren || !session.parentId) &&
       (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]))),
     );
-  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId]);
+  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent]);
 
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.
@@ -246,11 +247,10 @@ export function SessionSidebar({
       : [
         filteredPinnedSessions,
         ...sortableGroups
-          .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory))
+          .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory) || alwaysShowPrompts && group.sessions.some(hasPendingPrompt))
           .map((group) => group.sessions),
       ];
     const seen = new Set<string>();
-    // Pinned sessions also appear in project groups; keep their first row.
     visibleSidebarSessions.current = sections
       .flatMap((rows) => nestSessions(rows).map(({ session }) => session))
       .filter((session) => {
@@ -259,7 +259,7 @@ export function SessionSidebar({
         seen.add(key);
         return true;
       });
-  }, [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet]);
+  }, [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet, alwaysShowPrompts]);
   useEffect(() => () => { visibleSidebarSessions.current = null; }, []);
 
   const dndSensors = useSensors(
@@ -285,8 +285,6 @@ export function SessionSidebar({
     nestSessions(sessions).map(({ session, depth }) => renderRow(session, false, depth, true));
 
   const renderPinnedGroup = (sessions: Session[]) => {
-    // The "Pinned" group is always expanded and has a
-    // distinct header (pin icon, no collapse, no "+", not draggable).
     return (
       <div key="__pinned__" className="session-sidebar-group session-sidebar-group-pinned">
         <div className="session-sidebar-group-header-row">
@@ -316,7 +314,7 @@ export function SessionSidebar({
             <ProjectGroup
               key={group.key ?? (group.directory || '__empty__')}
               group={group}
-              collapsed={collapsedProjectSet.has(group.key ?? group.directory)}
+              collapsed={collapsedProjectSet.has(group.key ?? group.directory) && !(alwaysShowPrompts && group.sessions.some(hasPendingPrompt))}
               siblingGitInfos={siblingGitInfos}
               toggleCollapsedProject={toggleCollapsedProject}
               onNewSessionInDirectory={onNewSessionInDirectory}
@@ -365,6 +363,8 @@ export function SessionSidebar({
         setShowFactory={setShowFactory}
         showRoutines={showRoutines}
         setShowRoutines={setShowRoutines}
+        alwaysShowPrompts={alwaysShowPrompts}
+        setAlwaysShowPrompts={setAlwaysShowPrompts}
         sidebarView={sidebarView}
         setSidebarView={setSidebarView}
         onNewSession={onNewSession}

@@ -18,6 +18,8 @@ export interface SidebarHeaderProps {
   setShowFactory: (show: boolean) => void;
   showRoutines: boolean;
   setShowRoutines: (show: boolean) => void;
+  alwaysShowPrompts: boolean;
+  setAlwaysShowPrompts: (show: boolean) => void;
   sidebarView: 'recent' | 'projects';
   setSidebarView: (view: 'recent' | 'projects') => void;
   onNewSession: () => void;
@@ -38,6 +40,8 @@ export function SidebarHeader({
   setShowFactory,
   showRoutines,
   setShowRoutines,
+  alwaysShowPrompts,
+  setAlwaysShowPrompts,
   sidebarView,
   setSidebarView,
   onNewSession,
@@ -94,6 +98,10 @@ export function SidebarHeader({
         {filtersOpen && (
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
             <ProjectScopePicker projects={projects} value={projectFilter} onChange={setProjectFilter} label="Project" scopePrefix="scope:" />
+            <label title="Keep sessions awaiting permission or an answer visible regardless of filters">
+              <input type="checkbox" checked={alwaysShowPrompts} onChange={(event) => setAlwaysShowPrompts(event.target.checked)} />
+              <span>Always show prompts</span>
+            </label>
             <label>
               <input
                 type="checkbox"

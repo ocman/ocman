@@ -2,6 +2,10 @@ type SessionLike = {
   archived?: boolean;
 };
 
+export function hasPendingPrompt(session: { pendingPermission?: boolean; pendingQuestion?: boolean }): boolean {
+  return !!(session.pendingPermission || session.pendingQuestion);
+}
+
 // filterVisibleSessions drops archived rows. Accepts null/undefined
 // because /api/sessions occasionally serializes a Go nil slice as JSON
 // `null` instead of `[]`, which used to crash the dashboard with

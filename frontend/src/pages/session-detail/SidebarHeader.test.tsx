@@ -11,6 +11,7 @@ it('keeps the filter button neutral with every filter changed and the menu open'
     showChildren={false} setShowChildren={vi.fn()}
     showFactory setShowFactory={vi.fn()}
     showRoutines setShowRoutines={vi.fn()}
+    alwaysShowPrompts setAlwaysShowPrompts={vi.fn()}
     sidebarView="recent" setSidebarView={vi.fn()} onNewSession={vi.fn()}
   />);
   const button = screen.getByRole('button', { name: 'Filter sessions' });
@@ -29,6 +30,7 @@ it('represents a removed project selection and lets the user clear it', () => {
     showChildren: true, setShowChildren: vi.fn(),
     showFactory: false, setShowFactory: vi.fn(),
     showRoutines: false, setShowRoutines: vi.fn(),
+    alwaysShowPrompts: true, setAlwaysShowPrompts: vi.fn(),
     sidebarView: 'recent', setSidebarView: vi.fn(), onNewSession: vi.fn(),
   };
   const { rerender } = render(<SidebarHeader {...props} />);
@@ -56,6 +58,7 @@ it('searches projects and selects an organization prefix', () => {
     showChildren setShowChildren={vi.fn()}
     showFactory={false} setShowFactory={vi.fn()}
     showRoutines={false} setShowRoutines={vi.fn()}
+    alwaysShowPrompts setAlwaysShowPrompts={vi.fn()}
     sidebarView="recent" setSidebarView={vi.fn()} onNewSession={vi.fn()}
   />);
   fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));

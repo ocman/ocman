@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
-import { filterVisibleSessions } from '../../lib/sessionVisibility';
+import { filterVisibleSessions, hasPendingPrompt } from '../../lib/sessionVisibility';
 import { compareSidebarActivity, computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
@@ -174,7 +174,7 @@ export function useSidebarSessions({
         });
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         openSessionFallbackRef.current = resolved.cache;
-        const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
+        const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived || hasPendingPrompt(s));
         const current = resolved.session;
         const candidates = current && !visible.some((s) => s.id === current.id)
           ? [current, ...visible]
@@ -293,7 +293,7 @@ export function useSidebarSessions({
         peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
           if (!subscribed) return;
           const candidates = filterInactiveChildren([row], id);
-          if (!candidates.length || (!row.pinned && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
+          if (!candidates.length || (!row.pinned && !hasPendingPrompt(row) && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
             hiddenSessions.add(sessionID);
             return;
           }
@@ -302,7 +302,7 @@ export function useSidebarSessions({
           // the session is live; otherwise keep the row's own time and window.
           const live = row.status === 'busy';
           const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
-          if (!row.pinned && row.id !== id && !live && row.timeUpdated < since) {
+          if (!row.pinned && !hasPendingPrompt(row) && row.id !== id && !live && row.timeUpdated < since) {
             hiddenSessions.add(sessionID);
             return;
           }
@@ -391,7 +391,7 @@ export function useSidebarSessions({
           });
           const { recentSessions: current, setRecentSessions: storeSetter, recentSessionsHash } = useApiStore.getState();
           const next = current.flatMap((session) => session.id !== target.id ? [session]
-            : showArchivedRecentRef.current || session.pinned ? [{ ...session, archived: true }] : []);
+            : showArchivedRecentRef.current || session.pinned || hasPendingPrompt(session) ? [{ ...session, archived: true }] : []);
           // Only write if something actually changed.
           if (next !== current) storeSetter(next, computeSidebarHash(next));
           // Suppress TS: recentSessionsHash is read to satisfy the linter,
