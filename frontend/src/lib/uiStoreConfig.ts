@@ -47,6 +47,7 @@ export const uiStorePersistence: PersistOptions<UiStore, Partial<UiStore>> = {
     lastOpenedSessionId: s.lastOpenedSessionId,
     sidebarWidth: s.sidebarWidth,
     sidebarView: s.sidebarView,
+    sidebarStatsExpanded: s.sidebarStatsExpanded,
     bellEnabled: s.bellEnabled,
     showToolDetails: s.showToolDetails,
     showReasoning: s.showReasoning,

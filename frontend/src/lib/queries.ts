@@ -188,6 +188,16 @@ export function useSessions(
   });
 }
 
+export function useRunningSessionCount(enabled: boolean) {
+  useActivityScope(enabled ? 'sessions' : undefined);
+  return useQuery({
+    queryKey: ['running-session-count'],
+    queryFn: ({ signal }) => api.runningSessionCount(signal),
+    enabled,
+    refetchInterval: 5000,
+  });
+}
+
 /**
  * Insert (or replace) a provisional session row into every cached
  * `['sessions', ...]` list so a freshly-created session shows up

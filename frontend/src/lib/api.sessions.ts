@@ -5,6 +5,8 @@ import type { AgentInfo, NewSessionTarget, PrepareSessionResponse, StartSessionR
   SharedConversation } from './api.types';
 
 export const sessionApi = {
+  runningSessionCount: (signal?: AbortSignal) =>
+    fetchJSON<{ count: number }>('/api/sessions?view=running-count', signal),
   sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) =>
     fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
   sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) =>

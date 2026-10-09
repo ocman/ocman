@@ -30,6 +30,18 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	fanPhase := srvtiming.Begin(ctx, "sessions_fanout")
 	all := s.fanOutSessions(ctx, dir, since, s.registry.RememberSessions)
 	fanPhase.End()
+	if r.URL.Query().Get("view") == "running-count" {
+		count := 0
+		for _, session := range all {
+			if session.Status == db.StatusBusy {
+				count++
+			}
+		}
+		writeJSON(w, struct {
+			Count int `json:"count"`
+		}{Count: count})
+		return
+	}
 
 	// Force-include pinned sessions that fell outside the time window.
 	// The pinned set is typically <10 entries; each miss is a single

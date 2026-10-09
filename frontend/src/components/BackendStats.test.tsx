@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getSystemStats = vi.fn();
 let recentSessions: { status: string; platform?: string; parentId?: string; archived?: boolean }[] = [];
 let allSessions: typeof recentSessions | undefined = [];
+let longTasks = { count: 0, maxMs: 0 };
 
 vi.mock('../lib/queries', () => ({
-  useSessions: () => ({ data: allSessions }),
+  useRunningSessionCount: () => ({ data: allSessions && { count: allSessions.filter((s) => s.status === 'busy').length } }),
 }));
 
 vi.mock('../lib/apiStore', () => ({
@@ -17,10 +18,11 @@ vi.mock('../lib/apiStore', () => ({
 }));
 
 vi.mock('../lib/useLongTaskMonitor', () => ({
-  useLongTaskMonitor: () => ({ count: 0, maxMs: 0 }),
+  useLongTaskMonitor: () => longTasks,
 }));
 
 import { BackendStats } from './BackendStats';
+import { useUiStore } from '../lib/uiStore';
 
 let hidden = false;
 
@@ -38,11 +40,13 @@ async function flush() {
 let heapReads = 0;
 
 beforeEach(() => {
+  useUiStore.setState({ sidebarStatsExpanded: true });
   vi.useFakeTimers();
   hidden = false;
   heapReads = 0;
   recentSessions = [];
   allSessions = [];
+  longTasks = { count: 0, maxMs: 0 };
   getSystemStats.mockReset();
   getSystemStats.mockImplementation(() =>
     Promise.resolve({ memory: { heapAlloc: 42 * 1024 * 1024 }, uptime: 61 }));
@@ -62,6 +66,42 @@ afterEach(() => {
 });
 
 describe('BackendStats visibility gating (FR-10)', () => {
+  it.each([[100, 'warning'], [250, 'critical']] as const)('shows expanded long-task severity for %sms stalls', async (maxMs, severity) => {
+    longTasks = { count: 1, maxMs };
+    getSystemStats.mockResolvedValue({ memory: { heapAlloc: 0 }, uptime: 3600 });
+    render(<BackendStats />);
+    await flush();
+    expect(screen.getByTitle(`Long tasks (>50ms main-thread blocks). Worst: ${maxMs}ms`)).toHaveClass(`longtasks-${severity}`);
+    expect(screen.getByTitle('Time since the backend started')).toHaveTextContent('up: 1h 0m');
+  });
+  it('keeps the count visible with stats collapsed and persists expansion across remounts', async () => {
+    useUiStore.setState({ sidebarStatsExpanded: false });
+    allSessions = [{ status: 'busy' }];
+    const { unmount } = render(<BackendStats />);
+    await flush();
+    expect(screen.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveTextContent('active sessions: 1');
+    expect(screen.getByRole('button', { name: 'Show system stats' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTitle('Backend memory usage')).not.toBeInTheDocument();
+    expect(getSystemStats).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show system stats' }));
+    await flush();
+    expect(screen.getByTitle('Backend memory usage')).toHaveTextContent('be: 42MB');
+    expect(JSON.parse(localStorage.getItem('ocman:ui')!).state.sidebarStatsExpanded).toBe(true);
+    const saved = localStorage.getItem('ocman:ui')!;
+    unmount();
+    act(() => useUiStore.setState({ sidebarStatsExpanded: false }));
+    localStorage.setItem('ocman:ui', saved);
+    await act(async () => useUiStore.persist.rehydrate());
+    render(<BackendStats />);
+    await flush();
+    expect(screen.getByRole('button', { name: 'Hide system stats' })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide system stats' }));
+    await flush();
+    expect(screen.queryByTitle('Backend memory usage')).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('ocman:ui')!).state.sidebarStatsExpanded).toBe(false);
+  });
   it('counts only running sessions and updates as their status changes', async () => {
     recentSessions = [
       { status: 'busy' },
@@ -75,14 +115,14 @@ describe('BackendStats visibility gating (FR-10)', () => {
     allSessions = recentSessions;
     const { rerender } = render(<BackendStats />);
     await flush();
-    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 3as');
+    expect(screen.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveTextContent('active sessions: 3');
     expect(screen.getByTitle('Backend memory usage')).toHaveTextContent('be: 42MB');
     expect(screen.getByTitle('Time since the backend started')).toHaveTextContent('up: 1m 1s');
 
     recentSessions = [{ status: 'done' }];
     allSessions = recentSessions;
     rerender(<BackendStats />);
-    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 0as');
+    expect(screen.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveTextContent('active sessions: 0');
     expect(getSystemStats).toHaveBeenCalledTimes(1);
   });
 
@@ -90,17 +130,17 @@ describe('BackendStats visibility gating (FR-10)', () => {
     allSessions = [{ status: 'busy', archived: true }, { status: 'done', archived: true }];
     const { rerender } = render(<BackendStats />);
     await flush();
-    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 1as');
+    expect(screen.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveTextContent('active sessions: 1');
     recentSessions = allSessions;
     rerender(<BackendStats />);
-    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 1as');
+    expect(screen.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveTextContent('active sessions: 1');
   });
 
   it('does not report zero before session data is available', async () => {
     allSessions = undefined;
     render(<BackendStats />);
     await flush();
-    expect(screen.queryByTitle('Background activity: active sessions (as) currently running')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Currently running sessions, including archived sessions and subagents')).not.toBeInTheDocument();
     expect(screen.getByTitle('Backend memory usage')).toHaveTextContent('be: 42MB');
   });
 
@@ -220,10 +260,12 @@ describe('BackendStats visibility gating (FR-10)', () => {
     expect(getSystemStats).not.toHaveBeenCalled();
   });
 
-  it('still hides itself when the request fails', async () => {
+  it('keeps the count and toggle available when system stats fail', async () => {
     getSystemStats.mockRejectedValue(new Error('boom'));
-    const { container } = render(<BackendStats />);
+    render(<BackendStats />);
     await flush();
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.getByRole('button', { name: 'Hide system stats' })).toBeInTheDocument();
+    expect(screen.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveTextContent('active sessions: 0');
+    expect(screen.queryByTitle('Backend memory usage')).not.toBeInTheDocument();
   });
 });

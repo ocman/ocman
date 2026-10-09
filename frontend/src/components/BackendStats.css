@@ -8,37 +8,31 @@
   font-family: 'SF Mono', Consolas, monospace;
   color: var(--overlay0);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
+}
+
+.backend-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.backend-stats-toggle {
+  margin-left: auto;
+}
+
+.backend-stats-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
 }
 
 .backend-stats-item {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
-}
-
-.backend-stats-item:nth-child(1) {
-  flex: 0 0 70px;
-}
-
-.backend-stats-item:nth-child(2) {
-  flex: 0 0 70px;
-  text-align: center;
-}
-
-/* The long-task counter (added when PerformanceObserver supports
-   'longtask') sits between Memory and Uptime. Aligned right so it
-   reads "lt: N" cleanly next to the uptime field. */
-.backend-stats-item.backend-stats-longtasks {
-  flex: 0 0 80px;
-  text-align: right;
-}
-
-.backend-stats-item.backend-stats-uptime {
-  flex: 0 0 80px;
-  text-align: right;
 }
 
 .backend-stats-item.longtasks-warning {

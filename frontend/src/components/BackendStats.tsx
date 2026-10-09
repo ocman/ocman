@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApiStore } from '../lib/apiStore';
-import { useSessions } from '../lib/queries';
+import { useRunningSessionCount } from '../lib/queries';
+import { useUiStore } from '../lib/uiStore';
+import { IconButton } from './IconButton';
 import { useLongTaskMonitor } from '../lib/useLongTaskMonitor';
 import './BackendStats.css';
 
@@ -22,13 +24,14 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
   const [frontendMemory, setFrontendMemory] = useState<number | null>(null);
   const longTasks = useLongTaskMonitor();
   const getSystemStats = useApiStore((s) => s.getSystemStats);
-  const sessions = useSessions({ limit: 0 }, { enabled, refetchInterval: 5000 });
-  const runningSessions = sessions.data?.filter((session) => session.status === 'busy').length;
+  const runningSessions = useRunningSessionCount(enabled).data?.count;
+  const expanded = useUiStore((s) => s.sidebarStatsExpanded);
+  const toggleStats = useUiStore((s) => s.toggleSidebarStats);
 
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !expanded) return;
     const load = () => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -85,9 +88,7 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
       stop();
       abortRef.current?.abort();
     };
-  }, [getSystemStats, enabled]);
-
-  if (backendMemory === null) return null;
+  }, [getSystemStats, enabled, expanded]);
 
   // Calculate memory percentage and warning level
   const getMemoryWarning = (): { level: 'ok' | 'warning' | 'critical', percentage?: number } => {
@@ -132,35 +133,51 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <div className="backend-stats">
-      {runningSessions !== undefined && <span className="backend-stats-item" title="Background activity: active sessions (as) currently running">
-        <span className="backend-stats-label">bg</span>: {runningSessions}as
-      </span>}
-      <span className="backend-stats-item" title="Backend memory usage">
-        <span className="backend-stats-label" title="Backend Memory">be</span>: {(backendMemory / (1024 * 1024)).toFixed(0)}MB
-      </span>
-      {frontendMemory !== null && (
-        <span 
-          className={`backend-stats-item ${memoryWarning.level !== 'ok' ? `memory-${memoryWarning.level}` : ''}`}
-          title={memoryWarning.percentage 
-            ? `Frontend Memory (${memoryWarning.percentage.toFixed(0)}% of heap limit)` 
-            : 'Frontend Memory'}
-        >
-          <span className="backend-stats-label" title="Frontend Memory">fe</span>: {(frontendMemory / (1024 * 1024)).toFixed(0)}MB
-        </span>
-      )}
-      {longTasks.count > 0 && (
-        <span
-          className={`backend-stats-item backend-stats-longtasks${longTaskSeverity !== 'ok' ? ` longtasks-${longTaskSeverity}` : ''}`}
-          title={`Long tasks (>50ms main-thread blocks). Worst: ${longTasks.maxMs.toFixed(0)}ms`}
-        >
-          <span className="backend-stats-label" title="Long tasks (main-thread stalls > 50ms)">lt</span>: {longTasks.count}
-          {longTasks.maxMs > 0 && ` / ${longTasks.maxMs.toFixed(0)}ms`}
-        </span>
-      )}
-      {uptime !== null && (
-        <span className="backend-stats-item backend-stats-uptime" title="Time since the backend started">
-          <span className="backend-stats-label" title="Uptime">up</span>: {formatUptime(uptime)}
-        </span>
+      <div className="backend-stats-row">
+        {runningSessions !== undefined && (
+          <span className="backend-stats-item" title="Currently running sessions, including archived sessions and subagents">
+            <span className="backend-stats-label">active sessions</span>: {runningSessions}
+          </span>
+        )}
+        <IconButton
+          className="backend-stats-toggle"
+          label={expanded ? 'Hide system stats' : 'Show system stats'}
+          icon={expanded ? 'bi-chevron-up' : 'bi-chevron-down'}
+          variant="ghost"
+          aria-expanded={expanded}
+          onClick={toggleStats}
+        />
+      </div>
+      {expanded && backendMemory !== null && (
+        <div className="backend-stats-row backend-stats-details">
+          <span className="backend-stats-item" title="Backend memory usage">
+            <span className="backend-stats-label" title="Backend Memory">be</span>: {(backendMemory / (1024 * 1024)).toFixed(0)}MB
+          </span>
+          {frontendMemory !== null && (
+            <span
+              className={`backend-stats-item ${memoryWarning.level !== 'ok' ? `memory-${memoryWarning.level}` : ''}`}
+              title={memoryWarning.percentage
+                ? `Frontend Memory (${memoryWarning.percentage.toFixed(0)}% of heap limit)`
+                : 'Frontend Memory'}
+            >
+              <span className="backend-stats-label" title="Frontend Memory">fe</span>: {(frontendMemory / (1024 * 1024)).toFixed(0)}MB
+            </span>
+          )}
+          {longTasks.count > 0 && (
+            <span
+              className={`backend-stats-item backend-stats-longtasks${longTaskSeverity !== 'ok' ? ` longtasks-${longTaskSeverity}` : ''}`}
+              title={`Long tasks (>50ms main-thread blocks). Worst: ${longTasks.maxMs.toFixed(0)}ms`}
+            >
+              <span className="backend-stats-label" title="Long tasks (main-thread stalls > 50ms)">lt</span>: {longTasks.count}
+              {longTasks.maxMs > 0 && ` / ${longTasks.maxMs.toFixed(0)}ms`}
+            </span>
+          )}
+          {uptime !== null && (
+            <span className="backend-stats-item backend-stats-uptime" title="Time since the backend started">
+              <span className="backend-stats-label" title="Uptime">up</span>: {formatUptime(uptime)}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
