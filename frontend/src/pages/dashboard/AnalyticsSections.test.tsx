@@ -19,6 +19,8 @@ vi.mock('./context', () => ({ useDashboard: () => ({ projects: [], dirScope: '/r
 const useActivity = vi.fn();
 const useHourly = vi.fn();
 const useSessionConcurrency = vi.fn();
+const useUIUsage = vi.fn();
+const useAgentRunHours = vi.fn();
 const useHourlyTokens = vi.fn();
 const useMetrics = vi.fn();
 const useAnalyticsOverview = vi.fn();
@@ -30,6 +32,8 @@ vi.mock('../../lib/queries', () => ({
   useActivity: (...args: unknown[]) => useActivity(...args),
   useHourly: (...args: unknown[]) => useHourly(...args),
   useSessionConcurrency: (...args: unknown[]) => useSessionConcurrency(...args),
+  useUIUsage: (...args: unknown[]) => useUIUsage(...args),
+  useAgentRunHours: (...args: unknown[]) => useAgentRunHours(...args),
   useHourlyTokens: (...args: unknown[]) => useHourlyTokens(...args),
   useMetrics: (...args: unknown[]) => useMetrics(...args),
   useAnalyticsOverview: (...args: unknown[]) => useAnalyticsOverview(...args),
@@ -66,6 +70,8 @@ describe('analytics sections', () => {
     useActivity.mockReturnValue(query([{ date: '2026-09-01', messages: 2, userMessages: 1, sessions: 1 }]));
     useHourly.mockReturnValue(query([{ hour: 12, sessions: 1 }]));
     useSessionConcurrency.mockReturnValue(query({ bucketMs: 3_600_000, series: [{ timestamp: 1000, sessions: 2 }, { timestamp: 3_601_000, sessions: 0 }] }));
+    useUIUsage.mockReturnValue(query([{ date: '2026-09-01', activeSeconds: 7200 }, { date: '2026-09-02', activeSeconds: 0 }]));
+    useAgentRunHours.mockReturnValue(query([{ timestamp: 3_600_000, minutes: 90 }, { timestamp: 7_200_000, minutes: 0 }]));
     useHourlyTokens.mockReturnValue(query([]));
     useModels.mockReturnValue(query([{ provider: 'provider', model: 'model', count: 2, tokensIn: 10, tokensOut: 5 }]));
     useMetrics.mockReturnValue(query(metrics));
@@ -109,6 +115,19 @@ describe('analytics sections', () => {
     expect(screen.getByText('Less')).toBeInTheDocument();
     expect(useActivity).toHaveBeenCalledWith({ days: 365, dir: '/repo' });
     expect(screen.queryByRole('combobox', { name: 'Model' })).not.toBeInTheDocument();
+  });
+
+  it('plots installation-wide daily hours and project-scoped chronological agent minutes', () => {
+    renderTab(<ActivityTab />);
+    expect(useUIUsage).toHaveBeenCalledWith(30);
+    expect(useAgentRunHours).toHaveBeenCalledWith({ days: 30, dir: '/repo' });
+    expect(screen.getByText('2.0 hours in ocman · 1.0 hours per day')).toBeInTheDocument();
+    const usageCard = screen.getByText('Active Time in Ocman per Day').closest('.chart-card') as HTMLElement;
+    const usage = JSON.parse(within(usageCard).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
+    expect(usage.datasets[0].data).toEqual([2, 0]);
+    const agentCard = screen.getByText('Agent Run Minutes per Hour').closest('.chart-card') as HTMLElement;
+    const agents = JSON.parse(within(agentCard).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
+    expect(agents.datasets[0].data).toEqual([{ x: 3_600_000, y: 90 }, { x: 7_200_000, y: 0 }]);
   });
 
   it('plots only the selected daily activity range', () => {

@@ -247,6 +247,23 @@ export function useSessionConcurrency(params: { days?: number; dir?: string }) {
   });
 }
 
+export function useUIUsage(days: number) {
+  return useQuery({
+    queryKey: ['uiUsage', days],
+    queryFn: ({ signal }) => api.uiUsage(days, signal),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useAgentRunHours(params: { days?: number; dir?: string }) {
+  useActivityScope('metrics');
+  return useQuery({
+    queryKey: ['agentRunHours', params],
+    queryFn: ({ signal }) => api.agentRunHours(params, signal),
+    refetchInterval: 60_000,
+  });
+}
+
 export function useModels(
   params?: { days?: number; dir?: string },
   options?: { enabled?: boolean },

@@ -8,6 +8,7 @@ import { useActivity, useHourly, useSessionConcurrency } from '../../lib/queries
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
+import { RunTimeCharts } from './RunTimeCharts';
 
 export function ActivityTab() {
   const { dirScope } = useDashboard();
@@ -24,6 +25,7 @@ export function ActivityTab() {
   return (
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} />
+      <RunTimeCharts days={days} dir={dir} />
       {errors.map((error) => <InlineAlert key={error.message}>{error.message}</InlineAlert>)}
       {activityQ.isLoading && !activityQ.data && <ChartSkeletons labels={['Loading activity heatmap']} />}
       {(activityQ.data?.length ?? 0) > 0 && <HeatmapChart activity={activityQ.data ?? []} />}

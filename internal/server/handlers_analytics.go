@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -14,6 +16,30 @@ func (s *Server) handleSessionConcurrency(w http.ResponseWriter, r *http.Request
 	data, err := s.db.GetSessionConcurrency(r.Context(), parseSinceParam(r), time.Now().UnixMilli(), normaliseDirParam(r.URL.Query().Get("dir")))
 	if err != nil {
 		serverError(w, "fetching session concurrency", err)
+		return
+	}
+	writeJSON(w, data)
+}
+
+func (s *Server) handleAgentRunHours(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	since, until := parseSinceParam(r), time.Now().UnixMilli()
+	waits := make(map[string][]db.RunInterval)
+	if s.stateDB != nil {
+		observed, err := s.stateDB.AgentUserWaits(r.Context(), string(opencode.PlatformID), since, until)
+		if err != nil {
+			serverError(w, "reading permission waits", err)
+			return
+		}
+		for _, wait := range observed {
+			waits[wait.SessionID] = append(waits[wait.SessionID], db.RunInterval{Start: wait.Start, End: wait.End})
+		}
+	}
+	data, err := s.db.GetAgentRunHours(r.Context(), since, until, normaliseDirParam(r.URL.Query().Get("dir")), waits)
+	if err != nil {
+		serverError(w, "reading agent run hours", err)
 		return
 	}
 	writeJSON(w, data)

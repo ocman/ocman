@@ -23,7 +23,7 @@ import (
 //
 // It is derived data: delete the file and it rebuilds. A schema bump or a
 // different source database wipes it the same way.
-const mirrorSchemaVersion = 2
+const mirrorSchemaVersion = 3
 
 const mirrorSchema = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS message (
 );
 CREATE INDEX IF NOT EXISTS message_session_time_created_id_idx ON message (session_id, time_created, id);
 CREATE INDEX IF NOT EXISTS message_settled_idx ON message (settled, time_created);
-CREATE TABLE IF NOT EXISTS tool_timing (message_id TEXT NOT NULL, time TEXT);
+CREATE TABLE IF NOT EXISTS tool_timing (message_id TEXT NOT NULL, time TEXT, tool TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS tool_timing_message_idx ON tool_timing (message_id);
 `
 

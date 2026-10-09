@@ -49,7 +49,7 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] -->|core APIs + plugin actions and panes| Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>REST + SSE] -->|core APIs, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
@@ -71,6 +71,14 @@ flowchart LR
   and batched Logrus logs through `internal/telemetry`. Logs retain structured
   fields and span context, console output stays enabled, and shutdown flushes
   all three signals. The bundled LGTM stack routes logs to Loki.
+- **UI usage.** Authenticated browsers send active foreground intervals once
+  a minute and on focus/visibility changes. The hub unions overlapping tabs
+  and devices in one state.db transaction, retains two minutes of deduplication
+  history, and stores UTC daily totals. Newly committed seconds increment
+  `ocman.ui.active_time` through the existing OTel exporter without client or
+  date attributes. Dashboard graphs read SQLite, so collector outages cannot
+  erase their history. Five minutes without interaction stops counting; long
+  timer gaps do not count sleep. This is installation-wide, not named-user data.
 - **opencode.db.** Foreign data, opened read-only. The one exception is the
   user-started maintenance job (`internal/ocmaint`, Settings → Maintenance).
   It stops the managed instances, refuses while any other process holds the
@@ -87,8 +95,15 @@ flowchart LR
 - **analytics-cache.db.** A disposable copy of opencode.db's message and
   session rows, stored beside state.db, which the analytics queries read.
   User-message attachments are stripped from the copy. A minimal tool-timing
-  projection is refreshed in the same sync transaction as its messages,
-  so warm analytics reads do not parse historical tool outputs. TPS divides
+  projection is refreshed in the same sync transaction as its messages, so
+  warm analytics reads do not parse historical tool outputs. Tool names let
+  hourly agent run minutes exclude question-tool waits. That graph unions
+  completed assistant intervals per session, includes other tools, subtracts
+  recorded human waits from state.db, and sums subagents separately. Human
+  waits are observed after the approval decision, even with autoapproval off;
+  resolution and idle edges close them. Older permission lifecycle records
+  fill in history when available. Missing historical observations remain unknown.
+  TPS divides
   output tokens by completed message time minus the union of tool intervals,
   including recorded permission/question waits. Missing tool timing excludes
   the sample. This is request throughput, including startup/prefill latency,

@@ -3,6 +3,7 @@ import { settingsApi } from './api.settings';
 import { sessionApi } from './api.sessions';
 import { hostApi } from './api.host';
 import type { CachedProjectSettings } from './projectSettingsCache';
+import type { UsageDay } from './uiUsage';
 import type {
   WebhookDelivery, WebhookInbox, WebhookSubscription, ClientActivity, Stats, MetricsPerformance,
   AnalyticsOverview, DatabaseSizeSample, SubscriptionUsageResponse, MetricsLog, MetricsLogKind,
@@ -46,6 +47,10 @@ export const api = {
     fetchJSON<SessionConcurrency>(`/api/analytics/session-concurrency${queryString(params)}`, signal),
   databaseSizes: (params?: { days?: number }, signal?: AbortSignal) =>
     fetchJSON<DatabaseSizeSample[]>(`/api/analytics/database-sizes${queryString(params)}`, signal),
+  uiUsage: (days: number, signal?: AbortSignal) =>
+    fetchJSON<UsageDay[]>(`/api/analytics/ui-usage${queryString({ days })}`, signal),
+  agentRunHours: (params: { days?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<{ timestamp: number; minutes: number }[]>(`/api/analytics/agent-run-hours${queryString(params)}`, signal),
   subscriptionUsage: (signal?: AbortSignal) => fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
   metricLogs: (params: { kind: MetricsLogKind; agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsLog>(`/api/metric-logs${queryString(params)}`, signal),

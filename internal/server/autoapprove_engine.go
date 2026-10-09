@@ -55,11 +55,20 @@ func (s *Server) aaSvc() *autoapprove.Service {
 				}
 				return nil
 			},
-			BroadcastPermissionResolved: s.broadcastPermissionResolved,
-			PermissionAsked:             s.notifyPermissionInbox,
-			PromptNeedsUser:             s.conversationPromptNeedsUser,
-			BroadcastQuestionResolved:   s.broadcastQuestionResolved,
-			BroadcastSessionIdle:        s.onSessionIdle,
+			BroadcastPermissionResolved: func(session, request, reason string) {
+				s.onAgentPromptResolved(session, "permission", request)
+				s.broadcastPermissionResolved(session, request, reason)
+			},
+			PermissionAsked: s.notifyPermissionInbox,
+			PromptNeedsUser: s.onPromptNeedsUser,
+			BroadcastQuestionResolved: func(session, request, reason string) {
+				s.onAgentPromptResolved(session, "question", request)
+				s.broadcastQuestionResolved(session, request, reason)
+			},
+			BroadcastSessionIdle: func(platform, session string) {
+				s.onAgentWaitIdle(platform, session)
+				s.onSessionIdle(platform, session)
+			},
 			BroadcastQueueChanged: func(platformID, sessionID string) {
 				s.broadcastQueueUpdated(context.Background(), platformID, sessionID)
 			},

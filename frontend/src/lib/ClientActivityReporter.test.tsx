@@ -13,6 +13,7 @@ import {
 vi.mock('./api', () => ({
   api: { clientActivity: vi.fn().mockResolvedValue(undefined) },
 }));
+vi.mock('./UIUsageReporter', () => ({ UIUsageReporter: () => null }));
 
 const report = vi.mocked(api.clientActivity);
 

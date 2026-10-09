@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { api, type ClientActivity } from './api';
 import { activityScopeSnapshot, subscribeActivityScopes } from './activityScopes';
+import { UIUsageReporter } from './UIUsageReporter';
 
 export const ACTIVITY_HEARTBEAT_MS = 25_000;
 export const ACTIVITY_TTL_MS = 45_000;
@@ -75,5 +76,5 @@ export function ClientActivityReporter() {
     };
   }, []);
 
-  return null;
+  return <UIUsageReporter />;
 }
