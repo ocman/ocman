@@ -1,18 +1,18 @@
 import { test, expect, installDefaultRoutes, MOCK_SESSION } from './fixtures';
 import type { Page } from '@playwright/test';
 
-/** Read a composer text record straight from the draft database. */
-function storedText(page: Page, id: string) {
-  return page.evaluate((key) => new Promise<{ text: string; revision: number } | undefined>((resolve, reject) => {
+/** Read composer text or its draft identity's tombstone from the database. */
+function storedText(page: Page, id: string, store: 'texts' | 'drafts' = 'texts') {
+  return page.evaluate(({ key, store }) => new Promise<{ text: string; revision: number; deleted?: boolean } | undefined>((resolve, reject) => {
     const open = indexedDB.open('ocman.drafts.v1');
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {
       const db = open.result;
-      const request = db.transaction('texts').objectStore('texts').get(key);
+      const request = db.transaction(store).objectStore(store).get(key);
       request.onsuccess = () => { db.close(); resolve(request.result); };
       request.onerror = () => { db.close(); reject(request.error); };
     };
-  }), id);
+  }), { key: id, store });
 }
 
 async function prepareDraft(page: Page) {
@@ -45,8 +45,8 @@ test('a draft discarded in one tab is not resurrected by another tab\'s autosave
   await expect.poll(async () => (await storedText(second, freshId))?.text).toBe('a new draft');
   await expect.poll(async () => (await storedText(first, 'shared-discard'))?.text).toBe('');
   await second.reload();
-  // Only the fresh replacement draft remains; the retired identity stays retired.
-  await expect(second.getByTestId('session-sidebar').getByRole('button', { name: 'Discard draft', includeHidden: true })).toHaveCount(1);
+  // Both tabs may prepare replacements; the discarded identity must stay retired.
+  await expect.poll(async () => (await storedText(second, 'shared-discard', 'drafts'))?.deleted).toBe(true);
   await expect(second).not.toHaveURL(/draftId=shared-discard/);
   await expect(second.getByRole('textbox')).toHaveValue('a new draft');
 });
