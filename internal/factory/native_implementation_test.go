@@ -608,6 +608,10 @@ func (f *fakeImplementationLauncher) ResumeImplementationSession(_ context.Conte
 	return f.recoveryErr
 }
 
+func (f *fakeImplementationLauncher) RecoveryResponseDelivered(context.Context, PlanningSession, string) (bool, error) {
+	return false, nil
+}
+
 type flakyAuthorityStore struct {
 	*state.DB
 	failCompletion bool

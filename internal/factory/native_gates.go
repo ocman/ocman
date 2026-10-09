@@ -274,17 +274,28 @@ func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action,
 		if s.implementation == nil {
 			return RecoveryGate{}, errors.New("implementation launcher is unavailable")
 		}
-		if attempt.Result != nil && strings.HasPrefix(attempt.Result.Summary, "Recovery workspace checkpoint ") {
-			if _, err := s.implementation.ValidateImplementationCheckpoint(ctx, attempt.FrozenPolicy.Repository, attempt.FrozenPolicy.Branch, attempt.FrozenPolicy.CheckpointSHA); err != nil {
-				return RecoveryGate{}, fmt.Errorf("validate resumed Factory workspace: %w", err)
+		delivered := false
+		if pending {
+			delivered, err = s.implementation.RecoveryResponseDelivered(ctx, attempt.Session, gate.IssueID)
+			if err != nil {
+				return RecoveryGate{}, err
 			}
 		}
-		deliveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		if err := s.implementation.ResumeImplementationSession(deliveryCtx, attempt.Session, gate.IssueID, gate.Response); err != nil {
-			return RecoveryGate{}, fmt.Errorf("deliver Factory recovery response: %w", err)
+		if !delivered {
+			if attempt.Result != nil && strings.HasPrefix(attempt.Result.Summary, "Recovery workspace checkpoint ") {
+				if _, err := s.implementation.ValidateImplementationCheckpoint(ctx, attempt.FrozenPolicy.Repository, attempt.FrozenPolicy.Branch, attempt.FrozenPolicy.CheckpointSHA); err != nil {
+					return RecoveryGate{}, fmt.Errorf("validate resumed Factory workspace: %w", factoryHandoffError(err))
+				}
+			}
+			deliveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if err := s.implementation.ResumeImplementationSession(deliveryCtx, attempt.Session, gate.IssueID, gate.Response); err != nil {
+				return RecoveryGate{}, fmt.Errorf("deliver Factory recovery response: %w", err)
+			}
 		}
-		return store.CompleteFactoryRecoveryGate(deliveryCtx, gateID, time.Now())
+		completionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		return store.CompleteFactoryRecoveryGate(completionCtx, gateID, time.Now())
 	}
 	if (action == "retry" || action == "cancel") && s.implementation != nil && attempt.Session.ID != "" {
 		_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session)

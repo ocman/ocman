@@ -47,16 +47,17 @@ test('recovery action Markdown expands from seven lines', async ({ mockedPage: p
     recovery: { issueId: 'ship-1.2', epicId: 'ship-1', attemptId: 'a1', workId: 'ship-1.1', question: '**Review the evidence**', reason, choices: [], resolution: 'open' },
   }] }));
   await page.goto('/factory/overview');
-  const preview = page.getByRole('button', { name: /action text$/ });
+  const preview = page.getByTestId('factory-action-text');
+  const toggle = page.getByRole('button', { name: /action text$/ });
   await expect(preview.locator('strong')).toHaveText('Review the evidence');
   await expect(preview).toHaveCSS('-webkit-line-clamp', '7');
   const collapsedHeight = await preview.evaluate((element) => element.clientHeight);
   await page.screenshot({ path: testInfo.outputPath('recovery-collapsed.png') });
   await preview.click();
-  await expect(preview).toHaveAttribute('aria-expanded', 'true');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   expect(await preview.evaluate((element) => element.clientHeight)).toBeGreaterThan(collapsedHeight);
   await expect(preview.getByText('Check 12', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('recovery-expanded.png') });
-  await preview.press('Enter');
-  await expect(preview).toHaveAttribute('aria-expanded', 'false');
+  await toggle.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });

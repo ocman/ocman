@@ -322,6 +322,7 @@ type ImplementationLauncher interface {
 	LaunchImplementationSession(context.Context, ImplementationSessionRequest) (PlanningSession, error)
 	PromptImplementationSession(context.Context, PlanningSession, ImplementationSessionRequest) error
 	ResumeImplementationSession(context.Context, PlanningSession, string, string) error
+	RecoveryResponseDelivered(context.Context, PlanningSession, string) (bool, error)
 	ProbeImplementationSession(context.Context, PlanningSession) (bool, error)
 	StopImplementationSession(context.Context, PlanningSession) error
 	ImplementationPermissionPending(context.Context, PlanningSession, string) (bool, error)

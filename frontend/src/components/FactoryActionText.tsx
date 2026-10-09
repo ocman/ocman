@@ -1,21 +1,17 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { MarkdownContent } from './assistant/MarkdownText';
+import { Button } from './Control';
 
 export function FactoryActionText({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
-  return <div
+  const id = useId();
+  return <div><div
+    id={id}
+    data-testid="factory-action-text"
     className="oc-md"
-    role="button"
-    tabIndex={0}
-    aria-label={expanded ? 'Collapse action text' : 'Expand action text'}
-    aria-expanded={expanded}
     style={{ cursor: 'pointer', ...(expanded ? {} : { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 7, overflow: 'hidden' }) }}
     onClick={(event) => { if (!(event.target as HTMLElement).closest('a, button')) setExpanded(!expanded); }}
-    onKeyDown={(event) => {
-      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-        event.preventDefault();
-        setExpanded(!expanded);
-      }
-    }}
-  ><MarkdownContent text={text} factoryCards={false} /></div>;
+  ><MarkdownContent text={text} factoryCards={false} /></div>
+    <Button type="button" variant="ghost" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(!expanded)}>{expanded ? 'Collapse action text' : 'Expand action text'}</Button>
+  </div>;
 }
