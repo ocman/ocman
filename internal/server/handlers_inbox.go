@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -139,6 +140,11 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, item := range result.items {
+			if result.source != "local" && item.Category == state.InboxFactory && strings.HasPrefix(item.ID, "factory-action-") {
+				// Factory is owner-local; a remote's relative link would open the hub's graph.
+				body, _, _ := strings.Cut(item.Body, "\n\n[Open Factory actions](/factory/epics/")
+				item.Body = body + "\n\nOpen Factory on the owning machine to resolve this action."
+			}
 			if item.Category == "" {
 				item.Category = state.InboxGeneral
 			}

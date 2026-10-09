@@ -26,6 +26,9 @@ func (s *NativeService) reconcileAttention(ctx context.Context) {
 		return
 	}
 	for _, epic := range epics {
+		if epic.Status == "paused" {
+			continue
+		}
 		issues, err := s.ListIssues(ctx, epic.ID)
 		if err != nil {
 			logrus.WithError(err).WithField("epic", epic.ID).Warn("Factory attention scan failed")

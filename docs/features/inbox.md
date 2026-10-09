@@ -55,6 +55,8 @@ New actions also show an in-app toast and, when enabled and permitted, a system
 notification. Refreshes and restarts do not duplicate messages. Resolved actions
 are archived automatically; a new plan revision or failed attempt gets a new
 message. Existing actions do not notify again when you open the app.
+Pausing an epic preserves its pending messages. Remote Factory action messages
+direct you to the owning machine; their links never open the hub's local graph.
 
 Factory delivery notifications use the Factory category. Routine runs create a
 Routine message when they succeed, fail, or are interrupted.

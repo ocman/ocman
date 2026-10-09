@@ -134,3 +134,40 @@ func TestReconcileFactoryAttention(t *testing.T) {
 		t.Fatalf("closed items = %#v, %v", items, err)
 	}
 }
+
+func TestFactoryAttentionSurvivesPauseResume(t *testing.T) {
+	db, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	svc := NewNative(db, testProjectResolver{root: "/repo"})
+	ep, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{EpicID: "ship", Goal: "Ship", InitialProject: "/repo", InstantiationID: "pause-resume", AcknowledgeLocalExecution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.reconcileAttention(t.Context())
+	items, err := db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 1 {
+		t.Fatalf("initial items = %#v, %v", items, err)
+	}
+	id := items[0].ID
+	for _, paused := range []bool{true, false} {
+		if err := svc.SetEpicPaused(t.Context(), ep.ID, paused); err != nil {
+			t.Fatal(err)
+		}
+		svc.reconcileAttention(t.Context())
+		items, err = db.ListInboxItems(t.Context())
+		if err != nil || len(items) != 1 || items[0].ID != id {
+			t.Fatalf("paused=%v: items = %#v, %v; want original pending action", paused, items, err)
+		}
+	}
+	if err := svc.CloseEpic(t.Context(), ep.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	svc.reconcileAttention(t.Context())
+	items, err = db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("closed items = %#v, %v", items, err)
+	}
+}
