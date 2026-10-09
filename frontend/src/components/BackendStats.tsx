@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApiStore } from '../lib/apiStore';
+import { useSessions } from '../lib/queries';
 import { useLongTaskMonitor } from '../lib/useLongTaskMonitor';
 import './BackendStats.css';
 
@@ -21,7 +22,8 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
   const [frontendMemory, setFrontendMemory] = useState<number | null>(null);
   const longTasks = useLongTaskMonitor();
   const getSystemStats = useApiStore((s) => s.getSystemStats);
-  const runningSessions = useApiStore((s) => s.recentSessions.filter((session) => session.status === 'busy').length);
+  const sessions = useSessions({ limit: 0 }, { enabled, refetchInterval: 5000 });
+  const runningSessions = sessions.data?.filter((session) => session.status === 'busy').length;
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -130,9 +132,9 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <div className="backend-stats">
-      <span className="backend-stats-item" title="Background activity: active sessions (as) currently running">
+      {runningSessions !== undefined && <span className="backend-stats-item" title="Background activity: active sessions (as) currently running">
         <span className="backend-stats-label">bg</span>: {runningSessions}as
-      </span>
+      </span>}
       <span className="backend-stats-item" title="Backend memory usage">
         <span className="backend-stats-label" title="Backend Memory">be</span>: {(backendMemory / (1024 * 1024)).toFixed(0)}MB
       </span>

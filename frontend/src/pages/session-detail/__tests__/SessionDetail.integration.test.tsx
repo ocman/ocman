@@ -825,7 +825,7 @@ describe('SessionDetail — session tree usage', () => {
     }
   });
 
-  it('uses the detail tree for parent lookup without fetching the full session list', async () => {
+  it('uses the detail tree for parent lookup without another session list fetch', async () => {
     const parent = makeSession({ id: 'sess_parent', title: 'Parent planning session' });
     const child = makeSession({ id: 'sess_child', parentId: parent.id });
     const sessions = vi.fn().mockResolvedValue([parent, child]);
@@ -839,7 +839,9 @@ describe('SessionDetail — session tree usage', () => {
     const link = await screen.findByRole('link', { name: 'Parent planning session' });
     expect(link).toHaveAttribute('href', '/session/sess_parent');
     expect(link.closest('[role="note"]')).toHaveTextContent('Child session of');
-    expect(handle.api.sessions).not.toHaveBeenCalled();
+    // The footer fetches the unfiltered list for its active-session count.
+    expect(handle.api.sessions).toHaveBeenCalledTimes(1);
+    expect(handle.api.sessions).toHaveBeenCalledWith({ dir: undefined, since: undefined, limit: 0 }, expect.any(AbortSignal));
   });
 
   it('shows totals for the current session and nested subagents', async () => {
@@ -866,7 +868,8 @@ describe('SessionDetail — session tree usage', () => {
     expect(title.parentElement).toHaveTextContent('Reported cost$0.3000');
     expect(title.parentElement).toHaveTextContent('Est. cost$0.7500');
     expect(title.parentElement).toHaveTextContent('Cost$0.6500');
-    expect(handle.api.sessions).not.toHaveBeenCalled();
+    expect(handle.api.sessions).toHaveBeenCalledTimes(1);
+    expect(handle.api.sessions).toHaveBeenCalledWith({ dir: undefined, since: undefined, limit: 0 }, expect.any(AbortSignal));
   });
 
   it('shows estimated cost without requiring context usage', async () => {

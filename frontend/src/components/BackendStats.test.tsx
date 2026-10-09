@@ -4,7 +4,12 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getSystemStats = vi.fn();
-let recentSessions: { status: string; platform?: string; parentId?: string }[] = [];
+let recentSessions: { status: string; platform?: string; parentId?: string; archived?: boolean }[] = [];
+let allSessions: typeof recentSessions | undefined = [];
+
+vi.mock('../lib/queries', () => ({
+  useSessions: () => ({ data: allSessions }),
+}));
 
 vi.mock('../lib/apiStore', () => ({
   useApiStore: (selector: (state: { getSystemStats: typeof getSystemStats; recentSessions: typeof recentSessions }) => unknown) =>
@@ -37,6 +42,7 @@ beforeEach(() => {
   hidden = false;
   heapReads = 0;
   recentSessions = [];
+  allSessions = [];
   getSystemStats.mockReset();
   getSystemStats.mockImplementation(() =>
     Promise.resolve({ memory: { heapAlloc: 42 * 1024 * 1024 }, uptime: 61 }));
@@ -66,6 +72,7 @@ describe('BackendStats visibility gating (FR-10)', () => {
       { status: 'error' },
       { status: 'interrupted' },
     ];
+    allSessions = recentSessions;
     const { rerender } = render(<BackendStats />);
     await flush();
     expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 3as');
@@ -73,9 +80,28 @@ describe('BackendStats visibility gating (FR-10)', () => {
     expect(screen.getByTitle('Time since the backend started')).toHaveTextContent('up: 1m 1s');
 
     recentSessions = [{ status: 'done' }];
+    allSessions = recentSessions;
     rerender(<BackendStats />);
     expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 0as');
     expect(getSystemStats).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts archived busy sessions even when absent from the sidebar', async () => {
+    allSessions = [{ status: 'busy', archived: true }, { status: 'done', archived: true }];
+    const { rerender } = render(<BackendStats />);
+    await flush();
+    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 1as');
+    recentSessions = allSessions;
+    rerender(<BackendStats />);
+    expect(screen.getByTitle('Background activity: active sessions (as) currently running')).toHaveTextContent('bg: 1as');
+  });
+
+  it('does not report zero before session data is available', async () => {
+    allSessions = undefined;
+    render(<BackendStats />);
+    await flush();
+    expect(screen.queryByTitle('Background activity: active sessions (as) currently running')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Backend memory usage')).toHaveTextContent('be: 42MB');
   });
 
   it('does not request stats for a closed sidebar and refreshes when opened', async () => {
