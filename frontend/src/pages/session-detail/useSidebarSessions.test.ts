@@ -540,6 +540,28 @@ describe('useSidebarSessions live refresh', () => {
     expect(useApiStore.getState().recentSessions).toEqual([row]);
   });
 
+  it.each(['pendingPermission', 'pendingQuestion'] as const)('keeps an old %s through activity, reconciliation and fresh load until answered', async (prompt) => {
+    const row = { id: 'old-prompt', platform: 'opencode', timeUpdated: 1, seen: false, seenTimeUpdated: 0, lastTurnCompletedAt: 0,
+      directory: '/repo', status: 'waiting', archived: true, pendingPermission: prompt === 'pendingPermission', pendingQuestion: prompt === 'pendingQuestion' } as Session;
+    const getSessions = vi.fn().mockResolvedValue([row]);
+    useApiStore.setState({ peekSession: vi.fn().mockResolvedValue({ session: row }), getSessions, recentSessions: [], recentSessionsHash: '' });
+    const options = { id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent' as const,
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
+    const first = renderHook(() => useSidebarSessions(options));
+    await act(async () => { sessionActivity?.(row.id, Date.now()); });
+    expect(first.result.current.recentSessions).toEqual([row]);
+    await act(async () => { await first.result.current.loadRecentSessions(); });
+    expect(first.result.current.recentSessions).toEqual([row]);
+    expect(getSessions).toHaveBeenCalledWith({ since: expect.any(Number), limit: 0 }, expect.anything());
+    first.unmount();
+    useApiStore.setState({ recentSessions: [], recentSessionsHash: '' });
+    const fresh = renderHook(() => useSidebarSessions({ ...options, sessionId: 'ready' }));
+    await waitFor(() => expect(fresh.result.current.recentSessions).toEqual([row]));
+    getSessions.mockResolvedValue([]);
+    await act(async () => { await fresh.result.current.loadRecentSessions(); });
+    expect(fresh.result.current.recentSessions).toEqual([]);
+  });
+
   it('does not resurface an idle old session on replayed activity from a new instance', async () => {
     // A freshly launched instance emits message events for old sessions; the
     // backend stamps them "now". An idle row must keep its real timestamp.
