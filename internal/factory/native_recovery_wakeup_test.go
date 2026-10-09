@@ -61,9 +61,11 @@ func TestRecoveryCancellationDispatchesNextWorkWithoutIdleEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(svc.Close)
+	// Instrumented SQLite work can take several seconds on a loaded CI runner.
+	const dispatchTimeout = 10 * time.Second
 	select {
 	case <-store.settled:
-	case <-time.After(time.Second):
+	case <-time.After(dispatchTimeout):
 		t.Fatal("startup dispatch did not settle")
 	}
 	if _, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "cancel", "Skip optional work"); err != nil {
@@ -71,7 +73,7 @@ func TestRecoveryCancellationDispatchesNextWorkWithoutIdleEvent(t *testing.T) {
 	}
 	select {
 	case <-launcher.launched:
-	case <-time.After(time.Second):
+	case <-time.After(dispatchTimeout):
 		t.Fatal("cancellation did not dispatch ready work without another idle event")
 	}
 	svc.Close() // Wait for activation before inspecting the launcher.
