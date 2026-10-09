@@ -8,6 +8,7 @@ import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { remoteLog } from '../../lib/remoteLog';
 import { ArchiveButton } from '../../components/ArchiveButton';
 import { useHoverPrefetch } from './sessionPrefetch';
+import { SidebarRow } from './SidebarRow';
 
 export interface SidebarSessionRowProps {
   session: Session;
@@ -70,13 +71,14 @@ export function SidebarSessionRow({
     />
   );
   return (
-    <div
-      role="button"
+    <SidebarRow
       data-perf="session-row"
       data-session-key={`${inGroup ? 'group' : 'recent'}:${sib.platform}:${sib.id}`}
-      tabIndex={0}
-      aria-selected={active}
-      className={`session-sidebar-item ${active ? 'active' : ''}${archiving ? ' archiving' : ''}${inGroup ? ' in-group' : ''}${flat ? ' flat' : ''}${depth > 0 ? ' session-sidebar-item-child' : ''}`}
+      active={active}
+      archiving={archiving}
+      inGroup={inGroup}
+      flat={flat}
+      className={depth > 0 ? 'session-sidebar-item-child' : ''}
       {...(active ? {} : prefetch)}
       onClick={() => {
         if (debugMode) {
@@ -171,6 +173,6 @@ export function SidebarSessionRow({
             onClick={(e) => onArchiveSession(e, sib)} disabled={archiving} />
         </span>
       </span>
-    </div>
+    </SidebarRow>
   );
 }

@@ -1,12 +1,3 @@
-.session-sidebar-item .session-sidebar-draft-open {
-  align-items: stretch;
-  gap: 2px;
-  height: auto;
-  padding: 0;
-  color: var(--text);
-  text-align: left;
-}
-
 .session-sidebar-draft:focus-within .session-sidebar-actions {
   display: flex;
   visibility: visible;

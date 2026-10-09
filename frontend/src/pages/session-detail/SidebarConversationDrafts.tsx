@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Button } from '../../components/Control';
 import { ArchiveButton } from '../../components/ArchiveButton';
 import { StatusBadge } from '../../components/StatusBadge';
 import { InlineAlert } from '../../components/InlineAlert';
@@ -9,6 +8,7 @@ import { shortPath, fuzzyMatch, relativeTime } from '../../lib/format';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { forgetConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import './SidebarConversationDrafts.css';
+import { SidebarRow } from './SidebarRow';
 
 export function SidebarConversationDrafts({ searchQuery, drafts: supplied, inGroup = false }: { searchQuery: string; drafts?: ConversationDraft[]; inGroup?: boolean }) {
   const stored = useNewConversationDrafts((state) => state.drafts);
@@ -42,24 +42,24 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
     fuzzyMatch(searchQuery.trim(), `${draft.title || ''} ${draft.directory} ${draft.remoteId || 'local'}`));
   if (!visible.length) return null;
   return <>
-    {visible.map((draft) => <div key={draft.draftId} data-testid="conversation-draft" aria-selected={draft.draftId === activeId}
-      className={`session-sidebar-item session-sidebar-draft ${inGroup ? 'in-group' : 'flat'}${draft.draftId === activeId ? ' active' : ''}`}>
+    {visible.map((draft) => <SidebarRow key={draft.draftId} data-testid="conversation-draft" active={draft.draftId === activeId}
+      inGroup={inGroup} flat={!inGroup} className="session-sidebar-draft" aria-current={draft.draftId === activeId ? 'page' : undefined}
+      onClick={() => navigate(newSessionPath(draft))}>
       {inGroup && <StatusBadge status="done" compact draft seen />}
-      <Button variant="ghost" className="session-sidebar-item-body session-sidebar-draft-open" aria-current={draft.draftId === activeId ? 'page' : undefined}
-        onClick={() => navigate(newSessionPath(draft))}>
+      <span className="session-sidebar-item-body">
         {!inGroup && <span className="session-sidebar-project"><StatusBadge status="done" compact draft seen />
           <span className="session-sidebar-project-path">{shortPath(draft.directory)}{draft.remoteId && draft.remoteId !== 'local' ? ` · ${draft.remoteId}` : ''}</span>
           {draft.createdAt && <span className="session-sidebar-time">{relativeTime(draft.createdAt).replace('just now', 'now').replace(' ago', '')}</span>}
         </span>}
         <span className="session-sidebar-title">{draft.title || `New session ${useNewConversationDrafts.getState().drafts.findIndex((entry) => entry.draftId === draft.draftId) + 1}`}</span>
         {!inGroup && <span className="session-sidebar-git-slot" />}
-      </Button>
+      </span>
       <span className="session-sidebar-meta">
         {inGroup && draft.createdAt && <span className="session-sidebar-time">{relativeTime(draft.createdAt).replace('just now', 'now').replace(' ago', '')}</span>}
         <span className="session-sidebar-actions">
-        <ArchiveButton className="session-sidebar-archive-btn" label="Discard draft" disabled={discarding === draft.draftId} onClick={() => void discard(draft)} />
+        <ArchiveButton className="session-sidebar-archive-btn" label="Discard draft" disabled={discarding === draft.draftId} onClick={(event) => { event.stopPropagation(); void discard(draft); }} />
       </span></span>
-      {failed?.draftId === draft.draftId && <InlineAlert compact retrying={discarding === draft.draftId} onRetry={() => void discard(draft)}>{failed.message}</InlineAlert>}
-    </div>)}
+      {failed?.draftId === draft.draftId && <span onClick={(event) => event.stopPropagation()}><InlineAlert compact retrying={discarding === draft.draftId} onRetry={() => void discard(draft)}>{failed.message}</InlineAlert></span>}
+    </SidebarRow>)}
   </>;
 }

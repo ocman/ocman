@@ -77,9 +77,38 @@ it('does not leave a newer route when an earlier discard commits', async () => {
   await transact(['drafts'], 'readonly', (tx) => tx.get('drafts', 'old'));
   mount('', newSessionPath({ draftId: 'old', directory: '/old' }));
   const discard = vi.spyOn(draftsModule, 'forgetConversationDraft');
-  fireEvent.click(within(screen.getByRole('button', { name: /Old/ }).parentElement!).getByRole('button', { name: 'Discard draft' }));
-  fireEvent.click(screen.getByText('New').closest('button')!);
+  fireEvent.click(within(screen.getByRole('button', { name: /Old/ })).getByRole('button', { name: 'Discard draft' }));
+  fireEvent.click(screen.getByRole('button', { name: /New/ }));
   await act(async () => { await discard.mock.results[0].value; });
   expect(getConversationDraft('old')).toBeUndefined();
   expect(screen.getByTestId('location')).toHaveTextContent('draftId=z-new');
+});
+
+it('uses the selected session row as the only navigation control', () => {
+  rememberConversationDraft({ draftId: 'a', directory: '/repo', title: 'Draft title' });
+  mount('', newSessionPath({ draftId: 'a', directory: '/repo' }));
+  const row = screen.getByTestId('conversation-draft');
+  expect(screen.getByRole('button', { name: /Draft title/ })).toBe(row);
+  expect(row).toHaveAttribute('aria-selected', 'true');
+  expect(row).toHaveClass('session-sidebar-item', 'active', 'flat');
+  expect(row.querySelector('.oc-button')).toBeNull();
+});
+
+it.each(['Enter', ' '])('opens a grouped draft with %j without discarding it', (key) => {
+  rememberConversationDraft({ draftId: 'a', directory: '/repo', title: 'Draft title' });
+  render(<MemoryRouter><SidebarConversationDrafts searchQuery="" inGroup /><Location /></MemoryRouter>);
+  const row = screen.getByRole('button', { name: /Draft title/ });
+  expect(row).toHaveClass('in-group');
+  expect(row).toHaveAttribute('tabindex', '0');
+  fireEvent.keyDown(row, { key });
+  expect(screen.getByTestId('location')).toHaveTextContent('draftId=a');
+  expect(getConversationDraft('a')).toBeTruthy();
+});
+
+it('discards an unselected draft without navigating to it', async () => {
+  rememberConversationDraft({ draftId: 'a', directory: '/repo', title: 'Draft title' });
+  mount('', '/');
+  fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
+  await waitFor(() => expect(getConversationDraft('a')).toBeUndefined());
+  expect(screen.getByTestId('location').textContent).toBe('/');
 });
