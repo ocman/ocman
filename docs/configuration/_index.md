@@ -21,6 +21,10 @@ The alternatives to Jev do not all use the same API. A server must implement one
 of the contracts below, or you must provide an adapter. Span-01 and a model that
 returns a single answer letter are not automatically compatible.
 
+Reviewer requests include tool input and configured custom rules. When available,
+the prompt also includes up to six recent user-message excerpts. Choosing a hosted
+endpoint sends that context to its provider.
+
 - **OpenAI-compatible.** Ocman sends non-streaming `messages` with the existing
   permission-review prompt and custom rules. The response must contain one
   completed choice with `finish_reason: "stop"` and JSON text in
