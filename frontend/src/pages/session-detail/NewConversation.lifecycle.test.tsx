@@ -323,7 +323,7 @@ describe('new-conversation submission lifecycle', () => {
     expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=new');
     expect(screen.getByRole('textbox')).toHaveValue('legacy prompt');
     expect(getDraft('new')).toBe('');
-    expect(useNewConversationDrafts.getState().drafts).toHaveLength(1);
+    await waitFor(() => expect(useNewConversationDrafts.getState().drafts).toHaveLength(1));
     expect(api.startSession).not.toHaveBeenCalled();
   });
 
