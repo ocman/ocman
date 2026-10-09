@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useWorkEpics } from '../lib/queries';
+import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useTransferFactoryIssue, useWorkEpics } from '../lib/queries';
 import { FactoryIssues, IssueDrawer } from './FactoryIssues';
 
 vi.mock('../lib/queries', () => ({
@@ -11,10 +11,12 @@ vi.mock('../lib/queries', () => ({
   useFactoryGraphIssues: vi.fn(),
 	useFactoryIssueComments: vi.fn(),
 	useAddFactoryIssueComment: vi.fn(),
+	useTransferFactoryIssue: vi.fn(),
 }));
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
 	vi.mocked(useFactoryIssueComments).mockReturnValue({ data: [{ id: 1, issueId: 'fac-42', actor: 'mcp', body: 'Ready for review.', createdAt: 1000 }], isLoading: false, isError: false } as never);
 	vi.mocked(useAddFactoryIssueComment).mockReturnValue({ mutate: vi.fn((_body, options) => options?.onSuccess?.(undefined as never, '' as never, undefined as never, undefined)), isPending: false, isError: false } as never);
   vi.mocked(useWorkEpics).mockReturnValue({
@@ -99,3 +101,25 @@ it('shows a ticket list and opens issue details in a drawer', async () => {
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 }, 10_000);
+
+it('transfers an open ticket to the issue tracker after confirmation', async () => {
+	const user = userEvent.setup();
+	const mutate = vi.fn();
+	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate, isPending: false, isError: false } as never);
+	const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+	const issue = { id: 'fac-7', epicId: 'epic-1', project: '/repo', kind: 'task', title: 'Cover gap', status: 'open' };
+	const { rerender } = render(<MemoryRouter><IssueDrawer issue={issue} onClose={() => {}} /></MemoryRouter>);
+	await user.click(screen.getByRole('button', { name: 'Transfer to issue tracker' }));
+	expect(mutate).not.toHaveBeenCalled();
+	await user.click(screen.getByRole('button', { name: 'Transfer to issue tracker' }));
+	expect(mutate).toHaveBeenCalledWith({ epicId: 'epic-1', issueId: 'fac-7' });
+	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate, isPending: false, isError: true, error: new Error('no supported issue tracker') } as never);
+	rerender(<MemoryRouter><IssueDrawer issue={issue} onClose={() => {}} /></MemoryRouter>);
+	expect(screen.getByRole('alert')).toHaveTextContent('no supported issue tracker');
+	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate, data: { url: 'https://forge.example/issues/3', number: 3 }, isPending: false, isError: false } as never);
+	rerender(<MemoryRouter><IssueDrawer issue={issue} onClose={() => {}} /></MemoryRouter>);
+	expect(screen.getByRole('link', { name: 'https://forge.example/issues/3' })).toBeInTheDocument();
+	rerender(<MemoryRouter><IssueDrawer issue={{ ...issue, status: 'in_progress' }} onClose={() => {}} /></MemoryRouter>);
+	expect(screen.queryByRole('button', { name: 'Transfer to issue tracker' })).not.toBeInTheDocument();
+	confirm.mockRestore();
+});

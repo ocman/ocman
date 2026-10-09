@@ -282,10 +282,12 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 			rules = append(rules, platforms.PermissionRule{Permission: "external_directory", Pattern: pattern, Action: "allow"}, platforms.PermissionRule{Permission: "edit", Pattern: pattern, Action: "deny"})
 		}
 	}
-	if owner.RemoteID() == "local" {
+	local := owner.RemoteID() == "local"
+	if local {
 		// Keep exceptions after the catch-all: OpenCode uses the last match.
 		rules = append(rules, factoryExternalDirectoryRules()...)
 	}
+	rules = append(rules, factoryScratchRules(req.Repository, local)...)
 	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 	// Append Epic-level user rules last so they override the profile defaults.
 	for _, r := range req.PermissionRules {

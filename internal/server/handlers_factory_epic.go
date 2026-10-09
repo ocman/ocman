@@ -115,6 +115,10 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		})(w, r)
 		return
 	}
+	if len(parts) == 4 && parts[1] == "issues" && parts[3] == "transfer" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleFactoryIssueTransfer(w, r, parts[0], parts[2]) })(w, r)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "removed-issues" && r.Method == http.MethodGet {
 		removed, ok := s.factory.(interface {
 			ListRemovedIssues(context.Context, string) ([]factory.Issue, error)

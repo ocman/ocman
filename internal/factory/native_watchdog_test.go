@@ -81,6 +81,50 @@ func TestPauseIdleAttempt(t *testing.T) {
 	}
 }
 
+type nudgingActivityFake struct {
+	activityFake
+	messages []string
+	err      error
+}
+
+func (f *nudgingActivityFake) RunVerificationChecks(context.Context, string, string, string, []string) (bool, string, error) {
+	return false, "", nil
+}
+
+func (f *nudgingActivityFake) NotifyImplementationSession(_ context.Context, _ PlanningSession, message string) error {
+	f.messages = append(f.messages, message)
+	return f.err
+}
+
+func TestPauseIdleAttemptNudgesBeforeGating(t *testing.T) {
+	old := time.Now().Add(-2 * factoryIdleTimeout)
+	store := &watchdogStoreFake{}
+	probe := &nudgingActivityFake{activityFake: activityFake{last: old}}
+	s := &NativeService{store: store, implementation: probe}
+	attempt := model.FactoryAttempt{ID: "att-1", StartedAt: old.UnixMilli()}
+	if err := s.pauseIdleAttempt(t.Context(), attempt); err != nil {
+		t.Fatal(err)
+	}
+	if len(probe.messages) != 1 || !strings.Contains(probe.messages[0], "request_recovery") || len(store.questions) != 0 {
+		t.Fatalf("first idle: nudges %v, gates %v", probe.messages, store.questions)
+	}
+	// Still idle a full interval after the nudge: gate, do not nudge again.
+	s.idleNudgedAt["att-1"] = old.Add(time.Minute)
+	s.idleProbedAt = nil
+	if err := s.pauseIdleAttempt(t.Context(), attempt); err != nil {
+		t.Fatal(err)
+	}
+	if len(probe.messages) != 1 || len(store.questions) != 1 {
+		t.Fatalf("after nudge: nudges %v, gates %v", probe.messages, store.questions)
+	}
+	// A failed nudge falls back to the gate.
+	failing := &nudgingActivityFake{activityFake: activityFake{last: old}, err: errors.New("gone")}
+	store = &watchdogStoreFake{}
+	if err := (&NativeService{store: store, implementation: failing}).pauseIdleAttempt(t.Context(), attempt); err != nil || len(store.questions) != 1 {
+		t.Fatalf("failed nudge: err %v, gates %v", err, store.questions)
+	}
+}
+
 func TestPauseIdleAttemptThrottlesProbes(t *testing.T) {
 	probe := &activityFake{last: time.Now()}
 	s := &NativeService{store: &watchdogStoreFake{}, implementation: probe}

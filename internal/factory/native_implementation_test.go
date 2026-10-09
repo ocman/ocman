@@ -1707,7 +1707,8 @@ func TestNativeStuckEpicRecoversThroughReopenIssue(t *testing.T) {
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(launcher.calls) != 5 {
+	// The identical second failure ends the retry budget: 2 failed + 1 reopened.
+	if len(launcher.calls) != 3 {
 		t.Fatalf("reopen did not dispatch: %d launches", len(launcher.calls))
 	}
 	got, err = svc.GetWorkEpic(context.Background(), epic.ID)

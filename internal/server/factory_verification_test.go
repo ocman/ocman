@@ -43,6 +43,26 @@ func TestFactoryVerificationProfileIsReadOnly(t *testing.T) {
 	}
 }
 
+func TestFactoryScratchRules(t *testing.T) {
+	t.Setenv("TMPDIR", "/scratch")
+	patterns := func(local bool) string {
+		var got []string
+		for _, rule := range factoryScratchRules("/src/ocman/", local) {
+			if rule.Permission != "external_directory" || rule.Action != "allow" {
+				t.Fatalf("rule = %#v", rule)
+			}
+			got = append(got, rule.Pattern)
+		}
+		return strings.Join(got, " ")
+	}
+	if got := patterns(false); got != "/tmp/** /private/tmp/** /src/.worktrees/**" {
+		t.Fatalf("remote = %q", got)
+	}
+	if got := patterns(true); !strings.HasSuffix(got, "/src/.worktrees/** /scratch/**") {
+		t.Fatalf("local = %q", got)
+	}
+}
+
 func TestFactoryVerificationPrompt(t *testing.T) {
 	prompt := factoryVerificationPrompt(factory.ImplementationSessionRequest{WorkID: "w1", EpicID: "e1", Branch: "factory/e1", TargetBranch: "main", AttemptID: "a1", AgentToken: "tok", Criteria: "### i1 — API\n- [ ] returns 200"}, "Formula body")
 	for _, want := range []string{"Formula body", "- [ ] returns 200", "read-only validator", "PASS or FAIL", "a1", "tok", "checks_running", "skipped tests"} {

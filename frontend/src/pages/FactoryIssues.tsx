@@ -2,12 +2,13 @@ import { useDeferredValue, useState, type FormEvent } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
-import { SearchField, SelectField } from '../components/Control';
+import { Button, SearchField, SelectField } from '../components/Control';
+import { InlineAlert } from '../components/InlineAlert';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import type { FactoryEpic, FactoryIssue } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
-import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useWorkEpics } from '../lib/queries';
+import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useTransferFactoryIssue, useWorkEpics } from '../lib/queries';
 import './Factory.css';
 import './FactoryIssues.css';
 
@@ -49,6 +50,16 @@ function IssueComments({ issue }: { issue: FactoryIssue }) {
 		</section>;
 }
 
+/** Moves an open ticket out of the Epic into the project's issue tracker. */
+function TransferIssue({ issue }: { issue: FactoryIssue }) {
+	const transfer = useTransferFactoryIssue();
+	if (transfer.data) return <p role="status">Transferred to <a href={transfer.data.url} target="_blank" rel="noreferrer">{transfer.data.url}</a>.</p>;
+	return <div>
+		<Button type="button" disabled={transfer.isPending} onClick={() => { if (window.confirm(`Create a tracker issue for "${issue.title}" and remove it from this Epic?`)) transfer.mutate({ epicId: issue.epicId, issueId: issue.id }); }}>{transfer.isPending ? 'Transferring...' : 'Transfer to issue tracker'}</Button>
+		{transfer.isError && <InlineAlert>{transfer.error instanceof Error ? transfer.error.message : 'Could not transfer the issue.'}</InlineAlert>}
+	</div>;
+}
+
 export function IssueDrawer({ issue, preview = false, onClose }: { issue: FactoryIssue; preview?: boolean; onClose: () => void }) {
   const blockers = preview ? issue.dependsOn : issue.blockers;
   return <Modal label={`Issue ${issue.id}`} onClose={onClose} backdropClassName="factory-issue-backdrop" dialogClassName="factory-issue-drawer">
@@ -68,6 +79,7 @@ export function IssueDrawer({ issue, preview = false, onClose }: { issue: Factor
 		{issue.prUrl && <div><dt>Pull request</dt><dd><a href={issue.prUrl} target="_blank" rel="noreferrer">{issue.prUrl}</a></dd></div>}
 		{issue.session?.id && <div><dt>Session</dt><dd><Link to={`/session/${encodeURIComponent(issue.session.id)}`}>{issue.session.id}</Link></dd></div>}
     </dl>
+		{!preview && issue.status === 'open' && (issue.kind === 'task' || issue.kind === 'implementation') && <TransferIssue issue={issue} />}
 		{!preview && <IssueComments issue={issue} />}
   </Modal>;
 }

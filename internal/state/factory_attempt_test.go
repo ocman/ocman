@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -448,7 +449,7 @@ func issueByID(t *testing.T, db *DB, epicID, issueID string) model.NativeIssue {
 }
 
 // claimAndFail is a test helper: claim, activate, and fail one attempt for workID.
-func claimAndFail(t *testing.T, db *DB, epicID, workID string, at time.Time) {
+func claimAndFail(t *testing.T, db *DB, epicID, workID string, at time.Time, failure model.FactoryAttemptFailure) {
 	t.Helper()
 	ctx := context.Background()
 	if err := db.WakeFactoryRetries(ctx, at.Add(time.Hour)); err != nil {
@@ -458,7 +459,7 @@ func claimAndFail(t *testing.T, db *DB, epicID, workID string, at time.Time) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "no session"}, at); err != nil {
+	if _, err := db.FailFactoryAttempt(ctx, attempt.ID, failure, at); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -484,13 +485,13 @@ func TestFactoryLaunchRetriesBackOffThenReopen(t *testing.T) {
 		t.Fatal("reopening open work succeeded")
 	}
 	for i, wait := range factoryRetryBackoff {
-		claimAndFail(t, db, epic.ID, workID, now)
+		claimAndFail(t, db, epic.ID, workID, now, model.FactoryAttemptFailure{Type: "launch_failed", Message: fmt.Sprint("no session ", i)})
 		issue := issueByID(t, db, epic.ID, workID)
 		if issue.Status != "retry_wait" || issue.RetryAttempts != i+1 || issue.RetryAt != now.Add(wait).UnixMilli() {
 			t.Fatalf("attempt %d: %#v, want retry_wait at +%s", i+1, issue, wait)
 		}
 	}
-	claimAndFail(t, db, epic.ID, workID, now)
+	claimAndFail(t, db, epic.ID, workID, now, model.FactoryAttemptFailure{Type: "launch_failed", Message: "no session"})
 	issue := issueByID(t, db, epic.ID, workID)
 	if issue.Status != "closed" || issue.Outcome != "failed" || issue.RetryAttempts != len(factoryRetryBackoff)+1 {
 		t.Fatalf("exhausted work = %#v", issue)
@@ -504,6 +505,43 @@ func TestFactoryLaunchRetriesBackOffThenReopen(t *testing.T) {
 	}
 	if err := db.ReopenFactoryIssue(ctx, epic.ID, factoryIssueID(t, db, epic.ID, "plan")); err == nil {
 		t.Fatal("reopening a plan succeeded")
+	}
+}
+
+func TestFactoryRepeatedLaunchFailureStopsRetrying(t *testing.T) {
+	for _, tt := range []struct {
+		failure   model.FactoryAttemptFailure
+		wantRetry bool
+	}{
+		{model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation branch could not be resolved: merged"}, false},
+		{model.FactoryAttemptFailure{Type: "interrupted_startup", Message: "Implementation Session was not durably available after restart"}, true},
+	} {
+		t.Run(tt.failure.Type, func(t *testing.T) {
+			db := openTestStateDB(t)
+			defer db.Close()
+			ctx := context.Background()
+			now := time.Now()
+			epic, err := db.CreateFactoryEpic(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: factoryIssueID(t, db, epic.ID, "mol"), Kind: "task", Title: "Work"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.UpsertFactoryLocalExecutionAck(ctx, "local", "/repo", "factory-implement", "v1", "operator", now); err != nil {
+				t.Fatal(err)
+			}
+			workID := factoryIssueID(t, db, epic.ID, "task")
+			claimAndFail(t, db, epic.ID, workID, now, tt.failure)
+			if issue := issueByID(t, db, epic.ID, workID); issue.Status != "retry_wait" {
+				t.Fatalf("first failure = %#v", issue)
+			}
+			claimAndFail(t, db, epic.ID, workID, now, tt.failure)
+			issue := issueByID(t, db, epic.ID, workID)
+			if (issue.Status == "retry_wait") != tt.wantRetry || (!tt.wantRetry && (issue.Outcome != "failed" || issue.OutcomeReason != tt.failure.Message)) {
+				t.Fatalf("repeated failure = %#v, want retry %v", issue, tt.wantRetry)
+			}
+		})
 	}
 }
 

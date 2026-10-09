@@ -322,14 +322,25 @@ func (d *DB) FailFactoryAttempt(ctx context.Context, id string, failure model.Fa
 	if failure.Type == "launch_failed" || failure.Type == "activation_failed" || failure.Type == "prompt_failed" || failure.Type == "interrupted_startup" || failure.Type == "interrupted_runtime" || failure.Type == "handoff_finalize_failed" || failure.Type == "delivery_migration" {
 		// ponytail: fixed 1s/30s/5m backoff so a restarting opencode instance
 		// doesn't burn the whole budget in two seconds; ReopenFactoryIssue is
-		// the human escape hatch once it is exhausted.
+		// the human escape hatch once it is exhausted. A retry failing with the
+		// exact same message is deterministic (forge/branch state), so the
+		// budget ends there; restart interruptions share one fixed message and
+		// keep the full budget.
+		budget := len(factoryRetryBackoff)
+		deterministic := failure.Type != "interrupted_startup" && failure.Type != "interrupted_runtime"
+		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET
+			retry_attempts = CASE WHEN ? AND retry_attempts > 0 AND outcome_reason = ? THEN ? ELSE retry_attempts END
+			WHERE id = (SELECT work_item_id FROM factory_attempt WHERE id = ? AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1') AND status = 'in_progress'`,
+			deterministic, failure.Message, budget, id); err != nil {
+			return false, err
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET
 			status = CASE WHEN retry_attempts < ? THEN 'retry_wait' ELSE 'closed' END,
 			outcome = CASE WHEN retry_attempts < ? THEN '' ELSE 'failed' END,
 			outcome_reason = ?, retry_at = CASE retry_attempts WHEN 0 THEN ? WHEN 1 THEN ? WHEN 2 THEN ? ELSE 0 END,
 			retry_attempts = retry_attempts + 1
 			WHERE id = (SELECT work_item_id FROM factory_attempt WHERE id = ? AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1') AND status = 'in_progress'`,
-			len(factoryRetryBackoff), len(factoryRetryBackoff), failure.Message, at.Add(factoryRetryBackoff[0]).UnixMilli(), at.Add(factoryRetryBackoff[1]).UnixMilli(), at.Add(factoryRetryBackoff[2]).UnixMilli(), id); err != nil {
+			budget, budget, failure.Message, at.Add(factoryRetryBackoff[0]).UnixMilli(), at.Add(factoryRetryBackoff[1]).UnixMilli(), at.Add(factoryRetryBackoff[2]).UnixMilli(), id); err != nil {
 			return false, err
 		}
 	}

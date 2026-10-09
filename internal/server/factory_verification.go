@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
@@ -26,6 +29,28 @@ func factoryImplementationRules(verification bool) []platforms.PermissionRule {
 	return []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: edit}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}}
 }
 
+// factoryScratchRules pre-allows the directories Factory sessions reached for
+// in practice and users always approved: scratch space and sibling
+// worktrees. Bash can already reach them; asking only interrupted the user.
+func factoryScratchRules(repo string, local bool) []platforms.PermissionRule {
+	dirs := []string{"/tmp", "/private/tmp", filepath.Join(filepath.Dir(filepath.Clean(repo)), ".worktrees")}
+	if local {
+		// TMPDIR is per host; a remote's differs from the hub's.
+		dirs = append(dirs, os.TempDir())
+		if resolved, err := filepath.EvalSymlinks(os.TempDir()); err == nil {
+			dirs = append(dirs, resolved)
+		}
+	}
+	rules := make([]platforms.PermissionRule, 0, len(dirs))
+	for _, dir := range dirs {
+		if strings.ContainsAny(dir, "*?[") {
+			continue
+		}
+		rules = append(rules, platforms.PermissionRule{Permission: "external_directory", Pattern: filepath.Join(dir, "**"), Action: "allow"})
+	}
+	return rules
+}
+
 func factoryVerificationPrompt(req factory.ImplementationSessionRequest, body string) string {
 	return fmt.Sprintf(`Verify Factory step %s in Work Epic %s on the assigned branch %s (target %s).
 
@@ -36,12 +61,11 @@ Approved Issues and their acceptance criteria:
 
 Factory protocol: You are a read-only validator. You did not write this code; judge it, do not fix it. Do not edit, commit, push, or create or merge a pull request: Factory rejects completion if the shared branch moved.
 
-If you find missing work, use factory issues to find the implementation phase and mutate_graph to propose follow-up Issues. Submit the complete change in one call with action batch, epicId, mutations, and rationaleMarkdown summarizing what changed and why in Markdown. The rationale is shown beside graph approval. The amended graph requires human approval; never approve it yourself. Factory runs fresh verification after the added work. If your current scope cannot pass, request_recovery with its failing criteria.
-
 1. Review the combined diff against %s. Check every acceptance criterion above against the code and by running the relevant checks.
 2. Look for work that passes checks without doing the task: deleted or skipped tests, weakened or removed assertions, lowered thresholds, new lint or type suppressions, hard-coded expected values, and stubs.
-3. If anything fails, call request_recovery with attempt_id %s and attempt_token %s, listing each failing criterion or check. Do not claim success.
-4. Otherwise call complete_attempt with the same credentials, omit pr_url, and give a summary that lists each acceptance criterion as PASS or FAIL with evidence.
+3. If anything fails and an implementation session can fix it within the approved design, turn the failures into follow-up tickets: use factory issues to find the implementation phase, then call mutate_graph with attempt_id %[8]s and attempt_token %[9]s and one batch (epicId, mutations of action create, kind task, parentId the implementation phase, and rationaleMarkdown listing each failing criterion or check). Give each ticket a self-contained description with its acceptance criteria. No approval is needed: this ends your attempt, the tickets run, and Factory verifies again. Then end your turn. Do not claim success.
+4. Call request_recovery with the same credentials only when a human must decide: the approved design itself is wrong or contradictory, or the failure is outside the code (environment, credentials, external release).
+5. Otherwise call complete_attempt with the same credentials, omit pr_url, and give a summary that lists each acceptance criterion as PASS or FAIL with evidence.
 
 If this step declares Formula checks, complete_attempt answers checks_running: end your turn. Factory runs the commands itself and sends the results to this session; decide again with those results.`, req.WorkID, req.EpicID, req.Branch, req.TargetBranch, body, req.Criteria, req.TargetBranch, req.AttemptID, req.AgentToken)
 }

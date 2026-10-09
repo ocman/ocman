@@ -297,6 +297,7 @@ type NativeService struct {
 	checksMu          sync.Mutex
 	checks            map[string]verificationCheck // in memory: a restart just reruns the checks
 	idleProbedAt      map[string]time.Time
+	idleNudgedAt      map[string]time.Time // in memory: a restart costs one extra nudge
 	nudged            map[string]bool
 	handoffBlocked    map[string]string // recovery gate -> last reason; writer already stopped (recoveryMu)
 	startOnce         sync.Once

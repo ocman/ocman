@@ -297,11 +297,13 @@ session of an Epic when that Epic is closed. Later replies from the agent do
 not unarchive them.
 
 An active session that stops making progress without completing or requesting
-recovery is paused by a watchdog. Factory probes live attempts at most once a
-minute. After 30 minutes without activity in the session or its direct
-subagents, it opens a recovery gate: resume with guidance, retry, or cancel.
-The 30 minutes count from the attempt start, or from the last time a human
-resumed it. Sessions waiting on a permission or question prompt, and validators
+recovery is nudged, then paused by a watchdog. Factory probes live attempts at
+most once a minute. After 30 minutes without activity in the session or its
+direct subagents, it first messages the session once, asking it to continue,
+call `request_recovery`, or `complete_attempt`. If the session is still idle
+30 minutes after that nudge (or the nudge cannot be delivered), it opens a
+recovery gate: resume with guidance, retry, or cancel. The 30 minutes count
+from the attempt start, or from the last time a human resumed it. Sessions waiting on a permission or question prompt, and validators
 waiting on Formula checks, are not counted as idle.
 
 Recovery gates link to the stuck attempt's conversation through **Inspect
@@ -326,7 +328,16 @@ cannot be discarded. Recovery checkpoints survive cancellation and retries.
 Implementation sessions run in the Issue's target project workspace. They may
 read other projects admitted to the Epic, but path-specific permission rules
 deny edits there. Shell access remains enabled, so these rules enforce agent
-policy; they are not filesystem isolation.
+policy; they are not filesystem isolation. Implementation and verification
+sessions may also reach `/tmp`, the host's `$TMPDIR` (local projects only), and
+sibling worktrees under `<repo-parent>/.worktrees/` without an authority prompt;
+other outside directories still ask.
+
+A launch that fails is retried after 1 s, 30 s, and 5 minutes. When a retry
+fails with exactly the same message as the previous one (for example an
+unusable branch or a missing delivery remote), Factory stops retrying and
+closes the Issue as failed with that message; fix the cause, then **Reopen**.
+Restart interruptions keep the full retry budget.
 
 ## Project Deliveries
 
@@ -403,6 +414,22 @@ group has completed. Adding a task reopens that group; completed tasks stay
 closed. An active validator can finish its current scope, but Factory runs a
 fresh verification of the approved amendment before delivery, even if the new
 task leaves the commit checkpoint unchanged.
+
+A failing validator does not need approval for fixes within the approved
+design. It calls `mutate_graph` with its own `attempt_id` and `attempt_token`
+and a batch that only creates `task` or `implementation` Issues under the
+implementation phase. Factory adds them as ready tickets, ends the
+verification attempt, records the rationale as a comment on the verification
+step, and runs a fresh verification once the tickets succeed. Validators use
+`request_recovery` only when a human must decide: the approved design is
+wrong, or the failure lies outside the code. These calls are refused while
+another graph revision awaits approval.
+
+Any open task Issue can leave the Epic instead: **Transfer to issue tracker**
+in the Issue drawer opens a GitHub or Forgejo issue in the project's
+repository (preferring `origin`) with the ticket's title and description,
+comments the link on the Factory Issue, and removes it from the Epic so
+delivery no longer waits on it.
 
 New dispatch pauses until that graph is approved. Already-running work can
 finish, and completed Issues and checkpoints remain intact. The implementation

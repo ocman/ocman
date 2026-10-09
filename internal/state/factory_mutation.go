@@ -131,7 +131,7 @@ func mutateFactoryGraphTx(ctx context.Context, tx *sql.Tx, m model.GraphMutation
 		}
 		// Phase completion is derived from its children. New work reopens the
 		// group, while completed leaf Issues remain immutable.
-		if m.Actor == "mcp" && implementationParent && m.Kind != "mol" {
+		if (m.Actor == "mcp" || m.Actor == factoryVerificationActor) && implementationParent && m.Kind != "mol" {
 			if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome = '', outcome_reason = '' WHERE id = ? AND epic_id = ? AND kind = 'phase' AND status = 'closed' AND outcome = 'succeeded'`, m.ParentID, m.EpicID); err != nil {
 				return err
 			}

@@ -229,6 +229,12 @@ type Forge interface {
 	Checks(ctx context.Context, repo, sha string) (CIStatus, RateLimit, error)
 }
 
+// IssueCreator is implemented by forges that can open an issue; Factory
+// transfers Epic tickets through it.
+type IssueCreator interface {
+	CreateIssue(ctx context.Context, repo, title, body string) (Issue, error)
+}
+
 // ErrUnauthenticated is returned by CurrentUser (and may be returned
 // by other methods) when the forge has no credential. Handlers turn
 // this into a 401-shaped error envelope on the wire.

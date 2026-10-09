@@ -58,6 +58,13 @@ func (s *NativeService) pauseIdleAttempt(ctx context.Context, attempt model.Fact
 			since = resumed
 		}
 	}
+	s.checksMu.Lock()
+	nudgedAt := s.idleNudgedAt[attempt.ID]
+	s.checksMu.Unlock()
+	nudged := nudgedAt.After(since)
+	if nudged {
+		since = nudgedAt
+	}
 	if time.Since(since) < factoryIdleTimeout {
 		return nil
 	}
@@ -71,6 +78,20 @@ func (s *NativeService) pauseIdleAttempt(ctx context.Context, attempt model.Fact
 	idle := time.Since(last)
 	if idle < factoryIdleTimeout {
 		return nil
+	}
+	// Most idle gates were answered with a bare "Continue": ask the session
+	// itself once per idle window before involving the user.
+	if notifier, ok := s.implementation.(VerificationChecker); ok && !nudged {
+		message := fmt.Sprintf("Factory watchdog: no progress for %s. Continue the task. If you are blocked, call request_recovery with attempt_id %s and your attempt_token; if the work is done, call complete_attempt.", idle.Round(time.Minute), attempt.ID)
+		if err := notifier.NotifyImplementationSession(ctx, attempt.Session, message); err == nil {
+			s.checksMu.Lock()
+			if s.idleNudgedAt == nil {
+				s.idleNudgedAt = map[string]time.Time{}
+			}
+			s.idleNudgedAt[attempt.ID] = time.Now()
+			s.checksMu.Unlock()
+			return nil
+		}
 	}
 	question := fmt.Sprintf("The session has made no progress for %s without completing or requesting recovery. Resume it with guidance, retry the Issue, or cancel it.", idle.Round(time.Minute))
 	_, err = store.CreateFactoryRecoveryGate(ctx, attempt.ID, question, "Factory watchdog: session idle", nil, time.Now())

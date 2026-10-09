@@ -182,3 +182,9 @@ export function useReopenFactoryIssue() {
 export function useInvestigateFactoryUnblock() {
   return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.investigateFactoryUnblock(epicId, issueId) });
 }
+
+/** Moves an open Epic ticket to the project's issue tracker and drops it from the Epic. */
+export function useTransferFactoryIssue() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.transferFactoryIssue(epicId, issueId), onSuccess: () => invalidateFactoryState(client) });
+}

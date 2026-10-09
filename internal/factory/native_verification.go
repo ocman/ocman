@@ -163,6 +163,11 @@ func (s *NativeService) pruneAttemptState(active map[string]bool) {
 			delete(s.idleProbedAt, id)
 		}
 	}
+	for id := range s.idleNudgedAt {
+		if !active[id] {
+			delete(s.idleNudgedAt, id)
+		}
+	}
 }
 
 // nudgeRestartedValidators tells validators that may have been waiting for
@@ -198,7 +203,7 @@ func (s *NativeService) nudgeRestartedValidators(ctx context.Context, alive []mo
 }
 
 func verificationResultMessage(attemptID, head string, passed bool, report string) string {
-	verdict, next := "FAILED", "Do not claim success. Call request_recovery with attempt_id "+attemptID+" and the same attempt_token, and summarize which checks and acceptance criteria failed."
+	verdict, next := "FAILED", "Do not claim success. Turn the failures into follow-up tickets with mutate_graph, passing attempt_id "+attemptID+" and the same attempt_token, or call request_recovery with them when a human must decide."
 	if passed {
 		verdict, next = "PASSED", "Weigh these results together with your own review. If every acceptance criterion holds, call complete_attempt again with attempt_id "+attemptID+" and the same attempt_token, listing each acceptance criterion as PASS or FAIL in the summary. Otherwise call request_recovery."
 	}
@@ -241,6 +246,7 @@ func (s *NativeService) forgetVerificationChecks(attemptID string) {
 	}
 	delete(s.checks, attemptID)
 	delete(s.idleProbedAt, attemptID)
+	delete(s.idleNudgedAt, attemptID)
 	s.checksMu.Unlock()
 }
 

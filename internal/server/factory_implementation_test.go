@@ -243,6 +243,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 	endpoint := connectedPlanningMCP(t)
 	rules := []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: "allow"}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}, {Permission: "external_directory", Pattern: filepath.Join("/other", "**"), Action: "allow"}, {Permission: "edit", Pattern: filepath.Join("/other", "**"), Action: "deny"}}
 	rules = append(rules, skillRules...)
+	rules = append(rules, factoryScratchRules("/repo", true)...)
 	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 
 	t.Run("creates an owned bounded worktree session", func(t *testing.T) {
@@ -424,8 +425,12 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if _, err := (factoryImplementationLauncher{server: srv}).LaunchImplementationSession(ctx, request); err != nil {
 			t.Fatal(err)
 		}
+		portable := map[string]bool{"*": true}
+		for _, rule := range factoryScratchRules("/repo", false) {
+			portable[rule.Pattern] = true
+		}
 		for _, rule := range host.request.PermissionRules {
-			if rule.Permission == "external_directory" && rule.Pattern != "*" {
+			if rule.Permission == "external_directory" && !portable[rule.Pattern] {
 				t.Fatalf("remote request contains local grant: %#v", rule)
 			}
 		}

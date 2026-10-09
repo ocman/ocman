@@ -77,6 +77,8 @@ export const api = {
     postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/reopen`, undefined),
   investigateFactoryUnblock: (id: string, issueID: string) =>
     postJSON<{ platform: string; id: string }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/unblock`, undefined),
+  transferFactoryIssue: (id: string, issueID: string) =>
+    postJSON<{ url: string; number: number }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/transfer`, undefined),
   factoryIssues: (id: string, signal?: AbortSignal) => fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/issues`, signal),
   factoryIssueComments: (epicID: string, issueID: string, signal?: AbortSignal) =>
     fetchJSON<FactoryIssueComment[]>(`/api/factory/epics/${encodeURIComponent(epicID)}/issues/${encodeURIComponent(issueID)}/comments`, signal),
