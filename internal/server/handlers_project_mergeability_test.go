@@ -1,11 +1,14 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
@@ -70,20 +73,49 @@ func TestProjectPRMergeabilityInvalidTarget(t *testing.T) {
 }
 
 func TestProjectPRMergeabilityReviewFailure(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/reviews") {
-			w.WriteHeader(http.StatusTooManyRequests)
-			return
-		}
-		_, _ = w.Write([]byte(`{"mergeable":true}`))
-	}))
-	defer upstream.Close()
-	srv.integrations.GitHub = github.NewForTest(upstream.URL, "test-token", upstream.Client())
-	rr := httptest.NewRecorder()
-	srv.handleProjectPRMergeability(rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil))
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"mergeable":true`) || !strings.Contains(rr.Body.String(), `"approved":null`) {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	for _, upstreamStatus := range []int{http.StatusTooManyRequests, http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable} {
+		t.Run(strconv.Itoa(upstreamStatus), func(t *testing.T) {
+			srv := testServer(t)
+			dir := initGitHubRepo(t)
+			reset := time.Now().Add(time.Hour).Truncate(time.Second)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/reviews") {
+					if upstreamStatus == http.StatusTooManyRequests {
+						w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+					}
+					w.WriteHeader(upstreamStatus)
+					return
+				}
+				_, _ = w.Write([]byte(`{"mergeable":true}`))
+			}))
+			defer upstream.Close()
+			srv.integrations.GitHub = github.NewForTest(upstream.URL, "test-token", upstream.Client())
+			rr := httptest.NewRecorder()
+			srv.handleProjectPRMergeability(rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil))
+			wantStatus := http.StatusBadGateway
+			if upstreamStatus == http.StatusTooManyRequests {
+				wantStatus = http.StatusTooManyRequests
+			}
+			if rr.Code != wantStatus {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			var response struct {
+				Error struct {
+					Code           string    `json:"code"`
+					UpstreamStatus int       `json:"upstreamStatus"`
+					RetryAfter     time.Time `json:"retryAfter"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if upstreamStatus == http.StatusTooManyRequests {
+				if response.Error.Code != "rate_limited" || !response.Error.RetryAfter.Equal(reset) || rr.Header().Get("Retry-After") == "" {
+					t.Fatalf("lost rate-limit deadline: %s", rr.Body.String())
+				}
+			} else if response.Error.UpstreamStatus != upstreamStatus {
+				t.Fatalf("lost upstream status: %s", rr.Body.String())
+			}
+		})
 	}
 }

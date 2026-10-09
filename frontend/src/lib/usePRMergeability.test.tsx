@@ -82,4 +82,50 @@ describe('usePRMergeability', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(api.fetchPRMergeability).toHaveBeenCalledTimes(3);
   });
+
+  it('honors a reviews-only rate-limit deadline across viewport changes', async () => {
+    vi.useFakeTimers();
+    const retryAfter = new Date(Date.now() + 120_000).toISOString();
+    vi.mocked(api.fetchPRMergeability).mockRejectedValueOnce(new api.UpstreamApiError({ error: { code: 'rate_limited', message: 'limited', retryAfter } }, 429))
+      .mockResolvedValue({ mergeable: true, approved: true });
+    const { result, rerender } = renderHook(({ visible }) => usePRMergeability({ ...pr, mergeable: true }, '/repo', 'local', 'origin', visible), { initialProps: { visible: true } });
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    rerender({ visible: false });
+    rerender({ visible: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(89_999); });
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
+    expect(result.current.mergeable).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2);
+    expect(result.current.approved).toBe(true);
+  });
+
+  it.each([401, 403, 404])('stops permanent upstream failures %s until explicit refresh', async (upstreamStatus) => {
+    vi.useFakeTimers();
+    vi.mocked(api.fetchPRMergeability).mockRejectedValue(new api.UpstreamApiError({ error: { code: 'upstream_status', message: 'failed', upstreamStatus } }, 502));
+    const { rerender } = renderHook(({ visible }) => usePRMergeability(pr, '/repo', 'local', 'origin', visible), { initialProps: { visible: true } });
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    rerender({ visible: false });
+    rerender({ visible: true });
+    await act(async () => {});
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
+    act(() => clearPRChecksCache(['github.com/a/repo']));
+    await act(async () => {});
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2);
+  });
+
+  it('backs off transient failures from 15 seconds to a 60-second ceiling', async () => {
+    vi.useFakeTimers();
+    vi.mocked(api.fetchPRMergeability).mockRejectedValue(new Error('offline'));
+    renderHook(() => usePRMergeability(pr, '/repo', 'local', 'origin', true));
+    await act(async () => {});
+    for (const [delay, calls] of [[15_000, 2], [30_000, 3], [60_000, 4], [60_000, 5]]) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(delay - 1); });
+      expect(api.fetchPRMergeability).toHaveBeenCalledTimes(calls - 1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(api.fetchPRMergeability).toHaveBeenCalledTimes(calls);
+    }
+  });
 });

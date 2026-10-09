@@ -154,6 +154,9 @@ Hover over the circle for CI, mergeability, and approval status. Unknown
 mergeability stays unslashed. Visible rows fetch review approval alongside
 mergeability and retry when either status is unavailable. The pane's refresh
 button rechecks both, even when the PR head has not changed.
+Failed status requests back off from 15 to 60 seconds and honor forge
+rate-limit deadlines, including when a row leaves and re-enters the viewport.
+Authorization and other permanent client errors wait for an explicit refresh.
 
 ## Guides
 

@@ -25,9 +25,10 @@ func (s *Server) handleProjectPRMergeability(w http.ResponseWriter, r *http.Requ
 		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
 		return
 	}
-	var approved *bool
-	if value, err := f.PRApproval(r.Context(), remote.Repo, number); err == nil {
-		approved = &value
+	approved, err := f.PRApproval(r.Context(), remote.Repo, number)
+	if err != nil {
+		writeProjectForgeError(w, r, remote, err)
+		return
 	}
 	writeJSON(w, map[string]any{"mergeable": pr.Mergeable, "approved": approved})
 }
