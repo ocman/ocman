@@ -1,5 +1,4 @@
 import { useFactoryGraphIssues, useWorkEpics } from '../lib/queries';
-import { InlineAlert } from './InlineAlert';
 import { FactoryRecoveryActions } from './FactoryRecoveryActions';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 
@@ -8,7 +7,7 @@ export function FactorySessionRecovery({ platformID, sessionID }: { platformID: 
   const epics = useWorkEpics(visible);
   const matchingEpics = epics.data?.filter((epic) => epic.attempts?.some((attempt) => attempt.session.id === sessionID && attempt.session.platform === platformID));
   const issues = useFactoryGraphIssues(matchingEpics, visible);
-  if (epics.isError || issues.some((query) => query.isError)) return <InlineAlert compact retrying={epics.isFetching || issues.some((query) => query.isFetching)} onRetry={() => { void epics.refetch(); issues.forEach((query) => { void query.refetch(); }); }}>Could not load Factory recovery.</InlineAlert>;
+  if (epics.isError || issues.some((query) => query.isError)) return null;
   return <>{issues.flatMap((query) => query.data ?? []).map((issue) => {
     const gate = issue.recovery;
     if (!gate || ['resume', 'retry', 'cancel'].includes(gate.resolution)) return null;

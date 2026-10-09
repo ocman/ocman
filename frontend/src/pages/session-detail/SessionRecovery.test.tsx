@@ -5,7 +5,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { SessionComposerSlot } from './SessionComposerSlot';
 import { useFactoryGraphIssues, useResolveFactoryRecoveryGate, useWorkEpics } from '../../lib/queries';
 import { FactoryRecoveryActions } from '../../components/FactoryRecoveryActions';
-import alertStyles from '../../components/InlineAlert.module.css';
 
 vi.mock('../../lib/queries', () => ({ useFactoryGraphIssues: vi.fn(), useResolveFactoryRecoveryGate: vi.fn(), useWorkEpics: vi.fn() }));
 vi.mock('../../lib/draftStartClaims', () => ({ readDraftStart: async () => undefined }));
@@ -86,7 +85,7 @@ it('keeps pending resume limited to its saved response', () => {
   expect(mutate).toHaveBeenCalledWith({ id: 'gate', action: 'resume', response: 'B' });
 });
 
-it.each(['epics', 'issues'])('lets the user retry failed %s loading', (source) => {
+it.each(['epics', 'issues'])('does not show Factory %s loading errors beside the composer', (source) => {
   const refetch = vi.fn();
   if (source === 'epics') {
     vi.mocked(useWorkEpics).mockReturnValue({ isError: true, refetch } as never);
@@ -94,20 +93,19 @@ it.each(['epics', 'issues'])('lets the user retry failed %s loading', (source) =
   }
   else vi.mocked(useFactoryGraphIssues).mockReturnValue([{ isError: true, refetch }] as never);
   show();
-  expect(screen.getByRole('alert')).toHaveTextContent('Could not load Factory recovery.');
-  expect(screen.getByRole('alert')).toHaveClass(alertStyles.root, alertStyles.compact);
-  expect(screen.getByRole('alert')).not.toHaveClass('factory-plan-approval');
-  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-  expect(refetch).toHaveBeenCalled();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  expect(screen.getByText('Conversation composer')).toBeInTheDocument();
 });
 
-it.each(['epics', 'issues'])('disables retry while failed %s loading is being retried', (source) => {
+it.each(['epics', 'issues'])('keeps failed %s background retries out of the composer', (source) => {
   if (source === 'epics') {
     vi.mocked(useWorkEpics).mockReturnValue({ isError: true, isFetching: true, refetch: vi.fn() } as never);
     vi.mocked(useFactoryGraphIssues).mockReturnValue([]);
   }
   else vi.mocked(useFactoryGraphIssues).mockReturnValue([{ isError: true, isFetching: true, refetch: vi.fn() }] as never);
   show();
-  expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Retry' })).toHaveAttribute('aria-busy', 'true');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  expect(screen.getByText('Conversation composer')).toBeInTheDocument();
 });
