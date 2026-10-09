@@ -76,6 +76,7 @@ func (t *Tee) dispatchUserPrompt(dataJSON string) {
 			Info struct {
 				SessionID string `json:"sessionID"`
 				Role      string `json:"role"`
+				Synthetic bool   `json:"synthetic"`
 				Time      struct {
 					Created int64 `json:"created"`
 				} `json:"time"`
@@ -86,7 +87,7 @@ func (t *Tee) dispatchUserPrompt(dataJSON string) {
 		return
 	}
 	info := event.Properties.Info
-	if info.Role == "user" && info.SessionID != "" && info.Time.Created > 0 {
+	if info.Role == "user" && !info.Synthetic && info.SessionID != "" && info.Time.Created > 0 {
 		t.OnUserPrompt(info.SessionID, info.Time.Created)
 	}
 }

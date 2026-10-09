@@ -1,11 +1,42 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/json"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
+
+func TestV2SyntheticMessageDoesNotAdvanceUserPromptTimestamp(t *testing.T) {
+	defer ocv2.SetInstalledV2(true)()
+	path := writeV2DB(t)
+	w, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = w.Exec(`INSERT INTO session_message VALUES
+		('msg_synthetic', 'ses_a', 'synthetic', 3, 100, 100,
+		'{"text":"automatic follow-up","time":{"created":100}}')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	row, err := d.GetSessionSummary(t.Context(), "ses_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.LastUserPromptAt != 1 {
+		t.Fatalf("last user prompt = %d, want 1 before synthetic message", row.LastUserPromptAt)
+	}
+}
 
 func completionTimestamp(t *testing.T, session any) int64 {
 	t.Helper()

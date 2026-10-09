@@ -2,11 +2,33 @@ package autoapprove
 
 import (
 	"bytes"
+	"encoding/json"
 	"reflect"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+func TestTeeV2SyntheticMessageDoesNotAdvanceUserPromptTimestamp(t *testing.T) {
+	var got int64
+	tee := &Tee{W: &bytes.Buffer{}, OnUserPrompt: func(_ string, at int64) { got = at }}
+	for i, typ := range []string{"user", "synthetic"} {
+		message, ok := ocv2.ConvertMessage("s", map[string]any{"id": "msg", "type": typ,
+			"text": "prompt", "time": map[string]any{"created": (i + 1) * 100}})
+		if !ok {
+			t.Fatal("message not converted")
+		}
+		payload, err := json.Marshal(map[string]any{"type": "message.updated", "properties": map[string]any{"info": message.Info}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tee.dispatchEvent("", string(payload))
+	}
+	if got != 100 {
+		t.Fatalf("last user prompt = %d, want 100 before synthetic message", got)
+	}
+}
 
 func TestTeeUserPromptTimestamp(t *testing.T) {
 	for _, tc := range []struct {

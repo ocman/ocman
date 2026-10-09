@@ -5,6 +5,7 @@ package db
 const lastUserPromptAtSQL = `COALESCE((
 	SELECT m.time_created FROM message m
 	WHERE m.session_id = s.id AND json_extract(m.data, '$.role') = 'user'
+		AND COALESCE(json_extract(m.data, '$.synthetic'), 0) = 0
 	ORDER BY m.time_created DESC, m.id DESC LIMIT 1
 ), 0)`
 

@@ -56,6 +56,9 @@ func ConvertMessage(sessionID string, msg map[string]any) (V1Message, bool) {
 	switch str(msg, "type") {
 	case "user", "synthetic":
 		info := base("user")
+		if str(msg, "type") == "synthetic" {
+			info["synthetic"] = true
+		}
 		parts := []map[string]any{part(1, map[string]any{"type": "text", "text": str(msg, "text"), "synthetic": str(msg, "type") == "synthetic"})}
 		for i, f := range arr(msg, "files") {
 			file, _ := f.(map[string]any)
