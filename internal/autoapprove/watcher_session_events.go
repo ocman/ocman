@@ -63,7 +63,6 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 					// Keep deleted/hidden helpers seen. RefreshSession leaves
 					// them dirty so the incremental pass evicts stale rows
 					// without forcing a full scan on the next list request.
-					log.WithError(err).WithField("session_id", sessionID).Debug("new session has no list row")
 					return
 				}
 				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh new session")
@@ -100,7 +99,6 @@ func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, 
 			if err := refresh(ctx, sessionID); err != nil && ctx.Err() == nil {
 				if errors.Is(err, db.ErrSessionNotFound) {
 					// Keep the title deduplicated for deleted/hidden rows.
-					log.WithError(err).WithField("session_id", sessionID).Debug("renamed session has no list row")
 					return
 				}
 				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh renamed session")
