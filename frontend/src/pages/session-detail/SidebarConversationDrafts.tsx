@@ -42,7 +42,9 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
     fuzzyMatch(searchQuery.trim(), `${draft.title || ''} ${draft.directory} ${draft.remoteId || 'local'}`));
   if (!visible.length) return null;
   return <>
-    {visible.map((draft) => <SidebarRow key={draft.draftId} data-testid="conversation-draft" active={draft.draftId === activeId}
+    {visible.map((draft) => {
+      const title = draft.title || `New session ${useNewConversationDrafts.getState().drafts.findIndex((entry) => entry.draftId === draft.draftId) + 1}`;
+      return <SidebarRow key={draft.draftId} data-testid="conversation-draft" active={draft.draftId === activeId} aria-label={title}
       inGroup={inGroup} flat={!inGroup} className="session-sidebar-draft" aria-current={draft.draftId === activeId ? 'page' : undefined}
       onClick={() => navigate(newSessionPath(draft))}>
       {inGroup && <StatusBadge status="done" compact draft seen />}
@@ -51,7 +53,7 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
           <span className="session-sidebar-project-path">{shortPath(draft.directory)}{draft.remoteId && draft.remoteId !== 'local' ? ` · ${draft.remoteId}` : ''}</span>
           {draft.createdAt && <span className="session-sidebar-time">{relativeTime(draft.createdAt).replace('just now', 'now').replace(' ago', '')}</span>}
         </span>}
-        <span className="session-sidebar-title">{draft.title || `New session ${useNewConversationDrafts.getState().drafts.findIndex((entry) => entry.draftId === draft.draftId) + 1}`}</span>
+        <span className="session-sidebar-title">{title}</span>
         {!inGroup && <span className="session-sidebar-git-slot" />}
       </span>
       <span className="session-sidebar-meta">
@@ -60,6 +62,7 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
         <ArchiveButton className="session-sidebar-archive-btn" label="Discard draft" disabled={discarding === draft.draftId} onClick={(event) => { event.stopPropagation(); void discard(draft); }} />
       </span></span>
       {failed?.draftId === draft.draftId && <span onClick={(event) => event.stopPropagation()}><InlineAlert compact retrying={discarding === draft.draftId} onRetry={() => void discard(draft)}>{failed.message}</InlineAlert></span>}
-    </SidebarRow>)}
+    </SidebarRow>;
+    })}
   </>;
 }

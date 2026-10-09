@@ -92,6 +92,8 @@ it('uses the selected session row as the only navigation control', () => {
   expect(row).toHaveAttribute('aria-selected', 'true');
   expect(row).toHaveClass('session-sidebar-item', 'active', 'flat');
   expect(row.querySelector('.oc-button')).toBeNull();
+  expect(row).toHaveAccessibleName('Draft title');
+  expect(screen.getAllByRole('button', { name: /Discard draft/ })).toHaveLength(1);
 });
 
 it.each(['Enter', ' '])('opens a grouped draft with %j without discarding it', (key) => {
