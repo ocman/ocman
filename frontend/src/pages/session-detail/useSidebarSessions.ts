@@ -3,16 +3,15 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
-import { filterVisibleSessions, hasPendingPrompt } from '../../lib/sessionVisibility';
-import { compareSidebarActivity, computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
+import { hasPendingPrompt } from '../../lib/sessionVisibility';
+import { computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
-import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { useActivityScope } from '../../lib/activityScopes';
 import { useSidebarFilter } from './useSidebarFilter';
 import { flushSync } from 'react-dom';
-import { eventRefresh } from '../../lib/eventRefresh';
 import { withDeadline } from '../../lib/coalescedRefresh';
+import { useSidebarEvents } from './useSidebarEvents';
 
 /**
  * Reconciliation backstop for events missed while disconnected. Normal
@@ -98,7 +97,6 @@ export function useSidebarSessions({
   useActivityScope(enabled ? 'sessions' : undefined);
   const getSessions = useApiStore((s) => s.getSessions);
   const getSession = useApiStore((s) => s.getSession);
-  const peekSession = useApiStore((s) => s.peekSession);
   const archiveSession = useApiStore((s) => s.archiveSession);
   const pinSession = useApiStore((s) => s.pinSession);
   const recentSessions = useApiStore((s) => s.recentSessions);
@@ -232,98 +230,8 @@ export function useSidebarSessions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchivedRecent, loadRecentSessions]);
 
-  // SSE is the primary invalidation path. Re-fetch after reconnecting to
-  // reconcile events missed during the gap.
-  useEffect(() => {
-    if (!enabled) return;
-    const refresh = () => {
-      return loadRecentSessions(abortSignalRef.current?.signal)
-        .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
-    };
-    const refreshAfterCurrent = async () => {
-      await recentRequest.current?.promise.catch(() => {});
-      if (subscribed) await refresh();
-    };
-    const changedRefresh = eventRefresh(refreshAfterCurrent);
-    let subscribed = true;
-    const unsubscribeChanged = onSessionChanged((sessionID, _session, patch, platform) => {
-      if (!enabledRef.current || document.hidden) return;
-      const matches = useApiStore.getState().recentSessions.filter(s => s.id === sessionID && (!platform || s.platform === platform));
-      // Older unqualified events are safe only when the owner is unambiguous.
-      if (patch && matches.length === 1) {
-        const owner = matches[0].platform;
-        patchRecentSession(sessionID, { ...patch,
-          ...(patch.status === 'interrupted' && matches[0].status !== 'interrupted' ? { seen: false } : {}),
-        }, owner);
-        // A terminal status patch carries no completion timestamp. Refresh
-        // the durable row before promoting it; never rank by event arrival.
-        if (!patch.status || patch.status === 'busy') return;
-        const statusRow = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
-        const pendingReads = useApiStore.getState().pendingInterruptionReads;
-        peekSession(sessionID, abortSignalRef.current?.signal, owner).then(({ session: row }) => {
-          if (!subscribed || row.id !== sessionID || row.platform !== owner) return;
-          const current = useApiStore.getState().recentSessions.find(s => s.id === sessionID && s.platform === owner);
-          const readState = mergeSidebarSessions([row], current ? [current] : [], undefined, statusRow ? [statusRow] : [],
-            { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads })[0];
-          const sameInterruption = row.status === 'interrupted' && current?.status === 'interrupted' && current.timeUpdated <= row.timeUpdated;
-          patchRecentSession(sessionID, { ...(sameInterruption ? { seen: readState.seen, seenTimeUpdated: readState.seenTimeUpdated } : {}), lastTurnCompletedAt: Math.max(
-            row.lastTurnCompletedAt ?? 0, current?.lastTurnCompletedAt ?? 0,
-          ) }, owner);
-        }).catch((err) => remoteLog.error('Failed to refresh completed session', err));
-        return;
-      }
-      changedRefresh.schedule();
-    });
-    const unsubscribeConnect = onSseConnect(() => { void refreshAfterCurrent(); });
-    const pendingActivity = new Map<string, number>();
-    const hiddenSessions = new Set<string>();
-    const unsubscribeActivity = onSessionActivity((sessionID, timeUpdated) => {
-      if (!enabledRef.current || document.hidden) return;
-      const session = useApiStore.getState().recentSessions.find((s) => s.id === sessionID);
-      if (session) {
-        // Activity arrives per token; only refresh the relative-time label
-        // at minute granularity. It no longer determines row order.
-        if (compareSidebarActivity(session, { timeUpdated }) > 0) patchRecentSession(sessionID, { timeUpdated });
-      } else if (!hiddenSessions.has(sessionID)) {
-        const pending = pendingActivity.get(sessionID);
-        pendingActivity.set(sessionID, Math.max(pending ?? 0, timeUpdated));
-        if (pending !== undefined) return;
-        // Fetch the exact row: the list snapshot may not yet include an old
-        // session that just became active. Coalesce its streaming events.
-        peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
-          if (!subscribed) return;
-          const candidates = filterInactiveChildren([row], id);
-          if (!candidates.length || (!row.pinned && !hasPendingPrompt(row) && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
-            hiddenSessions.add(sessionID);
-            return;
-          }
-          // The activity time is stamped on receipt, so a new instance's replayed
-          // events would make idle old sessions look recent. Trust it only while
-          // the session is live; otherwise keep the row's own time and window.
-          const live = row.status === 'busy';
-          const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
-          if (!row.pinned && !hasPendingPrompt(row) && row.id !== id && !live && row.timeUpdated < since) {
-            hiddenSessions.add(sessionID);
-            return;
-          }
-          const current = useApiStore.getState().recentSessions;
-          const updated = live
-            ? { ...row, timeUpdated: Math.max(row.timeUpdated, pendingActivity.get(sessionID) ?? 0) }
-            : row;
-          const next = mergeSidebarSessions([updated, ...current.filter((s) => s.id !== sessionID)], current, id);
-          storeSetRecentSessions(next, computeSidebarHash(next));
-        }).catch((err) => remoteLog.error('Failed to refresh active session', err))
-          .finally(() => { pendingActivity.delete(sessionID); });
-      }
-    });
-    return () => {
-      unsubscribeChanged();
-      unsubscribeConnect();
-      unsubscribeActivity();
-      subscribed = false;
-      changedRefresh.dispose();
-    };
-  }, [loadRecentSessions, abortSignalRef, patchRecentSession, peekSession, id, storeSetRecentSessions, enabled]);
+  useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions, abortSignalRef,
+    recentRequest, showArchivedRecentRef, sidebarRecentHoursRef });
 
   // Slow reconciliation loop, paused while the tab is hidden.
   useEffect(() => {

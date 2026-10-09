@@ -1,5 +1,13 @@
 package db
 
+// Find the latest user message through the session's message index. Do not
+// parse every message or use the session's streaming time_updated.
+const lastUserPromptAtSQL = `COALESCE((
+	SELECT m.time_created FROM message m
+	WHERE m.session_id = s.id AND json_extract(m.data, '$.role') = 'user'
+	ORDER BY m.time_created DESC, m.id DESC LIMIT 1
+), 0)`
+
 // Walk a session's message index backwards to its last terminal assistant
 // message. Tool steps and compaction summaries are not completed turns.
 // Error envelopes can lack time.completed, so use their durable creation time.

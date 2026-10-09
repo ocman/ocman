@@ -16,53 +16,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-type livePromptEntry struct {
-	directory string
-	prompt    platforms.LivePrompt
-}
-
-type livePromptRegistry struct {
-	mu          sync.RWMutex
-	entries     map[string]livePromptEntry
-	version     map[string]uint64
-	changed     map[string]uint64
-	changeScope map[string]string
-	applied     map[string]uint64
-	scopePort   map[string]string
-	portGen     map[string]uint64
-}
-
-func newLivePromptRegistry() *livePromptRegistry {
-	return &livePromptRegistry{
-		entries:     make(map[string]livePromptEntry),
-		version:     make(map[string]uint64),
-		changed:     make(map[string]uint64),
-		changeScope: make(map[string]string),
-		applied:     make(map[string]uint64),
-		scopePort:   make(map[string]string),
-		portGen:     make(map[string]uint64),
-	}
-}
-
-func promptKey(kind, sessionID, requestID string) string {
-	return kind + "\x00" + sessionID + "\x00" + requestID
-}
-
-func promptScope(directory, kind string) string { return directory + "\x00" + kind }
-
-func promptString(prompt platforms.LivePrompt, key string) string {
-	value, _ := prompt[key].(string)
-	return value
-}
-
-func clonePrompt(prompt platforms.LivePrompt) platforms.LivePrompt {
-	out := make(platforms.LivePrompt, len(prompt))
-	for key, value := range prompt {
-		out[key] = value
-	}
-	return out
-}
-
 // ObservePromptAsked upserts one permission or question observed on the
 // process-wide event stream.
 func (a *Adapter) ObservePromptAsked(port, directory, kind string, prompt platforms.LivePrompt) {
@@ -90,6 +43,7 @@ func (a *Adapter) observePromptAsked(port string, generation uint64, directory, 
 		return
 	}
 	key := promptKey(kind, sessionID, requestID)
+	a.prompts.recordHalt(kind, prompt)
 	a.prompts.entries[key] = livePromptEntry{directory: directory, prompt: clonePrompt(prompt)}
 	scope := promptScope(directory, kind)
 	a.prompts.version[scope]++
@@ -350,6 +304,7 @@ func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64,
 		requestID := promptString(prompt, "id")
 		key := promptKey(kind, sessionID, requestID)
 		if sessionID != "" && requestID != "" && r.changed[key] <= token {
+			r.recordHalt(kind, prompt)
 			cloned := clonePrompt(prompt)
 			r.entries[key] = livePromptEntry{directory: directory, prompt: cloned}
 			if onPrompt != nil {

@@ -48,6 +48,9 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 	if err != nil {
 		return err
 	}
+	if err := a.attachSessionHalts(ctx, tree); err != nil {
+		return err
+	}
 
 	byID := make(map[string]db.Session, len(tree))
 	for _, session := range tree {
@@ -56,6 +59,8 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 	// The detail's tree projection already reads durable completion metadata.
 	// Keep ownership/directory lookups on GetSession free of message scans.
 	detail.Session.LastTurnCompletedAt = byID[id].LastTurnCompletedAt
+	detail.Session.LastUserPromptAt = byID[id].LastUserPromptAt
+	detail.Session.LastHaltAt = byID[id].LastHaltAt
 
 	ports := discoverOpenCodePorts()
 	detail.Session.Notice = a.sessionNoticeOnPort(id, portForDirectory(ports, detail.Session.Directory))

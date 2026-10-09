@@ -85,7 +85,9 @@ func NewWithPricingAndAuth(database *db.DB, favorites FavoritesReader, pricing C
 
 func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
 	configureHTTPAuth(auth)
-	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, prompts: newLivePromptRegistry(), turns: newLiveStatusRegistry()}
+	prompts := newLivePromptRegistry()
+	prompts.haltStore, _ = favorites.(*state.DB)
+	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, prompts: prompts, turns: newLiveStatusRegistry()}
 }
 
 // ID returns the OpenCode platform identifier.

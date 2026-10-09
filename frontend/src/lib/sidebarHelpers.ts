@@ -6,9 +6,13 @@ export function compareSidebarActivity(a: Pick<Session, 'timeUpdated'>, b: Pick<
   return Math.floor(b.timeUpdated / 60_000) - Math.floor(a.timeUpdated / 60_000);
 }
 
-/** Streaming and read-state changes leave the ordering key unchanged. */
+/** Exact attention time. Streaming and read-state changes never advance it. */
+export function sidebarAttentionTime(s: Session): number {
+  return Math.max(s.lastUserPromptAt ?? 0, s.lastHaltAt ?? 0, s.lastTurnCompletedAt ?? 0) || s.timeCreated || 0;
+}
+
 export function compareSidebarCompletion(a: Session, b: Session): number {
-  return (b.lastTurnCompletedAt || b.timeCreated || 0) - (a.lastTurnCompletedAt || a.timeCreated || 0)
+  return sidebarAttentionTime(b) - sidebarAttentionTime(a)
     || `${a.platform}:${a.id}`.localeCompare(`${b.platform}:${b.id}`);
 }
 
@@ -25,7 +29,7 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
   return sessions
     .map(
       (s) =>
-        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}${s.factoryAttemptId ? `|f:${s.factoryAttemptId}` : ''}`,
+        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.lastUserPromptAt ?? 0}|${s.lastHaltAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}${s.factoryAttemptId ? `|f:${s.factoryAttemptId}` : ''}`,
     )
     .join(',');
 }
@@ -135,6 +139,8 @@ export function mergeSidebarSessions(
       seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),
       timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),
       lastTurnCompletedAt: Math.max(live.lastTurnCompletedAt ?? 0, s.lastTurnCompletedAt ?? 0),
+      lastUserPromptAt: Math.max(live.lastUserPromptAt ?? 0, s.lastUserPromptAt ?? 0),
+      lastHaltAt: Math.max(live.lastHaltAt ?? 0, s.lastHaltAt ?? 0),
     };
   }).sort(compareSidebarCompletion);
 }
@@ -177,7 +183,7 @@ export function pickNextSessionAfterArchive(
 ): Session | undefined {
   const others = sessions.filter((s) => s.id !== target.id);
   if (view === 'projects') {
-    const newest = (list: Session[]) => list.sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
+    const newest = (list: Session[]) => list.sort(compareSidebarCompletion)[0];
     const targetRoot = projectRootForDirectory(target.directory || '');
     // Last session in the project: fall back to the newest remaining
     // session anywhere so we open a session instead of the dashboard.

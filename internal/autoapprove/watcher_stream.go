@@ -2,6 +2,7 @@ package autoapprove
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -188,6 +189,13 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			w.handleSessionTitle(streamCtx, sessionID, title)
 		},
 		OnSessionDataChanged: w.handleSessionDataChanged,
+		OnUserPrompt: func(sessionID string, at int64) {
+			if w.svc != nil {
+				payload, _ := json.Marshal(map[string]any{"sessionID": sessionID, "platform": opencode.PlatformID,
+					"patch": map[string]any{"lastUserPromptAt": at}})
+				w.svc.broadcastGlobalEvent("ocman.session.changed", payload)
+			}
+		},
 		OnGitCommand: func(sessionID, action string) {
 			if w.svc != nil && w.svc.deps.BroadcastGitCommand != nil {
 				w.svc.deps.BroadcastGitCommand(sessionID, action)

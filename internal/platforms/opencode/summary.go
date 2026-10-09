@@ -23,5 +23,9 @@ func (a *Adapter) SessionSummary(ctx context.Context, id string) (*db.Session, e
 	permissions, questions := a.prompts.pendingSessionIDs()
 	row.PendingPermission = bubbleUpPromptsToParent(ctx, permissions, a.db)[id]
 	row.PendingQuestion = bubbleUpPromptsToParent(ctx, questions, a.db)[id]
-	return &row, nil
+	rows := []db.Session{row}
+	if err := a.attachSessionHalts(ctx, rows); err != nil {
+		return nil, err
+	}
+	return &rows[0], nil
 }

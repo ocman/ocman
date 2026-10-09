@@ -500,6 +500,21 @@ describe('useSidebarSessions live refresh', () => {
     expect(sessionActivity).toBeUndefined();
   });
 
+  it('promotes a background user prompt immediately and fences replayed timestamps', () => {
+    const first = { id: 'first', platform: 'opencode', timeCreated: 1, lastTurnCompletedAt: 120_001 } as Session;
+    const background = { ...first, id: 'background', lastTurnCompletedAt: 60_000 };
+    const otherOwner = { ...background, platform: 'r-owner:opencode' };
+    useApiStore.setState({ recentSessions: [first, background, otherOwner] });
+    renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    act(() => sessionChanged?.('background', undefined, { lastUserPromptAt: 120_003 }, background.platform));
+    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ id: 'background', platform: 'opencode', lastUserPromptAt: 120_003 });
+    act(() => sessionChanged?.('background', undefined, { lastUserPromptAt: 120_000 }, background.platform));
+    expect(useApiStore.getState().recentSessions[0].lastUserPromptAt).toBe(120_003);
+    expect(useApiStore.getState().recentSessions.find(s => s.platform === otherOwner.platform)?.lastUserPromptAt).toBeUndefined();
+    expect(getSessions).not.toHaveBeenCalled();
+  });
+
   it('ignores per-token activity that stays within the same minute bucket', () => {
     useApiStore.setState({ recentSessions: [{ id: 'streaming', timeUpdated: 120_000 }] as Session[] });
     renderHook(() => useSidebarSessions({

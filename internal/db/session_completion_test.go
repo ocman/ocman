@@ -106,3 +106,39 @@ func TestSessionCompletionTimestampV2(t *testing.T) {
 		t.Fatalf("v2 completion = %d, want 3", got)
 	}
 }
+
+func TestLastUserPromptTimestamp(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	insertSession(t, d, "prompted", "Work", "/repo", 1, 999)
+	insertMessage(t, d, "user-old", "prompted", 10, map[string]any{"role": "user"})
+	insertMessage(t, d, "user-new", "prompted", 21, map[string]any{"role": "user"})
+	insertMessage(t, d, "assistant-stream", "prompted", 30, map[string]any{"role": "assistant"})
+	list, err := d.GetSessions(t.Context(), "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := d.GetSessionSummary(t.Context(), "prompted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := d.GetSessionTree(t.Context(), "prompted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []Session{list[0], summary, tree[0]} {
+		raw, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields struct {
+			LastUserPromptAt int64 `json:"lastUserPromptAt"`
+		}
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if fields.LastUserPromptAt != 21 {
+			t.Fatalf("last user prompt = %d, want 21", fields.LastUserPromptAt)
+		}
+	}
+}

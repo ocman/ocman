@@ -57,9 +57,9 @@ describe('runSlashCommand', () => {
   ] as const)('/archive picks among the rows the sidebar shows in the %s view', async (view, expected) => {
     useUiStore.setState({ sidebarView: view });
     visibleSidebarSessions.current = [
-      { id: 's1', directory: '/a', timeUpdated: 1000 },
-      { id: 's2', directory: '/b', timeUpdated: 100 },
-      { id: 's3', directory: '/c', timeUpdated: 900 },
+      { id: 's1', directory: '/a', timeUpdated: 1000, lastUserPromptAt: 1000 },
+      { id: 's2', directory: '/b', timeUpdated: 100, lastHaltAt: 100 },
+      { id: 's3', directory: '/c', timeUpdated: 900, lastTurnCompletedAt: 900 },
     ] as Session[];
     try {
       const c = ctx({ recentSessionsRef: { current: [{ id: 's1' }, { id: 'hidden' }] as Session[] } });

@@ -14,6 +14,20 @@ beforeEach(() => {
   useApiStore.setState({ recentSessions: sessions, recentSessionsHash: '' });
 });
 
+it('orders by the exact latest prompt, halt or completion, ignoring streams and reads', () => {
+  const rows = [
+    { ...sessions[0], id: 'completed', lastTurnCompletedAt: 120_001 },
+    { ...sessions[1], id: 'prompted', lastUserPromptAt: 120_003 },
+    { ...sessions[1], id: 'halted', lastHaltAt: 120_002 },
+    { ...sessions[1], id: 'streaming', timeUpdated: 999_999, seenTimeUpdated: 999_999 },
+  ] as Session[];
+  const merged = mergeSidebarSessions(rows, []);
+  expect(merged.map(s => s.id)).toEqual(['prompted', 'halted', 'completed', 'streaming']);
+  expect(mergeSidebarSessions(rows.map(s => ({ ...s, lastUserPromptAt: 0, lastHaltAt: 0 })), merged)
+    .map(s => s.id)).toEqual(['prompted', 'halted', 'completed', 'streaming']);
+  expect(computeSidebarHash(rows)).not.toBe(computeSidebarHash(rows.map(s => ({ ...s, lastUserPromptAt: 0, lastHaltAt: 0 }))));
+});
+
 it('stores unread corrections when hidden-tab SSE already updated status and activity', () => {
   const current = [{ ...sessions[0], status: 'done', seen: true, seenTimeUpdated: 60_000, unreadCount: 0 }] as Session[];
   const store = useApiStore.getState();

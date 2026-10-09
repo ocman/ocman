@@ -8,6 +8,36 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
+func TestTeeUserPromptTimestamp(t *testing.T) {
+	for _, tc := range []struct {
+		name, data string
+		want       int64
+	}{
+		{"user", `{"type":"message.updated","properties":{"info":{"sessionID":"s","role":"user","time":{"created":120003}}}}`, 120003},
+		{"global", `{"directory":"/repo","payload":{"type":"message.updated","properties":{"info":{"sessionID":"s","role":"user","time":{"created":120002}}}}}`, 120002},
+		{"assistant", `{"type":"message.updated","properties":{"info":{"sessionID":"s","role":"assistant","time":{"created":120004}}}}`, 0},
+		{"missing time", `{"type":"message.updated","properties":{"info":{"sessionID":"s","role":"user"}}}`, 0},
+		{"missing session", `{"type":"message.updated","properties":{"info":{"role":"user","time":{"created":120004}}}}`, 0},
+		{"bad time", `{"type":"message.updated","properties":{"info":{"sessionID":"s","role":"user","time":{"created":"bad"}}}}`, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got int64
+			var output bytes.Buffer
+			tee := &Tee{W: &output, OnUserPrompt: func(id string, at int64) {
+				if id != "s" {
+					t.Fatal(id)
+				}
+				got = at
+			}}
+			input := "data: " + tc.data + "\n\n"
+			_, _ = tee.Write([]byte(input))
+			if got != tc.want || output.String() != input {
+				t.Fatalf("prompt = %d, want %d; output = %q", got, tc.want, output.String())
+			}
+		})
+	}
+}
+
 func TestTeeWrappedResolutionCarriesDirectory(t *testing.T) {
 	var got string
 	tee := &Tee{

@@ -71,6 +71,9 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 			sessions[i].PendingQuestion = true
 		}
 	}
+	if err := a.attachSessionHalts(ctx, sessions); err != nil {
+		return nil, err
+	}
 	return slices.DeleteFunc(sessions, func(session db.Session) bool {
 		return since > 0 && session.TimeUpdated < since && !session.PendingPermission && !session.PendingQuestion
 	}), nil
