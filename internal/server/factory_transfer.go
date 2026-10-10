@@ -15,6 +15,7 @@ var errFactoryTracker = errors.New("issue tracker")
 
 type factoryIssueTransferrer interface {
 	TransferIssue(context.Context, string, string, func(context.Context, factory.Issue) (string, error)) (string, error)
+	CancelIssueTransfer(context.Context, string, string) error
 }
 
 // transferFactoryIssue moves an open Epic ticket to its project's GitHub or
@@ -71,4 +72,17 @@ func (s *Server) handleFactoryIssueTransfer(w http.ResponseWriter, r *http.Reque
 	default:
 		writeFactoryError(w, err)
 	}
+}
+
+func (s *Server) handleFactoryIssueTransferCancel(w http.ResponseWriter, r *http.Request, epicID, issueID string) {
+	service, ok := s.factory.(factoryIssueTransferrer)
+	if !ok {
+		writeFactoryError(w, factory.ErrFactoryUnavailable)
+		return
+	}
+	if err := service.CancelIssueTransfer(r.Context(), epicID, issueID); err != nil {
+		writeFactoryError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

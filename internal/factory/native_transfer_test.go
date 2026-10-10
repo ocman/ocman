@@ -83,12 +83,33 @@ func TestTransferIssueReservesAndResumes(t *testing.T) {
 		t.Fatal("a transferred issue was transferred again")
 	}
 
+	// An in-flight or uncertain transfer has one owner: a second request
+	// never creates again, and only Cancel releases it.
+	if _, err := db.ReserveFactoryIssueTransfer(t.Context(), epic.ID, ids["Third"], time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.TransferIssue(t.Context(), epic.ID, ids["Third"], create); !errors.Is(err, ErrInvalidRequest) || creates != 1 {
+		t.Fatalf("concurrent transfer = %v, creates %d", err, creates)
+	}
+	if err := svc.CancelIssueTransfer(t.Context(), epic.ID, ids["Third"]); err != nil {
+		t.Fatal(err)
+	}
+	if got := issueStatus(t, svc, epic.ID, ids["Third"]); got != "open" {
+		t.Fatalf("cancelled transfer = %s", got)
+	}
+	if err := db.RecordFactoryIssueTransfer(t.Context(), epic.ID, ids["Third"], "https://forge.example/late"); err == nil {
+		t.Fatal("a cancelled transfer recorded a tracker issue")
+	}
+
 	// A tracker issue recorded before a local failure is reused on retry.
 	if _, err := db.ReserveFactoryIssueTransfer(t.Context(), epic.ID, ids["Third"], time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.RecordFactoryIssueTransfer(t.Context(), ids["Third"], "https://forge.example/existing"); err != nil {
+	if err := db.RecordFactoryIssueTransfer(t.Context(), epic.ID, ids["Third"], "https://forge.example/existing"); err != nil {
 		t.Fatal(err)
+	}
+	if reason := issueReason(t, svc, epic.ID, ids["Third"]); reason != "Transferred to https://forge.example/existing" {
+		t.Fatalf("recorded reason = %q", reason)
 	}
 	if url, err := svc.TransferIssue(t.Context(), epic.ID, ids["Third"], create); err != nil || url != "https://forge.example/existing" || creates != 1 {
 		t.Fatalf("resumed transfer = %q, %v, creates %d", url, err, creates)
@@ -107,4 +128,18 @@ func issueStatus(t *testing.T, svc *NativeService, epicID, issueID string) strin
 		}
 	}
 	return "removed"
+}
+
+func issueReason(t *testing.T, svc *NativeService, epicID, issueID string) string {
+	t.Helper()
+	issues, err := svc.ListIssues(t.Context(), epicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range issues {
+		if issue.ID == issueID {
+			return issue.OutcomeReason
+		}
+	}
+	return ""
 }

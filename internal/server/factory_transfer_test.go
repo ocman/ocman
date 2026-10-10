@@ -20,6 +20,12 @@ type transferFactoryFake struct {
 	fakeFactoryService
 	issue     factory.Issue
 	finishErr error
+	cancelled string
+}
+
+func (f *transferFactoryFake) CancelIssueTransfer(_ context.Context, _, issueID string) error {
+	f.cancelled = issueID
+	return f.err
 }
 
 func (f *transferFactoryFake) TransferIssue(ctx context.Context, _, _ string, create func(context.Context, factory.Issue) (string, error)) (string, error) {
@@ -79,9 +85,21 @@ func TestFactoryIssueTransfer(t *testing.T) {
 	if rec := post(); rec.Code != http.StatusBadGateway {
 		t.Fatalf("forge failure = %d", rec.Code)
 	}
+	req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic/issues/epic.1.3.4/transfer/cancel", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	cancel := httptest.NewRecorder()
+	srv.handleFactoryEpic(cancel, req)
+	if cancel.Code != http.StatusNoContent || svc.cancelled != "epic.1.3.4" {
+		t.Fatalf("cancel = %d, %q", cancel.Code, svc.cancelled)
+	}
 	unsupported := New(nil, nil, "", platforms.NewRegistry(), nil)
 	unsupported.factory = &fakeFactoryService{}
 	if _, err := unsupported.transferFactoryIssue(t.Context(), "epic", "x"); !errors.Is(err, factory.ErrFactoryUnavailable) {
 		t.Fatalf("unsupported = %v", err)
+	}
+	rec = httptest.NewRecorder()
+	unsupported.handleFactoryIssueTransferCancel(rec, req, "epic", "x")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unsupported cancel = %d", rec.Code)
 	}
 }

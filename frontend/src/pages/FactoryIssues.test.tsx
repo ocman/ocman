@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useTransferFactoryIssue, useWorkEpics } from '../lib/queries';
+import { useAddFactoryIssueComment, useCancelFactoryIssueTransfer, useFactoryGraphIssues, useFactoryIssueComments, useTransferFactoryIssue, useWorkEpics } from '../lib/queries';
 import { FactoryIssues, IssueDrawer } from './FactoryIssues';
 
 vi.mock('../lib/queries', () => ({
@@ -12,11 +12,13 @@ vi.mock('../lib/queries', () => ({
 	useFactoryIssueComments: vi.fn(),
 	useAddFactoryIssueComment: vi.fn(),
 	useTransferFactoryIssue: vi.fn(),
+	useCancelFactoryIssueTransfer: vi.fn(),
 }));
 
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
+	vi.mocked(useCancelFactoryIssueTransfer).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
 	vi.mocked(useFactoryIssueComments).mockReturnValue({ data: [{ id: 1, issueId: 'fac-42', actor: 'mcp', body: 'Ready for review.', createdAt: 1000 }], isLoading: false, isError: false } as never);
 	vi.mocked(useAddFactoryIssueComment).mockReturnValue({ mutate: vi.fn((_body, options) => options?.onSuccess?.(undefined as never, '' as never, undefined as never, undefined)), isPending: false, isError: false } as never);
   vi.mocked(useWorkEpics).mockReturnValue({
@@ -121,5 +123,26 @@ it('transfers an open ticket to the issue tracker after confirmation', async () 
 	expect(screen.getByRole('link', { name: 'https://forge.example/issues/3' })).toBeInTheDocument();
 	rerender(<MemoryRouter><IssueDrawer issue={{ ...issue, status: 'in_progress' }} onClose={() => {}} /></MemoryRouter>);
 	expect(screen.queryByRole('button', { name: 'Transfer to issue tracker' })).not.toBeInTheDocument();
+	confirm.mockRestore();
+});
+
+it('resumes a recorded transfer and cancels an uncertain one after a reload', async () => {
+	const user = userEvent.setup();
+	const transfer = vi.fn();
+	const cancel = vi.fn();
+	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate: transfer, isPending: false, isError: false } as never);
+	vi.mocked(useCancelFactoryIssueTransfer).mockReturnValue({ mutate: cancel, isPending: false, isError: false } as never);
+	const confirm = vi.spyOn(window, 'confirm');
+	const base = { id: 'fac-8', epicId: 'epic-1', project: '/repo', kind: 'task', title: 'Held', status: 'deferred' };
+	const { rerender } = render(<MemoryRouter><IssueDrawer issue={{ ...base, outcomeReason: 'Transferred to https://forge.example/issues/4' }} onClose={() => {}} /></MemoryRouter>);
+	await user.click(screen.getByRole('button', { name: 'Resume transfer' }));
+	expect(transfer).toHaveBeenCalledWith({ epicId: 'epic-1', issueId: 'fac-8' });
+	expect(confirm).not.toHaveBeenCalled();
+	rerender(<MemoryRouter><IssueDrawer issue={{ ...base, outcomeReason: 'Transferring to the issue tracker' }} onClose={() => {}} /></MemoryRouter>);
+	expect(screen.queryByRole('button', { name: /transfer to issue tracker|resume transfer/i })).not.toBeInTheDocument();
+	await user.click(screen.getByRole('button', { name: 'Cancel transfer' }));
+	expect(cancel).toHaveBeenCalledWith({ epicId: 'epic-1', issueId: 'fac-8' });
+	rerender(<MemoryRouter><IssueDrawer issue={{ ...base, outcomeReason: 'Skip optional project' }} onClose={() => {}} /></MemoryRouter>);
+	expect(screen.queryByRole('button', { name: /transfer/i })).not.toBeInTheDocument();
 	confirm.mockRestore();
 });

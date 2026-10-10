@@ -433,7 +433,10 @@ comments the link on the Factory Issue, and removes it from the Epic so
 delivery no longer waits on it. Factory checks that the ticket can be removed
 and holds it out of dispatch before calling the tracker, and records the
 created issue first, so retrying after a local failure resumes instead of
-creating a duplicate.
+creating a duplicate: the drawer then shows **Resume transfer**. Only one
+transfer can be in flight; if one ends without a recorded result, the drawer
+shows **Cancel transfer**, which returns the ticket to the Epic after you have
+checked the tracker.
 
 New dispatch pauses until that graph is approved. Already-running work can
 finish, and completed Issues and checkpoints remain intact. The implementation

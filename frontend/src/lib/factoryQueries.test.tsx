@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from './api';
-import { useAddFactoryIssueComment, useDecideFactoryPlanGate, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useResolveFactoryAuthorityGate, useSetFactoryCapacityPolicy, useTransferFactoryIssue, useWorkEpic, useWorkEpics } from './queries';
+import { useAddFactoryIssueComment, useDecideFactoryPlanGate, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useResolveFactoryAuthorityGate, useCancelFactoryIssueTransfer, useSetFactoryCapacityPolicy, useTransferFactoryIssue, useWorkEpic, useWorkEpics } from './queries';
 
 vi.mock('./api', () => ({ api: {
   factoryEpic: vi.fn(),
@@ -18,6 +18,7 @@ vi.mock('./api', () => ({ api: {
   factoryPlanGate: vi.fn(),
   resolveFactoryAuthorityGate: vi.fn(),
   transferFactoryIssue: vi.fn(),
+  cancelFactoryIssueTransfer: vi.fn(),
 } }));
 
 function setup() {
@@ -50,6 +51,7 @@ describe('Factory query freshness', () => {
     vi.mocked(api.factoryPlanGate).mockResolvedValue({} as never);
     vi.mocked(api.resolveFactoryAuthorityGate).mockResolvedValue({} as never);
     vi.mocked(api.transferFactoryIssue).mockResolvedValue({ url: 'u' });
+    vi.mocked(api.cancelFactoryIssueTransfer).mockResolvedValue(undefined);
     const { client, wrapper } = setup();
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     const gate = renderHook(() => useDecideFactoryPlanGate('epic-1'), { wrapper });
@@ -59,7 +61,10 @@ describe('Factory query freshness', () => {
     const transfer = renderHook(() => useTransferFactoryIssue(), { wrapper });
     await act(() => transfer.result.current.mutateAsync({ epicId: 'epic-1', issueId: 'issue-1' }));
     expect(api.transferFactoryIssue).toHaveBeenCalledWith('epic-1', 'issue-1');
-    expect(invalidate).toHaveBeenCalledTimes(6);
+    const cancel = renderHook(() => useCancelFactoryIssueTransfer(), { wrapper });
+    await act(() => cancel.result.current.mutateAsync({ epicId: 'epic-1', issueId: 'issue-1' }));
+    expect(api.cancelFactoryIssueTransfer).toHaveBeenCalledWith('epic-1', 'issue-1');
+    expect(invalidate).toHaveBeenCalledTimes(8);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-epics'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-queue'] });
   });

@@ -37,7 +37,13 @@ func (d *DB) ReserveFactoryIssueTransfer(ctx context.Context, epicID, issueID st
 		if err := tx.QueryRowContext(ctx, `SELECT status FROM factory_issue WHERE id = ? AND epic_id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, issueID, epicID).Scan(&status); err != nil || status != "deferred" {
 			return "", invalid("factory issue was already transferred")
 		}
-		return strings.TrimPrefix(receipt, factoryTransferPending+issueID), nil
+		// A pending receipt has one owner: a create is running, or it ended
+		// without a recorded result. Never create again blindly; the user
+		// checks the tracker and cancels the transfer to retry.
+		if strings.HasPrefix(receipt, factoryTransferPending) {
+			return "", invalid("a transfer is in progress or its result is unknown; check the tracker, then cancel the transfer to retry")
+		}
+		return receipt, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
@@ -71,7 +77,7 @@ func (d *DB) ReserveFactoryIssueTransfer(ctx context.Context, epicID, issueID st
 	if removeErr != nil {
 		return "", removeErr
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'deferred', outcome_reason = 'Transferring to the issue tracker' WHERE id = ?`, issueID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'deferred', outcome_reason = ? WHERE id = ?`, FactoryTransferPendingReason, issueID); err != nil {
 		return "", err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_external_mapping (system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at) VALUES (?, ?, ?, 'issue', ?, '{}', ?)`, factoryTransferSystem, factoryTransferKind, factoryTransferPending+issueID, issueID, at.UnixMilli()); err != nil {
@@ -80,13 +86,37 @@ func (d *DB) ReserveFactoryIssueTransfer(ctx context.Context, epicID, issueID st
 	return "", tx.Commit()
 }
 
-// RecordFactoryIssueTransfer stores the created tracker issue on the receipt.
-func (d *DB) RecordFactoryIssueTransfer(ctx context.Context, issueID, url string) error {
-	_, err := d.db.ExecContext(ctx, `UPDATE factory_external_mapping SET external_id = ? WHERE system = ? AND external_kind = ? AND entity_kind = 'issue' AND entity_id = ?`, url, factoryTransferSystem, factoryTransferKind, issueID)
-	return err
+// FactoryTransferRecordedReason marks a ticket whose tracker issue exists but
+// whose removal has not finished; the UI offers Resume for it.
+const FactoryTransferRecordedReason = "Transferred to "
+
+// FactoryTransferPendingReason marks a ticket held by an in-flight or
+// uncertain transfer; the UI offers Cancel for it.
+const FactoryTransferPendingReason = "Transferring to the issue tracker"
+
+// RecordFactoryIssueTransfer stores the created tracker issue on the pending
+// receipt. It fails when the reservation was cancelled meanwhile.
+func (d *DB) RecordFactoryIssueTransfer(ctx context.Context, epicID, issueID, url string) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `UPDATE factory_external_mapping SET external_id = ? WHERE system = ? AND external_kind = ? AND external_id = ?`, url, factoryTransferSystem, factoryTransferKind, factoryTransferPending+issueID)
+	if err != nil {
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil || n != 1 {
+		return errors.New("the transfer was cancelled before its tracker issue was recorded")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET outcome_reason = ? WHERE id = ? AND epic_id = ? AND status = 'deferred'`, FactoryTransferRecordedReason+url, issueID, epicID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
-// ReleaseFactoryIssueTransfer undoes a reservation whose tracker call failed.
+// ReleaseFactoryIssueTransfer undoes a pending reservation: after a failed
+// tracker call, or when the user cancels an in-flight or uncertain transfer.
 func (d *DB) ReleaseFactoryIssueTransfer(ctx context.Context, epicID, issueID string) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {

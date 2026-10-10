@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from './App';
-import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useSetFactoryEpicPaused, useTransferFactoryIssue, useWorkEpic, useWorkEpics } from './lib/queries';
+import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useCancelFactoryIssueTransfer, useSetFactoryEpicPaused, useTransferFactoryIssue, useWorkEpic, useWorkEpics } from './lib/queries';
 
 vi.mock('./lib/queries', () => ({
   inboxEventRefresh: () => () => {},
@@ -17,6 +17,7 @@ vi.mock('./lib/queries', () => ({
 	useFactoryIssueComments: vi.fn(),
 	useAddFactoryIssueComment: vi.fn(),
 	useTransferFactoryIssue: vi.fn(),
+	useCancelFactoryIssueTransfer: vi.fn(),
 	useMutateFactoryGraph: vi.fn(),
 	useFactoryProposals: vi.fn(),
 	useDecideFactoryPlanGate: vi.fn(),
@@ -47,6 +48,7 @@ beforeEach(() => {
 	vi.mocked(useFactoryIssueComments).mockReturnValue({ data: [], isLoading: false, isError: false } as never);
 	vi.mocked(useAddFactoryIssueComment).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
 	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
+	vi.mocked(useCancelFactoryIssueTransfer).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
 	vi.mocked(useMutateFactoryGraph).mockReturnValue({ mutateAsync: vi.fn(), isPending: false, isError: false } as never);
 	vi.mocked(useFactoryProposals).mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() } as never);
 	vi.mocked(useDecideFactoryPlanGate).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
