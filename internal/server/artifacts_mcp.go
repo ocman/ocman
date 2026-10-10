@@ -23,13 +23,13 @@ func (s artifactMCPService) CreateArtifact(ctx context.Context, in internalmcp.A
 	if err != nil {
 		return state.Artifact{}, err
 	}
-	return artifactView(a), nil
+	return s.server.artifactMCPView(a), nil
 }
 
 func (s artifactMCPService) ListArtifacts(ctx context.Context, f state.ArtifactFilter) ([]state.Artifact, string, error) {
 	list, next, err := s.server.stateDB.ListArtifacts(ctx, f)
 	for i := range list {
-		list[i] = artifactView(list[i])
+		list[i] = s.server.artifactMCPView(list[i])
 	}
 	return list, next, err
 }
@@ -39,7 +39,7 @@ func (s artifactMCPService) GetArtifact(ctx context.Context, id string) (state.A
 	if err != nil {
 		return state.Artifact{}, err
 	}
-	return artifactView(a), nil
+	return s.server.artifactMCPView(a), nil
 }
 
 func (s artifactMCPService) ArtifactPageURL(id string) string {

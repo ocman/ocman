@@ -22,13 +22,11 @@ immutable copies; the original paths may have changed or disappeared.
    Pass a nonempty `next_cursor` as `cursor` to read the next page.
 2. Read titles, descriptions, and `items` to select an artifact, then call
    `{"action":"get","artifact_id":"..."}`. This returns metadata, not file contents.
-3. Read files by fetching `items[].url` with an HTTP fetch tool. A file URL
-   such as `/api/artifacts/art_1/files/0` is relative: resolve it against the
-   origin of the top-level `url` returned by `get`. For example, if `url` is
-   `http://127.0.0.1:8228/artifacts/art_1`, fetch
-   `http://127.0.0.1:8228/api/artifacts/art_1/files/0`.
-   The top-level `url` is a browser page, not the file. Do not use the MCP
-   listener's port as the file server. For `kind: "link"`, follow the item's
+3. Read files by fetching the absolute `items[].url` with an HTTP fetch tool.
+   When password auth is enabled, file URLs are signed for five minutes and
+   need no login cookie. Call `get` again to refresh an expired URL.
+   The top-level `url` opens a browser page, not the file, and may require login.
+   Do not use the MCP listener's port as the file server. For `kind: "link"`, follow the item's
    external URL. Use `name`, `mime`, and `size` to choose a suitable reader;
    download images or PDFs for an image/PDF reader if needed.
 

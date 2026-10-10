@@ -45,18 +45,23 @@ Uploaded files are immutable copies, and their source paths may no longer exist.
    in the project. Pass a nonempty `next_cursor` as `cursor` for the next page.
 2. Select an artifact by its title, description, and items, then call
    `{"action":"get","artifact_id":"art_1"}` for its metadata and file URLs.
-3. Fetch a file's `items[].url` to read its contents. Relative URLs resolve
-   against the origin of the top-level `url` returned by `get`. For example,
-   with `url: "http://127.0.0.1:8228/artifacts/art_1"` and item
-   `url: "/api/artifacts/art_1/files/0"`, fetch
-   `http://127.0.0.1:8228/api/artifacts/art_1/files/0`.
+3. Fetch a file's absolute `items[].url` to read its contents. When password
+   auth is enabled, `create`, `list`, and `get` return signed file URLs valid
+   for five minutes, without a login cookie. Call `get` again if a URL expires.
 
-The top-level `url` opens the browser page; it is not file content. The MCP
+The top-level `url` opens the browser page and still requires login when
+password auth is enabled; it is not file content. A signed URL grants only
+GET access to its one file, not metadata, other files, or interactive previews.
+Deleting the artifact invalidates its file URLs immediately. The MCP
 listener's port is not the file server. Items with `kind: "link"` point to
 external URLs. Use each file's `name`, `mime`, and `size` to choose a reader,
 downloading images or PDFs if the reader requires a local file. If fetching
 fails or requires authentication, report that error instead of substituting
 a file from the original source directory.
+
+File URLs use `-public-base-url` / `OCMAN_PUBLIC_BASE_URL` when configured,
+otherwise the web listen address. Agents running elsewhere need a reachable
+public base URL. Treat signed URLs as temporary credentials.
 
 ## Storage
 

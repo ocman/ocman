@@ -53,7 +53,7 @@ func (s *Server) handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 3 && parts[1] == "share" && r.Method == http.MethodDelete:
 		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleArtifactShareRevoke(w, r, parts[0], parts[2]) })(w, r)
 	case len(parts) == 3 && parts[1] == "files":
-		requireGET(s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		requireGET(s.requireArtifactFileAuth(func(w http.ResponseWriter, r *http.Request) {
 			s.serveArtifactFile(w, r, parts[0], parts[2], false)
 		}))(w, r)
 	// A path segment rather than a query flag, so a preview that navigates
