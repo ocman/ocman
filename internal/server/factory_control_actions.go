@@ -15,6 +15,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// factoryControlRunTimeout bounds running a confirmed proposal; a variable so
+// tests can make it expire.
+var factoryControlRunTimeout = 5 * time.Minute
+
 func decodeFactoryControlMutation(raw string) (factory.GraphMutation, error) {
 	var mutation factory.GraphMutation
 	decoder := json.NewDecoder(bytes.NewReader([]byte(raw)))
@@ -112,25 +116,32 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 		return action, fmt.Errorf("%w: this proposal was already %s", factory.ErrInvalidRequest, action.Status)
 	}
 	action.Status = next
-	// The claim is durable: finish under a context the client cannot cancel,
-	// so a confirmed proposal always reaches a terminal outcome.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
-	defer cancel()
+	// The claim is durable: run and finish under contexts the client cannot
+	// cancel, and record the outcome under its own deadline, so a confirmed
+	// proposal reaches a terminal state even when running it times out.
+	detached := context.WithoutCancel(ctx)
 	outcome := "The user dismissed: " + action.Summary
 	if verb == "confirm" {
-		result, runErr := s.runFactoryControlAction(ctx, action)
+		runCtx, cancelRun := context.WithTimeout(detached, factoryControlRunTimeout)
+		result, runErr := s.runFactoryControlAction(runCtx, action)
+		cancelRun()
 		action.Status, action.Result = "done", result
 		if runErr != nil {
 			action.Status, action.Result = "failed", runErr.Error()
 		}
-		if _, err := store.TransitionFactoryControlAction(ctx, epicID, actionID, "confirmed", action.Status, action.Result); err != nil {
+		finishCtx, cancelFinish := context.WithTimeout(detached, 10*time.Second)
+		_, err := store.TransitionFactoryControlAction(finishCtx, epicID, actionID, "confirmed", action.Status, action.Result)
+		cancelFinish()
+		if err != nil {
 			return action, err
 		}
 		outcome = fmt.Sprintf("The user confirmed: %s\nOutcome: %s %s", action.Summary, action.Status, action.Result)
 	}
 	// Tell the control session, if there is one, so it can carry on.
-	if _, found, _ := store.GetFactoryControlSession(ctx, epicID); found {
-		if _, err := s.postFactoryControl(ctx, epicID, outcome); err != nil {
+	postCtx, cancelPost := context.WithTimeout(detached, 2*time.Minute)
+	defer cancelPost()
+	if _, found, _ := store.GetFactoryControlSession(postCtx, epicID); found {
+		if _, err := s.postFactoryControl(postCtx, epicID, outcome); err != nil {
 			logrus.WithError(err).WithField("epic", epicID).Warn("factory: control outcome not delivered")
 		}
 	}

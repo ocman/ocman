@@ -4,6 +4,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
@@ -203,5 +206,66 @@ func TestDeliverAsIsWithNothingLeftOut(t *testing.T) {
 	}
 	if delivery := next(3); !delivery.Delivery || delivery.LeftOut != "" {
 		t.Fatalf("delivery = %#v", delivery)
+	}
+}
+
+// A recovery handoff advances the accepted checkpoint past the one the paused
+// attempt started from; delivering as is accepts the newer one.
+func TestDeliverAsIsAcceptsARecoveryCheckpoint(t *testing.T) {
+	svc, launcher, epicID, next := deliverAsIsFixture(t)
+	first := next(0)
+	if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "first done", ""); err != nil {
+		t.Fatal(err)
+	}
+	second := next(1)
+	gate, err := svc.CreateRecoveryGate(t.Context(), second.AttemptID, second.AgentToken, "Which API?", "Both change behaviour", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := svc.store.(*state.DB)
+	if err := db.RecordFactoryRecoveryCheckpoint(t.Context(), gate.IssueID, model.FactoryAttemptResult{Branch: second.Branch, CommitSHA: "handoff", TargetBranch: second.TargetBranch}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	launcher.checkpointSHA = "handoff"
+	if leftOut, err := svc.DeliverAsIs(t.Context(), epicID); err != nil || len(leftOut) != 1 {
+		t.Fatalf("deliver as is = %v, %v", leftOut, err)
+	}
+	if got := launcher.checkpointRefs[len(launcher.checkpointRefs)-1]; got != "handoff" {
+		t.Fatalf("validated against %q, want the recovery checkpoint", got)
+	}
+}
+
+// A decision still being carried out refuses delivery before anything stops.
+func TestDeliverAsIsWaitsForAPendingDecision(t *testing.T) {
+	svc, launcher, epicID, next := deliverAsIsFixture(t)
+	first := next(0)
+	if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "first done", ""); err != nil {
+		t.Fatal(err)
+	}
+	next(1)
+	attempts, err := svc.store.(nativeDeliverAsIsStore).ListFactoryAttempts(t.Context(), epicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session string
+	for _, attempt := range attempts {
+		if attempt.Phase != "terminal" {
+			session = attempt.Session.ID
+		}
+	}
+	gate, _, err := svc.EscalatePermission(t.Context(), session, "request", "external_directory", "/outside")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher.replyErr = errors.New("permission reply lost")
+	if _, err := svc.ResolveAuthorityEscalationGate(t.Context(), gate.IssueID, "approve"); err == nil {
+		t.Fatal("approval delivery did not fail")
+	}
+	stops := len(launcher.stops)
+	if _, err := svc.DeliverAsIs(t.Context(), epicID); err == nil || !strings.Contains(err.Error(), "still being carried out") {
+		t.Fatalf("pending decision = %v", err)
+	}
+	if len(launcher.stops) != stops {
+		t.Fatal("a refused delivery stopped a session")
 	}
 }

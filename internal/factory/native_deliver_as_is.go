@@ -13,6 +13,8 @@ type nativeDeliverAsIsStore interface {
 	ListFactoryAttempts(context.Context, string) ([]model.FactoryAttempt, error)
 	IsFactoryAttemptRecoveryPaused(context.Context, string) (bool, error)
 	DeliverFactoryEpicAsIs(context.Context, string, []string, time.Time) ([]string, error)
+	FactoryAttemptDecisionPending(context.Context, string) (bool, error)
+	LatestFactoryCheckpoint(context.Context, string, string) (string, error)
 }
 
 // DeliverAsIs is the user's way out of a review loop: running validators and
@@ -24,6 +26,12 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 	if !ok {
 		return nil, ErrFactoryUnavailable
 	}
+	// Hold every decision path's lock (in their nesting order), so no gate on
+	// this Epic changes between the checks below and the cancellation.
+	s.authorityMu.Lock()
+	defer s.authorityMu.Unlock()
+	s.projectRequestMu.Lock()
+	defer s.projectRequestMu.Unlock()
 	s.recoveryMu.Lock()
 	defer s.recoveryMu.Unlock()
 	attempts, err := store.ListFactoryAttempts(ctx, epicID)
@@ -50,6 +58,13 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 		if !verification[attempt.WorkID] && !paused {
 			return nil, fmt.Errorf("%w: wait for running work to finish: %s", ErrInvalidRequest, attempt.WorkID)
 		}
+		pending, err := store.FactoryAttemptDecisionPending(ctx, attempt.ID)
+		if err != nil {
+			return nil, err
+		}
+		if pending {
+			return nil, fmt.Errorf("%w: a decision on %s is still being carried out; try again shortly", ErrInvalidRequest, attempt.WorkID)
+		}
 		stop = append(stop, attempt)
 	}
 	// The left-out work is not delivered, so its workspace must be exactly the
@@ -59,11 +74,20 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 		if verification[attempt.WorkID] || policy.Branch == "" || s.implementation == nil {
 			continue
 		}
-		head, err := s.implementation.ValidateImplementationCheckpoint(ctx, policy.Repository, policy.Branch, policy.CheckpointSHA)
+		// Recovery handoffs and later work advance the accepted state past the
+		// checkpoint this attempt started from.
+		accepted, err := store.LatestFactoryCheckpoint(ctx, epicID, policy.Repository)
+		if err != nil {
+			return nil, err
+		}
+		if accepted == "" {
+			accepted = policy.CheckpointSHA
+		}
+		head, err := s.implementation.ValidateImplementationCheckpoint(ctx, policy.Repository, policy.Branch, accepted)
 		if err != nil {
 			return nil, fmt.Errorf("%w: the workspace of paused Issue %s is not a clean, pushed checkpoint (%w); resolve its recovery first", ErrInvalidRequest, attempt.WorkID, err)
 		}
-		if policy.CheckpointSHA != "" && head != policy.CheckpointSHA {
+		if accepted != "" && head != accepted {
 			return nil, fmt.Errorf("%w: paused Issue %s has commits beyond the accepted checkpoint; resume or retry it first", ErrInvalidRequest, attempt.WorkID)
 		}
 	}

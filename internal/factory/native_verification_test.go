@@ -440,26 +440,28 @@ func TestNudgeRestartedValidators(t *testing.T) {
 }
 
 // Cancelling an attempt's checks hands back a channel that closes only when
-// the run and its result message are over, so callers can wait it out.
+// the worker, including its result message, is gone, even when a first caller
+// gave up waiting and a second one cancels again.
 func TestCancelVerificationChecksWaitsForTheRun(t *testing.T) {
 	s := NewNative(&nativeStoreFake{})
-	if done := s.cancelVerificationChecks("none"); done == nil {
-		t.Fatal("no channel for an attempt without checks")
-	} else {
-		<-done
-	}
+	<-s.cancelVerificationChecks("none")
 	cancelled := false
 	exited := make(chan struct{})
-	s.checks = map[string]verificationCheck{"att-1": {head: "abc", cancel: func() { cancelled = true }, exited: exited}}
-	done := s.cancelVerificationChecks("att-1")
+	s.checks = map[string]verificationCheck{"att-1": {head: "abc", cancel: func() { cancelled = true }}}
+	s.checkExits = map[string]chan struct{}{"att-1": exited}
+	first := s.cancelVerificationChecks("att-1")
 	if !cancelled || len(s.checks) != 0 {
 		t.Fatalf("cancelled %v, checks %v", cancelled, s.checks)
 	}
-	select {
-	case <-done:
-		t.Fatal("returned before the run exited")
-	default:
+	// The first delivery request is cancelled; its retry must still wait.
+	retry := s.cancelVerificationChecks("att-1")
+	for _, done := range []<-chan struct{}{first, retry} {
+		select {
+		case <-done:
+			t.Fatal("returned before the worker exited")
+		default:
+		}
 	}
 	close(exited)
-	<-done
+	<-retry
 }

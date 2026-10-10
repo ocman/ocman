@@ -332,3 +332,23 @@ func TestFactoryControlConfirmOutlivesTheRequest(t *testing.T) {
 		t.Fatalf("stored = %#v", stored)
 	}
 }
+
+// A proposal whose run outlives its deadline still records a terminal outcome.
+func TestFactoryControlConfirmRecordsATimedOutRun(t *testing.T) {
+	f := newControlFixture(t)
+	previous := factoryControlRunTimeout
+	factoryControlRunTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { factoryControlRunTimeout = previous })
+	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "pause", nil, "Pause")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.svc.onSetPaused = func() { time.Sleep(50 * time.Millisecond) } // runs past its deadline
+	if _, err := f.srv.decideFactoryControlAction(t.Context(), f.srv.stateDB, "epic-1", id, "confirm"); err != nil {
+		t.Fatal(err)
+	}
+	stored, _, _ := f.srv.stateDB.GetFactoryControlAction(t.Context(), "epic-1", id)
+	if stored.Status != "done" && stored.Status != "failed" {
+		t.Fatalf("stored = %#v, want a terminal outcome", stored)
+	}
+}

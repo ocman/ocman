@@ -299,6 +299,7 @@ type NativeService struct {
 	onAttention       func(context.Context, string, []string) // set once before Start
 	liveTransfers     map[string]bool                         // issue -> create call running in this process
 	checks            map[string]verificationCheck            // in memory: a restart just reruns the checks
+	checkExits        map[string]chan struct{}                // attempt -> closed when its check worker exits (checksMu)
 	idleProbedAt      map[string]time.Time
 	idleNudgedAt      map[string]time.Time // in memory: a restart costs one extra nudge
 	nudged            map[string]bool

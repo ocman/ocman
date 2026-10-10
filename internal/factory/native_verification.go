@@ -35,7 +35,6 @@ type verificationCheck struct {
 	done   bool
 	passed bool
 	cancel context.CancelFunc
-	exited chan struct{} // closed when the run, including its result message, is over
 }
 
 func (s *NativeService) verificationStep(ctx context.Context, attempt model.FactoryAttempt) (*model.WorkflowStep, error) {
@@ -98,12 +97,25 @@ func (s *NativeService) gateVerification(ctx context.Context, attempt model.Fact
 		run.cancel()
 	}
 	runCtx, cancel := context.WithTimeout(context.Background(), verificationChecksTimeout)
+	// Exit tracking outlives the check entry: whoever cancels the run can
+	// still wait for its result message until the worker itself is gone.
 	exited := make(chan struct{})
-	s.checks[attempt.ID] = verificationCheck{head: head, cancel: cancel, exited: exited}
+	if s.checkExits == nil {
+		s.checkExits = map[string]chan struct{}{}
+	}
+	s.checkExits[attempt.ID] = exited
+	s.checks[attempt.ID] = verificationCheck{head: head, cancel: cancel}
 	s.dispatchWG.Add(1)
 	go func() {
 		defer s.dispatchWG.Done()
-		defer close(exited)
+		defer func() {
+			s.checksMu.Lock()
+			if s.checkExits[attempt.ID] == exited {
+				delete(s.checkExits, attempt.ID)
+			}
+			s.checksMu.Unlock()
+			close(exited)
+		}()
 		defer cancel()
 		// Shutdown kills the command tree instead of orphaning it.
 		go func() {
@@ -135,7 +147,7 @@ func (s *NativeService) runVerificationChecks(ctx context.Context, checker Verif
 		delete(s.checks, attempt.ID)
 		superseded = true
 	default:
-		s.checks[attempt.ID] = verificationCheck{head: head, done: true, passed: passed, exited: current.exited}
+		s.checks[attempt.ID] = verificationCheck{head: head, done: true, passed: passed}
 	}
 	s.checksMu.Unlock()
 	if superseded {
@@ -258,12 +270,12 @@ func (s *NativeService) cancelVerificationChecks(attemptID string) <-chan struct
 	delete(s.checks, attemptID)
 	delete(s.idleProbedAt, attemptID)
 	delete(s.idleNudgedAt, attemptID)
-	if !ok || run.exited == nil {
-		closed := make(chan struct{})
-		close(closed)
-		return closed
+	if exited, running := s.checkExits[attemptID]; running {
+		return exited
 	}
-	return run.exited
+	closed := make(chan struct{})
+	close(closed)
+	return closed
 }
 
 // foldAcceptanceCriteria requires a verifiable contract on every executable

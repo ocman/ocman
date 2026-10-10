@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
 
 // Recovery checkpoints are immutable audit evidence, even after retry/cancel.
@@ -19,5 +20,20 @@ func latestFactoryCheckpoint(ctx context.Context, tx *sql.Tx, epicID, project st
 		WHERE r.epic_id = ? AND json_extract(a.frozen_policy_json, '$.repository') = ?
 		AND r.action = 'recovery.checkpoint' AND json_valid(r.details_json) AND json_extract(r.details_json, '$.commitSha') <> ''
 	) ORDER BY recorded_at DESC, priority DESC, sequence DESC LIMIT 1`, epicID, project, epicID, project).Scan(&head)
+	return head, err
+}
+
+// LatestFactoryCheckpoint is the project's newest accepted commit in the Epic:
+// a succeeded attempt's checkpoint or a recovery handoff, "" when none.
+func (d *DB) LatestFactoryCheckpoint(ctx context.Context, epicID, project string) (string, error) {
+	tx, err := d.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+	head, err := latestFactoryCheckpoint(ctx, tx, epicID, project)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
 	return head, err
 }

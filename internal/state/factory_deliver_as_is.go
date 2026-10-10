@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -62,14 +63,12 @@ func (d *DB) DeliverFactoryEpicAsIs(ctx context.Context, epicID string, cancelAt
 			return nil, invalid("a running attempt changed; try again")
 		}
 		// A decision already being carried out must finish first.
-		var pending bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'resume', 'retry', 'cancel'))
-			OR EXISTS(SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'approve', 'reject'))
-			OR EXISTS(SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'approved', 'rejected'))`, id, id, id).Scan(&pending); err != nil {
+		pending, err := factoryAttemptDecisionPendingTx(ctx, tx, id)
+		if err != nil {
 			return nil, err
 		}
 		if pending {
-			return nil, invalid("a decision on paused work is still being carried out; try again shortly")
+			return nil, invalid(factoryDecisionPendingMessage)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'cancelled', finished_at = ?, updated_at = ? WHERE id = ?`, now, now, id); err != nil {
 			return nil, err
@@ -140,4 +139,24 @@ func (d *DB) DeliverFactoryEpicAsIs(ctx context.Context, epicID string, cancelAt
 		return nil, err
 	}
 	return deferred, tx.Commit()
+}
+
+const factoryDecisionPendingMessage = "a decision on paused work is still being carried out; try again shortly"
+
+type factoryQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func factoryAttemptDecisionPendingTx(ctx context.Context, q factoryQueryer, attemptID string) (bool, error) {
+	var pending bool
+	err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'resume', 'retry', 'cancel'))
+		OR EXISTS(SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'approve', 'reject'))
+		OR EXISTS(SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'approved', 'rejected'))`, attemptID, attemptID, attemptID).Scan(&pending)
+	return pending, err
+}
+
+// FactoryAttemptDecisionPending reports a decision on the attempt that is
+// being carried out (for example an approval still being delivered).
+func (d *DB) FactoryAttemptDecisionPending(ctx context.Context, attemptID string) (bool, error) {
+	return factoryAttemptDecisionPendingTx(ctx, d.db, attemptID)
 }
