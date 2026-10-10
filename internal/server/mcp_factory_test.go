@@ -44,3 +44,17 @@ func TestFactoryMCPScopeActionsReachUnderlyingService(t *testing.T) {
 		t.Fatalf("unsupported project = %v", err)
 	}
 }
+
+func TestFactoryMCPControlProposalsNeedAProposer(t *testing.T) {
+	var got string
+	service := factoryMCPService{factoryService: &fakeFactoryService{}, proposeControl: func(_ context.Context, epicID, action string, args map[string]string, summary string) (string, error) {
+		got = epicID + ":" + action + ":" + args["issue_id"] + ":" + summary
+		return "fca_1", nil
+	}}
+	if id, err := service.ProposeFactoryControl(t.Context(), "epic", "reopen", map[string]string{"issue_id": "epic.1.3"}, "Retry"); err != nil || id != "fca_1" || got != "epic:reopen:epic.1.3:Retry" {
+		t.Fatalf("propose = %q, %v (%q)", id, err, got)
+	}
+	if _, err := (factoryMCPService{factoryService: &fakeFactoryService{}}).ProposeFactoryControl(t.Context(), "epic", "pause", nil, "Pause"); !errors.Is(err, factory.ErrActionNotPermitted) {
+		t.Fatalf("no proposer = %v", err)
+	}
+}

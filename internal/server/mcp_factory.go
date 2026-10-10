@@ -9,11 +9,15 @@ import (
 // Agents can propose graph edits; approval remains an operator decision.
 type factoryMCPService struct {
 	factoryService
-	consumeUnblock func(string, string) bool
+	proposeControl func(context.Context, string, string, map[string]string, string) (string, error)
 }
 
-func (s factoryMCPService) ConsumeFactoryUnblock(token, epicID string) bool {
-	return s.consumeUnblock != nil && s.consumeUnblock(token, epicID)
+// ProposeFactoryControl records a control proposal; the user's card runs it.
+func (s factoryMCPService) ProposeFactoryControl(ctx context.Context, epicID, action string, args map[string]string, summary string) (string, error) {
+	if s.proposeControl == nil {
+		return "", factory.ErrActionNotPermitted
+	}
+	return s.proposeControl(ctx, epicID, action, args, summary)
 }
 
 func (s factoryMCPService) CreateWorkEpic(ctx context.Context, req factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {
@@ -56,10 +60,6 @@ func (s factoryMCPService) ReopenIssue(ctx context.Context, epicID, issueID stri
 		return factory.ErrActionNotPermitted
 	}
 	return reopener.ReopenIssue(ctx, epicID, issueID)
-}
-
-func (s factoryMCPService) MutateFactoryUnblock(ctx context.Context, mutation factory.GraphMutation) error {
-	return s.factoryService.MutateGraph(ctx, mutation)
 }
 
 func (factoryMCPService) SaveFormula(context.Context, factory.FormulaSaveRequest) (factory.NativeFormulaView, error) {

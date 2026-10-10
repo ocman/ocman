@@ -296,6 +296,9 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 		if err := archiveFactorySessionsTx(ctx, tx, now, `epic_id = ?`, epicID); err != nil {
 			return model.NativePlanGate{}, err
 		}
+		if err := archiveFactoryControlSessionTx(ctx, tx, now, epicID); err != nil {
+			return model.NativePlanGate{}, err
+		}
 	}
 	if action != "approve" && action != "revise" && action != "reject" {
 		return model.NativePlanGate{}, errors.New("invalid factory Plan gate action")

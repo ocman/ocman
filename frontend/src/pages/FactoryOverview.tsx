@@ -4,7 +4,7 @@ import { Button, SelectField } from '../components/Control';
 import { StatusBadge } from '../components/StatusBadge';
 import { EmptyState } from '../components/EmptyState';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
-import { useClaimFactoryPlan, useFactoryCapacityPolicy, useFactoryGraphIssues, useFactoryQueue, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useSessions, useWorkEpics } from '../lib/queries';
+import { useClaimFactoryPlan, useFactoryCapacityPolicy, useFactoryGraphIssues, useFactoryQueue, useDiscussFactoryIssue, useMaterializeFactoryPlan, useMutateFactoryGraph, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useSessions, useWorkEpics } from '../lib/queries';
 import { FactoryRecoveryActions } from '../components/FactoryRecoveryActions';
 import { FactoryActionText } from '../components/FactoryActionText';
 import { FactoryUsage } from '../components/FactoryUsage';
@@ -43,13 +43,13 @@ function FailedWorkItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }
 	const guidance = issue.outcomeReason?.includes('no supported Factory delivery remote')
 		? 'Add a GitHub or Forgejo git remote (preferably origin), authenticate ocman with GITHUB_TOKEN, FORGEJO_TOKEN/GITEA_TOKEN, or the gh/tea CLI, restart ocman if its environment changed, then reopen this work.'
 		: undefined;
-	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<><strong>Work {issue.outcome}{issue.retryAttempts ? ` after ${issue.retryAttempts} attempts` : ''}</strong>{issue.outcomeReason && <span>{issue.outcomeReason}</span>}{guidance && <><button type="button" className="factory-error-help-trigger" popoverTarget={helpID}>How to resolve</button><div id={helpID} className="factory-error-help" popover="auto"><strong>Configure a delivery remote</strong><p>{guidance}</p></div></>}</>} actions={<div><div className="factory-inbox-actions"><InvestigateUnblockButton issue={issue} /><Button type="button" disabled={reopen.isPending} onClick={() => reopen.mutate({ epicId: issue.epicId, issueId: issue.id })}>{reopen.isPending ? 'Reopening…' : 'Reopen'}</Button></div>{reopen.isError && <p role="alert">{reopen.error instanceof Error ? reopen.error.message : 'Could not reopen work.'}</p>}</div>} />;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<><strong>Work {issue.outcome}{issue.retryAttempts ? ` after ${issue.retryAttempts} attempts` : ''}</strong>{issue.outcomeReason && <span>{issue.outcomeReason}</span>}{guidance && <><button type="button" className="factory-error-help-trigger" popoverTarget={helpID}>How to resolve</button><div id={helpID} className="factory-error-help" popover="auto"><strong>Configure a delivery remote</strong><p>{guidance}</p></div></>}</>} actions={<div><div className="factory-inbox-actions"><DiscussIssueButton issue={issue} /><Button type="button" disabled={reopen.isPending} onClick={() => reopen.mutate({ epicId: issue.epicId, issueId: issue.id })}>{reopen.isPending ? 'Reopening…' : 'Reopen'}</Button></div>{reopen.isError && <p role="alert">{reopen.error instanceof Error ? reopen.error.message : 'Could not reopen work.'}</p>}</div>} />;
 }
 
-function InvestigateUnblockButton({ issue }: { issue: FactoryIssue }) {
-	const investigate = useInvestigateFactoryUnblock();
+function DiscussIssueButton({ issue }: { issue: FactoryIssue }) {
+	const discuss = useDiscussFactoryIssue();
 	const navigate = useNavigate();
-	return <><Button type="button" variant="accent" disabled={investigate.isPending} onClick={() => investigate.mutate({ epicId: issue.epicId, issueId: issue.id }, { onSuccess: (session) => navigate(`/session/${encodeURIComponent(session.id)}?factoryEpic=${encodeURIComponent(issue.epicId)}`) })}>{investigate.isPending ? 'Investigating…' : 'Investigate unblock'}</Button>{investigate.isError && <p role="alert">{investigate.error instanceof Error ? investigate.error.message : 'Could not start unblock investigation.'}</p>}</>;
+	return <><Button type="button" variant="accent" disabled={discuss.isPending} onClick={() => discuss.mutate({ epicId: issue.epicId, issueId: issue.id }, { onSuccess: (control) => navigate(`/session/${encodeURIComponent(control.sessionId)}?factoryEpic=${encodeURIComponent(issue.epicId)}`) })}>{discuss.isPending ? 'Asking…' : 'Ask control session'}</Button>{discuss.isError && <p role="alert">{discuss.error instanceof Error ? discuss.error.message : 'Could not reach the control session.'}</p>}</>;
 }
 
 function MaterializationItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }) {
@@ -134,7 +134,7 @@ export function FactoryOverview() {
 			{authorityGates.map((issue) => <AuthorityGateItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
 			{projectGates.map((issue) => <ProjectGateItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
 			{failedWork.map((issue) => <FailedWorkItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
-			{blockedWork.map((issue) => <FactoryDataRow key={issue.id} id={issue.id} epic={epicByID.get(issue.epicId)} title={<strong>{issue.title}</strong>} detail={<><strong>Blocked: a prerequisite failed</strong><span><DispatchExplanation item={issue} /></span></>} actions={<InvestigateUnblockButton issue={issue} />} />)}
+			{blockedWork.map((issue) => <FactoryDataRow key={issue.id} id={issue.id} epic={epicByID.get(issue.epicId)} title={<strong>{issue.title}</strong>} detail={<><strong>Blocked: a prerequisite failed</strong><span><DispatchExplanation item={issue} /></span></>} actions={<DiscussIssueButton issue={issue} />} />)}
 			{materializations.map((issue) => <MaterializationItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
 			{stuck.map((epic) => <FactoryDataRow key={`stuck-${epic.id}`} id={epic.id} idLabel="Epic" title={<strong>{epic.goal}</strong>} detail={<>Stuck: nothing can proceed<span>Closure blocked by: {epic.progress.closureBlockers?.join(', ')}</span></>} actions={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Manage graph</Link>} />)}
 			{prompts.map(({ session, epic, issueID, issueTitle }) => <FactoryDataRow key={session.id} id={issueID} epic={epic} title={<strong>{issueTitle}</strong>} detail={<>Agent is waiting for you: {session.title}<span>{session.pendingPermission ? 'Permission prompt' : 'Question'}</span></>} actions={<Link to={`/session/${encodeURIComponent(session.id)}`}>Answer in session</Link>} />)}

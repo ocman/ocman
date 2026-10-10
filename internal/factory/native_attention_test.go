@@ -84,9 +84,9 @@ func (s *attentionErrorStore) ListFactoryIssues(context.Context, string) ([]mode
 	}
 	return nil, nil
 }
-func (s *attentionErrorStore) SyncFactoryActionInbox(context.Context, string, string, map[string]string) error {
+func (s *attentionErrorStore) SyncFactoryActionInbox(context.Context, string, string, map[string]string) ([]string, error) {
 	s.syncs++
-	return s.syncErr
+	return nil, s.syncErr
 }
 func TestFactoryAttentionReadErrorsPreserveInbox(t *testing.T) {
 	NewNative(&nativeStoreFake{}).reconcileAttention(t.Context())
@@ -116,6 +116,10 @@ func TestReconcileFactoryAttention(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	svc := NewNative(db, testProjectResolver{root: "/repo"})
+	var heard []string
+	svc.OnAttention(func(_ context.Context, epicID string, actions []string) {
+		heard = append(heard, epicID+": "+strings.Join(actions, ","))
+	})
 	ep, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{EpicID: "ship", Goal: "Ship", InitialProject: "/repo", InstantiationID: "once", AcknowledgeLocalExecution: true})
 	if err != nil {
 		t.Fatal(err)
@@ -124,6 +128,10 @@ func TestReconcileFactoryAttention(t *testing.T) {
 	items, err := db.ListInboxItems(t.Context())
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items = %#v, %v", items, err)
+	}
+	svc.reconcileAttention(t.Context())
+	if len(heard) != 1 || !strings.HasPrefix(heard[0], "ship: ") {
+		t.Fatalf("attention heard = %q, want each new decision once", heard)
 	}
 	if err := db.CloseFactoryEpic(t.Context(), ep.ID, true); err != nil {
 		t.Fatal(err)

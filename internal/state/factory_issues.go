@@ -348,6 +348,9 @@ func (d *DB) CloseFactoryEpic(ctx context.Context, epicID string, force bool) er
 	if err := archiveFactorySessionsTx(ctx, tx, now, `epic_id = ?`, epicID); err != nil {
 		return err
 	}
+	if err := archiveFactoryControlSessionTx(ctx, tx, now, epicID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

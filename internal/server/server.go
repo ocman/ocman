@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"golang.org/x/sync/singleflight"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
@@ -181,8 +183,7 @@ type Server struct {
 	// clicked Refresh; see subscriptionUsageTTL.
 	subscriptionUsageCache subscriptionUsageCache
 	factory                factoryService
-	// ponytail: unblock sessions are rare; expire tokens if this map becomes measurable.
-	factoryUnblockTokens sync.Map
+	factoryControlFlight   singleflight.Group // one control session launch per Epic at a time
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 

@@ -47,9 +47,9 @@ func New(deps Deps) *Server {
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
 	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
-	// Keep unblock separate: OpenCode permissions apply per tool, so folding it
+	// Keep control separate: OpenCode permissions apply per tool, so folding it
 	// into factory would either prompt for every action or bypass its approval.
-	for _, tool := range factoryUnblockServerTools(deps.FactoryService) {
+	for _, tool := range factoryControlServerTools(deps.FactoryService) {
 		s.AddTool(tool.Tool, tool.Handler)
 	}
 	addInboxTools(s, &inboxTools{store: deps.InboxStore})
@@ -81,7 +81,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
 	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
-	tools = append(tools, factoryUnblockServerTools(deps.FactoryService)...)
+	tools = append(tools, factoryControlServerTools(deps.FactoryService)...)
 	tools = append(tools, inboxServerTools(&inboxTools{store: deps.InboxStore})...)
 	tools = append(tools, artifactServerTools(&artifactTools{svc: deps.ArtifactService})...)
 	tools = append(tools, routineServerTools(&routineTools{svc: deps.RoutineService})...)

@@ -73,7 +73,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | Tool | Description |
 |------|-------------|
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially on a shared branch; `complete_attempt` records a verified clean, pushed commit checkpoint without `pr_url`. A separate final delivery Issue creates or reuses the review-ready PR and completes with `pr_url`. |
-| `factory_unblock` | Executes a user-approved `reopen` or typed `mutate_graph` action proposed by a read-only Factory unblock session. Ocman configures this tool as `ask`, so OpenCode shows Allow and Reject buttons before execution. |
+| `factory_control` | Proposes a change to an Epic: `reopen`, typed `mutate_graph` (applied without plan approval), `resolve_recovery`, `deliver_as_is`, `pause`, or `resume`, with a one-line `summary`. It only records the proposal; Ocman renders a card under the call and runs the change when the user clicks **Confirm**. |
 | `artifacts` | Publish and inspect project artifacts (reports, screenshots, generated files, links). Actions `help`, `create`, `list`, `get`; there is no delete. `create` needs `directory` and `title`, takes an optional `platform` + `session_id` pair, `files` (`{path}` or `{name, content, mime}`) and `links` (`{url, label}`), and returns the artifact `id`, its ocman UI `url`, item URLs, and a markdown snippet. `list` filters by directory or session and pages with `cursor`/`limit`. Installed skill: `ocman-artifacts`. |
 | `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. Agents should send only asynchronous completions needing attention, blocked decisions, or important failures, not routine progress. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
@@ -145,10 +145,10 @@ planning session or implementation. Re-import after a revision request to submit
 the updated plan. The agent still cannot approve it. See
 [Use an existing plan](../factory/#use-an-existing-plan).
 
-Failed and terminally blocked work can launch a read-only unblock session from
-the Factory action inbox. The agent explains one minimal repair, then invokes
-`factory_unblock`; OpenCode's per-session permission prompt keeps the actual
-reopen or graph mutation behind explicit user approval in the conversation.
+Each Epic has one read-only control session where the user steers it (see
+[Control session](../factory/#control-session)). The agent there explains and
+proposes; every change goes through `factory_control`, whose card keeps it
+behind an explicit user confirmation in the conversation.
 
 > **Upgrade warning:** the native Factory cutover does not migrate legacy
 > Factory runs. Retired YAML Formula tables are kept under `legacy_factory_*`

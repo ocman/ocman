@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -251,79 +250,6 @@ func TestFactoryPlanningLauncherRejectsUnsafeProjectPattern(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "invalid admitted project path") {
 		t.Fatalf("LaunchPlanningSession error = %v", err)
 	}
-}
-
-func TestFactoryUnblockLauncherCreatesReadOnlyConversation(t *testing.T) {
-	endpoint := connectedPlanningMCP(t)
-	var sent platforms.SendMessageRequest
-	var rules platforms.SetPermissionRulesRequest
-	platform := &fakePlatform{id: "local-agent", caps: platforms.Capabilities{PermissionRules: true}}
-	platform.createSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-		return &platforms.CreateSessionResponse{ID: "unblock-1"}, nil
-	}
-	platform.setPermissionRulesFn = func(req platforms.SetPermissionRulesRequest) error { rules = req; return nil }
-	platform.sendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
-	registry := platforms.NewRegistry()
-	registry.Register(platform)
-	srv := New(nil, nil, "", registry, nil)
-	srv.factory = &fakeFactoryService{
-		epics:  []factory.WorkEpic{{ID: "epic-1", Goal: "Ship", Status: "open", InitialProject: "/repo", Projects: []model.EpicProject{{Path: "/repo"}, {Path: "/other", Removable: true}}}},
-		issues: []factory.Issue{{ID: "issue-1", EpicID: "epic-1", Kind: "implementation", Title: "Transport", Status: "closed", Outcome: "failed", OutcomeReason: "merged branch"}},
-	}
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
-	}})
-
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic-1/issues/issue-1/unblock", nil)
-	request.RemoteAddr = "127.0.0.1:1234"
-	mux.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusCreated || !strings.Contains(recorder.Body.String(), `"id":"unblock-1"`) || sent.SessionID != "unblock-1" {
-		t.Fatalf("response = %d %s, sent = %#v", recorder.Code, recorder.Body.String(), sent)
-	}
-	if !strings.Contains(sent.Message, "Allow and Reject buttons") || !strings.Contains(sent.Message, "cannot run before approval") || !strings.Contains(sent.Message, "factory_unblock") || !strings.Contains(sent.Message, "merged branch") {
-		t.Fatalf("prompt = %q", sent.Message)
-	}
-	if !strings.Contains(sent.Message, "before requesting tool permission approval") || strings.Contains(sent.Message, "shown beside graph approval") {
-		t.Fatalf("unblock rationale approval guidance = %q", sent.Message)
-	}
-	if !strings.Contains(sent.Message, "include the Issue title alongside its ID") {
-		t.Fatalf("unblock prompt omits human-readable Issue guidance: %q", sent.Message)
-	}
-	want := platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"}
-	projectRule := platforms.PermissionRule{Permission: "external_directory", Pattern: filepath.Join("/other", "**"), Action: "allow"}
-	if !slices.Contains(rules.Rules, want) || !slices.Contains(rules.Rules, projectRule) || slices.Contains(rules.Rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"}) {
-		t.Fatalf("rules = %#v", rules.Rules)
-	}
-	if !strings.Contains(sent.Message, "/repo") || !strings.Contains(sent.Message, "/other") {
-		t.Fatalf("prompt does not list admitted projects: %q", sent.Message)
-	}
-	var token string
-	srv.factoryUnblockTokens.Range(func(key, _ any) bool { token, _ = key.(string); return false })
-	if token == "" || !srv.consumeFactoryUnblock(token, "epic-1") || srv.consumeFactoryUnblock(token, "epic-1") {
-		t.Fatal("unblock token was not scoped and single-use")
-	}
-
-	// A lost send response may mean the prompt was accepted. Keep its history.
-	platform.disposeFn = func(platforms.DisposeSessionRequest) error {
-		t.Fatal("failed unblock prompt deleted session history")
-		return nil
-	}
-	aborted := false
-	platform.abortFn = func(req platforms.AbortRequest) error { aborted = req.SessionID == "unblock-1"; return nil }
-	platform.sendMessageFn = func(platforms.SendMessageRequest) error { return errors.New("response lost after acceptance") }
-	session, err := srv.launchFactoryUnblockSession(t.Context(), "epic-1", "issue-1")
-	if err == nil || session.ID != "unblock-1" || !aborted {
-		t.Fatalf("failed unblock = %#v, %v, aborted = %v", session, err, aborted)
-	}
-	srv.factoryUnblockTokens.Range(func(_, _ any) bool {
-		t.Error("failed unblock retained its authorization token")
-		return true
-	})
 }
 
 func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *testing.T) {

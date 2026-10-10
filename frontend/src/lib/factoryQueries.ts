@@ -183,8 +183,25 @@ export function useReopenFactoryIssue() {
   return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.reopenFactoryIssue(epicId, issueId), onSuccess: () => invalidateFactoryState(client) });
 }
 
-export function useInvestigateFactoryUnblock() {
-  return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.investigateFactoryUnblock(epicId, issueId) });
+/** The Epic's control session, or null before it is opened. */
+export function useFactoryControl(id: string) {
+  return useQuery({ queryKey: ['factory-control', id], queryFn: ({ signal }) => api.factoryControl(id, signal), enabled: !!id });
+}
+export function useOpenFactoryControl(id: string) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: () => api.openFactoryControl(id), onSuccess: (control) => client.setQueryData(['factory-control', id], control) });
+}
+export function useFactoryControlAction(epicID: string, actionID: string) {
+  return useQuery({ queryKey: ['factory-control-action', epicID, actionID], queryFn: ({ signal }) => api.factoryControlAction(epicID, actionID, signal) });
+}
+export function useDecideFactoryControlAction(epicID: string, actionID: string) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (decision: 'confirm' | 'dismiss') => api.decideFactoryControlAction(epicID, actionID, decision), onSuccess: (action) => { client.setQueryData(['factory-control-action', epicID, actionID], action); invalidateFactoryState(client); } });
+}
+/** Asks the Epic's control session to look into one Issue. */
+export function useDiscussFactoryIssue() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.discussFactoryIssue(epicId, issueId), onSuccess: (control) => client.setQueryData(['factory-control', control.epicId], control) });
 }
 
 /** Moves an open Epic ticket to the project's issue tracker and drops it from the Epic. */

@@ -140,7 +140,7 @@ func factoryHumanActionResult(ctx context.Context, svc factoryService, req mcpli
 		return result
 	}
 	text, ok := result.Content[0].(mcplib.TextContent)
-	if !ok || (text.Text != "factory action is not permitted" && text.Text != "unblock action is not authorized") {
+	if !ok || text.Text != "factory action is not permitted" {
 		return result
 	}
 	epicID, issueID := req.GetString("epic_id", ""), req.GetString("issue_id", "")

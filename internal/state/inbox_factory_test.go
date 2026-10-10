@@ -9,14 +9,20 @@ func TestFactoryActionInboxLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	actions := map[string]string{"review:1": "Review plan\n\n[Review](/factory/epics/ship)"}
-	sync := func(actions map[string]string) {
+	sync := func(actions map[string]string) []string {
 		t.Helper()
-		if err := db.SyncFactoryActionInbox(ctx, "ship", "Factory needs attention: Ship", actions); err != nil {
+		added, err := db.SyncFactoryActionInbox(ctx, "ship", "Factory needs attention: Ship", actions)
+		if err != nil {
 			t.Fatal(err)
 		}
+		return added
 	}
-	sync(actions)
-	sync(actions)
+	if added := sync(actions); len(added) != 1 || added[0] != actions["review:1"] {
+		t.Fatalf("first sync added = %q", added)
+	}
+	if added := sync(actions); len(added) != 0 {
+		t.Fatalf("repeat sync added = %q", added)
+	}
 	items, err := db.ListInboxItems(ctx)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items = %#v, %v; want one action", items, err)

@@ -307,10 +307,10 @@ flowchart TD
    Forge observations satisfy merge-gated cross-project dependencies; a recorded
    merge makes later work create a successor instead of refreshing the Delivery.
    Delivery retries preserve completed implementation Issues.
-   Failed or terminally blocked work can
-   launch a read-only diagnosis session; its scoped `factory_unblock` MCP tool
-   remains permission-gated in the conversation before reopening work or
-   applying a graph mutation. Implementation agents can also pause behind a
+   Each Epic has one read-only control session that receives every new
+   decision Factory needs. Its `factory_control` MCP tool only records proposals
+   (reopen, recovery, deliver as is, graph mutation); the user's Confirm on the
+   rendered card runs them over REST. Implementation agents can also pause behind a
    durable project-admission gate; human REST approval adopts the local project,
    records execution acknowledgement, and launches an additive scoped Plan,
    while rejection resumes the same session with feedback. The browser uses REST
@@ -386,7 +386,7 @@ flowchart TD
   cannot be converted losslessly to one routine prompt, so recovery is a
   manual read-only SQLite export.
 - **internal/mcp.** MCP handlers expose action-based `factory`,
-  permission-gated `factory_unblock`, `inbox`, `webhooks`, and `routines` tools, read-only
+  proposal-only `factory_control`, `inbox`, `webhooks`, and `routines` tools, read-only
   session inspection, and `embed_file`. File embedding uses signed tokens
   persisted in `state.db`.
 - **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and
@@ -788,8 +788,8 @@ flowchart TD
 - **Factory.** `/factory` presents actionable approval Gates, Epics, Issues,
    Queue, and Configuration through TanStack Query. Browser mutations create
    native Epics, pour Mols, decide exact Plan revisions, and explicitly close
-   completed containers. It can also launch a read-only unblock conversation;
-   approved repairs return through the scoped MCP tool. The dispatcher records
+   completed containers. Each Epic links to its control session, where
+   approved changes return through the scoped `factory_control` tool. The dispatcher records
    attempts before launching the prompt-constrained planning or configured
    implementation session.
    Factory MCP results can carry `[[ocman:card ...]]` markers. The tool-call

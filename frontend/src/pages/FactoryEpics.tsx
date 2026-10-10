@@ -16,6 +16,7 @@ import { FactoryImplementationModel } from '../components/FactoryImplementationM
 import { useFactoryImplementationModel } from '../components/useFactoryImplementationModel';
 import { FactoryEpicModels } from '../components/FactoryEpicModels';
 import { FactoryUsage } from '../components/FactoryUsage';
+import { FactoryControlPanel } from '../components/FactoryControlPanel';
 import { useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDeliverFactoryEpicAsIs, useDecideFactoryPlanGate, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryRemovedIssues, useMutateFactoryGraph, useProjects, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryEpic, FactoryFormula, FactoryGraphMutation, FactoryIssue } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
@@ -253,6 +254,7 @@ export function FactoryEpicDetail() {
 		<dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Projects</dt><dd>{(epic.data.projects ?? [{ path: epic.data.initialProject }]).map(({ path }, index) => <span key={path}>{index > 0 && ', '}<ProjectLabel path={path} /></span>)}</dd></div></dl>
     {/* ponytail: every epic action lives here, above the proposal dumps that used to push them off screen. */}
     <section className="factory-epic-actions" aria-label="Epic actions">
+      <FactoryControlPanel epicID={id} closed={epic.data.status === 'closed'} />
       {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate">
         <h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p>
         {gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview changes={changes} />{gatedProposal.rationaleMarkdown && <section className="factory-proposal oc-md" aria-label="Rationale"><h4>Rationale</h4><MarkdownContent text={gatedProposal.rationaleMarkdown} factoryCards={false} /></section>}</div>}

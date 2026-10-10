@@ -12,7 +12,7 @@ import (
 // produces an action notification. Inbox identities survive refresh/restart.
 func (s *NativeService) reconcileAttention(ctx context.Context) {
 	inbox, ok := s.store.(interface {
-		SyncFactoryActionInbox(context.Context, string, string, map[string]string) error
+		SyncFactoryActionInbox(context.Context, string, string, map[string]string) ([]string, error)
 	})
 	if !ok {
 		return
@@ -35,8 +35,13 @@ func (s *NativeService) reconcileAttention(ctx context.Context) {
 			continue
 		}
 		actions := factoryAttention(epic, issues)
-		if err := inbox.SyncFactoryActionInbox(ctx, epic.ID, "Factory needs attention: "+epic.Goal, actions); err != nil {
+		added, err := inbox.SyncFactoryActionInbox(ctx, epic.ID, "Factory needs attention: "+epic.Goal, actions)
+		if err != nil {
 			logrus.WithError(err).WithField("epic", epic.ID).Warn("Factory attention Inbox sync failed")
+			continue
+		}
+		if len(added) > 0 && s.onAttention != nil {
+			s.onAttention(context.WithoutCancel(ctx), epic.ID, added)
 		}
 	}
 }
@@ -72,4 +77,10 @@ func factoryAttention(epic WorkEpic, issues []Issue) map[string]string {
 		add(fmt.Sprintf("stuck:%d", len(epic.Attempts)), "Epic is stuck. Review its work graph.")
 	}
 	return actions
+}
+
+// OnAttention registers who hears about new decisions an Epic needs: the
+// server posts them into the Epic's control session.
+func (s *NativeService) OnAttention(listener func(ctx context.Context, epicID string, actions []string)) {
+	s.onAttention = listener
 }

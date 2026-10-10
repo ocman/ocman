@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,7 +27,7 @@ func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req 
 	return l.launchReadOnlySession(ctx, req, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 }
 
-func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req factory.PlanningSessionRequest, mcpRule platforms.PermissionRule) (factory.PlanningSession, error) {
+func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req factory.PlanningSessionRequest, mcpRules ...platforms.PermissionRule) (factory.PlanningSession, error) {
 	for _, project := range req.Projects {
 		if !filepath.IsAbs(project) || filepath.Clean(project) != project || strings.ContainsAny(project, "*?[") {
 			return factory.PlanningSession{}, fmt.Errorf("invalid admitted project path %q", project)
@@ -80,8 +78,8 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 		platforms.PermissionRule{Permission: "edit", Pattern: "*", Action: "deny"},
 		platforms.PermissionRule{Permission: "task", Pattern: "*", Action: "deny"},
 		platforms.PermissionRule{Permission: "webfetch", Pattern: "*", Action: "deny"},
-		mcpRule,
 	)
+	rules = append(rules, mcpRules...)
 	// Append Epic-level user rules last so they override the profile defaults.
 	for _, r := range req.PermissionRules {
 		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})
@@ -95,59 +93,6 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 		return factory.PlanningSession{}, fmt.Errorf("create bounded Planning Session: %w", err)
 	}
 	return factory.PlanningSession{Platform: platformID, ID: created.ID}, nil
-}
-
-func (s *Server) launchFactoryUnblockSession(ctx context.Context, epicID, issueID string) (factory.PlanningSession, error) {
-	epic, err := s.factory.GetWorkEpic(ctx, epicID)
-	if err != nil {
-		return factory.PlanningSession{}, err
-	}
-	issues, err := s.factory.ListIssues(ctx, epicID)
-	if err != nil {
-		return factory.PlanningSession{}, err
-	}
-	var issue *factory.Issue
-	for i := range issues {
-		if issues[i].ID == issueID {
-			issue = &issues[i]
-			break
-		}
-	}
-	if issue == nil {
-		return factory.PlanningSession{}, factory.ErrInvalidRequest
-	}
-	actionable := issue.DispatchState == string(factory.DispatchBlocked) || (issue.Status == "closed" && (issue.Outcome == "failed" || issue.Outcome == "cancelled"))
-	if !actionable {
-		return factory.PlanningSession{}, factory.ErrInvalidRequest
-	}
-	tokenBytes := make([]byte, 16)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return factory.PlanningSession{}, fmt.Errorf("create unblock token: %w", err)
-	}
-	token := hex.EncodeToString(tokenBytes)
-	launcher := factoryPlanningLauncher{server: s}
-	projects := make([]string, len(epic.Projects))
-	for i, project := range epic.Projects {
-		projects[i] = project.Path
-	}
-	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Projects: projects, Title: "UNBL: " + issue.Title}, platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"})
-	if err != nil {
-		return session, err
-	}
-	s.factoryUnblockTokens.Store(token, epic.ID)
-	evidence, _ := json.Marshal(issue)
-	prompt := fmt.Sprintf("Investigate why Factory Issue %s in Work Epic %s is blocked. The current evidence is:\n\n```json\n%s\n```\n\nInspect the admitted repositories without modifying files:\n- %s\n\nInspect Factory state too. Propose the smallest safe fix, explain it in the conversation, then invoke the factory_unblock MCP tool with that exact action and unblock_token %s. Its permission prompt supplies the user-facing Allow and Reject buttons, and the action cannot run before approval. Supported actions are reopen with epic_id and issue_id, or mutate_graph with epic_id and a strict GraphMutation JSON payload. For graph changes, submit the complete change in one call with action batch, epicId, mutations, and rationaleMarkdown summarizing what changed and why in Markdown. Explain this rationale in the conversation before requesting tool permission approval. After execution, explain what changed and why.", issue.ID, epic.ID, evidence, strings.Join(projects, "\n- "), token)
-	prompt += "\n\n" + factoryIssueProse
-	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt}); err != nil {
-		s.factoryUnblockTokens.Delete(token)
-		_ = launcher.StopPlanningSession(context.WithoutCancel(ctx), session)
-		return session, fmt.Errorf("prompt unblock session: %w", err)
-	}
-	return session, nil
-}
-
-func (s *Server) consumeFactoryUnblock(token, epicID string) bool {
-	return s.factoryUnblockTokens.CompareAndDelete(token, epicID)
 }
 
 func factoryExternalDirectoryRules() []platforms.PermissionRule {

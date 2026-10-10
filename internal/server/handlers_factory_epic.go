@@ -104,15 +104,27 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if len(parts) == 4 && parts[1] == "issues" && parts[3] == "unblock" && r.Method == http.MethodPost {
+	if len(parts) == 4 && parts[1] == "issues" && parts[3] == "discuss" && r.Method == http.MethodPost {
 		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
-			session, err := s.launchFactoryUnblockSession(r.Context(), parts[0], parts[2])
+			control, err := s.discussFactoryIssue(r.Context(), parts[0], parts[2])
 			if err != nil {
 				writeFactoryError(w, err)
 				return
 			}
-			writeJSONStatus(w, http.StatusCreated, session)
+			writeJSONStatus(w, http.StatusCreated, control)
 		})(w, r)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "control" {
+		s.handleFactoryControl(w, r, parts[0])
+		return
+	}
+	if (len(parts) == 3 || len(parts) == 4) && parts[1] == "control-actions" {
+		verb := ""
+		if len(parts) == 4 {
+			verb = parts[3]
+		}
+		s.handleFactoryControlAction(w, r, parts[0], parts[2], verb)
 		return
 	}
 	if len(parts) == 4 && parts[1] == "issues" && parts[3] == "transfer" && r.Method == http.MethodPost {
@@ -120,7 +132,9 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 5 && parts[1] == "issues" && parts[3] == "transfer" && parts[4] == "cancel" && r.Method == http.MethodPost {
-		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleFactoryIssueTransferCancel(w, r, parts[0], parts[2]) })(w, r)
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			s.handleFactoryIssueTransferCancel(w, r, parts[0], parts[2])
+		})(w, r)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "removed-issues" && r.Method == http.MethodGet {

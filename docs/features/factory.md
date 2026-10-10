@@ -13,6 +13,27 @@ sidebar never polls the Epic list; regular conversations no longer poll it eithe
 The default **Always show prompts** toggle keeps sessions awaiting permission or
 an answer visible even when Factory sessions are filtered out.
 
+## Control session
+
+Factory agents implement and report; the user decides. Each Epic has one
+**control session**, opened from **Start control session** on the Epic page, where you
+steer it in plain language. It is a read-only conversation in the Epic project
+that can read the Epic and every admitted repository.
+
+Every new decision Factory needs (plan approval, a recovery question, failed
+or blocked work, a stuck Epic) is also posted there, queued behind any turn in
+progress, and the session explains it and recommends what to do. **Ask control
+session** on failed or blocked work in the action inbox posts that Issue's state
+and opens the conversation.
+
+The session changes nothing itself. It proposes through the `factory_control`
+MCP tool (reopen work, edit the graph without plan approval, resolve a recovery
+gate, deliver as is, or pause and resume), and Ocman shows each proposal as a
+card with **Confirm** and **Dismiss**. Only your click runs it, once, and the
+outcome is posted back to the session. A control session that no longer exists
+is replaced, and closing the Epic archives it. Plan approval stays on the Plan
+approval card.
+
 ## Cost and token usage
 
 The Epic page shows input, output, cache-read and cache-write tokens, recorded
@@ -47,7 +68,7 @@ remote-host projects are not supported. A secondary project can be removed only
 before work or Delivery history exists for it, and the Epic project cannot be
 removed.
 
-Planning and unblock sessions start in the Epic project and may read every
+Planning and control sessions start in the Epic project and may read every
 admitted project, but no other external project. Each executable Issue has one
 project target, shown in Issue and queue views. A plan or graph mutation may set
 the target explicitly; an omitted target inherits the Epic project, and a target

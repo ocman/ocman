@@ -4,6 +4,11 @@ import { sessionApi } from './api.sessions';
 import { hostApi } from './api.host';
 import type { CachedProjectSettings } from './projectSettingsCache';
 import type { UsageDay } from './uiUsage';
+
+/** An Epic's control session: the one conversation where the user steers Factory. */
+export interface FactoryControlSession { epicId: string; platform: string; sessionId: string }
+/** A change the control session proposed; it runs only when the user confirms. */
+export interface FactoryControlAction { id: string; epicId: string; action: string; summary: string; status: 'pending' | 'confirmed' | 'dismissed' | 'done' | 'failed'; result?: string }
 import type {
   WebhookDelivery, WebhookInbox, WebhookSubscription, ClientActivity, Stats, MetricsPerformance,
   AnalyticsOverview, DatabaseSizeSample, SubscriptionUsageResponse, MetricsLog, MetricsLogKind,
@@ -75,8 +80,22 @@ export const api = {
     postJSON<FactoryMaterialization, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
   reopenFactoryIssue: (id: string, issueID: string) =>
     postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/reopen`, undefined),
-  investigateFactoryUnblock: (id: string, issueID: string) =>
-    postJSON<{ platform: string; id: string }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/unblock`, undefined),
+  factoryControl: async (id: string, signal?: AbortSignal): Promise<FactoryControlSession | null> => {
+    try {
+      return await fetchJSON<FactoryControlSession>(`/api/factory/epics/${encodeURIComponent(id)}/control`, signal);
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) return null;
+      throw error;
+    }
+  },
+  openFactoryControl: (id: string) =>
+    postJSON<FactoryControlSession, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/control`, undefined),
+  factoryControlAction: (id: string, actionID: string, signal?: AbortSignal) =>
+    fetchJSON<FactoryControlAction>(`/api/factory/epics/${encodeURIComponent(id)}/control-actions/${encodeURIComponent(actionID)}`, signal),
+  decideFactoryControlAction: (id: string, actionID: string, decision: 'confirm' | 'dismiss') =>
+    postJSON<FactoryControlAction, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/control-actions/${encodeURIComponent(actionID)}/${decision}`, undefined),
+  discussFactoryIssue: (id: string, issueID: string) =>
+    postJSON<FactoryControlSession, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/discuss`, undefined),
   transferFactoryIssue: (id: string, issueID: string) =>
     postJSON<{ url: string }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/transfer`, undefined),
   cancelFactoryIssueTransfer: (id: string, issueID: string) =>

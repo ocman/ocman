@@ -42,6 +42,7 @@ type fakeFactoryService struct {
 	err               error
 	reopenedEpicID    string
 	reopenedIssueID   string
+	controlCalls      []string
 }
 
 func (f *fakeFactoryService) ReopenIssue(_ context.Context, epicID, issueID string) error {
@@ -49,42 +50,36 @@ func (f *fakeFactoryService) ReopenIssue(_ context.Context, epicID, issueID stri
 	return f.err
 }
 
-func (*fakeFactoryService) ConsumeFactoryUnblock(token, epicID string) bool {
-	return token == "unblock-token" && epicID == "epic-1"
-}
-
 func (f *fakeFactoryService) MutateGraph(_ context.Context, mutation factory.GraphMutation) error {
 	f.mutation = mutation
 	return f.err
 }
 
-func (f *fakeFactoryService) MutateFactoryUnblock(ctx context.Context, mutation factory.GraphMutation) error {
-	return f.MutateGraph(ctx, mutation)
+func (f *fakeFactoryService) ProposeFactoryControl(_ context.Context, epicID, action string, args map[string]string, summary string) (string, error) {
+	f.controlCalls = append(f.controlCalls, fmt.Sprintf("%s:%s:%v:%s", epicID, action, args, summary))
+	return "fca_1", f.err
 }
 
-func TestFactoryUnblockToolExecutesApprovedOcmanActions(t *testing.T) {
+func TestFactoryControlToolOnlyProposes(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if got := callTool(t, srv, "factory_unblock", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "issue-1", "unblock_token": "unblock-token"}); got.IsError {
-		t.Fatalf("reopen failed: %s", resultText(got))
+	got := callTool(t, srv, "factory_control", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "epic-1.3", "summary": "Run the tests again"})
+	if got.IsError || len(got.Content) != 2 || !strings.Contains(resultText(got), "awaiting_confirmation") {
+		t.Fatalf("proposal = %#v", got)
 	}
-	if svc.reopenedEpicID != "epic-1" || svc.reopenedIssueID != "issue-1" {
-		t.Fatalf("reopened = %q/%q", svc.reopenedEpicID, svc.reopenedIssueID)
+	card := got.Content[1].(mcplib.TextContent).Text
+	if !strings.Contains(card, "[[ocman:card type=factory-issue epic=epic-1 issue=fca_1 action=control]]") || !strings.Contains(card, "Do not repeat") {
+		t.Fatalf("card = %q", card)
 	}
-
-	mutation := `{"action":"unlink","issueId":"issue-2","dependsOnId":"issue-1","dependencyType":"blocks"}`
-	if got := callTool(t, srv, "factory_unblock", map[string]any{"action": "mutate_graph", "epic_id": "epic-1", "mutation_json": mutation, "unblock_token": "unblock-token"}); got.IsError {
-		t.Fatalf("mutation failed: %s", resultText(got))
+	if want := []string{"epic-1:reopen:map[issue_id:epic-1.3]:Run the tests again"}; !reflect.DeepEqual(svc.controlCalls, want) || svc.reopenedIssueID != "" {
+		t.Fatalf("calls = %q, reopened %q", svc.controlCalls, svc.reopenedIssueID)
 	}
-	if svc.mutation.EpicID != "epic-1" || svc.mutation.Actor != "mcp_unblock" || svc.mutation.Action != "unlink" {
-		t.Fatalf("mutation = %#v", svc.mutation)
-	}
-	if got := callTool(t, srv, "factory_unblock", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "issue-1", "unblock_token": "wrong"}); !got.IsError || resultText(got) != "unblock action is not authorized" {
-		t.Fatalf("unauthorized result = %#v", got)
+	svc.err = errors.New("summary is required")
+	if got := callTool(t, srv, "factory_control", map[string]any{"action": "pause", "epic_id": "epic-1"}); !got.IsError {
+		t.Fatal("rejected proposal reported success")
 	}
 }
 
@@ -333,10 +328,6 @@ func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 	}
 	if svc.reopenedEpicID != "" {
 		t.Fatal("denied MCP call reopened work")
-	}
-	got := callTool(t, srv, "factory_unblock", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "epic-1.3", "unblock_token": "wrong"})
-	if !got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "[[ocman:card type=factory-issue epic=epic-1 issue=epic-1.3 action=reopen]]") {
-		t.Fatalf("unblock denial = %#v", got)
 	}
 }
 
