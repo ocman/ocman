@@ -13,6 +13,7 @@ const staleFactoryVerificationsSQL = `SELECT v.id FROM factory_issue v
 	WHERE v.epic_id = ? AND v.kind = 'task' AND v.status = 'closed' AND v.outcome = 'succeeded'
 	AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = v.id)
 	AND json_type(p.manifest_json, '$.issues') = 'array'
+	AND NOT EXISTS (SELECT 1 FROM factory_external_mapping m WHERE m.system = 'factory' AND m.external_kind = 'verification_waiver' AND m.entity_kind = 'issue' AND m.entity_id = v.id AND m.external_id = v.id || '@' || g.proposal_revision)
 	AND g.proposal_revision <> COALESCE((SELECT json_extract(a.frozen_policy_json, '$.planRevision') FROM factory_attempt a
 		WHERE a.work_item_id = v.id AND a.terminal_outcome = 'succeeded' ORDER BY a.sequence DESC LIMIT 1), 0)`
 

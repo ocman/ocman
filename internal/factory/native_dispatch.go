@@ -147,6 +147,9 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		if request.Verification {
 			request.Criteria = verificationCriteriaFromIssues(attempt.LaunchIssues, repository)
 		}
+		if request.Delivery {
+			request.LeftOut = leftOutIssues(attempt.LaunchIssues, repository)
+		}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {

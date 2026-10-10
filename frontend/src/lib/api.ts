@@ -101,6 +101,8 @@ export const api = {
     postJSON<FactoryPlanGate, FactoryPlanGateDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan-gate/${action}`, request),
   factoryCloseMol: (id: string, molID: string) =>
     postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/mols/${encodeURIComponent(molID)}/close`, undefined, { parseJSON: false }),
+  factoryDeliverAsIs: (id: string) =>
+    postJSON<{ leftOut: string[] }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/deliver-as-is`, undefined),
   factoryCloseEpic: (id: string, force: boolean) =>
     postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/close${force ? '?force=true' : ''}`, undefined, { parseJSON: false }),
   factorySetEpicPaused: (id: string, paused: boolean) =>

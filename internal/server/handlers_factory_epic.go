@@ -176,6 +176,24 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		})(w, r)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "deliver-as-is" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			deliverer, ok := s.factory.(interface {
+				DeliverAsIs(context.Context, string) ([]string, error)
+			})
+			if !ok {
+				writeFactoryError(w, factory.ErrFactoryUnavailable)
+				return
+			}
+			leftOut, err := deliverer.DeliverAsIs(r.Context(), parts[0])
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSON(w, map[string]any{"leftOut": leftOut})
+		})(w, r)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "close" && r.Method == http.MethodPost {
 		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
 			closer, ok := s.factory.(interface {

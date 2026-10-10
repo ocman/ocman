@@ -312,6 +312,7 @@ type ImplementationSessionRequest struct {
 	Verification                                                                                    bool
 	Prompt                                                                                          string
 	Criteria                                                                                        string // verification only: approved Issues and their acceptance criteria
+	LeftOut                                                                                         string // delivery only: Issues the user left out when delivering as is
 	Model                                                                                           string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
 	Projects                                                                                        []string

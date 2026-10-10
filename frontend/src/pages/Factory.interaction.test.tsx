@@ -57,6 +57,7 @@ vi.mock('../lib/api', () => ({ fetchJSON: vi.fn().mockResolvedValue({ total: { t
 		factoryCloseMol: vi.fn(),
 		factoryCloseEpic: vi.fn(),
 		factorySetEpicPaused: vi.fn(),
+		factoryDeliverAsIs: vi.fn(),
    factoryFormula: vi.fn(),
    factoryFormulas: vi.fn(),
    validateFactoryFormula: vi.fn(),
@@ -850,6 +851,30 @@ describe('Factory interactions', () => {
 		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 		await user.click(await screen.findByRole('button', { name: label }));
 		expect(await screen.findByRole('button', { name: pendingLabel })).toBeDisabled();
+	});
+
+	it('delivers an epic as is after confirmation and reports what was left out', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', progress: { requiredTotal: 3, requiredSucceeded: 2, optionalOpen: 0, deliveryStatus: 'pending' } } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([]);
+		vi.mocked(api.factoryDeliverAsIs).mockResolvedValue({ leftOut: ['epic-1.1.3.4'] });
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		const button = await screen.findByRole('button', { name: 'Deliver as is' });
+		await user.click(button);
+		expect(api.factoryDeliverAsIs).not.toHaveBeenCalled();
+		await user.click(button);
+		expect(api.factoryDeliverAsIs).toHaveBeenCalledWith('epic-1');
+		expect(await screen.findByText('Delivering as is. Left out: epic-1.1.3.4.')).toBeInTheDocument();
+		confirm.mockRestore();
+	});
+
+	it('offers delivery as is only for pending deliveries with completed work', async () => {
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', progress: { requiredTotal: 3, requiredSucceeded: 3, optionalOpen: 0, deliveryStatus: 'ready_for_review' } } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([]);
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		expect(await screen.findByRole('button', { name: 'Pause epic' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Deliver as is' })).not.toBeInTheDocument();
 	});
 
 	it('keeps closing feedback visible through both container and epic requests', async () => {

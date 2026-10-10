@@ -415,6 +415,15 @@ closed. An active validator can finish its current scope, but Factory runs a
 fresh verification of the approved amendment before delivery, even if the new
 task leaves the commit checkpoint unchanged.
 
+Verification can keep finding new gaps. **Deliver as is** on the Epic page ends
+that loop: Factory stops a running validator and any work paused for a
+recovery decision, accepts a pending graph amendment, leaves every unfinished
+implementation Issue out of the Epic (it stays visible as deferred), and
+waives verification of the current graph revision. Delivery then runs and
+lists the left-out Issues under "Not done" in the pull request, so you can
+finish or revise the delivery branch yourself. Other running implementation
+work must finish first. A later approved amendment needs verification again.
+
 Any open task Issue can leave the Epic instead: **Transfer to issue tracker**
 in the Issue drawer opens a GitHub or Forgejo issue in the project's
 repository (preferring `origin`) with the ticket's title and description,

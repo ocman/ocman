@@ -10,6 +10,10 @@ var nativeFormulaKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 
 func ValidNativeFormulaKey(key string) bool { return nativeFormulaKey.MatchString(key) }
 
+// DeliveredAsIsReason marks implementation work the user left out of a
+// delivery; the delivery session lists these Issues in the pull request.
+const DeliveredAsIsReason = "Left out: delivered as is"
+
 var (
 	ErrNativeEpicNotFound          = errors.New("factory epic not found")
 	ErrNativeInstantiationConflict = errors.New("factory instantiation conflict")

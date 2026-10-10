@@ -331,6 +331,9 @@ All required implementation Issues have completed.
 Factory protocol: Search the forge for an existing open pull request from this exact branch into the target branch before creating one; reuse it on retries. Create the final pull request if none exists and mark it ready for review. Never merge it or reuse a merged/closed pull request. If the branch was merged or changed unexpectedly, request recovery instead of guessing.
 
 Leave the worktree clean and pushed, then call factory complete_attempt with attempt_id %s, attempt_token %s, summary describing the delivery checks, and pr_url set to the final pull request URL. Factory validates the branch, target, and HEAD. If delivery is blocked, use request_recovery with the same attempt credentials.`, req.EpicID, req.Branch, req.TargetBranch, body, req.AttemptID, req.AgentToken)
+		if req.LeftOut != "" {
+			prompt = strings.Replace(prompt, "All required implementation Issues have completed.", "The user chose to deliver as is: verification was waived and this work was left out. Add a \"Not done\" section to the pull request description listing each of these with one line on what is missing (read them with factory issues):\n"+req.LeftOut, 1)
+		}
 	}
 	model := req.Model
 	if req.Verification {

@@ -213,6 +213,10 @@ func (f *fakeFactoryService) CloseEpic(_ context.Context, epicID string, force b
 	f.closedEpicForce = force
 	return f.err
 }
+func (f *fakeFactoryService) DeliverAsIs(_ context.Context, epicID string) ([]string, error) {
+	f.closedEpicID = epicID
+	return []string{epicID + ".1.3.9"}, f.err
+}
 func (f *fakeFactoryService) SetEpicPaused(_ context.Context, epicID string, paused bool) error {
 	f.pausedEpicID, f.paused = epicID, paused
 	return f.err
@@ -347,6 +351,13 @@ func TestFactoryEpicRoutes(t *testing.T) {
 		if rec.Code != http.StatusNoContent || svc.pausedEpicID != "fac-1" || svc.paused != tt.paused {
 			t.Fatalf("%s epic = %d, %q/%v: %s", tt.action, rec.Code, svc.pausedEpicID, svc.paused, rec.Body.String())
 		}
+	}
+	deliver := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-2/deliver-as-is", nil)
+	deliver.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, deliver)
+	if rec.Code != http.StatusOK || svc.closedEpicID != "fac-2" || !strings.Contains(rec.Body.String(), `"leftOut":["fac-2.1.3.9"]`) {
+		t.Fatalf("deliver as is = %d: %s", rec.Code, rec.Body.String())
 	}
 	badForce := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/close?force=maybe", nil)
 	badForce.RemoteAddr = "127.0.0.1:1"
@@ -568,6 +579,7 @@ func TestFactoryRoutesSanitizeServiceFailures(t *testing.T) {
 		{http.MethodPost, "/api/factory/epics/fac-1/mutations", `{"action":"edit","issueId":"work","title":"Rename"}`},
 		{http.MethodPost, "/api/factory/epics/fac-1/pour", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/close", ""},
+		{http.MethodPost, "/api/factory/epics/fac-1/deliver-as-is", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/pause", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/resume", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/mols/mol-1/close", ""},

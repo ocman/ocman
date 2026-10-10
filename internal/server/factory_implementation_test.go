@@ -286,6 +286,16 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 				t.Fatalf("delivery prompt missing %q: %s", text, sent.Message)
 			}
 		}
+		if strings.Contains(sent.Message, "Not done") {
+			t.Fatal("full delivery mentions left-out work")
+		}
+		request.LeftOut = "- Yet another gap (epic-1.1.3.9)\n"
+		if err := (factoryImplementationLauncher{server: srv}).PromptImplementationSession(ctx, got, request); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(sent.Message, `"Not done" section`) || !strings.Contains(sent.Message, "Yet another gap (epic-1.1.3.9)") || strings.Contains(sent.Message, "All required implementation Issues have completed") {
+			t.Fatalf("delivered-as-is prompt = %s", sent.Message)
+		}
 	})
 
 	t.Run("validates the PR branch and pushed HEAD", func(t *testing.T) {

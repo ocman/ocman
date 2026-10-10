@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from './App';
-import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useCancelFactoryIssueTransfer, useSetFactoryEpicPaused, useTransferFactoryIssue, useWorkEpic, useWorkEpics } from './lib/queries';
+import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useDeliverFactoryEpicAsIs, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useCancelFactoryIssueTransfer, useSetFactoryEpicPaused, useTransferFactoryIssue, useWorkEpic, useWorkEpics } from './lib/queries';
 
 vi.mock('./lib/queries', () => ({
   inboxEventRefresh: () => () => {},
@@ -27,6 +27,7 @@ vi.mock('./lib/queries', () => ({
 	useCloseFactoryMol: vi.fn(),
 	useCloseFactoryEpic: vi.fn(),
 	useSetFactoryEpicPaused: vi.fn(),
+	useDeliverFactoryEpicAsIs: vi.fn(),
 	useFactoryFormula: vi.fn(),
   useFactoryFormulas: vi.fn(),
   useProjects: vi.fn(),
@@ -59,6 +60,7 @@ beforeEach(() => {
 	vi.mocked(useCloseFactoryMol).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
 	vi.mocked(useCloseFactoryEpic).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
 	vi.mocked(useSetFactoryEpicPaused).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as never);
+	vi.mocked(useDeliverFactoryEpicAsIs).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, isSuccess: false } as never);
 	vi.mocked(useFactoryFormula).mockReturnValue({ data: { id: 'ocman/tracer', version: 1, name: 'Tracer', source: '', hash: 'hash', sourceHash: 'source-hash', inputs: [], nodes: [], edges: [], valid: true }, isLoading: false, isError: false, refetch: vi.fn() } as never);
 	vi.mocked(useFactoryFormulas).mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() } as never);
   vi.mocked(useProjects).mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() } as never);

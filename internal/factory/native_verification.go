@@ -275,3 +275,15 @@ func foldAcceptanceCriteria(node *ManifestNode) error {
 	node.Description = strings.TrimSpace(node.Description + "\n\nAcceptance criteria:" + list.String())
 	return nil
 }
+
+// leftOutIssues lists the work a user left out by delivering as is, so the
+// pull request says what was not done.
+func leftOutIssues(issues []model.NativeIssue, project string) string {
+	var out strings.Builder
+	for _, issue := range issues {
+		if issue.Status == "deferred" && issue.OutcomeReason == model.DeliveredAsIsReason && issue.Project == project {
+			fmt.Fprintf(&out, "- %s (%s)\n", issue.Title, issue.ID)
+		}
+	}
+	return out.String()
+}
