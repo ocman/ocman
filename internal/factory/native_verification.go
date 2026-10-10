@@ -99,16 +99,23 @@ func (s *NativeService) gateVerification(ctx context.Context, attempt model.Fact
 	runCtx, cancel := context.WithTimeout(context.Background(), verificationChecksTimeout)
 	// Exit tracking outlives the check entry: whoever cancels the run can
 	// still wait for its result message until the worker itself is gone.
+	// A rerun chains behind the previous worker: it starts only after that
+	// worker exits and closes its own channel later still, so the newest
+	// channel being closed means every earlier result message is done too.
 	exited := make(chan struct{})
 	if s.checkExits == nil {
 		s.checkExits = map[string]chan struct{}{}
 	}
+	previous := s.checkExits[attempt.ID]
 	s.checkExits[attempt.ID] = exited
 	s.checks[attempt.ID] = verificationCheck{head: head, cancel: cancel}
 	s.dispatchWG.Add(1)
 	go func() {
 		defer s.dispatchWG.Done()
 		defer func() {
+			if previous != nil {
+				<-previous
+			}
 			s.checksMu.Lock()
 			if s.checkExits[attempt.ID] == exited {
 				delete(s.checkExits, attempt.ID)
@@ -117,6 +124,18 @@ func (s *NativeService) gateVerification(ctx context.Context, attempt model.Fact
 			close(exited)
 		}()
 		defer cancel()
+		if previous != nil {
+			select {
+			case <-previous:
+			case <-runCtx.Done():
+				s.checksMu.Lock()
+				if run, ok := s.checks[attempt.ID]; ok && run.head == head && !run.done {
+					delete(s.checks, attempt.ID) // never ran: nobody is owed a result
+				}
+				s.checksMu.Unlock()
+				return
+			}
+		}
 		// Shutdown kills the command tree instead of orphaning it.
 		go func() {
 			select {

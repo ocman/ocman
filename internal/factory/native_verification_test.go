@@ -465,3 +465,59 @@ func TestCancelVerificationChecksWaitsForTheRun(t *testing.T) {
 	close(exited)
 	<-retry
 }
+
+// A rerun cannot hide an older worker whose result message is still in
+// flight: cancelling waits for every earlier worker too.
+func TestCancelVerificationChecksWaitsForAnOlderWorkerAfterARerun(t *testing.T) {
+	checker := &checkerFake{passed: false, notified: make(chan struct{})} // unbuffered: notify blocks
+	s := verificationService([]string{"make test"}, checker)
+	s.stop = make(chan struct{})
+	released := make(chan struct{})
+	t.Cleanup(func() {
+		close(released)
+		s.dispatchWG.Wait()
+	})
+	go func() { // drain blocked messages once the test is over, even on failure
+		<-released
+		for {
+			select {
+			case <-checker.notified:
+			case <-time.After(time.Second):
+				return
+			}
+		}
+	}()
+	if _, err := s.gateVerification(t.Context(), verificationAttempt(), "abc"); !errors.Is(err, ErrVerificationChecksPending) {
+		t.Fatal(err)
+	}
+	// Consume the failed result while its message is still being delivered.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := s.gateVerification(t.Context(), verificationAttempt(), "abc")
+		if errors.Is(err, ErrInvalidRequest) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("failed result never published: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := s.gateVerification(t.Context(), verificationAttempt(), "abc"); !errors.Is(err, ErrVerificationChecksPending) {
+		t.Fatalf("rerun = %v", err)
+	}
+	done := s.cancelVerificationChecks("att-1")
+	select {
+	case <-done:
+		t.Fatal("cancel returned while the first worker's message was in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+	<-checker.notified // the first worker's message finally lands
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancel never finished")
+	}
+	if checker.runs != 1 {
+		t.Fatalf("runs = %d: the cancelled rerun should never have started", checker.runs)
+	}
+}
