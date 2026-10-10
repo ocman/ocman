@@ -42,12 +42,6 @@ type fakeFactoryService struct {
 	err               error
 	reopenedEpicID    string
 	reopenedIssueID   string
-	followUpAttempt   []string
-}
-
-func (f *fakeFactoryService) AddVerificationFollowUps(_ context.Context, attemptID, token string, mutation factory.GraphMutation) ([]string, error) {
-	f.followUpAttempt, f.mutation = []string{attemptID, token}, mutation
-	return []string{"epic-1.1.3.1"}, f.err
 }
 
 func (f *fakeFactoryService) ReopenIssue(_ context.Context, epicID, issueID string) error {
@@ -395,10 +389,6 @@ func TestFactoryToolMutateGraphUsesStrictInput(t *testing.T) {
 	batch := `{"action":"batch","epicId":"epic-1","rationaleMarkdown":"## Changes\nAdd coverage.\n\n## Why\nMissing cases.","mutations":[{"action":"create","parentId":"epic-1.1","kind":"task","title":"Coverage"}]}`
 	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": batch}); got.IsError || len(svc.mutation.Mutations) != 1 || svc.mutation.RationaleMarkdown == "" || svc.mutation.Actor != "mcp" {
 		t.Fatalf("batch = %q, %#v", resultText(got), svc.mutation)
-	}
-	svc.mutation = factory.GraphMutation{}
-	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": batch, "attempt_id": "fa-1", "attempt_token": "tok"}); got.IsError || strings.Contains(resultText(got), "approve_plan") || !strings.Contains(resultText(got), "follow_ups_created") || !reflect.DeepEqual(svc.followUpAttempt, []string{"fa-1", "tok"}) || svc.mutation.Actor != "" {
-		t.Fatalf("validator follow-ups = %q, %#v", resultText(got), svc.mutation)
 	}
 	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"batch","epicId":"epic-1","mutations":[{"action":"delete","unexpected":true}]}`}); !got.IsError {
 		t.Fatal("unknown batch fields accepted")

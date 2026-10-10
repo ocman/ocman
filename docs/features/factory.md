@@ -415,17 +415,6 @@ closed. An active validator can finish its current scope, but Factory runs a
 fresh verification of the approved amendment before delivery, even if the new
 task leaves the commit checkpoint unchanged.
 
-A failing validator does not need approval for fixes within the approved
-design. It calls `mutate_graph` with its own `attempt_id` and `attempt_token`
-and a batch that only creates required `task` or `implementation` Issues under
-the implementation phase; an omitted project defaults to the repository being
-verified. Factory stops the validator session first (a failed stop changes
-nothing), then adds the tickets, ends the verification attempt, records the rationale as a comment on the verification
-step, and runs a fresh verification once the tickets succeed. Validators use
-`request_recovery` only when a human must decide: the approved design is
-wrong, or the failure lies outside the code. These calls are refused while
-another graph revision awaits approval.
-
 Any open task Issue can leave the Epic instead: **Transfer to issue tracker**
 in the Issue drawer opens a GitHub or Forgejo issue in the project's
 repository (preferring `origin`) with the ticket's title and description,

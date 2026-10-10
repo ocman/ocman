@@ -203,7 +203,7 @@ func (s *NativeService) nudgeRestartedValidators(ctx context.Context, alive []mo
 }
 
 func verificationResultMessage(attemptID, head string, passed bool, report string) string {
-	verdict, next := "FAILED", "Do not claim success. Turn the failures into follow-up tickets with mutate_graph, passing attempt_id "+attemptID+" and the same attempt_token, or call request_recovery with them when a human must decide."
+	verdict, next := "FAILED", "Do not claim success. Call request_recovery with attempt_id "+attemptID+" and the same attempt_token, and summarize which checks and acceptance criteria failed."
 	if passed {
 		verdict, next = "PASSED", "Weigh these results together with your own review. If every acceptance criterion holds, call complete_attempt again with attempt_id "+attemptID+" and the same attempt_token, listing each acceptance criterion as PASS or FAIL in the summary. Otherwise call request_recovery."
 	}

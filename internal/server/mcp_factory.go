@@ -28,16 +28,6 @@ func (s factoryMCPService) MutateGraph(ctx context.Context, mutation factory.Gra
 	return s.factoryService.MutateGraph(ctx, mutation)
 }
 
-func (s factoryMCPService) AddVerificationFollowUps(ctx context.Context, attemptID, token string, mutation factory.GraphMutation) ([]string, error) {
-	service, ok := s.factoryService.(interface {
-		AddVerificationFollowUps(context.Context, string, string, factory.GraphMutation) ([]string, error)
-	})
-	if !ok {
-		return nil, factory.ErrActionNotPermitted
-	}
-	return service.AddVerificationFollowUps(ctx, attemptID, token, mutation)
-}
-
 func (s factoryMCPService) SubmitScopePlan(ctx context.Context, req factory.SubmitProposalRequest) (factory.ProposalRevision, error) {
 	service, ok := s.factoryService.(interface {
 		SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
