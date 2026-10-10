@@ -324,18 +324,27 @@ func TestEnsureProjectOpencode_StaleRelaunch(t *testing.T) {
 	}
 }
 
-// TestEnsureProjectOpencode_NonRepo: a directory that is not a git repo
-// returns git.ErrNotARepo and launches nothing.
+// A new project can launch before Git is initialized.
 func TestEnsureProjectOpencode_NonRepo(t *testing.T) {
 	dir := t.TempDir() // not a git repo
 	rt := &fakeRuntime{}
 	h := New(Deps{Runtime: rt})
-	_, err := h.EnsureProjectOpencode(context.Background(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
-	if !errors.Is(err, git.ErrNotARepo) {
-		t.Fatalf("err = %v; want git.ErrNotARepo", err)
+	res, err := h.EnsureProjectOpencode(context.Background(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if rt.launchCount() != 0 {
-		t.Errorf("launched %d times for a non-repo; want 0", rt.launchCount())
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.launchCount() != 1 || res.RepoRoot != root {
+		t.Fatalf("launches=%d, root=%q; want 1, %q", rt.launchCount(), res.RepoRoot, root)
+	}
+	if _, err := h.EnsureProjectOpencode(context.Background(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	if rt.launchCount() != 1 {
+		t.Fatalf("launched %d times; want existing instance reused", rt.launchCount())
 	}
 }
 

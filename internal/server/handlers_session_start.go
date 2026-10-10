@@ -34,10 +34,9 @@ import (
 // opencode there while Create targets the hub.
 //
 // A remote ensure failure is fatal: the remote has no discovery fallback,
-// so Create would fail anyway. A local ensure failure is soft — a non-repo
-// directory (or a host that can't launch) can't be ensured, but discovery
-// may still find a usable instance. Returns ok=false after writing the
-// HTTP error.
+// so Create would fail anyway. A local ensure failure is soft: a host that
+// can't launch may still discover a usable instance. Returns ok=false after
+// writing the HTTP error.
 // resolveDraftOwner checks that the platform's owner is connected and the
 // platform known, writing the rejection otherwise.
 func (s *Server) resolveDraftOwner(w http.ResponseWriter, platform, directory string) bool {

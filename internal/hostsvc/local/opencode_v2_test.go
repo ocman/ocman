@@ -100,8 +100,12 @@ func TestV2EnsureLaunchesOneMachineServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure non-repo: %v", err)
 	}
-	if resP.RepoRoot != plain {
-		t.Errorf("non-repo RepoRoot = %q; want %q", resP.RepoRoot, plain)
+	wantPlain, err := filepath.EvalSymlinks(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resP.RepoRoot != wantPlain {
+		t.Errorf("non-repo RepoRoot = %q; want %q", resP.RepoRoot, wantPlain)
 	}
 }
 
