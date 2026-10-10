@@ -98,7 +98,7 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 		}
 	}
 	artifactsSource := strings.ToLower(string(skills["ocman-artifacts"]))
-	for _, required := range []string{"artifacts", `{"action":"help"}`, `{"action":"create","directory"`, "session_id", "screenshot", "permalink", "commit sha"} {
+	for _, required := range []string{"artifacts", `{"action":"help"}`, `{"action":"create","directory"`, "session_id", "screenshot", "permalink", "commit sha", "reading", `{"action":"list","directory"`, `{"action":"get","artifact_id"`, "items[].url", "original folders", "next_cursor", "origin", "metadata"} {
 		if !strings.Contains(artifactsSource, required) {
 			t.Errorf("Artifacts skill is missing %q", required)
 		}

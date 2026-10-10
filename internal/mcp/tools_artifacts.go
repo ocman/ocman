@@ -49,8 +49,8 @@ type artifactTools struct{ svc artifactService }
 var artifactActions = []sessionAction{
 	{name: "help", description: "Describes every available artifact action.", example: `{"action":"help"}`, output: "Artifact action documentation"},
 	{name: "create", description: "Publishes an immutable artifact of files and links for a project. Pass your own platform and session_id to attach it to your session.", example: `{"action":"create","directory":"/repo","platform":"opencode","session_id":"ses_1","title":"Coverage report","files":[{"path":"/repo/coverage.html"},{"name":"notes.md","content":"# Notes"}],"links":[{"url":"https://example.com/pr/1","label":"PR"}]}`, required: []string{"directory", "title"}, optional: []string{"description", "platform", "session_id", "files", "links"}, output: "{id, url, items: {kind, name?, url, label?}[], markdown}"},
-	{name: "list", description: "Lists artifacts newest first, optionally filtered by project directory or session.", example: `{"action":"list","directory":"/repo","limit":20}`, optional: []string{"directory", "platform", "session_id", "cursor", "limit"}, output: "{artifacts: Artifact[], next_cursor}"},
-	{name: "get", description: "Gets one artifact with its items.", example: `{"action":"get","artifact_id":"art_1"}`, required: []string{"artifact_id"}, output: "Artifact & {url}"},
+	{name: "list", description: "Finds published artifacts newest first. Filter by the stored project root, not a worktree path; list without directory if unknown. Omit platform and session_id to include other sessions. Use get and fetch item URLs to read files, rather than scanning original folders.", example: `{"action":"list","directory":"/repo","limit":20}`, optional: []string{"directory", "platform", "session_id", "cursor", "limit"}, output: "{artifacts: Artifact[], next_cursor}"},
+	{name: "get", description: "Gets artifact metadata and items, not file contents. Fetch items[].url to read files; resolve relative file URLs against the origin of the returned top-level url, which is the browser page.", example: `{"action":"get","artifact_id":"art_1"}`, required: []string{"artifact_id"}, output: "Artifact & {url}"},
 }
 
 func artifactServerTools(tools *artifactTools) []server.ServerTool {
@@ -58,7 +58,7 @@ func artifactServerTools(tools *artifactTools) []server.ServerTool {
 		return nil
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("artifacts",
-		mcplib.WithDescription("Publish and inspect project artifacts: reports, screenshots, generated files, and links (actions: help, create, list, get). Use action help for schemas and examples."),
+		mcplib.WithDescription("Find, read, and publish project artifacts: reports, screenshots, generated files, and links (actions: help, create, list, get). To read earlier artifacts, list with the stored project root (omit directory if unknown), get by artifact_id, then fetch items[].url; get returns metadata, not file contents. Resolve relative file URLs against the origin of get's top-level url. Use MCP instead of scanning original folders or old worktrees. Use action help for schemas and examples."),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("directory"), mcplib.WithString("platform"), mcplib.WithString("session_id"),
 		mcplib.WithString("title"), mcplib.WithString("description"), mcplib.WithString("artifact_id"), mcplib.WithString("cursor"), mcplib.WithNumber("limit"),
 		mcplib.WithArray("files", mcplib.Items(map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "content": map[string]any{"type": "string"}, "mime": map[string]any{"type": "string"}}})),
@@ -205,12 +205,17 @@ func artifactHelp() map[string]any {
 	}
 	help["actions"] = names
 	help["rules"] = []string{
-		"directory is the absolute project (or worktree) directory; it is folded to the project root",
+		"create's directory is the absolute project (or worktree) directory and is folded to the project root; list's directory is an exact filter on that stored root",
 		"platform and session_id identify your own session and go together",
 		"create needs at least one file or link; files are {path} (absolute) or {name, content, mime?}; links are {url, label?} with http(s) URLs",
 		"artifacts are immutable; this tool cannot delete them",
 		"for files already committed and pushed, prefer a link to a commit-sha forge permalink over uploading",
 		"list returns at most 200 artifacts per page; pass next_cursor as cursor for the next page",
+		"to find project artifacts, list with the stored project root and omit platform/session_id to include other sessions; if the root is unknown, list without directory and inspect returned directory fields; do not scan original folders, old worktrees, or blob storage",
+		"get returns metadata, not file contents; fetch items[].url to read the published immutable copy, or follow the external URL for kind=link",
+		"relative file URLs such as /api/artifacts/art_1/files/0 resolve against the origin of get's top-level url (the browser page), not the MCP listener's port",
+		"use item name, mime, and size to select a reader; if fetching fails or needs authentication, report the error rather than guessing an original path",
+		"artifacts are local to the connected ocman instance and are not routed across remotes",
 	}
 	help["errors"] = []string{"action is required", "unknown action", "directory is required", "title is required", "artifact_id is required", "platform and session_id must be provided together", "files must be an array of objects", "links must be an array of objects", "limit must be between 1 and 200", "invalid artifact: <reason>", "artifact not found", "artifact request failed"}
 	return help

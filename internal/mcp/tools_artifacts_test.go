@@ -66,7 +66,7 @@ func TestArtifactToolDisabledWithoutService(t *testing.T) {
 func TestArtifactToolHelpAndValidation(t *testing.T) {
 	srv := artifactTestServer(t, &fakeArtifacts{})
 	help := resultText(callTool(t, srv, "artifacts", map[string]any{"action": "help"}))
-	for _, want := range []string{"create", "list", "get", "output_schema", "permalink"} {
+	for _, want := range []string{"create", "list", "get", "output_schema", "permalink", "items[].url", "original folders", "origin", "metadata"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("help missing %q: %s", want, help)
 		}
