@@ -438,3 +438,28 @@ func TestNudgeRestartedValidators(t *testing.T) {
 	}
 	(&NativeService{store: verificationStoreFake{}}).nudgeRestartedValidators(t.Context(), alive)
 }
+
+// Cancelling an attempt's checks hands back a channel that closes only when
+// the run and its result message are over, so callers can wait it out.
+func TestCancelVerificationChecksWaitsForTheRun(t *testing.T) {
+	s := NewNative(&nativeStoreFake{})
+	if done := s.cancelVerificationChecks("none"); done == nil {
+		t.Fatal("no channel for an attempt without checks")
+	} else {
+		<-done
+	}
+	cancelled := false
+	exited := make(chan struct{})
+	s.checks = map[string]verificationCheck{"att-1": {head: "abc", cancel: func() { cancelled = true }, exited: exited}}
+	done := s.cancelVerificationChecks("att-1")
+	if !cancelled || len(s.checks) != 0 {
+		t.Fatalf("cancelled %v, checks %v", cancelled, s.checks)
+	}
+	select {
+	case <-done:
+		t.Fatal("returned before the run exited")
+	default:
+	}
+	close(exited)
+	<-done
+}

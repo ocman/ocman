@@ -207,11 +207,11 @@ export function useDiscussFactoryIssue() {
 /** Moves an open Epic ticket to the project's issue tracker and drops it from the Epic. */
 export function useTransferFactoryIssue() {
   const client = useQueryClient();
-  return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.transferFactoryIssue(epicId, issueId), onSuccess: () => invalidateFactoryState(client) });
+  return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.transferFactoryIssue(epicId, issueId), onSettled: () => invalidateFactoryState(client) });
 }
 
 /** Releases an in-flight or uncertain transfer so the ticket returns to the Epic. */
 export function useCancelFactoryIssueTransfer() {
   const client = useQueryClient();
-  return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.cancelFactoryIssueTransfer(epicId, issueId), onSuccess: () => invalidateFactoryState(client) });
+  return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.cancelFactoryIssueTransfer(epicId, issueId), onSettled: () => invalidateFactoryState(client) });
 }

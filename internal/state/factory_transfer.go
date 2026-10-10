@@ -133,7 +133,8 @@ func (d *DB) ReleaseFactoryIssueTransfer(ctx context.Context, epicID, issueID, c
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `DELETE FROM factory_external_mapping WHERE system = ? AND external_kind = ? AND entity_kind = 'issue' AND entity_id = ? AND substr(external_id, 1, length(?)) = ? AND (? = '' OR external_id = ?)`, factoryTransferSystem, factoryTransferKind, issueID, factoryTransferPending, factoryTransferPending, claim, claim)
+	result, err := tx.ExecContext(ctx, `DELETE FROM factory_external_mapping WHERE system = ? AND external_kind = ? AND entity_kind = 'issue' AND entity_id = ? AND substr(external_id, 1, length(?)) = ? AND (? = '' OR external_id = ?)
+		AND EXISTS (SELECT 1 FROM factory_issue WHERE id = ? AND epic_id = ?)`, factoryTransferSystem, factoryTransferKind, issueID, factoryTransferPending, factoryTransferPending, claim, claim, issueID, epicID)
 	if err != nil {
 		return err
 	}

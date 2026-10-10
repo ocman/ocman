@@ -52,8 +52,30 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 		}
 		stop = append(stop, attempt)
 	}
+	// The left-out work is not delivered, so its workspace must be exactly the
+	// accepted checkpoint: refuse before stopping anything otherwise.
+	for _, attempt := range stop {
+		policy := attempt.FrozenPolicy
+		if verification[attempt.WorkID] || policy.Branch == "" || s.implementation == nil {
+			continue
+		}
+		head, err := s.implementation.ValidateImplementationCheckpoint(ctx, policy.Repository, policy.Branch, policy.CheckpointSHA)
+		if err != nil {
+			return nil, fmt.Errorf("%w: the workspace of paused Issue %s is not a clean, pushed checkpoint (%v); resolve its recovery first", ErrInvalidRequest, attempt.WorkID, err)
+		}
+		if policy.CheckpointSHA != "" && head != policy.CheckpointSHA {
+			return nil, fmt.Errorf("%w: paused Issue %s has commits beyond the accepted checkpoint; resume or retry it first", ErrInvalidRequest, attempt.WorkID)
+		}
+	}
 	var cancel []string
 	for _, attempt := range stop {
+		// Settle the validator's check run first, so its result message cannot
+		// restart the session after it is stopped.
+		select {
+		case <-s.cancelVerificationChecks(attempt.ID):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		// Stop first: nothing may share the workspace with a live session.
 		if s.implementation != nil && attempt.Session.ID != "" {
 			if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
@@ -69,9 +91,9 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 	if err != nil {
 		return nil, err
 	}
-	for _, id := range cancel {
-		s.forgetVerificationChecks(id)
-	}
 	s.wakeDispatch()
+	if deferred == nil {
+		deferred = []string{}
+	}
 	return deferred, nil
 }

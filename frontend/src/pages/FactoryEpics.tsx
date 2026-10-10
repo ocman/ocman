@@ -26,7 +26,9 @@ import { Drawer, FactoryPage, InventoryToolbar, QueryError } from './FactoryLayo
 
 function IssueList({ epicID }: { epicID: string }) {
   const issues = useFactoryIssues(epicID);
-  const [selected, setSelected] = useState<FactoryIssue>();
+  // Keep the id, not the object, so the drawer follows live query data.
+  const [selectedID, setSelectedID] = useState<string>();
+  const selected = issues.data?.find((issue) => issue.id === selectedID);
 	const [query, setQuery] = useState('');
 	const [statusFilter, setStatusFilter] = useState('active');
 	const [kind, setKind] = useState('');
@@ -43,7 +45,7 @@ function IssueList({ epicID }: { epicID: string }) {
 	const groupFor = (issue: FactoryIssue) => statusGroups[issue.status] ?? statusLabel(issue.status);
 	const order = ['In progress', 'Blocked', 'Open', 'Waiting', 'Closed'];
 	const groups = [...new Set(visible.map(groupFor))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-	return <><InventoryToolbar label="Find board issues" value={query} onChange={setQuery}><label>Board status<SelectField value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="active">Open only</option><option value="all">Open + closed</option><option value="closed">Closed only</option></SelectField></label><label>Board type<SelectField value={kind} onChange={(event) => setKind(event.target.value)}><option value="">All types</option>{kinds.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField></label><span className="factory-result-count" aria-live="polite">{visible.length} shown{statusFilter === 'active' && closedCount > 0 ? ` · ${closedCount} closed hidden` : statusFilter === 'all' && closedCount > 0 ? ` · ${closedCount} closed` : ''}</span></InventoryToolbar>{!visible.length ? <EmptyState>{inventory.length ? 'No issues match these filters.' : 'This epic has no issues yet.'}</EmptyState> : <div className="factory-list" aria-label="Epic issues by status">{groups.map((group) => { const items = visible.filter((issue) => groupFor(issue) === group); return <DataTableGroup key={group} label={group} noun="issues" count={items.length} markerClassName={`factory-status-dot--${group.toLowerCase().replaceAll(' ', '-')}`}>{items.map((issue) => <FactoryIssueRow key={issue.id} issue={issue} onOpen={() => setSelected(issue)} />)}</DataTableGroup>; })}</div>}{selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => setSelected(undefined)} />}</>;
+	return <><InventoryToolbar label="Find board issues" value={query} onChange={setQuery}><label>Board status<SelectField value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="active">Open only</option><option value="all">Open + closed</option><option value="closed">Closed only</option></SelectField></label><label>Board type<SelectField value={kind} onChange={(event) => setKind(event.target.value)}><option value="">All types</option>{kinds.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField></label><span className="factory-result-count" aria-live="polite">{visible.length} shown{statusFilter === 'active' && closedCount > 0 ? ` · ${closedCount} closed hidden` : statusFilter === 'all' && closedCount > 0 ? ` · ${closedCount} closed` : ''}</span></InventoryToolbar>{!visible.length ? <EmptyState>{inventory.length ? 'No issues match these filters.' : 'This epic has no issues yet.'}</EmptyState> : <div className="factory-list" aria-label="Epic issues by status">{groups.map((group) => { const items = visible.filter((issue) => groupFor(issue) === group); return <DataTableGroup key={group} label={group} noun="issues" count={items.length} markerClassName={`factory-status-dot--${group.toLowerCase().replaceAll(' ', '-')}`}>{items.map((issue) => <FactoryIssueRow key={issue.id} issue={issue} onOpen={() => setSelectedID(issue.id)} />)}</DataTableGroup>; })}</div>}{selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => setSelectedID(undefined)} />}</>;
 }
 
 function GraphControls({ epicID, issues, allIssues }: { epicID: string; issues: FactoryIssue[]; allIssues: FactoryIssue[] }) {
@@ -279,7 +281,7 @@ export function FactoryEpicDetail() {
 		{!!progress.projectDeliveries?.length && <ul aria-label="Project deliveries" className="factory-issues">{progress.projectDeliveries.map((delivery) => <li key={delivery.issueId ?? `${delivery.project}:pending`}><ProjectLabel path={delivery.project} />{delivery.lineage && <span>Delivery {delivery.lineage}</span>}<span>{delivery.status === 'ready_for_review' ? 'Ready for review' : delivery.status.replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase())}</span></li>)}</ul>}
 		{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}
       {(closeEpic.isError || setPaused.isError || deliverAsIs.isError) && <p role="alert">{(closeEpic.error ?? setPaused.error ?? deliverAsIs.error) instanceof Error ? (closeEpic.error ?? setPaused.error ?? deliverAsIs.error)!.message : 'Could not update epic.'}</p>}
-      {deliverAsIs.isSuccess && <p role="status">{deliverAsIs.data.leftOut.length ? `Delivering as is. Left out: ${deliverAsIs.data.leftOut.join(', ')}.` : 'Delivering as is.'}</p>}
+      {deliverAsIs.isSuccess && <p role="status">{deliverAsIs.data.leftOut?.length ? `Delivering as is. Left out: ${deliverAsIs.data.leftOut.join(', ')}.` : 'Delivering as is.'}</p>}
     </section>
     <FactoryUsage epicID={id} />
     <Tabs value={active} onValueChange={setTab} className="factory-epic-views">

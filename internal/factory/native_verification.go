@@ -35,6 +35,7 @@ type verificationCheck struct {
 	done   bool
 	passed bool
 	cancel context.CancelFunc
+	exited chan struct{} // closed when the run, including its result message, is over
 }
 
 func (s *NativeService) verificationStep(ctx context.Context, attempt model.FactoryAttempt) (*model.WorkflowStep, error) {
@@ -97,10 +98,12 @@ func (s *NativeService) gateVerification(ctx context.Context, attempt model.Fact
 		run.cancel()
 	}
 	runCtx, cancel := context.WithTimeout(context.Background(), verificationChecksTimeout)
-	s.checks[attempt.ID] = verificationCheck{head: head, cancel: cancel}
+	exited := make(chan struct{})
+	s.checks[attempt.ID] = verificationCheck{head: head, cancel: cancel, exited: exited}
 	s.dispatchWG.Add(1)
 	go func() {
 		defer s.dispatchWG.Done()
+		defer close(exited)
 		defer cancel()
 		// Shutdown kills the command tree instead of orphaning it.
 		go func() {
@@ -132,7 +135,7 @@ func (s *NativeService) runVerificationChecks(ctx context.Context, checker Verif
 		delete(s.checks, attempt.ID)
 		superseded = true
 	default:
-		s.checks[attempt.ID] = verificationCheck{head: head, done: true, passed: passed}
+		s.checks[attempt.ID] = verificationCheck{head: head, done: true, passed: passed, exited: current.exited}
 	}
 	s.checksMu.Unlock()
 	if superseded {
@@ -240,14 +243,27 @@ func verificationCriteriaFromIssues(issues []model.NativeIssue, project string) 
 }
 
 func (s *NativeService) forgetVerificationChecks(attemptID string) {
+	_ = s.cancelVerificationChecks(attemptID)
+}
+
+// cancelVerificationChecks stops an attempt's check run and returns a channel
+// that closes once the run, including any result message, has finished.
+func (s *NativeService) cancelVerificationChecks(attemptID string) <-chan struct{} {
 	s.checksMu.Lock()
-	if run, ok := s.checks[attemptID]; ok && run.cancel != nil {
+	defer s.checksMu.Unlock()
+	run, ok := s.checks[attemptID]
+	if ok && run.cancel != nil {
 		run.cancel()
 	}
 	delete(s.checks, attemptID)
 	delete(s.idleProbedAt, attemptID)
 	delete(s.idleNudgedAt, attemptID)
-	s.checksMu.Unlock()
+	if !ok || run.exited == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return run.exited
 }
 
 // foldAcceptanceCriteria requires a verifiable contract on every executable

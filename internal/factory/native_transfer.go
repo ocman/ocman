@@ -32,7 +32,18 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 	if !ok {
 		return "", ErrFactoryUnavailable
 	}
+	// Reserving and registering the live call are one step under the lock, as
+	// are Cancel's live check and release, so Cancel can never release a
+	// reservation whose tracker call is about to start.
+	s.transfersMu.Lock()
 	url, claim, err := store.ReserveFactoryIssueTransfer(ctx, epicID, issueID, time.Now())
+	if err == nil && url == "" {
+		if s.liveTransfers == nil {
+			s.liveTransfers = map[string]bool{}
+		}
+		s.liveTransfers[issueID] = true
+	}
+	s.transfersMu.Unlock()
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		return "", fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
@@ -41,12 +52,6 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 	}
 	local := context.WithoutCancel(ctx)
 	if url == "" {
-		s.transfersMu.Lock()
-		if s.liveTransfers == nil {
-			s.liveTransfers = map[string]bool{}
-		}
-		s.liveTransfers[issueID] = true
-		s.transfersMu.Unlock()
 		defer func() {
 			s.transfersMu.Lock()
 			delete(s.liveTransfers, issueID)
@@ -89,9 +94,8 @@ func (s *NativeService) CancelIssueTransfer(ctx context.Context, epicID, issueID
 		return ErrFactoryUnavailable
 	}
 	s.transfersMu.Lock()
-	live := s.liveTransfers[issueID]
-	s.transfersMu.Unlock()
-	if live {
+	defer s.transfersMu.Unlock()
+	if s.liveTransfers[issueID] {
 		return errTransferLive
 	}
 	if err := store.ReleaseFactoryIssueTransfer(ctx, epicID, issueID, ""); err != nil {

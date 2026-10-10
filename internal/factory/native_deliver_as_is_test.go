@@ -131,3 +131,77 @@ func TestDeliverAsIsLeavesOutWorkPausedForRecovery(t *testing.T) {
 		t.Fatal("the paused session was not stopped")
 	}
 }
+
+// Delivering as is retires every decision the paused attempt waited on, and
+// refuses (keeping the decision) when the paused workspace is not handed off.
+func TestDeliverAsIsRetiresGatesAndChecksTheWorkspace(t *testing.T) {
+	svc, launcher, epicID, next := deliverAsIsFixture(t)
+	first := next(0)
+	if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "first done", ""); err != nil {
+		t.Fatal(err)
+	}
+	next(1)
+	attempts, err := svc.store.(nativeDeliverAsIsStore).ListFactoryAttempts(t.Context(), epicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session string
+	for _, attempt := range attempts {
+		if attempt.Phase != "terminal" {
+			session = attempt.Session.ID
+		}
+	}
+	gate, handled, err := svc.EscalatePermission(t.Context(), session, "request", "external_directory", "/outside")
+	if err != nil || !handled {
+		t.Fatalf("authority gate = %v, %v", handled, err)
+	}
+
+	launcher.handoffErr = errors.New("uncommitted changes")
+	if _, err := svc.DeliverAsIs(t.Context(), epicID); err == nil || !strings.Contains(err.Error(), "not a clean, pushed checkpoint") {
+		t.Fatalf("dirty workspace = %v", err)
+	}
+	if len(launcher.stops) != 0 {
+		t.Fatal("a refused delivery stopped the paused session")
+	}
+	launcher.handoffErr, launcher.checkpointSHA = nil, "newer"
+	if _, err := svc.DeliverAsIs(t.Context(), epicID); err == nil || !strings.Contains(err.Error(), "beyond the accepted checkpoint") {
+		t.Fatalf("unaccepted commits = %v", err)
+	}
+
+	launcher.checkpointSHA = ""
+	leftOut, err := svc.DeliverAsIs(t.Context(), epicID)
+	if err != nil || len(leftOut) != 1 {
+		t.Fatalf("deliver as is = %v, %v", leftOut, err)
+	}
+	if _, err := svc.ResolveAuthorityEscalationGate(t.Context(), gate.IssueID, "approve"); err == nil {
+		t.Fatal("the cancelled attempt's authority gate stayed open")
+	}
+	issues, err := svc.ListIssues(t.Context(), epicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range issues {
+		if issue.ID == gate.IssueID && (issue.Status != "closed" || issue.Outcome != "cancelled") {
+			t.Fatalf("authority gate issue = %#v", issue)
+		}
+	}
+}
+
+// With nothing left out the result is an empty list, never null.
+func TestDeliverAsIsWithNothingLeftOut(t *testing.T) {
+	svc, _, epicID, next := deliverAsIsFixture(t)
+	for i := range 2 {
+		work := next(i)
+		if err := svc.CompleteAttempt(t.Context(), work.AttemptID, work.AgentToken, "done", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next(2) // verification
+	leftOut, err := svc.DeliverAsIs(t.Context(), epicID)
+	if err != nil || leftOut == nil || len(leftOut) != 0 {
+		t.Fatalf("deliver as is = %#v, %v", leftOut, err)
+	}
+	if delivery := next(3); !delivery.Delivery || delivery.LeftOut != "" {
+		t.Fatalf("delivery = %#v", delivery)
+	}
+}

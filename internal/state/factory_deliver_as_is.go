@@ -61,13 +61,29 @@ func (d *DB) DeliverFactoryEpicAsIs(ctx context.Context, epicID string, cancelAt
 		if err := tx.QueryRowContext(ctx, `SELECT work_item_id FROM factory_attempt WHERE id = ? AND epic_id = ? AND phase <> 'terminal'`, id, epicID).Scan(&workID); err != nil {
 			return nil, invalid("a running attempt changed; try again")
 		}
+		// A decision already being carried out must finish first.
+		var pending bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'resume', 'retry', 'cancel'))
+			OR EXISTS(SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'approve', 'reject'))
+			OR EXISTS(SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'approved', 'rejected'))`, id, id, id).Scan(&pending); err != nil {
+			return nil, err
+		}
+		if pending {
+			return nil, invalid("a decision on paused work is still being carried out; try again shortly")
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'cancelled', finished_at = ?, updated_at = ? WHERE id = ?`, now, now, id); err != nil {
 			return nil, err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'cancelled', outcome_reason = 'delivered_as_is' WHERE id IN (SELECT issue_id FROM factory_recovery_gate WHERE attempt_id = ? AND resolution = 'open')`, id); err != nil {
-			return nil, err
+		// Every decision the cancelled attempt waited on is retired with it.
+		for _, gate := range []struct{ table, resolution string }{{"factory_recovery_gate", "cancel"}, {"factory_authority_escalation_gate", "reject"}, {"factory_project_request_gate", "rejected"}} {
+			if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'cancelled', outcome_reason = 'delivered_as_is' WHERE id IN (SELECT issue_id FROM `+gate.table+` WHERE attempt_id = ? AND resolution = 'open')`, id); err != nil {
+				return nil, err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE `+gate.table+` SET resolution = ?, resolved_at = ? WHERE attempt_id = ? AND resolution = 'open'`, gate.resolution, now, id); err != nil {
+				return nil, err
+			}
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE factory_recovery_gate SET resolution = 'cancel', response = 'Delivered as is', resolved_at = ? WHERE attempt_id = ? AND resolution = 'open'`, now, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE factory_recovery_gate SET response = 'Delivered as is' WHERE attempt_id = ? AND resolution = 'cancel' AND resolved_at = ?`, id, now); err != nil {
 			return nil, err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open' WHERE id = ? AND status = 'in_progress'`, workID); err != nil {

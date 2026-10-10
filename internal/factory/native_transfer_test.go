@@ -112,6 +112,12 @@ func TestTransferIssueReservesAndResumes(t *testing.T) {
 	if err := db.RecordFactoryIssueTransfer(t.Context(), epic.ID, ids["Third"], staleClaim, "https://forge.example/late"); err == nil {
 		t.Fatal("a stale claim recorded onto a new reservation")
 	}
+	if err := db.ReleaseFactoryIssueTransfer(t.Context(), "another-epic", ids["Third"], ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := issueStatus(t, svc, epic.ID, ids["Third"]); got != "deferred" {
+		t.Fatalf("another Epic released this reservation: %s", got)
+	}
 	if err := db.ReleaseFactoryIssueTransfer(t.Context(), epic.ID, ids["Third"], staleClaim); err != nil {
 		t.Fatal(err)
 	}
@@ -205,4 +211,63 @@ func issueReason(t *testing.T, svc *NativeService, epicID, issueID string) strin
 		}
 	}
 	return ""
+}
+
+// cancelDuringReserveStore races a Cancel into the window right after the
+// reservation commits, before the tracker call is registered as live.
+type cancelDuringReserveStore struct {
+	*state.DB
+	svc       *NativeService
+	cancelled chan error
+}
+
+func (s *cancelDuringReserveStore) ReserveFactoryIssueTransfer(ctx context.Context, epicID, issueID string, at time.Time) (string, string, error) {
+	url, claim, err := s.DB.ReserveFactoryIssueTransfer(ctx, epicID, issueID, at)
+	go func() { s.cancelled <- s.svc.CancelIssueTransfer(context.Background(), epicID, issueID) }()
+	time.Sleep(50 * time.Millisecond) // give an unserialized Cancel time to release
+	return url, claim, err
+}
+
+func TestTransferCancelCannotSlipBetweenReserveAndCreate(t *testing.T) {
+	db, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := &cancelDuringReserveStore{DB: db, cancelled: make(chan error, 1)}
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, &fakeImplementationLauncher{store: db})
+	store.svc = svc
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Transfer", InitialProject: "/repo", AcknowledgeLocalExecution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := []ManifestNode{{Key: "first", Type: "implementation", Title: "First", Requirement: "required", AcceptanceCriteria: []string{"done"}}, {Key: "second", Type: "implementation", Title: "Second", Requirement: "required", AcceptanceCriteria: []string{"done"}}}
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: nodes, Edges: []ManifestEdge{{From: "second", To: "first", Type: "blocks"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+		t.Fatal(err)
+	}
+	var second string
+	issues, _ := svc.ListIssues(t.Context(), epic.ID)
+	for _, issue := range issues {
+		if issue.Title == "Second" {
+			second = issue.ID
+		}
+	}
+	created := false
+	url, err := svc.TransferIssue(t.Context(), epic.ID, second, func(context.Context, Issue) (string, error) {
+		created = true
+		return "https://forge.example/issues/2", nil
+	})
+	if err != nil || !created || url == "" {
+		t.Fatalf("transfer = %q, %v", url, err)
+	}
+	if err := <-store.cancelled; !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("racing cancel = %v, want refused as live", err)
+	}
+	if got := issueStatus(t, svc, epic.ID, second); got != "removed" {
+		t.Fatalf("transferred issue = %s", got)
+	}
 }

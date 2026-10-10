@@ -12,7 +12,9 @@ import './EpicGraph.css';
 
 // Preview nodes can be inspected before their issues have been created.
 export function EpicGraph({ issues, preview, changes }: { issues?: FactoryIssue[]; preview?: boolean; changes?: ProposalChanges }) {
-  const [selected, setSelected] = useState<FactoryIssue>();
+  // Keep the id, not the object, so the drawer follows live issue data.
+  const [selectedID, setSelectedID] = useState<string>();
+  const selected = issues?.find((issue) => issue.id === selectedID);
   const { nodes, edges } = useMemo(() => {
     const model = factoryGraphModel(issues ?? [], preview);
     const flowNodes: Node[] = model.nodes.map((node) => ({
@@ -58,12 +60,12 @@ export function EpicGraph({ issues, preview, changes }: { issues?: FactoryIssue[
         nodesConnectable={false}
         edgesFocusable={false}
         proOptions={{ hideAttribution: true }}
-        onNodeClick={(_event, node) => setSelected(byID.get(node.id))}
+        onNodeClick={(_event, node) => setSelectedID(byID.get(node.id)?.id)}
       >
         <Background />
         <Controls showInteractive={false} />
       </ReactFlow>
     </div>
-    {selected && <IssueDrawer key={selected.id} issue={selected} preview={preview} onClose={() => setSelected(undefined)} />}
+    {selected && <IssueDrawer key={selected.id} issue={selected} preview={preview} onClose={() => setSelectedID(undefined)} />}
   </div>;
 }
