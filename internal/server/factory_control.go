@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ Reply now with a one-paragraph status of the Epic, including anything waiting fo
 
 type factoryControlStore interface {
 	GetFactoryControlSession(context.Context, string) (state.FactoryControlSession, bool, error)
-	SetFactoryControlSession(context.Context, state.FactoryControlSession, time.Time) error
+	SetFactoryControlSession(context.Context, state.FactoryControlSession, time.Time) (bool, error)
 	CreateFactoryControlAction(context.Context, state.FactoryControlAction, time.Time) error
 	GetFactoryControlAction(context.Context, string, string) (state.FactoryControlAction, bool, error)
 	TransitionFactoryControlAction(context.Context, string, string, string, string, string) (bool, error)
@@ -108,7 +109,14 @@ func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 		return state.FactoryControlSession{}, false, fmt.Errorf("start control session: %w", err)
 	}
 	control = state.FactoryControlSession{EpicID: epicID, Platform: session.Platform, SessionID: session.ID}
-	return control, true, store.SetFactoryControlSession(ctx, control, time.Now())
+	adopted, err := store.SetFactoryControlSession(ctx, control, time.Now())
+	if err == nil && !adopted {
+		// The Epic closed meanwhile: stop the session and keep it out of view.
+		_ = launcher.StopPlanningSession(ctx, session)
+		_ = s.stateDB.ArchiveSession(ctx, session.Platform, session.ID, math.MaxInt64)
+		err = fmt.Errorf("%w: the Epic is closed", factory.ErrInvalidRequest)
+	}
+	return control, adopted, err
 }
 
 // factoryControlAlive replaces a session only when it is known to be gone; a
@@ -125,10 +133,11 @@ func (s *Server) factoryControlAlive(ctx context.Context, control state.FactoryC
 	if !ok {
 		return false, nil
 	}
-	if _, err := reader.SessionLifecycle(ctx, control.SessionID); err != nil && !errors.Is(err, platforms.ErrNotFound) {
-		return false, err
+	_, err := reader.SessionLifecycle(ctx, control.SessionID)
+	if errors.Is(err, platforms.ErrNotFound) {
+		return false, nil
 	}
-	return false, nil
+	return err == nil, err
 }
 
 func (s *Server) factoryControlModel(ctx context.Context, session factory.PlanningSession) string {

@@ -14,6 +14,7 @@ import (
 )
 
 type fakeFactoryService struct {
+	onSetPaused           func()
 	epics                 []factory.WorkEpic
 	issues                []factory.Issue
 	comments              []factory.IssueComment
@@ -218,6 +219,9 @@ func (f *fakeFactoryService) DeliverAsIs(_ context.Context, epicID string) ([]st
 	return []string{epicID + ".1.3.9"}, f.err
 }
 func (f *fakeFactoryService) SetEpicPaused(_ context.Context, epicID string, paused bool) error {
+	if f.onSetPaused != nil {
+		f.onSetPaused()
+	}
 	f.pausedEpicID, f.paused = epicID, paused
 	return f.err
 }

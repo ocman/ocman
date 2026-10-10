@@ -12,9 +12,10 @@ export function FactoryControlPanel({ epicID, closed }: { epicID: string; closed
 	return <section className="factory-epic-gate" aria-label="Control session">
 		<h3>Control session</h3>
 		<p>Steer this epic from one conversation. Factory posts every decision it needs there, and each change it proposes waits for your Allow.</p>
-		{control.data
-			? <Button type="button" variant="accent" onClick={() => go(control.data!.sessionId)}>Open control session</Button>
-			: <Button type="button" variant="accent" aria-busy={open.isPending} disabled={open.isPending || control.isLoading} onClick={() => open.mutate(undefined, { onSuccess: (session) => go(session.sessionId) })}>{open.isPending ? 'Starting…' : 'Start control session'}</Button>}
+		{/* An open Epic always goes through the server, which replaces a session that no longer exists. */}
+		{closed
+			? control.data && <Button type="button" onClick={() => go(control.data!.sessionId)}>Open control session</Button>
+			: <Button type="button" variant="accent" aria-busy={open.isPending} disabled={open.isPending || control.isLoading} onClick={() => open.mutate(undefined, { onSuccess: (session) => go(session.sessionId) })}>{open.isPending ? (control.data ? 'Opening…' : 'Starting…') : control.data ? 'Open control session' : 'Start control session'}</Button>}
 		{(open.isError || control.isError) && <p role="alert">{(open.error ?? control.error) instanceof Error ? (open.error ?? control.error)!.message : 'Could not reach the control session.'}</p>}
 	</section>;
 }

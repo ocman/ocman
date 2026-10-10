@@ -19,7 +19,7 @@ func TestFactoryControlSessionLifecycle(t *testing.T) {
 	}
 	// Replacing keeps one session per Epic.
 	for _, id := range []string{"ses-1", "ses-2"} {
-		if err := db.SetFactoryControlSession(ctx, FactoryControlSession{EpicID: epic.ID, Platform: "opencode", SessionID: id}, time.Now()); err != nil {
+		if adopted, err := db.SetFactoryControlSession(ctx, FactoryControlSession{EpicID: epic.ID, Platform: "opencode", SessionID: id}, time.Now()); err != nil || !adopted {
 			t.Fatal(err)
 		}
 	}
@@ -36,6 +36,13 @@ func TestFactoryControlSessionLifecycle(t *testing.T) {
 	}
 	if _, ok := archived[Key{Platform: "opencode", SessionID: "ses-2"}]; !ok {
 		t.Fatalf("closing the Epic did not archive its control session: %v", archived)
+	}
+	// A session launched while the Epic closed is never adopted.
+	if adopted, err := db.SetFactoryControlSession(ctx, FactoryControlSession{EpicID: epic.ID, Platform: "opencode", SessionID: "ses-3"}, time.Now()); err != nil || adopted {
+		t.Fatalf("closed epic adopted = %v, %v", adopted, err)
+	}
+	if got, _, _ := db.GetFactoryControlSession(ctx, epic.ID); got.SessionID != "ses-2" {
+		t.Fatalf("control after close = %#v", got)
 	}
 }
 

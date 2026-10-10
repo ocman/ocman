@@ -61,7 +61,7 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 		}
 		head, err := s.implementation.ValidateImplementationCheckpoint(ctx, policy.Repository, policy.Branch, policy.CheckpointSHA)
 		if err != nil {
-			return nil, fmt.Errorf("%w: the workspace of paused Issue %s is not a clean, pushed checkpoint (%v); resolve its recovery first", ErrInvalidRequest, attempt.WorkID, err)
+			return nil, fmt.Errorf("%w: the workspace of paused Issue %s is not a clean, pushed checkpoint (%w); resolve its recovery first", ErrInvalidRequest, attempt.WorkID, err)
 		}
 		if policy.CheckpointSHA != "" && head != policy.CheckpointSHA {
 			return nil, fmt.Errorf("%w: paused Issue %s has commits beyond the accepted checkpoint; resume or retry it first", ErrInvalidRequest, attempt.WorkID)

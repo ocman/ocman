@@ -17,6 +17,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type controlFixture struct {
@@ -50,6 +51,11 @@ func newControlFixture(t *testing.T) *controlFixture {
 	registry := platforms.NewRegistry()
 	registry.Register(f.platform)
 	f.srv = New(nil, openTestStateDB(t), "", registry, nil)
+	tracer := factory.BuiltInTracerFormula()
+	if _, err := f.srv.stateDB.CreateFactoryEpic(t.Context(), "epic-1", "Ship", "", "/repo", "", model.NativeFormula{ID: tracer.ID, Version: tracer.Version, Source: tracer.Source, Hash: tracer.Hash,
+		Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}); err != nil {
+		t.Fatal(err)
+	}
 	f.svc = &fakeFactoryService{
 		epics:  []factory.WorkEpic{{ID: "epic-1", Goal: "Ship", Status: "open", InitialProject: "/repo", Projects: []model.EpicProject{{Path: "/repo"}, {Path: "/other", Removable: true}}}},
 		issues: []factory.Issue{{ID: "issue-1", EpicID: "epic-1", Kind: "implementation", Title: "Transport", Status: "closed", Outcome: "failed", OutcomeReason: "merged branch", Recovery: &factory.RecoveryGate{IssueID: "gate-1"}}},
@@ -246,5 +252,83 @@ func TestFactoryControlProposalsRunOnlyOnConfirmation(t *testing.T) {
 	f.svc.epics[0].Status = "closed"
 	if _, err := f.srv.proposeFactoryControl(ctx, "epic-1", "pause", nil, "Pause"); err == nil {
 		t.Fatal("proposal on a closed Epic accepted")
+	}
+}
+
+// lifecyclePlatform answers lifecycle reads where Owns cannot see the session.
+type lifecyclePlatform struct {
+	*fakePlatform
+	err error
+}
+
+func (p *lifecyclePlatform) SessionLifecycle(context.Context, string) (*platforms.SessionLifecycle, error) {
+	return &platforms.SessionLifecycle{}, p.err
+}
+
+// A session Owns misses but the lifecycle read finds is kept; only a session
+// known to be gone is replaced, and other read errors surface.
+func TestFactoryControlSessionSurvivesOwnsMisses(t *testing.T) {
+	f := newControlFixture(t)
+	if got := f.call(http.MethodPost, "/api/factory/epics/epic-1/control"); got.Code != http.StatusOK {
+		t.Fatalf("start = %d", got.Code)
+	}
+	f.platform.sessions = nil
+	wrapped := &lifecyclePlatform{fakePlatform: f.platform}
+	registry := platforms.NewRegistry()
+	registry.Register(wrapped)
+	f.srv.registry = registry
+	if _, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err != nil || f.creates != 1 {
+		t.Fatalf("lifecycle hit = %v, creates %d", err, f.creates)
+	}
+	wrapped.err = errors.New("database is locked")
+	if _, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err == nil || f.creates != 1 {
+		t.Fatalf("transient error = %v, creates %d", err, f.creates)
+	}
+	wrapped.err = platforms.ErrNotFound
+	if _, created, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err != nil || !created || f.creates != 2 {
+		t.Fatalf("gone = %v, created %v, creates %d", err, created, f.creates)
+	}
+}
+
+// An Epic that closes while its control session launches never adopts it.
+func TestFactoryControlSessionIsNotAdoptedByAClosingEpic(t *testing.T) {
+	f := newControlFixture(t)
+	aborted := false
+	f.platform.abortFn = func(platforms.AbortRequest) error { aborted = true; return nil }
+	// The Epic closes after the open check, while the session launches.
+	f.platform.sendMessageFn = func(platforms.SendMessageRequest) error {
+		return f.srv.stateDB.CloseFactoryEpic(t.Context(), "epic-1", true)
+	}
+	if _, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err == nil || !aborted {
+		t.Fatalf("closing epic = %v, aborted %v", err, aborted)
+	}
+	if _, found, _ := f.srv.stateDB.GetFactoryControlSession(t.Context(), "epic-1"); found {
+		t.Fatal("a closed Epic adopted a control session")
+	}
+	archived, err := f.srv.stateDB.ArchivedSessions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archived[state.Key{Platform: "local-agent", SessionID: "control-1"}]; !ok {
+		t.Fatalf("unadopted session not archived: %v", archived)
+	}
+}
+
+// A confirmed proposal finishes even when the client goes away.
+func TestFactoryControlConfirmOutlivesTheRequest(t *testing.T) {
+	f := newControlFixture(t)
+	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "pause", nil, "Pause")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	f.svc.onSetPaused = cancel // the client disconnects mid-run
+	action, err := f.srv.decideFactoryControlAction(ctx, f.srv.stateDB, "epic-1", id, "confirm")
+	if err != nil || action.Status != "done" {
+		t.Fatalf("confirm = %#v, %v", action, err)
+	}
+	stored, _, _ := f.srv.stateDB.GetFactoryControlAction(t.Context(), "epic-1", id)
+	if stored.Status != "done" {
+		t.Fatalf("stored = %#v", stored)
 	}
 }

@@ -39,16 +39,22 @@ func (d *DB) GetFactoryControlSession(ctx context.Context, epicID string) (Facto
 }
 
 // SetFactoryControlSession records (or replaces) the Epic's control session.
-func (d *DB) SetFactoryControlSession(ctx context.Context, control FactoryControlSession, at time.Time) error {
+// It adopts nothing once the Epic is closed, so a session launched while the
+// Epic was closing is never left unarchived: adopted reports which happened.
+func (d *DB) SetFactoryControlSession(ctx context.Context, control FactoryControlSession, at time.Time) (adopted bool, err error) {
 	metadata, err := json.Marshal(control)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = d.db.ExecContext(ctx, `INSERT INTO factory_external_mapping (system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at)
-		VALUES ('factory', ?, ?, 'epic', ?, ?, ?)
+	result, err := d.db.ExecContext(ctx, `INSERT INTO factory_external_mapping (system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at)
+		SELECT 'factory', ?, ?, 'epic', ?, ?, ? WHERE EXISTS (SELECT 1 FROM factory_epic WHERE id = ? AND status IN ('open', 'paused'))
 		ON CONFLICT (system, external_kind, entity_kind, entity_id) DO UPDATE SET metadata_json = excluded.metadata_json, created_at = excluded.created_at`,
-		factoryControlKind, "control:"+control.EpicID, control.EpicID, string(metadata), at.UnixMilli())
-	return err
+		factoryControlKind, "control:"+control.EpicID, control.EpicID, string(metadata), at.UnixMilli(), control.EpicID)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
 }
 
 // archiveFactoryControlSessionTx archives a closing Epic's control session

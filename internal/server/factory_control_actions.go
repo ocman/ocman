@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -111,6 +112,10 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 		return action, fmt.Errorf("%w: this proposal was already %s", factory.ErrInvalidRequest, action.Status)
 	}
 	action.Status = next
+	// The claim is durable: finish under a context the client cannot cancel,
+	// so a confirmed proposal always reaches a terminal outcome.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	defer cancel()
 	outcome := "The user dismissed: " + action.Summary
 	if verb == "confirm" {
 		result, runErr := s.runFactoryControlAction(ctx, action)
