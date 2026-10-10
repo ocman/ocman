@@ -34,6 +34,8 @@ function LocationProbe() {
 
 describe('Routines', () => {
   it.each(['routine-1', 'routine-2'])('keeps the new %s drawer and draft when an earlier save finishes after navigation', async (nextID) => {
+    // Only the save refresh is under test; slow runners must not add polling reads.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const other = { ...routine, id: 'routine-2', name: 'Evening check' };
     vi.mocked(api.routines.list).mockResolvedValue([routine, other]);
     let finish!: (value: Routine) => void;

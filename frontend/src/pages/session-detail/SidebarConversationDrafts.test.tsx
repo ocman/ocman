@@ -150,7 +150,7 @@ it.each([false, true])('discards a middle-clicked draft, selected: %s', async (s
   fireEvent(row, event);
   expect(event.defaultPrevented).toBe(true);
   await waitFor(() => expect(getConversationDraft('a')).toBeUndefined());
-  expect(screen.getByTestId('location').textContent).toBe(selected ? '/session/new' : '/session/existing');
+  await waitFor(() => expect(screen.getByTestId('location').textContent).toBe(selected ? '/session/new' : '/session/existing'));
 });
 
 it('discards an unselected draft without navigating to it', async () => {
