@@ -2,7 +2,9 @@ package state
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,12 +24,19 @@ const (
 
 // ReserveFactoryIssueTransfer checks that the Issue can be removed, then holds
 // it out of dispatch (deferred) with a pending receipt before any tracker call.
-// It returns the tracker URL when an earlier attempt already created it.
-func (d *DB) ReserveFactoryIssueTransfer(ctx context.Context, epicID, issueID string, at time.Time) (string, error) {
+// It returns the tracker URL when an earlier attempt already created it, or
+// the new reservation's unique claim, which recording and releasing must
+// present: a stale caller can never act on a later reservation.
+func (d *DB) ReserveFactoryIssueTransfer(ctx context.Context, epicID, issueID string, at time.Time) (url, claim string, err error) {
 	invalid := func(message string) error { return fmt.Errorf("%w: %s", model.ErrInvalidGraphMutation, message) }
+	nonce := make([]byte, 8)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", "", err
+	}
+	claim = factoryTransferPending + issueID + ":" + hex.EncodeToString(nonce)
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() { _ = tx.Rollback() }()
 	var receipt string
@@ -35,55 +44,55 @@ func (d *DB) ReserveFactoryIssueTransfer(ctx context.Context, epicID, issueID st
 	if err == nil {
 		var status string
 		if err := tx.QueryRowContext(ctx, `SELECT status FROM factory_issue WHERE id = ? AND epic_id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, issueID, epicID).Scan(&status); err != nil || status != "deferred" {
-			return "", invalid("factory issue was already transferred")
+			return "", "", invalid("factory issue was already transferred")
 		}
 		// A pending receipt has one owner: a create is running, or it ended
 		// without a recorded result. Never create again blindly; the user
 		// checks the tracker and cancels the transfer to retry.
 		if strings.HasPrefix(receipt, factoryTransferPending) {
-			return "", invalid("a transfer is in progress or its result is unknown; check the tracker, then cancel the transfer to retry")
+			return "", "", invalid("a transfer is in progress or its result is unknown; check the tracker, then cancel the transfer to retry")
 		}
-		return receipt, nil
+		return receipt, "", nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return "", err
+		return "", "", err
 	}
 	var status, kind string
 	err = tx.QueryRowContext(ctx, `SELECT status, kind FROM factory_issue WHERE id = ? AND epic_id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, issueID, epicID).Scan(&status, &kind)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (status != "open" || (kind != "task" && kind != "implementation"))) {
-		return "", invalid("only open task Issues can be transferred")
+		return "", "", invalid("only open task Issues can be transferred")
 	}
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var pendingGraph bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array')`, epicID).Scan(&pendingGraph); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if pendingGraph {
-		return "", invalid("a graph revision awaits approval; decide it before transferring")
+		return "", "", invalid("a graph revision awaits approval; decide it before transferring")
 	}
 	// Dry-run the removal so a ticket that cannot leave the Epic (for example
 	// after its project was delivered) never reaches the tracker.
 	if _, err := tx.ExecContext(ctx, `SAVEPOINT transfer_check`); err != nil {
-		return "", err
+		return "", "", err
 	}
 	removeErr := mutateFactoryGraphTx(ctx, tx, model.GraphMutation{Action: "delete", EpicID: epicID, IssueID: issueID, Actor: "user"}, false)
 	for _, statement := range []string{`ROLLBACK TO transfer_check`, `RELEASE transfer_check`} {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 	if removeErr != nil {
-		return "", removeErr
+		return "", "", removeErr
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'deferred', outcome_reason = ? WHERE id = ?`, FactoryTransferPendingReason, issueID); err != nil {
-		return "", err
+		return "", "", err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_external_mapping (system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at) VALUES (?, ?, ?, 'issue', ?, '{}', ?)`, factoryTransferSystem, factoryTransferKind, factoryTransferPending+issueID, issueID, at.UnixMilli()); err != nil {
-		return "", err
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_external_mapping (system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at) VALUES (?, ?, ?, 'issue', ?, '{}', ?)`, factoryTransferSystem, factoryTransferKind, claim, issueID, at.UnixMilli()); err != nil {
+		return "", "", err
 	}
-	return "", tx.Commit()
+	return "", claim, tx.Commit()
 }
 
 // FactoryTransferRecordedReason marks a ticket whose tracker issue exists but
@@ -96,13 +105,13 @@ const FactoryTransferPendingReason = "Transferring to the issue tracker"
 
 // RecordFactoryIssueTransfer stores the created tracker issue on the pending
 // receipt. It fails when the reservation was cancelled meanwhile.
-func (d *DB) RecordFactoryIssueTransfer(ctx context.Context, epicID, issueID, url string) error {
+func (d *DB) RecordFactoryIssueTransfer(ctx context.Context, epicID, issueID, claim, url string) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `UPDATE factory_external_mapping SET external_id = ? WHERE system = ? AND external_kind = ? AND external_id = ?`, url, factoryTransferSystem, factoryTransferKind, factoryTransferPending+issueID)
+	result, err := tx.ExecContext(ctx, `UPDATE factory_external_mapping SET external_id = ? WHERE system = ? AND external_kind = ? AND entity_kind = 'issue' AND entity_id = ? AND external_id = ?`, url, factoryTransferSystem, factoryTransferKind, issueID, claim)
 	if err != nil {
 		return err
 	}
@@ -117,13 +126,14 @@ func (d *DB) RecordFactoryIssueTransfer(ctx context.Context, epicID, issueID, ur
 
 // ReleaseFactoryIssueTransfer undoes a pending reservation: after a failed
 // tracker call, or when the user cancels an in-flight or uncertain transfer.
-func (d *DB) ReleaseFactoryIssueTransfer(ctx context.Context, epicID, issueID string) error {
+// An empty claim releases whatever reservation is pending (the user's cancel).
+func (d *DB) ReleaseFactoryIssueTransfer(ctx context.Context, epicID, issueID, claim string) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `DELETE FROM factory_external_mapping WHERE system = ? AND external_kind = ? AND external_id = ?`, factoryTransferSystem, factoryTransferKind, factoryTransferPending+issueID)
+	result, err := tx.ExecContext(ctx, `DELETE FROM factory_external_mapping WHERE system = ? AND external_kind = ? AND entity_kind = 'issue' AND entity_id = ? AND substr(external_id, 1, length(?)) = ? AND (? = '' OR external_id = ?)`, factoryTransferSystem, factoryTransferKind, issueID, factoryTransferPending, factoryTransferPending, claim, claim)
 	if err != nil {
 		return err
 	}

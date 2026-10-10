@@ -10,11 +10,18 @@ import (
 )
 
 type nativeTransferStore interface {
-	ReserveFactoryIssueTransfer(context.Context, string, string, time.Time) (string, error)
-	RecordFactoryIssueTransfer(context.Context, string, string, string) error
-	ReleaseFactoryIssueTransfer(context.Context, string, string) error
+	ReserveFactoryIssueTransfer(context.Context, string, string, time.Time) (string, string, error)
+	RecordFactoryIssueTransfer(context.Context, string, string, string, string) error
+	ReleaseFactoryIssueTransfer(context.Context, string, string, string) error
 	CompleteFactoryIssueTransfer(context.Context, string, string, string, time.Time) error
 }
+
+// ErrTrackerUncertain marks a create call that may have reached the tracker.
+// Its reservation stays pending until the user checks and cancels it.
+var ErrTrackerUncertain = errors.New("the tracker may have created the issue")
+
+// errTransferLive refuses to cancel a transfer whose create call still runs.
+var errTransferLive = fmt.Errorf("%w: the transfer is still running", ErrInvalidRequest)
 
 // TransferIssue moves an open ticket out of the Epic into an external
 // tracker. The ticket is reserved (held from dispatch, removal dry-run) before
@@ -25,7 +32,7 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 	if !ok {
 		return "", ErrFactoryUnavailable
 	}
-	url, err := store.ReserveFactoryIssueTransfer(ctx, epicID, issueID, time.Now())
+	url, claim, err := store.ReserveFactoryIssueTransfer(ctx, epicID, issueID, time.Now())
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		return "", fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
@@ -34,9 +41,20 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 	}
 	local := context.WithoutCancel(ctx)
 	if url == "" {
+		s.transfersMu.Lock()
+		if s.liveTransfers == nil {
+			s.liveTransfers = map[string]bool{}
+		}
+		s.liveTransfers[issueID] = true
+		s.transfersMu.Unlock()
+		defer func() {
+			s.transfersMu.Lock()
+			delete(s.liveTransfers, issueID)
+			s.transfersMu.Unlock()
+		}()
 		issues, err := s.ListIssues(ctx, epicID)
 		if err != nil {
-			_ = store.ReleaseFactoryIssueTransfer(local, epicID, issueID)
+			_ = store.ReleaseFactoryIssueTransfer(local, epicID, issueID, claim)
 			return "", err
 		}
 		var issue Issue
@@ -46,10 +64,12 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 			}
 		}
 		if url, err = create(ctx, issue); err != nil {
-			_ = store.ReleaseFactoryIssueTransfer(local, epicID, issueID)
+			if !errors.Is(err, ErrTrackerUncertain) {
+				_ = store.ReleaseFactoryIssueTransfer(local, epicID, issueID, claim)
+			}
 			return "", err
 		}
-		if err := store.RecordFactoryIssueTransfer(local, epicID, issueID, url); err != nil {
+		if err := store.RecordFactoryIssueTransfer(local, epicID, issueID, claim, url); err != nil {
 			return url, err
 		}
 	}
@@ -68,7 +88,13 @@ func (s *NativeService) CancelIssueTransfer(ctx context.Context, epicID, issueID
 	if !ok {
 		return ErrFactoryUnavailable
 	}
-	if err := store.ReleaseFactoryIssueTransfer(ctx, epicID, issueID); err != nil {
+	s.transfersMu.Lock()
+	live := s.liveTransfers[issueID]
+	s.transfersMu.Unlock()
+	if live {
+		return errTransferLive
+	}
+	if err := store.ReleaseFactoryIssueTransfer(ctx, epicID, issueID, ""); err != nil {
 		return err
 	}
 	s.wakeDispatch()

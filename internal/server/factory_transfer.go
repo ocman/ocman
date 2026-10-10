@@ -53,7 +53,8 @@ func (s *Server) transferFactoryIssue(ctx context.Context, epicID, issueID strin
 		body := fmt.Sprintf("%s\n\n---\nTransferred from ocman Factory Epic %s (%s), Issue %s.", issue.Description, epic.ID, epic.Goal, issue.ID)
 		created, err := creator.CreateIssue(ctx, repo, issue.Title, body)
 		if err != nil {
-			return "", fmt.Errorf("%w: create issue: %w", errFactoryTracker, err)
+			// The POST may have landed before the error; keep the reservation.
+			return "", fmt.Errorf("%w: create issue: %w (%w; check the tracker, then cancel the transfer to retry)", errFactoryTracker, err, factory.ErrTrackerUncertain)
 		}
 		return created.URL, nil
 	})

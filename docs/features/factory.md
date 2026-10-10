@@ -432,9 +432,12 @@ delivery no longer waits on it. Factory checks that the ticket can be removed
 and holds it out of dispatch before calling the tracker, and records the
 created issue first, so retrying after a local failure resumes instead of
 creating a duplicate: the drawer then shows **Resume transfer**. Only one
-transfer can be in flight; if one ends without a recorded result, the drawer
-shows **Cancel transfer**, which returns the ticket to the Epic after you have
-checked the tracker.
+transfer can be in flight, and each reservation has its own identity, so a
+late reply from an earlier attempt can never record onto or release a newer
+one. If the tracker call fails after it may have reached the tracker, or ends
+without a recorded result, the ticket stays held and the drawer shows **Cancel
+transfer**, which returns it to the Epic after you have checked the tracker.
+Cancel is refused while the tracker call is still running.
 
 New dispatch pauses until that graph is approved. Already-running work can
 finish, and completed Issues and checkpoints remain intact. The implementation
