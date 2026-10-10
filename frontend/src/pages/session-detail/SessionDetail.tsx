@@ -79,6 +79,8 @@ import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
 import { useMobilePanel } from './useMobilePanel';
 import { SessionModals, type MessageJumpHistory } from './SessionModals';
 import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
+import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
+import { FactorySessionRecovery } from '../../components/FactorySessionRecovery';
 import { useSessionModal } from './useSessionModal';
 import { SessionSidebar } from './SessionSidebar';
 import { useDocumentVisible, usePanelOpen, usePanelVisible } from '../../lib/usePanelVisible';
@@ -1012,8 +1014,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       platformId={session.platform}
                       directory={session.directory}
                       remoteId={session.remoteId}
-                      factoryEpicID={factoryEpicID}
-                      factorySession={!!session.factoryAttemptId}
                       firstUnreadMessageId={firstUnreadMessageId}
                       unreadMessageCount={unreadMessageCount}
                       onJumpToUnread={(messageId) => setScrollToMessageBookmark({
@@ -1072,8 +1072,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
                     />
                     </>
                   )}
-                  footer={showPendingPrompt || showSseDebug ? (
+                  footer={factoryEpicID || session.factoryAttemptId || showPendingPrompt || showSseDebug ? (
                     <>
+                      <ErrorBoundary name="session:factory" inline resetKey={session.id}>
+                        <FactoryPlanApproval epicID={factoryEpicID} platformID={session.platform} sessionID={session.id} />
+                        {session.factoryAttemptId && <FactorySessionRecovery key={`${session.platform}/${session.id}`} platformID={session.platform} sessionID={session.id} />}
+                      </ErrorBoundary>
                       {showSseDebug && (
                         <details className="oc-sse-debug">
                           <summary>SSE debug ({sseDebugEvents.length})</summary>

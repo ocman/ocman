@@ -96,7 +96,7 @@ function Child() {
     {failedSends.map((entry) => <div role="alert" key={entry.id}>
       {entry.error}<button onClick={() => actions.handleRetrySend(entry.id)}>Retry message</button>
     </div>)}
-    <SessionComposerSlot sessionId="child" platformId="opencode" factoryEpicID=""
+    <SessionComposerSlot sessionId="child" platformId="opencode"
     firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={() => {}}
     composer={{ sessionId: 'child', isRunning: false, onSend: actions.handleSend }} />
   </>;

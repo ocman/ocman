@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { SessionComposerSlot } from './SessionComposerSlot';
 import { useFactoryGraphIssues, useResolveFactoryRecoveryGate, useWorkEpics } from '../../lib/queries';
 import { FactoryRecoveryActions } from '../../components/FactoryRecoveryActions';
+import { FactorySessionRecovery } from '../../components/FactorySessionRecovery';
 
 vi.mock('../../lib/queries', () => ({ useFactoryGraphIssues: vi.fn(), useResolveFactoryRecoveryGate: vi.fn(), useWorkEpics: vi.fn() }));
 vi.mock('../../lib/draftStartClaims', () => ({ readDraftStart: async () => undefined }));
@@ -24,7 +25,10 @@ beforeEach(() => {
 });
 
 function show(platformId = session.platform, sessionId = session.id, factorySession = true) {
-  return render(<MemoryRouter><SessionComposerSlot sessionId={sessionId} platformId={platformId} factoryEpicID="" factorySession={factorySession} firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={vi.fn()} composer={{ isRunning: false } as never} /></MemoryRouter>);
+  return render(<MemoryRouter>
+    {factorySession && <FactorySessionRecovery platformID={platformId} sessionID={sessionId} />}
+    <SessionComposerSlot sessionId={sessionId} platformId={platformId} firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={vi.fn()} composer={{ isRunning: false } as never} />
+  </MemoryRouter>);
 }
 
 it('does not poll Factory Epics for a session no attempt ran in', () => {

@@ -2,8 +2,6 @@ import type { ComponentProps } from 'react';
 import { Composer } from '../../components/assistant/Composer';
 import { PermissionPrompt } from '../../components/session/PermissionPrompt';
 import { QuestionPrompt } from '../../components/session/QuestionPrompt';
-import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
-import { FactorySessionRecovery } from '../../components/FactorySessionRecovery';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { FirstSubmissionNotice } from './FirstSubmissionNotice';
 import { LaunchProgressCard } from '../../components/LaunchProgressCard';
@@ -15,8 +13,6 @@ export interface SessionComposerSlotProps {
   /** Session directory + owner; scope the launch progress card. */
   directory?: string;
   remoteId?: string;
-  factoryEpicID: string;
-  factorySession?: boolean;
   firstUnreadMessageId: string | null;
   unreadMessageCount: number;
   onJumpToUnread: (messageId: string) => void;
@@ -33,24 +29,20 @@ export function SessionPromptSlot({ permission, question }: {
 }
 
 /**
- * What sits below the thread: Factory cards and composer.
- * Pending prompts render inside the conversation viewport instead.
+ * What sits below the thread: launch progress and composer.
+ * Factory cards and pending prompts render inside the conversation viewport.
  */
 export function SessionComposerSlot({
   sessionId,
   platformId,
   directory,
   remoteId,
-  factoryEpicID,
-  factorySession,
   pendingPrompt,
   composer,
 }: SessionComposerSlotProps) {
   const firstPending = useSessionFirstSubmission(sessionId)?.pending;
   return (
     <ErrorBoundary name="session:composer" inline resetKey={sessionId}>
-      <FactoryPlanApproval epicID={factoryEpicID} platformID={platformId} sessionID={sessionId} />
-      {factorySession && <FactorySessionRecovery key={`${platformId}/${sessionId}`} platformID={platformId} sessionID={sessionId} />}
       {/* Above the prompt branches: a launch can start while a prompt is shown. */}
       <LaunchProgressCard directory={directory} remoteId={remoteId} />
       {!pendingPrompt && composer ? (

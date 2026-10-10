@@ -23,7 +23,6 @@ function renderSlot(over: Partial<SessionComposerSlotProps> = {}) {
   const props: SessionComposerSlotProps = {
     sessionId: 's1',
     platformId: 'opencode',
-    factoryEpicID: '',
     firstUnreadMessageId: null,
     unreadMessageCount: 0,
     onJumpToUnread: vi.fn(),
