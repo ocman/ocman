@@ -137,6 +137,22 @@ it.each(['Enter', ' '])('opens a grouped draft with %j without discarding it', (
   expect(getConversationDraft('a')).toBeTruthy();
 });
 
+it.each([false, true])('discards a middle-clicked draft, selected: %s', async (selected) => {
+  rememberConversationDraft({ draftId: 'a', directory: '/repo', title: 'Draft title' });
+  mount('', selected ? newSessionPath({ draftId: 'a', directory: '/repo' }) : '/session/existing');
+  const row = screen.getByTestId('conversation-draft');
+  const down = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true });
+  fireEvent(row, down);
+  expect(down.defaultPrevented).toBe(true);
+  fireEvent(row, new MouseEvent('auxclick', { button: 2, bubbles: true }));
+  expect(getConversationDraft('a')).toBeTruthy();
+  const event = new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true });
+  fireEvent(row, event);
+  expect(event.defaultPrevented).toBe(true);
+  await waitFor(() => expect(getConversationDraft('a')).toBeUndefined());
+  expect(screen.getByTestId('location').textContent).toBe(selected ? '/session/new' : '/session/existing');
+});
+
 it('discards an unselected draft without navigating to it', async () => {
   rememberConversationDraft({ draftId: 'a', directory: '/repo', title: 'Draft title' });
   mount('', '/');

@@ -309,6 +309,29 @@ test('cleared and discarded failed prompts stay empty after reload and an old-UR
   await expect(page.getByRole('textbox')).toHaveValue('');
 });
 
+for (const gesture of ['command', 'middle-click'] as const) {
+  test(`discards a prepared draft via ${gesture} without creating a session`, async ({ mockedPage: page }) => {
+    let starts = 0;
+    await page.route('**/api/sessions/start', async (route) => { starts++; await route.fulfill({ json: {} }); });
+    await prepareDraft(page);
+    await page.goto('/session/new?dir=%2Frepo&draftId=keep&title=Keep');
+    await page.getByRole('textbox').fill('Keep this text.');
+    await expect.poll(async () => (await storedText(page, 'keep'))?.text).toBe('Keep this text.');
+    await page.goto('/session/new?dir=%2Frepo&draftId=discard&title=Discard');
+    await expect(page.getByTestId('session-sidebar').getByRole('button', { name: 'Discard', exact: true })).toBeVisible();
+    if (gesture === 'command') {
+      await page.getByRole('textbox').fill('/archive');
+      await page.getByRole('button', { name: 'Send message' }).click();
+    } else {
+      await page.getByTestId('session-sidebar').getByRole('button', { name: 'Discard', exact: true }).click({ button: 'middle' });
+    }
+    await expect(page).toHaveURL(/draftId=keep/);
+    await expect(page.getByRole('textbox')).toHaveValue('Keep this text.');
+    await expect(page.getByTestId('conversation-draft')).toHaveCount(1);
+    expect(starts).toBe(0);
+  });
+}
+
 test('prepares multiple sidebar drafts without starting sessions', async ({ mockedPage: page }, testInfo) => {
   let starts = 0;
   await page.route('**/api/sessions/start', async (route) => {

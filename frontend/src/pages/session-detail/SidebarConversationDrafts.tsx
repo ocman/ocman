@@ -1,16 +1,14 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArchiveButton } from '../../components/ArchiveButton';
 import { StatusBadge } from '../../components/StatusBadge';
 import { InlineAlert } from '../../components/InlineAlert';
 import { shortPath, fuzzyMatch, relativeTime } from '../../lib/format';
 import { newSessionPath } from '../../lib/newSessionPath';
-import { useApiStore } from '../../lib/apiStore';
-import { useUiStore } from '../../lib/uiStore';
 import { forgetConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import './SidebarConversationDrafts.css';
 import { SidebarRow } from './SidebarRow';
+import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
 
 export function SidebarConversationDrafts({ searchQuery, drafts: supplied, inGroup = false }: { searchQuery: string; drafts?: ConversationDraft[]; inGroup?: boolean }) {
   const stored = useNewConversationDrafts((state) => state.drafts);
@@ -32,13 +30,7 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
       // Only a stored discard moves on; a failure keeps the draft, its text and files.
       await forgetConversationDraft(draft.draftId, () => {
         if (currentLocation.current?.key !== location.key || draft.draftId !== activeId) return;
-        const next = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId !== draft.draftId);
-        const sessions = useApiStore.getState().recentSessions.filter((session) => !session.archived);
-        const lastOpened = sessions.find((session) => session.id === useUiStore.getState().lastOpenedSessionId);
-        const target = lastOpened ?? sessions.reduce<(typeof sessions)[number] | undefined>(
-          (latest, session) => !latest || session.timeUpdated > latest.timeUpdated ? session : latest, undefined);
-        // Stay on the session route: bouncing through / unmounts the workspace.
-        flushSync(() => navigate(next ? newSessionPath(next) : target ? `/session/${target.id}` : '/session/new', { replace: true }));
+        navigateAfterDraftDiscard(draft.draftId, navigate);
       });
     } catch (error) {
       setFailed({ draftId: draft.draftId, message: `Could not discard the draft: ${error instanceof Error ? error.message : String(error)}` });
@@ -53,7 +45,13 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
       const title = draft.title || `New session ${useNewConversationDrafts.getState().drafts.findIndex((entry) => entry.draftId === draft.draftId) + 1}`;
       return <SidebarRow key={draft.draftId} data-testid="conversation-draft" active={draft.draftId === activeId} aria-label={title}
       inGroup={inGroup} flat={!inGroup} className="session-sidebar-draft" aria-current={draft.draftId === activeId ? 'page' : undefined}
-      onClick={() => navigate(newSessionPath(draft))}>
+      onClick={() => navigate(newSessionPath(draft))}
+      onMouseDown={(event) => { if (event.button === 1) event.preventDefault(); }}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        void discard(draft);
+      }}>
       {inGroup && <StatusBadge status="done" compact draft seen />}
       <span className="session-sidebar-item-body">
         {!inGroup && <span className="session-sidebar-project"><StatusBadge status="done" compact draft seen />

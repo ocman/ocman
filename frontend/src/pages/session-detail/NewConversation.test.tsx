@@ -13,7 +13,8 @@ import { describeModel } from '../../components/assistant/composerModel';
 import { useComposerModel } from './useComposerModel';
 import type { Message } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
-import { rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { getConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { transact } from '../../lib/draftDb';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), baseRef: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -33,17 +34,19 @@ vi.mock('../../lib/api', () => ({
 }));
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign((selector: (s: Record<string, unknown>) => unknown) => selector({ seedNewSession: mocks.seed }), {
-    getState: () => ({ seedNewSession: mocks.seed, getCachedSession: () => null }),
+    getState: () => ({ seedNewSession: mocks.seed, getCachedSession: () => null, recentSessions: [] }),
   }),
 }));
 vi.mock('../../lib/uiStore', () => ({
-  useUiStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ openWorktreeForm: mocks.openWorktreeForm }),
+  useUiStore: Object.assign((selector: (s: Record<string, unknown>) => unknown) => selector({ openWorktreeForm: mocks.openWorktreeForm }), {
+    getState: () => ({ lastOpenedSessionId: undefined }),
+  }),
 }));
 vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => mocks.caps,
 }));
-vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
+vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn(), warn: vi.fn() } }));
 let composer: ComposerProps;
 vi.mock('../../components/assistant/Composer', () => ({
   Composer: (props: ComposerProps) => { composer = props; return <span>{props.target}:{String(props.disabled)}</span>; },
@@ -561,6 +564,37 @@ describe('NewConversation', () => {
     expect(mocks.progress.size).toBe(0);
     // The session view keeps showing them until the first message arrives.
     expect(startHandoffs.get('child')).toEqual({ prompt: 'Fix login', steps: { opencode: 'active', worktree: 'done' } });
+  });
+
+  it.each([false, true])('closes a draft with /archive without starting a session, another draft: %s', async (another) => {
+    if (another) rememberConversationDraft({ draftId: 'other', directory: '/other' });
+    mount();
+    await ready();
+    saveDraft('new', 'unsent text');
+    await act(() => composer.onCommand!('archive', ''));
+    expect(getConversationDraft('new')).toBeUndefined();
+    expect(getDraft('new')).toBe('');
+    expect(navigate).toHaveBeenCalledWith(another ? '/session/new?dir=%2Fother&draftId=other' : '/session/new', { replace: true });
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps the draft and route when /archive cannot persist its deletion', async () => {
+    mount();
+    await ready();
+    saveDraft('new', 'unsent text');
+    await transact(['drafts', 'texts'], 'readonly', (tx) => tx.get('drafts', 'new'));
+    const fail = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => { throw new Error('storage failed'); });
+    try {
+      await act(async () => { await expect(composer.onCommand!('archive', '')).rejects.toThrow('storage failed'); });
+      expect(getConversationDraft('new')).toBeTruthy();
+      expect(getDraft('new')).toBe('unsent text');
+      expect(navigate).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent('Could not discard the draft');
+    } finally { fail.mockRestore(); }
+    await act(() => composer.onCommand!('archive', ''));
+    expect(getConversationDraft('new')).toBeUndefined();
+    expect(navigate).toHaveBeenCalledWith('/session/new', { replace: true });
   });
 
   it('keeps ocman built-ins out of the first submission and opens the worktree form for /wt', async () => {

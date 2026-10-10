@@ -122,7 +122,8 @@ list with its host badge.
 
 New conversations appear alongside sessions in the sidebar immediately, at the
 top of their project in grouped view. You can prepare several, switch between
-them, and discard one with its archive-style button.
+them, and discard one with its archive-style button, a middle-click on its
+sidebar row, or `/archive` in its composer.
 Their text, machine, target, model and agent selections are saved separately in
 this browser and survive a reload. Preparing a draft does not start an agent or
 create a worktree. Sending its first prompt creates the real session and removes

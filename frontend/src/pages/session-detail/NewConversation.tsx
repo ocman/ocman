@@ -8,7 +8,7 @@ import { api, postJSON, type PrepareSessionResponse, type StartSessionRequest } 
 import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, getConversationDraft, rememberConversationDraft, retryConversationDraftSave, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft, getConversationDraft, rememberConversationDraft, retryConversationDraftSave, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
@@ -34,6 +34,7 @@ import { sendFirstFiles } from './sendFirstFiles';
 import { StartProgress, type StartSteps } from './StartProgress';
 import { startHandoffs, startModels } from './startHandoffs';
 import { PreparedDraftLifecycle } from './PreparedDraftLifecycle';
+import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
 import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
 
 export interface NewConversationProps {
@@ -299,6 +300,14 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   };
 
   const onCommand = (command: string, args: string) => {
+    if (command === 'archive') {
+      return forgetConversationDraft(draftId, () => {
+        if (active.current) navigateAfterDraftDiscard(draftId, navigate);
+      }).catch((error: unknown) => {
+        if (active.current) setError(`Could not discard the draft: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+      });
+    }
     if (command === 'wt' || command === 'worktree') {
       openWorktreeForm({ projectDir: projectRootForDirectory(directory), branch: args.trim() || undefined, remoteId });
       return;
