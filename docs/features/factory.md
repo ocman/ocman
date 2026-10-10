@@ -417,9 +417,10 @@ task leaves the commit checkpoint unchanged.
 
 A failing validator does not need approval for fixes within the approved
 design. It calls `mutate_graph` with its own `attempt_id` and `attempt_token`
-and a batch that only creates `task` or `implementation` Issues under the
-implementation phase. Factory adds them as ready tickets, ends the
-verification attempt, records the rationale as a comment on the verification
+and a batch that only creates required `task` or `implementation` Issues under
+the implementation phase; an omitted project defaults to the repository being
+verified. Factory stops the validator session first (a failed stop changes
+nothing), then adds the tickets, ends the verification attempt, records the rationale as a comment on the verification
 step, and runs a fresh verification once the tickets succeed. Validators use
 `request_recovery` only when a human must decide: the approved design is
 wrong, or the failure lies outside the code. These calls are refused while
@@ -429,7 +430,10 @@ Any open task Issue can leave the Epic instead: **Transfer to issue tracker**
 in the Issue drawer opens a GitHub or Forgejo issue in the project's
 repository (preferring `origin`) with the ticket's title and description,
 comments the link on the Factory Issue, and removes it from the Epic so
-delivery no longer waits on it.
+delivery no longer waits on it. Factory checks that the ticket can be removed
+and holds it out of dispatch before calling the tracker, and records the
+created issue first, so retrying after a local failure resumes instead of
+creating a duplicate.
 
 New dispatch pauses until that graph is approved. Already-running work can
 finish, and completed Issues and checkpoints remain intact. The implementation

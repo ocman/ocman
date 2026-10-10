@@ -10,7 +10,7 @@ import (
 )
 
 type nativeVerificationFollowUpStore interface {
-	AddFactoryVerificationFollowUps(context.Context, string, model.GraphMutation, time.Time) ([]string, error)
+	AddFactoryVerificationFollowUps(context.Context, string, model.GraphMutation, time.Time, bool) ([]string, error)
 	GetFactoryAttempt(context.Context, string) (model.FactoryAttempt, bool, error)
 }
 
@@ -40,15 +40,24 @@ func (s *NativeService) AddVerificationFollowUps(ctx context.Context, attemptID,
 	if !found {
 		return nil, fmt.Errorf("%w: factory attempt is unavailable", ErrInvalidRequest)
 	}
-	created, err := store.AddFactoryVerificationFollowUps(ctx, attemptID, mutation, time.Now())
+	// Validate first, then stop the validator while its attempt still holds
+	// the workspace, and only then release it: follow-ups never run beside a
+	// validator that is still executing checks. A failed stop changes nothing.
+	if _, err := store.AddFactoryVerificationFollowUps(ctx, attemptID, mutation, time.Now(), false); err != nil {
+		return nil, err
+	}
+	// The call comes from this session, so aborting it may cancel ctx.
+	ctx = context.WithoutCancel(ctx)
+	if s.implementation != nil && attempt.Session.ID != "" {
+		if err := s.implementation.StopImplementationSession(ctx, attempt.Session); err != nil {
+			return nil, fmt.Errorf("stop verification session: %w", err)
+		}
+	}
+	created, err := store.AddFactoryVerificationFollowUps(ctx, attemptID, mutation, time.Now(), true)
 	if err != nil {
 		return nil, err
 	}
 	s.forgetVerificationChecks(attemptID)
-	if s.implementation != nil && attempt.Session.ID != "" {
-		// The call arrives from this session; stop it once the reply is out.
-		go func() { _ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session) }()
-	}
 	s.wakeDispatch()
 	return created, nil
 }

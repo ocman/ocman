@@ -116,7 +116,7 @@ it('transfers an open ticket to the issue tracker after confirmation', async () 
 	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate, isPending: false, isError: true, error: new Error('no supported issue tracker') } as never);
 	rerender(<MemoryRouter><IssueDrawer issue={issue} onClose={() => {}} /></MemoryRouter>);
 	expect(screen.getByRole('alert')).toHaveTextContent('no supported issue tracker');
-	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate, data: { url: 'https://forge.example/issues/3', number: 3 }, isPending: false, isError: false } as never);
+	vi.mocked(useTransferFactoryIssue).mockReturnValue({ mutate, data: { url: 'https://forge.example/issues/3' }, isPending: false, isError: false } as never);
 	rerender(<MemoryRouter><IssueDrawer issue={issue} onClose={() => {}} /></MemoryRouter>);
 	expect(screen.getByRole('link', { name: 'https://forge.example/issues/3' })).toBeInTheDocument();
 	rerender(<MemoryRouter><IssueDrawer issue={{ ...issue, status: 'in_progress' }} onClose={() => {}} /></MemoryRouter>);

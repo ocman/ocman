@@ -17,9 +17,11 @@ const factoryVerificationActor = "verification"
 // found into Epic tickets without a graph-approval round: nearly every such
 // approval was a rubber stamp. The new work reopens the implementation phase
 // and the verification step goes back to open behind it, so a fresh
-// verification runs once the follow-ups land. Only new Issues are allowed;
-// the user can still transfer or delete them like any open ticket.
-func (d *DB) AddFactoryVerificationFollowUps(ctx context.Context, attemptID string, m model.GraphMutation, at time.Time) ([]string, error) {
+// verification runs once the follow-ups land. Only new required Issues are
+// allowed; the user can still transfer or delete them like any open ticket.
+// With apply false everything is validated and rolled back, so the caller can
+// stop the validator before the workspace is released.
+func (d *DB) AddFactoryVerificationFollowUps(ctx context.Context, attemptID string, m model.GraphMutation, at time.Time, apply bool) ([]string, error) {
 	invalid := func(message string) error { return fmt.Errorf("%w: %s", model.ErrInvalidGraphMutation, message) }
 	changes := []model.GraphMutation{m}
 	if m.Action == "batch" {
@@ -34,9 +36,9 @@ func (d *DB) AddFactoryVerificationFollowUps(ctx context.Context, attemptID stri
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var workID, epicID string
-	err = tx.QueryRowContext(ctx, `SELECT a.work_item_id, a.epic_id FROM factory_attempt a JOIN factory_workflow_step w ON w.issue_id = a.work_item_id
-		WHERE a.id = ? AND a.phase = 'active' AND json_extract(w.definition_json, '$.kind') = 'verification'`, attemptID).Scan(&workID, &epicID)
+	var workID, epicID, project string
+	err = tx.QueryRowContext(ctx, `SELECT a.work_item_id, a.epic_id, i.project_path FROM factory_attempt a JOIN factory_workflow_step w ON w.issue_id = a.work_item_id JOIN factory_issue i ON i.id = a.work_item_id
+		WHERE a.id = ? AND a.phase = 'active' AND json_extract(w.definition_json, '$.kind') = 'verification'`, attemptID).Scan(&workID, &epicID, &project)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, invalid("only an active verification attempt may add follow-up Issues")
 	}
@@ -58,7 +60,15 @@ func (d *DB) AddFactoryVerificationFollowUps(ctx context.Context, attemptID stri
 		if change.Action != "create" || (change.Kind != "task" && change.Kind != "implementation") || len(change.Mutations) != 0 || (change.EpicID != "" && change.EpicID != epicID) {
 			return nil, invalid("verification follow-ups may only create task or implementation Issues")
 		}
-		change.EpicID, change.Actor = epicID, factoryVerificationActor
+		// A reference or optional ticket would never run, or could be skipped,
+		// yet verification would restart as if the repair were scheduled.
+		if change.Requirement != "" && change.Requirement != "required" {
+			return nil, invalid("verification follow-ups must be required executable Issues")
+		}
+		if change.Project == "" {
+			change.Project = project // the repository this step verified
+		}
+		change.EpicID, change.Actor, change.Requirement = epicID, factoryVerificationActor, "required"
 		if err := mutateFactoryGraphTx(ctx, tx, change, false); err != nil {
 			return nil, err
 		}
@@ -67,6 +77,9 @@ func (d *DB) AddFactoryVerificationFollowUps(ctx context.Context, attemptID stri
 			return nil, err
 		}
 		created = append(created, id)
+	}
+	if !apply {
+		return created, nil
 	}
 	now := at.UnixMilli()
 	if _, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'cancelled', finished_at = ?, updated_at = ? WHERE id = ? AND phase = 'active'`, now, now, attemptID); err != nil {

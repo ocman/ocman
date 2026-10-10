@@ -49,7 +49,7 @@ describe('Factory query freshness', () => {
   it('refreshes Epics and the queue after mutations', async () => {
     vi.mocked(api.factoryPlanGate).mockResolvedValue({} as never);
     vi.mocked(api.resolveFactoryAuthorityGate).mockResolvedValue({} as never);
-    vi.mocked(api.transferFactoryIssue).mockResolvedValue({ url: 'u', number: 1 });
+    vi.mocked(api.transferFactoryIssue).mockResolvedValue({ url: 'u' });
     const { client, wrapper } = setup();
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     const gate = renderHook(() => useDecideFactoryPlanGate('epic-1'), { wrapper });
