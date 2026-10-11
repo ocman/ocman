@@ -299,6 +299,10 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 // SetPermissionRules replaces a session's permission rules. Rules are
 // normalized in place: an empty pattern defaults to "*".
 func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req platforms.SetPermissionRulesRequest) error {
+	// Bound submitted updates, not internally generated creation profiles.
+	if len(req.Rules) > 100 {
+		return validation("too many rules")
+	}
 	if err := normalizePermissionRules(req.Rules); err != nil {
 		return err
 	}
@@ -316,9 +320,6 @@ func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req
 }
 
 func normalizePermissionRules(rules []platforms.PermissionRule) error {
-	if len(rules) > 100 {
-		return validation("too many rules")
-	}
 	for i := range rules {
 		rule := &rules[i]
 		if rule.Permission == "" {

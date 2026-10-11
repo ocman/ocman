@@ -3,6 +3,7 @@ package sessionsvc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -118,16 +119,31 @@ func TestDisposePreservesCleanupOnGenericSessionLookupFailure(t *testing.T) {
 }
 
 func TestCreateConfiguredPublishesAfterRules(t *testing.T) {
-	platform := &fakePlatform{id: "opencode", available: true}
-	registry := &fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}
-	publishedAfterRules := false
-	svc := New(registry, Hooks{SessionCreated: func(CreatedSession) { publishedAfterRules = len(platform.rules) == 1 }})
+	for _, count := range []int{1, 101} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			platform := &fakePlatform{id: "opencode", available: true}
+			registry := &fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}
+			publishedAfterRules := false
+			svc := New(registry, Hooks{SessionCreated: func(CreatedSession) {
+				publishedAfterRules = len(platform.rules) == 1 && len(platform.rules[0].Rules) == count
+			}})
+			rules := make([]platforms.PermissionRule, count)
+			for i := range rules {
+				rules[i] = platforms.PermissionRule{Permission: "read", Action: "allow"}
+			}
 
-	if _, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Action: "allow"}}); err != nil {
-		t.Fatal(err)
-	}
-	if !publishedAfterRules || len(platform.aborts) != 0 {
-		t.Fatalf("publishedAfterRules = %v, aborts = %#v", publishedAfterRules, platform.aborts)
+			if _, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, rules); err != nil {
+				t.Fatal(err)
+			}
+			if !publishedAfterRules || len(platform.aborts) != 0 {
+				t.Fatalf("publishedAfterRules = %v, aborts = %#v", publishedAfterRules, platform.aborts)
+			}
+			for _, rule := range platform.rules[0].Rules {
+				if rule.Pattern != "*" {
+					t.Fatalf("unnormalized rule = %#v", rule)
+				}
+			}
+		})
 	}
 }
 func (f *fakePlatform) RespondPermission(_ context.Context, req platforms.RespondPermissionRequest) error {

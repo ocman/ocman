@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -150,6 +151,42 @@ func TestFactoryControlSessionIsOnePerEpic(t *testing.T) {
 	f.svc.epics[0].Status = "closed"
 	if got := f.call(http.MethodPost, "/api/factory/epics/epic-1/control"); got.Code != http.StatusBadRequest {
 		t.Fatalf("closed epic = %d %s", got.Code, got.Body.String())
+	}
+}
+
+func TestFactoryDiscussIssueWithManyInstalledSkills(t *testing.T) {
+	factorySkillRulesFixture(t)
+	skills := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "opencode", "skills")
+	for i := range 110 {
+		directory := filepath.Join(skills, strings.Repeat("s", i+1))
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte("# Skill\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := newControlFixture(t)
+	got := f.call(http.MethodPost, "/api/factory/epics/epic-1/issues/issue-1/discuss")
+	if got.Code != http.StatusCreated {
+		t.Fatalf("investigate blocked issue = %d %s", got.Code, got.Body.String())
+	}
+	if len(f.rules.Rules) <= 100 || !f.delivered(t, "Look into Issue Transport (issue-1)") {
+		t.Fatalf("rules = %d, issue investigation not delivered", len(f.rules.Rules))
+	}
+	for _, rule := range []platforms.PermissionRule{
+		{Permission: "external_directory", Pattern: "*", Action: "deny"},
+		{Permission: "bash", Pattern: "*", Action: "deny"},
+		{Permission: "edit", Pattern: "*", Action: "deny"},
+	} {
+		if !slices.Contains(f.rules.Rules, rule) {
+			t.Fatalf("missing restriction %#v", rule)
+		}
+	}
+	for _, rule := range factoryExternalDirectoryRules() {
+		if !slices.Contains(f.rules.Rules, rule) {
+			t.Fatalf("missing skill rule %#v", rule)
+		}
 	}
 }
 
