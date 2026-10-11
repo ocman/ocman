@@ -154,6 +154,46 @@ func TestFactoryControlSessionIsOnePerEpic(t *testing.T) {
 	}
 }
 
+func TestFactoryControlMessagesRespectEpicPlanningModel(t *testing.T) {
+	for _, selected := range []string{"test/planner", ""} {
+		t.Run("model="+selected, func(t *testing.T) {
+			f := newControlFixture(t)
+			f.svc.epics[0].Models = model.EpicModels{Plan: selected, Implementation: "test/implementer", Verification: "test/verifier"}
+			f.platform.sessionModelsFn = func() *platforms.SessionModelsResponse {
+				return &platforms.SessionModelsResponse{Models: []platforms.SessionModel{{Provider: "test", Model: "astra", IsAvailable: true}}}
+			}
+			if _, err := f.srv.postFactoryControl(t.Context(), "epic-1", "First update"); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.sent) != 1 || f.sent[0].Model != selected {
+				t.Fatalf("initial control prompt = %#v, want model %q", f.sent, selected)
+			}
+			queued, err := f.srv.stateDB.ListQueuedMessages(t.Context(), "local-agent", "control-1")
+			if err != nil || len(queued) != 1 || queued[0].Model != selected {
+				t.Fatalf("first update = %#v, %v, want model %q", queued, err, selected)
+			}
+			f.svc.epics[0].Models.Plan = "test/new-planner"
+			if _, err := f.srv.postFactoryControl(t.Context(), "epic-1", "Next update"); err != nil {
+				t.Fatal(err)
+			}
+			queued, err = f.srv.stateDB.ListQueuedMessages(t.Context(), "local-agent", "control-1")
+			if err != nil || len(queued) != 2 || queued[1].Model != "test/new-planner" || queued[0].Model != selected || f.creates != 1 {
+				t.Fatalf("updates after model change = %#v, %v, creates %d", queued, err, f.creates)
+			}
+		})
+	}
+}
+
+func TestFactoryControlUpdateRequiresEpic(t *testing.T) {
+	f := newControlFixture(t)
+	if _, err := f.srv.postFactoryControl(t.Context(), "missing", "Update"); !errors.Is(err, factory.ErrWorkEpicNotFound) {
+		t.Fatalf("missing Epic update = %v", err)
+	}
+	if f.creates != 0 || len(f.sent) != 0 {
+		t.Fatalf("missing Epic launched %d sessions and sent %d messages", f.creates, len(f.sent))
+	}
+}
+
 func TestFactoryDiscussIssueWithManyInstalledSkills(t *testing.T) {
 	factorySkillRulesFixture(t)
 	skills := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "opencode", "skills")

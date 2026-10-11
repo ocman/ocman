@@ -287,6 +287,12 @@ Delivery uses the implementation model. Each Attempt freezes its model when it
 is claimed, so a change mid-implementation affects only work that has not
 started.
 
+The control session also uses the Epic's planning model, for its initial prompt
+and every Factory update. Changing that choice affects subsequent updates in
+the existing control session; already queued messages keep their selected model.
+With no explicit planning choice, control messages leave model selection to
+OpenCode rather than automatically selecting Fable or Astra.
+
 The picker combines catalogs from all projects attached to the Epic and searches
 model display names as well as IDs. **Refresh models** reloads those catalogs.
 If a configured model is missing after a configuration change, restart that

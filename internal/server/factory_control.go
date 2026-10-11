@@ -102,7 +102,7 @@ func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 		return state.FactoryControlSession{}, false, err
 	}
 	prompt := factoryIssueProse + "\n\n" + fmt.Sprintf(factoryControlProtocol, epicID, epic.Goal, strings.Join(projects, "\n- "))
-	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: s.factoryControlModel(ctx, session)}); err != nil {
+	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: epic.Models.Plan}); err != nil {
 		// A lost response may mean the prompt was accepted: stop the turn,
 		// keep the history, and never adopt a session without its protocol.
 		_ = launcher.StopPlanningSession(ctx, session)
@@ -140,24 +140,18 @@ func (s *Server) factoryControlAlive(ctx context.Context, control state.FactoryC
 	return err == nil, err
 }
 
-func (s *Server) factoryControlModel(ctx context.Context, session factory.PlanningSession) string {
-	if adapter, ok := s.registry.Get(platforms.ID(session.Platform)); ok {
-		if catalog, err := adapter.SessionModels(ctx, session.ID); err == nil && catalog != nil {
-			return factoryStrongModel(catalog.Models)
-		}
-	}
-	return ""
-}
-
 // postFactoryControl hands Factory news to the Epic's control session. It is
 // queued, so it never interleaves into a turn there, including the first.
 func (s *Server) postFactoryControl(ctx context.Context, epicID, message string) (state.FactoryControlSession, error) {
+	epic, err := s.factory.GetWorkEpic(ctx, epicID)
+	if err != nil {
+		return state.FactoryControlSession{}, err
+	}
 	control, created, err := s.ensureFactoryControlSession(ctx, epicID)
 	if err != nil {
 		return control, err
 	}
-	session := factory.PlanningSession{Platform: control.Platform, ID: control.SessionID}
-	return control, s.queueSvc().Enqueue(ctx, control.Platform, created, platforms.SendMessageRequest{SessionID: control.SessionID, Message: message, Model: s.factoryControlModel(ctx, session)})
+	return control, s.queueSvc().Enqueue(ctx, control.Platform, created, platforms.SendMessageRequest{SessionID: control.SessionID, Message: message, Model: epic.Models.Plan})
 }
 
 // factoryAttentionToControl posts the decisions Factory newly needs into the
