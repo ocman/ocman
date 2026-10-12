@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-frontend:
     name: Build Frontend
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,7 +28,7 @@ jobs:
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     needs: build-frontend
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     strategy:
       matrix:
         include:
@@ -95,7 +95,7 @@ jobs:
 
   release:
     name: Publish Release
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     needs: [build, build-desktop-macos]
     steps:
       - uses: actions/checkout@v4

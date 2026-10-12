@@ -12,7 +12,7 @@ permissions:
 jobs:
   frontend:
     name: Frontend
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,8 +27,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-${{ runner.arch }}-
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -68,7 +68,7 @@ jobs:
 
   backend:
     name: Backend
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     env:
       TERM: xterm-256color
     steps:
@@ -95,10 +95,10 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
           restore-keys: |
-            go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
-            go-${{ runner.os }}-
+            go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-${{ runner.arch }}-
       - name: go.mod tidy check
         run: go mod tidy -diff
       # Nothing detected drift between remote.proto and its committed
@@ -177,7 +177,7 @@ jobs:
     name: Coverage Results
     needs: [frontend, backend]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -228,7 +228,7 @@ jobs:
 
   e2e:
     name: Playwright E2E
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -240,8 +240,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-${{ runner.arch }}-
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -267,7 +267,7 @@ jobs:
   tag:
     name: Semantic Tag
     needs: [frontend, backend, e2e]
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
         with:
