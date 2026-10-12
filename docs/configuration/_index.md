@@ -327,6 +327,12 @@ For local dev, `make otel-up` starts a bundled Grafana LGTM stack on `:3000`, `:
 `:4318`. The `make dev*` targets export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
 and `OTEL_SERVICE_NAME=ocman-dev` for you. See `observability/` for dashboard provisioning.
 
+The provisioned dashboard selects an available `ocman*` service on load. Select
+`ocman-dev` for development runs or `ocman` for the default service name.
+LLM token, cost, and request metrics are collected every 30 seconds even when no
+ocman page is visible. Collection counts new assistant messages after ocman starts;
+existing message history is not imported into these counters.
+
 Logrus logs are exported in batches using the same endpoint and transport, while
 console logging stays enabled. Export respects the configured log level and
 includes structured fields and the service resource. Logs with an active span

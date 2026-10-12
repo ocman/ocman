@@ -159,9 +159,8 @@ func (s *Server) runLLMMetricsLoop(ctx context.Context) {
 }
 
 func (s *Server) runLLMMetricsTick(ctx context.Context, m *llmMetrics, hwm *int64) {
-	if !s.HasDemand("metrics") {
-		return
-	}
+	// Telemetry must keep collecting when no ocman metrics page is visible;
+	// external dashboards do not hold browser activity leases.
 	getMessages := s.getNewAssistantMessages
 	if getMessages == nil {
 		getMessages = s.db.GetNewAssistantMessages

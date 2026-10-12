@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"sync/atomic"
+	"fmt"
 	"testing"
 
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -97,25 +97,52 @@ func TestLLMMetrics_Record(t *testing.T) {
 	}
 }
 
-func TestLLMMetricsTickRequiresDemand(t *testing.T) {
-	srv := New(nil, nil, "", nil, nil)
-	var calls atomic.Int32
-	srv.getNewAssistantMessages = func(context.Context, int64) ([]db.LLMMessageRow, int64, error) {
-		calls.Add(1)
-		return nil, 2, nil
-	}
-	hwm := int64(1)
-	srv.runLLMMetricsTick(context.Background(), nil, &hwm)
-	if got := calls.Load(); got != 0 || hwm != 1 {
-		t.Fatalf("tick without demand: calls=%d hwm=%d, want 0 and 1", got, hwm)
-	}
-
-	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"metrics"}, TTLMS: 45_000}); err != nil {
-		t.Fatal(err)
-	}
-	srv.runLLMMetricsTick(context.Background(), nil, &hwm)
-	if got := calls.Load(); got != 1 || hwm != 2 {
-		t.Fatalf("tick with demand: calls=%d hwm=%d, want 1 and 2", got, hwm)
+func TestLLMMetricsTickWithoutDemand(t *testing.T) {
+	for _, hiddenClient := range []bool{false, true} {
+		t.Run(fmt.Sprintf("hidden-client=%t", hiddenClient), func(t *testing.T) {
+			srv := New(nil, nil, "", nil, nil)
+			if hiddenClient {
+				if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: false, Scopes: []string{"metrics"}, TTLMS: 45_000}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reader := metric.NewManualReader()
+			provider := metric.NewMeterProvider(metric.WithReader(reader))
+			t.Cleanup(func() { provider.Shutdown(context.Background()) })
+			m, err := newLLMMetrics(provider.Meter("test"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			srv.getNewAssistantMessages = func(_ context.Context, since int64) ([]db.LLMMessageRow, int64, error) {
+				calls++
+				if since == 2 {
+					return nil, since, nil
+				}
+				return []db.LLMMessageRow{{Model: "test", SessionID: "session", OutputTokens: 50}}, 2, nil
+			}
+			hwm := int64(1)
+			srv.runLLMMetricsTick(context.Background(), m, &hwm)
+			srv.runLLMMetricsTick(context.Background(), m, &hwm)
+			if calls != 2 || hwm != 2 {
+				t.Fatalf("tick without demand: calls=%d hwm=%d, want 2 and 2", calls, hwm)
+			}
+			var rm metricdata.ResourceMetrics
+			if err := reader.Collect(context.Background(), &rm); err != nil {
+				t.Fatal(err)
+			}
+			metrics := make(map[string]metricdata.Metrics)
+			for _, scope := range rm.ScopeMetrics {
+				for _, instrument := range scope.Metrics {
+					metrics[instrument.Name] = instrument
+				}
+			}
+			if _, ok := metrics["ocman.llm.requests"]; !ok {
+				t.Fatal("LLM requests not emitted without UI demand")
+			}
+			assertInt64Sum(t, metrics, "ocman.llm.requests", 1)
+			assertInt64Sum(t, metrics, "ocman.llm.tokens.output", 50)
+		})
 	}
 }
 
