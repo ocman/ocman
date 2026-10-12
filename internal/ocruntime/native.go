@@ -127,7 +127,9 @@ func (r *NativeRuntime) Stop(ctx context.Context, inst *Instance) error {
 		}
 		return fmt.Errorf("ocruntime: Stop requires an instance with an ID")
 	}
-	if err := r.kill(ctx, inst.ID); err != nil {
+	// Older persisted IDs kept dots; tmux stores them as underscores and
+	// interprets dots in targets as window/pane separators.
+	if err := r.kill(ctx, strings.ReplaceAll(inst.ID, ".", "_")); err != nil {
 		if missingNativeSession(err) && r.endpointAbsent(ctx, inst) {
 			return nil
 		}

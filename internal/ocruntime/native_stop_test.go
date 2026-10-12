@@ -52,6 +52,30 @@ func TestNativeStopCanEstablishAbsenceWithoutRuntimeID(t *testing.T) {
 	}
 }
 
+func TestNativeStopNormalizesPersistedDottedSessionID(t *testing.T) {
+	for _, id := range []string{
+		"~/src/github.com/example/project",
+		"~/src/github_com/example/project",
+	} {
+		t.Run(id, func(t *testing.T) {
+			const session = "~/src/github_com/example/project"
+			runtime := &NativeRuntime{kill: func(_ context.Context, target string) error {
+				if target != session {
+					return fmt.Errorf("tmux command failed: %w: can't find window: ~/src/github", &exec.ExitError{})
+				}
+				return nil
+			}}
+			inst := &Instance{ID: id}
+			if err := runtime.Stop(t.Context(), inst); err != nil {
+				t.Fatalf("persisted session ID blocked recovery: %v", err)
+			}
+			if inst.ID != id {
+				t.Fatal("Stop changed the persisted runtime handle")
+			}
+		})
+	}
+}
+
 func TestMissingTmuxBinaryIsNotEvidenceOfStoppedSession(t *testing.T) {
 	for _, err := range []error{errors.New("no server running"), &os.PathError{Op: "fork/exec", Path: "tmux", Err: syscall.ENOENT}, &exec.ExitError{Stderr: []byte("permission denied")}} {
 		if missingNativeSession(err) {
