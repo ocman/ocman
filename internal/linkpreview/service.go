@@ -244,7 +244,7 @@ func (s *Service) fetch(ctx context.Context, r Resolver, api *API, grant bool, v
 	for _, h := range r.APIHosts() {
 		hosts[strings.ToLower(h)] = true
 	}
-	api.client, api.hosts = s.client, hosts
+	api.client, api.hosts, api.now = s.client, hosts, s.now
 	p, err := r.Fetch(ctx, api, ref)
 	var he *HTTPError
 	errors.As(err, &he)
@@ -332,7 +332,7 @@ func safeURL(raw string) string {
 func sanitize(p Preview, ref Ref) Preview {
 	out := Preview{
 		Ref: ref, Title: short(p.Title, 200), Status: short(p.Status, 40),
-		UpdatedAt: p.UpdatedAt, State: StateOK,
+		UpdatedAt: p.UpdatedAt, State: StateOK, Stale: p.Stale,
 	}
 	if u := safeURL(p.URL); u != "" {
 		out.URL = u

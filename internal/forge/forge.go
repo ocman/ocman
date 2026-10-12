@@ -186,6 +186,7 @@ type ListOptions struct {
 // quota; otherwise Limited stays false and ResetAt is the zero value.
 type RateLimit struct {
 	Limited bool      `json:"limited"`
+	Stale   bool      `json:"stale,omitempty"`
 	ResetAt time.Time `json:"resetAt,omitempty"`
 }
 

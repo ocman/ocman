@@ -2,6 +2,7 @@ package linkpreview
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -19,38 +20,9 @@ func WithPreviewRefresh(ctx context.Context) context.Context {
 	return context.WithValue(ctx, previewRefreshKey{}, true)
 }
 
-// Checks clients normally format 401/403 as strings. Preserve their status at
-// the HTTP boundary so the preview service can revoke or classify the grant.
-type checksAuthTransport struct{ http.RoundTripper }
-
-func (t checksAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.RoundTripper.RoundTrip(req)
-	if err != nil {
-		return resp, err
-	}
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		resp.Body.Close()
-		he := &HTTPError{Status: resp.StatusCode}
-		if resp.StatusCode == http.StatusForbidden && (resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0") {
-			he.Status = http.StatusTooManyRequests
-			limit := forgehttp.ParseRateLimit(resp.Header, true)
-			if !limit.ResetAt.IsZero() {
-				he.RetryAfter = time.Until(limit.ResetAt)
-			}
-		}
-		return nil, he
-	}
-	return resp, nil
-}
-
 // The same forge clients paginate and normalize checks for the sidebar.
 func (f Forge) fetchChecks(ctx context.Context, api *API, repo, sha string) (Preview, error) {
 	client := *api.client
-	transport := client.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	client.Transport = checksAuthTransport{transport}
 	var status forge.CIStatus
 	var limit forge.RateLimit
 	var err error
@@ -60,6 +32,17 @@ func (f Forge) fetchChecks(ctx context.Context, api *API, repo, sha string) (Pre
 		status, limit, err = github.NewWithCredentials(f.APIBase, api.token, &client).Checks(ctx, repo, sha)
 	}
 	if err != nil {
+		var upstream *forgehttp.ResponseError
+		if errors.As(err, &upstream) && (upstream.Status == http.StatusUnauthorized || upstream.Status == http.StatusForbidden) {
+			he := &HTTPError{Status: upstream.Status}
+			if upstream.RateLimit.Limited {
+				he.Status = http.StatusTooManyRequests
+				if !upstream.RateLimit.ResetAt.IsZero() {
+					he.RetryAfter = time.Until(upstream.RateLimit.ResetAt)
+				}
+			}
+			return Preview{}, he
+		}
 		return Preview{}, err
 	}
 	if limit.Limited {
@@ -72,5 +55,5 @@ func (f Forge) fetchChecks(ctx context.Context, api *API, repo, sha string) (Pre
 	if status.Checks == nil {
 		status.Checks = []forge.Check{}
 	}
-	return Preview{Checks: &status}, nil
+	return Preview{Checks: &status, Stale: limit.Stale}, nil
 }

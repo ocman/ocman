@@ -19,7 +19,7 @@ export interface UseUpstreamListResult<T extends UpstreamListItem> {
   error: UpstreamApiError | Error | null;
   pagination: Pagination;
   rateLimit: RateLimit;
-  refresh: () => void;
+  refresh: (fresh?: boolean) => void;
   setPage: (page: number) => void;
   page: number;
 }
@@ -51,6 +51,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   // refreshCounter increments to force a re-run of the effect even
   // when none of the dependencies changed (manual refresh button).
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const refreshRequested = useRef(false);
   const requestKey = JSON.stringify([kind, dir, remoteId, remote, state, mine, page, enabled]);
   const [activeKey, setActiveKey] = useState(requestKey);
   const lastRequestKey = useRef(requestKey);
@@ -98,7 +99,8 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
       setError(null);
       setRateLimit({ limited: false });
 
-      const params = { dir, remoteId, remote, state, mine, page, signal: ctrl.signal };
+      const params = { dir, remoteId, remote, state, mine, page, signal: ctrl.signal, refresh: refreshRequested.current };
+      refreshRequested.current = false;
       const fetcher =
         kind === 'prs'
           ? fetchPRs(params).then((r) => ({
@@ -139,7 +141,8 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
     };
   }, [enabled, dir, remoteId, remote, state, mine, page, kind, refreshCounter, requestKey, visible]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback((fresh = true) => {
+    refreshRequested.current = fresh;
     setRefreshCounter((n) => n + 1);
   }, []);
 

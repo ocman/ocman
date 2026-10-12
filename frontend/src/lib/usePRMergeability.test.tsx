@@ -82,10 +82,12 @@ describe('usePRMergeability', () => {
     vi.mocked(api.fetchPRMergeability).mockResolvedValueOnce({ mergeable: true, approved: true }).mockResolvedValueOnce({ mergeable: false, approved: false });
     const { result } = renderHook(() => usePRMergeability(pr, '/repo', 'local', 'origin', true));
     await waitFor(() => expect(result.current).toEqual({ mergeable: true, approved: true }));
+    expect(api.fetchPRMergeability).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: false }));
     act(() => clearPRChecksCache(['github.com/other/repo']));
     expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
     act(() => clearPRChecksCache(['github.com/a/repo']));
     await waitFor(() => expect(result.current).toEqual({ mergeable: false, approved: false }));
+    expect(api.fetchPRMergeability).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: true }));
     expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2);
   });
 

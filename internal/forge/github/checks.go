@@ -37,7 +37,7 @@ func (c *Client) Checks(ctx context.Context, repo, sha string) (forge.CIStatus, 
 		return forge.CIStatus{}, rl2, err
 	}
 	// Prefer the most recent rate-limit reading.
-	if rl2.Limited {
+	if rl2.Limited || rl2.Stale {
 		rl = rl2
 	}
 

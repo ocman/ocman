@@ -192,7 +192,7 @@ function UpstreamTabContent({
   // Always render the filter strip + per-remote groups. Each group
   // owns its own fetch hook (via UpstreamRemoteGroup below) so a
   // failure in one host doesn't block the other.
-  const groupRefreshers = useMemo<Array<() => void>>(() => [], []);
+  const groupRefreshers = useMemo<Array<(fresh?: boolean) => void>>(() => [], []);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Compose a single refresh callback that fans out to every group.
@@ -208,9 +208,9 @@ function UpstreamTabContent({
       const sameProject = projectId && projectId !== 'global' && hint.projectId === projectId;
       if (!sameProject && hint.directory !== directory && hint.directory !== launchDirectory) return;
       clearTimeout(refreshTimer.current);
+      // Automatic hints re-read cached data; only the Refresh button spends GitHub quota.
       refreshTimer.current = setTimeout(() => {
-        clearPRChecksCache(upstreams.map((u) => `${u.host}/${u.repo}`));
-        for (const refresh of groupRefreshers) refresh();
+        for (const refresh of groupRefreshers) refresh(false);
       }, 750);
     });
     return unsubscribe;

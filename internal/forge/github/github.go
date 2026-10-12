@@ -41,21 +41,14 @@ type Client struct {
 
 // New creates a Client and discovers a GitHub token from the environment.
 func New() *Client {
-	return &Client{
-		token: discoverToken(),
-		http:  forgehttp.InstrumentClient(nil),
-	}
+	return NewWithCredentials(DefaultAPIBase, discoverToken(), forgehttp.InstrumentClient(nil))
 }
 
 // NewForTest returns a Client wired against the given apiBase and
 // token. Intended for tests that need to point the client at a
 // httptest.Server; not used in production paths.
 func NewForTest(apiBase, token string, httpClient *http.Client) *Client {
-	return &Client{
-		token:   token,
-		http:    forgehttp.InstrumentClient(httpClient),
-		apiBase: apiBase,
-	}
+	return NewWithCredentials(apiBase, token, forgehttp.InstrumentClient(httpClient))
 }
 
 // base returns the effective API base URL, falling back to

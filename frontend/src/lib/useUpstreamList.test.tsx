@@ -6,6 +6,24 @@ import { useUpstreamList } from './useUpstreamList';
 
 beforeEach(() => vi.restoreAllMocks());
 
+it('only bypasses the backend cache for an explicit refresh, not page changes or automatic reads', async () => {
+  const fetch = vi.spyOn(api, 'fetchPRs').mockResolvedValue({ prs: [], pagination: { page: 1, hasMore: true }, rateLimit: { limited: false } });
+  const { result } = renderHook(() => useUpstreamList<api.PR>({
+    kind: 'prs', dir: '/repo', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, enabled: true,
+  }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  expect(fetch.mock.calls[0][0].refresh).toBe(false);
+  act(() => result.current.refresh());
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  expect(fetch.mock.calls[1][0].refresh).toBe(true);
+  act(() => result.current.setPage(2));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  expect(fetch.mock.calls[2][0].refresh).toBe(false);
+  act(() => result.current.refresh(false));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+  expect(fetch.mock.calls[3][0].refresh).toBe(false);
+});
+
 it('clears rows when the project changes', async () => {
   const snapshots: Array<{ dir: string; titles: string[] }> = [];
   vi.spyOn(api, 'fetchPRs')

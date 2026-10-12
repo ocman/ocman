@@ -322,6 +322,7 @@ func TestProviderLifecycle(t *testing.T) {
 			expect("reconnected", StateOK)
 			l.revokeAll()
 			svc.Purge("", "", "")
+			ctx = WithPreviewRefresh(ctx)
 			expect("access revoked", StateConnect)
 			if connected() != 0 {
 				t.Fatal("401 did not forget the grant")

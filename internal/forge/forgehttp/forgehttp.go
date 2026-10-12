@@ -96,7 +96,8 @@ func Get(ctx context.Context, client *http.Client, req *http.Request) ([]byte, f
 // X-RateLimit-Reset (Unix seconds) from a response header. ResetAt is
 // set when a header is parseable; Limited follows the supplied flag.
 // Both GitHub and Forgejo emit these headers.
-func ParseRateLimit(h http.Header, limited bool) forge.RateLimit {
+func ParseRateLimit(h http.Header, limited bool) (result forge.RateLimit) {
+	defer func() { result.Stale = h.Get("X-Ocman-Cache") == "stale" }()
 	if v := h.Get("Retry-After"); v != "" {
 		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 			return forge.RateLimit{Limited: limited, ResetAt: time.Now().Add(time.Duration(secs) * time.Second)}

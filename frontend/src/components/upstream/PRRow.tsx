@@ -41,7 +41,7 @@ interface PRRowProps {
 export function PRRow({ pr, directory, checksDirectory = directory ?? '', remoteId, remote, currentBranch }: PRRowProps) {
   const [visible, setVisible] = useState(false);
   const sha = pr.headSha ?? '';
-  const loadChecks = useCallback((signal: AbortSignal) => fetchPRChecks({ dir: checksDirectory, remoteId, remote, sha, signal }), [checksDirectory, remoteId, remote, sha]);
+  const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPRChecks({ dir: checksDirectory, remoteId, remote, sha, signal, refresh }), [checksDirectory, remoteId, remote, sha]);
   const checks = usePRChecks(prChecksCacheKey(pr.host, pr.repo, sha), `${remoteId}\0${checksDirectory}\0${remote}\0${sha}`, visible && !!sha, loadChecks);
   const { mergeable, approved } = usePRMergeability(pr, checksDirectory, remoteId, remote, visible);
   const active = pr.status === 'open' || pr.status === 'draft';

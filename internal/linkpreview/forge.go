@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/forge/github"
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 )
 
@@ -109,6 +110,16 @@ func (f Forge) needGrant() error {
 }
 
 func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
+	if !f.Gitea {
+		copy := *api
+		copy.client = github.BudgetClient(api.client, api.now)
+		api = &copy
+		if ctx.Value(previewRefreshKey{}) == true {
+			ctx = github.WithRefresh(ctx)
+		} else {
+			ctx = github.WithCache(ctx)
+		}
+	}
 	m := forgeID.FindStringSubmatch(ref.ID)
 	if m == nil || !validForgeName(m[1]) || !validForgeName(m[2]) {
 		return Preview{}, ErrUnsafeRequest
@@ -154,7 +165,7 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 	if err := api.JSON(ctx, http.MethodGet, f.APIBase, path, nil, nil, &it); err != nil {
 		return Preview{}, err
 	}
-	p := Preview{Ref: Ref{URL: ref.URL}, Title: it.Title, Meta: []string{it.User.Login}}
+	p := Preview{Ref: Ref{URL: ref.URL}, Title: it.Title, Meta: []string{it.User.Login}, Stale: api.stale}
 	if ref.Kind == "pr" && forgeSHA.MatchString(it.Head.SHA) {
 		p.HeadSHA = it.Head.SHA
 	}

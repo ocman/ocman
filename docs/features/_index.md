@@ -132,6 +132,15 @@ is found, without clearing your preferences.
 Refreshing keeps existing rows, expanded details, and CI badges visible until
 the new results arrive. A failed refresh leaves the list available for retry.
 
+GitHub reads from the sidebar and link previews share one cache per token.
+A list, CI status or preview is fetched at most once a minute; conversations
+reuse the same cached data. The pane's refresh button forces a fresh fetch, up
+to 10 times a minute. Automatic polling may refresh expired data at most 60
+times an hour. Over either limit, ocman shows the cached data. As a backstop
+ocman never spends more than half of the GitHub quota reported in the
+`X-RateLimit-*` headers (2,500 of 5,000 requests per hour for a token, 30 of
+60 anonymously). Factory delivery checks always read live data.
+
 Each PR shows its CI status as soon as its row is visible. A running build is
 re-checked every 5 seconds while the row stays on screen. Once every check
 has finished, the result is remembered for that commit (also across reloads)

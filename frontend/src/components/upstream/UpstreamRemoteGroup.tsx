@@ -18,7 +18,7 @@ export interface UpstreamRemoteGroupProps {
   remoteId: string;
   state: StateFilter;
   mine: boolean;
-  registerRefresh: (fn: () => void) => () => void;
+  registerRefresh: (fn: (fresh?: boolean) => void) => () => void;
   onLoadingChange: (loading: boolean) => void;
   showHeader: boolean;
   currentBranch?: string;

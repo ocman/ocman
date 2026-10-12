@@ -56,7 +56,7 @@ func (s *Server) handleProjectPRChecks(w http.ResponseWriter, r *http.Request) {
 		writeProjectListError(w, http.StatusUnauthorized, "auth_required", "no forge client configured for "+rem.Host)
 		return
 	}
-	ci, rl, err := f.Checks(r.Context(), rem.Repo, sha)
+	ci, rl, err := f.Checks(projectForgeContext(r), rem.Repo, sha)
 	if err != nil {
 		writeProjectForgeError(w, r, rem, err)
 		return

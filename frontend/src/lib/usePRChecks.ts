@@ -39,7 +39,10 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
     let timer: number | undefined;
     let inFlight = false;
     let settled = false;
-    let refresh = polling.nextPollAt > 0 || generation > consumedRefresh.current || (refreshOnMount && refreshedKey.current !== requestKey);
+    // explicit: a Refresh click (or refreshOnMount) may bypass the server cache;
+    // refresh only skips this browser's final-status cache while polling.
+    let explicit = generation > consumedRefresh.current || (refreshOnMount && refreshedKey.current !== requestKey);
+    let refresh = polling.nextPollAt > 0 || explicit;
     const schedule = (delay: number) => {
       polling.nextPollAt = Date.now() + delay;
       if (!document.hidden) timer = window.setTimeout(run, delay);
@@ -57,7 +60,8 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
       }
       setResult((prev) => ({ key: requestKey, data: prev.key === requestKey ? prev.data : null, loading: true, error: false }));
       inFlight = true;
-      const request = fetchChecks(ctrl.signal, refresh);
+      const request = fetchChecks(ctrl.signal, explicit);
+      explicit = false;
       const wasRefresh = refresh;
       refresh = false;
       request.then((res) => {
@@ -67,8 +71,9 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
           consumedRefresh.current = generation;
           refreshedKey.current = requestKey;
         }
-        if (!res.rateLimit?.limited) polling.failures = 0;
-        polling.emptyResponses = !res.rateLimit?.limited && res.state === 'unknown' && res.checks.length === 0 ? polling.emptyResponses + 1 : 0;
+        const limited = res.rateLimit?.limited || res.rateLimit?.stale;
+        if (!limited) polling.failures = 0;
+        polling.emptyResponses = !limited && res.state === 'unknown' && res.checks.length === 0 ? polling.emptyResponses + 1 : 0;
         // Allow newly queued checks a minute to appear before caching "no CI".
         settled = isSettled(res, polling.emptyResponses >= 3);
         if (settled) polling.nextPollAt = 0;
@@ -76,7 +81,7 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
         setResult({ key: requestKey, data: res, loading: false, error: false });
         if (!settled) {
           refresh = true;
-          schedule(res.rateLimit?.limited ? Math.max(retryDelay(), Date.parse(res.rateLimit.resetAt ?? '') - Date.now() || 0) : polling.emptyResponses > 0 ? 30_000 : CI_POLL_MS);
+          schedule(limited ? Math.max(retryDelay(), Date.parse(res.rateLimit?.resetAt ?? '') - Date.now() || 0) : polling.emptyResponses > 0 ? 30_000 : CI_POLL_MS);
         }
       }).catch((error: unknown) => {
         if (ctrl.signal.aborted) return;

@@ -244,11 +244,14 @@ describe('PRRow CI build-status indicator', () => {
     await act(async () => {});
     expect(spy).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-pending');
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: false }));
     expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))).toBeUndefined();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
     expect(spy).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success');
+    // Polling never forces the server cache; only a Refresh click does.
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: false }));
     expect(getCachedPRChecks(prChecksCacheKey('example.com', 'dries/ocman', 'abc123'))?.state).toBe('success');
 
     await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS * 3); });

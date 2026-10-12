@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
 
 func TestChecksCredentialErrors(t *testing.T) {
@@ -86,7 +88,7 @@ func TestChecksDefaultTransportAndConnectionError(t *testing.T) {
 		t.Fatal("empty checks must encode as an array, not null")
 	}
 	api.Close()
-	if _, err := f.fetchChecks(context.Background(), client, "o/r", "abc123"); err == nil {
+	if _, err := f.fetchChecks(github.WithRefresh(context.Background()), client, "o/r", "abc123"); err == nil {
 		t.Fatal("connection failure was ignored")
 	}
 }

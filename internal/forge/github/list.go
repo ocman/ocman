@@ -86,12 +86,12 @@ func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOption
 
 func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.PR, error) {
 	path := fmt.Sprintf("/repos/%s/pulls/%d", repo, number)
-	body, _, status, err := c.fetch(ctx, path)
+	body, rl, status, err := c.fetch(ctx, path)
 	if err != nil {
 		return forge.PR{}, err
 	}
 	if status != http.StatusOK {
-		return forge.PR{}, fmt.Errorf("github api %s: status %d", path, status)
+		return forge.PR{}, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 	var raw ghPR
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -215,12 +215,12 @@ func (c *Client) ListIssues(ctx context.Context, repo string, opts forge.ListOpt
 
 func (c *Client) LookupIssue(ctx context.Context, repo string, number int) (forge.Issue, error) {
 	path := fmt.Sprintf("/repos/%s/issues/%d", repo, number)
-	body, _, status, err := c.fetch(ctx, path)
+	body, rl, status, err := c.fetch(ctx, path)
 	if err != nil {
 		return forge.Issue{}, err
 	}
 	if status != http.StatusOK {
-		return forge.Issue{}, fmt.Errorf("github api %s: status %d", path, status)
+		return forge.Issue{}, &forgehttp.ResponseError{Status: status, RateLimit: rl}
 	}
 	var raw ghIssue
 	if err := json.Unmarshal(body, &raw); err != nil {

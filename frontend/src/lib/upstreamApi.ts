@@ -77,6 +77,7 @@ export interface Pagination {
 }
 
 export interface RateLimit {
+  stale?: boolean;
   limited: boolean;
   resetAt?: string;
 }
@@ -160,6 +161,7 @@ export async function fetchPRs(opts: {
   mine: string | undefined;
   page: number;
   signal?: AbortSignal;
+  refresh?: boolean;
 }): Promise<ListPRsResponse> {
   const q = new URLSearchParams({
     dir: opts.dir,
@@ -169,6 +171,7 @@ export async function fetchPRs(opts: {
     page: String(opts.page),
   });
   if (opts.mine) q.set('mine', opts.mine);
+  if (opts.refresh) q.set('refresh', '1');
   const resp = await fetchResponse(`/api/project/prs?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
@@ -186,6 +189,7 @@ export async function fetchIssues(opts: {
   mine: string | undefined;
   page: number;
   signal?: AbortSignal;
+  refresh?: boolean;
 }): Promise<ListIssuesResponse> {
   const q = new URLSearchParams({
     dir: opts.dir,
@@ -195,6 +199,7 @@ export async function fetchIssues(opts: {
     page: String(opts.page),
   });
   if (opts.mine) q.set('mine', opts.mine);
+  if (opts.refresh) q.set('refresh', '1');
   const resp = await fetchResponse(`/api/project/issues?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
@@ -215,8 +220,10 @@ export async function fetchPRMergeability(opts: {
   remote: string;
   number: number;
   signal: AbortSignal;
+  refresh?: boolean;
 }): Promise<PRMergeability> {
   const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
+  if (opts.refresh) q.set('refresh', '1');
   const resp = await fetchResponse(`/api/project/pr-mergeability?${q}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
@@ -234,6 +241,7 @@ export async function fetchPRChecks(opts: {
   remote: string;
   sha: string;
   signal?: AbortSignal;
+  refresh?: boolean;
 }): Promise<PRChecks> {
   const q = new URLSearchParams({
     dir: opts.dir,
@@ -241,6 +249,7 @@ export async function fetchPRChecks(opts: {
     remote: opts.remote,
     sha: opts.sha,
   });
+  if (opts.refresh) q.set('refresh', '1');
   const resp = await fetchResponse(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);

@@ -62,7 +62,7 @@ func TestForgePreviewChecks(t *testing.T) {
 			if calls != count {
 				t.Fatal("fresh checks were fetched twice")
 			}
-			svc.now = func() time.Time { return time.Now().Add(16 * time.Second) }
+			svc.now = func() time.Time { return time.Now().Add(61 * time.Second) }
 			limited = true
 			p = svc.resolve(ctx, "", "local", ref)
 			if !p.Stale {
@@ -71,8 +71,15 @@ func TestForgePreviewChecks(t *testing.T) {
 			svc.Purge("", "", "")
 			limited = false
 			failed = true
-			// New owner bypasses the previous grant's rate-limit backoff.
-			p = svc.resolve(ctx, "", "other", ref)
+			if !gitea {
+				// A different owner cannot bypass the shared credential's budget.
+				p = svc.resolve(WithPreviewRefresh(ctx), "", "other", ref)
+				if !p.Stale || p.Checks == nil {
+					t.Fatalf("shared backoff was bypassed: %+v", p)
+				}
+				svc.now = func() time.Time { return time.Now().Add(3 * time.Minute) }
+			}
+			p = svc.resolve(WithPreviewRefresh(ctx), "", "other", ref)
 			if p.State != StateError || p.Checks != nil {
 				t.Fatalf("failed response: %+v", p)
 			}

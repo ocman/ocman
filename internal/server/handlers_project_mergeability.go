@@ -20,12 +20,13 @@ func (s *Server) handleProjectPRMergeability(w http.ResponseWriter, r *http.Requ
 		writeProjectListError(w, http.StatusUnauthorized, "auth_required", "no forge client configured for "+remote.Host)
 		return
 	}
-	pr, err := f.LookupPR(r.Context(), remote.Repo, number)
+	ctx := projectForgeContext(r)
+	pr, err := f.LookupPR(ctx, remote.Repo, number)
 	if err != nil {
-		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
+		writeProjectForgeError(w, r, remote, err)
 		return
 	}
-	approved, err := f.PRApproval(r.Context(), remote.Repo, number)
+	approved, err := f.PRApproval(ctx, remote.Repo, number)
 	if err != nil {
 		writeProjectForgeError(w, r, remote, err)
 		return

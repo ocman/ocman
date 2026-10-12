@@ -46,6 +46,8 @@ type API struct {
 	// slashes: a segment may hold "/"-separated valid parts, sent as one
 	// %2F-escaped segment (GitLab's URL-encoded project path).
 	slashes bool
+	stale   bool
+	now     func() time.Time
 }
 
 // WithEncodedSlashes returns a copy of a whose segments may contain "/",
@@ -143,6 +145,7 @@ func (a *API) JSON(ctx context.Context, method, base string, segments []string, 
 		return err
 	}
 	defer resp.Body.Close()
+	a.stale = a.stale || resp.Header.Get("X-Ocman-Cache") == "stale"
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 		secs, _ := strconv.Atoi(resp.Header.Get("Retry-After"))

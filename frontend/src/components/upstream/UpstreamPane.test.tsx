@@ -100,6 +100,7 @@ describe('UpstreamPane owner-scoped resources', () => {
       rerender(<UpstreamPane directory="/repo" currentDirectory="/second" projectId="p" remoteId="box" upstreams={[upstreams[0]]} />);
       act(() => vi.advanceTimersByTime(750));
       expect(upstreamListMock.refresh).toHaveBeenCalledOnce();
+      expect(upstreamListMock.refresh).toHaveBeenCalledWith(false);
       emit();
       unmount();
       act(() => vi.advanceTimersByTime(1000));
