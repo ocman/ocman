@@ -451,15 +451,15 @@ handlers don't bypass the `Host` seam). User-facing docs:
   (`~/.local/share/ocman/state.db`) for ocman's own state (archived
   / seen sessions). Primary key is `(platform, session_id)` so it
   can scope state per platform.
-- `internal/mcp/` — MCP server implementation: the Factory, session
-  (read-only actions plus `create`) and file tools, plus every tool a feature
-  module contributes (`Deps.Tools`). Mounted at `/mcp` by the server package.
+- `internal/mcp/` — MCP server implementation: the session (read-only
+  actions plus `create`) and file tools, plus every tool a feature module
+  contributes (`Deps.Tools`). Mounted at `/mcp` by the server package.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`. It is also the
   composition root for feature modules (`modules.go`).
 - `internal/module/` — the feature-module contract (see **Feature modules**
-  below): `Module`, `Router`, `Guards`, the optional `Starter` / `Runner` /
-  `ToolProvider` / `Subscriber`, and the typed event `Bus`.
+  below): `Module`, `Router`, `Guards`, the optional `Starter` / `Launcher` /
+  `Runner` / `Closer` / `ToolProvider` / `Subscriber`, and the typed event `Bus`.
 - `internal/httpx/` — JSON, request-body, inert-file and platform-error
   helpers shared by the server and modules, so both answer identically.
 - `internal/tmux/` — tmux process control: session/window listing,
@@ -499,6 +499,13 @@ handlers don't bypass the `Host` seam). User-facing docs:
   status, worktrees, diffs).
 - `internal/forge/` — GitHub/Forgejo PR + issue clients behind one
   interface; feeds the PRs & Issues sidebar.
+- `internal/factorymod/` — module: Factory's `/api/factory` routes, the
+  `factory` and separate `factory_control` MCP tools (the latter only records
+  proposals; the user's confirmation card runs them), the planning,
+  implementation and verification session launchers, Epic control sessions,
+  and the domain service's lifecycle. The domain and its dispatcher stay in
+  `internal/factory`; tables stay in `internal/state`. It is a separate
+  package because `internal/state` tests import `internal/factory`.
 - `internal/routines/` — module: validation, scheduling, fresh-session
   dispatch, session-settled run completion, `/api/routines` and the
   `routines` MCP tool. Definitions and immutable run snapshots are stored by
@@ -855,9 +862,13 @@ to set those explicitly.
 A feature that owns its routes, background work, MCP tools or event
 reactions is a module (`internal/module`), not a set of `*Server` methods.
 `Server.modules()` in `internal/server/modules.go` is the only registry:
-routes, startup (`Starter`, run before serving), background loops (`Runner`,
-joined on shutdown), MCP tools (`ToolProvider`) and `Bus` subscriptions
-(`Subscriber`) all iterate it. Rules:
+routes, startup (`Starter`, run before serving), launch (`Launcher`, run once
+the MCP listener is up, for work whose agents call ocman's MCP tools),
+background loops (`Runner`, joined on shutdown), close (`Closer`, reverse
+order after the HTTP and MCP listeners stop, before workers are joined), MCP
+tools (`ToolProvider`) and `Bus` subscriptions (`Subscriber`) all iterate it.
+Factory is the only Launcher/Closer: dispatch starts at launch and verifies
+each session's MCP connection. Rules:
 
 - A module never imports `internal/server` (the compiler forbids the cycle)
   or another module. It receives what it needs as `Deps`: narrow interfaces
@@ -874,7 +885,9 @@ joined on shutdown), MCP tools (`ToolProvider`) and `Bus` subscriptions
   over the `/api/session/` dispatcher.
 - `module.Bus` is typed and synchronous: subscribers run in order, so one can
   rely on earlier ones; slow work starts its own goroutine. Add an event type
-  only when a module needs it (today: `SessionIdle`).
+  only when a module needs it (today: `SessionIdle`, published after the
+  quota cooldown is recorded and the follow-up flush enqueued; Factory's
+  subscriber only signals dispatch without blocking).
 - Existing tables stay in `state.db`'s single migration sequence.
 
 ## Architecture doc

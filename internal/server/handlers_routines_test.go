@@ -207,8 +207,10 @@ func TestRoutineHTTPMethodAndLocalhostGuards(t *testing.T) {
 			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body.String())
 		}
 	}
-	if mods := (&Server{}).modules(); len(mods) != 0 {
-		t.Fatalf("routines mounted without a state DB: %v", mods)
+	for _, m := range (&Server{}).modules() {
+		if m.Name() == "routines" {
+			t.Fatal("routines mounted without a state DB")
+		}
 	}
 }
 

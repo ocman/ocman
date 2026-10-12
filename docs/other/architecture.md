@@ -176,9 +176,9 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Run, tools, Bus"| Modules[feature modules<br/>routines, webhook, artifacts, inbox, sharing]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>factorymod, routines, webhook, artifacts, inbox, sharing]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
-    Server -->|confirmed Epic controls + dispatch| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
+    Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory -->|graph + action Inbox reconciliation| State
     State --> FactoryModel
@@ -189,12 +189,11 @@ flowchart TD
     Routines --> Router
     Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
-    MCP --> Factory
     Modules -->|module tools| MCP
     Modules --> Inbox[internal/inbox<br/>state + owner routing]
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
-    Server -->|Factory + routine usage via platforms.UsageReader| OC
+    Modules -->|Factory + routine usage via platforms.UsageReader| OC
     Registry -->|session detail, summary, lifecycle + usage reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
     Router -->|streamed attachment writes on owner| RP
@@ -212,13 +211,16 @@ flowchart TD
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux, terminal, whisper and auto-approve. It is the
   composition root for feature modules.
-- **Feature modules** (`internal/module`). Routines, webhooks, artifacts,
-  the Inbox and conversation sharing each own their routes, background loops,
-  MCP tools and event subscriptions. The server lists them once in
-  `modules()` and hands each narrow `Deps` (store, guards, lookups); modules
-  never import the server or each other. Webhooks dispatch to routines through
-  an interface. Sharing reacts to the typed, synchronous `module.Bus`
-  `SessionIdle` event.
+- **Feature modules** (`internal/module`). Factory (`internal/factorymod`),
+  routines, webhooks, artifacts, the Inbox and conversation sharing each own
+  their routes, background loops, MCP tools and event subscriptions. The
+  server lists them once in `modules()` and hands each narrow `Deps` (store,
+  guards, lookups); modules never import the server or each other. Webhooks
+  dispatch to routines through an interface. Sharing and Factory's dispatch
+  wake-up react to the typed, synchronous `module.Bus` `SessionIdle` event.
+  Factory launches (`module.Launcher`) once the MCP listener is up, because
+  its sessions verify their ocman MCP connection, and closes (`module.Closer`)
+  after the HTTP and MCP listeners stop.
 - **Session summary reads.** Pinned sessions outside the recent window use
   `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound
@@ -229,7 +231,7 @@ flowchart TD
 - **Factory usage.** `/api/factory/epics/{id}/usage` joins durable attempt
   identities to `platforms.UsageReader`. The local OpenCode adapter reads
   descendant message metadata and reuses token and pricing calculations.
-  The server deduplicates owner-qualified session IDs for Epic phase totals,
+  The Factory module deduplicates owner-qualified session IDs for Epic phase totals,
   retains retry history per Attempt, and flags unavailable reads as incomplete.
   Epic and Queue views poll these totals every ten seconds.
 - **Owner-local session usage.** Both Factory and routine statistics read
@@ -398,9 +400,10 @@ flowchart TD
   inert historical data. No API, MCP tool, UI, or scheduler reads them. A DAG
   cannot be converted losslessly to one routine prompt, so recovery is a
   manual read-only SQLite export.
-- **internal/mcp.** MCP handlers expose action-based `factory`,
-  proposal-only `factory_control`, `inbox`, `webhooks`, and `routines` tools, read-only
-  session inspection, and `embed_file`. File embedding uses signed tokens
+- **internal/mcp.** The MCP server exposes read-only session inspection,
+  session creation and `embed_file`, plus the tools modules contribute:
+  action-based `factory` and proposal-only `factory_control` (Factory),
+  `inbox`, `webhooks`, `routines` and `artifacts`. File embedding uses signed tokens
   persisted in `state.db`.
 - **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and
   `recall`. Sends write the owning host's `state.db`; remote sends and recalls
