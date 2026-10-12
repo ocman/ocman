@@ -19,7 +19,9 @@ const isFinalCIState = (state: CIState) => state === 'success' || state === 'fai
  * rate-limited response may hold only some of the checks.
  */
 export const isSettled = (checks: PRChecks, emptyConfirmed = false) =>
-  !checks.rateLimit?.limited &&
+  // Stale data (served from the server cache because the refresh budget was
+  // spent) must never settle or persist; a later fresh read may differ.
+  !checks.rateLimit?.limited && !checks.rateLimit?.stale &&
   (checks.checks.length === 0 ? emptyConfirmed && checks.state === 'unknown' :
     isFinalCIState(checks.state) && checks.checks.every((c) => isFinalCIState(c.state)));
 

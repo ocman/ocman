@@ -177,11 +177,18 @@ func (t budgetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		}
 	}
+	// Honor a known provider backoff before any request, including the probe.
+	if now.Before(b.blocked) {
+		if hit {
+			return cached.stale(req, b.blocked), nil
+		}
+		return limitedResponse(req, b.blocked, now), nil
+	}
 	// The free quota endpoint makes the first real request respect quotas
 	// already consumed by other tools, including after an ocman restart.
 	if !b.initialized && req.URL.Hostname() == "api.github.com" {
-		if err := t.probe(req, b); err != nil {
-			return nil, err
+		if resp, err := t.probe(req, b, now); resp != nil || err != nil {
+			return resp, err
 		}
 	}
 	retryAt := b.blocked
@@ -221,16 +228,8 @@ func (t budgetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	b.observe(resp.Header, now)
-	limited := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden &&
-		(resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "")
+	limited := b.backoff(resp, now)
 	if limited {
-		b.blocked = forgehttp.ParseRateLimit(resp.Header, true).ResetAt
-		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds >= 0 {
-			b.blocked = now.Add(time.Duration(seconds) * time.Second)
-		}
-		if b.blocked.IsZero() {
-			b.blocked = now.Add(time.Minute)
-		}
 		if hit {
 			resp.Body.Close()
 			return cached.stale(req, b.blocked), nil
@@ -239,6 +238,11 @@ func (t budgetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden && !limited {
 		clear(b.cache)
 		b.bytes = 0
+	}
+	// A confirmed 404 (deleted, or now private) invalidates the old snapshot.
+	if resp.StatusCode == http.StatusNotFound && hit {
+		b.bytes -= len(cached.body)
+		delete(b.cache, key)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return resp, nil
@@ -289,35 +293,57 @@ func (b *readBudget) observe(header http.Header, now time.Time) {
 	}
 }
 
-func (t budgetTransport) probe(req *http.Request, b *readBudget) error {
+// backoff records a primary or secondary rate-limit deadline from resp.
+func (b *readBudget) backoff(resp *http.Response, now time.Time) bool {
+	limited := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden &&
+		(resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "")
+	if !limited {
+		return false
+	}
+	b.blocked = forgehttp.ParseRateLimit(resp.Header, true).ResetAt
+	if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds >= 0 {
+		b.blocked = now.Add(time.Duration(seconds) * time.Second)
+	}
+	if !b.blocked.After(now) {
+		b.blocked = now.Add(time.Minute)
+	}
+	return true
+}
+
+// probe reads the free /rate_limit endpoint. A non-200 response is returned
+// to the caller unchanged, so 401/403/429 keep their status and headers for
+// normal classification, and rate limits record a backoff.
+func (t budgetTransport) probe(req *http.Request, b *readBudget, now time.Time) (*http.Response, error) {
 	probe := req.Clone(context.WithValue(req.Context(), budgetHandledKey{}, true))
 	probe.Method, probe.Body, probe.GetBody, probe.ContentLength = http.MethodGet, nil, nil, 0
 	probe.URL.Path, probe.URL.RawPath, probe.URL.RawQuery = "/rate_limit", "", ""
 	b.points++
 	resp, err := t.RoundTripper.RoundTrip(probe)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		b.backoff(resp, now)
+		resp.Request = req
+		return resp, nil
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("github quota probe: status %d", resp.StatusCode)
-	}
 	var result struct {
 		Resources struct {
 			Core struct{ Limit, Remaining, Reset int } `json:"core"`
 		} `json:"resources"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, forgehttp.MaxResponseBytes)).Decode(&result); err != nil {
-		return err
+		return nil, err
 	}
 	core := result.Resources.Core
-	if core.Limit < 1 || core.Remaining < 0 || core.Remaining > core.Limit || int64(core.Reset) <= t.now().Unix() {
-		return fmt.Errorf("github quota probe returned invalid core quota")
+	if core.Limit < 1 || core.Remaining < 0 || core.Remaining > core.Limit || int64(core.Reset) <= now.Unix() {
+		return nil, fmt.Errorf("github quota probe returned invalid core quota")
 	}
 	b.limit, b.remaining, b.reset = core.Limit, core.Remaining, time.Unix(int64(core.Reset), 0)
-	b.observe(resp.Header, t.now())
+	b.observe(resp.Header, now)
 	b.initialized = true
-	return nil
+	return nil, nil
 }
 
 func (c cachedRead) response(req *http.Request) *http.Response {

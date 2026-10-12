@@ -116,11 +116,11 @@ sequenceDiagram
   permission judge. Remote hints are observed by the hub while proxying a
   remote session stream, using only the remote adapter's last cached session
   identity. Unknown identities are skipped; no transcript read or RPC delays
-  the stream. The visible PR/Issue tab refreshes its lists and CI
-  checks after a 750 ms debounce, scoped by owner and project, including sibling
-  worktrees and session-loading transitions. Automatic CI invalidation targets
-  only that project's upstream repositories; unrelated cached checks and rich
-  previews stay intact. Matching PR previews retain repository identity while
+  the stream. The visible PR/Issue tab re-reads its lists after a 750 ms
+  debounce, scoped by owner and project, including sibling worktrees and
+  session-loading transitions. These automatic re-reads use the server's
+  one-minute GitHub cache and never clear CI results; only the pane's Refresh
+  button forces fresh lists and CI checks. Matching PR previews retain repository identity while
   metadata reloads. An overlapping hint cancels the obsolete request and starts
   a fresh lookup, so its late response cannot restore an old head SHA. Canonical
   repository links can also match before the initial metadata response arrives.

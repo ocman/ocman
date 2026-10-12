@@ -110,6 +110,9 @@ func (f Forge) needGrant() error {
 }
 
 func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
+	// The public-only visibility check authorizes the read, so it is never
+	// served from the shared cache; only resource reads may be.
+	authCtx := ctx
 	if !f.Gitea {
 		copy := *api
 		copy.client = github.BudgetClient(api.client, api.now)
@@ -136,7 +139,7 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 			Visibility string `json:"visibility"`
 		}
 		var he *HTTPError
-		err := api.JSON(ctx, http.MethodGet, f.APIBase, []string{"repos", owner, repo}, nil, nil, &r)
+		err := api.JSON(authCtx, http.MethodGet, f.APIBase, []string{"repos", owner, repo}, nil, nil, &r)
 		if errors.As(err, &he) && (he.Status == http.StatusNotFound || he.Status == http.StatusForbidden) {
 			return Preview{}, f.needGrant() // private repos look missing without access
 		}

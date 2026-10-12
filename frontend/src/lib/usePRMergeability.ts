@@ -19,9 +19,12 @@ export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote:
   }, [repository]);
   const key = `${remoteId}\0${dir}\0${remote}\0${number}\0${headSha}\0${updatedAt}\0${generation}`;
   const [resolved, setResolved] = useState<{ key: string; value: PRMergeability }>();
-  const retry = useRef({ key: '', failures: 0, nextPollAt: 0, stopped: false, refreshed: false });
+  const retry = useRef({ key: '', failures: 0, nextPollAt: 0, stopped: false });
+  // A Refresh click is consumed once, independent of later automatic PR
+  // identity changes (new head, edited title) that also change the key.
+  const consumedRefresh = useRef(0);
   useEffect(() => {
-    if (retry.current.key !== key) retry.current = { key, failures: 0, nextPollAt: 0, stopped: false, refreshed: false };
+    if (retry.current.key !== key) retry.current = { key, failures: 0, nextPollAt: 0, stopped: false };
     const polling = retry.current;
     if (!visible || !documentVisible || polling.stopped) return;
     const controller = new AbortController();
@@ -30,8 +33,8 @@ export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote:
       let delay = 15_000;
       try {
         // Only the first read after a Refresh click bypasses the server cache.
-        const refresh = generation > 0 && !polling.refreshed;
-        polling.refreshed = true;
+        const refresh = generation > consumedRefresh.current;
+        consumedRefresh.current = generation;
         const value = await fetchPRMergeability({ dir, remoteId, remote, number, signal: controller.signal, refresh });
         if (controller.signal.aborted) return;
         polling.failures = 0;

@@ -13,6 +13,12 @@ describe('prChecksCache', () => {
     clearPRChecksCache();
   });
 
+  it('never persists a stale final result', () => {
+    const key = prChecksCacheKey('github.com', 'a/repo', 'abc');
+    cachePRChecks(key, { ...ok, rateLimit: { limited: false, stale: true } });
+    expect(getCachedPRChecks(key)).toBeUndefined();
+  });
+
   it.each<[string, PRChecks, boolean]>([
     ['all success', ok, true],
     ['all finished with a failure', { state: 'failure', checks: [{ name: 'a', state: 'success' }, { name: 'b', state: 'failure' }] }, true],
@@ -20,6 +26,8 @@ describe('prChecksCache', () => {
     ['pending', { state: 'pending', checks: [{ name: 'a', state: 'pending' }] }, false],
     ['no checks yet', { state: 'unknown', checks: [] }, false],
     ['rate-limited partial success', { ...ok, rateLimit: { limited: true } }, false],
+    // A capped refresh returns the old cached result marked stale; it must not settle.
+    ['stale success served from the server cache', { ...ok, rateLimit: { limited: false, stale: true } }, false],
   ])('isSettled: %s', (_name, checks, want) => {
     expect(isSettled(checks)).toBe(want);
   });

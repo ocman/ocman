@@ -529,3 +529,75 @@ func TestUncachedCallersAlwaysReadLive(t *testing.T) {
 		}
 	}
 }
+
+// Review finding: a forced refresh that gets 404 must evict the snapshot, so
+// a later normal read cannot resurrect a deleted (or now private) resource.
+func TestNotFoundEvictsSnapshot(t *testing.T) {
+	gone := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if gone {
+			http.NotFound(w, nil)
+			return
+		}
+		fmt.Fprint(w, `{"number":1}`)
+	}))
+	defer srv.Close()
+	c := NewForTest(srv.URL, t.Name(), srv.Client())
+	if _, _, status, _ := c.fetch(WithCache(context.Background()), "/issue"); status != http.StatusOK {
+		t.Fatal("populate failed")
+	}
+	gone = true
+	if _, _, status, _ := c.fetch(WithRefresh(context.Background()), "/issue"); status != http.StatusNotFound {
+		t.Fatalf("refresh status=%d", status)
+	}
+	if _, _, status, _ := c.fetch(WithCache(context.Background()), "/issue"); status != http.StatusNotFound {
+		t.Fatalf("deleted resource resurrected from cache: status=%d", status)
+	}
+}
+
+// Review finding: a failed first quota probe keeps its HTTP status for normal
+// classification, and a rate-limited probe records a backoff that later
+// requests honor without probing again.
+func TestProbeFailuresKeepStatusAndBackoff(t *testing.T) {
+	for _, tc := range []struct {
+		status  int
+		header  string
+		wantErr error
+		backoff bool
+	}{
+		{http.StatusUnauthorized, "", forge.ErrUnauthenticated, false},
+		{http.StatusTooManyRequests, "120", nil, true},
+	} {
+		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
+			probes, reads := 0, 0
+			transport := budgetRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path != "/rate_limit" {
+					reads++
+				} else {
+					probes++
+				}
+				h := make(http.Header)
+				if tc.header != "" {
+					h.Set("Retry-After", tc.header)
+				}
+				return &http.Response{StatusCode: tc.status, Header: h, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+			})
+			c := NewWithCredentials(DefaultAPIBase, t.Name()+strconv.FormatInt(time.Now().UnixNano(), 10), &http.Client{Transport: transport})
+			_, rl, status, err := c.fetch(WithCache(context.Background()), "/resource")
+			if status != tc.status || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
+				t.Fatalf("probe failure lost its status: status=%d err=%v", status, err)
+			}
+			if tc.backoff {
+				if !rl.Limited || rl.ResetAt.IsZero() {
+					t.Fatalf("429 probe lost its rate limit: %+v", rl)
+				}
+				if _, rl, _, _ = c.fetch(WithCache(context.Background()), "/resource"); !rl.Limited || probes != 1 {
+					t.Fatalf("second request ignored probe backoff: %+v probes=%d", rl, probes)
+				}
+			}
+			if reads != 0 {
+				t.Fatalf("resource read despite a failed probe: %d", reads)
+			}
+		})
+	}
+}

@@ -78,6 +78,19 @@ describe('usePRMergeability', () => {
     expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2);
   });
 
+  it('consumes a Refresh click once, not again on automatic PR updates', async () => {
+    vi.mocked(api.fetchPRMergeability).mockResolvedValue({ mergeable: null, approved: null });
+    const { rerender } = renderHook(({ updatedAt }) => usePRMergeability({ ...pr, updatedAt }, '/repo', 'local', 'origin', true), { initialProps: { updatedAt: 'today' } });
+    await waitFor(() => expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1));
+    act(() => clearPRChecksCache(['github.com/a/repo']));
+    await waitFor(() => expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2));
+    expect(api.fetchPRMergeability).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: true }));
+    // An edited title or new commit changes the key without another click.
+    rerender({ updatedAt: 'later' });
+    await waitFor(() => expect(api.fetchPRMergeability).toHaveBeenCalledTimes(3));
+    expect(api.fetchPRMergeability).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: false }));
+  });
+
   it('revalidates on a refresh for its repository, but not another repository', async () => {
     vi.mocked(api.fetchPRMergeability).mockResolvedValueOnce({ mergeable: true, approved: true }).mockResolvedValueOnce({ mergeable: false, approved: false });
     const { result } = renderHook(() => usePRMergeability(pr, '/repo', 'local', 'origin', true));
