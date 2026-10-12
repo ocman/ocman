@@ -71,6 +71,17 @@ describe('Inbox', () => {
     expect(new URL(screen.getByLabelText('Current URL').textContent!, 'https://example.com').searchParams.has('item')).toBe(false);
   });
 
+  it('marks a message read again when history reopens it after marking unread', async () => {
+    renderInbox('/inbox?item=laptop%3A2');
+    await screen.findByRole('heading', { name: 'Remote note' });
+    vi.mocked(api.inbox).mockResolvedValue({ items: items.map((item) => item.id === '2' ? { ...item, readAt: undefined } : item), unreadTotal: 2 });
+    fireEvent.click(screen.getByRole('button', { name: 'Mark unread' }));
+    await screen.findByText('Select a message');
+    fireEvent.click(screen.getByRole('button', { name: 'History back' }));
+    await screen.findByRole('heading', { name: 'Remote note' });
+    await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('2', 'laptop'));
+  });
+
   it('restores archived selection and does not replace a missing linked item', async () => {
     vi.mocked(api.inbox).mockImplementation(async (_signal, archived) => ({ items: archived ? [{ ...items[1], archivedAt: Date.now() }] : items, unreadTotal: 0 }));
     const view = renderInbox('/inbox?status=archived&item=laptop%3A2');
@@ -192,8 +203,9 @@ describe('Inbox', () => {
   });
 
   it('disables archive all read when no shown item is read', async () => {
+    vi.mocked(api.inbox).mockResolvedValue({ items: [items[1], items[0]], unreadTotal: 1 });
     renderInbox();
-    await screen.findByText('Remote note');
+    await screen.findByRole('button', { name: /Remote note/ });
     fireEvent.click(screen.getByRole('radio', { name: 'Primary' }));
     expect(inboxAction('Archive all read')).toBeDisabled();
   });
@@ -402,6 +414,7 @@ describe('Inbox', () => {
   it('marks the open message unread, updates the count, and returns to the list', async () => {
     const { client } = renderInbox();
     fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Mark unread' })).not.toBeDisabled());
     vi.mocked(api.inbox).mockResolvedValue({ items: items.map((item) => ({ ...item, readAt: undefined })), unreadTotal: 2 });
     fireEvent.click(screen.getByRole('button', { name: 'Mark unread' }));
     await waitFor(() => expect(api.markInboxItemUnread).toHaveBeenCalledWith('2', 'laptop'));
@@ -415,6 +428,7 @@ describe('Inbox', () => {
     vi.mocked(api.markInboxItemUnread).mockRejectedValue(new Error('offline'));
     const { client } = renderInbox();
     fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Mark unread' })).not.toBeDisabled());
     fireEvent.click(screen.getByRole('button', { name: 'Mark unread' }));
     await screen.findByText('Could not mark the message as unread. Please try again.');
     expect(screen.getByRole('heading', { name: 'Remote note' })).toBeInTheDocument();
@@ -485,6 +499,7 @@ describe('Inbox', () => {
       : { items, unreadTotal: 1 });
     const { client } = renderInbox();
     await screen.findByText('Remote note');
+    await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('1', 'local'));
     fireEvent.click(statusFilter('Archived'));
     // Ignore the read from auto-selecting the first message on load.
     vi.mocked(api.markInboxItemRead).mockClear();

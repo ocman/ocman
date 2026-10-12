@@ -69,13 +69,17 @@ test('compact two-row header searches and archives messages from the actions dro
   }
   await page.getByRole('searchbox', { name: 'Search inbox' }).fill('bldfn');
   await expect(page.getByRole('button', { name: /Build finished/ })).toBeVisible();
-  await page.getByRole('radio', { name: 'Unread', exact: true }).check();
+  await page.getByRole('radio', { name: 'Unread', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Unread', exact: true })).toBeChecked();
   await expect(page.getByText('No messages match these filters.')).toBeVisible();
-  await page.getByRole('radiogroup', { name: 'Message status' }).getByRole('radio', { name: 'All', exact: true }).check();
+  const all = page.getByRole('radiogroup', { name: 'Message status' }).getByRole('radio', { name: 'All', exact: true });
+  await all.click();
+  await expect(all).toBeChecked();
   await page.getByLabel('Inbox actions').click();
   await page.getByRole('button', { name: 'Archive all read', exact: true }).click();
   await expect(page.getByText('Your inbox is empty.')).toBeVisible();
-  await page.getByRole('radio', { name: 'Archived', exact: true }).check();
+  await page.getByRole('radio', { name: 'Archived', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Archived', exact: true })).toBeChecked();
   await page.getByRole('button', { name: /Build finished/ }).click();
   await expect(page.getByRole('heading', { name: 'Build finished' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mark unread', exact: true })).toBeDisabled();

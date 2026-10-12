@@ -90,7 +90,8 @@ export function Inbox() {
   const readItems = archived ? [] : visibleItems.filter((item) => item.readAt);
   const open = (item: InboxItem) => {
     setActiveKey(itemKey(item));
-    if (!item.readAt && !item.archivedAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
+    // Clicking the open row again retries a failed read mutation.
+    if (activeKey === itemKey(item) && !item.readAt && !item.archivedAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
   };
   const archiveItem = (item: InboxItem) => {
     const key = itemKey(item);
@@ -131,18 +132,19 @@ export function Inbox() {
   const autoSelected = useRef(false);
   const firstItem = visibleItems[0];
   useEffect(() => {
+    if (activeItem && !activeItem.readAt && !activeItem.archivedAt) markRead.mutate({ id: activeItem.id, remoteId: activeItem.remoteId });
+    // Read once per resolved selection, including history, not on refetches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey, activeItem && itemKey(activeItem)]);
+  useEffect(() => {
     if (activeKey) {
-      if (!autoSelected.current && activeItem) {
-        autoSelected.current = true;
-        if (!activeItem.readAt && !activeItem.archivedAt) markRead.mutate({ id: activeItem.id, remoteId: activeItem.remoteId });
-      }
+      autoSelected.current = true;
       return;
     }
     if (autoSelected.current || !firstItem || window.innerWidth <= 700) return;
     autoSelected.current = true;
     setActiveKey(itemKey(firstItem), true);
-    if (!firstItem.readAt && !firstItem.archivedAt) markRead.mutate({ id: firstItem.id, remoteId: firstItem.remoteId });
-    // markRead is a stable mutation handle; re-running on it would loop.
+    // Default selection happens only once; URL changes handle later navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstItem && itemKey(firstItem), activeKey, activeItem && itemKey(activeItem)]);
 
