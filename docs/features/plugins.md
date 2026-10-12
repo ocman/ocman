@@ -412,7 +412,7 @@ From the ocman checkout, run:
 
 ```sh
 go test ./sdk/plugin/... ./internal/plugins
-go test ./internal/server ./internal/remote ./internal/state -run Plugin
+go test ./internal/pluginsmod ./internal/server ./internal/remote ./internal/state -run Plugin
 ```
 
 External plugins can use `sdk/plugin/conformance.Run` for executable lifecycle

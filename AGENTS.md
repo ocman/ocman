@@ -332,7 +332,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   no longer on `hostsvc.Host`. See `docs/features/beads.md`.
 
   **conversation.v1** is the chat-provider seam (`internal/plugins/conversation.go`,
-  `conversation_broker.go`, wired in `internal/server/plugin_conversation.go`).
+  `conversation_broker.go`, wired in `internal/pluginsmod/conversation.go`).
   A plugin emits an unsolicited normalized `message` event; the broker authorizes
   it against enablement, the `conversation.session` grant, and the plugin's one
   required `project` setting (all read from one row under one lock), then core
@@ -346,7 +346,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   with the capability): it holds one owner's provider credentials and drives that
   owner's one project, so two machines sharing a provider app would compete for
   one Socket Mode stream. `createConversationSession` therefore uses
-  `Router.Local()`, never `ForDir` — inferred ownership could run the session on
+  `Deps.Local` (the server passes `Router.Local()`), never `ForDir` — inferred ownership could run the session on
   a machine that approved nothing, and its permissive fallback would silently
   degrade a disconnected remote back to the hub. The hub only projects Settings
   for a remote owner, and fails visibly (503) when that owner is disconnected.
@@ -357,12 +357,13 @@ handlers don't bypass the `Host` seam). User-facing docs:
   Delivery goes through `queuesvc.Enqueue` (not `sendNow`): an idle session
   answers now, a mid-turn message is held for the next `session.idle` edge in
   arrival order, because an external message must never interleave into a turn
-  nobody in the thread can see. On the `session.idle` edge the host resolves the
+  nobody in the thread can see. On the `session.idle` edge (a `module.Bus` subscription that reads the
+  turn on its own recovered goroutine) the module resolves the
   thread from the session and appends the newest assistant message's text to a
   **durable reply outbox** (`plugin_conversation_outbox`, migration v97) keyed by
   `<sessionId>:<messageId>`, so a repeated edge appends nothing.
 
-  Delivery is a separate, replayable step (`plugin_conversation_outbox.go`): each
+  Delivery is a separate, replayable step (`internal/pluginsmod/outbox.go`): each
   row's AUTOINCREMENT id is both its immutable identity and its sequence, and is
   passed as the wire `operationId` (`conv-out:<id>`), stable across retries. The
   pump claims only the *head* of each ordering group — one provider conversation
@@ -394,10 +395,10 @@ handlers don't bypass the `Host` seam). User-facing docs:
   fixed environment, so it is unreachable in production. Mock coverage is not
   live validation; a real Slack app, tokens and channel invite still need the
   manual walkthrough in `docs/features/plugins.md`.
-  Plugin events are drained by `Server.consumePluginEvents`; an unread event
+  Plugin events are drained by `pluginsmod.Module.consumePluginEvents`; an unread event
   flood fails the process.
 
-  **Attention notices** (`plugin_conversation_notice.go`) tell a thread its
+  **Attention notices** (`internal/pluginsmod/notice.go`) tell a thread its
   session cannot proceed: a permission or question awaiting the user, a turn
   that errored, or a message accepted from the provider that reached no session.
   They ride the same outbox, so dedup is the `(plugin, operation_id)` uniqueness
@@ -413,7 +414,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   `backgroundAutoApprove`, plus `ObserveQuestionPrompt` since a question is never
   auto-answered) — reporting on the raw `permission.asked` edge would page the
   user for every command the judge is about to approve. Links come from
-  `Server.publicURL`, i.e. `-public-base-url` / `OCMAN_PUBLIC_BASE_URL`; without
+  `Deps.PublicURL` (the server's `publicURL`), i.e. `-public-base-url` / `OCMAN_PUBLIC_BASE_URL`; without
   it they degrade to the loopback listen address, which is why the plugins doc
   tells operators to set it before pointing a plugin at a remote provider.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
@@ -506,6 +507,12 @@ handlers don't bypass the `Host` seam). User-facing docs:
   and the domain service's lifecycle. The domain and its dispatcher stay in
   `internal/factory`; tables stay in `internal/state`. It is a separate
   package because `internal/state` tests import `internal/factory`.
+- `internal/pluginsmod/` — module: every `/api/plugins` route, discovery and
+  process supervision, owner-local management, the remote `PluginOperation`
+  handler, palette actions, pane reads, and the conversation.v1 broker with its
+  reply outbox, pump, reconciliation and attention notices. The wire protocol,
+  supervisor and brokers stay in `internal/plugins` (the SDK aliases them);
+  tables stay in `internal/state`.
 - `internal/routines/` — module: validation, scheduling, fresh-session
   dispatch, session-settled run completion, `/api/routines` and the
   `routines` MCP tool. Definitions and immutable run snapshots are stored by
@@ -868,7 +875,12 @@ background loops (`Runner`, joined on shutdown), close (`Closer`, reverse
 order after the HTTP and MCP listeners stop, before workers are joined), MCP
 tools (`ToolProvider`) and `Bus` subscriptions (`Subscriber`) all iterate it.
 Factory is the only Launcher/Closer: dispatch starts at launch and verifies
-each session's MCP connection. Rules:
+each session's MCP connection. Plugins (`internal/pluginsmod`) are listed first
+because their discovery historically ran before every other startup step: `Start`
+binds the lifetime context and rescans, `Run` drives the reply pump and
+reconciliation, and the server keeps its `defer s.stopPluginProcesses()` so
+processes stop after the listeners and launched modules close, before workers
+are joined. Rules:
 
 - A module never imports `internal/server` (the compiler forbids the cycle)
   or another module. It receives what it needs as `Deps`: narrow interfaces
@@ -887,7 +899,9 @@ each session's MCP connection. Rules:
   rely on earlier ones; slow work starts its own goroutine. Add an event type
   only when a module needs it (today: `SessionIdle`, published after the
   quota cooldown is recorded and the follow-up flush enqueued; Factory's
-  subscriber only signals dispatch without blocking).
+  subscriber only signals dispatch without blocking; the plugins module's spawns
+  the reply read under its own recovery, since the bus cannot catch a panic
+  in a goroutine).
 - Existing tables stay in `state.db`'s single migration sequence.
 
 ## Architecture doc
