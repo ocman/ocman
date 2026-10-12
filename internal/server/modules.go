@@ -9,10 +9,14 @@ import (
 	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/pluginsmod"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -22,7 +26,8 @@ import (
 // modules lists the feature modules this server mounts. Routes, startup,
 // background work and MCP tools iterate it; append a module here to mount it.
 func (s *Server) modules() []module.Module {
-	mods := []module.Module{s.factoryModule()}
+	// Plugins first: their discovery ran before every other startup step.
+	mods := []module.Module{s.pluginsModule(), s.factoryModule()}
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
 	}
@@ -278,4 +283,64 @@ func launchModules(ctx context.Context, mods []module.Module) (func(), error) {
 		}
 	}
 	return closeAll, nil
+}
+
+// pluginsModule exists without a state DB too: plugin routes then answer
+// that plugins are unavailable rather than 404.
+func (s *Server) pluginsModule() *pluginsmod.Module {
+	s.pluginsModOnce.Do(func() {
+		s.pluginsMod = pluginsmod.NewModule(pluginsmod.Deps{
+			Store:    s.stateDB,
+			Local:    func() hostsvc.Host { return s.router().Local() },
+			Sessions: s.sessions,
+			Enqueue: func(ctx context.Context, platform string, forceQueue bool, req platforms.SendMessageRequest) error {
+				return s.queueSvc().Enqueue(ctx, platform, forceQueue, req)
+			},
+			Adapter: s.adapterForSession,
+			Remotes: func() pluginsmod.Remotes {
+				if s.remotes == nil {
+					return nil // untyped: a nil *remote.Manager would pass the module's nil check
+				}
+				return s.remotes
+			},
+			PublicURL: s.publicURL,
+			Guards:    module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+		})
+	})
+	return s.pluginsMod
+}
+
+// RescanPlugins and SyncPluginProcesses are the plugin lifecycle's entry
+// points for callers outside the module.
+func (s *Server) RescanPlugins(ctx context.Context) ([]plugins.Discovery, error) {
+	return s.pluginsModule().RescanPlugins(ctx)
+}
+
+func (s *Server) SyncPluginProcesses(ctx context.Context) error {
+	return s.pluginsModule().SyncPluginProcesses(ctx)
+}
+
+func (s *Server) stopPluginProcesses() { s.pluginsModule().Stop() }
+
+// RemotePluginOperation runs only owner-local operations after gRPC
+// authentication; it is the remote server's plugin handler.
+func (s *Server) RemotePluginOperation(ctx context.Context, req remote.PluginRequest) remote.PluginResponse {
+	return s.pluginsModule().RemoteOperation(ctx, req)
+}
+
+func (s *Server) routePluginOperation(ctx context.Context, owner string, req remote.PluginRequest) remote.PluginResponse {
+	return s.pluginsModule().RouteOperation(ctx, owner, req)
+}
+
+// replyToConversation is the session.changed recovery for a terminal turn
+// whose idle edge never arrived; the idle edge itself reaches the module
+// through the bus.
+func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID string) {
+	s.pluginsModule().ReplyToConversation(ctx, platformID, sessionID)
+}
+
+// conversationPromptNeedsUser is fired by the permission pipeline after it
+// decided a prompt is the user's, never on the raw ask.
+func (s *Server) conversationPromptNeedsUser(platformID, sessionID, kind, requestID string) {
+	s.pluginsModule().PromptNeedsUser(platformID, sessionID, kind, requestID)
 }

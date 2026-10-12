@@ -24,16 +24,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// stays readable. Routes that are localhost-only (tmux, debug log,
 	// hooks) use the localhost guard, which also validates browser origin.
 	mux.HandleFunc("/api/stats", s.get(s.handleStats))
-	mux.HandleFunc("/api/plugins", s.get(s.handlePluginCatalog))
-	mux.HandleFunc("/api/plugins/discovery", s.get(s.handlePluginDiscovery))
-	mux.HandleFunc("/api/plugins/rescan", s.post(s.requireLocalhost(s.handlePluginRescan)))
-	mux.HandleFunc("/api/plugins/project-catalog", s.post(s.requireLocalhost(s.handlePluginProjectCatalog)))
-	mux.HandleFunc("/api/plugins/", s.requireAuth(s.handlePluginManagement))
-	mux.HandleFunc("/api/plugins/actions", s.get(s.handlePluginActions))
-	mux.HandleFunc("/api/plugins/actions/invoke", s.post(s.handlePluginActionInvoke))
-	mux.HandleFunc("/api/plugins/actions/artifact", s.get(s.handlePluginActionArtifact))
-	mux.HandleFunc("/api/plugins/panes", s.get(s.handlePluginPanes))
-	mux.HandleFunc("/api/plugins/panes/read", s.get(s.handlePluginPaneRead))
 	mux.HandleFunc("/api/analytics/overview", s.get(s.handleAnalyticsOverview))
 	mux.HandleFunc("/api/analytics/session-concurrency", s.get(s.handleSessionConcurrency))
 	mux.HandleFunc("/api/analytics/database-sizes", s.get(s.handleDatabaseSizes))

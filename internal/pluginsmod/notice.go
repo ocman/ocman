@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// plugin_conversation_notice.go tells a conversation thread that its session
+// notice.go tells a conversation thread that its session
 // cannot proceed on its own, or did not end in an answer. A thread only ever
 // sees the assistant's completed replies, so without these a session blocked on
 // a permission prompt, or one whose turn errored, looks to everyone in the
@@ -64,16 +64,16 @@ var conversationNoticeText = map[string]string{
 // right for a local reader and useless to a remote one — see
 // docs/features/plugins.md, which tells operators to set OCMAN_PUBLIC_BASE_URL
 // before pointing a conversation plugin at a remote provider.
-func (s *Server) sessionURL(sessionID string) string {
+func (m *Module) sessionURL(sessionID string) string {
 	if sessionID == "" {
-		return s.publicURL("/")
+		return m.deps.PublicURL("/")
 	}
-	return s.publicURL("/session/" + url.PathEscape(sessionID))
+	return m.deps.PublicURL("/session/" + url.PathEscape(sessionID))
 }
 
 // conversationNotice renders one notice. Unknown kinds render nothing rather
 // than an empty-bodied link.
-func (s *Server) conversationNotice(kind, sessionID string) string {
+func (m *Module) conversationNotice(kind, sessionID string) string {
 	sentence, ok := conversationNoticeText[kind]
 	if !ok {
 		return ""
@@ -81,14 +81,14 @@ func (s *Server) conversationNotice(kind, sessionID string) string {
 	// Through the same sanitiser as an assistant reply: the link is built from
 	// a session ID, and the capability's text rules apply to host-authored
 	// text exactly as they do to an answer.
-	return conversationReplyText(sentence + "\n" + s.sessionURL(sessionID))
+	return conversationReplyText(sentence + "\n" + m.sessionURL(sessionID))
 }
 
 // appendConversationNotice records a notice for delivery to one thread.
 // operation is the dedup key: appending the same operation twice adds one
 // delivery, which is what makes a re-observed prompt silent.
-func (s *Server) appendConversationNotice(ctx context.Context, key state.PluginConversationKey, operation, text string) {
-	if s.stateDB == nil || text == "" {
+func (m *Module) appendConversationNotice(ctx context.Context, key state.PluginConversationKey, operation, text string) {
+	if m.store == nil || text == "" {
 		return
 	}
 	// Detached from the caller's context on purpose. A notice usually reports
@@ -97,38 +97,38 @@ func (s *Server) appendConversationNotice(ctx context.Context, key state.PluginC
 	// notice in exactly the case it exists for.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), conversationNoticeTimeout)
 	defer cancel()
-	delivery, err := s.stateDB.AppendPluginConversationReply(ctx, key, operation, text)
+	delivery, err := m.store.AppendPluginConversationReply(ctx, key, operation, text)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": key.PluginID}).
 			Error("recording conversation notice for delivery")
 		return
 	}
 	if delivery != 0 {
-		s.kickConversationOutbox()
+		m.kickConversationOutbox()
 	}
 }
 
 // notifyConversationSession resolves a session's thread and posts a notice into
 // it. A session with no thread — which is nearly all of them — costs one
 // indexed lookup and produces nothing.
-func (s *Server) notifyConversationSession(ctx context.Context, platformID, sessionID, operation, kind string) {
-	if s.stateDB == nil || sessionID == "" {
+func (m *Module) notifyConversationSession(ctx context.Context, platformID, sessionID, operation, kind string) {
+	if m.store == nil || sessionID == "" {
 		return
 	}
-	key, linked, err := s.stateDB.GetPluginConversationThread(ctx,
+	key, linked, err := m.store.GetPluginConversationThread(ctx,
 		state.PluginConversationSession{PlatformID: platformID, SessionID: sessionID})
 	if err != nil || !linked {
 		return
 	}
-	s.appendConversationNotice(ctx, key, operation, s.conversationNotice(kind, sessionID))
+	m.appendConversationNotice(ctx, key, operation, m.conversationNotice(kind, sessionID))
 }
 
-// conversationPromptNeedsUser is the autoapprove pipeline's PromptNeedsUser
+// PromptNeedsUser is the autoapprove pipeline's PromptNeedsUser
 // hook. It fires once the pipeline has decided a prompt is the user's to
 // answer, never on the raw ask, so a permission the judge approves produces no
 // notice at all.
-func (s *Server) conversationPromptNeedsUser(platformID, sessionID, kind, requestID string) {
-	if s.stateDB == nil || requestID == "" {
+func (m *Module) PromptNeedsUser(platformID, sessionID, kind, requestID string) {
+	if m.store == nil || requestID == "" {
 		return
 	}
 	if _, ok := conversationNoticeText[kind]; !ok {
@@ -136,6 +136,6 @@ func (s *Server) conversationPromptNeedsUser(platformID, sessionID, kind, reques
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), conversationNoticeTimeout)
 	defer cancel()
-	s.notifyConversationSession(ctx, platformID, sessionID,
+	m.notifyConversationSession(ctx, platformID, sessionID,
 		sessionID+conversationNoticeAttention+kind+":"+requestID, kind)
 }

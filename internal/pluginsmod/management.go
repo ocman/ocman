@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -35,36 +36,36 @@ func pluginManagementError(w http.ResponseWriter, err error) {
 	http.Error(w, message, status)
 }
 
-func (s *Server) handlePluginCatalog(w http.ResponseWriter, r *http.Request) {
-	s.servePluginOperation(w, r, remote.PluginRequest{Operation: "catalog"})
+func (m *Module) handlePluginCatalog(w http.ResponseWriter, r *http.Request) {
+	m.servePluginOperation(w, r, remote.PluginRequest{Operation: "catalog"})
 }
 
-func (s *Server) handlePluginDiscovery(w http.ResponseWriter, r *http.Request) {
-	s.servePluginOperation(w, r, remote.PluginRequest{Operation: "discovery"})
+func (m *Module) handlePluginDiscovery(w http.ResponseWriter, r *http.Request) {
+	m.servePluginOperation(w, r, remote.PluginRequest{Operation: "discovery"})
 }
 
-func (s *Server) handlePluginRescan(w http.ResponseWriter, r *http.Request) {
-	s.servePluginOperation(w, r, remote.PluginRequest{Operation: "rescan"})
+func (m *Module) handlePluginRescan(w http.ResponseWriter, r *http.Request) {
+	m.servePluginOperation(w, r, remote.PluginRequest{Operation: "rescan"})
 }
 
-func (s *Server) handlePluginProjectCatalog(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePluginProjectCatalog(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Directory string `json:"directory"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &input) || input.Directory == "" {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &input) || input.Directory == "" {
 		http.Error(w, "directory is required", http.StatusBadRequest)
 		return
 	}
 	values := map[string]json.RawMessage{"directory": json.RawMessage(strconv.Quote(input.Directory))}
-	s.servePluginOperation(w, r, remote.PluginRequest{Operation: "project-catalog", PluginID: "org.ocman.slack", Input: remote.PluginInput{Values: values}})
+	m.servePluginOperation(w, r, remote.PluginRequest{Operation: "project-catalog", PluginID: "org.ocman.slack", Input: remote.PluginInput{Values: values}})
 }
 
-func (s *Server) pluginProjectCatalog(ctx context.Context, input remote.PluginInput) (any, error) {
+func (m *Module) pluginProjectCatalog(ctx context.Context, input remote.PluginInput) (any, error) {
 	var directory string
 	if input.Values == nil || json.Unmarshal(input.Values["directory"], &directory) != nil || directory == "" {
 		return nil, plugins.ErrInvalidMessage
 	}
-	ensured, err := s.router().Local().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: directory})
+	ensured, err := m.deps.Local().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: directory})
 	if err != nil || ensured == nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func (s *Server) pluginProjectCatalog(ctx context.Context, input remote.PluginIn
 }
 
 // The action routes have longer mux matches and never pass through this handler.
-func (s *Server) handlePluginManagement(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePluginManagement(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	id, action, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/plugins/"), "/")
 	if !ok || id == "" {
@@ -101,20 +102,20 @@ func (s *Server) handlePluginManagement(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	handler := func(w http.ResponseWriter, r *http.Request) { s.managePlugin(w, r, id, action, read) }
+	handler := func(w http.ResponseWriter, r *http.Request) { m.managePlugin(w, r, id, action, read) }
 	if read {
 		if action == "stderr" {
-			handler = s.requireLocalhost(handler)
+			handler = m.deps.Guards.Localhost(handler)
 		}
-		requireGET(handler)(w, r)
+		get(handler)(w, r)
 	} else {
-		requirePOST(s.requireLocalhost(handler))(w, r)
+		post(m.deps.Guards.Localhost(handler))(w, r)
 	}
 }
 
 type pluginManagementInput = remote.PluginInput
 
-func (s *Server) managePlugin(w http.ResponseWriter, r *http.Request, id, action string, read bool) {
+func (m *Module) managePlugin(w http.ResponseWriter, r *http.Request, id, action string, read bool) {
 	var input *pluginManagementInput
 	if !read {
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, plugins.MaxMessageBytes))
@@ -126,22 +127,22 @@ func (s *Server) managePlugin(w http.ResponseWriter, r *http.Request, id, action
 	} else {
 		input = &pluginManagementInput{}
 	}
-	s.servePluginOperation(w, r, remote.PluginRequest{Operation: action, PluginID: id, Read: read, Input: *input})
+	m.servePluginOperation(w, r, remote.PluginRequest{Operation: action, PluginID: id, Read: read, Input: *input})
 }
 
-func (s *Server) manageLocalPlugin(ctx context.Context, id, action string, read bool, input pluginManagementInput) (any, error) {
+func (m *Module) manageLocalPlugin(ctx context.Context, id, action string, read bool, input pluginManagementInput) (any, error) {
 	// ponytail: one lifecycle lock includes readiness waits; use per-plugin locks
 	// if concurrent management needs to avoid blocking other plugins' admission.
-	s.pluginMu.Lock()
-	defer s.pluginMu.Unlock()
-	if s.stateDB == nil {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.store == nil {
 		return nil, plugins.ErrUnavailable
 	}
-	p, err := s.stateDB.GetPlugin(ctx, id)
+	p, err := m.store.GetPlugin(ctx, id)
 	if err != nil {
 		// Allow retrying file cleanup after a partially successful deletion.
 		if errors.Is(err, state.ErrPluginNotFound) && action == "remove-data" {
-			err = s.stateDB.DeletePluginPermanently(ctx, id)
+			err = m.store.DeletePluginPermanently(ctx, id)
 			if err == nil {
 				return map[string]bool{"removed": true}, nil
 			}
@@ -149,7 +150,7 @@ func (s *Server) manageLocalPlugin(ctx context.Context, id, action string, read 
 		return nil, err
 	}
 	if strings.HasPrefix(action, "conversations") {
-		return s.manageConversationBacklog(ctx, id, action, input)
+		return m.manageConversationBacklog(ctx, id, action, input)
 	}
 	if read {
 		switch action {
@@ -160,22 +161,22 @@ func (s *Server) manageLocalPlugin(ctx context.Context, id, action string, read 
 		case "configuration":
 			return p.Configuration, nil
 		case "stderr":
-			text := s.pluginStderr[id]
-			if process := s.pluginProcesses[id]; process != nil {
-				text += process.RedactedStderr(func(text string) string { return s.stateDB.RedactPluginDiagnostics(id, text) })
+			text := m.stderr[id]
+			if process := m.processes[id]; process != nil {
+				text += process.RedactedStderr(func(text string) string { return m.store.RedactPluginDiagnostics(id, text) })
 			}
-			text = s.stateDB.RedactPluginDiagnostics(id, text)
+			text = m.store.RedactPluginDiagnostics(id, text)
 			return map[string]string{"stderr": text[:min(len(text), 2*plugins.MaxStderrBytes)]}, nil
 		}
 		return nil, state.ErrPluginInvalid
 	}
-	if err := s.mutatePluginLocked(ctx, p, action, input); err != nil {
+	if err := m.mutatePluginLocked(ctx, p, action, input); err != nil {
 		return nil, err
 	}
 	if action == "configuration/validate" || action == "remove-data" {
 		return map[string]bool{"ok": true}, nil
 	}
-	return s.stateDB.GetPlugin(ctx, id)
+	return m.store.GetPlugin(ctx, id)
 }
 
 func validatePluginConfiguration(p state.PluginRegistration, input pluginManagementInput) (map[string]json.RawMessage, error) {
@@ -246,7 +247,7 @@ func approvedPluginGrants(p state.PluginRegistration, grants *[]string, all bool
 	return !all || len(seen) == len(p.Description.RequestedGrants)
 }
 
-func (s *Server) mutatePluginLocked(ctx context.Context, p state.PluginRegistration, action string, input pluginManagementInput) error {
+func (m *Module) mutatePluginLocked(ctx context.Context, p state.PluginRegistration, action string, input pluginManagementInput) error {
 	id := p.Description.ID
 	switch action {
 	case "enable", "restart", "retry":
@@ -264,39 +265,39 @@ func (s *Server) mutatePluginLocked(ctx context.Context, p state.PluginRegistrat
 			if err != nil {
 				return err
 			}
-			if err := s.stateDB.SetPluginConfiguration(ctx, id, values, nil); err != nil {
+			if err := m.store.SetPluginConfiguration(ctx, id, values, nil); err != nil {
 				return err
 			}
-			if err := s.stateDB.SetPluginEnabled(ctx, id, true, *input.Grants); err != nil {
+			if err := m.store.SetPluginEnabled(ctx, id, true, *input.Grants); err != nil {
 				return err
 			}
 		} else if !p.Enabled {
 			return errPluginConflict
 		}
-		if err := s.restartPluginLocked(ctx, id); err != nil {
+		if err := m.restartPluginLocked(ctx, id); err != nil {
 			return err
 		}
-		return s.stateDB.MarkPluginConfigurationWorking(ctx, id)
+		return m.store.MarkPluginConfigurationWorking(ctx, id)
 	case "disable":
-		if err := s.stateDB.SetPluginEnabled(ctx, id, false, nil); err != nil {
+		if err := m.store.SetPluginEnabled(ctx, id, false, nil); err != nil {
 			return err
 		}
-		s.stopOnePluginLocked(id)
+		m.stopOnePluginLocked(id)
 		if p.Health.Status == "conflict" {
 			return nil
 		}
-		return s.stateDB.SetPluginHealth(ctx, id, state.PluginHealth{Status: "disabled"})
+		return m.store.SetPluginHealth(ctx, id, state.PluginHealth{Status: "disabled"})
 	case "grants":
 		if !approvedPluginGrants(p, input.Grants, false) {
 			return state.ErrPluginInvalid
 		}
-		if err := s.stateDB.SetPluginGrants(ctx, id, *input.Grants); err != nil {
+		if err := m.store.SetPluginGrants(ctx, id, *input.Grants); err != nil {
 			return err
 		}
 		// Stop in-flight work before acknowledging revocation. Future admission
 		// uses the new durable grants under the same lifecycle lock.
 		if p.Enabled {
-			return s.restartPluginLocked(ctx, id)
+			return m.restartPluginLocked(ctx, id)
 		}
 		return nil
 	case "configuration", "configuration/validate":
@@ -305,16 +306,16 @@ func (s *Server) mutatePluginLocked(ctx context.Context, p state.PluginRegistrat
 			return err
 		}
 		if p.Enabled {
-			return s.activatePluginConfigurationLocked(ctx, p, values, input.Secrets)
+			return m.activatePluginConfigurationLocked(ctx, p, values, input.Secrets)
 		}
-		return s.stateDB.SetPluginConfiguration(ctx, id, values, input.Secrets)
+		return m.store.SetPluginConfiguration(ctx, id, values, input.Secrets)
 	case "remove-data":
 		if p.Enabled {
 			return errPluginConflict
 		}
-		s.stopOnePluginLocked(id)
-		delete(s.pluginStderr, id)
-		return s.stateDB.DeletePluginPermanently(ctx, id)
+		m.stopOnePluginLocked(id)
+		delete(m.stderr, id)
+		return m.store.DeletePluginPermanently(ctx, id)
 	}
 	return state.ErrPluginInvalid
 }

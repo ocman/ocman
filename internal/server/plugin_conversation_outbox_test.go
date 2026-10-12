@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -35,8 +33,7 @@ func (f *conversationFixture) appendReply(t *testing.T, thread, operation, text 
 // background ticker.
 func (f *conversationFixture) pump(t *testing.T, s *Server) {
 	t.Helper()
-	s.pumpConversationOutbox(t.Context())
-	if err := s.conversationDeliveryWorker().Drain(t.Context()); err != nil {
+	if err := s.pluginsModule().DeliverOwed(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -73,7 +70,7 @@ func TestConversationReplyReplayedAcrossCrashBoundaries(t *testing.T) {
 	// A host with no memory of the reply still delivers it.
 	restarted := f.restart(t)
 	f.pump(t, restarted)
-	first := fmt.Sprintf("reply\t%s\t%s\trecorded before the crash\n", conversationTestThread, conversationOutboxOperation(id))
+	first := fmt.Sprintf("reply\t%s\t%s\trecorded before the crash\n", conversationTestThread, conversationOutboxOp(id))
 	if f.replies() != first {
 		t.Fatalf("replay after a crash: %q, want %q", f.replies(), first)
 	}
@@ -84,8 +81,8 @@ func TestConversationReplyReplayedAcrossCrashBoundaries(t *testing.T) {
 	// Crash after the send, before the acknowledgment: the delivery is still
 	// pending, so it is replayed.
 	lost := f.appendReply(t, conversationTestThread, "ses-chat:m3", "acknowledgment lost")
-	if err := restarted.conversations().Reply(t.Context(), conversationPluginDescription().ID,
-		conversationOutboxOperation(lost), plugins.ConversationReply{
+	if err := restarted.pluginsModule().Conversations().Reply(t.Context(), conversationPluginDescription().ID,
+		conversationOutboxOp(lost), plugins.ConversationReply{
 			AccountID: conversationTestAccount, ThreadID: conversationTestThread, Text: "acknowledgment lost",
 		}); err != nil {
 		t.Fatal(err)
@@ -93,51 +90,12 @@ func TestConversationReplyReplayedAcrossCrashBoundaries(t *testing.T) {
 	// Continue on the restarted host. The crashed host must not compete
 	// with its replacement's acknowledgment-triggered pump.
 	f.pump(t, restarted)
-	repeated := fmt.Sprintf("reply\t%s\t%s\tacknowledgment lost\n", conversationTestThread, conversationOutboxOperation(lost))
+	repeated := fmt.Sprintf("reply\t%s\t%s\tacknowledgment lost\n", conversationTestThread, conversationOutboxOp(lost))
 	if got := f.replies(); got != first+repeated+repeated {
 		t.Fatalf("an unacknowledged reply must be replayed with a stable identity: %q", got)
 	}
 	if status := f.backlog(t); status.Pending != 0 {
 		t.Fatalf("the replay did not settle the delivery: %+v", status)
-	}
-}
-
-// TestConversationStaleClaimIsNotResent covers a pump whose claim was read
-// before a concurrent delivery acknowledged the row: once that delivery leaves
-// the in-flight set, the stale claim must not post the reply again.
-func TestConversationStaleClaimIsNotResent(t *testing.T) {
-	f := newConversationFixture(t)
-	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
-	f.awaitPrompts(t, 1)
-	f.settle(t)
-	f.awaitThread(t, "secondhalf")
-	for deadline := time.Now().Add(20 * time.Second); f.backlog(t).Pending != 0; time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("settled reply never acknowledged")
-		}
-	}
-
-	id := f.appendReply(t, conversationTestThread, "ses-chat:stale", "only once")
-	claimed, err := f.s.stateDB.ClaimPluginConversationReplies(t.Context(), 10)
-	if err != nil || len(claimed) != 1 {
-		t.Fatalf("claim: %v %v", claimed, err)
-	}
-	// Deliver through the in-flight guard like the pump does: the pump kicked
-	// by the earlier acknowledgment may already hold this row, and two
-	// unguarded deliveries would both pass the currency check.
-	if f.s.beginConversationDelivery(id) {
-		f.s.deliverConversationReply(claimed[0])
-	}
-	f.awaitThread(t, "only once")
-	// The stale snapshot, replayed once no delivery holds the row any more.
-	for deadline := time.Now().Add(20 * time.Second); !f.s.beginConversationDelivery(id); time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("the first delivery never left the in-flight set")
-		}
-	}
-	f.s.deliverConversationReply(claimed[0])
-	if got := f.countThread("only once"); got != 1 {
-		t.Fatalf("stale claim posted %d times: %q", got, f.replies())
 	}
 }
 
@@ -193,9 +151,9 @@ func TestConversationDeadLetterControls(t *testing.T) {
 	f.appendReply(t, conversationTestThread, "ses-chat:m3", "held behind the poison")
 	// Bounded retries: every attempt is immediately due, so the cap is reached
 	// without waiting out a real backoff.
-	for range conversationMaxAttempts {
+	for range conversationTestMaxAttempts {
 		f.pump(t, f.s)
-		if _, err := f.s.stateDB.FailPluginConversationReply(t.Context(), poison, "unavailable", 0, conversationMaxAttempts); err != nil {
+		if _, err := f.s.stateDB.FailPluginConversationReply(t.Context(), poison, "unavailable", 0, conversationTestMaxAttempts); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -206,7 +164,7 @@ func TestConversationDeadLetterControls(t *testing.T) {
 	if status.Dead != 1 || len(status.DeadLetters) != 1 || status.DeadLetters[0].ID != poison {
 		t.Fatalf("the dead letter is not actionable from the UI: %+v", status)
 	}
-	if status.DeadLetters[0].LastError == "" || status.DeadLetters[0].Attempts < conversationMaxAttempts {
+	if status.DeadLetters[0].LastError == "" || status.DeadLetters[0].Attempts < conversationTestMaxAttempts {
 		t.Fatalf("dead letter %+v", status.DeadLetters[0])
 	}
 
@@ -326,37 +284,9 @@ func TestConversationIntakePausesWhenBacklogIsFull(t *testing.T) {
 	}
 }
 
-func TestConversationRetryDelayIsBounded(t *testing.T) {
-	if got := conversationRetryDelay(0); got != conversationRetryBase {
-		t.Fatalf("first retry waits %s", got)
-	}
-	previous := time.Duration(0)
-	for attempts := range 20 {
-		got := conversationRetryDelay(attempts)
-		if got < previous || got > conversationRetryMax {
-			t.Fatalf("attempt %d: %s after %s, ceiling %s", attempts, got, previous, conversationRetryMax)
-		}
-		previous = got
-	}
-	if conversationRetryDelay(19) != conversationRetryMax {
-		t.Fatal("the backoff never reaches its ceiling")
-	}
-}
+// conversationOutboxOp is the wire operation id of an outbox row: stable
+// across retries, so a provider adapter can recognize a repeat.
+func conversationOutboxOp(id int64) string { return fmt.Sprintf("conv-out:%d", id) }
 
-func TestConversationFailureReasonStaysOpaque(t *testing.T) {
-	for _, tc := range []struct {
-		err  error
-		want string
-	}{
-		{err: &plugins.WireError{Category: plugins.ErrorUnavailable}, want: "unavailable"},
-		{err: context.DeadlineExceeded, want: "deadline_exceeded"},
-		{err: context.Canceled, want: "cancelled"},
-		{err: plugins.ErrUnavailable, want: "unavailable"},
-		{err: state.ErrPluginState, want: "host state error"},
-		{err: errors.New("provider said: token xoxb-secret is bad"), want: "internal"},
-	} {
-		if got := conversationFailureReason(tc.err); got != tc.want {
-			t.Fatalf("%v: %q, want %q", tc.err, got, tc.want)
-		}
-	}
-}
+// conversationTestMaxAttempts is where a failing reply becomes a dead letter.
+const conversationTestMaxAttempts = 6

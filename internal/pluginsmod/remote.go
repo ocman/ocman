@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -30,10 +31,10 @@ func validPluginInput(input remote.PluginInput) bool {
 	return err == nil && len(data) <= plugins.MaxMessageBytes
 }
 
-// RemotePluginOperation runs only owner-local operations after gRPC authentication.
+// RemoteOperation runs only owner-local operations after gRPC authentication.
 // It cannot forward to another owner or invoke hub-scoped/global actions.
-func (s *Server) RemotePluginOperation(ctx context.Context, req remote.PluginRequest) remote.PluginResponse {
-	return s.localPluginOperation(ctx, req, true)
+func (m *Module) RemoteOperation(ctx context.Context, req remote.PluginRequest) remote.PluginResponse {
+	return m.localPluginOperation(ctx, req, true)
 }
 
 func pluginResponse(value any, err error) remote.PluginResponse {
@@ -68,34 +69,34 @@ func pluginResponse(value any, err error) remote.PluginResponse {
 	return remote.PluginResponse{Error: &plugins.WireError{Category: category}}
 }
 
-func (s *Server) localPluginOperation(ctx context.Context, req remote.PluginRequest, fromRemote bool) remote.PluginResponse {
+func (m *Module) localPluginOperation(ctx context.Context, req remote.PluginRequest, fromRemote bool) remote.PluginResponse {
 	ctx = context.WithValue(ctx, pluginExecutionKey{}, pluginExecution{remote: fromRemote, owner: req.Action.Context.OwnerID})
 	switch req.Operation {
 	case "pane-read":
-		return pluginResponse(s.readLocalPluginPane(ctx, req.Pane))
+		return pluginResponse(m.readLocalPluginPane(ctx, req.Pane))
 	case "project-catalog":
 		if req.PluginID != "org.ocman.slack" || req.Read {
 			return pluginResponse(nil, plugins.ErrInvalidMessage)
 		}
-		return pluginResponse(s.pluginProjectCatalog(ctx, req.Input))
+		return pluginResponse(m.pluginProjectCatalog(ctx, req.Input))
 	case "available":
 		return pluginResponse(true, nil)
 	case "discovery":
-		s.pluginMu.Lock()
-		defer s.pluginMu.Unlock()
-		return pluginResponse(append([]pluginDiscoveryFailure{}, s.pluginDiscovery...), nil)
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return pluginResponse(append([]pluginDiscoveryFailure{}, m.discovery...), nil)
 	case "catalog", "rescan":
-		if s.stateDB == nil {
+		if m.store == nil {
 			return pluginResponse(nil, plugins.ErrUnavailable)
 		}
 		if req.Operation == "rescan" {
-			if _, err := s.RescanPlugins(ctx); err != nil {
+			if _, err := m.RescanPlugins(ctx); err != nil {
 				return pluginResponse(nil, err)
 			}
 		}
-		s.pluginMu.Lock()
-		defer s.pluginMu.Unlock()
-		return pluginResponse(s.stateDB.ListPlugins(ctx))
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return pluginResponse(m.store.ListPlugins(ctx))
 	case "actions", "invoke":
 		if req.Action.Validate() != nil {
 			return pluginResponse(nil, plugins.ErrInvalidMessage)
@@ -104,11 +105,11 @@ func (s *Server) localPluginOperation(ctx context.Context, req remote.PluginRequ
 			return pluginResponse(nil, &plugins.WireError{Category: plugins.ErrorPermissionDenied})
 		}
 		if req.Operation == "invoke" {
-			return pluginResponse(s.actionBroker().Invoke(ctx, req.Action), nil)
+			return pluginResponse(m.Actions().Invoke(ctx, req.Action), nil)
 		}
-		return pluginResponse(s.localPluginActions(ctx, req.Action, fromRemote))
+		return pluginResponse(m.localPluginActions(ctx, req.Action, fromRemote))
 	case "artifact":
-		name, data, err := s.actionBroker().Artifact(ctx, req.Handle)
+		name, data, err := m.Actions().Artifact(ctx, req.Handle)
 		return pluginResponse(pluginArtifact{Name: name, Data: data}, err)
 	case "health", "stderr", "conversations":
 		if !req.Read {
@@ -128,7 +129,7 @@ func (s *Server) localPluginOperation(ctx context.Context, req remote.PluginRequ
 	if !validPluginInput(req.Input) {
 		return pluginResponse(nil, plugins.ErrInvalidMessage)
 	}
-	return pluginResponse(s.manageLocalPlugin(ctx, req.PluginID, req.Operation, req.Read, req.Input))
+	return pluginResponse(m.manageLocalPlugin(ctx, req.PluginID, req.Operation, req.Read, req.Input))
 }
 
 type pluginArtifact struct {
@@ -143,7 +144,9 @@ type ownedPlugin struct {
 	OwnerID string `json:"ownerId"`
 }
 
-func (s *Server) routePluginOperation(ctx context.Context, owner string, req remote.PluginRequest) remote.PluginResponse {
+// RouteOperation runs req on owner ("local" or empty for this machine) and
+// qualifies the answer with that owner at the hub.
+func (m *Module) RouteOperation(ctx context.Context, owner string, req remote.PluginRequest) remote.PluginResponse {
 	if !validPluginInput(req.Input) {
 		return pluginResponse(nil, plugins.ErrInvalidMessage)
 	}
@@ -152,12 +155,12 @@ func (s *Server) routePluginOperation(ctx context.Context, owner string, req rem
 	}
 	var response remote.PluginResponse
 	if owner == "local" {
-		response = s.localPluginOperation(ctx, req, false)
-	} else if s.remotes == nil {
+		response = m.localPluginOperation(ctx, req, false)
+	} else if remotes := m.remotes(); remotes == nil {
 		return pluginResponse(nil, remote.ErrRemoteOffline)
 	} else {
 		var err error
-		response, err = s.remotes.PluginOperation(ctx, owner, req)
+		response, err = remotes.PluginOperation(ctx, owner, req)
 		if err != nil {
 			// Transport errors never expose remote diagnostics or request contents.
 			return pluginResponse(nil, remote.ErrRemoteOffline)
@@ -199,8 +202,8 @@ func (s *Server) routePluginOperation(ctx context.Context, owner string, req rem
 	return response
 }
 
-func (s *Server) servePluginOperation(w http.ResponseWriter, r *http.Request, req remote.PluginRequest) {
-	response := s.routePluginOperation(r.Context(), r.URL.Query().Get("ownerId"), req)
+func (m *Module) servePluginOperation(w http.ResponseWriter, r *http.Request, req remote.PluginRequest) {
+	response := m.RouteOperation(r.Context(), r.URL.Query().Get("ownerId"), req)
 	writePluginResponse(w, response)
 }
 
@@ -210,15 +213,15 @@ func writePluginResponse(w http.ResponseWriter, response remote.PluginResponse) 
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, response.Value)
+	httpx.WriteJSON(w, response.Value)
 }
 
-func (s *Server) localPluginActions(ctx context.Context, request plugins.ActionRequest, fromRemote bool) ([]listedPluginAction, error) {
+func (m *Module) localPluginActions(ctx context.Context, request plugins.ActionRequest, fromRemote bool) ([]listedPluginAction, error) {
 	actions := []listedPluginAction{}
-	if s.stateDB == nil {
+	if m.store == nil {
 		return actions, nil
 	}
-	registrations, err := s.stateDB.ListPlugins(ctx)
+	registrations, err := m.store.ListPlugins(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -233,4 +236,11 @@ func (s *Server) localPluginActions(ctx context.Context, request plugins.ActionR
 		}
 	}
 	return actions, nil
+}
+
+func (m *Module) remotes() Remotes {
+	if m.deps.Remotes == nil {
+		return nil
+	}
+	return m.deps.Remotes()
 }

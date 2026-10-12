@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -36,35 +36,35 @@ type conversationJob struct {
 	event    plugins.Event
 }
 
-// conversations is the grant-scoped seam between a conversation plugin and
+// Conversations is the grant-scoped seam between a conversation plugin and
 // ocman's session orchestration. It is the only path a plugin has to a session.
-func (s *Server) conversations() *plugins.ConversationBroker {
-	s.conversationOnce.Do(s.buildConversations)
-	return s.conversationBroker
+func (m *Module) Conversations() *plugins.ConversationBroker {
+	m.conversationOnce.Do(m.buildConversations)
+	return m.conversationBroker
 }
 
-func (s *Server) conversationWorker() *worker.Worker[conversationJob] {
-	s.conversationOnce.Do(s.buildConversations)
-	return s.conversationJobs
+func (m *Module) conversationWorker() *worker.Worker[conversationJob] {
+	m.conversationOnce.Do(m.buildConversations)
+	return m.conversationJobs
 }
 
-func (s *Server) buildConversations() {
-	s.conversationBroker = plugins.NewConversationBroker(
+func (m *Module) buildConversations() {
+	m.conversationBroker = plugins.NewConversationBroker(
 		func(ctx context.Context, id string, use func(plugins.Description, []string, plugins.ConversationConfig) error) error {
-			// Lock order matches actions: server lifecycle, then durable state.
-			s.pluginMu.Lock()
-			defer s.pluginMu.Unlock()
-			if s.stateDB == nil {
+			// Lock order matches actions: module lifecycle (mu), then durable state.
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if m.store == nil {
 				return plugins.ErrUnavailable
 			}
 			// No pluginScopeAllowed check: conversation.v1 has no remote
 			// projection, so every delivery is already owner-local.
-			return s.stateDB.WithPluginConversation(ctx, id, use)
+			return m.store.WithPluginConversation(ctx, id, use)
 		},
-		s.startConversation,
+		m.startConversation,
 		func(ctx context.Context, id string, call plugins.Call) (<-chan plugins.Reply, error) {
-			// The authorization callback holds pluginMu through admission.
-			p := s.pluginProcesses[id]
+			// The authorization callback holds mu through admission.
+			p := m.processes[id]
 			if p == nil {
 				return nil, plugins.ErrUnavailable
 			}
@@ -77,15 +77,15 @@ func (s *Server) buildConversations() {
 	// Serial per plugin (so one thread cannot fork two sessions) but unbounded,
 	// so a slow turn start never starves the supervisor's event channel — an
 	// unread event flood fails the plugin process.
-	s.conversationJobs = worker.NewKeyed(s.runConversationJob, func(j conversationJob) string { return j.pluginID })
-	s.conversationDeliveries = worker.NewKeyed(func(d state.PluginConversationDelivery) {
-		runWithRecover("plugin-conversation-delivery", func() { s.deliverConversationReply(d) })
+	m.conversationJobs = worker.NewKeyed(m.runConversationJob, func(j conversationJob) string { return j.pluginID })
+	m.conversationDeliveries = worker.NewKeyed(func(d state.PluginConversationDelivery) {
+		runWithRecover("plugin-conversation-delivery", func() { m.deliverConversationReply(d) })
 	}, state.PluginConversationDelivery.Group)
-	s.conversationInFlight = make(map[int64]bool)
+	m.conversationInFlight = make(map[int64]bool)
 }
 
-func (s *Server) runConversationJob(job conversationJob) {
-	if err := s.conversations().Deliver(job.ctx, job.pluginID, job.event); err != nil {
+func (m *Module) runConversationJob(job conversationJob) {
+	if err := m.Conversations().Deliver(job.ctx, job.pluginID, job.event); err != nil {
 		// Host-side categories and errors only; plugin payloads are never logged.
 		log.WithError(err).WithFields(log.Fields{"plugin_id": job.pluginID, "capability": job.event.Capability, "event": job.event.Name}).
 			Warn("delivering plugin conversation message")
@@ -94,17 +94,17 @@ func (s *Server) runConversationJob(job conversationJob) {
 
 // consumePluginEvents drains one plugin's event channel until the process
 // stops. Draining is mandatory: the supervisor fails a process whose events go
-// unread. ctx is captured by the caller under pluginMu.
-func (s *Server) consumePluginEvents(ctx context.Context, id string, p *plugins.Process) {
+// unread. ctx is captured by the caller under mu.
+func (m *Module) consumePluginEvents(ctx context.Context, id string, p *plugins.Process) {
 	for event := range p.Events() {
-		s.conversationWorker().Enqueue(conversationJob{ctx: ctx, pluginID: id, event: event})
+		m.conversationWorker().Enqueue(conversationJob{ctx: ctx, pluginID: id, event: event})
 	}
 }
 
 // startConversation creates or resumes the thread's session in the plugin's one
 // approved project and delivers the normalized text as a prompt. dir comes from
 // the approved configuration; a plugin can never name another directory.
-func (s *Server) startConversation(ctx context.Context, pluginID string, config plugins.ConversationConfig, message plugins.ConversationMessage) error {
+func (m *Module) startConversation(ctx context.Context, pluginID string, config plugins.ConversationConfig, message plugins.ConversationMessage) error {
 	dir := filepath.Clean(config.Project)
 	if !filepath.IsAbs(dir) {
 		return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
@@ -113,7 +113,7 @@ func (s *Server) startConversation(ctx context.Context, pluginID string, config 
 		// An unapproved or nonexistent project is a denial, not a crash.
 		return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 	}
-	if s.stateDB == nil {
+	if m.store == nil {
 		return plugins.ErrUnavailable
 	}
 	// Pressure is applied here, at the producer, and before the event receipt
@@ -121,7 +121,7 @@ func (s *Server) startConversation(ctx context.Context, pluginID string, config 
 	// instead of dropping replies the host already owes. Not consuming the
 	// receipt is what lets the provider's redelivery be accepted once the
 	// backlog drains.
-	if err := s.conversationBacklogPaused(ctx, pluginID); err != nil {
+	if err := m.conversationBacklogPaused(ctx, pluginID); err != nil {
 		return err
 	}
 	// Claim the delivery before doing any of its work. Reserve-then-act makes a
@@ -130,7 +130,7 @@ func (s *Server) startConversation(ctx context.Context, pluginID string, config 
 	// prompt and a duplicate reply into a thread everyone can see. The receipt
 	// is durable, so the dedup survives a restart of host and plugin alike.
 	operation := conversationInboundPrefix + message.AccountID + ":" + message.EventID
-	if err := s.stateDB.ReservePluginOperation(ctx, pluginID, operation); err != nil {
+	if err := m.store.ReservePluginOperation(ctx, pluginID, operation); err != nil {
 		var wire *plugins.WireError
 		if errors.As(err, &wire) && wire.Category == plugins.ErrorConflict {
 			// A duplicate provider delivery is expected traffic, not a failure.
@@ -140,16 +140,16 @@ func (s *Server) startConversation(ctx context.Context, pluginID string, config 
 		return err
 	}
 	key := state.PluginConversationKey{PluginID: pluginID, AccountID: message.AccountID, ThreadID: message.ThreadID}
-	err := s.deliverConversationPrompt(ctx, key, dir, config.Values, message)
+	err := m.deliverConversationPrompt(ctx, key, dir, config.Values, message)
 	if err != nil {
 		// The receipt above is already consumed, so no redelivery is coming for
 		// this message: the thread would otherwise wait forever on an answer
 		// that nobody is computing. Keyed on the event so a message that fails
 		// twice cannot say so twice. Best-effort — the original failure is what
 		// the caller acts on.
-		s.appendConversationNotice(ctx, key,
+		m.appendConversationNotice(ctx, key,
 			conversationNoticeOutcome+"unavailable:"+message.AccountID+":"+message.EventID,
-			s.conversationNotice("unavailable", ""))
+			m.conversationNotice("unavailable", ""))
 	}
 	return err
 }
@@ -157,13 +157,13 @@ func (s *Server) startConversation(ctx context.Context, pluginID string, config 
 // deliverConversationPrompt creates or resumes the thread's session and hands
 // it the prompt. Split out from startConversation so every way of failing
 // after the receipt was consumed reaches the same notice.
-func (s *Server) deliverConversationPrompt(ctx context.Context, key state.PluginConversationKey, dir string, values map[string]json.RawMessage, message plugins.ConversationMessage) error {
-	linked, resumed, err := s.stateDB.GetPluginConversation(ctx, key)
+func (m *Module) deliverConversationPrompt(ctx context.Context, key state.PluginConversationKey, dir string, values map[string]json.RawMessage, message plugins.ConversationMessage) error {
+	linked, resumed, err := m.store.GetPluginConversation(ctx, key)
 	if err != nil {
 		return err
 	}
 	if !resumed {
-		if linked, err = s.createConversationSession(ctx, key, dir); err != nil {
+		if linked, err = m.createConversationSession(ctx, key, dir); err != nil {
 			return err
 		}
 	}
@@ -177,7 +177,7 @@ func (s *Server) deliverConversationPrompt(ctx context.Context, key state.Plugin
 	var agent, model string
 	_ = json.Unmarshal(values["agent"], &agent)
 	_ = json.Unmarshal(values["model"], &model)
-	return s.queueSvc().Enqueue(ctx, linked.PlatformID,
+	return m.deps.Enqueue(ctx, linked.PlatformID,
 		false, platforms.SendMessageRequest{SessionID: linked.SessionID, Message: message.Text, Agent: agent, Model: model})
 }
 
@@ -185,7 +185,7 @@ func (s *Server) deliverConversationPrompt(ctx context.Context, key state.Plugin
 // session and claims the mapping. Losing the claim is not an error: the winner's
 // session is authoritative and this one is abandoned, so a concurrent first
 // message can never leave the conversation with two mapped sessions.
-func (s *Server) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir string) (state.PluginConversationSession, error) {
+func (m *Module) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir string) (state.PluginConversationSession, error) {
 	// The owner is this machine, explicitly. A conversation plugin's binary,
 	// provider credentials, configuration and approved project are all
 	// owner-local, and dir was just validated on this filesystem. Inferring the
@@ -193,18 +193,18 @@ func (s *Server) createConversationSession(ctx context.Context, key state.Plugin
 	// can hand the session to another machine that happens to claim the path —
 	// and whose permissive fallback silently degrades a disconnected remote
 	// back to the hub, running the conversation somewhere nobody approved it.
-	host := s.router().Local()
+	host := m.deps.Local()
 	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 	if err != nil {
 		return state.PluginConversationSession{}, err
 	}
 	// Owner-local by construction, so the platform is never remote-qualified.
 	const platformID = "opencode"
-	created, err := s.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Port: ensured.Port()})
+	created, err := m.deps.Sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Port: ensured.Port()})
 	if err != nil {
 		return state.PluginConversationSession{}, err
 	}
-	linked, won, err := s.stateDB.LinkPluginConversation(ctx, key,
+	linked, won, err := m.store.LinkPluginConversation(ctx, key,
 		state.PluginConversationSession{PlatformID: platformID, SessionID: created.ID})
 	if err != nil {
 		return state.PluginConversationSession{}, err
@@ -216,7 +216,7 @@ func (s *Server) createConversationSession(ctx context.Context, key state.Plugin
 	return linked, nil
 }
 
-// replyToConversation records the session's completed assistant turn for
+// ReplyToConversation records the session's completed assistant turn for
 // delivery to the originating thread. Sessions with no linked thread are
 // ignored. The mapping is read from the database, so a turn that completes
 // after a restart still finds its thread.
@@ -225,20 +225,20 @@ func (s *Server) createConversationSession(ctx context.Context, key state.Plugin
 // durable outbox and wakes the delivery pump: a disconnect, a plugin crash or a
 // host restart between here and the post replays the delivery instead of losing
 // a completed reply.
-func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID string) {
-	if s.stateDB == nil {
+func (m *Module) ReplyToConversation(ctx context.Context, platformID, sessionID string) {
+	if m.store == nil {
 		return
 	}
-	key, linked, err := s.stateDB.GetPluginConversationThread(ctx,
+	key, linked, err := m.store.GetPluginConversationThread(ctx,
 		state.PluginConversationSession{PlatformID: platformID, SessionID: sessionID})
 	if err != nil || !linked {
 		return
 	}
-	adapter, ok := s.adapterForSession(ctx, platformID, sessionID)
+	adapter, ok := m.deps.Adapter(ctx, platformID, sessionID)
 	if !ok {
 		return
 	}
-	if skip, err := s.conversationReplyAlreadyRecorded(ctx, adapter, key, sessionID); err != nil {
+	if skip, err := m.conversationReplyAlreadyRecorded(ctx, adapter, key, sessionID); err != nil {
 		log.WithError(err).WithField("session_id", sessionID).Warn("checking conversation reply receipt")
 		return
 	} else if skip {
@@ -261,8 +261,8 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 	// so a repeated idle edge for the same failed turn reports once, while the
 	// next turn's failure is a new notice.
 	if messageID != "" && detail.Session.Status == db.StatusError {
-		s.appendConversationNotice(ctx, key, sessionID+conversationNoticeOutcome+"error:"+messageID,
-			s.conversationNotice("error", sessionID))
+		m.appendConversationNotice(ctx, key, sessionID+conversationNoticeOutcome+"error:"+messageID,
+			m.conversationNotice("error", sessionID))
 	}
 	if text == "" {
 		return
@@ -270,14 +270,14 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 	// The message ID keys the append, so a repeated idle edge for the same
 	// completed turn adds no second delivery. The receipt outlives the
 	// delivery, so this holds after the reply has been acknowledged.
-	delivery, err := s.stateDB.AppendPluginConversationReply(ctx, key, sessionID+":"+messageID, text)
+	delivery, err := m.store.AppendPluginConversationReply(ctx, key, sessionID+":"+messageID, text)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": key.PluginID, "session_id": sessionID}).
 			Error("recording completed reply for delivery")
 		return
 	}
 	if delivery != 0 {
-		s.kickConversationOutbox()
+		m.kickConversationOutbox()
 	}
 }
 
@@ -289,8 +289,8 @@ func conversationReplyReady(status db.SessionStatus) bool {
 // that omit terminal idle/changed events. The outbox's session:message key
 // makes recovery safe. Idle/changed events handle normal delivery; this scan
 // runs at startup and every five minutes to recover missed events.
-func (s *Server) runConversationReplyReconciliation(ctx context.Context) {
-	s.reconcileConversationReplies(ctx)
+func (m *Module) runConversationReplyReconciliation(ctx context.Context) {
+	m.reconcileConversationReplies(ctx)
 	ticker := time.NewTicker(conversationReconcileInterval)
 	defer ticker.Stop()
 	for {
@@ -298,22 +298,22 @@ func (s *Server) runConversationReplyReconciliation(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.reconcileConversationReplies(ctx)
+			m.reconcileConversationReplies(ctx)
 		}
 	}
 }
 
-func (s *Server) reconcileConversationReplies(ctx context.Context) {
-	if s.stateDB == nil {
+func (m *Module) reconcileConversationReplies(ctx context.Context) {
+	if m.store == nil {
 		return
 	}
-	sessions, err := s.stateDB.ListPluginConversationSessions(ctx)
+	sessions, err := m.store.ListPluginConversationSessions(ctx)
 	if err != nil {
 		log.WithError(err).Warn("listing conversation sessions for reply reconciliation")
 		return
 	}
 	for _, session := range sessions {
-		s.replyToConversation(ctx, session.PlatformID, session.SessionID)
+		m.ReplyToConversation(ctx, session.PlatformID, session.SessionID)
 	}
 }
 

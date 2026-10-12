@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -19,7 +19,7 @@ type listedPluginPane struct {
 	Pane     plugins.PaneDescriptor `json:"pane"`
 }
 
-func (s *Server) handlePluginPanes(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePluginPanes(w http.ResponseWriter, r *http.Request) {
 	owner := r.URL.Query().Get("ownerId")
 	if owner == "" {
 		writePluginResponse(w, pluginResponse(nil, plugins.ErrInvalidMessage))
@@ -27,7 +27,7 @@ func (s *Server) handlePluginPanes(w http.ResponseWriter, r *http.Request) {
 	}
 	// Catalog is supported by older protocol-7 owners; their descriptions simply
 	// have no pane declarations. Discovery must not require a new RPC envelope.
-	response := s.routePluginOperation(r.Context(), owner, remote.PluginRequest{Operation: "catalog"})
+	response := m.RouteOperation(r.Context(), owner, remote.PluginRequest{Operation: "catalog"})
 	if response.Error != nil {
 		writePluginResponse(w, response)
 		return
@@ -40,14 +40,14 @@ func (s *Server) handlePluginPanes(w http.ResponseWriter, r *http.Request) {
 	writePluginResponse(w, pluginResponse(pluginPaneDeclarations(registrations, owner), nil))
 }
 
-func (s *Server) handlePluginPaneRead(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePluginPaneRead(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	request := plugins.PaneRequest{PluginID: q.Get("pluginId"), PaneID: q.Get("paneId"), OwnerID: q.Get("ownerId"), Directory: q.Get("directory")}
 	if request.Validate() != nil {
 		writePluginResponse(w, pluginResponse(nil, plugins.ErrInvalidMessage))
 		return
 	}
-	writePluginResponse(w, s.routePluginOperation(r.Context(), request.OwnerID, remote.PluginRequest{Operation: "pane-read", Pane: request}))
+	writePluginResponse(w, m.RouteOperation(r.Context(), request.OwnerID, remote.PluginRequest{Operation: "pane-read", Pane: request}))
 }
 
 // Listing declarations never invokes plugins or probes a project's tools.
@@ -66,7 +66,7 @@ func pluginPaneDeclarations(registrations []state.PluginRegistration, owner stri
 	return panes
 }
 
-func (s *Server) readLocalPluginPane(ctx context.Context, request plugins.PaneRequest) (plugins.PaneTree, error) {
+func (m *Module) readLocalPluginPane(ctx context.Context, request plugins.PaneRequest) (plugins.PaneTree, error) {
 	if request.Validate() != nil {
 		return plugins.PaneTree{}, plugins.ErrInvalidMessage
 	}
@@ -75,16 +75,16 @@ func (s *Server) readLocalPluginPane(ctx context.Context, request plugins.PaneRe
 	var replies <-chan plugins.Reply
 	// Match lifecycle lock ordering. Authorization and call admission are atomic
 	// with disable/revocation; reads have no durable side-effect receipt.
-	s.pluginMu.Lock()
+	m.mu.Lock()
 	var err error
-	if s.stateDB == nil {
+	if m.store == nil {
 		err = plugins.ErrUnavailable
 	} else {
-		err = s.stateDB.WithPluginAuthorization(ctx, request.PluginID, func(d plugins.Description, grants []string) error {
+		err = m.store.WithPluginAuthorization(ctx, request.PluginID, func(d plugins.Description, grants []string) error {
 			if !d.PaneAllowed(request.PaneID, grants) {
 				return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 			}
-			p := s.pluginProcesses[request.PluginID]
+			p := m.processes[request.PluginID]
 			if p == nil {
 				return plugins.ErrUnavailable
 			}
@@ -93,7 +93,7 @@ func (s *Server) readLocalPluginPane(ctx context.Context, request plugins.PaneRe
 			return err
 		})
 	}
-	s.pluginMu.Unlock()
+	m.mu.Unlock()
 	if err != nil {
 		return plugins.PaneTree{}, err
 	}
@@ -112,7 +112,7 @@ func (s *Server) readLocalPluginPane(ctx context.Context, request plugins.PaneRe
 			return plugins.PaneTree{}, result.Error
 		}
 		// A disable or grant revocation also denies a racing completed read.
-		err = s.stateDB.WithPluginAuthorization(ctx, request.PluginID, func(d plugins.Description, grants []string) error {
+		err = m.store.WithPluginAuthorization(ctx, request.PluginID, func(d plugins.Description, grants []string) error {
 			if !d.PaneAllowed(request.PaneID, grants) {
 				return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 			}

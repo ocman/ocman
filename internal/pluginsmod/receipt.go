@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 // Read only lifecycle and the durable receipt before fetching a transcript.
 // Failed turns still need their attention notice even if a partial reply exists.
-func (s *Server) conversationReplyAlreadyRecorded(ctx context.Context, adapter platforms.Platform, key state.PluginConversationKey, sessionID string) (bool, error) {
+func (m *Module) conversationReplyAlreadyRecorded(ctx context.Context, adapter platforms.Platform, key state.PluginConversationKey, sessionID string) (bool, error) {
 	reader, ok := adapter.(platforms.LifecycleReader)
 	if !ok {
 		return false, nil
@@ -29,5 +29,5 @@ func (s *Server) conversationReplyAlreadyRecorded(ctx context.Context, adapter p
 	if lifecycle.Status == db.StatusError || lifecycle.LatestMessageRole != "assistant" || lifecycle.LatestMessageID == "" {
 		return false, nil
 	}
-	return s.stateDB.HasPluginConversationReply(ctx, key, sessionID+":"+lifecycle.LatestMessageID)
+	return m.store.HasPluginConversationReply(ctx, key, sessionID+":"+lifecycle.LatestMessageID)
 }

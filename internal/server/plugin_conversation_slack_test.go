@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
@@ -184,7 +185,7 @@ func (w *slackWorkspace) noFurtherPost(t *testing.T) {
 func (f *conversationFixture) installSlack(t *testing.T) {
 	t.Helper()
 	f.call(t, "POST", "/rescan", `{}`, 200)
-	configuration, err := json.Marshal(pluginManagementInput{
+	configuration, err := json.Marshal(remote.PluginInput{
 		Values: map[string]json.RawMessage{
 			"project":      mustJSON(t, f.project),
 			"allowedUsers": mustJSON(t, slackTestUser),
@@ -200,7 +201,7 @@ func (f *conversationFixture) installSlack(t *testing.T) {
 		t.Fatal(err)
 	}
 	grants := []string{plugins.ConversationSessionGrant}
-	enable, err := json.Marshal(pluginManagementInput{Approval: p.Approval, Grants: &grants})
+	enable, err := json.Marshal(remote.PluginInput{Approval: p.Approval, Grants: &grants})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,9 +339,9 @@ func TestSlackPluginEndToEnd(t *testing.T) {
 	// Restart recovery, inbound: a host with none of the previous process's
 	// memory continues the thread's session instead of starting a second one.
 	restarted := f.restart(t)
-	if err := restarted.startConversation(t.Context(), slackPluginID, plugins.ConversationConfig{Project: f.project}, plugins.ConversationMessage{
+	if err := restarted.pluginsModule().Conversations().Deliver(t.Context(), slackPluginID, conversationMessageEvent(t, plugins.ConversationMessage{
 		AccountID: slackTestTeam, ThreadID: slackTestThread(), EventID: "Ev3restart", Text: "still here?",
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	if created := f.createdSessions(); created != 1 {

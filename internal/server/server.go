@@ -19,7 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/pluginsmod"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
@@ -131,42 +131,22 @@ type Server struct {
 
 	// routineMod is built on first use (routinesModule); tests may set it
 	// before then.
-	routineMod        *routines.Module
-	routineModOnce    sync.Once
-	pluginMu          sync.Mutex
-	pluginRecovered   bool
-	pluginDiscovery   []pluginDiscoveryFailure
-	pluginCtx         context.Context
-	lifetimeCtx       context.Context // guarded by pluginMu; retained through plugin cleanup
-	webhookMod        *webhook.Module
-	webhookModOnce    sync.Once
-	artifactMod       *artifacts.Module
-	artifactModOnce   sync.Once
-	inboxMod          *inbox.Module
-	inboxModOnce      sync.Once
-	sharingMod        *sharing.Module
-	sharingModOnce    sync.Once
-	busV              *module.Bus
-	busOnce           sync.Once
-	pluginProcesses   map[string]*plugins.Process
-	pluginStderr      map[string]string
-	pluginActionsOnce sync.Once
-	pluginActions     *plugins.ActionBroker
-
-	// conversation.v1 state: the broker, its inbound worker and the outbound
-	// delivery worker. Everything durable lives in state.db: the
-	// thread<->session mapping (plugin_conversation) and the reply outbox
-	// (plugin_conversation_outbox), so both survive a restart.
-	// conversationInFlight only prevents one process from delivering the same
-	// outbox row twice; it is guarded by conversationMu and is not state.
-	// See plugin_conversation.go and plugin_conversation_outbox.go.
-	conversationOnce       sync.Once
-	conversationBroker     *plugins.ConversationBroker
-	conversationJobs       *worker.Worker[conversationJob]
-	conversationDeliveries *worker.Worker[state.PluginConversationDelivery]
-	conversationMu         sync.Mutex
-	conversationInFlight   map[int64]bool
-
+	routineMod      *routines.Module
+	routineModOnce  sync.Once
+	lifetimeMu      sync.Mutex
+	lifetimeCtx     context.Context // guarded by lifetimeMu
+	pluginsMod      *pluginsmod.Module
+	pluginsModOnce  sync.Once
+	webhookMod      *webhook.Module
+	webhookModOnce  sync.Once
+	artifactMod     *artifacts.Module
+	artifactModOnce sync.Once
+	inboxMod        *inbox.Module
+	inboxModOnce    sync.Once
+	sharingMod      *sharing.Module
+	sharingModOnce  sync.Once
+	busV            *module.Bus
+	busOnce         sync.Once
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
 	// queueSvcOnce. See queue.go.

@@ -243,9 +243,6 @@ func (s *Server) onSessionIdle(platformID, sessionID string) {
 		cooled = p.(string)
 	}
 	s.queueFlushWorker().Enqueue(queueFlush{platformID: platformID, sessionID: sessionID, cooled: cooled})
-	go runWithRecover("plugin-conversation-reply", func() {
-		s.replyToConversation(context.Background(), platformID, sessionID)
-	})
 	s.bus().PublishSessionIdle(context.Background(), module.SessionIdle{Platform: platformID, SessionID: sessionID})
 }
 

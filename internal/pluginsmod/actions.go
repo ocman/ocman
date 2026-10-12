@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -12,16 +12,17 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
-func (s *Server) actionBroker() *plugins.ActionBroker {
-	s.pluginActionsOnce.Do(func() {
-		s.pluginActions = plugins.NewActionBroker(func(ctx context.Context, id string, use func(plugins.Description, []string) error) error {
-			// Lock order matches discovery: server lifecycle, then durable state.
-			s.pluginMu.Lock()
-			defer s.pluginMu.Unlock()
-			if s.stateDB == nil {
+// Actions is the palette action broker: admission, confirmation and receipts.
+func (m *Module) Actions() *plugins.ActionBroker {
+	m.actionsOnce.Do(func() {
+		m.actions = plugins.NewActionBroker(func(ctx context.Context, id string, use func(plugins.Description, []string) error) error {
+			// Lock order matches discovery: module lifecycle (mu), then durable state.
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if m.store == nil {
 				return plugins.ErrUnavailable
 			}
-			return s.stateDB.WithPluginAuthorization(ctx, id, func(d plugins.Description, grants []string) error {
+			return m.store.WithPluginAuthorization(ctx, id, func(d plugins.Description, grants []string) error {
 				execution, _ := ctx.Value(pluginExecutionKey{}).(pluginExecution)
 				if !pluginScopeAllowed(d.Scope, execution) {
 					return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
@@ -29,18 +30,18 @@ func (s *Server) actionBroker() *plugins.ActionBroker {
 				return use(d, grants)
 			})
 		}, func(ctx context.Context, id string, call plugins.Call) (<-chan plugins.Reply, error) {
-			// The authorization callback holds pluginMu through admission.
-			p := s.pluginProcesses[id]
+			// The authorization callback holds mu through admission.
+			p := m.processes[id]
 			if p == nil {
 				return nil, plugins.ErrUnavailable
 			}
-			if err := s.stateDB.ReservePluginOperation(ctx, id, call.OperationID); err != nil {
+			if err := m.store.ReservePluginOperation(ctx, id, call.OperationID); err != nil {
 				return nil, err
 			}
 			return p.Call(ctx, call)
 		})
 	})
-	return s.pluginActions
+	return m.actions
 }
 
 type listedPluginAction struct {
@@ -50,7 +51,7 @@ type listedPluginAction struct {
 	Action   plugins.ActionDescriptor `json:"action"`
 }
 
-func (s *Server) handlePluginActions(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePluginActions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	context := plugins.ActionContext{OwnerID: q.Get("ownerId"), ProjectID: q.Get("projectId"), SessionID: q.Get("sessionId"), Route: q.Get("route")}
 	if context.OwnerID == "" {
@@ -64,7 +65,7 @@ func (s *Server) handlePluginActions(w http.ResponseWriter, r *http.Request) {
 	if request.Placement == "global" {
 		context.OwnerID, request.Context.OwnerID = "local", "local"
 	}
-	response := s.routePluginOperation(r.Context(), context.OwnerID, remote.PluginRequest{Operation: "actions", Action: request})
+	response := m.RouteOperation(r.Context(), context.OwnerID, remote.PluginRequest{Operation: "actions", Action: request})
 	if response.Error != nil {
 		writePluginResponse(w, response)
 		return
@@ -75,7 +76,7 @@ func (s *Server) handlePluginActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if context.OwnerID != "local" {
-		hub, err := s.localPluginActions(r.Context(), request, false)
+		hub, err := m.localPluginActions(r.Context(), request, false)
 		if err != nil {
 			writePluginResponse(w, pluginResponse(nil, err))
 			return
@@ -87,7 +88,7 @@ func (s *Server) handlePluginActions(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(actions)
 }
 
-func (s *Server) handlePluginActionInvoke(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePluginActionInvoke(w http.ResponseWriter, r *http.Request) {
 	var request plugins.ActionRequest
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
 	d.DisallowUnknownFields()
@@ -111,14 +112,14 @@ func (s *Server) handlePluginActionInvoke(w http.ResponseWriter, r *http.Request
 	}
 	if owner == "local" && request.Context.OwnerID != "local" {
 		// Hub-scoped actions still require a connected explicit project owner.
-		check := s.routePluginOperation(r.Context(), request.Context.OwnerID, remote.PluginRequest{Operation: "available"})
+		check := m.RouteOperation(r.Context(), request.Context.OwnerID, remote.PluginRequest{Operation: "available"})
 		if check.Error != nil {
 			writePluginResponse(w, check)
 			return
 		}
 	}
 	request.OwnerID = owner
-	response := s.routePluginOperation(r.Context(), owner, remote.PluginRequest{Operation: "invoke", Action: request})
+	response := m.RouteOperation(r.Context(), owner, remote.PluginRequest{Operation: "invoke", Action: request})
 	if response.Error != nil {
 		writePluginResponse(w, response)
 		return
@@ -162,8 +163,8 @@ func writeActionResponse(w http.ResponseWriter, response plugins.ActionResponse)
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-func (s *Server) handlePluginActionArtifact(w http.ResponseWriter, r *http.Request) {
-	response := s.routePluginOperation(r.Context(), r.URL.Query().Get("ownerId"), remote.PluginRequest{Operation: "artifact", Handle: r.URL.Query().Get("handle")})
+func (m *Module) handlePluginActionArtifact(w http.ResponseWriter, r *http.Request) {
+	response := m.RouteOperation(r.Context(), r.URL.Query().Get("ownerId"), remote.PluginRequest{Operation: "artifact", Handle: r.URL.Query().Get("handle")})
 	var artifact pluginArtifact
 	var err error
 	if response.Error != nil {

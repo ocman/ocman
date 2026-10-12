@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 )
 
 type conversationLifecyclePlatform struct {
-	fakePlatform
+	platforms.Platform
 	lifecycle    platforms.SessionLifecycle
 	lifecycleErr error
 	reads        int
@@ -32,7 +32,7 @@ func TestConversationReceiptPreflight(t *testing.T) {
 	if _, err := d.AppendPluginConversationReply(t.Context(), key, "session:recorded", "answer"); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{stateDB: d}
+	m := NewModule(Deps{Store: d})
 	for _, tc := range []struct {
 		name          string
 		status        db.SessionStatus
@@ -51,13 +51,13 @@ func TestConversationReceiptPreflight(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &conversationLifecyclePlatform{lifecycle: platforms.SessionLifecycle{Status: tc.status, LatestMessageID: tc.id, LatestMessageRole: tc.role}, lifecycleErr: tc.err}
-			skip, err := s.conversationReplyAlreadyRecorded(t.Context(), p, key, "session")
+			skip, err := m.conversationReplyAlreadyRecorded(t.Context(), p, key, "session")
 			if skip != tc.skip || (err != nil) != tc.wantErr {
 				t.Fatalf("preflight = %v, %v", skip, err)
 			}
 		})
 	}
-	if skip, err := s.conversationReplyAlreadyRecorded(t.Context(), &fakePlatform{}, key, "session"); skip || err != nil {
+	if skip, err := m.conversationReplyAlreadyRecorded(t.Context(), struct{ platforms.Platform }{}, key, "session"); skip || err != nil {
 		t.Fatalf("fallback = %v, %v", skip, err)
 	}
 }
@@ -80,11 +80,9 @@ func TestConversationRecordedReplySkipsTranscript(t *testing.T) {
 	if _, err := d.AppendPluginConversationReply(t.Context(), key, "session:message", "answer"); err != nil {
 		t.Fatal(err)
 	}
-	p := &conversationLifecyclePlatform{fakePlatform: fakePlatform{id: "fake"}, lifecycle: platforms.SessionLifecycle{Status: db.StatusDone, LatestMessageRole: "assistant", LatestMessageID: "message"}}
-	registry := platforms.NewRegistry()
-	registry.Register(p)
-	s := &Server{stateDB: d, registry: registry}
-	s.replyToConversation(t.Context(), "fake", "session")
+	p := &conversationLifecyclePlatform{lifecycle: platforms.SessionLifecycle{Status: db.StatusDone, LatestMessageRole: "assistant", LatestMessageID: "message"}}
+	m := NewModule(Deps{Store: d, Adapter: func(context.Context, string, string) (platforms.Platform, bool) { return p, true }})
+	m.ReplyToConversation(t.Context(), "fake", "session")
 	if p.reads != 0 {
 		t.Fatalf("already recorded reply fetched the transcript %d times", p.reads)
 	}

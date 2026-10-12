@@ -21,19 +21,19 @@ func TestPaneDiscoveryAcceptsLegacyOwnerCatalog(t *testing.T) {
 		// Previous protocol-7 owners reject both unknown envelope fields and
 		// new operations, but still support their existing plugin catalog.
 		if request.Pane != (plugins.PaneRequest{}) {
-			return pluginResponse(nil, plugins.ErrInvalidMessage)
+			return remote.PluginResponse{Error: &plugins.WireError{Category: plugins.ErrorInvalidArgument}}
 		}
 		switch request.Operation {
 		case "available":
-			return pluginResponse(true, nil)
+			return remote.PluginResponse{Value: json.RawMessage(`true`)}
 		case "catalog":
-			return pluginResponse(legacy, nil)
+			return remote.PluginResponse{Value: encodeJSON(t, legacy)}
 		default:
-			return pluginResponse(nil, plugins.ErrInvalidMessage)
+			return remote.PluginResponse{Error: &plugins.WireError{Category: plugins.ErrorInvalidArgument}}
 		}
 	})
 	body := hub.call(t, http.MethodGet, "/panes?ownerId=machine", "", http.StatusOK)
-	var panes []listedPluginPane
+	var panes []json.RawMessage
 	if err := json.Unmarshal([]byte(body), &panes); err != nil || len(panes) != 0 {
 		t.Fatalf("legacy pane catalog = %s, %v", body, err)
 	}

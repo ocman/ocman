@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +23,7 @@ func TestPluginActionEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := &Server{stateDB: db, pluginCtx: t.Context(), auth: newTestAuth(t, "secret")}
+	s := bindPlugins(&Server{stateDB: db, auth: newTestAuth(t, "secret")}, t.Context())
 	t.Cleanup(s.stopPluginProcesses)
 	d := plugins.Description{ID: "org.example.actions", Name: "Actions", Version: "1", Protocol: plugins.Version{Major: 1}, Scope: plugins.ScopeOwner, MaxConcurrency: 1,
 		Capabilities: []plugins.Capability{plugins.ActionCapability}, RequestedGrants: []string{"context.owner"},
@@ -89,7 +88,7 @@ func TestPluginActionEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for s.pluginProcesses[d.ID].Health().Status != "ready" {
+	for s.pluginsModule().Process(d.ID).Health().Status != "ready" {
 		if time.Now().After(deadline) {
 			t.Fatal("plugin not ready")
 		}
@@ -146,14 +145,15 @@ func TestPluginActionEndpoints(t *testing.T) {
 	}
 	handle := response.Results[2].Handle
 	// A new broker has no cached response, but durable admission prevents replay.
-	restarted := &Server{stateDB: db, pluginProcesses: s.pluginProcesses}
-	challenge := restarted.actionBroker().Invoke(t.Context(), r)
+	restarted := &Server{stateDB: db}
+	restarted.pluginsModule().AdoptProcesses(s.pluginsModule())
+	challenge := restarted.pluginsModule().Actions().Invoke(t.Context(), r)
 	if challenge.Confirmation == nil {
 		t.Fatal("missing fresh confirmation")
 	}
 	retry := r
 	retry.ConfirmationToken = challenge.Confirmation.Token
-	if got := restarted.actionBroker().Invoke(t.Context(), retry); got.Error == nil || got.Error.Category != plugins.ErrorConflict {
+	if got := restarted.pluginsModule().Actions().Invoke(t.Context(), retry); got.Error == nil || got.Error.Category != plugins.ErrorConflict {
 		t.Fatalf("restart replay: %+v", got)
 	}
 	if w := request("GET", artifact+"?handle="+handle, "", true, ""); w.Code != 200 || w.Body.String() != "hi" || w.Header().Get("Content-Disposition") != "attachment; filename=report.txt" || w.Header().Get("X-Content-Type-Options") != "nosniff" {
@@ -191,46 +191,5 @@ func TestPluginActionEndpoints(t *testing.T) {
 		if w := request("POST", invoke, body, true, ""); w.Code != 400 {
 			t.Fatalf("invalid body: %d %s", w.Code, w.Body.String())
 		}
-	}
-}
-
-func TestPluginActionUnavailableAndErrors(t *testing.T) {
-	s := &Server{}
-	r := plugins.ActionRequest{PluginID: "org.example.test", ActionID: "run", OperationID: "op", Placement: "global", Surface: "command-palette"}
-	if got := s.actionBroker().Invoke(t.Context(), r); got.Error.Category != plugins.ErrorUnavailable {
-		t.Fatal(got)
-	}
-	w := httptest.NewRecorder()
-	s.handlePluginActions(w, httptest.NewRequest(http.MethodGet, "/?placement=global&surface=command-palette", nil))
-	if strings.TrimSpace(w.Body.String()) != "[]" {
-		t.Fatal(w.Body.String())
-	}
-	for _, tc := range []struct {
-		category plugins.ErrorCategory
-		status   int
-	}{
-		{plugins.ErrorInvalidArgument, 400}, {plugins.ErrorPermissionDenied, 403}, {plugins.ErrorNotFound, 404}, {plugins.ErrorConflict, 409}, {plugins.ErrorUnavailable, 503}, {plugins.ErrorDeadlineExceeded, 504}, {plugins.ErrorCancelled, 408}, {plugins.ErrorInternal, 500},
-	} {
-		w := httptest.NewRecorder()
-		writeActionResponse(w, plugins.ActionResponse{Error: &plugins.WireError{Category: tc.category}})
-		if w.Code != tc.status {
-			t.Fatalf("%s: %d", tc.category, w.Code)
-		}
-	}
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s = &Server{stateDB: db}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	w = httptest.NewRecorder()
-	s.handlePluginActions(w, httptest.NewRequest(http.MethodGet, "/?placement=global&surface=command-palette", nil))
-	if w.Code != 500 {
-		t.Fatal(w.Code)
-	}
-	if got := s.actionBroker().Invoke(context.Background(), r); got.Error.Category != plugins.ErrorInternal {
-		t.Fatal(got)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
@@ -33,7 +34,7 @@ func newPluginManagementTest(t *testing.T) *pluginManagementTest {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := &Server{stateDB: db, pluginCtx: context.Background(), auth: newTestAuth(t, "password")}
+	s := bindPlugins(&Server{stateDB: db, auth: newTestAuth(t, "password")}, context.Background())
 	t.Cleanup(s.stopPluginProcesses)
 	d := plugins.Description{ID: "org.example.management", Name: "Management", Version: "1", Protocol: plugins.Version{Major: 1}, Scope: plugins.ScopeOwner, MaxConcurrency: 1,
 		Capabilities:    []plugins.Capability{plugins.ActionCapability},
@@ -95,7 +96,7 @@ func (f *pluginManagementTest) approval(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := json.Marshal(pluginManagementInput{Approval: p.Approval, Grants: &p.Description.RequestedGrants})
+	data, err := json.Marshal(remote.PluginInput{Approval: p.Approval, Grants: &p.Description.RequestedGrants})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestPluginEnableRequiresReviewedRegistration(t *testing.T) {
 		approved = f.approval(t)
 	}
 	p, err = f.s.stateDB.GetPlugin(t.Context(), f.description.ID)
-	if err != nil || p.Enabled || len(f.s.pluginProcesses) != 0 {
+	if err != nil || p.Enabled || f.s.pluginsModule().Running() != 0 {
 		t.Fatalf("stale approval enabled replacement: %+v %v", p, err)
 	}
 }
@@ -190,7 +191,7 @@ func TestPluginStartupRecoversInterruptedConfiguration(t *testing.T) {
 	if err := f.s.stateDB.SetPluginConfiguration(t.Context(), f.description.ID, map[string]json.RawMessage{"mode": json.RawMessage(`"bad"`)}, map[string]string{"token": "candidate"}); err != nil {
 		t.Fatal(err)
 	}
-	restarted := &Server{stateDB: f.s.stateDB, pluginCtx: context.Background()}
+	restarted := bindPlugins(&Server{stateDB: f.s.stateDB}, context.Background())
 	t.Cleanup(restarted.stopPluginProcesses)
 	if _, err := restarted.RescanPlugins(t.Context()); err != nil {
 		t.Fatal(err)
@@ -224,7 +225,7 @@ func TestPluginManagementLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.call(t, "POST", base+"/enable", f.approval(t), 200)
-	first := f.s.pluginProcesses[f.description.ID]
+	first := f.s.pluginsModule().Process(f.description.ID)
 	if first == nil || first.Health().Status != "ready" {
 		t.Fatal("not ready")
 	}
@@ -275,7 +276,7 @@ func TestPluginManagementLifecycle(t *testing.T) {
 	}
 	f.call(t, "POST", base+"/disable", `{}`, 200)
 	p, _ = f.s.stateDB.GetPlugin(t.Context(), f.description.ID)
-	if p.Enabled || !p.Configuration.Secrets["token"] || len(f.s.pluginProcesses) != 0 {
+	if p.Enabled || !p.Configuration.Secrets["token"] || f.s.pluginsModule().Running() != 0 {
 		t.Fatalf("disable: %+v", p)
 	}
 	if body := f.call(t, "GET", base+"/stderr", "", 200); !strings.Contains(body, "[REDACTED]") || strings.Contains(body, "next-secret") {
@@ -344,9 +345,7 @@ func TestPluginManagementFailedLaunchAndRetry(t *testing.T) {
 	f.call(t, "POST", base+"/disable", `{}`, 200)
 	f.call(t, "POST", base+"/configuration", `{"values":{"mode":"good"}}`, 200)
 	f.call(t, "POST", base+"/enable", f.approval(t), 200)
-	f.s.pluginMu.Lock()
-	f.s.stopOnePluginLocked(f.description.ID)
-	f.s.pluginMu.Unlock()
+	f.s.pluginsModule().Process(f.description.ID).Stop()
 	if err := f.s.stateDB.SetPluginHealth(t.Context(), f.description.ID, state.PluginHealth{Status: "unhealthy", RestartCount: 5}); err != nil {
 		t.Fatal(err)
 	}
@@ -383,56 +382,25 @@ func TestPluginConfigurationCancellationRollsBack(t *testing.T) {
 
 func TestPluginManagementUnavailable(t *testing.T) {
 	f := newPluginManagementTest(t)
-	db := f.s.stateDB
-	f.s.stateDB = nil
-	f.call(t, "GET", "", "", 503)
-	f.call(t, "POST", "/rescan", `{}`, 503)
-	f.call(t, "GET", "/org.example.management/health", "", 503)
-	f.s.stateDB = db
+	// The same routes on a server without a state DB.
+	none := &pluginManagementTest{s: &Server{auth: f.s.auth}, cookie: f.cookie}
+	var err error
+	if none.mux, err = none.s.routes(); err != nil {
+		t.Fatal(err)
+	}
+	none.call(t, "GET", "", "", 503)
+	none.call(t, "POST", "/rescan", `{}`, 503)
+	none.call(t, "GET", "/org.example.management/health", "", 503)
 	f.call(t, "POST", "/rescan", `{}`, 200)
 	f.call(t, "POST", "/org.example.management/configuration", `{"secrets":{"token":"secret"}}`, 200)
 	f.s.stopPluginProcesses()
 	f.call(t, "POST", "/org.example.management/enable", f.approval(t), 503)
-	if err := db.Close(); err != nil {
+	if err := f.s.stateDB.Close(); err != nil {
 		t.Fatal(err)
 	}
 	f.call(t, "GET", "", "", 500)
 	f.call(t, "POST", "/rescan", `{}`, 500)
 	f.call(t, "GET", "/org.example.management/health", "", 500)
-}
-
-func TestPluginConfigurationSchema(t *testing.T) {
-	p := state.PluginRegistration{Description: plugins.Description{Settings: []plugins.Setting{
-		{Key: "count", Type: "integer", Required: true},
-		{Key: "optional", Type: "boolean"},
-		{Key: "token", Type: "string", Secret: true, Enum: []string{"allowed"}},
-	}}}
-	for _, tt := range []struct {
-		values, secrets string
-		valid           bool
-	}{
-		{`{}`, `{}`, false},
-		{`{"count":1.5}`, `{}`, false},
-		{`{"count":1}`, `{}`, true},
-		{`{"count":1,"optional":false}`, `{"token":"allowed"}`, true},
-		{`{"count":1}`, `{"token":"denied"}`, false},
-		{`{"count":1}`, `{"token":""}`, true},
-	} {
-		var input pluginManagementInput
-		if err := json.Unmarshal([]byte(tt.values), &input.Values); err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal([]byte(tt.secrets), &input.Secrets); err != nil {
-			t.Fatal(err)
-		}
-		values, err := validatePluginConfiguration(p, input)
-		if (err == nil) != tt.valid {
-			t.Fatalf("%+v: %v", tt, err)
-		}
-		if _, ok := values["token"]; ok {
-			t.Fatal("secret in public values")
-		}
-	}
 }
 
 func TestPluginManagementConflicts(t *testing.T) {
@@ -451,7 +419,7 @@ func TestPluginManagementConflicts(t *testing.T) {
 	if body := f.call(t, "GET", base+"/health", "", 200); !strings.Contains(body, "conflict") {
 		t.Fatal(body)
 	}
-	if len(f.s.pluginProcesses) != 0 {
+	if f.s.pluginsModule().Running() != 0 {
 		t.Fatal("conflicted plugin launched")
 	}
 }

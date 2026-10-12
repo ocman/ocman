@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -18,23 +18,23 @@ type pluginDiscoveryFailure struct {
 
 // RescanPlugins is the shared startup/manual discovery path. When the server is
 // running, reconcile approved processes only after the complete scan is recorded.
-func (s *Server) RescanPlugins(ctx context.Context) ([]plugins.Discovery, error) {
-	s.pluginMu.Lock()
-	defer s.pluginMu.Unlock()
+func (m *Module) RescanPlugins(ctx context.Context) ([]plugins.Discovery, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	dir, err := plugins.DiscoveryDirectory()
 	if err != nil {
 		return nil, err
 	}
 	var previous []state.PluginRegistration
 	known := make(map[string]string)
-	if s.stateDB != nil {
-		if !s.pluginRecovered {
-			if err := s.stateDB.RecoverPluginConfigurations(ctx); err != nil {
+	if m.store != nil {
+		if !m.recovered {
+			if err := m.store.RecoverPluginConfigurations(ctx); err != nil {
 				return nil, err
 			}
-			s.pluginRecovered = true
+			m.recovered = true
 		}
-		previous, err = s.stateDB.ListPlugins(ctx)
+		previous, err = m.store.ListPlugins(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -46,21 +46,21 @@ func (s *Server) RescanPlugins(ctx context.Context) ([]plugins.Discovery, error)
 	if err != nil {
 		return nil, err
 	}
-	s.pluginDiscovery = []pluginDiscoveryFailure{}
+	m.discovery = []pluginDiscoveryFailure{}
 	for _, candidate := range catalog {
-		if candidate.Err != nil && len(s.pluginDiscovery) < 128 {
+		if candidate.Err != nil && len(m.discovery) < 128 {
 			// Scan errors are fixed host messages, never executable output.
-			s.pluginDiscovery = append(s.pluginDiscovery, pluginDiscoveryFailure{Filename: filepath.Base(candidate.Path), Error: candidate.Err.Error()})
+			m.discovery = append(m.discovery, pluginDiscoveryFailure{Filename: filepath.Base(candidate.Path), Error: candidate.Err.Error()})
 		}
 	}
-	if s.stateDB == nil {
+	if m.store == nil {
 		return catalog, nil
 	}
-	if err := s.recordPluginDiscovery(ctx, catalog, previous, known); err != nil {
-		s.stopPluginProcessesLocked()
+	if err := m.recordPluginDiscovery(ctx, catalog, previous, known); err != nil {
+		m.stopPluginProcessesLocked()
 		return nil, err
 	}
-	if err := s.syncPluginProcessesLocked(ctx); err != nil {
+	if err := m.syncPluginProcessesLocked(ctx); err != nil {
 		return nil, err
 	}
 	return catalog, nil
@@ -69,19 +69,19 @@ func (s *Server) RescanPlugins(ctx context.Context) ([]plugins.Discovery, error)
 // SyncPluginProcesses applies durable enable/disable changes. Management callers
 // invoke it after updating registration. Rescans also call it; unchanged enabled
 // processes, including terminally unhealthy ones, are never started twice.
-func (s *Server) SyncPluginProcesses(ctx context.Context) error {
-	s.pluginMu.Lock()
-	defer s.pluginMu.Unlock()
-	return s.syncPluginProcessesLocked(ctx)
+func (m *Module) SyncPluginProcesses(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.syncPluginProcessesLocked(ctx)
 }
 
-func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
-	if s.pluginCtx == nil || s.pluginCtx.Err() != nil || s.stateDB == nil {
+func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
+	if m.ctx == nil || m.ctx.Err() != nil || m.store == nil {
 		return nil
 	}
-	registrations, err := s.stateDB.ListPlugins(ctx)
+	registrations, err := m.store.ListPlugins(ctx)
 	if err != nil {
-		s.stopPluginProcessesLocked()
+		m.stopPluginProcessesLocked()
 		return err
 	}
 	enabled := make(map[string]state.PluginRegistration)
@@ -89,21 +89,21 @@ func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
 		if registration.Enabled && !registration.Removed {
 			enabled[registration.Description.ID] = registration
 		} else if registration.Health.Status != "conflict" {
-			if err := s.stateDB.SetPluginHealth(ctx, registration.Description.ID, state.PluginHealth{Status: "disabled"}); err != nil {
+			if err := m.store.SetPluginHealth(ctx, registration.Description.ID, state.PluginHealth{Status: "disabled"}); err != nil {
 				return err
 			}
 		}
 	}
-	for id := range s.pluginProcesses {
+	for id := range m.processes {
 		if _, ok := enabled[id]; !ok {
-			s.stopOnePluginLocked(id)
+			m.stopOnePluginLocked(id)
 		}
 	}
 	for id, registration := range enabled {
-		if s.pluginProcesses[id] != nil || registration.Health.Status == "unhealthy" {
+		if m.processes[id] != nil || registration.Health.Status == "unhealthy" {
 			continue
 		}
-		dir, err := s.stateDB.PluginDataDir(ctx, id)
+		dir, err := m.store.PluginDataDir(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -112,7 +112,7 @@ func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
 			values[key] = value
 		}
 		var configuration json.RawMessage
-		if err := s.stateDB.WithPluginSecrets(ctx, id, func(secrets map[string]string) error {
+		if err := m.store.WithPluginSecrets(ctx, id, func(secrets map[string]string) error {
 			for _, setting := range registration.Description.Settings {
 				if secret, exists := secrets[setting.Key]; setting.Secret && exists {
 					values[setting.Key], _ = json.Marshal(secret)
@@ -123,7 +123,7 @@ func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		process, err := plugins.StartProcess(s.pluginCtx, plugins.LaunchConfig{
+		process, err := plugins.StartProcess(m.ctx, plugins.LaunchConfig{
 			Candidate:     plugins.Discovery{Path: registration.ExecutablePath, Checksum: registration.Checksum, Description: registration.Description},
 			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.PaneCapability},
 			DataDir:       dir,
@@ -131,39 +131,31 @@ func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
 			OnHealth: func(h plugins.Health) {
 				writeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				_ = s.stateDB.SetPluginProcessHealth(writeCtx, id, state.PluginHealth{Status: h.Status, RestartCount: h.RestartCount, LastError: h.LastError})
+				_ = m.store.SetPluginProcessHealth(writeCtx, id, state.PluginHealth{Status: h.Status, RestartCount: h.RestartCount, LastError: h.LastError})
 			},
 		})
 		if err != nil {
 			return err
 		}
-		if s.pluginProcesses == nil {
-			s.pluginProcesses = make(map[string]*plugins.Process)
+		if m.processes == nil {
+			m.processes = make(map[string]*plugins.Process)
 		}
-		s.pluginProcesses[id] = process
+		m.processes[id] = process
 		// Events must be drained or the supervisor fails the process. The
-		// context is captured here, under pluginMu, because stopPluginProcesses
-		// clears s.pluginCtx.
-		eventCtx := context.WithoutCancel(s.pluginCtx)
-		go runWithRecover("plugin-events", func() { s.consumePluginEvents(eventCtx, id, process) })
+		// context is captured here, under mu, because Stop clears m.ctx.
+		eventCtx := context.WithoutCancel(m.ctx)
+		go runWithRecover("plugin-events", func() { m.consumePluginEvents(eventCtx, id, process) })
 	}
 	return nil
 }
 
-func (s *Server) stopPluginProcessesLocked() {
-	for id := range s.pluginProcesses {
-		s.stopOnePluginLocked(id)
+func (m *Module) stopPluginProcessesLocked() {
+	for id := range m.processes {
+		m.stopOnePluginLocked(id)
 	}
 }
 
-func (s *Server) stopPluginProcesses() {
-	s.pluginMu.Lock()
-	defer s.pluginMu.Unlock()
-	s.pluginCtx = nil
-	s.stopPluginProcessesLocked()
-}
-
-func (s *Server) recordPluginDiscovery(ctx context.Context, catalog []plugins.Discovery, previous []state.PluginRegistration, known map[string]string) error {
+func (m *Module) recordPluginDiscovery(ctx context.Context, catalog []plugins.Discovery, previous []state.PluginRegistration, known map[string]string) error {
 	byID := make(map[string]plugins.Discovery)
 	for _, candidate := range catalog {
 		// Do not let a changed identity replace the durable path binding, even
@@ -181,28 +173,28 @@ func (s *Server) recordPluginDiscovery(ctx context.Context, catalog []plugins.Di
 		if _, exists := byID[old.Description.ID]; exists {
 			continue
 		}
-		if err := s.stateDB.RemovePlugin(ctx, old.Description.ID); err != nil {
+		if err := m.store.RemovePlugin(ctx, old.Description.ID); err != nil {
 			return err
 		}
 	}
 	for id, candidate := range byID {
-		if err := s.stateDB.DiscoverPlugin(ctx, candidate.Description, candidate.Path, candidate.Checksum, nil); err != nil {
+		if err := m.store.DiscoverPlugin(ctx, candidate.Description, candidate.Path, candidate.Checksum, nil); err != nil {
 			return err
 		}
 		if candidate.Err != nil {
-			if err := s.stateDB.SetPluginEnabled(ctx, id, false, nil); err != nil {
+			if err := m.store.SetPluginEnabled(ctx, id, false, nil); err != nil {
 				return err
 			}
-			if err := s.stateDB.SetPluginHealth(ctx, id, state.PluginHealth{Status: "conflict", LastError: plugins.ErrDuplicateID.Error()}); err != nil {
+			if err := m.store.SetPluginHealth(ctx, id, state.PluginHealth{Status: "conflict", LastError: plugins.ErrDuplicateID.Error()}); err != nil {
 				return err
 			}
 		} else {
-			p, err := s.stateDB.GetPlugin(ctx, id)
+			p, err := m.store.GetPlugin(ctx, id)
 			if err != nil {
 				return err
 			}
 			if !p.Enabled {
-				if err := s.stateDB.SetPluginHealth(ctx, id, state.PluginHealth{Status: "disabled"}); err != nil {
+				if err := m.store.SetPluginHealth(ctx, id, state.PluginHealth{Status: "disabled"}); err != nil {
 					return err
 				}
 			}

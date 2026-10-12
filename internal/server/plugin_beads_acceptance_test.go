@@ -50,7 +50,7 @@ esac
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := &Server{stateDB: db, pluginCtx: context.Background(), auth: newTestAuth(t, "password")}
+	s := bindPlugins(&Server{stateDB: db, auth: newTestAuth(t, "password")}, context.Background())
 	t.Cleanup(s.stopPluginProcesses)
 	mux, err := s.routes()
 	if err != nil {

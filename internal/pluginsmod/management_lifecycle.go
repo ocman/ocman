@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -12,29 +12,29 @@ import (
 // Include scheduling slack beyond the supervisor's handshake deadline.
 const pluginManagementReadyTimeout = plugins.ReadyTimeout + 5*time.Second
 
-func (s *Server) stopOnePluginLocked(id string) {
-	if process := s.pluginProcesses[id]; process != nil {
+func (m *Module) stopOnePluginLocked(id string) {
+	if process := m.processes[id]; process != nil {
 		process.Stop()
-		if s.pluginStderr == nil {
-			s.pluginStderr = make(map[string]string)
+		if m.stderr == nil {
+			m.stderr = make(map[string]string)
 		}
-		s.pluginStderr[id] = process.RedactedStderr(func(text string) string { return s.stateDB.RedactPluginDiagnostics(id, text) })
-		delete(s.pluginProcesses, id)
+		m.stderr[id] = process.RedactedStderr(func(text string) string { return m.store.RedactPluginDiagnostics(id, text) })
+		delete(m.processes, id)
 	}
 }
 
-func (s *Server) restartPluginLocked(ctx context.Context, id string) error {
-	s.stopOnePluginLocked(id)
-	if s.pluginCtx == nil || s.pluginCtx.Err() != nil {
+func (m *Module) restartPluginLocked(ctx context.Context, id string) error {
+	m.stopOnePluginLocked(id)
+	if m.ctx == nil || m.ctx.Err() != nil {
 		return plugins.ErrUnavailable
 	}
-	if err := s.stateDB.SetPluginHealth(ctx, id, state.PluginHealth{Status: "starting"}); err != nil {
+	if err := m.store.SetPluginHealth(ctx, id, state.PluginHealth{Status: "starting"}); err != nil {
 		return err
 	}
-	if err := s.syncPluginProcessesLocked(ctx); err != nil {
+	if err := m.syncPluginProcessesLocked(ctx); err != nil {
 		return err
 	}
-	process := s.pluginProcesses[id]
+	process := m.processes[id]
 	if process == nil {
 		return plugins.ErrUnavailable
 	}
@@ -61,32 +61,32 @@ wait:
 		case <-tick.C:
 		}
 	}
-	s.stopOnePluginLocked(id)
+	m.stopOnePluginLocked(id)
 	// Use a fresh context so a disconnected client cannot leave a failed launch
 	// retrying indefinitely or lose its terminal health.
 	cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := s.stateDB.SetPluginHealth(cleanup, id, state.PluginHealth{Status: "unhealthy", LastError: "plugin readiness failed"}); err != nil {
+	if err := m.store.SetPluginHealth(cleanup, id, state.PluginHealth{Status: "unhealthy", LastError: "plugin readiness failed"}); err != nil {
 		return err
 	}
 	return plugins.ErrUnavailable
 }
 
-func (s *Server) activatePluginConfigurationLocked(ctx context.Context, p state.PluginRegistration, values map[string]json.RawMessage, secrets map[string]string) error {
+func (m *Module) activatePluginConfigurationLocked(ctx context.Context, p state.PluginRegistration, values map[string]json.RawMessage, secrets map[string]string) error {
 	id := p.Description.ID
-	process := s.pluginProcesses[id]
+	process := m.processes[id]
 	if process == nil || process.Health().Status != "ready" {
 		return errPluginConflict
 	}
-	if err := s.stateDB.MarkPluginConfigurationWorking(ctx, id); err != nil {
+	if err := m.store.MarkPluginConfigurationWorking(ctx, id); err != nil {
 		return err
 	}
-	if err := s.stateDB.SetPluginConfiguration(ctx, id, values, secrets); err != nil {
+	if err := m.store.SetPluginConfiguration(ctx, id, values, secrets); err != nil {
 		return err
 	}
-	err := s.restartPluginLocked(ctx, id)
+	err := m.restartPluginLocked(ctx, id)
 	if err == nil {
-		err = s.stateDB.MarkPluginConfigurationWorking(ctx, id)
+		err = m.store.MarkPluginConfigurationWorking(ctx, id)
 	}
 	if err == nil {
 		return nil
@@ -95,11 +95,11 @@ func (s *Server) activatePluginConfigurationLocked(ctx context.Context, p state.
 	// shutdown and database work as well as a full replacement handshake.
 	recovery, cancel := context.WithTimeout(context.Background(), 2*pluginManagementReadyTimeout)
 	defer cancel()
-	s.stopOnePluginLocked(id)
-	if rollback := s.stateDB.RollbackPluginConfiguration(recovery, id); rollback != nil {
+	m.stopOnePluginLocked(id)
+	if rollback := m.store.RollbackPluginConfiguration(recovery, id); rollback != nil {
 		return rollback
 	}
-	if rollback := s.restartPluginLocked(recovery, id); rollback != nil {
+	if rollback := m.restartPluginLocked(recovery, id); rollback != nil {
 		return rollback
 	}
 	return err

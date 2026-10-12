@@ -1,14 +1,12 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // awaitThread waits for want to appear in the thread's delivered messages.
@@ -168,41 +166,6 @@ func TestConversationUnavailableOutcomeReachesThread(t *testing.T) {
 	}
 }
 
-// TestConversationNoticeRendering pins what a notice may contain. A thread is
-// usually a wider audience than the session's operator, so a notice carries a
-// fixed sentence and a link and nothing else — no permission text, no command,
-// no transcript.
-func TestConversationNoticeRendering(t *testing.T) {
-	s := &Server{}
-	for kind := range conversationNoticeText {
-		notice := s.conversationNotice(kind, "ses-1")
-		if notice == "" {
-			t.Fatalf("%s rendered nothing", kind)
-		}
-		if !strings.HasSuffix(notice, "http://localhost:8228/session/ses-1") {
-			t.Fatalf("%s notice = %q", kind, notice)
-		}
-		// Host-authored text still has to satisfy the wire contract.
-		if err := (plugins.ConversationReply{
-			AccountID: conversationTestAccount, ThreadID: conversationTestThread, Text: notice,
-		}).Validate(); err != nil {
-			t.Fatalf("%s notice fails the wire contract: %v", kind, err)
-		}
-	}
-	if got := s.conversationNotice("no-such-kind", "ses-1"); got != "" {
-		t.Fatalf("unknown kind rendered %q", got)
-	}
-
-	// A session id is not trusted to be URL-safe.
-	if got := s.sessionURL("a b/c?d#e"); got != "http://localhost:8228/session/a%20b%2Fc%3Fd%23e" {
-		t.Fatalf("session url = %q", got)
-	}
-	// With no session to point at, the notice still links somewhere openable.
-	if got := s.sessionURL(""); got != "http://localhost:8228/" {
-		t.Fatalf("base url = %q", got)
-	}
-}
-
 // TestConversationNoticeLinkUsesConfiguredBaseURL covers the addressing
 // requirement: a reader in a provider thread is not on this machine, so the
 // link has to come from the operator's configured public base URL rather than
@@ -218,28 +181,9 @@ func TestConversationNoticeLinkUsesConfiguredBaseURL(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &Server{publicBaseURL: tc.base, addr: tc.addr}
-			if got := s.sessionURL("ses-1"); got != tc.want {
+			if got := s.publicURL("/session/ses-1"); got != tc.want {
 				t.Fatalf("session url = %q, want %q", got, tc.want)
 			}
 		})
 	}
-}
-
-// TestConversationNoticeSurvivesTheFailureItReports covers the context a notice
-// runs under. The likeliest reason a message cannot be delivered is that
-// reaching the agent ran out of time, so a notice that inherited the caller's
-// exhausted context would be dropped in precisely the case it exists for.
-func TestConversationNoticeSurvivesTheFailureItReports(t *testing.T) {
-	f := newConversationFixture(t)
-	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
-	f.awaitPrompts(t, 1)
-
-	key := state.PluginConversationKey{
-		PluginID: conversationPluginDescription().ID, AccountID: conversationTestAccount,
-		ThreadID: conversationTestThread,
-	}
-	dead, cancel := context.WithCancel(t.Context())
-	cancel()
-	f.s.appendConversationNotice(dead, key, "notice-on-a-dead-context", f.s.conversationNotice("unavailable", ""))
-	f.awaitThread(t, "could not be delivered")
 }

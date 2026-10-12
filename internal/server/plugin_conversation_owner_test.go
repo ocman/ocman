@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
 // otherOwnerHost stands in for a second machine. Touching it at all is the
@@ -36,7 +37,7 @@ func (f *conversationFixture) enable(t *testing.T, grants []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := json.Marshal(pluginManagementInput{Approval: p.Approval, Grants: &grants})
+	body, err := json.Marshal(remote.PluginInput{Approval: p.Approval, Grants: &grants})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestPluginManagementOwnerCapabilities(t *testing.T) {
@@ -153,9 +154,9 @@ func TestPluginRemoteApprovalAndDiscovery(t *testing.T) {
 	hub.call(t, "POST", base+"/configuration?ownerId=machine", `{"secrets":{"token":"working"}}`, 200)
 	hub.call(t, "POST", base+"/enable?ownerId=machine", `{"grants":["context.owner"]}`, 409)
 	hub.call(t, "POST", base+"/enable?ownerId=machine", owner.approval(t), 200)
-	owner.s.pluginMu.Lock()
-	owner.s.pluginDiscovery = []pluginDiscoveryFailure{{Filename: "ocman-plugin-broken", Error: plugins.ErrInvalidMessage.Error()}}
-	owner.s.pluginMu.Unlock()
+	// A candidate that fails discovery is reported only by its own owner.
+	testutil.WriteScript(t, filepath.Join(owner.dir, "ocman-plugin-broken"), "#!/bin/sh\nexit 1\n")
+	owner.call(t, "POST", "/rescan", `{}`, 200)
 	if body := hub.call(t, "GET", "/discovery?ownerId=machine", "", 200); !strings.Contains(body, "ocman-plugin-broken") {
 		t.Fatal(body)
 	}
@@ -191,8 +192,8 @@ func installRoutedAction(t *testing.T, s *Server, scope plugins.Scope, label str
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.manageLocalPlugin(t.Context(), d.ID, "enable", false, pluginManagementInput{Approval: p.Approval, Grants: &grants}); err != nil {
-		t.Fatal(err)
+	if got := s.routePluginOperation(t.Context(), "local", remote.PluginRequest{Operation: "enable", PluginID: d.ID, Input: remote.PluginInput{Approval: p.Approval, Grants: &grants}}); got.Error != nil {
+		t.Fatal(got.Error)
 	}
 	return d.ID
 }
@@ -332,8 +333,5 @@ func TestPluginRemoteLargeCatalog(t *testing.T) {
 	projected := hub.call(t, "GET", "?ownerId=machine", "", 200)
 	if len(projected) < 4<<20 || strings.ReplaceAll(projected, `"ownerId":"machine"`, `"ownerId":"local"`) != local {
 		t.Fatal("large catalog differs between transports")
-	}
-	if got := pluginResponse(strings.Repeat("x", remote.MaxPluginResponseBytes), nil); got.Error == nil || got.Error.Category != plugins.ErrorUnavailable {
-		t.Fatal("unbounded catalog response")
 	}
 }

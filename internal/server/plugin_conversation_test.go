@@ -22,6 +22,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
@@ -228,10 +229,11 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 		},
 	})
 	f.s = &Server{
-		stateDB: stateDB, pluginCtx: context.Background(), auth: newTestAuth(t, "password"),
+		stateDB: stateDB, auth: newTestAuth(t, "password"),
 		registry: registry, hostRouter: hostsvc.NewRouter(&conversationTestHost{}),
 	}
 	f.s.sessions = sessionsvc.New(registry, sessionsvc.Hooks{})
+	bindPlugins(f.s, context.Background())
 	t.Cleanup(f.s.stopPluginProcesses)
 
 	exe, err := os.Executable()
@@ -282,7 +284,7 @@ func (f *conversationFixture) install(t *testing.T, project string, grants []str
 	if f.failThread != "" {
 		values["failThread"] = mustJSON(t, f.failThread)
 	}
-	configuration, err := json.Marshal(pluginManagementInput{
+	configuration, err := json.Marshal(remote.PluginInput{
 		Values:  values,
 		Secrets: map[string]string{"token": "xoxb-super-secret"},
 	})
@@ -294,7 +296,7 @@ func (f *conversationFixture) install(t *testing.T, project string, grants []str
 	if err != nil {
 		t.Fatal(err)
 	}
-	enable, err := json.Marshal(pluginManagementInput{Approval: p.Approval, Grants: &grants})
+	enable, err := json.Marshal(remote.PluginInput{Approval: p.Approval, Grants: &grants})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,13 +392,13 @@ func TestConversationPluginDeniedWithoutGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	event := conversationMessageEvent(t, conversationMessage("again"))
-	err := f.s.conversations().Deliver(t.Context(), conversationPluginDescription().ID, event)
+	err := f.s.pluginsModule().Conversations().Deliver(t.Context(), conversationPluginDescription().ID, event)
 	assertConversationDenied(t, err)
 	if prompts := f.awaitPromptsNoGrowth(t); len(prompts) != 1 {
 		t.Fatalf("ungranted message reached a session: %v", prompts)
 	}
 	// A revoked grant also blocks the outbound reply.
-	assertConversationDenied(t, f.s.conversations().Reply(t.Context(), conversationPluginDescription().ID, "op-1",
+	assertConversationDenied(t, f.s.pluginsModule().Conversations().Reply(t.Context(), conversationPluginDescription().ID, "op-1",
 		plugins.ConversationReply{AccountID: conversationTestAccount, ThreadID: conversationTestThread, Text: "leak"}))
 }
 
@@ -407,13 +409,13 @@ func TestConversationPluginDeniedForUnapprovedProject(t *testing.T) {
 	id := conversationPluginDescription().ID
 
 	// A project the host cannot resolve never produces a session.
-	err := f.s.conversations().Deliver(t.Context(), id, conversationMessageEvent(t, conversationMessage("go")))
+	err := f.s.pluginsModule().Conversations().Deliver(t.Context(), id, conversationMessageEvent(t, conversationMessage("go")))
 	assertConversationDenied(t, err)
 
 	// Nor does a plugin naming a project other than its configured one.
 	claim := conversationMessage("go")
 	claim.Project = f.project
-	assertConversationDenied(t, f.s.conversations().Deliver(t.Context(), id, conversationMessageEvent(t, claim)))
+	assertConversationDenied(t, f.s.pluginsModule().Conversations().Deliver(t.Context(), id, conversationMessageEvent(t, claim)))
 	if prompts := f.awaitPromptsNoGrowth(t); len(prompts) != 0 {
 		t.Fatalf("unapproved project started a session: %v", prompts)
 	}
@@ -422,7 +424,7 @@ func TestConversationPluginDeniedForUnapprovedProject(t *testing.T) {
 func TestConversationPluginDisabledIsUnavailable(t *testing.T) {
 	f := newConversationFixture(t)
 	f.call(t, "POST", "/rescan", `{}`, 200)
-	err := f.s.conversations().Deliver(t.Context(), conversationPluginDescription().ID,
+	err := f.s.pluginsModule().Conversations().Deliver(t.Context(), conversationPluginDescription().ID,
 		conversationMessageEvent(t, conversationMessage("go")))
 	if err == nil {
 		t.Fatal("a disabled plugin reached session orchestration")
@@ -443,7 +445,7 @@ func (f *conversationFixture) settle(t *testing.T) {
 // per-plugin worker. Continuity must not depend on that serialization.
 func (f *conversationFixture) deliver(t *testing.T, m plugins.ConversationMessage) error {
 	t.Helper()
-	return f.s.conversations().Deliver(t.Context(), conversationPluginDescription().ID, conversationMessageEvent(t, m))
+	return f.s.pluginsModule().Conversations().Deliver(t.Context(), conversationPluginDescription().ID, conversationMessageEvent(t, m))
 }
 
 // restart stands in for an ocman restart: a brand new Server over the same
@@ -451,13 +453,13 @@ func (f *conversationFixture) deliver(t *testing.T, m plugins.ConversationMessag
 func (f *conversationFixture) restart(t *testing.T) *Server {
 	t.Helper()
 	s := &Server{
-		stateDB: f.s.stateDB, pluginCtx: context.Background(), auth: f.s.auth,
+		stateDB: f.s.stateDB, auth: f.s.auth,
 		registry: f.s.registry, hostRouter: hostsvc.NewRouter(&conversationTestHost{}),
-		// The plugin process is relaunched by the new host at startup; what
-		// this Server does not have is any memory of work in flight.
-		pluginProcesses: f.s.pluginProcesses,
 	}
 	s.sessions = sessionsvc.New(f.s.registry, sessionsvc.Hooks{})
+	// The plugin process is relaunched by the new host at startup; what
+	// this Server does not have is any memory of work in flight.
+	bindPlugins(s, context.Background()).pluginsModule().AdoptProcesses(f.s.pluginsModule())
 	return s
 }
 
@@ -557,7 +559,7 @@ func TestConversationMappingSurvivesRestart(t *testing.T) {
 	before := f.sentTo()
 
 	restarted := f.restart(t)
-	if err := restarted.startConversation(t.Context(), conversationPluginDescription().ID, plugins.ConversationConfig{Project: f.project}, conversationMessage("still here?")); err != nil {
+	if err := restarted.pluginsModule().Conversations().Deliver(t.Context(), conversationPluginDescription().ID, conversationMessageEvent(t, conversationMessage("still here?"))); err != nil {
 		t.Fatal(err)
 	}
 	if created := f.createdSessions(); created != 1 {
@@ -680,67 +682,4 @@ func assertConversationDenied(t *testing.T, err error) {
 	if !errors.As(err, &wire) || wire.Category != plugins.ErrorPermissionDenied {
 		t.Fatalf("expected permission_denied, got %v", err)
 	}
-}
-
-func TestLatestAssistantText(t *testing.T) {
-	messages := []db.Message{
-		{ID: "m1", TimeCreated: 100, Data: json.RawMessage(`{"role":"user"}`)},
-		{ID: "m3", TimeCreated: 300, Data: json.RawMessage(`{"role":"assistant"}`)},
-		{ID: "m2", TimeCreated: 200, Data: json.RawMessage(`{"role":"assistant"}`)},
-		{ID: "broken", TimeCreated: 400, Data: json.RawMessage(`not json`)},
-	}
-	// Stored parts carry timestamps and may arrive unordered.
-	stored := []db.Part{
-		{ID: "b", MessageID: "m3", TimeCreated: 320, Data: json.RawMessage(`{"type":"text","text":"world\n"}`)},
-		{ID: "a", MessageID: "m3", TimeCreated: 310, Data: json.RawMessage(`{"type":"text","text":"hello"}`)},
-		{ID: "c", MessageID: "m3", TimeCreated: 330, Data: json.RawMessage(`{"type":"tool","text":"ignored"}`)},
-		{ID: "d", MessageID: "m3", TimeCreated: 340, Data: json.RawMessage(`{"type":"text","text":"   "}`)},
-		{ID: "e", MessageID: "m2", TimeCreated: 210, Data: json.RawMessage(`{"type":"text","text":"older"}`)},
-	}
-	id, text := latestAssistantText(messages, stored)
-	if id != "m3" || text != "hello\n\nworld" {
-		t.Fatalf("%q %q", id, text)
-	}
-	// Live parts have no timestamps: arrival order must survive, not ID order.
-	live := []db.Part{
-		{ID: "zz", MessageID: "m3", Data: json.RawMessage(`{"type":"text","text":"hello"}`)},
-		{ID: "aa", MessageID: "m3", Data: json.RawMessage(`{"type":"text","text":"world"}`)},
-	}
-	if _, text := latestAssistantText(messages, live); text != "hello\n\nworld" {
-		t.Fatalf("live part order not preserved: %q", text)
-	}
-	if id, text := latestAssistantText(messages[:1], stored); id != "" || text != "" {
-		t.Fatalf("no assistant message should yield nothing: %q %q", id, text)
-	}
-	long := []db.Part{{ID: "x", MessageID: "m3", Data: mustPartText(t, strings.Repeat("y", plugins.ConversationMaxTextBytes+10))}}
-	if _, text := latestAssistantText(messages, long); len(text) > plugins.ConversationMaxTextBytes {
-		t.Fatalf("oversized reply not truncated: %d", len(text))
-	}
-}
-
-// Assistant answers can contain terminal escapes; the whole reply must not be
-// dropped because conversation.v1 forbids them on the wire.
-func TestConversationReplyTextSanitizes(t *testing.T) {
-	messages := []db.Message{{ID: "m1", TimeCreated: 1, Data: json.RawMessage(`{"role":"assistant"}`)}}
-	parts := []db.Part{{ID: "p", MessageID: "m1", Data: mustPartText(t, "before\x1b[31m\x07after\ttab")}}
-	_, text := latestAssistantText(messages, parts)
-	if text != "before[31mafter\ttab" {
-		t.Fatalf("sanitized text %q", text)
-	}
-	if (plugins.ConversationReply{AccountID: conversationTestAccount, ThreadID: conversationTestThread, Text: text}).Validate() != nil {
-		t.Fatal("sanitized text still fails the wire contract")
-	}
-	trailing := []db.Part{{ID: "p", MessageID: "m1", Data: mustPartText(t, "ok\x1b")}}
-	if _, text := latestAssistantText(messages, trailing); text != "ok" {
-		t.Fatalf("trailing escape not stripped: %q", text)
-	}
-}
-
-func mustPartText(t *testing.T, text string) json.RawMessage {
-	t.Helper()
-	data, err := json.Marshal(map[string]string{"type": "text", "text": text})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }

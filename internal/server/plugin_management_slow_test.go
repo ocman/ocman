@@ -52,7 +52,7 @@ func TestPluginManagementToleratesSlowStart(t *testing.T) {
 		}
 		f.call(t, "POST", base+"/"+action, body, 200)
 	}
-	if p := f.s.pluginProcesses[f.description.ID]; p == nil || p.Health().Status != "ready" {
+	if p := f.s.pluginsModule().Process(f.description.ID); p == nil || p.Health().Status != "ready" {
 		t.Fatal("slow plugin did not become ready")
 	}
 }

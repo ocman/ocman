@@ -52,14 +52,12 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// started below race that assignment otherwise.
 	s.router()
 	s.loadProjectsIndexCache(context.WithoutCancel(ctx))
-	s.pluginMu.Lock()
-	s.pluginCtx = ctx
+	s.lifetimeMu.Lock()
 	s.lifetimeCtx = ctx
-	s.pluginMu.Unlock()
+	s.lifetimeMu.Unlock()
+	// Plugins start (discovery, processes) with the other modules below; their
+	// processes stop here, after the listeners and launched modules close.
 	defer s.stopPluginProcesses()
-	if _, err := s.RescanPlugins(ctx); err != nil {
-		log.WithError(err).Warn("plugin discovery failed")
-	}
 	if s.remotes != nil {
 		s.remotes.SetWebhookDispatcher(s.RoutineService())
 	}
@@ -94,10 +92,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
 		workers.Go(func() { sup.RunMachineSupervisor(ctx) })
 	}
-	// Replays conversation replies left unacknowledged by a disconnect or a
-	// crash, and is the clock for their bounded retries.
-	workers.Go(func() { s.runConversationDeliveryPump(ctx) })
-	workers.Go(func() { s.runConversationReplyReconciliation(ctx) })
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive
 	// the judge even when no browser tab is open. Without this, the

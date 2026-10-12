@@ -1,4 +1,4 @@
-package server
+package pluginsmod
 
 import (
 	"context"
@@ -40,8 +40,8 @@ func TestEnabledPluginProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := &Server{stateDB: db, pluginCtx: ctx}
-	t.Cleanup(s.stopPluginProcesses)
+	s := bound(NewModule(Deps{Store: db}), ctx)
+	t.Cleanup(s.Stop)
 	id := "org.example.test"
 	path := writeDiscoveryPlugin(t, dir, "ocman-plugin-a", id, "1")
 	script, err := os.ReadFile(path)
@@ -55,7 +55,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	if _, err := s.RescanPlugins(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.pluginProcesses) != 0 {
+	if s.Running() != 0 {
 		t.Fatal("started disabled plugin")
 	}
 	if err := db.SetPluginEnabled(ctx, id, true, nil); err != nil {
@@ -64,7 +64,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	if err := s.SyncPluginProcesses(ctx); err != nil {
 		t.Fatal(err)
 	}
-	first := s.pluginProcesses[id]
+	first := s.Process(id)
 	if first == nil {
 		t.Fatal("enabled plugin not started")
 	}
@@ -85,7 +85,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	if _, err := s.RescanPlugins(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if s.pluginProcesses[id] != first {
+	if s.Process(id) != first {
 		t.Fatal("rescan replaced running process")
 	}
 	dataDir, err := db.PluginDataDir(ctx, id)
@@ -97,7 +97,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	if _, err := s.RescanPlugins(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.pluginProcesses) != 0 || first.Health().Status != "stopped" {
+	if s.Running() != 0 || first.Health().Status != "stopped" {
 		t.Fatal("conflicted process still running")
 	}
 	p, err := db.GetPlugin(ctx, id)
@@ -126,10 +126,10 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	if err := s.SyncPluginProcesses(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.pluginProcesses) != 0 {
+	if s.Running() != 0 {
 		t.Fatal("disabled process still running")
 	}
-	s.stopPluginProcesses()
+	s.Stop()
 	if err := s.SyncPluginProcesses(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -140,12 +140,12 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	if err := db.SetPluginProcessHealth(ctx, id, state.PluginHealth{Status: "unhealthy", RestartCount: 5}); err != nil {
 		t.Fatal(err)
 	}
-	restarted := &Server{stateDB: db, pluginCtx: ctx}
-	t.Cleanup(restarted.stopPluginProcesses)
+	restarted := bound(NewModule(Deps{Store: db}), ctx)
+	t.Cleanup(restarted.Stop)
 	if _, err := restarted.RescanPlugins(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(restarted.pluginProcesses) != 0 {
+	if restarted.Running() != 0 {
 		t.Fatal("restart reset unhealthy cutoff")
 	}
 	if err := db.SetPluginEnabled(ctx, id, false, nil); err != nil {
@@ -160,7 +160,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	if err := restarted.SyncPluginProcesses(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(restarted.pluginProcesses) != 1 {
+	if restarted.Running() != 1 {
 		t.Fatal("explicit reenable did not reset cutoff")
 	}
 }
@@ -174,7 +174,7 @@ func TestRescanPlugins(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := &Server{stateDB: db}
+	s := NewModule(Deps{Store: db})
 	path := writeDiscoveryPlugin(t, dir, "ocman-plugin-a", "org.example.test", "1.0")
 	rescan := func() []plugins.Discovery {
 		t.Helper()
@@ -186,7 +186,7 @@ func TestRescanPlugins(t *testing.T) {
 	}
 	get := func() state.PluginRegistration {
 		t.Helper()
-		p, err := s.stateDB.GetPlugin(ctx, "org.example.test")
+		p, err := s.store.GetPlugin(ctx, "org.example.test")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,10 +196,10 @@ func TestRescanPlugins(t *testing.T) {
 	if p := get(); p.Enabled || p.Removed || p.Health.Status != "disabled" {
 		t.Fatalf("new: %+v", p)
 	}
-	if err := s.stateDB.SetPluginConfiguration(ctx, "org.example.test", map[string]json.RawMessage{"value": json.RawMessage(`true`)}, nil); err != nil {
+	if err := s.store.SetPluginConfiguration(ctx, "org.example.test", map[string]json.RawMessage{"value": json.RawMessage(`true`)}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.stateDB.SetPluginEnabled(ctx, "org.example.test", true, []string{"read"}); err != nil {
+	if err := s.store.SetPluginEnabled(ctx, "org.example.test", true, []string{"read"}); err != nil {
 		t.Fatal(err)
 	}
 	rescan()
@@ -213,7 +213,7 @@ func TestRescanPlugins(t *testing.T) {
 		t.Fatalf("changed: %+v", p)
 	}
 	duplicate := writeDiscoveryPlugin(t, dir, "ocman-plugin-b", "org.example.test", "2.0")
-	if err := s.stateDB.SetPluginEnabled(ctx, "org.example.test", true, nil); err != nil {
+	if err := s.store.SetPluginEnabled(ctx, "org.example.test", true, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, d := range rescan() {
@@ -236,11 +236,11 @@ func TestRescanPlugins(t *testing.T) {
 	if len(catalog) != 1 || !errors.Is(catalog[0].Err, plugins.ErrIdentityChanged) {
 		t.Fatalf("identity: %+v", catalog)
 	}
-	if _, err := s.stateDB.GetPlugin(ctx, "org.example.changed"); !errors.Is(err, state.ErrPluginNotFound) {
+	if _, err := s.store.GetPlugin(ctx, "org.example.changed"); !errors.Is(err, state.ErrPluginNotFound) {
 		t.Fatal("changed identity persisted")
 	}
 	// A fresh server still rejects a changed identity using the durable binding.
-	s = &Server{stateDB: s.stateDB}
+	s = NewModule(Deps{Store: s.store})
 	if d := rescan(); !errors.Is(d[0].Err, plugins.ErrIdentityChanged) {
 		t.Fatalf("restart identity: %+v", d)
 	}
@@ -258,17 +258,37 @@ func TestRescanPlugins(t *testing.T) {
 	}
 }
 
+func TestDiscoveryConflictCannotReplaceIdentity(t *testing.T) {
+	s := NewModule(Deps{Store: openStore(t)})
+	ctx := context.Background()
+	dir := t.TempDir()
+	t.Setenv("OCMAN_PLUGIN_DIR", dir)
+	writeDiscoveryPlugin(t, dir, "ocman-plugin-a", "org.example.first", "1")
+	if _, err := s.RescanPlugins(ctx); err != nil {
+		t.Fatal(err)
+	}
+	writeDiscoveryPlugin(t, dir, "ocman-plugin-a", "org.example.other", "1")
+	writeDiscoveryPlugin(t, dir, "ocman-plugin-b", "org.example.other", "1")
+	if _, err := s.RescanPlugins(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.store.GetPlugin(ctx, "org.example.other")
+	if err != nil || p.Enabled || p.Health.Status != "conflict" || !strings.HasSuffix(p.ExecutablePath, "ocman-plugin-b") {
+		t.Fatalf("conflict: %+v %v", p, err)
+	}
+}
+
 func TestRescanPluginsFailures(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	s := &Server{}
+	s := NewModule(Deps{})
 	writeDiscoveryPlugin(t, dir, "ocman-plugin-test", "org.example.test", "1")
 	if catalog, err := s.RescanPlugins(ctx); err != nil || len(catalog) != 1 || catalog[0].Err != nil {
 		t.Fatalf("no state: %+v %v", catalog, err)
 	}
-	st := openTestStateDB(t)
-	s.stateDB = st
+	st := openStore(t)
+	s.store = st
 	if _, err := s.RescanPlugins(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -297,22 +317,18 @@ func TestRescanPluginsFailures(t *testing.T) {
 	}
 }
 
-func TestDiscoveryConflictCannotReplaceIdentity(t *testing.T) {
-	s := &Server{stateDB: openTestStateDB(t)}
-	ctx := context.Background()
-	dir := t.TempDir()
-	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	writeDiscoveryPlugin(t, dir, "ocman-plugin-a", "org.example.first", "1")
-	if _, err := s.RescanPlugins(ctx); err != nil {
+// bound gives m the lifetime context Start would, and stops it at cleanup.
+func bound(m *Module, ctx context.Context) *Module {
+	m.Bind(ctx)
+	return m
+}
+
+func openStore(t *testing.T) *state.DB {
+	t.Helper()
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	writeDiscoveryPlugin(t, dir, "ocman-plugin-a", "org.example.other", "1")
-	writeDiscoveryPlugin(t, dir, "ocman-plugin-b", "org.example.other", "1")
-	if _, err := s.RescanPlugins(ctx); err != nil {
-		t.Fatal(err)
-	}
-	p, err := s.stateDB.GetPlugin(ctx, "org.example.other")
-	if err != nil || p.Enabled || p.Health.Status != "conflict" || !strings.HasSuffix(p.ExecutablePath, "ocman-plugin-b") {
-		t.Fatalf("conflict: %+v %v", p, err)
-	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
 }
