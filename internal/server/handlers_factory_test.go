@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 )
 
 type fakeFactoryService struct {
@@ -265,7 +266,7 @@ func TestWriteFactoryErrorSeparatesClientAndServerFailures(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			writeFactoryError(rec, tt.err)
+			factorymod.WriteError(rec, tt.err)
 			if rec.Code != tt.want {
 				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
 			}
@@ -279,7 +280,7 @@ func TestWriteFactoryErrorSeparatesClientAndServerFailures(t *testing.T) {
 func TestFactoryEpicRoutes(t *testing.T) {
 	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "fac-1", Goal: "Ship", Attempts: []model.FactoryAttempt{{ID: "attempt-1", Session: model.PlanningSession{Platform: "opencode", ID: "session-1"}}}}, {ID: "fac/encoded", Goal: "Encoded"}}, issues: []factory.Issue{{ID: "fac-1.child", Kind: "mol", FormulaID: "custom/child", FormulaVersion: 1, FormulaHash: "child-hash", Bindings: map[string]string{"goal": "Ship"}}}}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -411,7 +412,7 @@ func TestFactoryEpicRoutes(t *testing.T) {
 func TestFactoryFormulaRoute(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -430,7 +431,7 @@ func TestFactoryFormulaRoute(t *testing.T) {
 
 func TestFactoryFormulaRouteDistinguishesUnavailableStorage(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = &fakeFactoryService{err: factory.ErrFactoryUnavailable}
+	useFactory(srv, &fakeFactoryService{err: factory.ErrFactoryUnavailable})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -445,7 +446,7 @@ func TestFactoryFormulaRouteDistinguishesUnavailableStorage(t *testing.T) {
 func TestFactoryFormulaLibraryRoutes(t *testing.T) {
 	svc := &fakeFactoryService{formulas: []factory.NativeFormulaView{{ID: "ocman/tracer", Version: 1, Valid: true}}}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -476,7 +477,7 @@ func TestFactoryFormulaLibraryRoutes(t *testing.T) {
 
 func TestFactoryFormulaRoutesReturnValidationFeedback(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = &fakeFactoryService{err: fmt.Errorf("%w: TOML source is required", factory.ErrInvalidFormula)}
+	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("%w: TOML source is required", factory.ErrInvalidFormula)})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -493,7 +494,7 @@ func TestFactoryFormulaRoutesReturnValidationFeedback(t *testing.T) {
 func TestFactoryConfigurationRoute(t *testing.T) {
 	svc := &fakeFactoryService{capacityPolicy: factory.CapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4, ProjectOverrides: map[string]int{}}}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -530,7 +531,7 @@ func TestFactoryConfigurationRoute(t *testing.T) {
 
 func TestFactoryEpicRoutesRejectInvalidRequests(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = &fakeFactoryService{err: fmt.Errorf("%w: nope", factory.ErrInvalidRequest)}
+	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("%w: nope", factory.ErrInvalidRequest)})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -546,7 +547,7 @@ func TestFactoryEpicRoutesRejectInvalidRequests(t *testing.T) {
 
 func TestFactoryAcknowledgementRequiredIsBadRequest(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = &fakeFactoryService{err: factory.ErrAcknowledgementRequired}
+	useFactory(srv, &fakeFactoryService{err: factory.ErrAcknowledgementRequired})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -563,7 +564,7 @@ func TestFactoryAcknowledgementRequiredIsBadRequest(t *testing.T) {
 func TestFactoryRoutesSanitizeServiceFailures(t *testing.T) {
 	svc := &fakeFactoryService{err: errors.New("private store failure")}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -640,7 +641,7 @@ func TestFactoryRoutesSanitizeServiceFailures(t *testing.T) {
 func TestFactoryPlanningRoutes(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -690,7 +691,7 @@ func TestFactoryPlanningRoutes(t *testing.T) {
 func TestFactoryGraphMutationRouteIsLocalAndStrict(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -723,7 +724,7 @@ func TestFactoryGraphMutationRouteIsLocalAndStrict(t *testing.T) {
 func TestFactoryStatusQueueAndGateRoutes(t *testing.T) {
 	svc := &fakeFactoryService{queue: []factory.DispatchItem{{ID: "work", Project: "/other", State: "ready"}}}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -771,7 +772,7 @@ func TestFactoryStatusQueueAndGateRoutes(t *testing.T) {
 func TestFactoryProjectGateRouteRequiresHumanLocalApproval(t *testing.T) {
 	service := &fakeFactoryService{}
 	server := New(nil, nil, "", nil, nil)
-	server.factory = service
+	useFactory(server, service)
 	mux, err := server.routes()
 	if err != nil {
 		t.Fatal(err)

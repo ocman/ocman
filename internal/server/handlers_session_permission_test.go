@@ -38,7 +38,7 @@ func TestSessionPermissionOnlyInspectsPromptsForFactoryApprovals(t *testing.T) {
 			platform.respondPermissionFn = func(req platforms.RespondPermissionRequest) error { replied = req; return nil }
 			srv := newPermissionRulesTestServer(t, platform)
 			factorySvc := &fakeFactoryService{implementationSession: tt.factorySession, authorityErr: tt.resolveErr}
-			srv.factory = factorySvc
+			useFactory(srv, factorySvc)
 			mux, err := srv.routes()
 			if err != nil {
 				t.Fatal(err)

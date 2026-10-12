@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -12,32 +12,33 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
-func (s *Server) handleFactoryStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.factory.Status(r.Context()))
+func (m *Module) handleFactoryStatus(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteJSON(w, m.svc.Status(r.Context()))
 }
 
-func (s *Server) handleFactoryQueue(w http.ResponseWriter, r *http.Request) {
-	queueService, ok := s.factory.(interface {
+func (m *Module) handleFactoryQueue(w http.ResponseWriter, r *http.Request) {
+	queueService, ok := m.svc.(interface {
 		Queue(context.Context) ([]factory.DispatchItem, error)
 	})
 	if !ok {
-		writeFactoryError(w, factory.ErrFactoryUnavailable)
+		WriteError(w, factory.ErrFactoryUnavailable)
 		return
 	}
 	queue, err := queueService.Queue(r.Context())
 	if err != nil {
-		writeFactoryError(w, err)
+		WriteError(w, err)
 		return
 	}
 	if queue == nil {
 		queue = []factory.DispatchItem{}
 	}
-	writeJSON(w, queue)
+	httpx.WriteJSON(w, queue)
 }
 
-func (s *Server) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/recovery-gates/"), "/"), "/")
 	if len(parts) != 2 || parts[0] == "" || (parts[1] != "resume" && parts[1] != "retry" && parts[1] != "cancel") {
 		http.Error(w, "invalid recovery gate action", http.StatusBadRequest)
@@ -48,7 +49,7 @@ func (s *Server) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Response string `json:"response"`
 		}
@@ -60,16 +61,16 @@ func (s *Server) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Reques
 			http.Error(w, "invalid recovery gate ID", http.StatusBadRequest)
 			return
 		}
-		gate, err := s.factory.ResolveRecoveryGate(r.Context(), gateID, parts[1], request.Response)
+		gate, err := m.svc.ResolveRecoveryGate(r.Context(), gateID, parts[1], request.Response)
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
-		writeJSON(w, gate)
+		httpx.WriteJSON(w, gate)
 	})(w, r)
 }
 
-func (s *Server) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/authority-gates/"), "/"), "/")
 	if len(parts) != 2 || parts[0] == "" || (parts[1] != "approve" && parts[1] != "reject") {
 		http.Error(w, "invalid authority gate action", http.StatusBadRequest)
@@ -80,22 +81,22 @@ func (s *Server) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
 		gateID, err := url.PathUnescape(parts[0])
 		if err != nil {
 			http.Error(w, "invalid authority gate ID", http.StatusBadRequest)
 			return
 		}
-		gate, err := s.factory.ResolveAuthorityEscalationGate(r.Context(), gateID, parts[1])
+		gate, err := m.svc.ResolveAuthorityEscalationGate(r.Context(), gateID, parts[1])
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
-		writeJSON(w, gate)
+		httpx.WriteJSON(w, gate)
 	})(w, r)
 }
 
-func (s *Server) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/project-gates/"), "/"), "/")
 	if len(parts) != 2 || parts[0] == "" || (parts[1] != "approve" && parts[1] != "reject") {
 		http.Error(w, "invalid project gate action", http.StatusBadRequest)
@@ -106,12 +107,12 @@ func (s *Server) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
-		service, ok := s.factory.(interface {
+	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
+		service, ok := m.svc.(interface {
 			ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error)
 		})
 		if !ok {
-			writeFactoryError(w, factory.ErrFactoryUnavailable)
+			WriteError(w, factory.ErrFactoryUnavailable)
 			return
 		}
 		var request struct {
@@ -128,34 +129,34 @@ func (s *Server) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request
 		}
 		gate, err := service.ResolveProjectRequest(r.Context(), gateID, parts[1], request.Response, request.AcknowledgeLocalExecution)
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
-		writeJSON(w, gate)
+		httpx.WriteJSON(w, gate)
 	})(w, r)
 }
 
-func (s *Server) handleFactoryConfiguration(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryConfiguration(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		policy, err := s.factory.GetCapacityPolicy(r.Context())
+		policy, err := m.svc.GetCapacityPolicy(r.Context())
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
-		writeJSON(w, policy)
+		httpx.WriteJSON(w, policy)
 	case http.MethodPost:
-		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+		m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
 			var policy factory.CapacityPolicy
 			if !decodeFactoryRequest(w, r, &policy) {
 				return
 			}
-			policy, err := s.factory.SetCapacityPolicy(r.Context(), policy)
+			policy, err := m.svc.SetCapacityPolicy(r.Context(), policy)
 			if err != nil {
-				writeFactoryError(w, err)
+				WriteError(w, err)
 				return
 			}
-			writeJSON(w, policy)
+			httpx.WriteJSON(w, policy)
 		})(w, r)
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -163,65 +164,65 @@ func (s *Server) handleFactoryConfiguration(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (s *Server) handleFactoryEpics(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryEpics(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		epics, err := s.factory.ListWorkEpics(r.Context())
+		epics, err := m.svc.ListWorkEpics(r.Context())
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
 		if epics == nil {
 			epics = []factory.WorkEpic{}
 		}
-		writeJSON(w, epics)
+		httpx.WriteJSON(w, epics)
 	case http.MethodPost:
-		s.requireLocalhost(s.handleFactoryEpicCreate)(w, r)
+		m.deps.Guards.Localhost(m.handleFactoryEpicCreate)(w, r)
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *Server) handleFactoryEpicCreate(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryEpicCreate(w http.ResponseWriter, r *http.Request) {
 	var req factory.CreateWorkEpicRequest
 	if !decodeFactoryRequest(w, r, &req) {
 		return
 	}
-	epic, err := s.factory.CreateWorkEpic(r.Context(), req)
+	epic, err := m.svc.CreateWorkEpic(r.Context(), req)
 	if err != nil {
-		writeFactoryError(w, err)
+		WriteError(w, err)
 		return
 	}
-	writeJSONStatus(w, http.StatusCreated, epic)
+	httpx.WriteJSONStatus(w, http.StatusCreated, epic)
 }
 
-func (s *Server) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/factory/formulas")
 	if path == "" || path == "/" {
 		switch r.Method {
 		case http.MethodGet:
-			formulas, err := s.factory.ListFormulas(r.Context())
+			formulas, err := m.svc.ListFormulas(r.Context())
 			if err != nil {
-				writeFactoryError(w, err)
+				WriteError(w, err)
 				return
 			}
 			if formulas == nil {
 				formulas = []factory.NativeFormulaView{}
 			}
-			writeJSON(w, formulas)
+			httpx.WriteJSON(w, formulas)
 		case http.MethodPost:
-			s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
 				var req factory.FormulaSaveRequest
 				if !decodeFactoryRequest(w, r, &req) {
 					return
 				}
-				formula, err := s.factory.SaveFormula(r.Context(), req)
+				formula, err := m.svc.SaveFormula(r.Context(), req)
 				if err != nil {
-					writeFactoryError(w, err)
+					WriteError(w, err)
 					return
 				}
-				writeJSONStatus(w, http.StatusCreated, formula)
+				httpx.WriteJSONStatus(w, http.StatusCreated, formula)
 			})(w, r)
 		default:
 			w.Header().Set("Allow", "GET, POST")
@@ -235,7 +236,7 @@ func (s *Server) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+		m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
 			var req struct {
 				Source string `json:"source"`
 				ID     string `json:"id"`
@@ -246,15 +247,15 @@ func (s *Server) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
 			var formula factory.NativeFormulaView
 			var err error
 			if path == "/validate" {
-				formula, err = s.factory.ValidateFormula(r.Context(), req.Source, req.ID)
+				formula, err = m.svc.ValidateFormula(r.Context(), req.Source, req.ID)
 			} else {
-				formula, err = s.factory.PreviewFormula(r.Context(), req.Source, req.ID)
+				formula, err = m.svc.PreviewFormula(r.Context(), req.Source, req.ID)
 			}
 			if err != nil {
-				writeFactoryError(w, err)
+				WriteError(w, err)
 				return
 			}
-			writeJSON(w, formula)
+			httpx.WriteJSON(w, formula)
 		})(w, r)
 		return
 	}
@@ -278,16 +279,16 @@ func (s *Server) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid Formula revision", http.StatusBadRequest)
 		return
 	}
-	formula, err := s.factory.GetFormula(r.Context(), id, version)
+	formula, err := m.svc.GetFormula(r.Context(), id, version)
 	if err != nil {
-		writeFactoryError(w, err)
+		WriteError(w, err)
 		return
 	}
-	writeJSON(w, formula)
+	httpx.WriteJSON(w, formula)
 }
 
 func decodeFactoryRequest(w http.ResponseWriter, r *http.Request, value any) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, httpx.MaxRequestBody))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
 		http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
@@ -300,13 +301,15 @@ func decodeFactoryRequest(w http.ResponseWriter, r *http.Request, value any) boo
 	return true
 }
 
-func writeFactoryError(w http.ResponseWriter, err error) {
+// WriteError maps a Factory error to its HTTP status; the server's
+// permission pipeline answers Factory escalations the same way.
+func WriteError(w http.ResponseWriter, err error) {
 	if errors.Is(err, model.ErrRecoveryWorkspaceBusy) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
 	if errors.Is(err, factory.ErrFormulaCorrupt) {
-		serverError(w, "reading Factory Formula", err)
+		httpx.ServerError(w, "reading Factory Formula", err)
 		return
 	}
 	if errors.Is(err, factory.ErrFactoryUnavailable) {
@@ -357,5 +360,5 @@ func writeFactoryError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	serverError(w, "handling Factory request", err)
+	httpx.ServerError(w, "handling Factory request", err)
 }

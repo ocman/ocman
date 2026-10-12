@@ -97,13 +97,12 @@ func (s *Server) mcpHandler() http.Handler {
 // The handler is localhost-only (enforced by the caller in StartOnListener).
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
-	return s.buildMCPHandlerFor(factoryMCPService{factoryService: s.factory, proposeControl: s.proposeFactoryControl}, sessionMCPService{s})
+	return s.buildMCPHandlerFor(sessionMCPService{s})
 }
 
-func (s *Server) buildMCPHandlerFor(factoryService factoryService, sessionService sessionMCPService) http.Handler {
+func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handler {
 	deps := internalmcp.Deps{
 		SignFile:       s.FileURL,
-		FactoryService: factoryService,
 		SessionService: sessionService,
 	}
 	for _, m := range s.modules() {

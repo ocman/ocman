@@ -9,9 +9,6 @@ import (
 // Deps holds the dependencies injected into the MCP server by the
 // ocman server package. All fields are required unless noted.
 type Deps struct {
-	// FactoryService drives implementation-neutral Factory intake tools.
-	// Optional: nil disables Factory tools.
-	FactoryService factoryService
 	// Tools are contributed by feature modules (module.ToolProvider).
 	Tools []mcpserver.ServerTool
 	// Optional: nil disables session tools. The create action also needs
@@ -39,12 +36,6 @@ func New(deps Deps) *Server {
 
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
-	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
-	// Keep control separate: OpenCode permissions apply per tool, so folding it
-	// into factory would either prompt for every action or bypass its approval.
-	for _, tool := range factoryControlServerTools(deps.FactoryService) {
-		s.AddTool(tool.Tool, tool.Handler)
-	}
 	s.AddTools(deps.Tools...)
 	addSessionTools(s, &sessionTools{svc: deps.SessionService})
 
@@ -68,8 +59,6 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	tools := []mcpserver.ServerTool{
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
-	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
-	tools = append(tools, factoryControlServerTools(deps.FactoryService)...)
 	tools = append(tools, deps.Tools...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	return tools

@@ -12,6 +12,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -60,11 +61,11 @@ func TestRemovedVerificationKeepsUsagePhase(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New(nil, store, "", nil, nil)
-	srv.factory = &fakeFactoryService{epics: []factory.WorkEpic{{ID: ep.ID}}}
+	useFactory(srv, &fakeFactoryService{epics: []factory.WorkEpic{{ID: ep.ID}}})
 	srv.registry.Register(&usagePlatform{fakePlatform: fakePlatform{id: "p"}, usage: map[string]map[string]platforms.Usage{"verify": {"verify": {Cost: 1}}}})
 	w := httptest.NewRecorder()
-	srv.handleFactoryEpic(w, httptest.NewRequest(http.MethodGet, "/api/factory/epics/"+ep.ID+"/usage", nil))
-	var got factoryEpicUsage
+	serveFactory(srv, w, httptest.NewRequest(http.MethodGet, "/api/factory/epics/"+ep.ID+"/usage", nil))
+	var got factorymod.EpicUsage
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("%d %s: %v", w.Code, w.Body, err)
 	}
@@ -96,7 +97,7 @@ func TestFactoryUsagePhasesRetriesAndDedup(t *testing.T) {
 	}
 	attempts = append(attempts, model.FactoryAttempt{ID: "other", Session: model.PlanningSession{Platform: "other", ID: "plan"}}, model.FactoryAttempt{ID: "not-launched"})
 	issues := []model.NativeIssue{{ID: "verify", Workflow: &model.WorkflowStep{Kind: "verification"}}, {ID: "deliver", Kind: "delivery"}}
-	got := srv.factoryUsage(t.Context(), attempts, issues)
+	got := srv.factoryModule().Usage(t.Context(), attempts, issues)
 	if got.Incomplete || len(got.Attempts) != 8 || got.Total.Cost != 1.75 || got.Total.EstCost != 3.5 || got.Total.Tokens.CacheRead != 21 {
 		t.Fatalf("usage = %+v", got)
 	}
@@ -111,7 +112,7 @@ func TestFactoryUsagePhasesRetriesAndDedup(t *testing.T) {
 	// Delivery can still be classified from frozen policy when its issue is absent.
 	attempts[0].FrozenPolicy.Profile = ""
 	attempts[0].FrozenPolicy.Delivery = true
-	if got := srv.factoryUsage(t.Context(), attempts[:1], nil); got.Phases["deliver"].Cost != 0.5 {
+	if got := srv.factoryModule().Usage(t.Context(), attempts[:1], nil); got.Phases["deliver"].Cost != 0.5 {
 		t.Fatal(got)
 	}
 }
@@ -126,7 +127,7 @@ func TestFactoryUsageUnavailable(t *testing.T) {
 			if kind == "failed" {
 				srv.registry.Register(&usagePlatform{fakePlatform: fakePlatform{id: "p"}, err: errors.New("offline")})
 			}
-			got := srv.factoryUsage(t.Context(), []model.FactoryAttempt{{Session: model.PlanningSession{Platform: "p", ID: "session"}}}, nil)
+			got := srv.factoryModule().Usage(t.Context(), []model.FactoryAttempt{{Session: model.PlanningSession{Platform: "p", ID: "session"}}}, nil)
 			if !got.Incomplete || got.Attempts[0].Usage != nil {
 				t.Fatalf("usage = %+v", got)
 			}
@@ -139,35 +140,35 @@ func TestFactoryUsageRoute(t *testing.T) {
 	if _, err := srv.stateDB.CreateFactoryEpic(t.Context(), "e", "Usage", "", "/repo", "usage", model.NativeFormula{ID: "usage", Version: 1, Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}); err != nil {
 		t.Fatal(err)
 	}
-	srv.factory = &fakeFactoryService{epics: []factory.WorkEpic{{ID: "e"}}}
+	useFactory(srv, &fakeFactoryService{epics: []factory.WorkEpic{{ID: "e"}}})
 	request := httptest.NewRequest(http.MethodGet, "/api/factory/epics/e/usage", nil)
 	w := httptest.NewRecorder()
-	srv.handleFactoryEpic(w, request)
+	serveFactory(srv, w, request)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 	}
-	var got factoryEpicUsage
+	var got factorymod.EpicUsage
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
 	if len(got.Phases) != 4 || got.Attempts == nil {
 		t.Fatal(got)
 	}
-	srv.factory = &fakeFactoryService{err: factory.ErrWorkEpicNotFound}
+	useFactory(srv, &fakeFactoryService{err: factory.ErrWorkEpicNotFound})
 	w = httptest.NewRecorder()
-	srv.handleFactoryEpic(w, request)
+	serveFactory(srv, w, request)
 	if w.Code != http.StatusNotFound {
 		t.Fatal(w.Code)
 	}
-	srv.factory = &fakeFactoryService{epics: []factory.WorkEpic{{ID: "e"}}}
 	srv.stateDB = nil
+	useFactory(srv, &fakeFactoryService{epics: []factory.WorkEpic{{ID: "e"}}})
 	w = httptest.NewRecorder()
-	srv.handleFactoryEpic(w, request)
+	serveFactory(srv, w, request)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatal(w.Code)
 	}
 	w = httptest.NewRecorder()
-	srv.handleFactoryEpic(w, httptest.NewRequest(http.MethodPost, request.URL.String(), nil))
+	serveFactory(srv, w, httptest.NewRequest(http.MethodPost, request.URL.String(), nil))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatal(w.Code)
 	}

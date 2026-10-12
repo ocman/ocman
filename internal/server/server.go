@@ -6,15 +6,12 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-
 	"time"
-
-	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/module"
@@ -194,8 +191,8 @@ type Server struct {
 	// Guards the providers against a reopened panel or a repeatedly
 	// clicked Refresh; see subscriptionUsageTTL.
 	subscriptionUsageCache subscriptionUsageCache
-	factory                factoryService
-	factoryControlFlight   singleflight.Group // one control session launch per Epic at a time
+	factoryMod             *factorymod.Module
+	factoryModOnce         sync.Once
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 
@@ -213,39 +210,6 @@ type Server struct {
 	projectUpstreamsPending map[string]*projectUpstreamsPending
 	projectUpstreamsSlots   chan struct{}
 	upstreamNow             func() time.Time
-}
-
-type factoryService interface {
-	Start(context.Context) error
-	Close()
-	Status(context.Context) factory.Status
-	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
-	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
-	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
-	Pour(context.Context, string) ([]factory.Issue, error)
-	ListIssues(context.Context, string) ([]factory.Issue, error)
-	ListIssueComments(context.Context, string, string) ([]factory.IssueComment, error)
-	AddIssueComment(context.Context, string, string, string, string) (factory.IssueComment, error)
-	ClaimPlan(context.Context, string, string) (factory.ClaimedPlan, error)
-	Materialize(context.Context, string, string) (factory.Materialization, error)
-	SubmitProposal(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
-	GetProposal(context.Context, string, int) (factory.ProposalRevision, error)
-	ListProposals(context.Context, string) ([]factory.ProposalRevision, error)
-	DecidePlanGate(context.Context, string, string, factory.PlanGateDecisionRequest) (factory.PlanGate, error)
-	GetFormula(context.Context, string, int) (factory.NativeFormulaView, error)
-	ListFormulas(context.Context) ([]factory.NativeFormulaView, error)
-	ValidateFormula(context.Context, string, string) (factory.NativeFormulaView, error)
-	PreviewFormula(context.Context, string, string) (factory.NativeFormulaView, error)
-	SaveFormula(context.Context, factory.FormulaSaveRequest) (factory.NativeFormulaView, error)
-	GetCapacityPolicy(context.Context) (factory.CapacityPolicy, error)
-	SetCapacityPolicy(context.Context, factory.CapacityPolicy) (factory.CapacityPolicy, error)
-	MutateGraph(context.Context, factory.GraphMutation) error
-	CreateRecoveryGate(context.Context, string, string, string, string, []string) (factory.RecoveryGate, error)
-	ResolveRecoveryGate(context.Context, string, string, string) (factory.RecoveryGate, error)
-	IsImplementationSession(context.Context, string) (bool, error)
-	EscalatePermission(context.Context, string, string, string, string) (factory.AuthorityEscalationGate, bool, error)
-	ResolveAuthorityEscalationGate(context.Context, string, string) (factory.AuthorityEscalationGate, error)
-	CompleteAttempt(context.Context, string, string, string, string) error
 }
 
 type factoryProjectResolver struct{ server *Server }
@@ -322,8 +286,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		ProjectModels: s.projectModelList,
 		CooldownTimes: s.cooldownTimes,
 	})
-	factorySvc := factory.NewNativeWithExecution(stateDB, factoryProjectResolver{server: s}, factoryPlanningLauncher{server: s}, factoryImplementationLauncher{server: s})
-	s.factory = factorySvc
 	return s
 }
 

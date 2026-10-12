@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -19,22 +19,22 @@ import (
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
-type factoryPlanningLauncher struct{ server *Server }
+type PlanningLauncher struct{ m *Module }
 
 const factoryIssueProse = "In human-facing plans, summaries, questions, and rationaleMarkdown, include the Issue title alongside its ID, for example Fix attachment uploads (upload-fix.1.2). Never refer to an Issue by number or ID alone. Use factory issues to look up titles when needed. Keep exact IDs in tool arguments."
 
-func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req factory.PlanningSessionRequest) (factory.PlanningSession, error) {
+func (l PlanningLauncher) LaunchPlanningSession(ctx context.Context, req factory.PlanningSessionRequest) (factory.PlanningSession, error) {
 	return l.launchReadOnlySession(ctx, req, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 }
 
-func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req factory.PlanningSessionRequest, mcpRules ...platforms.PermissionRule) (factory.PlanningSession, error) {
+func (l PlanningLauncher) launchReadOnlySession(ctx context.Context, req factory.PlanningSessionRequest, mcpRules ...platforms.PermissionRule) (factory.PlanningSession, error) {
 	for _, project := range req.Projects {
 		if !filepath.IsAbs(project) || filepath.Clean(project) != project || strings.ContainsAny(project, "*?[") {
 			return factory.PlanningSession{}, fmt.Errorf("invalid admitted project path %q", project)
 		}
 	}
 	var platformID string
-	for _, candidate := range l.server.registry.Platforms() {
+	for _, candidate := range l.m.deps.Registry.Platforms() {
 		remoteID, _ := remote.SplitPlatformID(string(candidate.ID()))
 		if remoteID != "" || !candidate.Available(ctx) || !candidate.Capabilities().PermissionRules {
 			continue
@@ -47,7 +47,7 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 	if platformID == "" {
 		return factory.PlanningSession{}, errors.New("no local planning platform with permission rules is available")
 	}
-	host := l.server.router().Local()
+	host := l.m.deps.Router().Local()
 	ensureReq := hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Repository}
 	ensured, err := host.EnsureProjectOpencode(ctx, ensureReq)
 	if err != nil {
@@ -72,7 +72,7 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 		}
 	}
 	// Session rules override agent defaults; restore these after the catch-all.
-	rules = append(rules, factoryExternalDirectoryRules()...)
+	rules = append(rules, ExternalDirectoryRules()...)
 	rules = append(rules,
 		platforms.PermissionRule{Permission: "bash", Pattern: "*", Action: "deny"},
 		platforms.PermissionRule{Permission: "edit", Pattern: "*", Action: "deny"},
@@ -84,7 +84,7 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 	for _, r := range req.PermissionRules {
 		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})
 	}
-	created, err := l.server.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port()}, rules)
+	created, err := l.m.deps.Sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port()}, rules)
 	if err != nil {
 		var cleanup *sessionsvc.ConfiguredSessionCleanupError
 		if errors.As(err, &cleanup) {
@@ -95,7 +95,7 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 	return factory.PlanningSession{Platform: platformID, ID: created.ID}, nil
 }
 
-func factoryExternalDirectoryRules() []platforms.PermissionRule {
+func ExternalDirectoryRules() []platforms.PermissionRule {
 	home, _ := os.UserHomeDir()
 	if !filepath.IsAbs(home) {
 		return nil
@@ -152,14 +152,14 @@ func factoryExternalDirectoryRules() []platforms.PermissionRule {
 	return rules
 }
 
-func (l factoryPlanningLauncher) ensureMCP(ctx context.Context, ensured *hostsvc.EnsureProjectOpencodeResult) error {
-	client := &http.Client{Timeout: 5 * time.Second, Transport: l.server.openCodeAuth.Transport(http.DefaultTransport)}
+func (l PlanningLauncher) ensureMCP(ctx context.Context, ensured *hostsvc.EnsureProjectOpencodeResult) error {
+	client := &http.Client{Timeout: 5 * time.Second, Transport: l.m.deps.OpenCodeAuth().Transport(http.DefaultTransport)}
 	loadedURL, err := planningMCPURL(ctx, client, ensured.Endpoint)
 	if err != nil {
 		return fmt.Errorf("check planning MCP config: %w", err)
 	}
-	if loadedURL != l.server.mcpServerURL() {
-		return fmt.Errorf("planning MCP is configured for %q; restart OpenCode after configuring %s", loadedURL, l.server.mcpServerURL())
+	if loadedURL != l.m.deps.MCPURL() {
+		return fmt.Errorf("planning MCP is configured for %q; restart OpenCode after configuring %s", loadedURL, l.m.deps.MCPURL())
 	}
 	status, err := planningMCPStatus(ctx, client, ensured.Endpoint)
 	if err != nil {
@@ -184,7 +184,7 @@ func (l factoryPlanningLauncher) ensureMCP(ctx context.Context, ensured *hostsvc
 	}
 	status, err = planningMCPStatus(ctx, client, ensured.Endpoint)
 	if err != nil || status != "connected" {
-		return fmt.Errorf("planning MCP is unavailable (status %q): restart OpenCode after configuring %s", status, l.server.mcpServerURL())
+		return fmt.Errorf("planning MCP is unavailable (status %q): restart OpenCode after configuring %s", status, l.m.deps.MCPURL())
 	}
 	return nil
 }
@@ -227,9 +227,9 @@ func planningGetJSON(ctx context.Context, client *http.Client, url string, targe
 	return json.NewDecoder(response.Body).Decode(target)
 }
 
-func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, session factory.PlanningSession, req factory.PlanningSessionRequest) error {
+func (l PlanningLauncher) PromptPlanningSession(ctx context.Context, session factory.PlanningSession, req factory.PlanningSessionRequest) error {
 	planningModel := req.Model
-	if adapter, ok := l.server.registry.Get(platforms.ID(session.Platform)); ok && planningModel == "" {
+	if adapter, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform)); ok && planningModel == "" {
 		if catalog, err := adapter.SessionModels(ctx, session.ID); err == nil && catalog != nil {
 			planningModel = factoryStrongModel(catalog.Models)
 		}
@@ -248,7 +248,7 @@ func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, sess
 	}
 	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the admitted repositories without modifying them. If this Epic's permission rules allow shell commands, use them only for research and inspection; do not write files:\n- %s\n\n%s\n\nFactory protocol: Submit the resulting issue graph with the factory MCP action %s using epic_id %s, attempt_id %s, and attempt_token %s. Give every manifest node a stable key, concise title, actionable description, and for implementation work acceptanceCriteria: 1–20 verifiable outcomes an independent validator will check. Add explicit edges from each dependent node to its blocker where ordering matters. Set a node's project when it targets a non-initial admitted repository; omission inherits the Epic's initial project. Do not link to /factory/epics/%s before submitting the full plan; that link renders an approve card. %s", req.EpicID, req.WorkID, strings.Join(req.Projects, "\n- "), body, action, req.EpicID, req.AttemptID, req.AgentToken, req.EpicID, ending)
 	prompt = factoryIssueProse + "\n\n" + prompt
-	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: planningModel})
+	return l.m.deps.Sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: planningModel})
 }
 
 func factoryStrongModel(models []platforms.SessionModel) string {
@@ -261,13 +261,13 @@ func factoryStrongModel(models []platforms.SessionModel) string {
 	return ""
 }
 
-func (l factoryPlanningLauncher) StopPlanningSession(ctx context.Context, session factory.PlanningSession) error {
+func (l PlanningLauncher) StopPlanningSession(ctx context.Context, session factory.PlanningSession) error {
 	// Stop the turn, preserving the session and its complete transcript.
-	return l.server.sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
+	return l.m.deps.Sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
 }
 
-func (l factoryPlanningLauncher) ProbePlanningSession(ctx context.Context, session factory.PlanningSession) (bool, error) {
-	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+func (l PlanningLauncher) ProbePlanningSession(ctx context.Context, session factory.PlanningSession) (bool, error) {
+	platform, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return false, fmt.Errorf("planning platform %q is unavailable", session.Platform)
 	}

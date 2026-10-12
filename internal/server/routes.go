@@ -118,16 +118,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
 	s.mountModules(mux)
-	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
-	mux.HandleFunc("/api/factory/queue", s.get(s.handleFactoryQueue))
-	mux.HandleFunc("/api/factory/recovery-gates/", s.requireAuth(s.handleFactoryRecoveryGate))
-	mux.HandleFunc("/api/factory/authority-gates/", s.requireAuth(s.handleFactoryAuthorityGate))
-	mux.HandleFunc("/api/factory/project-gates/", s.requireAuth(s.handleFactoryProjectGate))
-	mux.HandleFunc("/api/factory/configuration", s.requireAuth(s.handleFactoryConfiguration))
-	mux.HandleFunc("/api/factory/epics", s.requireAuth(s.handleFactoryEpics))
-	mux.HandleFunc("/api/factory/epics/", s.requireAuth(s.handleFactoryEpic))
-	mux.HandleFunc("/api/factory/formulas", s.requireAuth(s.handleFactoryFormulas))
-	mux.HandleFunc("/api/factory/formulas/", s.requireAuth(s.handleFactoryFormulas))
 
 	// MCP server — localhost-only, enabled by default.
 	// Password auth applies here like everywhere else. Clients that

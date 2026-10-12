@@ -29,7 +29,7 @@ func TestFactoryLegacyDetachedTarget(t *testing.T) {
 	}})
 	srv := New(nil, nil, "", registry, nil)
 	srv.hostRouter = hostsvc.NewRouter(hostlocal.New(hostlocal.Deps{}))
-	branch, target, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationWorkspace(ctx, repo, "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
+	branch, target, err := (srv.factoryModule().ImplementationLauncher()).ResolveImplementationWorkspace(ctx, repo, "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
 	if err != nil || branch != "factory/epic" || target != "main" {
 		t.Fatalf("legacy detached workspace = %q/%q, %v", branch, target, err)
 	}

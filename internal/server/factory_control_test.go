@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -61,7 +62,7 @@ func newControlFixture(t *testing.T) *controlFixture {
 		epics:  []factory.WorkEpic{{ID: "epic-1", Goal: "Ship", Status: "open", InitialProject: "/repo", Projects: []model.EpicProject{{Path: "/repo"}, {Path: "/other", Removable: true}}}},
 		issues: []factory.Issue{{ID: "issue-1", EpicID: "epic-1", Kind: "implementation", Title: "Transport", Status: "closed", Outcome: "failed", OutcomeReason: "merged branch", Recovery: &factory.RecoveryGate{IssueID: "gate-1"}}},
 	}
-	f.srv.factory = f.svc
+	useFactory(f.srv, f.svc)
 	f.srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
 	}})
@@ -132,7 +133,7 @@ func TestFactoryControlSessionIsOnePerEpic(t *testing.T) {
 	}
 
 	// Factory news reaches the same session.
-	f.srv.factoryAttentionToControl(t.Context(), "epic-1", []string{"Recovery required: Transport"})
+	f.srv.factoryModule().AttentionToControl(t.Context(), "epic-1", []string{"Recovery required: Transport"})
 	deadline := time.Now().Add(5 * time.Second)
 	for !f.delivered(t, "Recovery required: Transport") {
 		if time.Now().After(deadline) {
@@ -162,7 +163,7 @@ func TestFactoryControlMessagesRespectEpicPlanningModel(t *testing.T) {
 			f.platform.sessionModelsFn = func() *platforms.SessionModelsResponse {
 				return &platforms.SessionModelsResponse{Models: []platforms.SessionModel{{Provider: "test", Model: "astra", IsAvailable: true}}}
 			}
-			if _, err := f.srv.postFactoryControl(t.Context(), "epic-1", "First update"); err != nil {
+			if _, err := f.srv.factoryModule().PostControl(t.Context(), "epic-1", "First update"); err != nil {
 				t.Fatal(err)
 			}
 			if len(f.sent) != 1 || f.sent[0].Model != selected {
@@ -173,7 +174,7 @@ func TestFactoryControlMessagesRespectEpicPlanningModel(t *testing.T) {
 				t.Fatalf("first update = %#v, %v, want model %q", queued, err, selected)
 			}
 			f.svc.epics[0].Models.Plan = "test/new-planner"
-			if _, err := f.srv.postFactoryControl(t.Context(), "epic-1", "Next update"); err != nil {
+			if _, err := f.srv.factoryModule().PostControl(t.Context(), "epic-1", "Next update"); err != nil {
 				t.Fatal(err)
 			}
 			queued, err = f.srv.stateDB.ListQueuedMessages(t.Context(), "local-agent", "control-1")
@@ -186,7 +187,7 @@ func TestFactoryControlMessagesRespectEpicPlanningModel(t *testing.T) {
 
 func TestFactoryControlUpdateRequiresEpic(t *testing.T) {
 	f := newControlFixture(t)
-	if _, err := f.srv.postFactoryControl(t.Context(), "missing", "Update"); !errors.Is(err, factory.ErrWorkEpicNotFound) {
+	if _, err := f.srv.factoryModule().PostControl(t.Context(), "missing", "Update"); !errors.Is(err, factory.ErrWorkEpicNotFound) {
 		t.Fatalf("missing Epic update = %v", err)
 	}
 	if f.creates != 0 || len(f.sent) != 0 {
@@ -223,7 +224,7 @@ func TestFactoryDiscussIssueWithManyInstalledSkills(t *testing.T) {
 			t.Fatalf("missing restriction %#v", rule)
 		}
 	}
-	for _, rule := range factoryExternalDirectoryRules() {
+	for _, rule := range factorymod.ExternalDirectoryRules() {
 		if !slices.Contains(f.rules.Rules, rule) {
 			t.Fatalf("missing skill rule %#v", rule)
 		}
@@ -257,16 +258,16 @@ func TestFactoryControlProposalsRunOnlyOnConfirmation(t *testing.T) {
 		{"mutate_graph", map[string]string{"mutation_json": `{"bogus":1}`}, "mutation_json is invalid"},
 		{"resolve_recovery", map[string]string{"recovery_gate_id": "gate-1", "decision": "maybe"}, "decision must be"},
 	} {
-		if _, err := f.srv.proposeFactoryControl(ctx, "epic-1", tc.action, tc.args, "Do it"); err == nil || !strings.Contains(err.Error(), tc.want) {
+		if _, err := f.srv.factoryModule().ProposeControl(ctx, "epic-1", tc.action, tc.args, "Do it"); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s = %v, want %q", tc.action, err, tc.want)
 		}
 	}
-	if _, err := f.srv.proposeFactoryControl(ctx, "epic-1", "pause", nil, " "); err == nil {
+	if _, err := f.srv.factoryModule().ProposeControl(ctx, "epic-1", "pause", nil, " "); err == nil {
 		t.Fatal("a proposal without a summary was accepted")
 	}
 	propose := func(action string, args map[string]string) string {
 		t.Helper()
-		id, err := f.srv.proposeFactoryControl(ctx, "epic-1", action, args, "Do "+action)
+		id, err := f.srv.factoryModule().ProposeControl(ctx, "epic-1", action, args, "Do "+action)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -327,7 +328,7 @@ func TestFactoryControlProposalsRunOnlyOnConfirmation(t *testing.T) {
 	}
 
 	f.svc.epics[0].Status = "closed"
-	if _, err := f.srv.proposeFactoryControl(ctx, "epic-1", "pause", nil, "Pause"); err == nil {
+	if _, err := f.srv.factoryModule().ProposeControl(ctx, "epic-1", "pause", nil, "Pause"); err == nil {
 		t.Fatal("proposal on a closed Epic accepted")
 	}
 }
@@ -354,15 +355,15 @@ func TestFactoryControlSessionSurvivesOwnsMisses(t *testing.T) {
 	registry := platforms.NewRegistry()
 	registry.Register(wrapped)
 	f.srv.registry = registry
-	if _, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err != nil || f.creates != 1 {
+	if _, _, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1"); err != nil || f.creates != 1 {
 		t.Fatalf("lifecycle hit = %v, creates %d", err, f.creates)
 	}
 	wrapped.err = errors.New("database is locked")
-	if _, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err == nil || f.creates != 1 {
+	if _, _, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1"); err == nil || f.creates != 1 {
 		t.Fatalf("transient error = %v, creates %d", err, f.creates)
 	}
 	wrapped.err = platforms.ErrNotFound
-	if _, created, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err != nil || !created || f.creates != 2 {
+	if _, created, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1"); err != nil || !created || f.creates != 2 {
 		t.Fatalf("gone = %v, created %v, creates %d", err, created, f.creates)
 	}
 }
@@ -376,7 +377,7 @@ func TestFactoryControlSessionIsNotAdoptedByAClosingEpic(t *testing.T) {
 	f.platform.sendMessageFn = func(platforms.SendMessageRequest) error {
 		return f.srv.stateDB.CloseFactoryEpic(t.Context(), "epic-1", true)
 	}
-	if _, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err == nil || !aborted {
+	if _, _, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1"); err == nil || !aborted {
 		t.Fatalf("closing epic = %v, aborted %v", err, aborted)
 	}
 	if _, found, _ := f.srv.stateDB.GetFactoryControlSession(t.Context(), "epic-1"); found {
@@ -394,13 +395,13 @@ func TestFactoryControlSessionIsNotAdoptedByAClosingEpic(t *testing.T) {
 // A confirmed proposal finishes even when the client goes away.
 func TestFactoryControlConfirmOutlivesTheRequest(t *testing.T) {
 	f := newControlFixture(t)
-	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "pause", nil, "Pause")
+	id, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "pause", nil, "Pause")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	f.svc.onSetPaused = cancel // the client disconnects mid-run
-	action, err := f.srv.decideFactoryControlAction(ctx, f.srv.stateDB, "epic-1", id, "confirm")
+	action, err := f.srv.factoryModule().DecideControlAction(ctx, "epic-1", id, "confirm")
 	if err != nil || action.Status != "done" {
 		t.Fatalf("confirm = %#v, %v", action, err)
 	}
@@ -413,15 +414,15 @@ func TestFactoryControlConfirmOutlivesTheRequest(t *testing.T) {
 // A proposal whose run outlives its deadline still records a terminal outcome.
 func TestFactoryControlConfirmRecordsATimedOutRun(t *testing.T) {
 	f := newControlFixture(t)
-	previous := factoryControlRunTimeout
-	factoryControlRunTimeout = 20 * time.Millisecond
-	t.Cleanup(func() { factoryControlRunTimeout = previous })
-	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "pause", nil, "Pause")
+	previous := factorymod.ControlRunTimeout
+	factorymod.ControlRunTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { factorymod.ControlRunTimeout = previous })
+	id, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "pause", nil, "Pause")
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.svc.onSetPaused = func() { time.Sleep(50 * time.Millisecond) } // runs past its deadline
-	if _, err := f.srv.decideFactoryControlAction(t.Context(), f.srv.stateDB, "epic-1", id, "confirm"); err != nil {
+	if _, err := f.srv.factoryModule().DecideControlAction(t.Context(), "epic-1", id, "confirm"); err != nil {
 		t.Fatal(err)
 	}
 	stored, _, _ := f.srv.stateDB.GetFactoryControlAction(t.Context(), "epic-1", id)

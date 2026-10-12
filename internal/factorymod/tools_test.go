@@ -1,4 +1,4 @@
-package mcp_test
+package factorymod
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
 	"github.com/sirupsen/logrus"
@@ -62,7 +61,7 @@ func (f *fakeFactoryService) ProposeFactoryControl(_ context.Context, epicID, ac
 
 func TestFactoryControlToolOnlyProposes(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +204,7 @@ func (f *fakeFactoryService) ListProposals(_ context.Context, epicID string) ([]
 
 func TestFactoryToolActions(t *testing.T) {
 	svc := &fakeFactoryService{issues: []factory.Issue{{ID: "epic-1.child", Kind: "mol", FormulaID: "custom/child", FormulaVersion: 1, FormulaHash: "child-hash", Bindings: map[string]string{"goal": "Ship"}}}}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +237,7 @@ func TestFactoryToolActions(t *testing.T) {
 }
 
 func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: &fakeFactoryService{}})...)
+	srv, err := mcptest.NewServer(t, testTools(&fakeFactoryService{})...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +286,7 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 
 func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 	svc := &fakeFactoryService{err: factory.ErrActionNotPermitted, epic: factory.WorkEpic{ID: "epic-1"}, issues: []factory.Issue{{ID: "gate-1"}}}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +332,7 @@ func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 
 func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +364,7 @@ func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 
 func TestFactoryToolMutateGraphUsesStrictInput(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +393,7 @@ func TestFactoryToolMutateGraphUsesStrictInput(t *testing.T) {
 
 func TestFactoryToolPlanningActions(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +448,7 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 
 func TestFactoryToolImportsExistingPlan(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +484,7 @@ func TestFactoryToolImportsExistingPlan(t *testing.T) {
 
 func TestFactoryToolCompletesImplementationAttempt(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,7 +498,7 @@ func TestFactoryToolCompletesImplementationAttempt(t *testing.T) {
 
 func TestFactoryToolFormulaAction(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +531,7 @@ func TestFactoryToolFormulaAction(t *testing.T) {
 
 func TestFactoryToolFormulaValidationReturnsFeedback(t *testing.T) {
 	svc := &fakeFactoryService{err: fmt.Errorf("%w: TOML source is required", factory.ErrInvalidFormula)}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +546,7 @@ func TestFactoryToolReturnsActionableRequestErrors(t *testing.T) {
 	hook := logtest.NewLocal(logrus.StandardLogger())
 	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
 	svc := &fakeFactoryService{err: fmt.Errorf("%w: factory worktree has uncommitted changes", factory.ErrInvalidRequest)}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -577,7 +576,7 @@ func TestFactoryToolReturnsActionableRequestErrors(t *testing.T) {
 
 func TestFactoryToolCapacityPolicyActions(t *testing.T) {
 	svc := &fakeFactoryService{capacityPolicy: factory.CapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4, ProjectOverrides: map[string]int{}}}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +595,7 @@ func TestFactoryToolCapacityPolicyActions(t *testing.T) {
 
 func TestFactoryToolPlanGateActionsRequireExactProposal(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,7 +610,7 @@ func TestFactoryToolPlanGateActionsRequireExactProposal(t *testing.T) {
 
 func TestFactoryToolRecoveryActions(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}

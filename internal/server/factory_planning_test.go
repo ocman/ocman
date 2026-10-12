@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -22,26 +22,6 @@ type factoryPlanningHost struct {
 	hostsvc.Host
 	ensured, restarted *hostsvc.EnsureProjectOpencodeResult
 	restartCalls       int
-}
-
-func TestFactoryStrongModel(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		models []platforms.SessionModel
-		want   string
-	}{
-		{"none", nil, ""},
-		{"balanced only", []platforms.SessionModel{{Provider: "p", Model: "opus", IsAvailable: true}}, ""},
-		{"unavailable", []platforms.SessionModel{{Provider: "p", Model: "fable"}}, ""},
-		{"astra", []platforms.SessionModel{{Provider: "p", Model: "gpt-6-astra", IsAvailable: true}}, "p/gpt-6-astra"},
-		{"display name", []platforms.SessionModel{{Provider: "p", Model: "strong", ModelName: "Fable", IsAvailable: true}}, "p/strong"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := factoryStrongModel(tc.models); got != tc.want {
-				t.Fatalf("model = %q, want %q", got, tc.want)
-			}
-		})
-	}
 }
 
 func (h *factoryPlanningHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
@@ -110,7 +90,7 @@ func factorySkillRulesFixture(t *testing.T) []platforms.PermissionRule {
 func TestFactoryExternalDirectoryRulesRejectsRelativeHome(t *testing.T) {
 	t.Setenv("HOME", "relative")
 	t.Setenv("XDG_CONFIG_HOME", "")
-	if rules := factoryExternalDirectoryRules(); len(rules) != 0 {
+	if rules := factorymod.ExternalDirectoryRules(); len(rules) != 0 {
 		t.Fatalf("rules = %#v", rules)
 	}
 }
@@ -141,7 +121,7 @@ func TestFactoryExternalDirectoryRulesDataPaths(t *testing.T) {
 			if err := os.Symlink(target, output); err != nil {
 				t.Fatal(err)
 			}
-			rules := factoryExternalDirectoryRules()
+			rules := factorymod.ExternalDirectoryRules()
 			if dataHome == "bad*path" {
 				if len(rules) != 0 {
 					t.Fatalf("wildcard path granted access: %#v", rules)
@@ -159,7 +139,7 @@ func TestFactoryExternalDirectoryRulesDataPaths(t *testing.T) {
 }
 
 func TestFactoryPlanningLauncherRejectsUnsafeProjectPatterns(t *testing.T) {
-	launcher := factoryPlanningLauncher{server: New(nil, nil, "", platforms.NewRegistry(), nil)}
+	launcher := New(nil, nil, "", platforms.NewRegistry(), nil).factoryModule().PlanningLauncher()
 	for _, project := range []string{"relative", "/other/../repo", "/other*", "/other[repo"} {
 		if _, err := launcher.LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo", Projects: []string{"/repo", project}}); err == nil {
 			t.Fatalf("accepted project path %q", project)
@@ -193,14 +173,14 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	}})
 
 	req := factory.PlanningSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "fa_1", AgentToken: "fat_secret", Repository: "/repo", Projects: []string{"/repo", "/other"}, Title: "Plan: Ship"}
-	got, err := (factoryPlanningLauncher{server: srv}).LaunchPlanningSession(context.Background(), req)
+	got, err := (srv.factoryModule().PlanningLauncher()).LaunchPlanningSession(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != (factory.PlanningSession{Platform: "local-agent", ID: "session-1"}) || ensured != "/repo" {
 		t.Fatalf("session = %#v, ensured = %q", got, ensured)
 	}
-	if err := (factoryPlanningLauncher{server: srv}).PromptPlanningSession(context.Background(), got, req); err != nil {
+	if err := (srv.factoryModule().PlanningLauncher()).PromptPlanningSession(context.Background(), got, req); err != nil {
 		t.Fatal(err)
 	}
 	if created != (platforms.CreateSessionRequest{Directory: "/repo", Title: "Plan: Ship", Port: strings.TrimPrefix(endpoint, "http://127.0.0.1:")}) {
@@ -236,7 +216,7 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 		t.Fatalf("prompt does not end with approval link: %q", sent.Message)
 	}
 	req.ScopeExpansion = true
-	if err := (factoryPlanningLauncher{server: srv}).PromptPlanningSession(context.Background(), got, req); err != nil {
+	if err := (srv.factoryModule().PlanningLauncher()).PromptPlanningSession(context.Background(), got, req); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(sent.Message, "submit_scope_plan") || !strings.Contains(sent.Message, "Do not ask for another approval") || strings.Contains(sent.Message, "At approval") {
@@ -245,7 +225,7 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 }
 
 func TestFactoryPlanningLauncherRejectsUnsafeProjectPattern(t *testing.T) {
-	launcher := factoryPlanningLauncher{server: New(nil, nil, "", platforms.NewRegistry(), nil)}
+	launcher := New(nil, nil, "", platforms.NewRegistry(), nil).factoryModule().PlanningLauncher()
 	_, err := launcher.LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo", Projects: []string{"/repo", "/other*"}})
 	if err == nil || !strings.Contains(err.Error(), "invalid admitted project path") {
 		t.Fatalf("LaunchPlanningSession error = %v", err)
@@ -267,7 +247,7 @@ func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *test
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
 	}})
 
-	got, err := (factoryPlanningLauncher{server: srv}).LaunchPlanningSession(context.Background(), factory.PlanningSessionRequest{Repository: "/repo", Title: "Plan: Ship"})
+	got, err := (srv.factoryModule().PlanningLauncher()).LaunchPlanningSession(context.Background(), factory.PlanningSessionRequest{Repository: "/repo", Title: "Plan: Ship"})
 	if err == nil || got != (factory.PlanningSession{Platform: "local-agent", ID: "restricted-session"}) {
 		t.Fatalf("LaunchPlanningSession = %#v, %v", got, err)
 	}
@@ -298,64 +278,10 @@ func TestFactoryPlanningLauncherRejectsStaleMCPConfigWithoutRestart(t *testing.T
 	srv.mcpAddr = "127.0.0.1:8227"
 	srv.hostRouter = hostsvc.NewRouter(host)
 
-	if _, err := (factoryPlanningLauncher{server: srv}).LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo"}); err == nil || !strings.Contains(err.Error(), "restart OpenCode after configuring") {
+	if _, err := (srv.factoryModule().PlanningLauncher()).LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo"}); err == nil || !strings.Contains(err.Error(), "restart OpenCode after configuring") {
 		t.Fatalf("LaunchPlanningSession error = %v", err)
 	}
 	if host.restartCalls != 0 || created.Port != "" {
 		t.Fatalf("restart calls = %d, create = %#v", host.restartCalls, created)
-	}
-}
-
-func TestFactoryPlanningMCPUsesOpenCodeAuth(t *testing.T) {
-	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, password, ok := r.BasicAuth()
-		if !ok || password != "secret" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		if r.URL.Path == "/config" {
-			_, _ = w.Write([]byte(`{"mcp":{"ocman":{"url":"http://localhost:8229/mcp"}}}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"ocman":{"status":"connected"}}`))
-	}))
-	t.Cleanup(endpoint.Close)
-	srv := New(nil, nil, "", platforms.NewRegistry(), nil).WithOpenCodeAuth(ocapi.New("secret"))
-	if err := (factoryPlanningLauncher{server: srv}).ensureMCP(t.Context(), &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint.URL}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestFactoryPlanningMCPConnectsAndReportsUpstreamFailures(t *testing.T) {
-	connected := false
-	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/config":
-			_, _ = w.Write([]byte(`{"mcp":{"ocman":{"url":"http://localhost:8229/mcp"}}}`))
-		case "/mcp":
-			status := "disconnected"
-			if connected {
-				status = "connected"
-			}
-			_, _ = w.Write([]byte(`{"ocman":{"status":"` + status + `"}}`))
-		case "/mcp/ocman/connect":
-			connected = true
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(endpoint.Close)
-	launcher := factoryPlanningLauncher{server: New(nil, nil, "", platforms.NewRegistry(), nil)}
-	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint.URL}); err != nil || !connected {
-		t.Fatalf("ensureMCP = %v, connected = %v", err, connected)
-	}
-
-	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(broken.Close)
-	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureProjectOpencodeResult{Endpoint: broken.URL}); err == nil || !strings.Contains(err.Error(), "check planning MCP config") {
-		t.Fatalf("ensureMCP error = %v", err)
 	}
 }

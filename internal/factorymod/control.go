@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const factoryControlProtocolVersion = 3
+const ControlProtocolVersion = 3
 
 const factoryControlProtocol = `You are the control session for Factory Work Epic %[1]s: %[2]s. The user steers this Epic from here, and Factory posts every decision it needs into this conversation.
 
@@ -50,11 +50,11 @@ type factoryControlStore interface {
 	DismissFactoryControlAlternatives(context.Context, string, string) error
 }
 
-func (s *Server) factoryControlStore() (factoryControlStore, error) {
-	if s.stateDB == nil {
+func (m *Module) factoryControlStore() (factoryControlStore, error) {
+	if m.deps.Store == nil {
 		return nil, factory.ErrFactoryUnavailable
 	}
-	return s.stateDB, nil
+	return m.deps.Store, nil
 }
 
 type factoryControlEnsured struct {
@@ -62,24 +62,24 @@ type factoryControlEnsured struct {
 	created bool
 }
 
-// ensureFactoryControlSession returns the Epic's control session, creating it
+// EnsureControlSession returns the Epic's control session, creating it
 // (or replacing one that no longer exists) on first use. Concurrent callers
 // for one Epic share a single launch.
-func (s *Server) ensureFactoryControlSession(ctx context.Context, epicID string) (state.FactoryControlSession, bool, error) {
-	result, err, _ := s.factoryControlFlight.Do(epicID, func() (any, error) {
-		control, created, err := s.ensureFactoryControlSessionOnce(context.WithoutCancel(ctx), epicID)
+func (m *Module) EnsureControlSession(ctx context.Context, epicID string) (state.FactoryControlSession, bool, error) {
+	result, err, _ := m.controlFlight.Do(epicID, func() (any, error) {
+		control, created, err := m.ensureFactoryControlSessionOnce(context.WithoutCancel(ctx), epicID)
 		return factoryControlEnsured{control, created}, err
 	})
 	ensured, _ := result.(factoryControlEnsured)
 	return ensured.control, ensured.created, err
 }
 
-func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID string) (state.FactoryControlSession, bool, error) {
-	store, err := s.factoryControlStore()
+func (m *Module) ensureFactoryControlSessionOnce(ctx context.Context, epicID string) (state.FactoryControlSession, bool, error) {
+	store, err := m.factoryControlStore()
 	if err != nil {
 		return state.FactoryControlSession{}, false, err
 	}
-	epic, err := s.factory.GetWorkEpic(ctx, epicID)
+	epic, err := m.svc.GetWorkEpic(ctx, epicID)
 	if err != nil {
 		return state.FactoryControlSession{}, false, err
 	}
@@ -99,37 +99,37 @@ func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 		return state.FactoryControlSession{}, false, err
 	}
 	if found {
-		alive, err := s.factoryControlAlive(ctx, control)
+		alive, err := m.factoryControlAlive(ctx, control)
 		if err != nil || alive {
-			if err == nil && control.ProtocolVersion < factoryControlProtocolVersion {
-				err = s.queueSvc().Enqueue(ctx, control.Platform, false, platforms.SendMessageRequest{SessionID: control.SessionID, Message: "Updated Factory control instructions. These replace the previous control protocol.\n\n" + prompt, Model: epic.Models.Plan})
+			if err == nil && control.ProtocolVersion < ControlProtocolVersion {
+				err = m.deps.Enqueue(ctx, control.Platform, false, platforms.SendMessageRequest{SessionID: control.SessionID, Message: "Updated Factory control instructions. These replace the previous control protocol.\n\n" + prompt, Model: epic.Models.Plan})
 				if err == nil {
-					control.ProtocolVersion = factoryControlProtocolVersion
+					control.ProtocolVersion = ControlProtocolVersion
 					_, err = store.SetFactoryControlSession(ctx, control, time.Now())
 				}
 			}
 			return control, false, err
 		}
 	}
-	launcher := factoryPlanningLauncher{server: s}
+	launcher := PlanningLauncher{m}
 	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Projects: projects, Title: "Control: " + epic.Goal + " (@factory)"},
 		platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"},
 		platforms.PermissionRule{Permission: "mcp_factory_control", Pattern: "factory_control", Action: "allow"})
 	if err != nil {
 		return state.FactoryControlSession{}, false, err
 	}
-	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: epic.Models.Plan}); err != nil {
+	if err := m.deps.Sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: epic.Models.Plan}); err != nil {
 		// A lost response may mean the prompt was accepted: stop the turn,
 		// keep the history, and never adopt a session without its protocol.
 		_ = launcher.StopPlanningSession(ctx, session)
 		return state.FactoryControlSession{}, false, fmt.Errorf("start control session: %w", err)
 	}
-	control = state.FactoryControlSession{EpicID: epicID, Platform: session.Platform, SessionID: session.ID, ProtocolVersion: factoryControlProtocolVersion}
+	control = state.FactoryControlSession{EpicID: epicID, Platform: session.Platform, SessionID: session.ID, ProtocolVersion: ControlProtocolVersion}
 	adopted, err := store.SetFactoryControlSession(ctx, control, time.Now())
 	if err == nil && !adopted {
 		// The Epic closed meanwhile: stop the session and keep it out of view.
 		_ = launcher.StopPlanningSession(ctx, session)
-		_ = s.stateDB.ArchiveSession(ctx, session.Platform, session.ID, math.MaxInt64)
+		_ = m.deps.Store.ArchiveSession(ctx, session.Platform, session.ID, math.MaxInt64)
 		err = fmt.Errorf("%w: the Epic is closed", factory.ErrInvalidRequest)
 	}
 	return control, adopted, err
@@ -137,8 +137,8 @@ func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 
 // factoryControlAlive replaces a session only when it is known to be gone; a
 // transient read error must not orphan the user's conversation.
-func (s *Server) factoryControlAlive(ctx context.Context, control state.FactoryControlSession) (bool, error) {
-	platform, ok := s.registry.Get(platforms.ID(control.Platform))
+func (m *Module) factoryControlAlive(ctx context.Context, control state.FactoryControlSession) (bool, error) {
+	platform, ok := m.deps.Registry.Get(platforms.ID(control.Platform))
 	if !ok {
 		return false, nil
 	}
@@ -156,38 +156,38 @@ func (s *Server) factoryControlAlive(ctx context.Context, control state.FactoryC
 	return err == nil, err
 }
 
-// postFactoryControl hands Factory news to the Epic's control session. It is
+// PostControl hands Factory news to the Epic's control session. It is
 // queued, so it never interleaves into a turn there, including the first.
-func (s *Server) postFactoryControl(ctx context.Context, epicID, message string) (state.FactoryControlSession, error) {
-	epic, err := s.factory.GetWorkEpic(ctx, epicID)
+func (m *Module) PostControl(ctx context.Context, epicID, message string) (state.FactoryControlSession, error) {
+	epic, err := m.svc.GetWorkEpic(ctx, epicID)
 	if err != nil {
 		return state.FactoryControlSession{}, err
 	}
-	control, created, err := s.ensureFactoryControlSession(ctx, epicID)
+	control, created, err := m.EnsureControlSession(ctx, epicID)
 	if err != nil {
 		return control, err
 	}
-	return control, s.queueSvc().Enqueue(ctx, control.Platform, created, platforms.SendMessageRequest{SessionID: control.SessionID, Message: message, Model: epic.Models.Plan})
+	return control, m.deps.Enqueue(ctx, control.Platform, created, platforms.SendMessageRequest{SessionID: control.SessionID, Message: message, Model: epic.Models.Plan})
 }
 
-// factoryAttentionToControl posts the decisions Factory newly needs into the
+// AttentionToControl posts the decisions Factory newly needs into the
 // Epic's control session, off the dispatch path.
 // ponytail: a failed post is only logged; the Inbox keeps the decision and a
 // new control session starts by reporting everything waiting for the user.
-func (s *Server) factoryAttentionToControl(ctx context.Context, epicID string, actions []string) {
+func (m *Module) AttentionToControl(ctx context.Context, epicID string, actions []string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 		message := "Factory needs your decision:\n- " + strings.Join(actions, "\n- ") + "\n\nExplain each briefly and recommend what to do."
-		if _, err := s.postFactoryControl(ctx, epicID, message); err != nil {
+		if _, err := m.PostControl(ctx, epicID, message); err != nil {
 			logrus.WithError(err).WithField("epic", epicID).Warn("factory: control session update failed")
 		}
 	}()
 }
 
 // discussFactoryIssue asks the control session to look into one Issue.
-func (s *Server) discussFactoryIssue(ctx context.Context, epicID, issueID string) (state.FactoryControlSession, error) {
-	issues, err := s.factory.ListIssues(ctx, epicID)
+func (m *Module) discussFactoryIssue(ctx context.Context, epicID, issueID string) (state.FactoryControlSession, error) {
+	issues, err := m.svc.ListIssues(ctx, epicID)
 	if err != nil {
 		return state.FactoryControlSession{}, err
 	}
@@ -199,7 +199,7 @@ func (s *Server) discussFactoryIssue(ctx context.Context, epicID, issueID string
 		if err != nil {
 			return state.FactoryControlSession{}, err
 		}
-		return s.postFactoryControl(ctx, epicID, fmt.Sprintf("Look into Issue %s (%s). Its current state:\n\n```json\n%s\n```\n\nExplain what went wrong and propose the smallest safe fix.", issue.Title, issue.ID, evidence))
+		return m.PostControl(ctx, epicID, fmt.Sprintf("Look into Issue %s (%s). Its current state:\n\n```json\n%s\n```\n\nExplain what went wrong and propose the smallest safe fix.", issue.Title, issue.ID, evidence))
 	}
 	return state.FactoryControlSession{}, factory.ErrInvalidRequest
 }
@@ -221,9 +221,9 @@ var factoryControlActions = map[string][]string{
 	"resolve_project":   {"project_gate_id", "decision"},
 }
 
-// proposeFactoryControl records an agent's proposal; it does nothing until
+// ProposeControl records an agent's proposal; it does nothing until
 // the user confirms its card.
-func (s *Server) proposeFactoryControl(ctx context.Context, epicID, action string, args map[string]string, summary string) (string, error) {
+func (m *Module) ProposeControl(ctx context.Context, epicID, action string, args map[string]string, summary string) (string, error) {
 	required, ok := factoryControlActions[action]
 	if !ok {
 		return "", fmt.Errorf("%w: unsupported factory control action", factory.ErrInvalidRequest)
@@ -247,13 +247,13 @@ func (s *Server) proposeFactoryControl(ctx context.Context, epicID, action strin
 	if err := validateFactoryControlDecision(action, args); err != nil {
 		return "", err
 	}
-	epic, err := s.factory.GetWorkEpic(ctx, epicID)
+	epic, err := m.svc.GetWorkEpic(ctx, epicID)
 	if err != nil {
 		return "", err
 	}
 	requestedProject := ""
 	if action == "resolve_project" && args["decision"] == "approve" {
-		issues, err := s.factory.ListIssues(ctx, epicID)
+		issues, err := m.svc.ListIssues(ctx, epicID)
 		if err != nil {
 			return "", err
 		}
@@ -270,7 +270,7 @@ func (s *Server) proposeFactoryControl(ctx context.Context, epicID, action strin
 	if epic.Status == "closed" {
 		return "", fmt.Errorf("%w: the Epic is closed", factory.ErrInvalidRequest)
 	}
-	store, err := s.factoryControlStore()
+	store, err := m.factoryControlStore()
 	if err != nil {
 		return "", err
 	}

@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"bytes"
@@ -11,8 +11,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-func (l factoryImplementationLauncher) RecoveryResponseDelivered(ctx context.Context, session factory.PlanningSession, gateID string) (bool, error) {
-	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+func (l ImplementationLauncher) RecoveryResponseDelivered(ctx context.Context, session factory.PlanningSession, gateID string) (bool, error) {
+	platform, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return false, errors.New("implementation platform is unavailable")
 	}
@@ -32,13 +32,13 @@ func (l factoryImplementationLauncher) RecoveryResponseDelivered(ctx context.Con
 	return false, nil
 }
 
-func (l factoryImplementationLauncher) ResumeImplementationSession(ctx context.Context, session factory.PlanningSession, gateID, response string) error {
+func (l ImplementationLauncher) ResumeImplementationSession(ctx context.Context, session factory.PlanningSession, gateID, response string) error {
 	if found, err := l.RecoveryResponseDelivered(ctx, session, gateID); found || err != nil {
 		return err
 	}
 	marker := "Factory recovery response for gate " + gateID + ":"
 	prompt := fmt.Sprintf("%s\n\n%s\n\nContinue the existing Factory Issue using this response.", marker, response)
-	err := l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
+	err := l.m.deps.Sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
 	if err != nil {
 		// A lost HTTP reply is not a lost prompt. Confirm acceptance without resending.
 		checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)

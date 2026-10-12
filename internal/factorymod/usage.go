@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -6,10 +6,11 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-type factoryAttemptUsage struct {
+type AttemptUsage struct {
 	AttemptID string                `json:"attemptId"`
 	WorkID    string                `json:"workId"`
 	Stage     string                `json:"stage"`
@@ -17,41 +18,41 @@ type factoryAttemptUsage struct {
 	Usage     *platforms.Usage      `json:"usage"`
 }
 
-type factoryEpicUsage struct {
+type EpicUsage struct {
 	Total      platforms.Usage            `json:"total"`
 	Phases     map[string]platforms.Usage `json:"phases"`
-	Attempts   []factoryAttemptUsage      `json:"attempts"`
+	Attempts   []AttemptUsage             `json:"attempts"`
 	Incomplete bool                       `json:"incomplete"`
 }
 
-func (s *Server) handleFactoryUsage(w http.ResponseWriter, r *http.Request, epicID string) {
-	if _, err := s.factory.GetWorkEpic(r.Context(), epicID); err != nil {
-		writeFactoryError(w, err)
+func (m *Module) handleFactoryUsage(w http.ResponseWriter, r *http.Request, epicID string) {
+	if _, err := m.svc.GetWorkEpic(r.Context(), epicID); err != nil {
+		WriteError(w, err)
 		return
 	}
-	if s.stateDB == nil {
-		writeFactoryError(w, factory.ErrFactoryUnavailable)
+	if m.deps.Store == nil {
+		WriteError(w, factory.ErrFactoryUnavailable)
 		return
 	}
-	attempts, err := s.stateDB.ListFactoryAttempts(r.Context(), epicID)
+	attempts, err := m.deps.Store.ListFactoryAttempts(r.Context(), epicID)
 	if err != nil {
-		serverError(w, "reading Factory attempts", err)
+		httpx.ServerError(w, "reading Factory attempts", err)
 		return
 	}
-	issues, err := s.stateDB.ListFactoryUsageIssues(r.Context(), epicID)
+	issues, err := m.deps.Store.ListFactoryUsageIssues(r.Context(), epicID)
 	if err != nil {
-		serverError(w, "reading Factory issues", err)
+		httpx.ServerError(w, "reading Factory issues", err)
 		return
 	}
-	usage := s.factoryUsage(r.Context(), attempts, issues)
+	usage := m.Usage(r.Context(), attempts, issues)
 	if err := r.Context().Err(); err != nil {
 		return
 	}
-	writeJSON(w, usage)
+	httpx.WriteJSON(w, usage)
 }
 
-func (s *Server) factoryUsage(ctx context.Context, attempts []model.FactoryAttempt, issues []model.NativeIssue) factoryEpicUsage {
-	result := factoryEpicUsage{Phases: map[string]platforms.Usage{"plan": {}, "implement": {}, "verify": {}, "deliver": {}}, Attempts: []factoryAttemptUsage{}}
+func (m *Module) Usage(ctx context.Context, attempts []model.FactoryAttempt, issues []model.NativeIssue) EpicUsage {
+	result := EpicUsage{Phases: map[string]platforms.Usage{"plan": {}, "implement": {}, "verify": {}, "deliver": {}}, Attempts: []AttemptUsage{}}
 	work := make(map[string]model.NativeIssue, len(issues))
 	for _, issue := range issues {
 		work[issue.ID] = issue
@@ -68,10 +69,10 @@ func (s *Server) factoryUsage(ctx context.Context, attempts []model.FactoryAttem
 		case issue.Workflow != nil && issue.Workflow.Kind == "verification":
 			stage = "verify"
 		}
-		row := factoryAttemptUsage{AttemptID: attempt.ID, WorkID: attempt.WorkID, Stage: stage, Session: attempt.Session}
+		row := AttemptUsage{AttemptID: attempt.ID, WorkID: attempt.WorkID, Stage: stage, Session: attempt.Session}
 		if attempt.Session.ID == "" {
 			row.Usage = &platforms.Usage{}
-		} else if adapter, ok := s.registry.Get(platforms.ID(attempt.Session.Platform)); ok {
+		} else if adapter, ok := m.deps.Registry.Get(platforms.ID(attempt.Session.Platform)); ok {
 			if reader, ok := adapter.(platforms.UsageReader); ok {
 				if sessions, err := reader.SessionUsage(ctx, attempt.Session.ID); err == nil {
 					row.Usage = &platforms.Usage{}

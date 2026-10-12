@@ -141,16 +141,12 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// MCP clients work without a cookie, without exposing the tools
 	// through a reverse proxy on the main port.
 	stopMCP := s.startMCPListener()
-	if listener, ok := s.factory.(interface {
-		OnAttention(func(context.Context, string, []string))
-	}); ok {
-		listener.OnAttention(s.factoryAttentionToControl)
-	}
-	if err := s.factory.Start(ctx); err != nil {
+	closeModules, err := launchModules(ctx, s.modules())
+	if err != nil {
 		stopMCP()
-		return fmt.Errorf("starting Factory: %w", err)
+		return err
 	}
-	defer s.factory.Close()
+	defer closeModules()
 	defer stopMCP()
 
 	// Sweep orphaned ephemeral terminal-viewer sessions left by an

@@ -17,11 +17,11 @@ import (
 
 func TestFactoryRecoveryWorkspaceConflictIsActionable(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = &fakeFactoryService{err: fmt.Errorf("%w by Issue claude-code-provider.1.3.105. Resume after that Issue releases the workspace", model.ErrRecoveryWorkspaceBusy)}
+	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("%w by Issue claude-code-provider.1.3.105. Resume after that Issue releases the workspace", model.ErrRecoveryWorkspaceBusy)})
 	req := httptest.NewRequest(http.MethodPost, "/api/factory/recovery-gates/claude-code-provider.1.23/resume", strings.NewReader(`{"response":"Continue"}`))
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
-	srv.handleFactoryRecoveryGate(rec, req)
+	serveFactory(srv, rec, req)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "claude-code-provider.1.3.105") {
 		t.Fatalf("resume conflict = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -29,11 +29,11 @@ func TestFactoryRecoveryWorkspaceConflictIsActionable(t *testing.T) {
 
 func TestFactoryRecoveryInvalidCheckpointIsActionable(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = &fakeFactoryService{err: fmt.Errorf("validate resumed Factory workspace: %w: factory worktree has uncommitted changes", factory.ErrInvalidRequest)}
+	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("validate resumed Factory workspace: %w: factory worktree has uncommitted changes", factory.ErrInvalidRequest)})
 	req := httptest.NewRequest(http.MethodPost, "/api/factory/recovery-gates/gate/resume", strings.NewReader(`{"response":"Continue"}`))
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
-	srv.handleFactoryRecoveryGate(rec, req)
+	serveFactory(srv, rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "uncommitted changes") {
 		t.Fatalf("resume invalid checkpoint = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -73,7 +73,7 @@ func TestFactoryRecoveryConfirmsDeliveryAfterTimeout(t *testing.T) {
 			}
 			registry := platforms.NewRegistry()
 			registry.Register(platform)
-			launcher := factoryImplementationLauncher{server: New(nil, nil, "", registry, nil)}
+			launcher := New(nil, nil, "", registry, nil).factoryModule().ImplementationLauncher()
 			session := factory.PlanningSession{Platform: "opencode", ID: "session"}
 			err := launcher.ResumeImplementationSession(t.Context(), session, "gate", "Continue")
 			if tc.accepted && err != nil {

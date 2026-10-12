@@ -9,6 +9,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -32,13 +33,13 @@ func TestFactoryVerificationProfileIsReadOnly(t *testing.T) {
 		}
 		return ""
 	}
-	if got := action(factoryImplementationRules(false), "edit"); got != "allow" {
+	if got := action(factorymod.ImplementationRules(false), "edit"); got != "allow" {
 		t.Fatalf("implementer edit = %q", got)
 	}
-	if got := action(factoryImplementationRules(true), "edit"); got != "deny" {
+	if got := action(factorymod.ImplementationRules(true), "edit"); got != "deny" {
 		t.Fatalf("validator edit = %q", got)
 	}
-	if got := action(factoryImplementationRules(true), "bash"); got != "allow" {
+	if got := action(factorymod.ImplementationRules(true), "bash"); got != "allow" {
 		t.Fatalf("validator must still run checks, bash = %q", got)
 	}
 }
@@ -47,7 +48,7 @@ func TestFactoryScratchRules(t *testing.T) {
 	t.Setenv("TMPDIR", "/scratch")
 	patterns := func(local bool) string {
 		var got []string
-		for _, rule := range factoryScratchRules("/src/ocman/", local) {
+		for _, rule := range factorymod.ScratchRules("/src/ocman/", local) {
 			if rule.Permission != "external_directory" || rule.Action != "allow" {
 				t.Fatalf("rule = %#v", rule)
 			}
@@ -60,15 +61,6 @@ func TestFactoryScratchRules(t *testing.T) {
 	}
 	if got := patterns(true); !strings.HasSuffix(got, "/src/.worktrees/** /scratch/**") {
 		t.Fatalf("local = %q", got)
-	}
-}
-
-func TestFactoryVerificationPrompt(t *testing.T) {
-	prompt := factoryVerificationPrompt(factory.ImplementationSessionRequest{WorkID: "w1", EpicID: "e1", Branch: "factory/e1", TargetBranch: "main", AttemptID: "a1", AgentToken: "tok", Criteria: "### i1 — API\n- [ ] returns 200"}, "Formula body")
-	for _, want := range []string{"Formula body", "- [ ] returns 200", "read-only validator", "PASS or FAIL", "a1", "tok", "checks_running", "skipped tests"} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("prompt missing %q", want)
-		}
 	}
 }
 
@@ -86,18 +78,8 @@ func TestFactoryVerificationLauncherSeams(t *testing.T) {
 	srv := New(nil, nil, "", registry, nil)
 	host := &factoryCheckHostFake{}
 	srv.hostRouter = hostsvc.NewRouter(host)
-	launcher := factoryImplementationLauncher{server: srv}
+	launcher := srv.factoryModule().ImplementationLauncher()
 	session := factory.PlanningSession{Platform: "opencode", ID: "s"}
-
-	if got := launcher.verificationModel(t.Context(), session, "x/frozen"); got != "x/frozen" {
-		t.Fatalf("explicit model = %q", got)
-	}
-	if got := launcher.verificationModel(t.Context(), session, ""); got != "p/fable-1" {
-		t.Fatalf("default validator model = %q", got)
-	}
-	if got := launcher.verificationModel(t.Context(), factory.PlanningSession{Platform: "missing"}, ""); got != "" {
-		t.Fatalf("missing platform model = %q", got)
-	}
 
 	passed, report, err := launcher.RunVerificationChecks(t.Context(), "/repo", "factory/e1", "main", []string{"make test"})
 	if err != nil || !passed || report != "ok" || strings.Join(host.got, " ") != "/repo factory/e1 main make test" {
@@ -156,7 +138,7 @@ func TestFactoryImplementationActivityCountsQuestionsAndRefreshedPermissions(t *
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(platform)
-	launcher := factoryImplementationLauncher{server: New(nil, nil, "", registry, nil)}
+	launcher := New(nil, nil, "", registry, nil).factoryModule().ImplementationLauncher()
 	session := factory.PlanningSession{Platform: "opencode", ID: "s"}
 	if _, waiting, err := launcher.ImplementationActivity(t.Context(), session); err != nil || waiting {
 		t.Fatalf("refreshed permissions must replace the cache: waiting=%v, %v", waiting, err)

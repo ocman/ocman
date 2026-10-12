@@ -8,8 +8,10 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sharing"
@@ -20,7 +22,7 @@ import (
 // modules lists the feature modules this server mounts. Routes, startup,
 // background work and MCP tools iterate it; append a module here to mount it.
 func (s *Server) modules() []module.Module {
-	var mods []module.Module
+	mods := []module.Module{s.factoryModule()}
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
 	}
@@ -51,6 +53,37 @@ func (s *Server) bus() *module.Bus {
 		}
 	})
 	return s.busV
+}
+
+// factoryModule exists without a state DB too: Factory then answers that
+// it is unavailable rather than 404.
+func (s *Server) factoryModule() *factorymod.Module {
+	s.factoryModOnce.Do(func() {
+		if s.factoryMod == nil {
+			s.factoryMod = s.newFactoryModule(nil)
+		}
+	})
+	return s.factoryMod
+}
+
+// newFactoryModule builds Factory over svc, or over the native service
+// when svc is nil.
+func (s *Server) newFactoryModule(svc factorymod.Service) *factorymod.Module {
+	return factorymod.NewModule(factorymod.Deps{
+		Store:    s.stateDB,
+		Service:  svc,
+		Registry: registryRef{s},
+		Router:   s.router,
+		Sessions: s.sessions,
+		Enqueue: func(ctx context.Context, platform string, forceQueue bool, req platforms.SendMessageRequest) error {
+			return s.queueSvc().Enqueue(ctx, platform, forceQueue, req)
+		},
+		ResolveForge:   s.resolveForge,
+		ResolveProject: factoryProjectResolver{s}.ResolveLocalProject,
+		OpenCodeAuth:   func() ocapi.Auth { return s.openCodeAuth },
+		MCPURL:         s.mcpServerURL,
+		Guards:         module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+	})
 }
 
 func (s *Server) sharingModule() *sharing.Module {
@@ -219,4 +252,30 @@ func (s *Server) startModules(ctx context.Context, workers *sync.WaitGroup) erro
 		}
 	}
 	return nil
+}
+
+// launchModules runs every Launcher once the MCP listener is up. The
+// returned func closes the launched modules in reverse order; on error the
+// ones already launched are closed and the failing one is not.
+func launchModules(ctx context.Context, mods []module.Module) (func(), error) {
+	var launched []module.Closer
+	closeAll := func() {
+		for i := len(launched) - 1; i >= 0; i-- {
+			launched[i].Close()
+		}
+	}
+	for _, m := range mods {
+		l, ok := m.(module.Launcher)
+		if !ok {
+			continue
+		}
+		if err := l.Launch(ctx); err != nil {
+			closeAll()
+			return func() {}, fmt.Errorf("starting %s: %w", m.Name(), err)
+		}
+		if c, ok := m.(module.Closer); ok {
+			launched = append(launched, c)
+		}
+	}
+	return closeAll, nil
 }

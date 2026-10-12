@@ -53,7 +53,7 @@ func TestFactoryIssueTransfer(t *testing.T) {
 		issue:              factory.Issue{ID: "epic.1.3.4", Kind: "task", Status: "open", Title: "Gap", Description: "Cover it."},
 	}
 	srv := New(nil, nil, "", platforms.NewRegistry(), nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	srv.integrations.GitHub, srv.integrations.Forgejo = nil, nil // never reach a real forge
 	host := &factoryImplementationHost{upstreams: hostsvc.ProjectUpstreams{Remotes: []forge.Remote{{Name: "origin", Type: forge.RemoteTypeGitHub, Repo: "acme/repo"}}}}
 	srv.hostRouter = hostsvc.NewRouter(host)
@@ -61,7 +61,7 @@ func TestFactoryIssueTransfer(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic/issues/epic.1.3.4/transfer", nil)
 		req.RemoteAddr = "127.0.0.1:1"
 		rec := httptest.NewRecorder()
-		srv.handleFactoryEpic(rec, req)
+		serveFactory(srv, rec, req)
 		return rec
 	}
 
@@ -88,17 +88,19 @@ func TestFactoryIssueTransfer(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic/issues/epic.1.3.4/transfer/cancel", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	cancel := httptest.NewRecorder()
-	srv.handleFactoryEpic(cancel, req)
+	serveFactory(srv, cancel, req)
 	if cancel.Code != http.StatusNoContent || svc.cancelled != "epic.1.3.4" {
 		t.Fatalf("cancel = %d, %q", cancel.Code, svc.cancelled)
 	}
 	unsupported := New(nil, nil, "", platforms.NewRegistry(), nil)
-	unsupported.factory = &fakeFactoryService{}
-	if _, err := unsupported.transferFactoryIssue(t.Context(), "epic", "x"); !errors.Is(err, factory.ErrFactoryUnavailable) {
+	useFactory(unsupported, &fakeFactoryService{})
+	if _, err := unsupported.factoryModule().TransferIssue(t.Context(), "epic", "x"); !errors.Is(err, factory.ErrFactoryUnavailable) {
 		t.Fatalf("unsupported = %v", err)
 	}
 	rec = httptest.NewRecorder()
-	unsupported.handleFactoryIssueTransferCancel(rec, req, "epic", "x")
+	unsupportedCancel := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic/issues/x/transfer/cancel", nil)
+	unsupportedCancel.RemoteAddr = "127.0.0.1:1"
+	serveFactory(unsupported, rec, unsupportedCancel)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unsupported cancel = %d", rec.Code)
 	}

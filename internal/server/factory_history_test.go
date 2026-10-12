@@ -27,9 +27,9 @@ func TestFactoryStopsSessionsWithoutDeletingHistory(t *testing.T) {
 			session := factory.PlanningSession{Platform: "opencode", ID: "session"}
 			var err error
 			if kind == "planning" {
-				err = (factoryPlanningLauncher{server: srv}).StopPlanningSession(t.Context(), session)
+				err = (srv.factoryModule().PlanningLauncher()).StopPlanningSession(t.Context(), session)
 			} else {
-				err = (factoryImplementationLauncher{server: srv}).StopImplementationSession(t.Context(), session)
+				err = (srv.factoryModule().ImplementationLauncher()).StopImplementationSession(t.Context(), session)
 			}
 			if err != nil || !aborted || !platform.Owns(t.Context(), session.ID) {
 				t.Fatalf("stop = %v, aborted = %v, history retained = %v", err, aborted, platform.Owns(t.Context(), session.ID))

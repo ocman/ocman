@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 // Agents can propose graph edits; approval remains an operator decision.
 type factoryMCPService struct {
-	factoryService
+	Service
 	proposeControl func(context.Context, string, string, map[string]string, string) (string, error)
 }
 
@@ -24,16 +24,16 @@ func (s factoryMCPService) CreateWorkEpic(ctx context.Context, req factory.Creat
 	if req.FormulaID != "" || req.FormulaRevision != 0 {
 		return factory.WorkEpic{}, factory.ErrActionNotPermitted
 	}
-	return s.factoryService.CreateWorkEpic(ctx, req)
+	return s.Service.CreateWorkEpic(ctx, req)
 }
 
 func (s factoryMCPService) MutateGraph(ctx context.Context, mutation factory.GraphMutation) error {
 	mutation.Actor = "mcp"
-	return s.factoryService.MutateGraph(ctx, mutation)
+	return s.Service.MutateGraph(ctx, mutation)
 }
 
 func (s factoryMCPService) SubmitScopePlan(ctx context.Context, req factory.SubmitProposalRequest) (factory.ProposalRevision, error) {
-	service, ok := s.factoryService.(interface {
+	service, ok := s.Service.(interface {
 		SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
 	})
 	if !ok {
@@ -43,7 +43,7 @@ func (s factoryMCPService) SubmitScopePlan(ctx context.Context, req factory.Subm
 }
 
 func (s factoryMCPService) RequestProject(ctx context.Context, attemptID, token, project, reason string) (factory.ProjectRequestGate, error) {
-	service, ok := s.factoryService.(interface {
+	service, ok := s.Service.(interface {
 		RequestProject(context.Context, string, string, string, string) (factory.ProjectRequestGate, error)
 	})
 	if !ok {
@@ -53,7 +53,7 @@ func (s factoryMCPService) RequestProject(ctx context.Context, attemptID, token,
 }
 
 func (s factoryMCPService) ReopenIssue(ctx context.Context, epicID, issueID string) error {
-	reopener, ok := s.factoryService.(interface {
+	reopener, ok := s.Service.(interface {
 		ReopenIssue(context.Context, string, string) error
 	})
 	if !ok {

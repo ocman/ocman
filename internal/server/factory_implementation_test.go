@@ -14,6 +14,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
@@ -91,7 +92,7 @@ func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
 			}
 			srv := New(nil, nil, "", registry, nil)
 			srv.hostRouter = hostsvc.NewRouter(host)
-			branch, target, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationWorkspace(t.Context(), "/repo", "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
+			branch, target, err := (srv.factoryModule().ImplementationLauncher()).ResolveImplementationWorkspace(t.Context(), "/repo", "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
 			if name == "shared" || name == "successor" || name == "local default" || name == "remote-only default" || name == "local origin branch" || name == "local namespace branch" {
 				wantTarget := "main"
 				if name == "local origin branch" {
@@ -121,7 +122,7 @@ func TestFactoryResolvesDeletedForgejoBranch(t *testing.T) {
 		"forge.example": forgejo.NewForTest("forge.example", api.URL, "token", api.Client()),
 	})
 	policy := model.FactoryAttemptPolicy{DeliveryRemoteType: "forgejo", DeliveryRemoteHost: "forge.example", DeliveryRemoteRepo: "dries/ocman"}
-	branch, base, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationBranch(t.Context(), "/repo", "factory/aamruifdam-crov", "https://forge.example/dries/ocman/pulls/604", policy)
+	branch, base, err := (srv.factoryModule().ImplementationLauncher()).ResolveImplementationBranch(t.Context(), "/repo", "factory/aamruifdam-crov", "https://forge.example/dries/ocman/pulls/604", policy)
 	if err != nil || branch != "factory/aamruifdam-crov-3" || base != "" {
 		t.Fatalf("replacement branch/base = %q/%q, %v", branch, base, err)
 	}
@@ -164,7 +165,7 @@ func TestFactoryDeliveryValidatesFinalPR(t *testing.T) {
 			srv.hostRouter = hostsvc.NewRouter(host)
 			srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{"forge.example": forgejo.NewForTest("forge.example", api.URL, "token", api.Client())})
 			srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
-			launcher := factoryImplementationLauncher{server: srv}
+			launcher := srv.factoryModule().ImplementationLauncher()
 			policy := model.FactoryAttemptPolicy{Delivery: true, TargetBranch: "main", DeliveryRemoteType: provider, DeliveryRemoteHost: "forge.example", DeliveryRemoteRepo: "acme/repo"}
 			validate := func() error {
 				return launcher.ValidateImplementationHandoff(t.Context(), "/repo", "factory/epic", "", "https://forge.example/acme/repo/pulls/1", policy)
@@ -208,7 +209,7 @@ func TestFactoryDeliveryValidatesFinalPR(t *testing.T) {
 		})
 	}
 	srv := New(nil, nil, "", platforms.NewRegistry(), nil)
-	if _, _, err := (factoryImplementationLauncher{server: srv}).ObserveImplementationDelivery(t.Context(), "https://forge.example/acme/repo/pulls/1", model.FactoryAttemptPolicy{}); err == nil {
+	if _, _, err := (srv.factoryModule().ImplementationLauncher()).ObserveImplementationDelivery(t.Context(), "https://forge.example/acme/repo/pulls/1", model.FactoryAttemptPolicy{}); err == nil {
 		t.Fatal("observed delivery without a forge target")
 	}
 }
@@ -243,7 +244,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 	endpoint := connectedPlanningMCP(t)
 	rules := []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: "allow"}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}, {Permission: "external_directory", Pattern: filepath.Join("/other", "**"), Action: "allow"}, {Permission: "edit", Pattern: filepath.Join("/other", "**"), Action: "deny"}}
 	rules = append(rules, skillRules...)
-	rules = append(rules, factoryScratchRules("/repo", true)...)
+	rules = append(rules, factorymod.ScratchRules("/repo", true)...)
 	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 
 	t.Run("creates an owned bounded worktree session", func(t *testing.T) {
@@ -257,7 +258,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv.hostRouter = hostsvc.NewRouter(host)
 
 		request := factory.ImplementationSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "attempt-1", AgentToken: "token", Profile: "factory-implement/v1", Repository: "/repo", Projects: []string{"/repo", "/other"}, Branch: "factory/work", BaseRef: "factory/previous", Title: "Remove dead code", Description: "Delete the obsolete helper and run its package tests."}
-		got, err := (factoryImplementationLauncher{server: srv}).LaunchImplementationSession(ctx, request)
+		got, err := (srv.factoryModule().ImplementationLauncher()).LaunchImplementationSession(ctx, request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -265,7 +266,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 			t.Fatalf("session = %#v", got)
 		}
 		request.Model = "openai/gpt-5.6-sol"
-		if err := (factoryImplementationLauncher{server: srv}).PromptImplementationSession(ctx, got, request); err != nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).PromptImplementationSession(ctx, got, request); err != nil {
 			t.Fatal(err)
 		}
 		if sent.Model != request.Model {
@@ -278,7 +279,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 			t.Fatalf("prompt = %#v", sent)
 		}
 		request.Delivery, request.TargetBranch = true, "main"
-		if err := (factoryImplementationLauncher{server: srv}).PromptImplementationSession(ctx, got, request); err != nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).PromptImplementationSession(ctx, got, request); err != nil {
 			t.Fatal(err)
 		}
 		for _, text := range []string{"Deliver Factory Work Epic", "into main", "reuse it on retries", "pr_url", "Never merge"} {
@@ -290,7 +291,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 			t.Fatal("full delivery mentions left-out work")
 		}
 		request.LeftOut = "- Yet another gap (epic-1.1.3.9)\n"
-		if err := (factoryImplementationLauncher{server: srv}).PromptImplementationSession(ctx, got, request); err != nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).PromptImplementationSession(ctx, got, request); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(sent.Message, `"Not done" section`) || !strings.Contains(sent.Message, "Yet another gap (epic-1.1.3.9)") || strings.Contains(sent.Message, "All required implementation Issues have completed") {
@@ -312,35 +313,35 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
 		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
 		host.handoffErr = errors.New("invalid handoff")
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); !errors.Is(err, host.handoffErr) {
+		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); !errors.Is(err, host.handoffErr) {
 			t.Fatalf("handoff error = %v", err)
 		}
 		host.handoffErr = nil
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err != nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err != nil {
 			t.Fatal(err)
 		}
 		draft = true
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil || !strings.Contains(err.Error(), "ready for review") {
+		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil || !strings.Contains(err.Error(), "ready for review") {
 			t.Fatalf("draft PR error = %v", err)
 		}
 		draft = false
 		prBranch = "factory/epic-1-2"
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted a rotated first PR")
 		}
 		prBranch = "factory/epic-1"
 		state = "merged"
 		prBranch = "refs/pull/1/head"
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err != nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err != nil {
 			t.Fatalf("merged PR: %v", err)
 		}
 		state = "closed"
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted an unmerged closed PR")
 		}
 		state = "open"
 		prBranch = "factory/epic-1"
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/other", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
+		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/other", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted a PR for another branch")
 		}
 	})
@@ -369,7 +370,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv.hostRouter = hostsvc.NewRouter(host)
 		srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
 		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
-		launcher := factoryImplementationLauncher{server: srv}
+		launcher := srv.factoryModule().ImplementationLauncher()
 		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-2" || baseRef != "" {
 			t.Fatalf("resolved replacement branch/base = %q/%q, %v", branch, baseRef, err)
 		}
@@ -432,11 +433,11 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv.hostRouter = hostsvc.NewRouter(host)
 
 		request := factory.ImplementationSessionRequest{Profile: "factory-implement/v1", Repository: "/repo", Branch: "factory/work"}
-		if _, err := (factoryImplementationLauncher{server: srv}).LaunchImplementationSession(ctx, request); err != nil {
+		if _, err := (srv.factoryModule().ImplementationLauncher()).LaunchImplementationSession(ctx, request); err != nil {
 			t.Fatal(err)
 		}
 		portable := map[string]bool{"*": true}
-		for _, rule := range factoryScratchRules("/repo", false) {
+		for _, rule := range factorymod.ScratchRules("/repo", false) {
 			portable[rule.Pattern] = true
 		}
 		for _, rule := range host.request.PermissionRules {
@@ -460,7 +461,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 			registry := platforms.NewRegistry()
 			srv := New(nil, nil, "", registry, nil)
 			srv.hostRouter = hostsvc.NewRouter(host)
-			_, err := (factoryImplementationLauncher{server: srv}).LaunchImplementationSession(ctx, tt.request)
+			_, err := (srv.factoryModule().ImplementationLauncher()).LaunchImplementationSession(ctx, tt.request)
 			if err == nil || err.Error() != tt.want {
 				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
@@ -471,7 +472,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 func TestFactoryImplementationLauncherProbe(t *testing.T) {
 	registry := platforms.NewRegistry()
 	srv := New(nil, nil, "", registry, nil)
-	launcher := factoryImplementationLauncher{server: srv}
+	launcher := srv.factoryModule().ImplementationLauncher()
 	if _, err := launcher.ProbeImplementationSession(context.Background(), factory.PlanningSession{Platform: "missing", ID: "session"}); err == nil {
 		t.Fatal("missing platform probe succeeded")
 	}
@@ -502,17 +503,17 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 	srv := New(nil, nil, "", registry, nil)
 	session := factory.PlanningSession{Platform: "opencode", ID: "session"}
 
-	if err := (factoryImplementationLauncher{server: srv}).StopImplementationSession(context.Background(), session); err != nil || aborted.SessionID != "session" {
+	if err := (srv.factoryModule().ImplementationLauncher()).StopImplementationSession(context.Background(), session); err != nil || aborted.SessionID != "session" {
 		t.Fatalf("StopImplementationSession = %v, %#v", err, aborted)
 	}
-	if err := (factoryImplementationLauncher{server: srv}).RespondImplementationPermission(context.Background(), session, "permission", "always"); err != nil || replied.SessionID != "session" || replied.PermissionID != "permission" || replied.Reply != "always" {
+	if err := (srv.factoryModule().ImplementationLauncher()).RespondImplementationPermission(context.Background(), session, "permission", "always"); err != nil || replied.SessionID != "session" || replied.PermissionID != "permission" || replied.Reply != "always" {
 		t.Fatalf("RespondImplementationPermission = %v, %#v", err, replied)
 	}
-	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-1", "Use A"); err != nil || sent.SessionID != "session" || !strings.Contains(sent.Message, "gate-1") || !strings.Contains(sent.Message, "Use A") {
+	if err := (srv.factoryModule().ImplementationLauncher()).ResumeImplementationSession(context.Background(), session, "gate-1", "Use A"); err != nil || sent.SessionID != "session" || !strings.Contains(sent.Message, "gate-1") || !strings.Contains(sent.Message, "Use A") {
 		t.Fatalf("ResumeImplementationSession = %v, %#v", err, sent)
 	}
 	detail.Parts = []db.Part{{Data: []byte(`{"type":"text","text":"Factory recovery response for gate gate-1:"}`)}}
-	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-1", "Use A"); err != nil || sends != 1 {
+	if err := (srv.factoryModule().ImplementationLauncher()).ResumeImplementationSession(context.Background(), session, "gate-1", "Use A"); err != nil || sends != 1 {
 		t.Fatalf("idempotent ResumeImplementationSession = %v, sends %d", err, sends)
 	}
 	detail.Parts = nil
@@ -521,22 +522,22 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 		detail.Parts = []db.Part{{Data: []byte(request.Message)}}
 		return errors.New("response lost after acceptance")
 	}
-	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err != nil {
+	if err := (srv.factoryModule().ImplementationLauncher()).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err != nil {
 		t.Fatalf("confirmed delivery returned an error: %v", err)
 	}
-	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err != nil || sends != 2 {
+	if err := (srv.factoryModule().ImplementationLauncher()).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err != nil || sends != 2 {
 		t.Fatalf("ambiguous delivery retry = %v, total sends %d", err, sends)
 	}
-	if pending, err := (factoryImplementationLauncher{server: srv}).ImplementationPermissionPending(context.Background(), session, "permission"); err != nil || !pending {
+	if pending, err := (srv.factoryModule().ImplementationLauncher()).ImplementationPermissionPending(context.Background(), session, "permission"); err != nil || !pending {
 		t.Fatalf("ImplementationPermissionPending = %v, %v", pending, err)
 	}
-	if err := (factoryPlanningLauncher{server: srv}).StopPlanningSession(context.Background(), session); err != nil {
+	if err := (srv.factoryModule().PlanningLauncher()).StopPlanningSession(context.Background(), session); err != nil {
 		t.Fatal(err)
 	}
-	if owned, err := (factoryPlanningLauncher{server: srv}).ProbePlanningSession(context.Background(), session); err != nil || !owned {
+	if owned, err := (srv.factoryModule().PlanningLauncher()).ProbePlanningSession(context.Background(), session); err != nil || !owned {
 		t.Fatalf("ProbePlanningSession = %v, %v", owned, err)
 	}
-	if _, err := (factoryPlanningLauncher{server: srv}).ProbePlanningSession(context.Background(), factory.PlanningSession{Platform: "missing"}); err == nil {
+	if _, err := (srv.factoryModule().PlanningLauncher()).ProbePlanningSession(context.Background(), factory.PlanningSession{Platform: "missing"}); err == nil {
 		t.Fatal("missing planning platform probe succeeded")
 	}
 }

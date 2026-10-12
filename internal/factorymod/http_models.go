@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -6,15 +6,16 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // handleFactoryEpicModels handles POST /api/factory/epics/<id>/models.
-func (s *Server) handleFactoryEpicModels(w http.ResponseWriter, r *http.Request, epicID string) {
-	setter, ok := s.factory.(interface {
+func (m *Module) handleFactoryEpicModels(w http.ResponseWriter, r *http.Request, epicID string) {
+	setter, ok := m.svc.(interface {
 		SetEpicModels(context.Context, string, model.EpicModels) (model.EpicModels, error)
 	})
 	if !ok {
-		writeFactoryError(w, factory.ErrFactoryUnavailable)
+		WriteError(w, factory.ErrFactoryUnavailable)
 		return
 	}
 	var req model.EpicModels
@@ -23,8 +24,8 @@ func (s *Server) handleFactoryEpicModels(w http.ResponseWriter, r *http.Request,
 	}
 	models, err := setter.SetEpicModels(r.Context(), epicID, req)
 	if err != nil {
-		writeFactoryError(w, err)
+		WriteError(w, err)
 		return
 	}
-	writeJSON(w, models)
+	httpx.WriteJSON(w, models)
 }

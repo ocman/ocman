@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-type factoryImplementationLauncher struct{ server *Server }
+type ImplementationLauncher struct{ m *Module }
 
 type factoryHandoffHost interface {
 	ValidateFactoryHandoff(context.Context, string, string) (string, error)
@@ -31,8 +31,8 @@ type factoryWorkspaceHost interface {
 
 // ResolveImplementationWorkspace recovers the actual branch of a session started
 // before Factory persisted workspaces. It never creates or edits a pull request.
-func (l factoryImplementationLauncher) ResolveImplementationWorkspace(ctx context.Context, repo, branch string, session factory.PlanningSession) (string, string, error) {
-	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+func (l ImplementationLauncher) ResolveImplementationWorkspace(ctx context.Context, repo, branch string, session factory.PlanningSession) (string, string, error) {
+	platform, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return "", "", errors.New("implementation platform is unavailable")
 	}
@@ -43,7 +43,7 @@ func (l factoryImplementationLauncher) ResolveImplementationWorkspace(ctx contex
 	if detail == nil || detail.Session == nil || detail.Session.Directory == "" {
 		return "", "", errors.New("implementation session directory is unavailable")
 	}
-	owner := l.server.router().ForDir(repo)
+	owner := l.m.deps.Router().ForDir(repo)
 	worktrees, err := owner.ListWorktrees(ctx, repo)
 	if err != nil {
 		return "", "", err
@@ -60,25 +60,25 @@ func (l factoryImplementationLauncher) ResolveImplementationWorkspace(ctx contex
 	return "", "", errors.New("factory shared branch worktree was not found")
 }
 
-func (l factoryImplementationLauncher) PrepareImplementationWorkspace(ctx context.Context, repo, branch, checkpoint, target string) (string, string, error) {
-	host, ok := l.server.router().ForDir(repo).(factoryWorkspaceHost)
+func (l ImplementationLauncher) PrepareImplementationWorkspace(ctx context.Context, repo, branch, checkpoint, target string) (string, string, error) {
+	host, ok := l.m.deps.Router().ForDir(repo).(factoryWorkspaceHost)
 	if !ok {
 		return "", "", errors.New("factory workspace validation is unavailable")
 	}
 	return host.PrepareFactoryWorkspace(ctx, repo, branch, checkpoint, target)
 }
 
-func (l factoryImplementationLauncher) ValidateImplementationCheckpoint(ctx context.Context, repo, branch, checkpoint string) (string, error) {
-	host, ok := l.server.router().ForDir(repo).(factoryWorkspaceHost)
+func (l ImplementationLauncher) ValidateImplementationCheckpoint(ctx context.Context, repo, branch, checkpoint string) (string, error) {
+	host, ok := l.m.deps.Router().ForDir(repo).(factoryWorkspaceHost)
 	if !ok {
 		return "", errors.New("factory workspace validation is unavailable")
 	}
 	return host.ValidateFactoryCheckpoint(ctx, repo, branch, checkpoint)
 }
 
-func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context.Context, repoRoot, branch, previousPRURL, prURL string, policy model.FactoryAttemptPolicy) error {
+func (l ImplementationLauncher) ValidateImplementationHandoff(ctx context.Context, repoRoot, branch, previousPRURL, prURL string, policy model.FactoryAttemptPolicy) error {
 	remote := forge.Remote{Type: forge.RemoteType(policy.DeliveryRemoteType), Host: policy.DeliveryRemoteHost, Repo: policy.DeliveryRemoteRepo}
-	client, ok := l.server.resolveForge(remote)
+	client, ok := l.m.deps.ResolveForge(remote)
 	if !ok || remote.Repo == "" {
 		return errors.New("factory delivery target is unavailable")
 	}
@@ -121,7 +121,7 @@ func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context
 	} else if pr.Status != "merged" && pr.Branch != branch {
 		return errors.New("pull request does not publish the shared Factory branch HEAD")
 	}
-	owner := l.server.router().ForDir(repoRoot)
+	owner := l.m.deps.Router().ForDir(repoRoot)
 	host, ok := owner.(factoryHandoffHost)
 	if !ok {
 		return errors.New("factory handoff validation is unavailable")
@@ -136,9 +136,9 @@ func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context
 	return errors.New("pull request does not publish the shared Factory branch HEAD")
 }
 
-func (l factoryImplementationLauncher) ObserveImplementationDelivery(ctx context.Context, prURL string, policy model.FactoryAttemptPolicy) (string, string, error) {
+func (l ImplementationLauncher) ObserveImplementationDelivery(ctx context.Context, prURL string, policy model.FactoryAttemptPolicy) (string, string, error) {
 	remote := forge.Remote{Type: forge.RemoteType(policy.DeliveryRemoteType), Host: policy.DeliveryRemoteHost, Repo: policy.DeliveryRemoteRepo}
-	client, ok := l.server.resolveForge(remote)
+	client, ok := l.m.deps.ResolveForge(remote)
 	if !ok || remote.Repo == "" {
 		return "", "", errors.New("factory delivery target is unavailable")
 	}
@@ -146,12 +146,12 @@ func (l factoryImplementationLauncher) ObserveImplementationDelivery(ctx context
 	return pr.Status, pr.HeadSHA, err
 }
 
-func (l factoryImplementationLauncher) ResolveImplementationBranch(ctx context.Context, repoRoot, branch, previousPRURL string, policy model.FactoryAttemptPolicy) (string, string, error) {
+func (l ImplementationLauncher) ResolveImplementationBranch(ctx context.Context, repoRoot, branch, previousPRURL string, policy model.FactoryAttemptPolicy) (string, string, error) {
 	if previousPRURL == "" {
 		return branch, "", nil
 	}
 	remote := forge.Remote{Type: forge.RemoteType(policy.DeliveryRemoteType), Host: policy.DeliveryRemoteHost, Repo: policy.DeliveryRemoteRepo}
-	client, ok := l.server.resolveForge(remote)
+	client, ok := l.m.deps.ResolveForge(remote)
 	if !ok || remote.Repo == "" {
 		return "", "", errors.New("factory delivery target is unavailable")
 	}
@@ -175,7 +175,7 @@ func (l factoryImplementationLauncher) ResolveImplementationBranch(ctx context.C
 			if previous.Status == "closed" && previous.HeadSHA == "" {
 				return "", "", errors.New("factory pull request has no head commit")
 			}
-			branches, err := l.server.router().ForDir(repoRoot).GitBranches(ctx, repoRoot)
+			branches, err := l.m.deps.Router().ForDir(repoRoot).GitBranches(ctx, repoRoot)
 			if err != nil {
 				return "", "", err
 			}
@@ -239,19 +239,19 @@ func lookupFactoryPR(ctx context.Context, client forge.Forge, repo, prURL string
 	return pr, nil
 }
 
-func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.Context, req factory.ImplementationSessionRequest) (factory.PlanningSession, error) {
+func (l ImplementationLauncher) LaunchImplementationSession(ctx context.Context, req factory.ImplementationSessionRequest) (factory.PlanningSession, error) {
 	if req.Profile != "factory-implement/v1" {
 		return factory.PlanningSession{}, errors.New("invalid Factory implementation profile")
 	}
-	owner := l.server.router().ForDir(req.Repository)
-	if l.server.stateDB != nil {
+	owner := l.m.deps.Router().ForDir(req.Repository)
+	if l.m.deps.Store != nil {
 		upstreams, err := owner.ProjectUpstreams(ctx, req.Repository)
 		if err != nil {
 			return factory.PlanningSession{}, fmt.Errorf("resolve Factory delivery target: %w", err)
 		}
 		var delivery forge.Remote
 		for _, remote := range upstreams.Remotes {
-			if _, ok := l.server.resolveForge(remote); ok && (delivery.Repo == "" || remote.Name == "origin") {
+			if _, ok := l.m.deps.ResolveForge(remote); ok && (delivery.Repo == "" || remote.Name == "origin") {
 				delivery = remote
 				if remote.Name == "origin" {
 					break
@@ -261,7 +261,7 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 		if delivery.Repo == "" {
 			return factory.PlanningSession{}, errors.New("no supported Factory delivery remote")
 		}
-		if err := l.server.stateDB.SetFactoryAttemptDeliveryTarget(ctx, req.AttemptID, string(delivery.Type), delivery.Host, delivery.Repo, time.Now()); err != nil {
+		if err := l.m.deps.Store.SetFactoryAttemptDeliveryTarget(ctx, req.AttemptID, string(delivery.Type), delivery.Host, delivery.Repo, time.Now()); err != nil {
 			return factory.PlanningSession{}, err
 		}
 	}
@@ -272,10 +272,10 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 	if ensured == nil {
 		return factory.PlanningSession{}, errors.New("ensure Factory runtime returned no instance")
 	}
-	if err := factoryPlanningLauncher(l).ensureMCP(ctx, ensured); err != nil {
+	if err := PlanningLauncher(l).ensureMCP(ctx, ensured); err != nil {
 		return factory.PlanningSession{}, err
 	}
-	rules := factoryImplementationRules(req.Verification)
+	rules := ImplementationRules(req.Verification)
 	for _, project := range req.Projects {
 		if project != req.Repository {
 			pattern := filepath.Join(project, "**")
@@ -285,9 +285,9 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 	local := owner.RemoteID() == "local"
 	if local {
 		// Keep exceptions after the catch-all: OpenCode uses the last match.
-		rules = append(rules, factoryExternalDirectoryRules()...)
+		rules = append(rules, ExternalDirectoryRules()...)
 	}
-	rules = append(rules, factoryScratchRules(req.Repository, local)...)
+	rules = append(rules, ScratchRules(req.Repository, local)...)
 	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 	// Append Epic-level user rules last so they override the profile defaults.
 	for _, r := range req.PermissionRules {
@@ -300,7 +300,7 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 	return factory.PlanningSession{Platform: "opencode", ID: created.SessionID}, nil
 }
 
-func (l factoryImplementationLauncher) PromptImplementationSession(ctx context.Context, session factory.PlanningSession, req factory.ImplementationSessionRequest) error {
+func (l ImplementationLauncher) PromptImplementationSession(ctx context.Context, session factory.PlanningSession, req factory.ImplementationSessionRequest) error {
 	body := req.Prompt
 	if body == "" {
 		stage := "implementation"
@@ -344,19 +344,19 @@ Leave the worktree clean and pushed, then call factory complete_attempt with att
 		prompt += "\n\nIf you discover missing work, use factory issues to find the implementation parent and mutate_graph to propose tickets or dependency changes. Submit the complete change in one call with action batch, epicId, mutations, and rationaleMarkdown summarizing what changed and why in Markdown. The rationale is shown beside graph approval. The revised graph needs human approval before new work runs. Finish only your assigned Issue; use request_recovery if the gap prevents you from continuing. Never approve the graph yourself."
 	}
 	prompt += "\n\n" + factoryIssueProse
-	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: model})
+	return l.m.deps.Sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: model})
 }
 
-func (l factoryImplementationLauncher) StopImplementationSession(ctx context.Context, session factory.PlanningSession) error {
-	return l.server.sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
+func (l ImplementationLauncher) StopImplementationSession(ctx context.Context, session factory.PlanningSession) error {
+	return l.m.deps.Sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
 }
 
-func (l factoryImplementationLauncher) RespondImplementationPermission(ctx context.Context, session factory.PlanningSession, permissionID, reply string) error {
-	return l.server.sessions.RespondPermission(ctx, session.Platform, platforms.RespondPermissionRequest{SessionID: session.ID, PermissionID: permissionID, Reply: reply})
+func (l ImplementationLauncher) RespondImplementationPermission(ctx context.Context, session factory.PlanningSession, permissionID, reply string) error {
+	return l.m.deps.Sessions.RespondPermission(ctx, session.Platform, platforms.RespondPermissionRequest{SessionID: session.ID, PermissionID: permissionID, Reply: reply})
 }
 
-func (l factoryImplementationLauncher) ImplementationPermissionPending(ctx context.Context, session factory.PlanningSession, permissionID string) (bool, error) {
-	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+func (l ImplementationLauncher) ImplementationPermissionPending(ctx context.Context, session factory.PlanningSession, permissionID string) (bool, error) {
+	platform, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return false, errors.New("implementation platform is unavailable")
 	}
@@ -372,8 +372,8 @@ func (l factoryImplementationLauncher) ImplementationPermissionPending(ctx conte
 	return false, nil
 }
 
-func (l factoryImplementationLauncher) ProbeImplementationSession(ctx context.Context, session factory.PlanningSession) (bool, error) {
-	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+func (l ImplementationLauncher) ProbeImplementationSession(ctx context.Context, session factory.PlanningSession) (bool, error) {
+	platform, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return false, errors.New("implementation platform is unavailable")
 	}

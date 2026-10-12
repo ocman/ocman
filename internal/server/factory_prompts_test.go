@@ -21,13 +21,13 @@ func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
 			var err error
 			action := "complete_attempt"
 			if stage == "planning" || stage == "scope_expansion" {
-				err = (factoryPlanningLauncher{server: srv}).PromptPlanningSession(t.Context(), session, factory.PlanningSessionRequest{EpicID: "epic", WorkID: "work", AttemptID: "attempt", AgentToken: "secret", Prompt: custom, ScopeExpansion: stage == "scope_expansion"})
+				err = (srv.factoryModule().PlanningLauncher()).PromptPlanningSession(t.Context(), session, factory.PlanningSessionRequest{EpicID: "epic", WorkID: "work", AttemptID: "attempt", AgentToken: "secret", Prompt: custom, ScopeExpansion: stage == "scope_expansion"})
 				action = "submit_proposal"
 				if stage == "scope_expansion" {
 					action = "submit_scope_plan"
 				}
 			} else {
-				err = (factoryImplementationLauncher{server: srv}).PromptImplementationSession(t.Context(), session, factory.ImplementationSessionRequest{EpicID: "epic", WorkID: "work", AttemptID: "attempt", AgentToken: "secret", Prompt: custom, Delivery: stage == "delivery", Verification: stage == "verification"})
+				err = (srv.factoryModule().ImplementationLauncher()).PromptImplementationSession(t.Context(), session, factory.ImplementationSessionRequest{EpicID: "epic", WorkID: "work", AttemptID: "attempt", AgentToken: "secret", Prompt: custom, Delivery: stage == "delivery", Verification: stage == "verification"})
 			}
 			if err != nil {
 				t.Fatal(err)

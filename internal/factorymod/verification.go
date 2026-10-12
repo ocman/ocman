@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -17,11 +17,11 @@ type factoryCheckHost interface {
 	RunFactoryChecks(ctx context.Context, repoRoot, branch, target string, commands []string) (bool, string, error)
 }
 
-// factoryImplementationRules is the frozen session profile. Validators get
+// ImplementationRules is the frozen session profile. Validators get
 // the same tools minus edit: they judge code they did not write and must
 // not "fix" it into passing. Bash stays so they can run checks; the
 // unchanged-HEAD rule in CompleteAttempt catches writes made through it.
-func factoryImplementationRules(verification bool) []platforms.PermissionRule {
+func ImplementationRules(verification bool) []platforms.PermissionRule {
 	edit := "allow"
 	if verification {
 		edit = "deny"
@@ -29,10 +29,10 @@ func factoryImplementationRules(verification bool) []platforms.PermissionRule {
 	return []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: edit}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}}
 }
 
-// factoryScratchRules pre-allows the directories Factory sessions reached for
+// ScratchRules pre-allows the directories Factory sessions reached for
 // in practice and users always approved: scratch space and sibling
 // worktrees. Bash can already reach them; asking only interrupted the user.
-func factoryScratchRules(repo string, local bool) []platforms.PermissionRule {
+func ScratchRules(repo string, local bool) []platforms.PermissionRule {
 	dirs := []string{"/tmp", "/private/tmp", filepath.Join(filepath.Dir(filepath.Clean(repo)), ".worktrees")}
 	if local {
 		// TMPDIR is per host; a remote's differs from the hub's.
@@ -73,11 +73,11 @@ If this step declares Formula checks, complete_attempt answers checks_running: e
 
 // verificationModel keeps an explicitly frozen model and otherwise prefers
 // the strong planning model, so the validator is not the implementer's twin.
-func (l factoryImplementationLauncher) verificationModel(ctx context.Context, session factory.PlanningSession, frozen string) string {
+func (l ImplementationLauncher) verificationModel(ctx context.Context, session factory.PlanningSession, frozen string) string {
 	if frozen != "" {
 		return frozen
 	}
-	adapter, ok := l.server.registry.Get(platforms.ID(session.Platform))
+	adapter, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return ""
 	}
@@ -90,23 +90,23 @@ func (l factoryImplementationLauncher) verificationModel(ctx context.Context, se
 	return factoryStrongModel(catalog.Models)
 }
 
-func (l factoryImplementationLauncher) RunVerificationChecks(ctx context.Context, repo, branch, target string, commands []string) (bool, string, error) {
-	host, ok := l.server.router().ForDir(repo).(factoryCheckHost)
+func (l ImplementationLauncher) RunVerificationChecks(ctx context.Context, repo, branch, target string, commands []string) (bool, string, error) {
+	host, ok := l.m.deps.Router().ForDir(repo).(factoryCheckHost)
 	if !ok {
 		return false, "", errors.New("factory verification checks are unavailable on this host")
 	}
 	return host.RunFactoryChecks(ctx, repo, branch, target, commands)
 }
 
-func (l factoryImplementationLauncher) NotifyImplementationSession(ctx context.Context, session factory.PlanningSession, message string) error {
-	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: message})
+func (l ImplementationLauncher) NotifyImplementationSession(ctx context.Context, session factory.PlanningSession, message string) error {
+	return l.m.deps.Sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: message})
 }
 
 // ImplementationActivity reports when the session or a direct subagent last
 // changed, from the cached session snapshot, and whether a permission or
 // question prompt is waiting on a human.
-func (l factoryImplementationLauncher) ImplementationActivity(ctx context.Context, session factory.PlanningSession) (time.Time, bool, error) {
-	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+func (l ImplementationLauncher) ImplementationActivity(ctx context.Context, session factory.PlanningSession) (time.Time, bool, error) {
+	platform, ok := l.m.deps.Registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return time.Time{}, false, errors.New("implementation platform is unavailable")
 	}

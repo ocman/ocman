@@ -1,14 +1,14 @@
-package mcp_test
+package factorymod
 
 import (
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/mark3labs/mcp-go/mcptest"
 	"testing"
+
+	"github.com/mark3labs/mcp-go/mcptest"
 )
 
 func TestFactoryCheckpointCompletionOmitsPR(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	srv, err := mcptest.NewServer(t, testTools(svc)...)
 	if err != nil {
 		t.Fatal(err)
 	}

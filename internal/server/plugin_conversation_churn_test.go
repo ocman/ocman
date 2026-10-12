@@ -62,24 +62,6 @@ func TestConversationReceiptPreflight(t *testing.T) {
 	}
 }
 
-type factoryIdleNotifier struct {
-	factoryService
-	platform, session string
-}
-
-func (f *factoryIdleNotifier) NotifySessionIdle(platform, session string) {
-	f.platform, f.session = platform, session
-}
-
-func TestSessionIdleNotifiesFactoryWithOwner(t *testing.T) {
-	f := &factoryIdleNotifier{}
-	s := &Server{factory: f}
-	s.onSessionIdle("r-owner:opencode", "session")
-	if f.platform != "r-owner:opencode" || f.session != "session" {
-		t.Fatalf("notified %q/%q", f.platform, f.session)
-	}
-}
-
 func (f *conversationLifecyclePlatform) Session(context.Context, string, int, int) (*platforms.SessionDetail, error) {
 	f.reads++
 	return nil, platforms.ErrNotFound

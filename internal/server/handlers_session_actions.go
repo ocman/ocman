@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -457,9 +458,9 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 		factorySession := false
 		if req.Reply != "reject" {
 			var err error
-			factorySession, err = s.factory.IsImplementationSession(r.Context(), sessionID)
+			factorySession, err = s.factoryModule().Service().IsImplementationSession(r.Context(), sessionID)
 			if err != nil {
-				writeFactoryError(w, err)
+				factorymod.WriteError(w, err)
 				return
 			}
 		}
@@ -469,15 +470,15 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 				if prompts, err := adapter.ListPermissions(r.Context(), sessionID); err == nil {
 					for _, prompt := range prompts {
 						if id, _ := prompt["id"].(string); id == permissionID {
-							gate, handled, err := s.factory.EscalatePermission(r.Context(), sessionID, permissionID, stringValue(prompt["permission"]), strings.Join(extractPermissionPatterns(prompt), ","))
+							gate, handled, err := s.factoryModule().Service().EscalatePermission(r.Context(), sessionID, permissionID, stringValue(prompt["permission"]), strings.Join(extractPermissionPatterns(prompt), ","))
 							if err != nil {
-								writeFactoryError(w, err)
+								factorymod.WriteError(w, err)
 								return
 							}
 							if handled {
-								gate, err = s.factory.ResolveAuthorityEscalationGate(r.Context(), gate.IssueID, "approve")
+								gate, err = s.factoryModule().Service().ResolveAuthorityEscalationGate(r.Context(), gate.IssueID, "approve")
 								if err != nil {
-									writeFactoryError(w, err)
+									factorymod.WriteError(w, err)
 									return
 								}
 								writeJSON(w, gate)

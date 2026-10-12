@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"bytes"
@@ -12,14 +12,15 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/sirupsen/logrus"
 )
 
-// factoryControlRunTimeout bounds running a confirmed proposal; a variable so
+// ControlRunTimeout bounds running a confirmed proposal; a variable so
 // tests can make it expire.
-var factoryControlRunTimeout = 5 * time.Minute
+var ControlRunTimeout = 5 * time.Minute
 
 // ponytail: serialize confirmed controls; use per-Epic locks if contention matters.
 var factoryControlDecisionMu sync.Mutex
@@ -36,32 +37,32 @@ func decodeFactoryControlMutation(raw string) (factory.GraphMutation, error) {
 
 // handleFactoryControl: GET returns the Epic's control session (404 before
 // it exists), POST opens it.
-func (s *Server) handleFactoryControl(w http.ResponseWriter, r *http.Request, epicID string) {
+func (m *Module) handleFactoryControl(w http.ResponseWriter, r *http.Request, epicID string) {
 	switch r.Method {
 	case http.MethodGet:
-		store, err := s.factoryControlStore()
+		store, err := m.factoryControlStore()
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
 		control, found, err := store.GetFactoryControlSession(r.Context(), epicID)
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
 		if !found {
 			http.Error(w, "no control session", http.StatusNotFound)
 			return
 		}
-		writeJSON(w, control)
+		httpx.WriteJSON(w, control)
 	case http.MethodPost:
-		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
-			control, _, err := s.ensureFactoryControlSession(r.Context(), epicID)
+		m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
+			control, _, err := m.EnsureControlSession(r.Context(), epicID)
 			if err != nil {
-				writeFactoryError(w, err)
+				WriteError(w, err)
 				return
 			}
-			writeJSON(w, control)
+			httpx.WriteJSON(w, control)
 		})(w, r)
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -71,30 +72,30 @@ func (s *Server) handleFactoryControl(w http.ResponseWriter, r *http.Request, ep
 
 // handleFactoryControlAction serves a proposal's card: GET reads it, POST
 // confirm runs it, POST dismiss drops it. Only a human click reaches here.
-func (s *Server) handleFactoryControlAction(w http.ResponseWriter, r *http.Request, epicID, actionID, verb string) {
-	store, err := s.factoryControlStore()
+func (m *Module) handleFactoryControlAction(w http.ResponseWriter, r *http.Request, epicID, actionID, verb string) {
+	store, err := m.factoryControlStore()
 	if err != nil {
-		writeFactoryError(w, err)
+		WriteError(w, err)
 		return
 	}
 	if verb == "" && r.Method == http.MethodGet {
 		action, found, err := store.GetFactoryControlAction(r.Context(), epicID, actionID)
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
 		if !found {
 			http.Error(w, "control action not found", http.StatusNotFound)
 			return
 		}
-		writeJSON(w, action)
+		httpx.WriteJSON(w, action)
 		return
 	}
 	if r.Method != http.MethodPost || (verb != "confirm" && verb != "dismiss") {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			AcknowledgeLocalExecution bool `json:"acknowledgeLocalExecution"`
 		}
@@ -104,16 +105,23 @@ func (s *Server) handleFactoryControlAction(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "invalid confirmation", http.StatusBadRequest)
 			return
 		}
-		action, err := s.decideFactoryControlAction(r.Context(), store, epicID, actionID, verb, request.AcknowledgeLocalExecution)
+		action, err := m.DecideControlAction(r.Context(), epicID, actionID, verb, request.AcknowledgeLocalExecution)
 		if err != nil {
-			writeFactoryError(w, err)
+			WriteError(w, err)
 			return
 		}
-		writeJSON(w, action)
+		httpx.WriteJSON(w, action)
 	})(w, r)
 }
 
-func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryControlStore, epicID, actionID, verb string, acknowledged ...bool) (state.FactoryControlAction, error) {
+// DecideControlAction confirms or dismisses a pending proposal. Only a
+// human click reaches it; confirming runs the action with the user's
+// authority and reports the outcome to the control session.
+func (m *Module) DecideControlAction(ctx context.Context, epicID, actionID, verb string, acknowledged ...bool) (state.FactoryControlAction, error) {
+	store, err := m.factoryControlStore()
+	if err != nil {
+		return state.FactoryControlAction{}, err
+	}
 	factoryControlDecisionMu.Lock()
 	defer factoryControlDecisionMu.Unlock()
 	action, found, err := store.GetFactoryControlAction(ctx, epicID, actionID)
@@ -138,8 +146,8 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 	detached := context.WithoutCancel(ctx)
 	outcome := "The user dismissed: " + action.Summary
 	if verb == "confirm" {
-		runCtx, cancelRun := context.WithTimeout(detached, factoryControlRunTimeout)
-		result, runErr := s.runFactoryControlAction(runCtx, action, acknowledged...)
+		runCtx, cancelRun := context.WithTimeout(detached, ControlRunTimeout)
+		result, runErr := m.runFactoryControlAction(runCtx, action, acknowledged...)
 		cancelRun()
 		action.Status, action.Result = "done", result
 		if runErr != nil {
@@ -157,7 +165,7 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 			return action, err
 		}
 		outcome = fmt.Sprintf("The user confirmed: %s\nOutcome: %s %s", action.Summary, action.Status, action.Result)
-		if reconciler, ok := s.factory.(interface{ ReconcileAttention(context.Context) }); ok {
+		if reconciler, ok := m.svc.(interface{ ReconcileAttention(context.Context) }); ok {
 			reconciler.ReconcileAttention(detached)
 		}
 	}
@@ -166,12 +174,12 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 	defer cancelPost()
 	if control, found, _ := store.GetFactoryControlSession(postCtx, epicID); found {
 		// Deliver the final outcome without creating another control session.
-		epic, err := s.factory.GetWorkEpic(postCtx, epicID)
+		epic, err := m.svc.GetWorkEpic(postCtx, epicID)
 		if err == nil && epic.Status == "closed" {
 			outcome += "\nThe Epic is closed. Report the final state and unfinished work. Do not propose more work or recovery."
-			err = s.queueSvc().Enqueue(postCtx, control.Platform, false, platforms.SendMessageRequest{SessionID: control.SessionID, Message: outcome, Model: epic.Models.Plan})
+			err = m.deps.Enqueue(postCtx, control.Platform, false, platforms.SendMessageRequest{SessionID: control.SessionID, Message: outcome, Model: epic.Models.Plan})
 		} else if err == nil {
-			_, err = s.postFactoryControl(postCtx, epicID, outcome+"\nRe-read the Epic and issues before recommending another action. Older notifications and proposals may have been superseded.")
+			_, err = m.PostControl(postCtx, epicID, outcome+"\nRe-read the Epic and issues before recommending another action. Older notifications and proposals may have been superseded.")
 		}
 		if err != nil {
 			logrus.WithError(err).WithField("epic", epicID).Warn("factory: control outcome not delivered")
@@ -182,13 +190,13 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 
 // runFactoryControlAction performs a confirmed proposal with the user's
 // authority, so it bypasses the agent-facing refusals.
-func (s *Server) runFactoryControlAction(ctx context.Context, action state.FactoryControlAction, acknowledged ...bool) (string, error) {
+func (m *Module) runFactoryControlAction(ctx context.Context, action state.FactoryControlAction, acknowledged ...bool) (string, error) {
 	var args map[string]string
 	if err := json.Unmarshal(action.Args, &args); err != nil {
 		return "", err
 	}
 	epicID := action.EpicID
-	epic, err := s.factory.GetWorkEpic(ctx, epicID)
+	epic, err := m.svc.GetWorkEpic(ctx, epicID)
 	if err != nil {
 		return "", err
 	}
@@ -197,13 +205,13 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 	}
 	switch action.Action {
 	case "claim_plan":
-		_, err := s.factory.ClaimPlan(ctx, epicID, args["issue_id"])
+		_, err := m.svc.ClaimPlan(ctx, epicID, args["issue_id"])
 		return "", err
 	case "materialize":
-		_, err := s.factory.Materialize(ctx, epicID, args["issue_id"])
+		_, err := m.svc.Materialize(ctx, epicID, args["issue_id"])
 		return "", err
 	case "reopen":
-		reopener, ok := s.factory.(interface {
+		reopener, ok := m.svc.(interface {
 			ReopenIssue(context.Context, string, string) error
 		})
 		if !ok {
@@ -216,21 +224,21 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 			return "", err
 		}
 		mutation.EpicID, mutation.Actor = epicID, "user"
-		return "", s.factory.MutateGraph(ctx, mutation)
+		return "", m.svc.MutateGraph(ctx, mutation)
 	case "resolve_recovery":
-		issues, err := s.factory.ListIssues(ctx, epicID)
+		issues, err := m.svc.ListIssues(ctx, epicID)
 		if err != nil {
 			return "", err
 		}
 		for _, issue := range issues {
 			if issue.ID == args["recovery_gate_id"] || (issue.Recovery != nil && issue.Recovery.IssueID == args["recovery_gate_id"]) {
-				_, err := s.factory.ResolveRecoveryGate(ctx, args["recovery_gate_id"], args["decision"], args["response"])
+				_, err := m.svc.ResolveRecoveryGate(ctx, args["recovery_gate_id"], args["decision"], args["response"])
 				return "", err
 			}
 		}
 		return "", fmt.Errorf("%w: recovery gate %s is not part of Epic %s", factory.ErrInvalidRequest, args["recovery_gate_id"], epicID)
 	case "deliver_as_is":
-		deliverer, ok := s.factory.(interface {
+		deliverer, ok := m.svc.(interface {
 			DeliverAsIs(context.Context, string) ([]string, error)
 		})
 		if !ok {
@@ -242,7 +250,7 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 		}
 		return "left out " + strings.Join(leftOut, ", "), err
 	case "pause", "resume":
-		pauser, ok := s.factory.(interface {
+		pauser, ok := m.svc.(interface {
 			SetEpicPaused(context.Context, string, bool) error
 		})
 		if !ok {
@@ -250,7 +258,7 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 		}
 		return "", pauser.SetEpicPaused(ctx, epicID, action.Action == "pause")
 	case "stop":
-		stopper, ok := s.factory.(interface {
+		stopper, ok := m.svc.(interface {
 			StopEpic(context.Context, string) error
 		})
 		if !ok {
@@ -258,7 +266,7 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 		}
 		return "Epic stopped without delivery; unfinished work cancelled, files and history preserved.", stopper.StopEpic(ctx, epicID)
 	case "decide_plan", "resolve_authority", "resolve_project":
-		return "", s.runFactoryControlDecision(ctx, epicID, action.Action, args, acknowledged...)
+		return "", m.runFactoryControlDecision(ctx, epicID, action.Action, args, acknowledged...)
 	}
 	return "", fmt.Errorf("%w: unsupported factory control action", factory.ErrInvalidRequest)
 }

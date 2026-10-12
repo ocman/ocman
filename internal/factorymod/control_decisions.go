@@ -1,4 +1,4 @@
-package server
+package factorymod
 
 import (
 	"context"
@@ -30,19 +30,19 @@ func validateFactoryControlDecision(action string, args map[string]string) error
 	return nil
 }
 
-func (s *Server) runFactoryControlDecision(ctx context.Context, epicID, action string, args map[string]string, acknowledged ...bool) error {
+func (m *Module) runFactoryControlDecision(ctx context.Context, epicID, action string, args map[string]string, acknowledged ...bool) error {
 	if action == "decide_plan" {
 		revision, _ := strconv.Atoi(args["expected_revision"])
-		_, err := s.factory.DecidePlanGate(ctx, epicID, args["decision"], factory.PlanGateDecisionRequest{ExpectedRevision: revision, ExpectedHash: args["expected_hash"], Actor: "user", Feedback: args["response"], ImplementationModel: args["implementation_model"]})
+		_, err := m.svc.DecidePlanGate(ctx, epicID, args["decision"], factory.PlanGateDecisionRequest{ExpectedRevision: revision, ExpectedHash: args["expected_hash"], Actor: "user", Feedback: args["response"], ImplementationModel: args["implementation_model"]})
 		return err
 	}
-	issues, err := s.factory.ListIssues(ctx, epicID)
+	issues, err := m.svc.ListIssues(ctx, epicID)
 	if err != nil {
 		return err
 	}
 	for _, issue := range issues {
 		if action == "resolve_authority" && issue.Authority != nil && issue.Authority.IssueID == args["authority_gate_id"] {
-			_, err := s.factory.ResolveAuthorityEscalationGate(ctx, args["authority_gate_id"], args["decision"])
+			_, err := m.svc.ResolveAuthorityEscalationGate(ctx, args["authority_gate_id"], args["decision"])
 			return err
 		}
 		if action == "resolve_project" && issue.ProjectRequest != nil && issue.ProjectRequest.IssueID == args["project_gate_id"] {
@@ -50,7 +50,7 @@ func (s *Server) runFactoryControlDecision(ctx context.Context, epicID, action s
 			if args["decision"] == "approve" && !consent {
 				return fmt.Errorf("%w: the user must allow local command execution for this project", factory.ErrInvalidRequest)
 			}
-			resolver, ok := s.factory.(interface {
+			resolver, ok := m.svc.(interface {
 				ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error)
 			})
 			if !ok {

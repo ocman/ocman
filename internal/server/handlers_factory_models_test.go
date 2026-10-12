@@ -40,7 +40,7 @@ func TestFactoryEpicModelsRoute(t *testing.T) {
 	}
 	svc := &fakeModelsFactory{fakeFactoryService: &fakeFactoryService{}}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	rec := post(srv, `{"plan":"p/plan","implementation":"p/impl","verification":"p/verify"}`)
 	if rec.Code != http.StatusOK || svc.epicID != "fac-1" || svc.models != (model.EpicModels{Plan: "p/plan", Implementation: "p/impl", Verification: "p/verify"}) || !strings.Contains(rec.Body.String(), `"implementation":"p/impl"`) {
 		t.Fatalf("set models = %d %s; %#v", rec.Code, rec.Body.String(), svc.models)
@@ -48,7 +48,7 @@ func TestFactoryEpicModelsRoute(t *testing.T) {
 	if rec := post(srv, `{"plan":"bad"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid models = %d: %s", rec.Code, rec.Body.String())
 	}
-	srv.factory = &fakeFactoryService{}
+	useFactory(srv, &fakeFactoryService{})
 	if rec := post(srv, `{}`); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unsupported factory = %d: %s", rec.Code, rec.Body.String())
 	}

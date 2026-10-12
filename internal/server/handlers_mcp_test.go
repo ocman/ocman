@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -241,7 +240,7 @@ func TestMCPServerURL(t *testing.T) {
 func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -267,7 +266,7 @@ func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +289,7 @@ func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 func TestMainMuxMCPProposesExecutableIssueCreation(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
-	srv.factory = svc
+	useFactory(srv, svc)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -310,74 +309,5 @@ func TestMainMuxMCPProposesExecutableIssueCreation(t *testing.T) {
 	}
 	if svc.mutation.Action != "create" || svc.mutation.Actor != "mcp" {
 		t.Fatalf("MutateGraph = %+v, want agent proposal", svc.mutation)
-	}
-}
-
-func TestDedicatedMCPFactoryServiceRejectsUserOnlyActions(t *testing.T) {
-	service := factoryMCPService{factoryService: &fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}}
-	checks := []struct {
-		name string
-		call func() error
-	}{
-		{"create Epic with custom Formula", func() error {
-			_, err := service.CreateWorkEpic(t.Context(), factory.CreateWorkEpicRequest{FormulaID: "custom/team", FormulaRevision: 1})
-			return err
-		}},
-		{"create Epic with Formula revision", func() error {
-			_, err := service.CreateWorkEpic(t.Context(), factory.CreateWorkEpicRequest{FormulaRevision: 1})
-			return err
-		}},
-		{"save Formula", func() error { _, err := service.SaveFormula(t.Context(), factory.FormulaSaveRequest{}); return err }},
-		{"set capacity", func() error { _, err := service.SetCapacityPolicy(t.Context(), factory.CapacityPolicy{}); return err }},
-		{"decide Plan", func() error {
-			_, err := service.DecidePlanGate(t.Context(), "epic", "approve", factory.PlanGateDecisionRequest{})
-			return err
-		}},
-		{"resolve recovery", func() error { _, err := service.ResolveRecoveryGate(t.Context(), "gate", "resume", ""); return err }},
-		{"resolve authority", func() error {
-			_, err := service.ResolveAuthorityEscalationGate(t.Context(), "gate", "approve")
-			return err
-		}},
-		{"resolve project request", func() error {
-			_, err := service.ResolveProjectRequest(t.Context(), "gate", "approve", "", true)
-			return err
-		}},
-	}
-	for _, check := range checks {
-		t.Run(check.name, func(t *testing.T) {
-			if err := check.call(); !errors.Is(err, factory.ErrActionNotPermitted) {
-				t.Fatalf("error = %v, want ErrActionNotPermitted", err)
-			}
-		})
-	}
-}
-
-func TestMCPFactoryImportsPlanButCannotApproveIt(t *testing.T) {
-	underlying := &fakeFactoryService{}
-	service := factoryMCPService{factoryService: underlying}
-	if _, err := service.SubmitProposal(t.Context(), factory.SubmitProposalRequest{Import: true, EpicID: "epic"}); err != nil || !underlying.submitProposalReq.Import {
-		t.Fatalf("import = %#v, %v", underlying.submitProposalReq, err)
-	}
-	if _, err := service.DecidePlanGate(t.Context(), "epic", "approve", factory.PlanGateDecisionRequest{ExpectedRevision: 1, ExpectedHash: "hash"}); !errors.Is(err, factory.ErrActionNotPermitted) || underlying.gateAction != "" {
-		t.Fatalf("agent approved imported plan: %v", err)
-	}
-}
-
-func TestDedicatedMCPFactoryServiceAllowsGraphMutations(t *testing.T) {
-	underlying := &fakeFactoryService{}
-	service := factoryMCPService{factoryService: underlying}
-	for _, action := range []string{"create", "edit", "reparent", "link", "unlink", "delete"} {
-		mutation := factory.GraphMutation{Action: action, EpicID: "epic", ParentID: "epic.1", Kind: "mol", Title: "Work", Actor: "mcp"}
-		if err := service.MutateGraph(t.Context(), mutation); err != nil {
-			t.Fatalf("%s: %v", action, err)
-		}
-		if !reflect.DeepEqual(underlying.mutation, mutation) {
-			t.Fatalf("mutation = %+v, want %+v", underlying.mutation, mutation)
-		}
-	}
-	for _, kind := range []string{"implementation", "task"} {
-		if err := service.MutateGraph(t.Context(), factory.GraphMutation{Action: "create", Kind: kind, Actor: "user"}); err != nil || underlying.mutation.Actor != "mcp" {
-			t.Fatalf("%s create = %#v, %v, want agent proposal", kind, underlying.mutation, err)
-		}
 	}
 }

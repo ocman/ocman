@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -19,7 +21,7 @@ func (f *fakeFactoryService) StopEpic(ctx context.Context, epicID string) error 
 
 func TestFactoryControlUpgradesExistingInstructionsOnce(t *testing.T) {
 	f := newControlFixture(t)
-	control, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1")
+	control, _, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +30,8 @@ func TestFactoryControlUpgradesExistingInstructionsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		current, created, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1")
-		if err != nil || created || current.ProtocolVersion != factoryControlProtocolVersion {
+		current, created, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1")
+		if err != nil || created || current.ProtocolVersion != factorymod.ControlProtocolVersion {
 			t.Fatalf("upgrade = %#v, %v, %v", current, created, err)
 		}
 	}
@@ -38,7 +40,7 @@ func TestFactoryControlUpgradesExistingInstructionsOnce(t *testing.T) {
 		t.Fatalf("upgrade messages = %#v, %v", queued, err)
 	}
 	stored, _, err := f.srv.stateDB.GetFactoryControlSession(t.Context(), "epic-1")
-	if err != nil || stored != (state.FactoryControlSession{EpicID: "epic-1", Platform: control.Platform, SessionID: control.SessionID, ProtocolVersion: factoryControlProtocolVersion}) {
+	if err != nil || stored != (state.FactoryControlSession{EpicID: "epic-1", Platform: control.Platform, SessionID: control.SessionID, ProtocolVersion: factorymod.ControlProtocolVersion}) {
 		t.Fatalf("stored = %#v, %v", stored, err)
 	}
 }
@@ -57,7 +59,7 @@ func TestFactoryControlOwnsAllEpicDecisions(t *testing.T) {
 		t.Run(tc.action, func(t *testing.T) {
 			f := newControlFixture(t)
 			f.svc.issues = append(f.svc.issues, factory.Issue{ID: "authority-1", Authority: &factory.AuthorityEscalationGate{IssueID: "authority-1"}}, factory.Issue{ID: "project-1", ProjectRequest: &factory.ProjectRequestGate{IssueID: "project-1", RequestedProject: "/sensitive"}})
-			id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", tc.action, tc.args, "Allow "+tc.action)
+			id, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", tc.action, tc.args, "Allow "+tc.action)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -67,7 +69,7 @@ func TestFactoryControlOwnsAllEpicDecisions(t *testing.T) {
 			got := f.call(http.MethodPost, "/api/factory/epics/epic-1/control-actions/"+id+"/confirm")
 			if tc.action == "resolve_project" {
 				// The acknowledgement is human confirmation input, never a proposal field.
-				id, err = f.srv.proposeFactoryControl(t.Context(), "epic-1", tc.action, tc.args, "Allow execution")
+				id, err = f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", tc.action, tc.args, "Allow execution")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -114,7 +116,7 @@ func TestFactoryControlProjectConsentUsesCoreScope(t *testing.T) {
 	f := newControlFixture(t)
 	f.svc.issues = []factory.Issue{{ID: "project-1", ProjectRequest: &factory.ProjectRequestGate{IssueID: "project-1", RequestedProject: "/sensitive"}}}
 	args := map[string]string{"project_gate_id": "project-1", "decision": "approve", "requested_project": "/fake"}
-	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "resolve_project", args, "Continue work")
+	id, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "resolve_project", args, "Continue work")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,14 +128,14 @@ func TestFactoryControlProjectConsentUsesCoreScope(t *testing.T) {
 		t.Fatalf("unacknowledged = %d %s", got.Code, got.Body.String())
 	}
 	args["acknowledge_local_execution"] = "true"
-	if _, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "resolve_project", args, "Agent-only consent"); !errors.Is(err, factory.ErrInvalidRequest) {
+	if _, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "resolve_project", args, "Agent-only consent"); !errors.Is(err, factory.ErrInvalidRequest) {
 		t.Fatalf("agent consent accepted: %v", err)
 	}
 }
 
 func TestFactoryControlRejectsMalformedHumanConsent(t *testing.T) {
 	f := newControlFixture(t)
-	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "pause", nil, "Pause")
+	id, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "pause", nil, "Pause")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,45 +161,64 @@ func TestFactoryControlDecisionValidation(t *testing.T) {
 		{"resolve_authority", map[string]string{"authority_gate_id": "gate", "decision": "maybe"}},
 		{"resolve_project", map[string]string{"project_gate_id": "gate", "decision": "approve", "acknowledge_local_execution": "maybe"}},
 	} {
-		if _, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", tc.action, tc.args, "Do it"); !errors.Is(err, factory.ErrInvalidRequest) {
+		if _, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", tc.action, tc.args, "Do it"); !errors.Is(err, factory.ErrInvalidRequest) {
 			t.Fatalf("%s accepted invalid args: %v", tc.action, err)
 		}
 	}
 	for _, action := range []string{"resolve_authority", "resolve_project"} {
-		err := f.srv.runFactoryControlDecision(t.Context(), "epic-1", action, map[string]string{"authority_gate_id": "foreign", "project_gate_id": "foreign", "decision": "approve"})
-		if !errors.Is(err, factory.ErrInvalidRequest) || f.svc.authorityGateID != "" || f.svc.projectGateID != "" {
-			t.Fatalf("foreign gate accepted: %v", err)
+		got := f.confirmRecorded(t, action, map[string]string{"authority_gate_id": "foreign", "project_gate_id": "foreign", "decision": "approve"}, true)
+		if got.Status != "failed" || !strings.Contains(got.Result, "decision gate is not part of Epic") || f.svc.authorityGateID != "" || f.svc.projectGateID != "" {
+			t.Fatalf("foreign gate accepted: %#v", got)
 		}
 	}
+}
+
+// confirmRecorded confirms a proposal stored as-is, bypassing proposal
+// validation, so the confirmation path's own checks are what run.
+func (f *controlFixture) confirmRecorded(t *testing.T, action string, args map[string]string, acknowledged bool) state.FactoryControlAction {
+	t.Helper()
+	raw, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "fca_" + action
+	if err := f.srv.stateDB.CreateFactoryControlAction(t.Context(), state.FactoryControlAction{ID: id, EpicID: "epic-1", Action: action, Args: raw, Summary: "Do it"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.srv.factoryModule().DecideControlAction(t.Context(), "epic-1", id, "confirm", acknowledged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
 }
 
 func TestFactoryControlRejectsAgentOnlyExecutionConsent(t *testing.T) {
 	f := newControlFixture(t)
 	f.svc.issues = []factory.Issue{{ID: "project-1", ProjectRequest: &factory.ProjectRequestGate{IssueID: "project-1", RequestedProject: "/sensitive"}}}
-	err := f.srv.runFactoryControlDecision(t.Context(), "epic-1", "resolve_project", map[string]string{"project_gate_id": "project-1", "decision": "approve", "acknowledge_local_execution": "true"})
-	if !errors.Is(err, factory.ErrInvalidRequest) || f.svc.projectGateID != "" {
-		t.Fatalf("agent execution consent accepted: %v, gate %s", err, f.svc.projectGateID)
+	got := f.confirmRecorded(t, "resolve_project", map[string]string{"project_gate_id": "project-1", "decision": "approve", "acknowledge_local_execution": "true"}, false)
+	if got.Status != "failed" || !strings.Contains(got.Result, "must allow local command execution") || f.svc.projectGateID != "" {
+		t.Fatalf("agent execution consent accepted: %#v, gate %s", got, f.svc.projectGateID)
 	}
 }
 
 func TestFactoryControlRetiresAlternativeProposals(t *testing.T) {
 	f := newControlFixture(t)
-	old, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "resume", nil, "Retry the loop")
+	old, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "resume", nil, "Retry the loop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "stop", nil, "End the loop")
+	stop, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "stop", nil, "End the loop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.srv.decideFactoryControlAction(t.Context(), f.srv.stateDB, "epic-1", stop, "confirm"); err != nil {
+	if _, err := f.srv.factoryModule().DecideControlAction(t.Context(), "epic-1", stop, "confirm"); err != nil {
 		t.Fatal(err)
 	}
 	previous, _, err := f.srv.stateDB.GetFactoryControlAction(t.Context(), "epic-1", old)
 	if err != nil || previous.Status != "dismissed" || !strings.Contains(previous.Result, "Superseded") {
 		t.Fatalf("alternative = %#v, %v", previous, err)
 	}
-	if _, err := f.srv.decideFactoryControlAction(t.Context(), f.srv.stateDB, "epic-1", old, "confirm"); err == nil || f.svc.pausedEpicID != "" {
+	if _, err := f.srv.factoryModule().DecideControlAction(t.Context(), "epic-1", old, "confirm"); err == nil || f.svc.pausedEpicID != "" {
 		t.Fatal("superseded proposal ran")
 	}
 }
@@ -211,15 +232,15 @@ func (f closingControlFactory) StopEpic(ctx context.Context, id string) error {
 
 func TestFactoryControlGetsFinalOutcomeAfterStop(t *testing.T) {
 	f := newControlFixture(t)
-	if _, _, err := f.srv.ensureFactoryControlSession(t.Context(), "epic-1"); err != nil {
+	if _, _, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1"); err != nil {
 		t.Fatal(err)
 	}
-	f.srv.factory = closingControlFactory{f.svc}
-	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "stop", nil, "End the loop")
+	useFactory(f.srv, closingControlFactory{f.svc})
+	id, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "stop", nil, "End the loop")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.srv.decideFactoryControlAction(t.Context(), f.srv.stateDB, "epic-1", id, "confirm"); err != nil {
+	if _, err := f.srv.factoryModule().DecideControlAction(t.Context(), "epic-1", id, "confirm"); err != nil {
 		t.Fatal(err)
 	}
 	if f.creates != 1 || !f.delivered(t, "The Epic is closed") || !f.delivered(t, "unfinished work cancelled") {
@@ -229,7 +250,7 @@ func TestFactoryControlGetsFinalOutcomeAfterStop(t *testing.T) {
 
 func TestFactoryControlCanStopWithoutDelivery(t *testing.T) {
 	f := newControlFixture(t)
-	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "stop", nil, "Stop and leave unfinished work cancelled")
+	id, err := f.srv.factoryModule().ProposeControl(t.Context(), "epic-1", "stop", nil, "Stop and leave unfinished work cancelled")
 	if err != nil {
 		t.Fatal(err)
 	}
