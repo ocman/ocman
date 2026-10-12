@@ -6,6 +6,7 @@ package sharing
 import (
 	"context"
 	"net/http"
+	"runtime/debug"
 
 	log "github.com/sirupsen/logrus"
 
@@ -59,6 +60,11 @@ func (m *Module) Subscribe(b *module.Bus) {
 			return
 		}
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.WithFields(log.Fields{"panic": r, "stack": string(debug.Stack()), "session_id": e.SessionID}).Error("share relay publisher panicked")
+				}
+			}()
 			if err := m.PublishCompletedTurn(context.Background(), adapter, e.SessionID); err != nil {
 				log.WithError(err).WithField("session_id", e.SessionID).Warn("publishing completed turn to share relay")
 			}

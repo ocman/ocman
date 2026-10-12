@@ -4,15 +4,42 @@ import (
 	"testing"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
+
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 type idleAdapter struct {
 	platforms.Platform
 	looked chan string
+}
+
+type panickingAdapter struct{ platforms.Platform }
+
+func (panickingAdapter) ID() platforms.ID { panic("publisher panic") }
+
+func TestIdlePublisherRecoversPanic(t *testing.T) {
+	oldHooks := log.StandardLogger().ReplaceHooks(make(log.LevelHooks))
+	t.Cleanup(func() { log.StandardLogger().ReplaceHooks(oldHooks) })
+	hook := logtest.NewGlobal()
+	m := NewModule(Deps{Platform: func(platforms.ID) (platforms.Platform, bool) {
+		return panickingAdapter{}, true
+	}})
+	var bus module.Bus
+	m.Subscribe(&bus)
+	bus.PublishSessionIdle(t.Context(), module.SessionIdle{Platform: "opencode", SessionID: "s"})
+	testutil.WaitFor(t, time.Second, "publisher panic logged", func() bool {
+		return hook.LastEntry() != nil
+	})
+	entry := hook.LastEntry()
+	if entry.Level != log.ErrorLevel || entry.Data["panic"] != "publisher panic" || entry.Data["stack"] == "" || entry.Data["stack"] == nil {
+		t.Fatalf("panic log = %+v", entry)
+	}
 }
 
 func (a idleAdapter) ID() platforms.ID { a.looked <- "opencode"; return "opencode" }
