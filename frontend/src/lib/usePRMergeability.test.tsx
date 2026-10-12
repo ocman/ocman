@@ -47,6 +47,37 @@ describe('usePRMergeability', () => {
     expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps resolved results when a row leaves and re-enters the viewport', async () => {
+    vi.mocked(api.fetchPRMergeability).mockResolvedValue({ mergeable: true, approved: false });
+    const { result, rerender } = renderHook(({ visible }) => usePRMergeability(pr, '/repo', 'local', 'origin', visible), { initialProps: { visible: true } });
+    await waitFor(() => expect(result.current).toEqual({ mergeable: true, approved: false }));
+    rerender({ visible: false });
+    rerender({ visible: true });
+    await act(async () => {});
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers fetching and pauses pending retries while the browser tab is hidden', async () => {
+    vi.useFakeTimers();
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    vi.mocked(api.fetchPRMergeability).mockResolvedValueOnce({ mergeable: null, approved: null }).mockResolvedValue({ mergeable: true, approved: true });
+    const { result } = renderHook(() => usePRMergeability(pr, '/repo', 'local', 'origin', true));
+    await act(async () => {});
+    expect(api.fetchPRMergeability).not.toHaveBeenCalled();
+    hidden.mockReturnValue(false);
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
+    hidden.mockReturnValue(true);
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(vi.mocked(api.fetchPRMergeability).mock.calls[0][0].signal.aborted).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
+    hidden.mockReturnValue(false);
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(result.current).toEqual({ mergeable: true, approved: true });
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(2);
+  });
+
   it('revalidates on a refresh for its repository, but not another repository', async () => {
     vi.mocked(api.fetchPRMergeability).mockResolvedValueOnce({ mergeable: true, approved: true }).mockResolvedValueOnce({ mergeable: false, approved: false });
     const { result } = renderHook(() => usePRMergeability(pr, '/repo', 'local', 'origin', true));

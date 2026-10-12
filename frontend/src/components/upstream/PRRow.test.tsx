@@ -195,12 +195,19 @@ describe('PRRow CI build-status indicator', () => {
     const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue(success);
     render(<PRRow pr={makePR({ headSha: 'abc123' })} directory="/repo" remoteId="local" remote="origin" />);
     expect(spy).not.toHaveBeenCalled();
+    expect(api.fetchPRMergeability).not.toHaveBeenCalled();
     expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-unknown');
 
     show(true);
     await waitFor(() => expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success'));
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ dir: '/repo', remote: 'origin', sha: 'abc123' }));
     expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument();
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
+    show(false);
+    show(true);
+    await act(async () => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
   });
 
   it('fetches without IntersectionObserver', async () => {

@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchPRMergeability, UpstreamApiError } from './upstreamApi';
 import type { PR, PRMergeability } from './upstreamApi';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
+import { useDocumentVisible } from './usePanelVisible';
 
 export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote: string, visible: boolean) {
+  const documentVisible = useDocumentVisible();
   const { number, status, mergeable, headSha, updatedAt } = pr;
   const [generation, setGeneration] = useState(0);
   const repository = `${pr.host}/${pr.repo}`;
@@ -21,7 +23,7 @@ export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote:
   useEffect(() => {
     if (retry.current.key !== key) retry.current = { key, failures: 0, nextPollAt: 0, stopped: false };
     const polling = retry.current;
-    if (!visible || polling.stopped) return;
+    if (!visible || !documentVisible || polling.stopped) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
@@ -32,7 +34,10 @@ export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote:
         polling.failures = 0;
         polling.nextPollAt = 0;
         setResolved({ key, value });
-        if (value.approved != null && (status !== 'open' || mergeable != null || value.mergeable != null)) return;
+        if (value.approved != null && (status !== 'open' || mergeable != null || value.mergeable != null)) {
+          polling.stopped = true;
+          return;
+        }
       } catch (error) {
         if (controller.signal.aborted) return;
         const status = error instanceof UpstreamApiError ? error.envelope?.error.upstreamStatus || error.status : 0;
@@ -54,7 +59,7 @@ export function usePRMergeability(pr: PR, dir: string, remoteId: string, remote:
       controller.abort();
       clearTimeout(timer);
     };
-  }, [dir, key, mergeable, number, remote, remoteId, status, visible]);
+  }, [dir, key, mergeable, number, remote, remoteId, status, visible, documentVisible]);
   const value = resolved?.key === key ? resolved.value : undefined;
   return { mergeable: mergeable ?? value?.mergeable, approved: value?.approved };
 }
