@@ -41,8 +41,13 @@ export function platformMessageCount(messages: Message[]): number {
   return messages.reduce((count, message) => count + (message.data?.role === 'notice' ? 0 : 1), 0);
 }
 
+// History keys survive reloads and change on SPA navigation. Keep the initial
+// document entry outside the session hooks so remounting cannot reset it.
+const initialDocumentEntryKey = window.history.state?.key;
+
 /** Restoring an existing browser view is a read, not an explicit reopen. */
 export function isSessionPageRestore(sessionId?: string): boolean {
+  if (window.history.state?.key !== initialDocumentEntryKey) return false;
   const navigation = performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined;
   if (navigation?.type !== 'reload' && navigation?.type !== 'back_forward') return false;
   // Navigation timing describes the document's original URL, even after SPA navigation.

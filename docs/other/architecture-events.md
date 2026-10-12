@@ -95,6 +95,9 @@ sequenceDiagram
   background inspections use `peek=1`, preserving archives made in another tab
   unless newer activity meets the configured resurfacing policy. Read-watermark
   updates and tab visibility changes do not clear the browser's archived flag.
+  Restore detection also checks the document's initial browser history key, so
+  leaving for another page and deliberately reopening the same session works
+  across session-page unmounts and remounts.
 - Archive and reopen requests broadcast an owner-qualified `archived` patch
   after persistence. An open archived conversation moves to the next visible
   session or an empty conversation on every client, including hidden tabs.
