@@ -220,3 +220,27 @@ func TestFactoryAttentionSurvivesPauseResume(t *testing.T) {
 		t.Fatalf("closed items = %#v, %v", items, err)
 	}
 }
+
+func TestFactoryAttentionDeliversNewPausedDecisionsOnce(t *testing.T) {
+	svc, _, epicID, next := deliverAsIsFixture(t)
+	work := next(0)
+	var notified []string
+	svc.OnAttention(func(_ context.Context, _ string, actions []string) { notified = append(notified, actions...) })
+	if err := svc.SetEpicPaused(t.Context(), epicID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateRecoveryGate(t.Context(), work.AttemptID, work.AgentToken, "Paused question", "Needs a decision", nil); err != nil {
+		t.Fatal(err)
+	}
+	svc.ReconcileAttention(t.Context())
+	if len(notified) != 1 || !strings.Contains(notified[0], "Recovery required") {
+		t.Fatalf("paused notification = %v", notified)
+	}
+	if err := svc.SetEpicPaused(t.Context(), epicID, false); err != nil {
+		t.Fatal(err)
+	}
+	svc.ReconcileAttention(t.Context())
+	if len(notified) != 1 {
+		t.Fatalf("decision notified more than once: %v", notified)
+	}
+}

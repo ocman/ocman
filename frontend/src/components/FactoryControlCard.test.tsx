@@ -58,6 +58,37 @@ describe('FactoryControlCard', () => {
 		expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the proposed change');
 	});
 
+	it('requires explicit execution consent and displays the real project', async () => {
+		const user = userEvent.setup();
+		const proposal = { ...pending, action: 'resolve_project', summary: 'Continue work', requestedProject: '/sensitive' };
+		vi.mocked(api.factoryControlAction).mockResolvedValueOnce(proposal).mockResolvedValue({ ...proposal, status: 'done' });
+		vi.mocked(api.decideFactoryControlAction).mockResolvedValue({ ...proposal, status: 'done' });
+		renderCard();
+		const acknowledge = await screen.findByRole('checkbox', { name: /Allow local command execution/ });
+		expect(screen.getByText('/sensitive')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled();
+		await user.click(acknowledge);
+		await user.click(screen.getByRole('button', { name: 'Confirm' }));
+		expect(api.decideFactoryControlAction).toHaveBeenCalledWith('epic-1', 'fca_1', 'confirm', true);
+	});
+
+	it('does not carry consent to a different proposal and can dismiss without granting execution', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryControlAction).mockImplementation(async (_, id) => ({ ...pending, id, action: 'resolve_project', requestedProject: id === 'first' ? '/first' : '/second' }));
+		const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		const card = (id: string) => <QueryClientProvider client={client}><MemoryRouter><FactoryMarkerCard epicID="epic-1" issueID={id} action="control" /></MemoryRouter></QueryClientProvider>;
+		const view = render(card('first'));
+		await user.click(await screen.findByRole('checkbox'));
+		expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+		view.rerender(card('second'));
+		expect(await screen.findByText('/second')).toBeInTheDocument();
+		expect(screen.getByRole('checkbox')).not.toBeChecked();
+		expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled();
+		vi.mocked(api.decideFactoryControlAction).mockResolvedValue({ ...pending, id: 'second', status: 'dismissed' });
+		await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+		expect(api.decideFactoryControlAction).toHaveBeenCalledWith('epic-1', 'second', 'dismiss');
+	});
+
 	it('removes superseded confirmation buttons after another change is confirmed', async () => {
 		const user = userEvent.setup();
 		let stopped = false;

@@ -95,7 +95,16 @@ func (s *Server) handleFactoryControlAction(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
-		action, err := s.decideFactoryControlAction(r.Context(), store, epicID, actionID, verb)
+		var request struct {
+			AcknowledgeLocalExecution bool `json:"acknowledgeLocalExecution"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); (err != nil && err != io.EOF) || decoder.Decode(&struct{}{}) != io.EOF {
+			http.Error(w, "invalid confirmation", http.StatusBadRequest)
+			return
+		}
+		action, err := s.decideFactoryControlAction(r.Context(), store, epicID, actionID, verb, request.AcknowledgeLocalExecution)
 		if err != nil {
 			writeFactoryError(w, err)
 			return
@@ -104,7 +113,7 @@ func (s *Server) handleFactoryControlAction(w http.ResponseWriter, r *http.Reque
 	})(w, r)
 }
 
-func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryControlStore, epicID, actionID, verb string) (state.FactoryControlAction, error) {
+func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryControlStore, epicID, actionID, verb string, acknowledged ...bool) (state.FactoryControlAction, error) {
 	factoryControlDecisionMu.Lock()
 	defer factoryControlDecisionMu.Unlock()
 	action, found, err := store.GetFactoryControlAction(ctx, epicID, actionID)
@@ -130,7 +139,7 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 	outcome := "The user dismissed: " + action.Summary
 	if verb == "confirm" {
 		runCtx, cancelRun := context.WithTimeout(detached, factoryControlRunTimeout)
-		result, runErr := s.runFactoryControlAction(runCtx, action)
+		result, runErr := s.runFactoryControlAction(runCtx, action, acknowledged...)
 		cancelRun()
 		action.Status, action.Result = "done", result
 		if runErr != nil {
@@ -173,7 +182,7 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 
 // runFactoryControlAction performs a confirmed proposal with the user's
 // authority, so it bypasses the agent-facing refusals.
-func (s *Server) runFactoryControlAction(ctx context.Context, action state.FactoryControlAction) (string, error) {
+func (s *Server) runFactoryControlAction(ctx context.Context, action state.FactoryControlAction, acknowledged ...bool) (string, error) {
 	var args map[string]string
 	if err := json.Unmarshal(action.Args, &args); err != nil {
 		return "", err
@@ -249,7 +258,7 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 		}
 		return "Epic stopped without delivery; unfinished work cancelled, files and history preserved.", stopper.StopEpic(ctx, epicID)
 	case "decide_plan", "resolve_authority", "resolve_project":
-		return "", s.runFactoryControlDecision(ctx, epicID, action.Action, args)
+		return "", s.runFactoryControlDecision(ctx, epicID, action.Action, args, acknowledged...)
 	}
 	return "", fmt.Errorf("%w: unsupported factory control action", factory.ErrInvalidRequest)
 }

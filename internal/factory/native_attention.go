@@ -41,7 +41,7 @@ func (s *NativeService) reconcileAttention(ctx context.Context) {
 			logrus.WithError(err).WithField("epic", epic.ID).Warn("Factory attention Inbox sync failed")
 			continue
 		}
-		if len(added) > 0 && epic.Status != "paused" && s.onAttention != nil {
+		if len(added) > 0 && s.onAttention != nil {
 			s.onAttention(context.WithoutCancel(ctx), epic.ID, added)
 		}
 	}

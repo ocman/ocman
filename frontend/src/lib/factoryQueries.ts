@@ -196,9 +196,9 @@ export function useOpenFactoryControl(id: string) {
 export function useFactoryControlAction(epicID: string, actionID: string) {
   return useQuery({ queryKey: ['factory-control-action', epicID, actionID], queryFn: ({ signal }) => api.factoryControlAction(epicID, actionID, signal), refetchInterval: (query) => query.state.data?.status === 'pending' || query.state.data?.status === 'confirmed' ? factoryRefetchInterval : false });
 }
-export function useDecideFactoryControlAction(epicID: string, actionID: string) {
+export function useDecideFactoryControlAction(epicID: string, actionID: string, acknowledgeLocalExecution = false) {
   const client = useQueryClient();
-  return useMutation({ mutationFn: (decision: 'confirm' | 'dismiss') => api.decideFactoryControlAction(epicID, actionID, decision), onSuccess: (action) => { client.setQueryData(['factory-control-action', epicID, actionID], action); return invalidateFactoryState(client); } });
+  return useMutation({ mutationFn: (decision: 'confirm' | 'dismiss') => acknowledgeLocalExecution && decision === 'confirm' ? api.decideFactoryControlAction(epicID, actionID, decision, true) : api.decideFactoryControlAction(epicID, actionID, decision), onSuccess: (action) => { client.setQueryData(['factory-control-action', epicID, actionID], action); return invalidateFactoryState(client); } });
 }
 /** Asks the Epic's control session to look into one Issue. */
 export function useDiscussFactoryIssue() {

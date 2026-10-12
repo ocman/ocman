@@ -4,6 +4,15 @@ import { api } from './api';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Factory API', () => {
+	it('sends execution consent only as explicit confirmation input', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+		vi.stubGlobal('fetch', fetchMock);
+		for (const consent of [undefined, false, true]) {
+			fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+			await api.decideFactoryControlAction('epic/1', 'action/1', 'confirm', consent);
+			expect(fetchMock).toHaveBeenLastCalledWith('/api/factory/epics/epic%2F1/control-actions/action%2F1/confirm', expect.objectContaining({ method: 'POST', body: consent === undefined ? undefined : JSON.stringify({ acknowledgeLocalExecution: consent }) }));
+		}
+	});
   it('uses the native epic graph endpoints', async () => {
     const fetchMock = vi.fn().mockImplementation(() => new Response(JSON.stringify([]), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

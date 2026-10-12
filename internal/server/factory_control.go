@@ -17,7 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const factoryControlProtocolVersion = 2
+const factoryControlProtocolVersion = 3
 
 const factoryControlProtocol = `You are the control session for Factory Work Epic %[1]s: %[2]s. The user steers this Epic from here, and Factory posts every decision it needs into this conversation.
 
@@ -36,7 +36,7 @@ const factoryControlProtocol = `You are the control session for Factory Work Epi
   - pause or resume: suspend new work or start dispatch again.
   - decide_plan with decision (approve, revise, reject), expected_revision and expected_hash from the current plan gate, optional response and implementation_model.
   - resolve_authority with authority_gate_id and decision (approve or reject).
-  - resolve_project with project_gate_id, decision (approve or reject), optional response. Approving execution on this machine also requires acknowledge_local_execution true, explicitly described in the confirmation summary.
+  - resolve_project with project_gate_id, decision (approve or reject), optional response. Ocman's card displays the requested project and requires the user to explicitly allow local command execution. You cannot supply that acknowledgement.
 - Recovery worker sessions are optional evidence, not another conversation the user must manage. Resolve Epic decisions here. Before acting on an old notification, read the current Epic and issues. After a confirmed change, re-read them and explain what remains relevant; never ask for decisions on closed gates or cancelled work.
 
 Reply now with a one-paragraph status of the Epic, including anything waiting for the user.`
@@ -251,6 +251,22 @@ func (s *Server) proposeFactoryControl(ctx context.Context, epicID, action strin
 	if err != nil {
 		return "", err
 	}
+	requestedProject := ""
+	if action == "resolve_project" && args["decision"] == "approve" {
+		issues, err := s.factory.ListIssues(ctx, epicID)
+		if err != nil {
+			return "", err
+		}
+		for _, issue := range issues {
+			if issue.ProjectRequest != nil && issue.ProjectRequest.IssueID == args["project_gate_id"] {
+				requestedProject = issue.ProjectRequest.RequestedProject
+				break
+			}
+		}
+		if requestedProject == "" {
+			return "", fmt.Errorf("%w: project gate is not part of this Epic", factory.ErrInvalidRequest)
+		}
+	}
 	if epic.Status == "closed" {
 		return "", fmt.Errorf("%w: the Epic is closed", factory.ErrInvalidRequest)
 	}
@@ -267,5 +283,5 @@ func (s *Server) proposeFactoryControl(ctx context.Context, epicID, action strin
 		return "", err
 	}
 	id := "fca_" + hex.EncodeToString(idBytes)
-	return id, store.CreateFactoryControlAction(ctx, state.FactoryControlAction{ID: id, EpicID: epicID, Action: action, Args: raw, Summary: strings.TrimSpace(summary)}, time.Now())
+	return id, store.CreateFactoryControlAction(ctx, state.FactoryControlAction{ID: id, EpicID: epicID, Action: action, Args: raw, Summary: strings.TrimSpace(summary), RequestedProject: requestedProject}, time.Now())
 }

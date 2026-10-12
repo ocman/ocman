@@ -8,7 +8,7 @@ import type { UsageDay } from './uiUsage';
 /** An Epic's control session: the one conversation where the user steers Factory. */
 export interface FactoryControlSession { epicId: string; platform: string; sessionId: string }
 /** A change the control session proposed; it runs only when the user confirms. */
-export interface FactoryControlAction { id: string; epicId: string; action: string; summary: string; status: 'pending' | 'confirmed' | 'dismissed' | 'done' | 'failed'; result?: string }
+export interface FactoryControlAction { id: string; epicId: string; action: string; summary: string; status: 'pending' | 'confirmed' | 'dismissed' | 'done' | 'failed'; result?: string; requestedProject?: string }
 import type {
   WebhookDelivery, WebhookInbox, WebhookSubscription, ClientActivity, Stats, MetricsPerformance,
   AnalyticsOverview, DatabaseSizeSample, SubscriptionUsageResponse, MetricsLog, MetricsLogKind,
@@ -92,8 +92,8 @@ export const api = {
     postJSON<FactoryControlSession, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/control`, undefined),
   factoryControlAction: (id: string, actionID: string, signal?: AbortSignal) =>
     fetchJSON<FactoryControlAction>(`/api/factory/epics/${encodeURIComponent(id)}/control-actions/${encodeURIComponent(actionID)}`, signal),
-  decideFactoryControlAction: (id: string, actionID: string, decision: 'confirm' | 'dismiss') =>
-    postJSON<FactoryControlAction, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/control-actions/${encodeURIComponent(actionID)}/${decision}`, undefined),
+  decideFactoryControlAction: (id: string, actionID: string, decision: 'confirm' | 'dismiss', acknowledgeLocalExecution?: boolean) =>
+    postJSON<FactoryControlAction, { acknowledgeLocalExecution: boolean } | undefined>(`/api/factory/epics/${encodeURIComponent(id)}/control-actions/${encodeURIComponent(actionID)}/${decision}`, acknowledgeLocalExecution === undefined ? undefined : { acknowledgeLocalExecution }),
   discussFactoryIssue: (id: string, issueID: string) =>
     postJSON<FactoryControlSession, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/discuss`, undefined),
   transferFactoryIssue: (id: string, issueID: string) =>

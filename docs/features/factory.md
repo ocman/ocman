@@ -34,6 +34,11 @@ card with **Confirm** and **Dismiss**. Only your click runs it, once, and the
 outcome is posted back to the session. A control session that no longer exists
 is replaced, and closing the Epic archives it. Plan decisions bind to the
 revision and hash you reviewed. The Plan approval card remains available.
+Project approvals display the requested directory from Factory's persisted
+gate and require a separate **Allow local command execution in this project**
+checkbox. An agent cannot supply that acknowledgement, and consent does not
+carry over to another proposal or project. Decisions created by workers while
+the Epic is paused still reach its control conversation once.
 
 The control session investigates repeated failures and proposes a changed
 approach rather than repeating the same retry. You can ask it to stop the

@@ -23,14 +23,14 @@ func validateFactoryControlDecision(action string, args map[string]string) error
 		if decision != "approve" && decision != "reject" {
 			return fmt.Errorf("%w: decision must be approve or reject", factory.ErrInvalidRequest)
 		}
-		if value := args["acknowledge_local_execution"]; value != "" && value != "true" && value != "false" {
-			return fmt.Errorf("%w: acknowledge_local_execution must be true or false", factory.ErrInvalidRequest)
+		if args["acknowledge_local_execution"] != "" {
+			return fmt.Errorf("%w: execution acknowledgement must come from the user confirmation", factory.ErrInvalidRequest)
 		}
 	}
 	return nil
 }
 
-func (s *Server) runFactoryControlDecision(ctx context.Context, epicID, action string, args map[string]string) error {
+func (s *Server) runFactoryControlDecision(ctx context.Context, epicID, action string, args map[string]string, acknowledged ...bool) error {
 	if action == "decide_plan" {
 		revision, _ := strconv.Atoi(args["expected_revision"])
 		_, err := s.factory.DecidePlanGate(ctx, epicID, args["decision"], factory.PlanGateDecisionRequest{ExpectedRevision: revision, ExpectedHash: args["expected_hash"], Actor: "user", Feedback: args["response"], ImplementationModel: args["implementation_model"]})
@@ -46,13 +46,17 @@ func (s *Server) runFactoryControlDecision(ctx context.Context, epicID, action s
 			return err
 		}
 		if action == "resolve_project" && issue.ProjectRequest != nil && issue.ProjectRequest.IssueID == args["project_gate_id"] {
+			consent := len(acknowledged) > 0 && acknowledged[0]
+			if args["decision"] == "approve" && !consent {
+				return fmt.Errorf("%w: the user must allow local command execution for this project", factory.ErrInvalidRequest)
+			}
 			resolver, ok := s.factory.(interface {
 				ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error)
 			})
 			if !ok {
 				return factory.ErrFactoryUnavailable
 			}
-			_, err := resolver.ResolveProjectRequest(ctx, args["project_gate_id"], args["decision"], args["response"], args["acknowledge_local_execution"] == "true")
+			_, err := resolver.ResolveProjectRequest(ctx, args["project_gate_id"], args["decision"], args["response"], consent)
 			return err
 		}
 	}

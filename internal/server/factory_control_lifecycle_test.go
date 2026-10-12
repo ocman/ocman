@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -51,11 +52,11 @@ func TestFactoryControlOwnsAllEpicDecisions(t *testing.T) {
 		{"materialize", map[string]string{"issue_id": "materialize-1"}},
 		{"decide_plan", map[string]string{"decision": "approve", "expected_revision": "3", "expected_hash": "hash", "implementation_model": "provider/model", "response": "Ship it"}},
 		{"resolve_authority", map[string]string{"authority_gate_id": "authority-1", "decision": "approve"}},
-		{"resolve_project", map[string]string{"project_gate_id": "project-1", "decision": "approve", "acknowledge_local_execution": "true", "response": "Use this project"}},
+		{"resolve_project", map[string]string{"project_gate_id": "project-1", "decision": "approve", "response": "Use this project"}},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			f := newControlFixture(t)
-			f.svc.issues = append(f.svc.issues, factory.Issue{ID: "authority-1", Authority: &factory.AuthorityEscalationGate{IssueID: "authority-1"}}, factory.Issue{ID: "project-1", ProjectRequest: &factory.ProjectRequestGate{IssueID: "project-1"}})
+			f.svc.issues = append(f.svc.issues, factory.Issue{ID: "authority-1", Authority: &factory.AuthorityEscalationGate{IssueID: "authority-1"}}, factory.Issue{ID: "project-1", ProjectRequest: &factory.ProjectRequestGate{IssueID: "project-1", RequestedProject: "/sensitive"}})
 			id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", tc.action, tc.args, "Allow "+tc.action)
 			if err != nil {
 				t.Fatal(err)
@@ -64,6 +65,14 @@ func TestFactoryControlOwnsAllEpicDecisions(t *testing.T) {
 				t.Fatal("decision ran before confirmation")
 			}
 			got := f.call(http.MethodPost, "/api/factory/epics/epic-1/control-actions/"+id+"/confirm")
+			if tc.action == "resolve_project" {
+				// The acknowledgement is human confirmation input, never a proposal field.
+				id, err = f.srv.proposeFactoryControl(t.Context(), "epic-1", tc.action, tc.args, "Allow execution")
+				if err != nil {
+					t.Fatal(err)
+				}
+				got = confirmControlWithBody(f, id, `{"acknowledgeLocalExecution":true}`)
+			}
 			if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"status":"done"`) {
 				t.Fatalf("confirm = %d %s", got.Code, got.Body.String())
 			}
@@ -93,6 +102,52 @@ func TestFactoryControlOwnsAllEpicDecisions(t *testing.T) {
 	}
 }
 
+func confirmControlWithBody(f *controlFixture, id, body string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic-1/control-actions/"+id+"/confirm", strings.NewReader(body))
+	request.RemoteAddr = "127.0.0.1:1234"
+	f.mux.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestFactoryControlProjectConsentUsesCoreScope(t *testing.T) {
+	f := newControlFixture(t)
+	f.svc.issues = []factory.Issue{{ID: "project-1", ProjectRequest: &factory.ProjectRequestGate{IssueID: "project-1", RequestedProject: "/sensitive"}}}
+	args := map[string]string{"project_gate_id": "project-1", "decision": "approve", "requested_project": "/fake"}
+	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "resolve_project", args, "Continue work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _, err := f.srv.stateDB.GetFactoryControlAction(t.Context(), "epic-1", id)
+	if err != nil || stored.RequestedProject != "/sensitive" {
+		t.Fatalf("confirmation scope = %#v, %v", stored, err)
+	}
+	if got := confirmControlWithBody(f, id, `{"acknowledgeLocalExecution":false}`); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"status":"failed"`) || f.svc.projectGateID != "" {
+		t.Fatalf("unacknowledged = %d %s", got.Code, got.Body.String())
+	}
+	args["acknowledge_local_execution"] = "true"
+	if _, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "resolve_project", args, "Agent-only consent"); !errors.Is(err, factory.ErrInvalidRequest) {
+		t.Fatalf("agent consent accepted: %v", err)
+	}
+}
+
+func TestFactoryControlRejectsMalformedHumanConsent(t *testing.T) {
+	f := newControlFixture(t)
+	id, err := f.srv.proposeFactoryControl(t.Context(), "epic-1", "pause", nil, "Pause")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{`{"acknowledgeLocalExecution":"true"}`, `{"unexpected":true}`, `{} {}`, strings.Repeat("x", 1025)} {
+		if got := confirmControlWithBody(f, id, body); got.Code != http.StatusBadRequest {
+			t.Fatalf("bad confirmation = %d %s", got.Code, got.Body.String())
+		}
+	}
+	stored, _, err := f.srv.stateDB.GetFactoryControlAction(t.Context(), "epic-1", id)
+	if err != nil || stored.Status != "pending" {
+		t.Fatalf("malformed input consumed proposal: %#v, %v", stored, err)
+	}
+}
+
 func TestFactoryControlDecisionValidation(t *testing.T) {
 	f := newControlFixture(t)
 	for _, tc := range []struct {
@@ -113,6 +168,15 @@ func TestFactoryControlDecisionValidation(t *testing.T) {
 		if !errors.Is(err, factory.ErrInvalidRequest) || f.svc.authorityGateID != "" || f.svc.projectGateID != "" {
 			t.Fatalf("foreign gate accepted: %v", err)
 		}
+	}
+}
+
+func TestFactoryControlRejectsAgentOnlyExecutionConsent(t *testing.T) {
+	f := newControlFixture(t)
+	f.svc.issues = []factory.Issue{{ID: "project-1", ProjectRequest: &factory.ProjectRequestGate{IssueID: "project-1", RequestedProject: "/sensitive"}}}
+	err := f.srv.runFactoryControlDecision(t.Context(), "epic-1", "resolve_project", map[string]string{"project_gate_id": "project-1", "decision": "approve", "acknowledge_local_execution": "true"})
+	if !errors.Is(err, factory.ErrInvalidRequest) || f.svc.projectGateID != "" {
+		t.Fatalf("agent execution consent accepted: %v, gate %s", err, f.svc.projectGateID)
 	}
 }
 

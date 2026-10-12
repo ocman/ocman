@@ -79,13 +79,14 @@ func archiveFactoryControlSessionTx(ctx context.Context, tx *sql.Tx, now int64, 
 // FactoryControlAction is a change an agent proposed for an Epic. Only the
 // user's confirmation on its card runs it.
 type FactoryControlAction struct {
-	ID      string          `json:"id"`
-	EpicID  string          `json:"epicId"`
-	Action  string          `json:"action"`
-	Args    json.RawMessage `json:"args"`
-	Summary string          `json:"summary"`
-	Status  string          `json:"status"` // pending, confirmed, dismissed, done, failed
-	Result  string          `json:"result,omitempty"`
+	ID               string          `json:"id"`
+	EpicID           string          `json:"epicId"`
+	Action           string          `json:"action"`
+	Args             json.RawMessage `json:"args"`
+	Summary          string          `json:"summary"`
+	Status           string          `json:"status"` // pending, confirmed, dismissed, done, failed
+	Result           string          `json:"result,omitempty"`
+	RequestedProject string          `json:"requestedProject,omitempty"`
 }
 
 // CreateFactoryControlAction records a pending proposal.
