@@ -398,6 +398,17 @@ describe('new-conversation submission lifecycle', () => {
     expect(screen.getByRole('textbox')).not.toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('start failed');
   });
+  it('does not replace a local discard navigation while the router transition is pending', async () => {
+    const navigate = vi.fn();
+    render(<NewConversation params={{ directory: '/repo', draftId: 'discarded' }} composerRef={null} whisperAvailable={false}
+      navigate={navigate} navigateToSession={vi.fn()} />);
+    await waitFor(() => expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === 'discarded')).toBe(true));
+    await act(async () => forgetConversationDraft('discarded', () => navigate('/session/new?draftId=keep')));
+    await act(async () => {});
+    expect(navigate.mock.calls).toEqual([['/session/new?draftId=keep']]);
+    expect(useNewConversationDrafts.getState().discardNavigation.discarded).toBeUndefined();
+  });
+
   it('does not restore immediately discarded text during unmount or a delayed start failure', async () => {
     const props = { params: { directory: '/repo', draftId: 'discarded' }, composerRef: null, whisperAvailable: false,
       navigate: vi.fn(), navigateToSession: vi.fn() };

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { NEW_SESSION_ID, newSessionPath } from '../../lib/newSessionPath';
 import { reconcileConversationStart, retryDraftRelocation, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { useApiStore } from '../../lib/apiStore';
@@ -15,6 +15,12 @@ export function PreparedDraftLifecycle({ params, navigate, children }:
   const draftId = params.draftId || legacyId;
   const exists = useNewConversationDrafts((state) => state.drafts.some((draft) => draft.draftId === draftId));
   const discardNavigation = useNewConversationDrafts((state) => !!state.discardNavigation[draftId]);
+  const localDiscard = useRef(false);
+  // Router transitions may commit after storage retires this draft. Keep the
+  // initiating view's navigation ownership until it unmounts; failures reset it.
+  useLayoutEffect(() => {
+    if (exists || discardNavigation) localDiscard.current = discardNavigation;
+  }, [exists, discardNavigation]);
   const routeKey = `${params.remoteId || 'local'}:${params.directory}:${params.platform}:${params.title}`;
   const createdSession = useNewConversationDrafts((state) => state.starts[draftId]?.createdSession);
   const sessionId = useNewConversationDrafts((state) => {
@@ -62,12 +68,12 @@ export function PreparedDraftLifecycle({ params, navigate, children }:
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- remember which route has registered its client-only draft.
     else if (exists) setObserved(draftId);
-    else if (observed === draftId && !discardNavigation) {
+    else if (observed === draftId && !discardNavigation && !localDiscard.current) {
       // Completion and deletion arrive on different storage keys. Read the
       // authoritative receipt before interpreting retirement as user discard.
       void reconcileConversationStart(draftId).then(() => {
         if (!active) return;
-        if (useNewConversationDrafts.getState().discardNavigation[draftId]) return;
+        if (localDiscard.current || useNewConversationDrafts.getState().discardNavigation[draftId]) return;
         const start = useNewConversationDrafts.getState().starts[draftId];
         if (start?.sessionId && (!start.routeKey || start.routeKey === routeKey)) return;
         const target = `${draftId}:discarded`;

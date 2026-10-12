@@ -310,7 +310,7 @@ test('cleared and discarded failed prompts stay empty after reload and an old-UR
 });
 
 for (const gesture of ['command', 'middle-click'] as const) {
-  test(`discards a prepared draft via ${gesture} without creating a session`, async ({ mockedPage: page }) => {
+  test(`discards a prepared draft via ${gesture} without creating a session`, async ({ mockedPage: page, browserName }) => {
     let starts = 0;
     await page.route('**/api/sessions/start', async (route) => { starts++; await route.fulfill({ json: {} }); });
     await prepareDraft(page);
@@ -319,6 +319,11 @@ for (const gesture of ['command', 'middle-click'] as const) {
     await expect.poll(async () => (await storedText(page, 'keep'))?.text).toBe('Keep this text.');
     // Text and sidebar metadata commit independently; both must survive navigation.
     await expect.poll(() => storedText(page, 'keep', 'drafts')).toMatchObject({ draftId: 'keep', directory: '/repo' });
+    if (gesture === 'middle-click' && browserName === 'chromium') {
+      // Exercise a route transition that commits after the discard transaction.
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 10 });
+    }
     await page.goto('/session/new?dir=%2Frepo&draftId=discard&title=Discard');
     await expect.poll(() => storedText(page, 'discard', 'drafts')).toMatchObject({ draftId: 'discard', directory: '/repo' });
     await expect(page.getByTestId('session-sidebar').getByRole('button', { name: 'Discard', exact: true })).toBeVisible();
