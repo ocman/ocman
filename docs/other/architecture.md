@@ -527,7 +527,9 @@ without unmounting open panes or recovery controls, preserving fullscreen diffs,
 pagination, expanded previews and unsent guidance. Resuming refreshes the visible
 content, including the artifact pages already opened by the user.
 Conversation archive and keyboard navigation load their candidates on demand
-when the mobile sidebar is closed, without restarting sidebar polling. Artifact
+when the mobile sidebar is closed, without restarting sidebar polling. Archive
+changes broadcast to every client and close the affected open conversation;
+browser reloads preserve the archive instead of treating it as a reopen. Artifact
 pagination and resume refreshes share a serialized read chain.
 Settled agent bash commands also produce `ocman.git.command` refresh hints for
 the owning project's PR/Issue pane.

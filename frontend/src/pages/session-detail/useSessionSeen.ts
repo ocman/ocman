@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
-import { onSessionChanged } from '../../lib/useGlobalEvents';
+import { onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import type { SessionMetadata } from '../../lib/sessionReducer';
+import { pickNextSessionAfterArchive, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
+import { isSessionPageRestore } from './sessionView';
 
 export interface UseSessionSeenOptions {
   session: SessionMetadata | null;
@@ -20,6 +23,7 @@ export interface UseSessionSeenOptions {
  * info + document title.
  */
 export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions): void {
+  const navigate = useNavigate();
   const [visible, setVisible] = useState(() => !document.hidden);
   useEffect(() => {
     const onVisibility = () => setVisible(!document.hidden);
@@ -38,9 +42,20 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
   const sessionSeenInterrupted = session?.status === 'interrupted';
+  const sessionDirectory = session?.directory;
   const lastMarked = useRef(0);
   const openedIdentity = useRef('');
   const pendingMark = useRef<(() => void) | null>(null);
+  const closeArchivedSession = useCallback(() => {
+    if (!sessionSeenId || !sessionSeenPlatform) return;
+    const store = useApiStore.getState();
+    const candidates = sidebarNavigableSessions(store.recentSessions).filter((row) => !row.archived || row.id === sessionSeenId);
+    const next = pickNextSessionAfterArchive(candidates, { id: sessionSeenId, directory: sessionDirectory ?? '' }, useUiStore.getState().sidebarView);
+    patchSession({ archived: true });
+    patchRecentSession(sessionSeenId, { archived: true }, sessionSeenPlatform);
+    store.updateCachedSession(sessionSeenId, (cached) => ({ ...cached, session: { ...cached.session, archived: true } }));
+    navigate(next ? `/session/${next.id}` : '/session/new', { replace: true });
+  }, [sessionSeenId, sessionSeenPlatform, sessionDirectory, patchSession, patchRecentSession, navigate]);
   const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
     if (document.hidden) return;
     lastMarked.current = updated;
@@ -58,8 +73,10 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   useEffect(() => {
     if (!visible || !sessionSeenId || !sessionSeenPlatform) return;
     const identity = `${sessionSeenPlatform}\0${sessionSeenId}`;
-    const opening = openedIdentity.current !== identity;
+    const restoring = openedIdentity.current === '' && isSessionPageRestore(sessionSeenId);
+    const opening = openedIdentity.current !== identity && !restoring;
     openedIdentity.current = identity;
+    if (restoring && session?.archived) { closeArchivedSession(); return; }
     recordOpenedSession(sessionSeenId);
     patchSession({ seen: true, ...(opening ? { archived: false } : {}) });
     markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated, opening);
@@ -101,28 +118,45 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     // if nothing newer happened while it was in flight.
     let revision = 0;
     const controller = new AbortController();
-    const unsubscribe = onSessionChanged((changedId, _session, patch) => {
+    const refreshMetadata = () => {
+      if (timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        const requested = ++revision;
+        peekSession(sessionSeenId, controller.signal, sessionSeenPlatform)
+          .then(({ session: row }) => {
+            if (requested !== revision) return;
+            if (row.archived) closeArchivedSession();
+            else if (row.title) patchSession({ title: row.title });
+          })
+          .catch((err) => { if (!controller.signal.aborted) remoteLog.error('Failed to refresh session metadata', err); });
+      }, 250);
+    };
+    const unsubscribe = onSessionChanged((changedId, _session, patch, platform) => {
       if (changedId !== sessionSeenId) return;
+      if (platform && platform !== sessionSeenPlatform) return;
+      if (patch?.archived !== undefined) {
+        revision++;
+        if (patch.archived) closeArchivedSession();
+        else patchSession({ archived: false });
+        return;
+      }
       if (patch?.title) {
         revision++;
         patchSession({ title: patch.title });
         return;
       }
-      if (patch || timer !== undefined) return;
-      timer = setTimeout(() => {
-        timer = undefined;
-        const requested = ++revision;
-        peekSession(sessionSeenId, controller.signal)
-          .then(({ session: row }) => { if (row.title && requested === revision) patchSession({ title: row.title }); })
-          .catch((err) => { if (!controller.signal.aborted) remoteLog.error('Failed to refresh session title', err); });
-      }, 250);
+      if (!patch) refreshMetadata();
     });
+    const unsubscribeConnect = onSseConnect(refreshMetadata);
     return () => {
       unsubscribe();
+      unsubscribeConnect();
+      revision++;
       clearTimeout(timer);
       controller.abort();
     };
-  }, [sessionSeenId, patchSession, peekSession]);
+  }, [sessionSeenId, sessionSeenPlatform, patchSession, peekSession, closeArchivedSession]);
 
   // Header info.
   useEffect(() => {

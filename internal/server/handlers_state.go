@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -126,6 +127,11 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	payload, _ := json.Marshal(map[string]any{
+		"sessionID": req.SessionID, "platform": platform,
+		"patch": map[string]bool{"archived": req.Archived},
+	})
+	s.broadcastGlobalEvent("ocman.session.changed", payload)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

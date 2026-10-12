@@ -18,12 +18,19 @@ vi.hoisted(() => {
 
 const recheckFaviconNotify = vi.fn();
 vi.mock('../../lib/useFaviconNotify', () => ({ recheckFaviconNotify: () => recheckFaviconNotify() }));
-type ChangedListener = (id: string, session?: unknown, patch?: { title?: string }) => void;
+const navigate = vi.fn();
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
+type ChangedListener = (id: string, session?: unknown, patch?: Partial<Session>, platform?: string) => void;
 const changedListeners = new Set<ChangedListener>();
+const connectListeners = new Set<() => void>();
 vi.mock('../../lib/useGlobalEvents', () => ({
   onSessionChanged: (cb: ChangedListener) => {
     changedListeners.add(cb);
     return () => changedListeners.delete(cb);
+  },
+  onSseConnect: (cb: () => void) => {
+    connectListeners.add(cb);
+    return () => connectListeners.delete(cb);
   },
 }));
 
@@ -55,6 +62,79 @@ describe('useSessionSeen', () => {
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('closes an archive missed while disconnected when the global stream reconnects', async () => {
+    vi.useFakeTimers();
+    const peekSession = vi.fn(async () => ({ session: { ...session, archived: true }, messages: [], parts: [] }));
+    useApiStore.setState({ peekSession, recentSessions: [session] as Session[] });
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession: vi.fn() }), { wrapper });
+    act(() => { for (const cb of connectListeners) cb(); });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(navigate).toHaveBeenCalledWith('/session/new', { replace: true });
+    unmount();
+  });
+
+  it('does not optimistically reopen an archived session restored by a page reload', () => {
+    Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: vi.fn(() => [{ type: 'reload' }]) });
+    const patchSession = vi.fn();
+    useApiStore.setState({ recentSessions: [] });
+    const { unmount } = renderHook(() => useSessionSeen({ session: { ...session, archived: true }, patchSession }), { wrapper });
+    expect(patchSession.mock.calls.some(([patch]) => patch.archived === false)).toBe(false);
+    expect(navigate).toHaveBeenCalledWith('/session/new', { replace: true });
+    unmount();
+    Reflect.deleteProperty(performance, 'getEntriesByType');
+  });
+
+  it('drops an older archived metadata response after another client reopens the session', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: unknown) => void;
+    useApiStore.setState({ peekSession: vi.fn(() => new Promise((resolve) => { finish = resolve; })) } as never);
+    const patchSession = vi.fn();
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
+    act(() => { for (const cb of connectListeners) cb(); });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    act(() => { for (const cb of changedListeners) cb('s1', undefined, { archived: false }, 'opencode'); });
+    await act(async () => finish({ session: { ...session, archived: true }, messages: [], parts: [] }));
+    expect(patchSession).toHaveBeenLastCalledWith({ archived: false });
+    expect(navigate).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('keeps the conversation open if reconnect metadata cannot be read', async () => {
+    vi.useFakeTimers();
+    useApiStore.setState({ peekSession: vi.fn().mockRejectedValue(new Error('offline')) });
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession: vi.fn() }), { wrapper });
+    act(() => { for (const cb of connectListeners) cb(); });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(navigate).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('keeps the conversation open if marking it seen fails', async () => {
+    markSessionSeen.mockRejectedValueOnce(new Error('offline'));
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession: vi.fn() }), { wrapper });
+    await act(async () => {});
+    expect(navigate).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it.each([false, true])('closes the open session when another client archives it, hidden=%s', (hidden) => {
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockReturnValue(hidden);
+    const patchSession = vi.fn();
+    useApiStore.setState({ recentSessions: [session, { ...session, id: 'next' }] as Session[] });
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
+    act(() => {
+      for (const cb of changedListeners) cb('s1', undefined, { archived: true }, 'r-other:opencode');
+    });
+    expect(navigate).not.toHaveBeenCalled();
+    act(() => {
+      for (const cb of changedListeners) cb('s1', undefined, { archived: true }, 'opencode');
+    });
+    expect(patchSession).toHaveBeenCalledWith({ archived: true });
+    expect(navigate).toHaveBeenCalledWith('/session/next', { replace: true });
+    unmount();
+    visibility.mockRestore();
+  });
 
   it('acknowledges only the viewed owner when session IDs match', () => {
     const local = { ...session, platform: 'opencode', status: 'interrupted', seen: false, seenTimeUpdated: 0 } as Session;
@@ -198,7 +278,7 @@ describe('useSessionSeen', () => {
     }
     await act(async () => vi.advanceTimersByTime(250));
     expect(peekSession).toHaveBeenCalledTimes(1);
-    expect(peekSession).toHaveBeenCalledWith('s1', expect.any(AbortSignal));
+    expect(peekSession).toHaveBeenCalledWith('s1', expect.any(AbortSignal), 'opencode');
     expect(patchSession).toHaveBeenCalledWith({ title: 'Renamed' });
     unmount();
   });

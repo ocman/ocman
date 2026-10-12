@@ -19,6 +19,10 @@ sequenceDiagram
 
     B->>S: navigation: GET /api/session/id
     S->>I: clear local session and project archive markers
+    B->>S: archive: POST /api/session/archive
+    S->>I: persist owner-qualified archive marker
+    S->>E: ocman.session.changed (id, platform, archived)
+    E-->>B: all clients update archive state and close the active conversation
     B->>S: GET /api/sessions
     S->>R: resolve platform/host
     R->>A: ListSessions()
@@ -86,10 +90,16 @@ sequenceDiagram
   whole call.
 
 - Only the first successful session-detail fetch after navigation opens a local
-  session and clears its archive markers. Reconnects, refreshes, pagination and
+  session and clears its archive markers. Browser reloads and history restores,
+  reconnects, refreshes, pagination and
   background inspections use `peek=1`, preserving archives made in another tab
   unless newer activity meets the configured resurfacing policy. Read-watermark
   updates and tab visibility changes do not clear the browser's archived flag.
+- Archive and reopen requests broadcast an owner-qualified `archived` patch
+  after persistence. An open archived conversation moves to the next visible
+  session or an empty conversation on every client, including hidden tabs.
+  Global stream reconnects re-read the active session with `peek=1` to recover
+  an archive missed while disconnected.
 - The local watcher broadcasts activity for identified message/part mutations
   on the shared `/api/events` stream. The sidebar updates known rows directly,
   fetching a single session only when it is missing. This avoids list refetches

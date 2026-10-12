@@ -970,6 +970,21 @@ describe('useSession — reconnect after error', () => {
 });
 
 describe('useSession — session.idle refetch', () => {
+  it.each(['reload', 'back_forward'])('preserves an archive on a browser %s but allows later navigation to reopen', async (type) => {
+    Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: vi.fn(() => [{ type, name: `http://localhost/session/${SID}` }]) });
+    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
+    const { rerender, unmount } = renderHook(({ id }) => useSession(id, { fetchSession }), { initialProps: { id: SID } });
+    await waitFor(() => expect(fetchSession).toHaveBeenCalledOnce());
+    expect(fetchSession.mock.calls[0][5]).toBe(true);
+    await act(async () => rerender({ id: 'other-session' }));
+    expect(fetchSession.mock.calls.at(-1)?.[5]).toBe(false);
+    await act(async () => rerender({ id: 'new' }));
+    await act(async () => rerender({ id: 'other-session' }));
+    expect(fetchSession.mock.calls.at(-1)?.[5]).toBe(false);
+    unmount();
+    Reflect.deleteProperty(performance, 'getEntriesByType');
+  });
+
   it('keeps a session archived elsewhere when an existing tab refreshes or reconnects', async () => {
     vi.useFakeTimers();
     const requests: URL[] = [];
