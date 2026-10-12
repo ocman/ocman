@@ -54,7 +54,15 @@ function InboxPermissionActions({ permission }: { permission: NonNullable<InboxI
 }
 
 export function Inbox() {
-  const [filter, setFilter] = useState<typeof filters[number]['id']>('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = filters.find(({ id }) => id === searchParams.get('status'))?.id ?? 'all';
+  const activeKey = searchParams.get('item');
+  const setActiveKey = (key: string | null, replace = false) => {
+    setSearchParams((params) => {
+      if (key) params.set('item', key); else params.delete('item');
+      return params;
+    }, { replace });
+  };
   const archived = filter === 'archived';
   const inbox = useInbox(archived);
   const archive = useArchiveInboxItems();
@@ -62,7 +70,6 @@ export function Inbox() {
   const markUnread = useMarkInboxItemUnread();
   const pin = usePinInboxItem();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [activeKey, setActiveKey] = useState<string | null>(null);
   const activeKeyRef = useRef(activeKey);
   useEffect(() => { activeKeyRef.current = activeKey; }, [activeKey]);
   const [search, setSearch] = useState('');
@@ -71,7 +78,6 @@ export function Inbox() {
   // Safari doesn't focus a clicked button, so blur carries no relatedTarget;
   // outside clicks are detected here instead of in onBlur.
   useClickOutside(actions, true, () => actions.current?.removeAttribute('open'));
-  const [searchParams, setSearchParams] = useSearchParams();
   const activeCategory = searchParams.get('category') ?? 'all';
   const items = inbox.data ? inbox.data.items : [];
   const activeItem = items.find((item) => itemKey(item) === activeKey);
@@ -112,8 +118,10 @@ export function Inbox() {
     archive.mutate(readItems.map(({ id, remoteId }) => ({ id, remoteId })));
   };
   const selectCategory = (id: string) => {
-    setSearchParams((params) => { params.set('category', id); return params; }, { replace: true });
-    setActiveKey(null);
+    setSearchParams((params) => { params.set('category', id); params.delete('item'); return params; }, { replace: true });
+  };
+  const setFilter = (id: typeof filters[number]['id']) => {
+    setSearchParams((params) => { params.set('status', id); params.delete('item'); return params; }, { replace: true });
   };
 
   // Open the first message once, when the inbox first loads, so the reader
@@ -123,13 +131,20 @@ export function Inbox() {
   const autoSelected = useRef(false);
   const firstItem = visibleItems[0];
   useEffect(() => {
+    if (activeKey) {
+      if (!autoSelected.current && activeItem) {
+        autoSelected.current = true;
+        if (!activeItem.readAt && !activeItem.archivedAt) markRead.mutate({ id: activeItem.id, remoteId: activeItem.remoteId });
+      }
+      return;
+    }
     if (autoSelected.current || !firstItem || window.innerWidth <= 700) return;
     autoSelected.current = true;
-    setActiveKey(itemKey(firstItem));
+    setActiveKey(itemKey(firstItem), true);
     if (!firstItem.readAt && !firstItem.archivedAt) markRead.mutate({ id: firstItem.id, remoteId: firstItem.remoteId });
     // markRead is a stable mutation handle; re-running on it would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firstItem && itemKey(firstItem)]);
+  }, [firstItem && itemKey(firstItem), activeKey, activeItem && itemKey(activeItem)]);
 
   useShortcut({
     id: 'inbox.archive',
@@ -152,7 +167,7 @@ export function Inbox() {
         <div className="inbox-filters">
           <div className="inbox-filter-row">
             <SearchField aria-label="Search inbox" placeholder="Search inbox…" value={search} onChange={(event) => { setSearch(event.target.value); setActiveKey(null); }} />
-            <SegmentedControl label="Message status" compact options={filters.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={filter} onChange={(id) => { setFilter(id); setActiveKey(null); setSelected(new Set()); }} />
+            <SegmentedControl label="Message status" compact options={filters.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={filter} onChange={(id) => { setFilter(id); setSelected(new Set()); }} />
           </div>
           <div className="inbox-filter-row">
             <SegmentedControl label="Message type" compact options={categories.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={activeCategory} onChange={selectCategory} />

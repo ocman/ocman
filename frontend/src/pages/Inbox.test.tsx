@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { api, type InboxItem } from '../lib/api';
 import { useShortcutDispatcher } from '../lib/shortcutRegistry';
@@ -15,9 +15,15 @@ function Shortcuts() {
 
 const items = [{ id: '1', title: 'Build **finished**', body: 'See [details](https://example.com).', createdAt: Date.now(), remoteId: 'local', category: 'general' as const }, { id: '2', title: 'Remote note', body: 'body', createdAt: Date.now() - 1_000, readAt: Date.now(), remoteId: 'laptop', category: 'factory' as const }];
 
-function renderInbox() {
+function Location() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <><div aria-label="Current URL">{location.pathname}{location.search}</div><button onClick={() => navigate(-1)}>History back</button></>;
+}
+
+function renderInbox(url = '/inbox') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter><Shortcuts /><Inbox /></MemoryRouter></QueryClientProvider>) };
+  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><Location /><Shortcuts /><Inbox /></MemoryRouter></QueryClientProvider>) };
 }
 
 function inboxAction(name: string) {
@@ -39,6 +45,57 @@ describe('Inbox', () => {
     vi.spyOn(api, 'pinInboxItem').mockResolvedValue(undefined);
     vi.spyOn(api, 'respondPermission').mockResolvedValue(undefined);
     vi.spyOn(api, 'archiveInboxItems').mockResolvedValue(undefined);
+  });
+
+  it('restores the selected remote item from its URL instead of opening the first item', async () => {
+    vi.mocked(api.inbox).mockResolvedValue({ items: [items[0], { ...items[1], id: '1', readAt: undefined }], unreadTotal: 2 });
+    renderInbox('/inbox?item=laptop%3A1');
+    expect(await screen.findByRole('heading', { name: 'Remote note' })).toBeInTheDocument();
+    await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('1', 'laptop'));
+    expect(api.markInboxItemRead).not.toHaveBeenCalledWith('1', 'local');
+  });
+
+  it('updates the item URL, restores it on reload, and supports browser history', async () => {
+    const view = renderInbox('/inbox?category=all');
+    await screen.findByRole('heading', { name: 'Build finished' });
+    fireEvent.click(screen.getByRole('button', { name: /Remote note/ }));
+    const url = screen.getByLabelText('Current URL').textContent!;
+    expect(new URL(url, 'https://example.com').searchParams.get('item')).toBe('laptop:2');
+    expect(new URL(url, 'https://example.com').searchParams.get('category')).toBe('all');
+    fireEvent.click(screen.getByRole('button', { name: 'History back' }));
+    await screen.findByRole('heading', { name: 'Build finished' });
+    view.unmount();
+    renderInbox(url);
+    await screen.findByRole('heading', { name: 'Remote note' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
+    expect(new URL(screen.getByLabelText('Current URL').textContent!, 'https://example.com').searchParams.has('item')).toBe(false);
+  });
+
+  it('restores archived selection and does not replace a missing linked item', async () => {
+    vi.mocked(api.inbox).mockImplementation(async (_signal, archived) => ({ items: archived ? [{ ...items[1], archivedAt: Date.now() }] : items, unreadTotal: 0 }));
+    const view = renderInbox('/inbox?status=archived&item=laptop%3A2');
+    await screen.findByRole('heading', { name: 'Remote note' });
+    expect(statusFilter('Archived')).toBeChecked();
+    expect(api.markInboxItemRead).not.toHaveBeenCalled();
+    view.unmount();
+    renderInbox('/inbox?item=local%3Amissing');
+    await screen.findByRole('button', { name: /Build.*finished/ });
+    expect(screen.getByText('Select a message')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current URL')).toHaveTextContent('item=local%3Amissing');
+  });
+
+  it('opens a linked message on narrow screens without selecting a message on plain arrival', async () => {
+    vi.stubGlobal('innerWidth', 600);
+    try {
+      const view = renderInbox();
+      await screen.findByRole('button', { name: /Remote note/ });
+      expect(screen.getByText('Select a message')).toBeInTheDocument();
+      view.unmount();
+      renderInbox('/inbox?item=laptop%3A2');
+      await screen.findByRole('heading', { name: 'Remote note' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('opens markdown in the reading pane, marks unread items read, and archives selection', async () => {
@@ -78,6 +135,7 @@ describe('Inbox', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Archive' }));
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
     await screen.findByRole('heading', { name: 'Remote note' });
+    expect(new URL(screen.getByLabelText('Current URL').textContent!, 'https://example.com').searchParams.get('item')).toBe('laptop:2');
     // Archived rows can't be re-archived.
     fireEvent.click(statusFilter('Archived'));
     await waitFor(() => expect(screen.getByRole('button', { name: /Remote note/ })).toBeInTheDocument());
