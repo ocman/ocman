@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -248,15 +249,7 @@ func (s *Server) onSessionIdle(platformID, sessionID string) {
 	go runWithRecover("plugin-conversation-reply", func() {
 		s.replyToConversation(context.Background(), platformID, sessionID)
 	})
-	go runWithRecover("share-relay-publish", func() {
-		adapter, ok := s.adapterForSession(context.Background(), "", sessionID)
-		if !ok {
-			return
-		}
-		if err := s.publishCompletedTurn(context.Background(), adapter, sessionID); err != nil {
-			log.WithError(err).WithField("session_id", sessionID).Warn("publishing completed turn to share relay")
-		}
-	})
+	s.bus().PublishSessionIdle(context.Background(), module.SessionIdle{Platform: platformID, SessionID: sessionID})
 }
 
 // broadcastQueueUpdated broadcasts that a session's follow-up queue

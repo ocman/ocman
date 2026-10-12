@@ -1,17 +1,16 @@
 package tmux
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestLaunchFailureDoesNotExposeEnvironmentCredentials(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >&2\nexit 1\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, filepath.Join(dir, "tmux"), "#!/bin/sh\nprintf '%s\\n' \"$@\" >&2\nexit 1\n")
 	t.Setenv("PATH", dir)
 	err := Run(t.Context(), "new-session", "-e", "OPENCODE_SERVER_PASSWORD=test-server-credential", "-e", "OPENCODE_PASSWORD=test-client-credential", "-s", "fixture")
 	if err == nil {

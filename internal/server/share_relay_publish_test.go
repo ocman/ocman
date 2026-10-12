@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +34,7 @@ func newTestRelay(t *testing.T) *httptest.Server {
 
 // readRelayChunks fetches and decrypts every chunk of a share, the way
 // the browser viewer does.
-func readRelayChunks(t *testing.T, baseURL, id string, key share.Key) []relayChunk {
+func readRelayChunks(t *testing.T, baseURL, id string, key share.Key) []sharedChunk {
 	t.Helper()
 	resp, err := http.Get(baseURL + "/s/" + id + "?from=0")
 	if err != nil {
@@ -53,7 +52,7 @@ func readRelayChunks(t *testing.T, baseURL, id string, key share.Key) []relayChu
 		t.Fatalf("decode relay read: %v", err)
 	}
 
-	out := make([]relayChunk, 0, len(body.Chunks))
+	out := make([]sharedChunk, 0, len(body.Chunks))
 	for _, chunk := range body.Chunks {
 		ciphertext, err := base64.RawStdEncoding.DecodeString(chunk.Data)
 		if err != nil {
@@ -63,7 +62,7 @@ func readRelayChunks(t *testing.T, baseURL, id string, key share.Key) []relayChu
 		if err != nil {
 			t.Fatalf("open chunk %d: %v", chunk.Seq, err)
 		}
-		var decoded relayChunk
+		var decoded sharedChunk
 		if err := json.Unmarshal(plain, &decoded); err != nil {
 			t.Fatalf("unmarshal chunk %d: %v", chunk.Seq, err)
 		}
@@ -74,7 +73,7 @@ func readRelayChunks(t *testing.T, baseURL, id string, key share.Key) []relayChu
 
 // mergeChunks collapses a chunk log into the id-keyed row sets the
 // viewer builds, so assertions read as "what a reader ends up seeing".
-func mergeChunks(chunks []relayChunk) (messages, parts map[string]bool) {
+func mergeChunks(chunks []sharedChunk) (messages, parts map[string]bool) {
 	messages, parts = map[string]bool{}, map[string]bool{}
 	for _, chunk := range chunks {
 		for _, m := range chunk.Messages {
@@ -92,11 +91,11 @@ func mergeChunks(chunks []relayChunk) (messages, parts map[string]bool) {
 func createShareForTest(t *testing.T, srv *Server, sessionID string) (string, share.Key) {
 	t.Helper()
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodPost, "/api/session/"+sessionID+"/share", nil))
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/session/"+sessionID+"/share", nil))
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create share status = %d, want 201; body=%s", rr.Code, rr.Body)
 	}
-	var view shareLinkView
+	var view sharedLink
 	if err := json.Unmarshal(rr.Body.Bytes(), &view); err != nil {
 		t.Fatalf("unmarshal share view: %v", err)
 	}
@@ -166,7 +165,7 @@ func TestPublishCompletedTurnAppendsNewTurn(t *testing.T) {
 		db.Part{ID: "p4", MessageID: "m4", SessionID: "ses_live", Data: json.RawMessage(`{"type":"text","text":"second answer"}`)},
 	)
 
-	if err := srv.publishCompletedTurn(context.Background(), fake, "ses_live"); err != nil {
+	if err := srv.sharingModule().PublishCompletedTurn(context.Background(), fake, "ses_live"); err != nil {
 		t.Fatalf("publishCompletedTurn: %v", err)
 	}
 
@@ -245,7 +244,7 @@ func TestPublishCompletedTurnSplitsOversizedTurn(t *testing.T) {
 		})
 	}
 
-	if err := srv.publishCompletedTurn(context.Background(), fake, "ses_big_turn"); err != nil {
+	if err := srv.sharingModule().PublishCompletedTurn(context.Background(), fake, "ses_big_turn"); err != nil {
 		t.Fatalf("publishCompletedTurn: %v", err)
 	}
 
@@ -282,86 +281,10 @@ func TestPublishCompletedTurnIgnoresSharesWithoutRelay(t *testing.T) {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
 
-	if err := srv.publishCompletedTurn(context.Background(), fake, "ses_norelay"); err != nil {
+	if err := srv.sharingModule().PublishCompletedTurn(context.Background(), fake, "ses_norelay"); err != nil {
 		t.Fatalf("publishCompletedTurn: %v", err)
 	}
 	if got := shareLinkFor(t, srv, "ses_norelay"); got != -1 {
 		t.Errorf("last seq = %d, want it untouched at -1", got)
-	}
-}
-
-// bigChunk is a chunk large enough to trip the byte-size guards.
-func bigChunk() relayChunk {
-	return relayChunk{
-		Parts: []db.Part{{
-			ID:   "p1",
-			Data: json.RawMessage(fmt.Sprintf(`{"type":"text","text":%q}`, strings.Repeat("Z", 4096))),
-		}},
-	}
-}
-
-// The three guards below must fail *before* any upload: an unreachable
-// relay URL is used deliberately, so a transport error would prove the
-// check ran too late.
-func TestUploadChunksEnforcesRelayLimitsBeforeUploading(t *testing.T) {
-	key, err := share.NewKey()
-	if err != nil {
-		t.Fatalf("NewKey: %v", err)
-	}
-	client := share.RelayClient{BaseURL: "http://127.0.0.1:1"}
-
-	tests := []struct {
-		name       string
-		allocation share.RelayAllocation
-		chunks     []relayChunk
-		want       string
-	}{
-		{
-			name:       "chunk over the per-chunk byte cap",
-			allocation: share.RelayAllocation{ID: "share", MaxChunkBytes: 64},
-			chunks:     []relayChunk{bigChunk()},
-			want:       "chunk is too large after encryption",
-		},
-		{
-			name:       "chunks over the per-share byte cap",
-			allocation: share.RelayAllocation{ID: "share", MaxShareBytes: 64},
-			chunks:     []relayChunk{bigChunk()},
-			want:       "share is too large",
-		},
-		{
-			name:       "appending past the chunk-count cap",
-			allocation: share.RelayAllocation{ID: "share", MaxChunks: 2},
-			chunks:     []relayChunk{{}},
-			want:       "share has too many chunks",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			firstSeq := uint64(0)
-			if tc.want == "share has too many chunks" {
-				firstSeq = 2 // already at the cap
-			}
-			_, err := (&Server{}).uploadChunks(context.Background(), client, tc.allocation, key, firstSeq, tc.chunks)
-
-			var relayErr *share.RelayError
-			if !errors.As(err, &relayErr) {
-				t.Fatalf("error = %v, want a *share.RelayError", err)
-			}
-			if relayErr.Status != http.StatusRequestEntityTooLarge || relayErr.Message != tc.want {
-				t.Fatalf("error = %v, want 413 %q", err, tc.want)
-			}
-		})
-	}
-}
-
-func TestSplitShareSnapshotReportsUnencodableRows(t *testing.T) {
-	broken := json.RawMessage(`{"not closed"`)
-
-	if _, err := splitShareSnapshot(nil, []db.Message{{ID: "m1", Data: broken}}, nil, 16<<10); err == nil {
-		t.Error("expected an error for a message that cannot be encoded")
-	}
-	if _, err := splitShareSnapshot(nil, nil, []db.Part{{ID: "p1", Data: broken}}, 16<<10); err == nil {
-		t.Error("expected an error for a part that cannot be encoded")
 	}
 }

@@ -27,7 +27,7 @@ func TestPublishCompletedTurnSkipsFetchWithoutShareLinks(t *testing.T) {
 	}
 	reg.Register(fake)
 
-	if err := srv.publishCompletedTurn(context.Background(), fake, "ses-gone"); err != nil {
+	if err := srv.sharingModule().PublishCompletedTurn(context.Background(), fake, "ses-gone"); err != nil {
 		t.Fatalf("publishCompletedTurn: %v", err)
 	}
 	select {

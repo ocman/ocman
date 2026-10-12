@@ -1,0 +1,273 @@
+package routines
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"time"
+
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+)
+
+type routineService interface {
+	Create(context.Context, Input) (state.Routine, error)
+	Update(context.Context, string, Input) (state.Routine, error)
+	Get(context.Context, string) (state.Routine, error)
+	List(context.Context, bool) ([]state.Routine, error)
+	Delete(context.Context, string) error
+	RunNow(context.Context, string) (state.RoutineRun, error)
+	History(context.Context, string) ([]state.RoutineRun, error)
+}
+
+type routineTools struct{ svc routineService }
+
+type routineAction struct {
+	name, description, example string
+	required, optional         []string
+	output                     any
+}
+
+var routineInputRequired = []string{"name", "prompt", "directory"}
+var routineInputOptional = []string{"remote_id", "agent", "model", "session_mode", "session_id", "worktree", "cleanup_worktree", "schedule_kind", "timeout_ms", "at", "cron", "timezone", "enabled", "delete_after_success", "archive_session_after_success", "notify_on_success", "permission_rules"}
+
+var routineActions = []routineAction{
+	{name: "help", description: "Describes every available routine action.", example: `{"action":"help"}`, output: "Routine action documentation"},
+	{name: "list", description: "Lists active routines.", example: `{"action":"list"}`, output: "Routine[]"},
+	{name: "get", description: "Gets one routine.", example: `{"action":"get","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "Routine"},
+	{name: "create", description: "Creates a routine. Defaults to a disabled, unscheduled routine using a new session.", example: `{"action":"create","name":"Daily review","prompt":"Review open work","directory":"/repo"}`, required: routineInputRequired, optional: routineInputOptional, output: "Routine"},
+	{name: "update", description: "Replaces one routine definition. Omitted optional fields use their defaults.", example: `{"action":"update","routine_id":"routine-1","name":"Daily review","prompt":"Review open work","directory":"/repo","enabled":true,"schedule_kind":"cron","cron":"0 9 * * 1-5","timezone":"Europe/Brussels"}`, required: append([]string{"routine_id"}, routineInputRequired...), optional: routineInputOptional, output: "Routine"},
+	{name: "patch", description: "Updates one routine in place: only the fields you pass change, everything else keeps its current value. Passing any schedule field replaces only the schedule fields you pass.", example: `{"action":"patch","routine_id":"routine-1","prompt":"Review open work and summarise"}`, required: []string{"routine_id"}, optional: append(append([]string{}, routineInputRequired...), routineInputOptional...), output: "Routine"},
+	{name: "delete", description: "Soft-deletes one routine and disables future runs.", example: `{"action":"delete","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: map[string]string{"status": "deleted"}},
+	{name: "run", description: "Runs one routine now.", example: `{"action":"run","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "RoutineRun"},
+	{name: "history", description: "Lists runs for one routine, newest first.", example: `{"action":"history","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "RoutineRun[]"},
+}
+
+func routineServerTools(tools *routineTools) []server.ServerTool {
+	if tools == nil || tools.svc == nil {
+		return nil
+	}
+	return []server.ServerTool{{Tool: mcplib.NewTool("routines",
+		mcplib.WithDescription("Create, inspect, run, and manage routines. Use action help for schemas and examples."),
+		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("routine_id"), mcplib.WithString("name"), mcplib.WithString("prompt"),
+		mcplib.WithString("directory"), mcplib.WithString("remote_id"), mcplib.WithString("agent"), mcplib.WithString("model"),
+		mcplib.WithString("session_mode"), mcplib.WithString("session_id"), mcplib.WithString("schedule_kind"), mcplib.WithNumber("timeout_ms"),
+		mcplib.WithNumber("at"), mcplib.WithString("cron"), mcplib.WithString("timezone"), mcplib.WithBoolean("enabled"), mcplib.WithBoolean("delete_after_success"),
+		mcplib.WithBoolean("archive_session_after_success"),
+		mcplib.WithBoolean("notify_on_success"),
+		mcplib.WithBoolean("worktree"), mcplib.WithBoolean("cleanup_worktree"),
+		mcplib.WithString("permission_rules")), Handler: tools.handle}}
+}
+
+func (t *routineTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	action, err := req.RequireString("action")
+	if err != nil {
+		return mcplib.NewToolResultError("action is required"), nil
+	}
+	registered, ok := routineActionFor(action)
+	if !ok {
+		return mcplib.NewToolResultError("unknown action"), nil
+	}
+	arguments, ok := req.Params.Arguments.(map[string]any)
+	for _, field := range registered.required {
+		if value, present := arguments[field]; !ok || !present || value == nil || value == "" {
+			return mcplib.NewToolResultError(field + " is required"), nil
+		}
+	}
+
+	switch action {
+	case "help":
+		return internalmcp.ToolResultJSON(routineHelp()), nil
+	case "list":
+		items, err := t.svc.List(ctx, false)
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		if items == nil {
+			items = []state.Routine{}
+		}
+		return internalmcp.ToolResultJSON(items), nil
+	case "get":
+		item, err := t.svc.Get(ctx, req.GetString("routine_id", ""))
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		return internalmcp.ToolResultJSON(item), nil
+	case "create", "update":
+		input, err := routineInput(req, arguments)
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		var item state.Routine
+		if action == "create" {
+			item, err = t.svc.Create(ctx, input)
+		} else {
+			item, err = t.svc.Update(ctx, req.GetString("routine_id", ""), input)
+		}
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		return internalmcp.ToolResultJSON(item), nil
+	case "patch":
+		id := req.GetString("routine_id", "")
+		existing, err := t.svc.Get(ctx, id)
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		input, err := patchRoutineInput(existing, req, arguments, time.Now())
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		item, err := t.svc.Update(ctx, id, input)
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		return internalmcp.ToolResultJSON(item), nil
+	case "delete":
+		if err := t.svc.Delete(ctx, req.GetString("routine_id", "")); err != nil {
+			return routineToolError(err), nil
+		}
+		return internalmcp.ToolResultJSON(map[string]string{"status": "deleted"}), nil
+	case "run":
+		run, err := t.svc.RunNow(ctx, req.GetString("routine_id", ""))
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		return internalmcp.ToolResultJSON(run), nil
+	case "history":
+		runs, err := t.svc.History(ctx, req.GetString("routine_id", ""))
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		if runs == nil {
+			runs = []state.RoutineRun{}
+		}
+		return internalmcp.ToolResultJSON(runs), nil
+	}
+	return mcplib.NewToolResultError("unknown action"), nil
+}
+
+func routineActionFor(name string) (routineAction, bool) {
+	for _, action := range routineActions {
+		if action.name == name {
+			return action, true
+		}
+	}
+	return routineAction{}, false
+}
+
+func routineHelp() map[string]any {
+	help := make(map[string]any, len(routineActions)+3)
+	actions := make([]string, 0, len(routineActions))
+	for _, action := range routineActions {
+		actions = append(actions, action.name)
+		help[action.name] = map[string]any{"required": append([]string{}, action.required...), "optional": append([]string{}, action.optional...), "action": action.description, "example": action.example, "output_schema": action.output}
+	}
+	help["actions"] = actions
+	help["errors"] = []string{"action is required", "unknown action", "invalid routine", "routine not found", "routine name already exists", "routine already has an active shared-session run", "routine request failed"}
+	help["rules"] = []string{"directory must be absolute", "session_mode is new, reuse, or existing; existing requires session_id", "schedule_kind is none, timeout, once, or cron", "timeout_ms is a positive millisecond delay", "at is a future Unix timestamp in milliseconds", "cron is a five-field expression and timezone is an IANA timezone", `permission_rules is a JSON array of {permission, pattern, action} objects; action is "allow", "deny", or "ask"; omit or pass [] for platform defaults`}
+	return help
+}
+
+func routineInput(req mcplib.CallToolRequest, arguments map[string]any) (Input, error) {
+	timeoutMS := int64(req.GetInt("timeout_ms", 0))
+	if timeoutMS > math.MaxInt64/int64(time.Millisecond) || timeoutMS < math.MinInt64/int64(time.Millisecond) {
+		return Input{}, ErrValidation
+	}
+	var permRules []platforms.PermissionRule
+	if raw := req.GetString("permission_rules", ""); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &permRules); err != nil {
+			return Input{}, fmt.Errorf("permission_rules: invalid JSON: %w", ErrValidation)
+		}
+	}
+	return Input{
+		Name: req.GetString("name", ""), Prompt: req.GetString("prompt", ""), Directory: req.GetString("directory", ""),
+		RemoteID: req.GetString("remote_id", ""), Agent: req.GetString("agent", ""), Model: req.GetString("model", ""),
+		SessionMode: req.GetString("session_mode", SessionNew), SessionID: req.GetString("session_id", ""),
+		Worktree: boolArgument(arguments, "worktree"), CleanupWorktree: boolArgument(arguments, "cleanup_worktree"),
+		Schedule: Schedule{Kind: req.GetString("schedule_kind", ScheduleNone), Timeout: time.Duration(timeoutMS) * time.Millisecond, At: time.UnixMilli(int64(req.GetInt("at", 0))), Cron: req.GetString("cron", ""), Timezone: req.GetString("timezone", "")},
+		Enabled:  boolArgument(arguments, "enabled"), DeleteAfterSuccess: boolArgument(arguments, "delete_after_success"),
+		ArchiveSessionAfterSuccess: boolArgument(arguments, "archive_session_after_success"),
+		NotifyOnSuccess:            boolArgument(arguments, "notify_on_success"),
+		PermissionRules:            permRules,
+	}, nil
+}
+
+// patchRoutineInput overlays the arguments that are present onto the stored
+// routine. Absent keys keep their stored value; an explicit "" clears a string.
+func patchRoutineInput(existing state.Routine, req mcplib.CallToolRequest, arguments map[string]any, now time.Time) (Input, error) {
+	input, err := InputFromRoutine(existing, now)
+	if err != nil {
+		return Input{}, err
+	}
+	has := func(name string) bool { _, ok := arguments[name]; return ok }
+	for name, field := range map[string]*string{
+		"name": &input.Name, "prompt": &input.Prompt, "directory": &input.Directory, "remote_id": &input.RemoteID,
+		"agent": &input.Agent, "model": &input.Model, "session_mode": &input.SessionMode, "session_id": &input.SessionID,
+		"schedule_kind": &input.Schedule.Kind, "cron": &input.Schedule.Cron, "timezone": &input.Schedule.Timezone,
+	} {
+		if has(name) {
+			*field = req.GetString(name, "")
+		}
+	}
+	for name, field := range map[string]*bool{"enabled": &input.Enabled, "delete_after_success": &input.DeleteAfterSuccess, "archive_session_after_success": &input.ArchiveSessionAfterSuccess, "notify_on_success": &input.NotifyOnSuccess, "worktree": &input.Worktree, "cleanup_worktree": &input.CleanupWorktree} {
+		if has(name) {
+			*field = boolArgument(arguments, name)
+		}
+	}
+	if has("timeout_ms") {
+		timeoutMS := int64(req.GetInt("timeout_ms", 0))
+		if timeoutMS > math.MaxInt64/int64(time.Millisecond) || timeoutMS < 0 {
+			return Input{}, ErrValidation
+		}
+		input.Schedule.Timeout = time.Duration(timeoutMS) * time.Millisecond
+	}
+	if has("at") {
+		input.Schedule.At = time.UnixMilli(int64(req.GetInt("at", 0)))
+	}
+	// Without a schedule argument the stored schedule and due time are kept
+	// as-is; rebuilding would skip an overdue cron or reject a spent one-shot.
+	input.KeepSchedule = true
+	for _, name := range []string{"schedule_kind", "cron", "timezone", "timeout_ms", "at"} {
+		if has(name) {
+			input.KeepSchedule = false
+		}
+	}
+	if !input.KeepSchedule && input.Schedule.Kind == ScheduleTimeout && input.Schedule.Timeout <= 0 {
+		return Input{}, fmt.Errorf("the timeout has already elapsed; pass timeout_ms or another schedule_kind: %w", ErrValidation)
+	}
+	if has("permission_rules") {
+		input.PermissionRules = nil
+		if raw := req.GetString("permission_rules", ""); raw != "" {
+			if err := json.Unmarshal([]byte(raw), &input.PermissionRules); err != nil {
+				return Input{}, fmt.Errorf("permission_rules: invalid JSON: %w", ErrValidation)
+			}
+		}
+	}
+	return input, nil
+}
+
+func boolArgument(arguments map[string]any, name string) bool {
+	value, _ := arguments[name].(bool)
+	return value
+}
+
+func routineToolError(err error) *mcplib.CallToolResult {
+	switch {
+	case errors.Is(err, ErrValidation):
+		return mcplib.NewToolResultError(err.Error())
+	case errors.Is(err, state.ErrRoutineNotFound):
+		return mcplib.NewToolResultError("routine not found")
+	case errors.Is(err, ErrNameConflict):
+		return mcplib.NewToolResultError("routine name already exists")
+	case errors.Is(err, state.ErrRoutineRunActive):
+		return mcplib.NewToolResultError("routine already has an active shared-session run")
+	default:
+		return mcplib.NewToolResultError("routine request failed")
+	}
+}

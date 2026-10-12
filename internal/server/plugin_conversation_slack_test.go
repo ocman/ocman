@@ -17,6 +17,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
 	"github.com/NoUseFreak/ocman/sdk/plugin/conformance"
 )
@@ -47,6 +48,7 @@ func buildSlackPlugin(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("building the slack plugin: %s: %v", out, err)
 	}
+	testutil.WarmExecutable(t, path)
 	return path
 }
 
@@ -63,9 +65,7 @@ func installSlackPlugin(t *testing.T, dir, binary, api, configPath string) strin
 	}
 	script := fmt.Sprintf("#!/bin/sh\nexport OCMAN_SLACK_API=%q\nexec %q \"$@\"%s\n", api, binary, redirect)
 	path := filepath.Join(dir, "ocman-plugin-slack")
-	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, path, script)
 	return path
 }
 

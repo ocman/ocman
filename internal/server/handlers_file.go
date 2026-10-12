@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -164,18 +165,10 @@ func (s *Server) handleFileProxy(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, path, info.ModTime(), f)
 }
 
-// inertFileCSP sandboxes a served file with every capability off: an opaque
-// origin and no script, whatever the embedding iframe allows.
-const inertFileCSP = "sandbox; frame-ancestors 'self'"
-
-// setInertFileHeaders neutralises active content (SVG and HTML can carry
-// script) and lets only the dashboard itself frame the file, replacing the
-// global X-Frame-Options: DENY so HTML previews can render in an iframe.
-func setInertFileHeaders(w http.ResponseWriter) {
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", inertFileCSP)
-	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-}
+var (
+	setInertFileHeaders = httpx.SetInertFileHeaders
+	fileDisposition     = httpx.FileDisposition
+)
 
 // fileContentType maps an extension to a MIME type, defaulting to a
 // generic binary type when the extension is unknown.
@@ -184,21 +177,4 @@ func fileContentType(path string) string {
 		return ct
 	}
 	return "application/octet-stream"
-}
-
-// fileDisposition reports whether a content type is one browsers render
-// usefully in place ("inline") or should just download ("attachment").
-func fileDisposition(ctype string) string {
-	base, _, _ := strings.Cut(ctype, ";")
-	base = strings.TrimSpace(base)
-	switch {
-	case strings.HasPrefix(base, "image/"),
-		strings.HasPrefix(base, "video/"),
-		strings.HasPrefix(base, "audio/"),
-		strings.HasPrefix(base, "text/"),
-		base == "application/pdf",
-		base == "application/json":
-		return "inline"
-	}
-	return "attachment"
 }

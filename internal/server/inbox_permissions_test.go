@@ -27,19 +27,19 @@ func TestPermissionInboxReconciliationUsesLiveSnapshot(t *testing.T) {
 	adapter := &refreshingInboxPlatform{fakePlatform: fakePlatform{id: "opencode"}, prompts: []platforms.LivePrompt{{"id": "perm-1"}}}
 	srv.registry.Register(adapter)
 	srv.notifyPermissionInbox(state.InboxPermission{Platform: "opencode", SessionID: "ses-1", PermissionID: "perm-1", Permission: "bash"})
-	srv.reconcilePermissionInbox(t.Context())
+	srv.inboxModule().Reconcile(t.Context())
 	items, _ := srv.stateDB.ListInboxItems(t.Context())
 	if len(items) != 1 {
 		t.Fatal("empty cached list overrode live pending request")
 	}
 	adapter.prompts, adapter.err = nil, errors.New("offline")
-	srv.reconcilePermissionInbox(t.Context())
+	srv.inboxModule().Reconcile(t.Context())
 	items, _ = srv.stateDB.ListInboxItems(t.Context())
 	if len(items) != 1 {
 		t.Fatal("failed live snapshot archived request")
 	}
 	adapter.err = nil
-	srv.reconcilePermissionInbox(t.Context())
+	srv.inboxModule().Reconcile(t.Context())
 	items, _ = srv.stateDB.ListInboxItems(t.Context())
 	if len(items) != 0 {
 		t.Fatal("successful empty snapshot did not archive request")
@@ -100,7 +100,7 @@ func TestPermissionInboxExternalResolutionAndReconciliation(t *testing.T) {
 	p := state.InboxPermission{Platform: "opencode", SessionID: "ses-1", PermissionID: "perm-1", Permission: "bash"}
 	srv.notifyPermissionInbox(p)
 	adapter.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return nil, errors.New("offline") }
-	srv.reconcilePermissionInbox(t.Context())
+	srv.inboxModule().Reconcile(t.Context())
 	items, _ := srv.stateDB.ListInboxItems(t.Context())
 	if len(items) != 1 {
 		t.Fatal("offline owner treated as resolved")
@@ -108,13 +108,13 @@ func TestPermissionInboxExternalResolutionAndReconciliation(t *testing.T) {
 	adapter.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
 		return []platforms.LivePrompt{{"id": p.PermissionID}}, nil
 	}
-	srv.reconcilePermissionInbox(t.Context())
+	srv.inboxModule().Reconcile(t.Context())
 	items, _ = srv.stateDB.ListInboxItems(t.Context())
 	if len(items) != 1 {
 		t.Fatal("pending prompt archived")
 	}
 	adapter.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return nil, nil }
-	srv.reconcilePermissionInbox(t.Context())
+	srv.inboxModule().Reconcile(t.Context())
 	items, _ = srv.stateDB.ListInboxItems(t.Context())
 	if len(items) != 0 {
 		t.Fatal("stale prompt not archived")

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // fakeTmux installs a fake `tmux` executable at the front of PATH so the
@@ -19,9 +21,7 @@ func fakeTmux(t *testing.T, body string) func() string {
 	dir := t.TempDir()
 	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.log\"\n" + body + "\n"
 	bin := filepath.Join(dir, "tmux")
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	testutil.WriteScript(t, bin, script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return func() string {
 		b, err := os.ReadFile(bin + ".log")

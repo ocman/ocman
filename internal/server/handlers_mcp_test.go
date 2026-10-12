@@ -13,7 +13,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -72,7 +71,6 @@ func TestMCPListenerDisabledWhenAddrEmpty(t *testing.T) {
 
 func TestMainMuxMCPListsInboxRoutineAndSessionTools(t *testing.T) {
 	srv := testServer(t)
-	srv.routineSvc = routines.New(routines.Deps{Store: srv.stateDB})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)

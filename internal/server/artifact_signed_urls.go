@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 const artifactURLTTL = 5 * time.Minute
@@ -32,19 +30,13 @@ func (a *Auth) validArtifactURLToken(path, token string, now time.Time) bool {
 	return hmac.Equal([]byte(token), []byte(a.artifactURLToken(path, time.Unix(exp, 0))))
 }
 
-func (s *Server) artifactMCPView(a state.Artifact) state.Artifact {
-	a = artifactView(a)
-	expires := time.Now().Add(artifactURLTTL)
-	for i := range a.Items {
-		if a.Items[i].Kind == state.ArtifactItemFile {
-			path := a.Items[i].URL
-			if s.auth != nil {
-				path += "?token=" + url.QueryEscape(s.auth.artifactURLToken(path, expires))
-			}
-			a.Items[i].URL = s.publicURL(path)
-		}
+// signArtifactFileURL makes an artifact file route absolute and, when auth
+// is on, appends a short-lived token scoped to that one path.
+func (s *Server) signArtifactFileURL(path string) string {
+	if s.auth != nil {
+		path += "?token=" + url.QueryEscape(s.auth.artifactURLToken(path, time.Now().Add(artifactURLTTL)))
 	}
-	return a
+	return s.publicURL(path)
 }
 
 // Only the inert file route uses this wrapper. All other routes keep cookie auth.

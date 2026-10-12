@@ -12,11 +12,9 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/term"
-	"github.com/NoUseFreak/ocman/internal/webhook"
 )
 
 // Start starts the HTTP server. It blocks until the context is cancelled,
@@ -62,13 +60,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if _, err := s.RescanPlugins(ctx); err != nil {
 		log.WithError(err).Warn("plugin discovery failed")
 	}
-	if s.stateDB != nil && s.routineSvc == nil {
-		s.routineSvc = routines.New(routines.Deps{
-			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,
-		})
-	}
 	if s.remotes != nil {
-		s.remotes.SetWebhookDispatcher(s.routineSvc)
+		s.remotes.SetWebhookDispatcher(s.RoutineService())
 	}
 	if s.db != nil {
 		if _, ok := s.registry.Get(opencode.PlatformID); ok {
@@ -87,21 +80,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
 	}
 
-	if s.routineSvc != nil {
-		if err := s.routineSvc.Recover(context.WithoutCancel(ctx)); err != nil {
-			return fmt.Errorf("recovering routines: %w", err)
-		}
-	}
-	if s.stateDB != nil {
-		inboxes, err := s.stateDB.ListWebhookInboxes(context.WithoutCancel(ctx))
-		if err != nil {
-			return fmt.Errorf("loading webhook inboxes: %w", err)
-		}
-		s.webhookCtx = ctx
-		for _, inbox := range inboxes {
-			workers.Go(func() { (&webhook.Poller{Store: s.stateDB, Inbox: inbox, Routines: s.routineSvc}).Run(ctx) })
-		}
-		workers.Go(func() { s.runWebhookHistoryCleanup(ctx) })
+	if err := s.startModules(ctx, &workers); err != nil {
+		return err
 	}
 
 	workers.Go(func() { s.runAutoArchiveLoop(ctx) })
@@ -118,8 +98,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// crash, and is the clock for their bounded retries.
 	workers.Go(func() { s.runConversationDeliveryPump(ctx) })
 	workers.Go(func() { s.runConversationReplyReconciliation(ctx) })
-	workers.Go(func() { s.runRoutines(ctx) })
-	workers.Go(func() { s.runPermissionInboxReconciliation(ctx) })
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive
 	// the judge even when no browser tab is open. Without this, the

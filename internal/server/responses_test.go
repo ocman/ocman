@@ -164,7 +164,7 @@ func TestReadHandlersClassifyCancellation(t *testing.T) {
 			case "/api/sessions/notify":
 				handler = srv.handleSessionsNotify
 			case "/api/inbox":
-				handler = srv.handleInbox
+				handler = srv.inboxModule().ServeHTTP
 			case "/api/git/diff?dir=/repo":
 				srv.hostRouter = hostsvc.NewRouter(&failedGitDiffHost{err: fmt.Errorf("git diff: %w", ctx.Err())})
 				handler = srv.handleGitDiff

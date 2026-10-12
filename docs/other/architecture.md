@@ -176,7 +176,8 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server --> Routines[internal/routines<br/>saved prompts + schedules]
+    Server -->|"modules(): routes, Start, Run, tools, Bus"| Modules[feature modules<br/>routines, webhook, artifacts, inbox, sharing]
+    Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Server -->|confirmed Epic controls + dispatch| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory -->|graph + action Inbox reconciliation| State
@@ -189,9 +190,8 @@ flowchart TD
     Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
     MCP --> Factory
-    MCP --> Inbox[Inbox<br/>state + owner routing]
-    MCP --> Routines
-    MCP -->|webhook inbox actions, in-process| Server
+    Modules -->|module tools| MCP
+    Modules --> Inbox[internal/inbox<br/>state + owner routing]
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Server -->|Factory + routine usage via platforms.UsageReader| OC
@@ -210,7 +210,15 @@ flowchart TD
 ```
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
-  handler files, plus tmux, terminal, whisper, auto-approve and routine ticks.
+  handler files, plus tmux, terminal, whisper and auto-approve. It is the
+  composition root for feature modules.
+- **Feature modules** (`internal/module`). Routines, webhooks, artifacts,
+  the Inbox and conversation sharing each own their routes, background loops,
+  MCP tools and event subscriptions. The server lists them once in
+  `modules()` and hands each narrow `Deps` (store, guards, lookups); modules
+  never import the server or each other. Webhooks dispatch to routines through
+  an interface. Sharing reacts to the typed, synchronous `module.Bus`
+  `SessionIdle` event.
 - **Session summary reads.** Pinned sessions outside the recent window use
   `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound

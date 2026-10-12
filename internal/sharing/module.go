@@ -1,0 +1,78 @@
+// Package sharing shares conversations: Markdown export, encrypted relay
+// share links kept current on every completed turn, and the sharing
+// setting. The relay protocol and encryption live in internal/share.
+package sharing
+
+import (
+	"context"
+	"net/http"
+
+	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
+)
+
+type Deps struct {
+	Store *state.DB
+	// Session resolves the adapter owning a request's session, writing the
+	// error response itself when there is none.
+	Session func(w http.ResponseWriter, r *http.Request, sessionID string) platforms.Platform
+	// Platform is the adapter for a compound platform id.
+	Platform func(platforms.ID) (platforms.Platform, bool)
+	// RelayURL is the share relay, RelaySource where its value came from
+	// ("flag", "env", "builtin"); both empty without a relay.
+	RelayURL    func() string
+	RelaySource func() string
+	Guards      module.Guards
+}
+
+type Module struct{ Deps }
+
+var (
+	_ module.Module     = (*Module)(nil)
+	_ module.Subscriber = (*Module)(nil)
+)
+
+func NewModule(deps Deps) *Module { return &Module{deps} }
+
+func (m *Module) Name() string { return "sharing" }
+
+// Routes are more specific than the server's /api/session/ dispatcher, so
+// the mux sends these here.
+func (m *Module) Routes(r module.Router) {
+	auth := m.Guards.Auth
+	r.Handle("GET /api/session/{id}/export.md", auth(m.withSession(m.handleExportMarkdown)))
+	r.Handle("GET /api/session/{id}/shares", auth(m.withSession(m.handleSessionShares)))
+	r.Handle("POST /api/session/{id}/share", auth(m.withSession(m.handleCreateSessionShare)))
+	r.Handle("DELETE /api/session/{id}/share/{token}", auth(m.withSession(m.handleRevokeSessionShare)))
+	r.Handle("GET /api/shares", auth(m.handleAllShares))
+	r.Setting("/api/settings/sharing", auth(m.handleSharingSetting))
+}
+
+// Subscribe appends each completed turn to the session's live shares.
+func (m *Module) Subscribe(b *module.Bus) {
+	b.OnSessionIdle(func(_ context.Context, e module.SessionIdle) {
+		adapter, ok := m.Platform(platforms.ID(e.Platform))
+		if !ok {
+			return
+		}
+		go func() {
+			if err := m.PublishCompletedTurn(context.Background(), adapter, e.SessionID); err != nil {
+				log.WithError(err).WithField("session_id", e.SessionID).Warn("publishing completed turn to share relay")
+			}
+		}()
+	})
+}
+
+type sessionHandler func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform)
+
+func (m *Module) withSession(h sessionHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if adapter := m.Session(w, r, id); adapter != nil {
+			h(w, r, id, adapter)
+		}
+	}
+}

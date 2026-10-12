@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/NoUseFreak/ocman/sdk/plugin"
 	"github.com/NoUseFreak/ocman/sdk/plugin/conformance"
 )
@@ -20,6 +21,7 @@ func TestFixture(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", out, err)
 	}
+	testutil.WarmExecutable(t, path)
 	action := plugin.Call{Capability: "action", Version: plugin.Version{Major: 1}, Method: "invoke", Params: json.RawMessage(`{"actionId":"notice","context":{}}`)}
 	fixture := func(method string) plugin.Call {
 		return plugin.Call{Capability: "fixture", Version: plugin.Version{Major: 1}, Method: method, Params: json.RawMessage(`{}`)}

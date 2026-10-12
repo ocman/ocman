@@ -4,14 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/webhook"
 )
 
 func fakeInboxRelay(t *testing.T) *httptest.Server {
@@ -66,7 +64,7 @@ func TestWebhookInboxesLifecycle(t *testing.T) {
 		t.Fatalf("blank name: %d", rec.Code)
 	}
 	rec := doRoutineRequest(t, handler, http.MethodPost, base, `{"name":"forgejo","enrollmentToken":"enroll","secret":"Bearer s","secretHeader":"Authorization"}`)
-	var view webhookInboxView
+	var view webhook.InboxView
 	// The shared secret is the user's own value, shown back so they can check
 	// it; relay credentials and the private key never are.
 	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &view) != nil || view.Name != "forgejo" || view.SecretHeader != "Authorization" || view.Secret != "Bearer s" || len(view.Subscriptions) != 0 {
@@ -246,135 +244,5 @@ func TestWebhookInboxesFailures(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code == http.StatusOK {
 		t.Fatalf("non-local request allowed")
-	}
-	rec = httptest.NewRecorder()
-	(&Server{}).handleWebhookInboxes(rec, httptest.NewRequest(http.MethodGet, base, nil))
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("no state: %d", rec.Code)
-	}
-}
-
-func TestWebhookInboxPatchKeepsConcurrentKeyAndRevocation(t *testing.T) {
-	srv, handler, _ := routineHTTPServer(t)
-	srv.relayURL = fakeInboxRelay(t).URL
-	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/webhook-inboxes", `{"name":"forgejo"}`); rec.Code != http.StatusCreated {
-		t.Fatalf("create: %d", rec.Code)
-	}
-	stale, err := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A key reset lands while a rename still holds the pre-reset snapshot.
-	if rec := doRoutineRequest(t, handler, http.MethodPut, "/api/webhook-inboxes/inbox", `{"reset":true}`); rec.Code != http.StatusOK {
-		t.Fatalf("reset: %d", rec.Code)
-	}
-	rotated, _ := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
-	rec := httptest.NewRecorder()
-	srv.updateWebhookInbox(rec, httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(`{"name":"renamed","secret":"s"}`)), stale)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
-	}
-	got, _ := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
-	if got.Identity != rotated.Identity || got.KeyVersion != rotated.KeyVersion || got.Identity == stale.Identity || got.Name != "renamed" || got.SecretHeader != "X-Webhook-Secret" {
-		t.Fatalf("patch clobbered the rotated key: stale v%d, rotated v%d, got %+v", stale.KeyVersion, rotated.KeyVersion, got)
-	}
-	var view webhookInboxView
-	if json.Unmarshal(rec.Body.Bytes(), &view) != nil || view.KeyVersion != rotated.KeyVersion {
-		t.Fatalf("view = %s", rec.Body.String())
-	}
-
-	// A secret replacement lands while a rename still holds the old snapshot:
-	// the rename must not restore the old secret the relay no longer accepts.
-	stale, _ = srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
-	if rec := doRoutineRequest(t, handler, http.MethodPatch, "/api/webhook-inboxes/inbox", `{"secret":"Bearer new","secretHeader":"Authorization"}`); rec.Code != http.StatusOK {
-		t.Fatalf("secret: %d", rec.Code)
-	}
-	rec = httptest.NewRecorder()
-	srv.updateWebhookInbox(rec, httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(`{"name":"renamed again"}`)), stale)
-	if got, _ := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox"); rec.Code != http.StatusOK || got.Name != "renamed again" || got.Secret != "Bearer new" || got.SecretHeader != "Authorization" {
-		t.Fatalf("rename restored the stale secret: %d %+v", rec.Code, got)
-	}
-
-	// A rename that races a revoke must not bring the inbox back.
-	if err := srv.stateDB.DeleteWebhookInboxByID(t.Context(), "inbox"); err != nil {
-		t.Fatal(err)
-	}
-	rec = httptest.NewRecorder()
-	srv.updateWebhookInbox(rec, httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(`{"name":"ghost"}`)), stale)
-	if _, err := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox"); err == nil {
-		t.Fatal("patch resurrected a revoked inbox")
-	}
-}
-
-// Two secret changes race. The relay takes A and holds its reply until B
-// arrives, then takes B; unless the relay call and the local write share a
-// lock, ocman records A last while the relay enforces B. With the lock B
-// cannot arrive during the hold, which then just times out.
-func TestWebhookSecretChangesPersistInRelayOrder(t *testing.T) {
-	srv, handler, _ := routineHTTPServer(t)
-	var mu sync.Mutex
-	var last string
-	second := make(chan struct{})
-	var arrivals atomic.Int32
-	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/inboxes/inbox/secret" {
-			http.Error(w, "unexpected", http.StatusBadGateway)
-			return
-		}
-		var body struct{ Secret string }
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		mu.Lock()
-		last = body.Secret
-		mu.Unlock()
-		if arrivals.Add(1) == 1 {
-			select {
-			case <-second:
-			case <-time.After(200 * time.Millisecond):
-			}
-		} else {
-			defer close(second)
-		}
-		_, _ = w.Write([]byte(`{"secretHeader":"X-Webhook-Secret"}`))
-	}))
-	t.Cleanup(relay.Close)
-	if err := srv.stateDB.SaveWebhookInbox(t.Context(), state.WebhookInbox{ID: "inbox", RoutineID: "inbox", RelayURL: relay.URL, Identity: "id"}); err != nil {
-		t.Fatal(err)
-	}
-	var wg sync.WaitGroup
-	for _, secret := range []string{"A", "B"} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			doRoutineRequest(t, handler, http.MethodPatch, "/api/webhook-inboxes/inbox", `{"secret":"`+secret+`"}`)
-		}()
-		time.Sleep(20 * time.Millisecond) // A reaches the relay first
-	}
-	wg.Wait()
-	got, _ := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
-	mu.Lock()
-	defer mu.Unlock()
-	if got.Secret != last {
-		t.Fatalf("ocman stored %q but the relay enforces %q", got.Secret, last)
-	}
-}
-
-// Delivery files expire even after the last inbox is revoked, when no poller
-// is left running.
-func TestWebhookHistoryCleanupRunsWithoutInboxes(t *testing.T) {
-	srv, _, _ := routineHTTPServer(t)
-	path, err := srv.stateDB.WriteWebhookFile("gone", "d1", state.WebhookBodyFile, []byte("secret"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-state.WebhookHistoryRetention - time.Hour)
-	if err := os.Chtimes(path, old, old); err != nil {
-		t.Fatal(err)
-	}
-	if inboxes, _ := srv.stateDB.ListWebhookInboxes(t.Context()); len(inboxes) != 0 {
-		t.Fatalf("inboxes = %+v", inboxes)
-	}
-	srv.cleanWebhookHistory(t.Context())
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expired delivery file kept: %v", err)
 	}
 }

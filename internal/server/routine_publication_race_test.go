@@ -43,12 +43,12 @@ func TestRoutineUpstreamCreationCannotPublishUntaggedList(t *testing.T) {
 					return []db.Session{{ID: "session-1", Platform: "opencode", Directory: "/repo"}}, nil
 				},
 			})
-			routine, err := srv.routineSvc.Create(t.Context(), routines.Input{Name: "Check", Prompt: "inspect", Directory: "/repo", Enabled: true, Schedule: routines.Schedule{Kind: routines.ScheduleNone}})
+			routine, err := srv.routineService().Create(t.Context(), routines.Input{Name: "Check", Prompt: "inspect", Directory: "/repo", Enabled: true, Schedule: routines.Schedule{Kind: routines.ScheduleNone}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			runDone := make(chan error, 1)
-			go func() { _, err := srv.routineSvc.RunNow(t.Context(), routine.ID); runDone <- err }()
+			go func() { _, err := srv.routineService().RunNow(t.Context(), routine.ID); runDone <- err }()
 			<-blocked
 			sub, unsubscribe := srv.broadcastHub.subscribe()
 			defer unsubscribe()

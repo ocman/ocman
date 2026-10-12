@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // Use short socket paths on macOS and never touch a developer's tmux servers.
@@ -27,9 +29,7 @@ func isolateTmux(t *testing.T) string {
 	// Terminal fixtures must not run a developer's interactive shell startup.
 	t.Setenv("SHELL", "/bin/sh")
 	script := fmt.Sprintf("#!/bin/sh\nexec %q -f /dev/null \"$@\"\n", bin)
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, filepath.Join(dir, "tmux"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Cleanup(func() {
 		for _, socket := range []string{"default", "ocman-term"} {

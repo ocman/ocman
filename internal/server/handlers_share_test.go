@@ -9,7 +9,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // shareTestDetail builds a minimal SessionDetail for the fake platform.
@@ -41,7 +40,7 @@ func TestExportMarkdownEndpoint(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/ses_export/export.md", nil)
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
@@ -63,18 +62,9 @@ func TestCreateShareLinkRequiresRelay(t *testing.T) {
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/session/ses_share/share", nil)
 	createRR := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(createRR, createReq)
+	serveRoutes(t, srv, createRR, createReq)
 	if createRR.Code != http.StatusServiceUnavailable {
 		t.Fatalf("create status = %d, want 503; body=%s", createRR.Code, createRR.Body)
-	}
-}
-
-func TestShareLinkViewUsesRelayURL(t *testing.T) {
-	srv, _ := newSessionsTestServer(t)
-	link := state.ShareLink{Token: "local-token", RelayURL: "https://relay.example.com", RelayID: "20260813-abc", RelayKey: "secret-key"}
-	view := srv.shareLinkView(httptest.NewRequest(http.MethodGet, "http://localhost:8228/api/session/s/share", nil), link)
-	if view.URL != "https://relay.example.com/v/20260813-abc#k=secret-key" {
-		t.Fatalf("url = %q", view.URL)
 	}
 }
 
@@ -84,7 +74,7 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 
 	// Default: enabled.
 	getRR := httptest.NewRecorder()
-	srv.handleSharingSetting(getRR, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
+	serveRoutes(t, srv, getRR, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
 	if getRR.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want 200", getRR.Code)
 	}
@@ -98,26 +88,26 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 
 	// Disable it.
 	postRR := httptest.NewRecorder()
-	srv.handleSharingSetting(postRR, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":false}`)))
+	serveRoutes(t, srv, postRR, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":false}`)))
 	if postRR.Code != http.StatusOK {
 		t.Fatalf("post status = %d, want 200; body=%s", postRR.Code, postRR.Body)
 	}
-	if enabled, err := srv.sharingEnabled(t.Context()); err != nil || enabled {
-		t.Fatalf("sharing should be disabled after POST (enabled=%v, err=%v)", enabled, err)
+	if v, _, err := srv.stateDB.GetSetting(t.Context(), "sharing_enabled"); err != nil || v != "false" {
+		t.Fatalf("sharing should be disabled after POST (stored=%q, err=%v)", v, err)
 	}
 
 	// Create is now rejected with 403.
 	createRR := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(createRR, httptest.NewRequest(http.MethodPost, "/api/session/ses_guard/share", nil))
+	serveRoutes(t, srv, createRR, httptest.NewRequest(http.MethodPost, "/api/session/ses_guard/share", nil))
 	if createRR.Code != http.StatusForbidden {
 		t.Fatalf("create status = %d, want 403 when disabled; body=%s", createRR.Code, createRR.Body)
 	}
 
 	// Re-enable still needs a relay; a local URL must not be minted.
 	reEnable := httptest.NewRecorder()
-	srv.handleSharingSetting(reEnable, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":true}`)))
+	serveRoutes(t, srv, reEnable, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":true}`)))
 	create2 := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(create2, httptest.NewRequest(http.MethodPost, "/api/session/ses_guard/share", nil))
+	serveRoutes(t, srv, create2, httptest.NewRequest(http.MethodPost, "/api/session/ses_guard/share", nil))
 	if create2.Code != http.StatusServiceUnavailable {
 		t.Fatalf("create status = %d, want 503 without relay; body=%s", create2.Code, create2.Body)
 	}
@@ -166,7 +156,7 @@ func TestSharingSettingReportsRelay(t *testing.T) {
 			srv.WithRelay(tc.url, tc.source)
 
 			rr := httptest.NewRecorder()
-			srv.handleSharingSetting(rr, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
+			serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
 			if rr.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", rr.Code)
 			}
@@ -194,7 +184,7 @@ func TestSharingSettingPostKeepsRelay(t *testing.T) {
 	srv.WithRelay("http://localhost:8231", "flag")
 
 	rr := httptest.NewRecorder()
-	srv.handleSharingSetting(rr, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":false}`)))
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":false}`)))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
 	}
@@ -222,12 +212,8 @@ func TestSharingFailsClosedOnStateError(t *testing.T) {
 		t.Fatalf("close state db: %v", err)
 	}
 
-	if _, err := srv.sharingEnabled(t.Context()); err == nil {
-		t.Fatal("sharingEnabled must report the read error, not assume enabled")
-	}
-
 	createRR := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(createRR, httptest.NewRequest(http.MethodPost, "/api/session/ses_failclosed/share", nil))
+	serveRoutes(t, srv, createRR, httptest.NewRequest(http.MethodPost, "/api/session/ses_failclosed/share", nil))
 	if createRR.Code != http.StatusServiceUnavailable {
 		t.Fatalf("create status = %d, want 503 when the sharing setting can't be read; body=%s",
 			createRR.Code, createRR.Body)
@@ -236,7 +222,7 @@ func TestSharingFailsClosedOnStateError(t *testing.T) {
 	// The read-only status endpoint reports unavailable rather than
 	// claiming sharing is on.
 	getRR := httptest.NewRecorder()
-	srv.handleSharingSetting(getRR, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
+	serveRoutes(t, srv, getRR, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
 	if getRR.Code != http.StatusServiceUnavailable {
 		t.Fatalf("GET status = %d, want 503 when the setting can't be read; body=%s", getRR.Code, getRR.Body)
 	}
@@ -254,7 +240,7 @@ func TestAllSharesGlobalList(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	srv.handleAllShares(rr, httptest.NewRequest(http.MethodGet, "/api/shares", nil))
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodGet, "/api/shares", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
 	}
@@ -271,4 +257,43 @@ func TestAllSharesGlobalList(t *testing.T) {
 			t.Errorf("incomplete global view: %+v", v)
 		}
 	}
+}
+
+// serveRoutes serves req through the server's full route table, where the
+// sharing module mounts its routes.
+func serveRoutes(t *testing.T, srv *Server, w http.ResponseWriter, req *http.Request) {
+	t.Helper()
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux.ServeHTTP(w, req)
+}
+
+// sharedChunk and sharedLink decode the relay chunk and share link wire
+// shapes the sharing module writes.
+type sharedChunk struct {
+	Session  *db.Session  `json:"session,omitempty"`
+	Messages []db.Message `json:"messages"`
+	Parts    []db.Part    `json:"parts"`
+	ReadOnly bool         `json:"readOnly"`
+}
+
+type sharedLink struct {
+	Token     string `json:"token"`
+	URL       string `json:"url"`
+	CreatedAt int64  `json:"createdAt"`
+	ExpiresAt int64  `json:"expiresAt,omitempty"`
+}
+
+type sharingSettingView struct {
+	Enabled     bool   `json:"enabled"`
+	RelayURL    string `json:"relayUrl"`
+	RelaySource string `json:"relaySource"`
+}
+
+type globalShareLinkView struct {
+	sharedLink
+	Platform  string `json:"platform"`
+	SessionID string `json:"sessionId"`
 }

@@ -48,8 +48,6 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},
 	{http.MethodGet, "{id}/auto-approve", (*Server).handleSessionAutoApproveGet},
 	{http.MethodGet, "{id}/approved-permissions", (*Server).handleSessionApprovedPermissions},
-	{http.MethodGet, "{id}/export.md", (*Server).handleSessionExportMarkdown},
-	{http.MethodGet, "{id}/shares", (*Server).handleSessionShares},
 	{http.MethodGet, "{id}/queue", (*Server).handleSessionQueueList},
 
 	// Session-scoped POSTs (specific patterns first).
@@ -71,8 +69,6 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodPost, "{id}/compact", (*Server).handleSessionCompact},
 	{http.MethodPost, "{id}/fork", (*Server).handleSessionFork},
 	{http.MethodPost, "{id}/move", (*Server).handleSessionMove},
-	{http.MethodPost, "{id}/share", (*Server).handleCreateSessionShare},
-	{http.MethodDelete, "{id}/share/{token}", (*Server).handleRevokeSessionShare},
 
 	// Bare /api/session/{id} (kept last so longer matches win).
 	{http.MethodGet, "{id}", (*Server).handleSession},

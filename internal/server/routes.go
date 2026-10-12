@@ -68,9 +68,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/capabilities", s.get(s.handleCapabilities))
 	mux.HandleFunc("/api/doctor", s.get(s.handleDoctor))
 	mux.HandleFunc("/api/favorites", s.requireAuth(s.handleFavoritesRoot)) // GET = list, POST = add, DELETE = remove
-	for _, path := range []string{"/api/inbox", "/api/inbox/", "/api/inbox/read", "/api/inbox/open", "/api/inbox/archive", "/api/inbox/archive-all-read"} {
-		mux.HandleFunc(path, s.requireAuth(s.handleInbox))
-	}
 	mux.HandleFunc("/api/whisper/status", s.get(s.handleWhisperStatus))
 	mux.HandleFunc("/api/transcribe", s.post(s.handleTranscribe))
 	mux.HandleFunc("/api/cost/calc", s.post(s.handleCalcCost))
@@ -120,14 +117,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
-	routineHandler := s.requireLocalhost(s.handleRoutines)
-	mux.HandleFunc("/api/routines", routineHandler)
-	mux.HandleFunc("/api/routines/", routineHandler)
-	webhookInboxHandler := s.requireLocalhost(s.handleWebhookInboxes)
-	mux.HandleFunc("/api/webhook-inboxes", webhookInboxHandler)
-	mux.HandleFunc("/api/webhook-inboxes/", webhookInboxHandler)
-	mux.HandleFunc("/api/artifacts", s.handleArtifacts)
-	mux.HandleFunc("/api/artifacts/", s.handleArtifacts)
+	s.mountModules(mux)
 	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
 	mux.HandleFunc("/api/factory/queue", s.get(s.handleFactoryQueue))
 	mux.HandleFunc("/api/factory/recovery-gates/", s.requireAuth(s.handleFactoryRecoveryGate))
@@ -189,8 +179,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/settings/prompt-templates", s.settingsHandler(s.requireAuth(s.handlePromptTemplates)))
 	mux.HandleFunc("/api/settings/link-preview-rules", s.settingsHandler(s.requireAuth(s.handleLinkPreviewRules)))
 	// Master toggle for public session sharing (on by default).
-	mux.HandleFunc("/api/settings/sharing", s.settingsHandler(s.requireAuth(s.handleSharingSetting)))
-	mux.HandleFunc("/api/settings/webhook-relay", s.settingsHandler(s.requireLocalhost(s.handleWebhookRelaySetting)))
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
 	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.settingsHandler(s.requireAuth(s.handleWorktreeInheritPermissions)))
@@ -204,7 +192,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/maintenance/opencode-db/restore", s.post(s.requireLocalhost(s.maintenanceAction((*ocmaint.Runner).Restore))))
 	mux.HandleFunc("/api/maintenance/opencode-db/delete-dump", s.post(s.requireLocalhost(s.maintenanceAction((*ocmaint.Runner).DeleteDump))))
 	// Global list of active share links, for inspect/revoke in Settings.
-	mux.HandleFunc("/api/shares", s.requireAuth(s.get(s.handleAllShares)))
 	// Remote-access surface for multi-remote support: this instance's
 	// own instance ID + gRPC-listen status, and an explicit token reveal.
 	mux.HandleFunc("/api/settings/remote-access", s.get(s.handleRemoteAccess))

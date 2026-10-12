@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // bodyDeadlineTestServer serves the three request shapes we care about
@@ -16,7 +18,7 @@ import (
 // ReadTimeout would fail these tests instead of silently breaking SSE.
 func bodyDeadlineTestServer(t *testing.T) string {
 	t.Helper()
-	bodyTimeout := bodyReadTimeout
+	bodyTimeout := httpx.BodyReadTimeout
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bounded", func(w http.ResponseWriter, r *http.Request) {
@@ -105,10 +107,10 @@ func trickleRequest(t *testing.T, addr, path string, chunks []string, gap time.D
 // no longer pin a handler goroutine forever: the read deadline fires and
 // the handler answers 400 instead of waiting.
 func TestSlowBodyIsCutOff(t *testing.T) {
-	bodyReadTimeout = 150 * time.Millisecond
+	httpx.BodyReadTimeout = 150 * time.Millisecond
 	uploadReadTimeout = 5 * time.Second
 	t.Cleanup(func() {
-		bodyReadTimeout = 30 * time.Second
+		httpx.BodyReadTimeout = 30 * time.Second
 		uploadReadTimeout = 5 * time.Minute
 	})
 	addr := bodyDeadlineTestServer(t)
@@ -130,10 +132,10 @@ func TestSlowBodyIsCutOff(t *testing.T) {
 // their own, generous bound: a body slower than bodyReadTimeout still
 // completes.
 func TestUploadBodyGetsTheLongerDeadline(t *testing.T) {
-	bodyReadTimeout = 150 * time.Millisecond
+	httpx.BodyReadTimeout = 150 * time.Millisecond
 	uploadReadTimeout = 5 * time.Second
 	t.Cleanup(func() {
-		bodyReadTimeout = 30 * time.Second
+		httpx.BodyReadTimeout = 30 * time.Second
 		uploadReadTimeout = 5 * time.Minute
 	})
 	addr := bodyDeadlineTestServer(t)
@@ -170,8 +172,8 @@ func TestUploadBodyGetsTheLongerDeadline(t *testing.T) {
 // only the body read: a handler doing slow work after the body arrived
 // still answers.
 func TestSlowHandlerNotAffectedByBodyDeadline(t *testing.T) {
-	bodyReadTimeout = 150 * time.Millisecond
-	t.Cleanup(func() { bodyReadTimeout = 30 * time.Second })
+	httpx.BodyReadTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { httpx.BodyReadTimeout = 30 * time.Second })
 	addr := bodyDeadlineTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)
@@ -198,8 +200,8 @@ func TestSlowHandlerNotAffectedByBodyDeadline(t *testing.T) {
 // outlive the body-read bound many times over, so nobody may replace the
 // per-handler deadline with http.Server.ReadTimeout.
 func TestStreamingSurvivesBodyDeadline(t *testing.T) {
-	bodyReadTimeout = 150 * time.Millisecond
-	t.Cleanup(func() { bodyReadTimeout = 30 * time.Second })
+	httpx.BodyReadTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { httpx.BodyReadTimeout = 30 * time.Second })
 	addr := bodyDeadlineTestServer(t)
 
 	conn, err := net.Dial("tcp", addr)

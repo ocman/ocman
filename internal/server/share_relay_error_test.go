@@ -59,7 +59,7 @@ func TestCreateShareReportsRelayFailure(t *testing.T) {
 			srv.WithRelay(relay.URL, "flag")
 
 			rr := httptest.NewRecorder()
-			srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_relay_err/share", nil))
+			serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_relay_err/share", nil))
 
 			if rr.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d; body=%s", rr.Code, tc.wantStatus, rr.Body)
@@ -86,7 +86,7 @@ func TestCreateShareReportsUnreachableRelay(t *testing.T) {
 	srv.WithRelay(url, "flag")
 
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_down/share", nil))
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_down/share", nil))
 
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502; body=%s", rr.Code, rr.Body)
@@ -110,7 +110,7 @@ func TestCreateShareRollsBackOnRelayFailure(t *testing.T) {
 	srv.WithRelay(relay.URL, "flag")
 
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_rollback/share", nil))
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_rollback/share", nil))
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", rr.Code)
 	}
@@ -131,7 +131,7 @@ func TestCreateShareWithoutRelayExplainsHowToConfigureIt(t *testing.T) {
 	registerShareFake(reg, "ses_norelay")
 
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_norelay/share", nil))
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_norelay/share", nil))
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rr.Code)

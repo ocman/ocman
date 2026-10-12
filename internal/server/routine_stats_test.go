@@ -8,39 +8,9 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
-
-func TestSummarizeRoutineRuns(t *testing.T) {
-	runs := []state.RoutineRun{
-		{State: "success", StartedAt: 100, FinishedAt: 300, Platform: "remote", SessionID: "s"},
-		{State: "failure", StartedAt: 400, FinishedAt: 800, Platform: "remote", SessionID: "s"},
-		{State: "running", StartedAt: 900, Platform: "remote", SessionID: "child"},
-		{State: "interrupted", StartedAt: 1000, FinishedAt: 900, Platform: "offline", SessionID: "s"},
-		{State: "failure"},
-	}
-	var calls int
-	stats := summarizeRoutineRuns(t.Context(), runs, func(_ context.Context, key state.Key) (map[string]platforms.Usage, error) {
-		calls++
-		if key.Platform == "offline" {
-			return nil, platforms.ErrNotFound
-		}
-		if key.SessionID == "child" {
-			return map[string]platforms.Usage{"child": {Cost: 2, EstCost: 3}}, nil
-		}
-		return map[string]platforms.Usage{"s": {Cost: 1, EstCost: 2}, "child": {Cost: 2, EstCost: 3}}, nil
-	})
-	if stats.TotalRuns != 5 || stats.States["failure"] != 2 || stats.States["running"] != 1 || stats.AverageDuration == nil || *stats.AverageDuration != 300 {
-		t.Fatalf("run stats: %+v", stats)
-	}
-	if calls != 3 || stats.CostSessions != 2 || stats.MissingSessions != 1 || stats.TotalCost != 3 || stats.TotalEstCost != 5 {
-		t.Fatalf("cost stats: %+v, calls=%d", stats, calls)
-	}
-	empty := summarizeRoutineRuns(t.Context(), nil, nil)
-	if empty.TotalRuns != 0 || empty.AverageDuration != nil || empty.CostSessions != 0 {
-		t.Fatalf("empty: %+v", empty)
-	}
-}
 
 type routineUsagePlatform struct{ *fakePlatform }
 
@@ -67,7 +37,7 @@ func TestRoutineStatsHTTP(t *testing.T) {
 	for _, adapter := range []platforms.Platform{&fakePlatform{id: "opencode"}, &routineUsagePlatform{&fakePlatform{id: "opencode"}}} {
 		srv.registry.Register(adapter)
 		rec = doRoutineRequest(t, handler, http.MethodGet, path, "")
-		var stats routineStats
+		var stats routines.Stats
 		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &stats) != nil || stats.TotalRuns != 60 || stats.AverageDuration == nil || *stats.AverageDuration != 200 {
 			t.Fatalf("stats: %d %s", rec.Code, rec.Body.String())
 		}
@@ -81,7 +51,7 @@ func TestRoutineStatsHTTP(t *testing.T) {
 	}
 	srv.registry.Unregister("opencode")
 	rec = doRoutineRequest(t, handler, http.MethodGet, path, "")
-	var missing routineStats
+	var missing routines.Stats
 	if json.Unmarshal(rec.Body.Bytes(), &missing) != nil || missing.MissingSessions != 1 {
 		t.Fatalf("disconnected: %s", rec.Body.String())
 	}

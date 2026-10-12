@@ -9,18 +9,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func TestInboxHTTPKeepsSuccessfulSourcesWhenRemoteListFails(t *testing.T) {
 	srv := testServer(t)
-	srv.inboxSourcesFn = func() []string { return []string{"local", "remote-1"} }
-	srv.inboxItemsFn = func(_ context.Context, source string) ([]state.InboxItem, error) {
+	useInboxRemotes(srv, []string{"local", "remote-1"}, func(_ context.Context, source string) ([]state.InboxItem, error) {
 		if source == "remote-1" {
 			return nil, errors.New("remote unavailable")
 		}
 		return []state.InboxItem{{ID: "local-item", Title: "local", Body: "body", CreatedAt: 1}}, nil
-	}
+	})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func TestInboxHTTPKeepsSuccessfulSourcesWhenRemoteListFails(t *testing.T) {
 		t.Fatalf("partial list status = %d, want 200", rec.Code)
 	}
 	var response struct {
-		Items []inboxItemView `json:"items"`
+		Items []inbox.ItemView `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -44,17 +44,16 @@ func TestInboxHTTPKeepsSuccessfulSourcesWhenRemoteListFails(t *testing.T) {
 func TestInboxHTTPProjectsPermissionOwner(t *testing.T) {
 	srv := testServer(t)
 	permission := &state.InboxPermission{Platform: "opencode", SessionID: "child", PermissionID: "request"}
-	srv.inboxSourcesFn = func() []string { return []string{"local", "remote-1"} }
-	srv.inboxItemsFn = func(_ context.Context, source string) ([]state.InboxItem, error) {
+	useInboxRemotes(srv, []string{"local", "remote-1"}, func(_ context.Context, source string) ([]state.InboxItem, error) {
 		if source == "local" {
 			return []state.InboxItem{{ID: "legacy", Title: "Old message"}}, nil
 		}
 		return []state.InboxItem{{ID: "request", Title: "Permission", Category: state.InboxPermissionCategory, Permission: permission}}, nil
-	}
+	})
 	rec := httptest.NewRecorder()
-	srv.handleInboxList(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	srv.inboxModule().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	var response struct {
-		Items []inboxItemView `json:"items"`
+		Items []inbox.ItemView `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -92,8 +91,8 @@ func TestInboxHTTPListAndMutations(t *testing.T) {
 		t.Fatalf("list status = %d, want 200", list.Code)
 	}
 	var response struct {
-		Items       []inboxItemView `json:"items"`
-		UnreadTotal int             `json:"unreadTotal"`
+		Items       []inbox.ItemView `json:"items"`
+		UnreadTotal int              `json:"unreadTotal"`
 	}
 	if err := json.Unmarshal(list.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -148,10 +147,9 @@ func TestInboxHTTPListAndMutations(t *testing.T) {
 
 func TestInboxHTTPPinsItemsAboveNewerMessages(t *testing.T) {
 	srv := testServer(t)
-	srv.inboxSourcesFn = func() []string { return []string{"local", "laptop"} }
-	srv.inboxItemsFn = func(_ context.Context, source string) ([]state.InboxItem, error) {
+	useInboxRemotes(srv, []string{"local", "laptop"}, func(_ context.Context, source string) ([]state.InboxItem, error) {
 		return []state.InboxItem{{ID: "same-id", Title: source, Body: "body", CreatedAt: map[string]int64{"local": 2, "laptop": 1}[source]}}, nil
-	}
+	})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +163,7 @@ func TestInboxHTTPPinsItemsAboveNewerMessages(t *testing.T) {
 	list := httptest.NewRecorder()
 	mux.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	var response struct {
-		Items []inboxItemView `json:"items"`
+		Items []inbox.ItemView `json:"items"`
 	}
 	if err := json.Unmarshal(list.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -271,4 +269,39 @@ func TestInboxHTTPUnreadUnavailableOwnerDoesNotFallbackLocally(t *testing.T) {
 	if err != nil || len(items) != 1 || items[0].ReadAt == 0 {
 		t.Fatalf("local item changed: %+v, %v", items, err)
 	}
+}
+
+// fakeInboxRemotes lists canned sources and items; mutations go to the
+// local store, as they did before remotes existed.
+type fakeInboxRemotes struct {
+	store   *state.DB
+	sources []string
+	items   func(context.Context, string) ([]state.InboxItem, error)
+}
+
+func (f *fakeInboxRemotes) InboxSources() []string { return f.sources }
+func (f *fakeInboxRemotes) InboxItems(ctx context.Context, source string) ([]state.InboxItem, error) {
+	return f.items(ctx, source)
+}
+func (f *fakeInboxRemotes) ArchivedInboxItems(ctx context.Context, _ string) ([]state.InboxItem, error) {
+	return f.store.ListArchivedInboxItems(ctx)
+}
+func (f *fakeInboxRemotes) MarkInboxItemRead(ctx context.Context, _, id string) error {
+	return f.store.MarkInboxItemRead(ctx, id)
+}
+func (f *fakeInboxRemotes) MarkInboxItemUnread(ctx context.Context, _, id string) error {
+	return f.store.MarkInboxItemUnread(ctx, id)
+}
+func (f *fakeInboxRemotes) ArchiveInboxItems(ctx context.Context, _ string, ids []string, allRead bool) error {
+	if allRead {
+		return f.store.ArchiveAllReadInboxItems(ctx)
+	}
+	return f.store.ArchiveInboxItems(ctx, ids)
+}
+
+// useInboxRemotes builds the server's Inbox over canned remote listings; it
+// must run before anything else reaches the Inbox module.
+func useInboxRemotes(s *Server, sources []string, items func(context.Context, string) ([]state.InboxItem, error)) {
+	remotes := &fakeInboxRemotes{store: s.stateDB, sources: sources, items: items}
+	s.inboxMod = s.newInboxModule(func() inbox.Remotes { return remotes })
 }

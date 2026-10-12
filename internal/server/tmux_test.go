@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
@@ -96,9 +97,7 @@ case "$1" in
     ;;
 esac
 `, stderr)
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	testutil.WriteScript(t, path, script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
@@ -168,8 +167,6 @@ case "$1" in
   *) exit 0 ;;
 esac
 `
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	testutil.WriteScript(t, path, script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

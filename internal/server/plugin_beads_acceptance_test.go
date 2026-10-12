@@ -17,6 +17,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // These tests exercise the external executable as an integration fixture;
@@ -29,6 +30,7 @@ func newBeadsPaneTest(t *testing.T) *pluginManagementTest {
 	if out, err := exec.Command("go", "build", "-trimpath", "-o", binary, "../../examples/ocman-plugin-beads").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, out)
 	}
+	testutil.WarmExecutable(t, binary)
 	bd := filepath.Join(dir, "bd")
 	script := `#!/bin/sh
 printf '%s\n' "$*" >> '` + filepath.Join(dir, "commands") + `'
@@ -42,9 +44,7 @@ case "$*" in
   *) exit 1;;
 esac
 `
-	if err := os.WriteFile(bd, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, bd, script)
 	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)

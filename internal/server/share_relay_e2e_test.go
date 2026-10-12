@@ -54,13 +54,9 @@ func TestCreateShareHandlesConversationLargerThanChunkLimit(t *testing.T) {
 		t.Fatalf("fixture is only %d bytes; it must exceed the %d chunk limit to be meaningful",
 			len(raw), relay.DefaultMaxChunkBytes)
 	}
-	truncated, err := json.Marshal(truncateShareParts(detail.Parts, sharePartTextLimit))
-	if err != nil {
-		t.Fatalf("marshal truncated: %v", err)
-	}
-	if len(truncated) <= relay.DefaultMaxChunkBytes {
-		t.Fatalf("fixture is %d bytes after truncation; it must still exceed the %d chunk limit "+
-			"so splitting is exercised too", len(truncated), relay.DefaultMaxChunkBytes)
+	if truncated := len(detail.Parts) * sharePartTextLimit; truncated <= relay.DefaultMaxChunkBytes {
+		t.Fatalf("fixture is ~%d bytes after truncation; it must still exceed the %d chunk limit "+
+			"so splitting is exercised too", truncated, relay.DefaultMaxChunkBytes)
 	}
 
 	srv, reg := newSessionsTestServer(t)
@@ -72,12 +68,12 @@ func TestCreateShareHandlesConversationLargerThanChunkLimit(t *testing.T) {
 	srv.WithRelay(ts.URL, "flag")
 
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_big/share", nil))
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_big/share", nil))
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201; body=%s", rr.Code, rr.Body)
 	}
 
-	var view shareLinkView
+	var view sharedLink
 	if err := json.Unmarshal(rr.Body.Bytes(), &view); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -161,3 +157,6 @@ func TestCreateShareTruncatesToolOutput(t *testing.T) {
 		t.Error("published output lost the retained head of the tool result")
 	}
 }
+
+// sharePartTextLimit mirrors the sharing module's per-string cap.
+const sharePartTextLimit = 8 << 10

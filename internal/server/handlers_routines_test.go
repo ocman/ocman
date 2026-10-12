@@ -46,7 +46,7 @@ func routineHTTPServer(t *testing.T) (*Server, http.Handler, *atomic.Int32) {
 	var ids atomic.Int32
 	var now atomic.Int64
 	now.Store(1000)
-	srv.routineSvc = routines.New(routines.Deps{
+	srv.routineMod = routines.NewModule(routines.Deps{
 		Store: srv.stateDB, Router: router, Sessions: srv.sessions, Platforms: registry,
 		Now:   func() time.Time { return time.UnixMilli(now.Add(1)) },
 		NewID: func(prefix string) string { return prefix + string('0'+ids.Add(1)) },
@@ -207,10 +207,8 @@ func TestRoutineHTTPMethodAndLocalhostGuards(t *testing.T) {
 			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body.String())
 		}
 	}
-	rec = httptest.NewRecorder()
-	(&Server{}).handleRoutines(rec, httptest.NewRequest(http.MethodGet, "/api/routines", nil))
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("missing service: %d %s", rec.Code, rec.Body.String())
+	if mods := (&Server{}).modules(); len(mods) != 0 {
+		t.Fatalf("routines mounted without a state DB: %v", mods)
 	}
 }
 
@@ -309,6 +307,7 @@ func TestRoutineHTTPListCarriesLatestRunAndHistoryIsPaged(t *testing.T) {
 }
 
 func TestRoutineHTTPHistoryDefaultPageIsBounded(t *testing.T) {
+	const defaultRoutineHistoryLimit = 50 // the API's documented default page
 	srv, handler, _ := routineHTTPServer(t)
 	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
 	var routine state.Routine

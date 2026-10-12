@@ -451,11 +451,17 @@ handlers don't bypass the `Host` seam). User-facing docs:
   (`~/.local/share/ocman/state.db`) for ocman's own state (archived
   / seen sessions). Primary key is `(platform, session_id)` so it
   can scope state per platform.
-- `internal/mcp/` — MCP server implementation. Tool handlers implement the
-  action-based Factory, routine, artifact, session (read-only actions plus `create`), and file tools. Mounted at `/mcp` by the server
-  package.
+- `internal/mcp/` — MCP server implementation: the Factory, session
+  (read-only actions plus `create`) and file tools, plus every tool a feature
+  module contributes (`Deps.Tools`). Mounted at `/mcp` by the server package.
 - `internal/server/` — HTTP server, API handlers, static file serving
-  with SPA fallback, OpenCode port discovery via `lsof`.
+  with SPA fallback, OpenCode port discovery via `lsof`. It is also the
+  composition root for feature modules (`modules.go`).
+- `internal/module/` — the feature-module contract (see **Feature modules**
+  below): `Module`, `Router`, `Guards`, the optional `Starter` / `Runner` /
+  `ToolProvider` / `Subscriber`, and the typed event `Bus`.
+- `internal/httpx/` — JSON, request-body, inert-file and platform-error
+  helpers shared by the server and modules, so both answer identically.
 - `internal/tmux/` — tmux process control: session/window listing,
   name derivation/validation, opencode launchers (runner seams for
   tests). HTTP handlers stay in `internal/server`.
@@ -493,15 +499,24 @@ handlers don't bypass the `Host` seam). User-facing docs:
   status, worktrees, diffs).
 - `internal/forge/` — GitHub/Forgejo PR + issue clients behind one
   interface; feeds the PRs & Issues sidebar.
-- `internal/routines/` — validation, scheduling, fresh-session dispatch, and
-  session-settled run completion for saved prompts. Definitions and immutable
-  run snapshots are stored by `internal/state`. See
-  `docs/features/routines.md`.
-- Artifacts have no package of their own: `internal/state/artifacts*.go`
-  holds the tables and blob store, `internal/server/artifacts*.go` /
-  `handlers_artifacts.go` / `artifact_share.go` the service, REST API and
-  relay sharing, and `internal/mcp/tools_artifacts.go` the `artifacts` tool.
-  See `docs/features/artifacts.md`.
+- `internal/routines/` — module: validation, scheduling, fresh-session
+  dispatch, session-settled run completion, `/api/routines` and the
+  `routines` MCP tool. Definitions and immutable run snapshots are stored by
+  `internal/state`. See `docs/features/routines.md`.
+- `internal/webhook/` — module: webhook inboxes, their pollers and
+  delivery-history expiry, `/api/webhook-inboxes`, the relay setting and the
+  `webhooks` MCP tool. Dispatches to routines through its `Routines`
+  interface, never by importing them.
+- `internal/artifacts/` — module: the artifact service, `/api/artifacts`,
+  relay sharing and the `artifacts` MCP tool. Tables and the blob store live
+  in `internal/state/artifacts*.go`; signed file URLs stay in the server's
+  `Auth`. See `docs/features/artifacts.md`.
+- `internal/inbox/` — module: the cross-machine Inbox list and mutations,
+  permission items (`NotifyPermission` / `ResolvePermission` / `Reconcile`)
+  and the `inbox` MCP tool.
+- `internal/sharing/` — module: Markdown export, relay share links (kept
+  current on the session-idle `Bus` event) and the sharing setting. The
+  relay protocol and encryption are `internal/share`.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost
@@ -828,12 +843,39 @@ User-facing setup and the full tool table are documented in
 The owner-local `webhooks` MCP tool creates and inspects inboxes, saves or
 removes routine subscriptions, reads recent deliveries, and redelivers a
 stored delivery by ID (including ones past the recent list). It invokes the
-existing inbox HTTP handler in-process through `Deps.WebhookHandler`, using
+existing inbox HTTP handler in-process (`internal/webhook/tools.go`), using
 only fixed routes after MCP authentication. Relay registration and polling,
 predicate validation, and local-routine checks stay in that handler. It uses
 saved relay settings and omits shared secrets from inbox results. Subscription
 actions do not alter routine schedules or enabled state; agents use `routines`
 to set those explicitly.
+
+## Feature modules
+
+A feature that owns its routes, background work, MCP tools or event
+reactions is a module (`internal/module`), not a set of `*Server` methods.
+`Server.modules()` in `internal/server/modules.go` is the only registry:
+routes, startup (`Starter`, run before serving), background loops (`Runner`,
+joined on shutdown), MCP tools (`ToolProvider`) and `Bus` subscriptions
+(`Subscriber`) all iterate it. Rules:
+
+- A module never imports `internal/server` (the compiler forbids the cycle)
+  or another module. It receives what it needs as `Deps`: narrow interfaces
+  and functions the composition root fills in (webhooks reach routines
+  through `webhook.Routines`).
+- Dependencies that can change after `server.New` (relay URL, auth, remotes)
+  are functions read at call time, and each module is built once on first
+  use (`sync.Once`), like `router()`. Tests may assign a module field before
+  that first use. Pass an untyped nil, never a nil pointer, for an absent
+  interface.
+- Guards come from the server: `Router.Local` / `LocalSetting` for a whole
+  mount, or `Router.Handle` plus `Deps.Guards` when subroutes differ. Session
+  routes use Go mux patterns (`"GET /api/session/{id}/shares"`), which win
+  over the `/api/session/` dispatcher.
+- `module.Bus` is typed and synchronous: subscribers run in order, so one can
+  rely on earlier ones; slow work starts its own goroutine. Add an event type
+  only when a module needs it (today: `SessionIdle`).
+- Existing tables stay in `state.db`'s single migration sequence.
 
 ## Architecture doc
 

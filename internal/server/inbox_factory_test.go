@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -15,11 +16,10 @@ func TestFactoryInboxLinkStaysOnItsOwner(t *testing.T) {
 	s := testServer(t)
 	body := "Plan approval required\n\n[Open Factory actions](/factory/epics/ship)"
 	item := state.InboxItem{ID: "factory-action-ship:review", Title: "Ship", Body: body, Category: state.InboxFactory}
-	s.inboxSourcesFn = func() []string { return []string{"local", "laptop"} }
-	s.inboxItemsFn = func(context.Context, string) ([]state.InboxItem, error) { return []state.InboxItem{item}, nil }
+	useInboxRemotes(s, []string{"local", "laptop"}, func(context.Context, string) ([]state.InboxItem, error) { return []state.InboxItem{item}, nil })
 	rec := httptest.NewRecorder()
-	s.handleInboxList(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
-	var response struct{ Items []inboxItemView }
+	s.inboxModule().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	var response struct{ Items []inbox.ItemView }
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}

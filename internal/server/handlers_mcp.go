@@ -13,10 +13,10 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	"github.com/NoUseFreak/ocman/internal/routines"
 )
 
 // handleMCPConfigStatus reports whether OpenCode's global config
@@ -97,21 +97,18 @@ func (s *Server) mcpHandler() http.Handler {
 // The handler is localhost-only (enforced by the caller in StartOnListener).
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
-	return s.buildMCPHandlerFor(factoryMCPService{factoryService: s.factory, proposeControl: s.proposeFactoryControl}, s.routineSvc, sessionMCPService{s})
+	return s.buildMCPHandlerFor(factoryMCPService{factoryService: s.factory, proposeControl: s.proposeFactoryControl}, sessionMCPService{s})
 }
 
-func (s *Server) buildMCPHandlerFor(factoryService factoryService, routineService *routines.Service, sessionService sessionMCPService) http.Handler {
+func (s *Server) buildMCPHandlerFor(factoryService factoryService, sessionService sessionMCPService) http.Handler {
 	deps := internalmcp.Deps{
 		SignFile:       s.FileURL,
 		FactoryService: factoryService,
-		InboxStore:     s.stateDB,
-		RoutineService: routineService,
 		SessionService: sessionService,
 	}
-	if s.stateDB != nil {
-		deps.ArtifactService = artifactMCPService{s}
-		if routineService != nil {
-			deps.WebhookHandler = http.HandlerFunc(s.handleWebhookInboxes)
+	for _, m := range s.modules() {
+		if p, ok := m.(module.ToolProvider); ok {
+			deps.Tools = append(deps.Tools, p.Tools()...)
 		}
 	}
 	return internalmcp.New(deps).Handler()

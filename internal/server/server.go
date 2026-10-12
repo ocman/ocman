@@ -7,13 +7,17 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sync/singleflight"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
+	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/inbox"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
@@ -23,7 +27,9 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/webhook"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
@@ -125,20 +131,26 @@ type Server struct {
 	// means "use s.remotes"; tests override it to inject remote-tagged
 	// rows without a full remote.Manager.
 	remoteProjectsFn func() []db.ProjectStats
-	inboxSourcesFn   func() []string
-	inboxItemsFn     func(context.Context, string) ([]state.InboxItem, error)
 
-	routineSvc      *routines.Service
-	pluginMu        sync.Mutex
-	pluginRecovered bool
-	pluginDiscovery []pluginDiscoveryFailure
-	pluginCtx       context.Context
-	lifetimeCtx     context.Context // guarded by pluginMu; retained through plugin cleanup
-	// webhookCtx outlives requests so pollers for newly created inboxes keep running.
-	webhookCtx context.Context
-	// webhookKeyMu serializes relay-side inbox mutations (key resets, secret
-	// changes) with their local record.
-	webhookKeyMu      sync.Mutex
+	// routineMod is built on first use (routinesModule); tests may set it
+	// before then.
+	routineMod        *routines.Module
+	routineModOnce    sync.Once
+	pluginMu          sync.Mutex
+	pluginRecovered   bool
+	pluginDiscovery   []pluginDiscoveryFailure
+	pluginCtx         context.Context
+	lifetimeCtx       context.Context // guarded by pluginMu; retained through plugin cleanup
+	webhookMod        *webhook.Module
+	webhookModOnce    sync.Once
+	artifactMod       *artifacts.Module
+	artifactModOnce   sync.Once
+	inboxMod          *inbox.Module
+	inboxModOnce      sync.Once
+	sharingMod        *sharing.Module
+	sharingModOnce    sync.Once
+	busV              *module.Bus
+	busOnce           sync.Once
 	pluginProcesses   map[string]*plugins.Process
 	pluginStderr      map[string]string
 	pluginActionsOnce sync.Once
@@ -376,7 +388,15 @@ func (s *Server) triggerProjectsIndexRefresh() {
 // same hooks) the HTTP layer uses.
 func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 
-func (s *Server) RoutineService() *routines.Service { return s.routineSvc }
+// RoutineService is the webhook dispatcher for main.go's remote gRPC
+// server, which is wired before Start. Untyped nil without a state DB: a
+// typed nil passes the poller's nil check and panics on the first delivery.
+func (s *Server) RoutineService() webhook.RoutineDispatcher {
+	if svc := s.routineService(); svc != nil {
+		return svc
+	}
+	return nil
+}
 
 // WithAutoApproveDefault sets the server-wide default for auto-approve.
 // When true, sessions that have no per-session override start with

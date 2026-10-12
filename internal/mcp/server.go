@@ -12,18 +12,11 @@ type Deps struct {
 	// FactoryService drives implementation-neutral Factory intake tools.
 	// Optional: nil disables Factory tools.
 	FactoryService factoryService
-	// Optional: nil disables routine tools.
-	RoutineService routineService
+	// Tools are contributed by feature modules (module.ToolProvider).
+	Tools []mcpserver.ServerTool
 	// Optional: nil disables session tools. The create action also needs
 	// the service to implement CreateSession.
 	SessionService sessionService
-	// Optional: nil disables owner-local Inbox tools.
-	InboxStore inboxStore
-	// Optional: nil disables the artifacts tool.
-	ArtifactService artifactService
-	// Optional: owner-local inbox handler, called in-process after MCP authentication.
-	WebhookHandler http.Handler
-
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
 	// file embedding is unavailable.
@@ -52,12 +45,7 @@ func New(deps Deps) *Server {
 	for _, tool := range factoryControlServerTools(deps.FactoryService) {
 		s.AddTool(tool.Tool, tool.Handler)
 	}
-	addInboxTools(s, &inboxTools{store: deps.InboxStore})
-	addArtifactTools(s, &artifactTools{svc: deps.ArtifactService})
-	addRoutineTools(s, &routineTools{svc: deps.RoutineService})
-	for _, tool := range webhookServerTools(deps.WebhookHandler) {
-		s.AddTool(tool.Tool, tool.Handler)
-	}
+	s.AddTools(deps.Tools...)
 	addSessionTools(s, &sessionTools{svc: deps.SessionService})
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
@@ -82,10 +70,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	}
 	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
 	tools = append(tools, factoryControlServerTools(deps.FactoryService)...)
-	tools = append(tools, inboxServerTools(&inboxTools{store: deps.InboxStore})...)
-	tools = append(tools, artifactServerTools(&artifactTools{svc: deps.ArtifactService})...)
-	tools = append(tools, routineServerTools(&routineTools{svc: deps.RoutineService})...)
-	tools = append(tools, webhookServerTools(deps.WebhookHandler)...)
+	tools = append(tools, deps.Tools...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	return tools
 }

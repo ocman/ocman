@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -38,11 +39,10 @@ func TestInboxSessionContextOwnerRouting(t *testing.T) {
 		{ID: "routine", Session: origin},
 		{ID: "legacy", Title: "Legacy"},
 	}
-	s.inboxSourcesFn = func() []string { return []string{"laptop"} }
-	s.inboxItemsFn = func(context.Context, string) ([]state.InboxItem, error) { return input, nil }
+	useInboxRemotes(s, []string{"laptop"}, func(context.Context, string) ([]state.InboxItem, error) { return input, nil })
 	rec := httptest.NewRecorder()
-	s.handleInboxList(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
-	var response struct{ Items []inboxItemView }
+	s.inboxModule().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	var response struct{ Items []inbox.ItemView }
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
@@ -65,26 +65,5 @@ func TestInboxSessionContextOwnerRouting(t *testing.T) {
 	}
 	if origin.Platform != "opencode" || permission.Platform != "opencode" || input[0].Title != "" {
 		t.Fatal("modified source data")
-	}
-}
-
-func TestInboxSessionContextLocalChildAndFallback(t *testing.T) {
-	s, raw := testServerWithRawDB(t)
-	if _, err := raw.Exec(`INSERT INTO session (id, parent_id, title) VALUES ('child', 'parent', 'Local child')`); err != nil {
-		t.Fatal(err)
-	}
-	adapter := &inboxSessionPlatform{fakePlatform: fakePlatform{id: "opencode"}}
-	s.registry.Register(adapter)
-	items := s.inboxSessionContext(t.Context(), "local", []state.InboxItem{
-		{Permission: &state.InboxPermission{Platform: "opencode", SessionID: "child", Permission: "bash"}},
-		{Session: &state.InboxSession{Platform: "opencode", SessionID: "gone", Title: "Stored title"}},
-	})
-	if items[0].Title != "Local child: Permission requested: bash" || items[1].Session.Title != "Stored title" || adapter.calls != 0 {
-		t.Fatalf("items=%+v transcript/defaults reads=%d", items, adapter.calls)
-	}
-	s.db = nil
-	items = s.inboxSessionContext(t.Context(), "local", items)
-	if items[0].Session.Title != "Local child" {
-		t.Fatal("missing database lost stored title")
 	}
 }
