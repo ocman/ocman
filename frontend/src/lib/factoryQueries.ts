@@ -165,6 +165,8 @@ function invalidateFactoryState(client: QueryClient) {
   return Promise.all([
     client.invalidateQueries({ queryKey: ['factory-epics'] }),
     client.invalidateQueries({ queryKey: ['factory-queue'] }),
+    client.invalidateQueries({ queryKey: ['factory-control-action'] }),
+    client.invalidateQueries({ queryKey: ['inbox'] }),
   ]);
 }
 
@@ -192,11 +194,11 @@ export function useOpenFactoryControl(id: string) {
   return useMutation({ mutationFn: () => api.openFactoryControl(id), onSuccess: (control) => client.setQueryData(['factory-control', id], control) });
 }
 export function useFactoryControlAction(epicID: string, actionID: string) {
-  return useQuery({ queryKey: ['factory-control-action', epicID, actionID], queryFn: ({ signal }) => api.factoryControlAction(epicID, actionID, signal) });
+  return useQuery({ queryKey: ['factory-control-action', epicID, actionID], queryFn: ({ signal }) => api.factoryControlAction(epicID, actionID, signal), refetchInterval: (query) => query.state.data?.status === 'pending' || query.state.data?.status === 'confirmed' ? factoryRefetchInterval : false });
 }
 export function useDecideFactoryControlAction(epicID: string, actionID: string) {
   const client = useQueryClient();
-  return useMutation({ mutationFn: (decision: 'confirm' | 'dismiss') => api.decideFactoryControlAction(epicID, actionID, decision), onSuccess: (action) => { client.setQueryData(['factory-control-action', epicID, actionID], action); invalidateFactoryState(client); } });
+  return useMutation({ mutationFn: (decision: 'confirm' | 'dismiss') => api.decideFactoryControlAction(epicID, actionID, decision), onSuccess: (action) => { client.setQueryData(['factory-control-action', epicID, actionID], action); return invalidateFactoryState(client); } });
 }
 /** Asks the Epic's control session to look into one Issue. */
 export function useDiscussFactoryIssue() {

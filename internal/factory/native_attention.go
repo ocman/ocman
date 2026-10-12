@@ -26,25 +26,29 @@ func (s *NativeService) reconcileAttention(ctx context.Context) {
 		return
 	}
 	for _, epic := range epics {
-		if epic.Status == "paused" {
-			continue
-		}
 		issues, err := s.ListIssues(ctx, epic.ID)
 		if err != nil {
 			logrus.WithError(err).WithField("epic", epic.ID).Warn("Factory attention scan failed")
 			continue
 		}
-		actions := factoryAttention(epic, issues)
+		attentionEpic := epic
+		if attentionEpic.Status == "paused" {
+			attentionEpic.Status = "open"
+		}
+		actions := factoryAttention(attentionEpic, issues)
 		added, err := inbox.SyncFactoryActionInbox(ctx, epic.ID, "Factory needs attention: "+epic.Goal, actions)
 		if err != nil {
 			logrus.WithError(err).WithField("epic", epic.ID).Warn("Factory attention Inbox sync failed")
 			continue
 		}
-		if len(added) > 0 && s.onAttention != nil {
+		if len(added) > 0 && epic.Status != "paused" && s.onAttention != nil {
 			s.onAttention(context.WithoutCancel(ctx), epic.ID, added)
 		}
 	}
 }
+
+// ReconcileAttention removes obsolete decisions immediately after user control.
+func (s *NativeService) ReconcileAttention(ctx context.Context) { s.reconcileAttention(ctx) }
 
 func factoryAttention(epic WorkEpic, issues []Issue) map[string]string {
 	actions := map[string]string{}
@@ -57,6 +61,9 @@ func factoryAttention(epic WorkEpic, issues []Issue) map[string]string {
 		add(fmt.Sprintf("plan:%s:%d:%s", gate.IssueID, gate.ProposalRevision, gate.ProposalHash), "Plan approval required")
 	}
 	for _, issue := range issues {
+		if issue.Kind == "gate" && issue.Status == "closed" {
+			continue
+		}
 		key := fmt.Sprintf("%s:%s:%d", issue.ID, issue.AttemptID, issue.PlanRevision)
 		switch {
 		case issue.Recovery != nil && issue.Recovery.Resolution != "resume" && issue.Recovery.Resolution != "retry" && issue.Recovery.Resolution != "cancel":

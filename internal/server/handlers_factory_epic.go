@@ -222,7 +222,18 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "invalid force value", http.StatusBadRequest)
 				return
 			}
-			if err := closer.CloseEpic(r.Context(), parts[0], force); err != nil {
+			closeEpic := func() error { return closer.CloseEpic(r.Context(), parts[0], false) }
+			if force {
+				stopper, ok := s.factory.(interface {
+					StopEpic(context.Context, string) error
+				})
+				if !ok {
+					writeFactoryError(w, factory.ErrFactoryUnavailable)
+					return
+				}
+				closeEpic = func() error { return stopper.StopEpic(r.Context(), parts[0]) }
+			}
+			if err := closeEpic(); err != nil {
 				writeFactoryError(w, err)
 				return
 			}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,7 +28,7 @@ describe('FactoryControlCard', () => {
 
 	it('runs the change only when the user confirms', async () => {
 		const user = userEvent.setup();
-		vi.mocked(api.factoryControlAction).mockResolvedValue(pending);
+		vi.mocked(api.factoryControlAction).mockResolvedValueOnce(pending).mockResolvedValue({ ...pending, status: 'done' });
 		vi.mocked(api.decideFactoryControlAction).mockResolvedValue({ ...pending, status: 'done' });
 		renderCard();
 		expect(await screen.findByText('Run the tests again')).toBeInTheDocument();
@@ -56,5 +56,23 @@ describe('FactoryControlCard', () => {
 		vi.mocked(api.factoryControlAction).mockRejectedValue(new Error('gone'));
 		renderCard();
 		expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the proposed change');
+	});
+
+	it('removes superseded confirmation buttons after another change is confirmed', async () => {
+		const user = userEvent.setup();
+		let stopped = false;
+		vi.mocked(api.factoryControlAction).mockImplementation(async (_, id) => id === 'stop'
+			? { ...pending, id, action: 'stop', summary: 'End the loop', status: stopped ? 'done' : 'pending' }
+			: { ...pending, status: stopped ? 'dismissed' : 'pending', result: stopped ? 'Superseded by the stop' : undefined });
+		vi.mocked(api.decideFactoryControlAction).mockImplementation(async () => {
+			stopped = true;
+			return { ...pending, id: 'stop', action: 'stop', summary: 'End the loop', status: 'done' };
+		});
+		const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		render(<QueryClientProvider client={client}><MemoryRouter><FactoryMarkerCard epicID="epic-1" issueID="fca_1" action="control" /><FactoryMarkerCard epicID="epic-1" issueID="stop" action="control" /></MemoryRouter></QueryClientProvider>);
+		await waitFor(() => expect(screen.getAllByRole('button', { name: 'Confirm' })).toHaveLength(2));
+		await user.click(screen.getAllByRole('button', { name: 'Confirm' })[1]);
+		expect(await screen.findByText('Dismissed: Superseded by the stop')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument();
 	});
 });

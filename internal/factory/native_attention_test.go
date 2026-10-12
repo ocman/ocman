@@ -32,6 +32,9 @@ func TestFactoryAttention(t *testing.T) {
 		{"resolved authority", Issue{Authority: &AuthorityEscalationGate{Resolution: "approve"}}, false},
 		{"project", Issue{ProjectRequest: &ProjectRequestGate{Resolution: "open"}}, true},
 		{"resolved project", Issue{ProjectRequest: &ProjectRequestGate{Resolution: "approved"}}, false},
+		{"cancelled recovery", Issue{Kind: "gate", Status: "closed", Recovery: &RecoveryGate{Resolution: "open"}}, false},
+		{"cancelled authority", Issue{Kind: "gate", Status: "closed", Authority: &AuthorityEscalationGate{Resolution: "approve_pending"}}, false},
+		{"cancelled project", Issue{Kind: "gate", Status: "closed", ProjectRequest: &ProjectRequestGate{Resolution: "open"}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.issue.ID, tc.issue.Title = "ship.1", "Do work"
@@ -64,6 +67,44 @@ func TestFactoryAttention(t *testing.T) {
 	ep.Progress.Stuck = true
 	if len(factoryAttention(ep, nil)) != 1 {
 		t.Fatal("stuck epic missing")
+	}
+}
+
+type attentionSnapshotStore struct {
+	*state.DB
+	issues []model.NativeIssue
+}
+
+func (s *attentionSnapshotStore) ListFactoryIssues(context.Context, string) ([]model.NativeIssue, error) {
+	return s.issues, nil
+}
+
+func TestFactoryAttentionRetiresObsoleteRequestsWhilePaused(t *testing.T) {
+	db, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := &attentionSnapshotStore{DB: db}
+	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	ep, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{EpicID: "ship", Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.issues = []model.NativeIssue{{ID: "plan", EpicID: ep.ID, Kind: "plan", Status: "open", DispatchState: "ready"}}
+	svc.ReconcileAttention(t.Context())
+	items, err := db.ListInboxItems(t.Context())
+	if err != nil || len(items) == 0 {
+		t.Fatalf("initial items = %#v, %v", items, err)
+	}
+	if err := svc.SetEpicPaused(t.Context(), ep.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	store.issues = nil
+	svc.ReconcileAttention(t.Context())
+	items, err = db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("obsolete paused actions = %#v, %v", items, err)
 	}
 }
 

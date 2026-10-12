@@ -57,6 +57,7 @@ function availableWorkAction(issue: FactoryIssue) {
 }
 
 function requiresIssueAction(epic: FactoryEpic, issue: FactoryIssue, requestedAction?: string) {
+	if (issue.kind === 'gate' && issue.status === 'closed' && issue.outcome === 'cancelled') return false;
   const accepts = (...actions: string[]) => !requestedAction || actions.includes(requestedAction);
   const action = availableWorkAction(issue);
   return (epic.status === 'open' && action && accepts(...WORK_REQUESTS[action])) ||

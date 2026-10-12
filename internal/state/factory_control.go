@@ -18,9 +18,10 @@ const (
 
 // FactoryControlSession is the Epic's control conversation.
 type FactoryControlSession struct {
-	EpicID    string `json:"epicId"`
-	Platform  string `json:"platform"`
-	SessionID string `json:"sessionId"`
+	EpicID          string `json:"epicId"`
+	Platform        string `json:"platform"`
+	SessionID       string `json:"sessionId"`
+	ProtocolVersion int    `json:"protocolVersion,omitempty"`
 }
 
 // GetFactoryControlSession returns the Epic's control session, if any.
@@ -55,6 +56,13 @@ func (d *DB) SetFactoryControlSession(ctx context.Context, control FactoryContro
 	}
 	n, err := result.RowsAffected()
 	return n == 1, err
+}
+
+// A successful change invalidates alternative proposals based on the old state.
+func (d *DB) DismissFactoryControlAlternatives(ctx context.Context, epicID, exceptID string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE factory_external_mapping SET metadata_json = json_set(metadata_json, '$.status', 'dismissed', '$.result', 'Superseded by a confirmed Epic change; inspect the current Epic before proposing again')
+		WHERE system = 'factory' AND external_kind = ? AND json_extract(metadata_json, '$.epicId') = ? AND entity_id <> ? AND json_extract(metadata_json, '$.status') = 'pending'`, factoryControlActionKind, epicID, exceptID)
+	return err
 }
 
 // archiveFactoryControlSessionTx archives a closing Epic's control session

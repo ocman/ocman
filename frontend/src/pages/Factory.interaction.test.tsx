@@ -930,6 +930,42 @@ describe('Factory interactions', () => {
 		expect(screen.getByRole('button', { name: 'Closing…' })).toHaveAttribute('aria-busy', 'true');
 	});
 
+	it('offers a confirmed stop even before there is any completed work', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryDeliverAsIs).mockClear();
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Stuck before planning', status: 'open', initialProject: '/repo' } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([]);
+		vi.mocked(api.factoryCloseEpic).mockResolvedValue(undefined);
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		const stop = await screen.findByRole('button', { name: 'Stop epic' });
+		await user.click(stop);
+		expect(api.factoryCloseEpic).not.toHaveBeenCalled();
+		await user.click(stop);
+		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenCalledWith('epic-1', true));
+		expect(confirm).toHaveBeenCalledWith(expect.stringContaining('unfinished work is cancelled'));
+		expect(api.factoryDeliverAsIs).not.toHaveBeenCalled();
+		confirm.mockRestore();
+	});
+
+	it('keeps only current Epic decisions in the action inbox', async () => {
+		vi.mocked(api.factoryEpics).mockResolvedValue([
+			{ id: 'retired', goal: 'Stopped loop', status: 'closed', initialProject: '/repo', progress: { stuck: true }, planGate: { issueId: 'retired-plan', resolution: 'open', proposalRevision: 1 } },
+			{ id: 'epic-1', goal: 'Current work', status: 'open', initialProject: '/repo' },
+		] as never);
+		vi.mocked(api.factoryIssues).mockImplementation(async (id) => (id === 'retired' ? [
+			{ id: 'old', epicId: id, kind: 'gate', title: 'Obsolete recovery', status: 'open', recovery: { issueId: 'old', epicId: id, resolution: 'open', question: 'Repeat the loop?', choices: [] } },
+		] : [
+			{ id: 'cancelled', epicId: id, kind: 'gate', title: 'Cancelled recovery', status: 'closed', recovery: { issueId: 'cancelled', epicId: id, resolution: 'open', question: 'Already cancelled', choices: [] } },
+			{ id: 'current', epicId: id, kind: 'gate', title: 'Current permission', status: 'open', authority: { issueId: 'current', epicId: id, resolution: 'open', permission: 'bash', target: 'git push' } },
+		]) as never);
+		renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+		expect(await screen.findByText('Current permission')).toBeInTheDocument();
+		expect(screen.queryAllByRole('button', { name: 'Resume' })).toHaveLength(0);
+		expect(screen.queryByRole('link', { name: 'Review plan' })).not.toBeInTheDocument();
+		expect(screen.getByText('1 action')).toBeInTheDocument();
+	});
+
 	it.each([
 		['Validate Formula', 'Validating…', 'validateFactoryFormula'],
 		['Preview Formula', 'Previewing…', 'previewFactoryFormula'],
@@ -1007,7 +1043,7 @@ describe('Factory interactions', () => {
 		vi.mocked(api.factoryCloseEpic).mockRejectedValueOnce(Object.assign(new Error('factory Epic closure is blocked'), { status: 409 }));
 		await user.click(screen.getByRole('button', { name: 'Close epic' }));
 		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenLastCalledWith('epic-1', true));
-		expect(window.confirm).toHaveBeenCalledWith('This epic still has unfinished work. Close it anyway?');
+		expect(window.confirm).toHaveBeenCalledWith('Stop this epic without delivery? All workers stop, unfinished work is cancelled, and partial files and history are preserved.');
 	});
 
 	it('shows progressive delivery status for each changed project', async () => {

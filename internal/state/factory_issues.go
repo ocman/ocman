@@ -344,6 +344,11 @@ func (d *DB) CloseFactoryEpic(ctx context.Context, epicID string, force bool) er
 	if err != nil || changed != 1 {
 		return fmt.Errorf("%w: close the root Mol successfully before closing the Epic", model.ErrEpicClosureBlocked)
 	}
+	if force {
+		if err := cancelFactoryEpicTx(ctx, tx, epicID, now); err != nil {
+			return err
+		}
+	}
 	// A closed Epic has nothing left to watch; sweep every session it spawned.
 	if err := archiveFactorySessionsTx(ctx, tx, now, `epic_id = ?`, epicID); err != nil {
 		return err

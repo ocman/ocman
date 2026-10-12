@@ -80,15 +80,15 @@ export function FactoryOverview() {
 	const sessionByID = new Map((sessions.data ?? []).map((session) => [session.id, session]));
 	const epicByID = new Map((epics.data ?? []).map((epic) => [epic.id, epic]));
 	const epicGoal = (epicID: string) => epicByID.get(epicID)?.goal ?? epicID;
-	const planGates = epics.data?.filter((epic) => epic.planGate?.resolution === 'open') ?? [];
-	const issues = issueQueries.flatMap((result) => result.data ?? []);
-	const issuesLoading = issueQueries.some((result) => result.isLoading);
-	const issueError = issueQueries.find((result) => result.isError);
-	const allRecoveryGates = issues.filter((issue) => issue.recovery && issue.recovery.resolution !== 'resume' && issue.recovery.resolution !== 'retry' && issue.recovery.resolution !== 'cancel');
-	const allAuthorityGates = issues.filter((issue) => issue.authority && issue.authority.resolution !== 'approve' && issue.authority.resolution !== 'reject');
-	const allProjectGates = issues.filter((issue) => issue.projectRequest && !['approved', 'rejected'].includes(issue.projectRequest.resolution));
+	const planGates = epics.data?.filter((epic) => epic.status !== 'closed' && epic.planGate?.resolution === 'open') ?? [];
 	const openEpics = new Set(epics.data?.filter((epic) => epic.status === 'open').map((epic) => epic.id));
 	const liveEpics = new Set(epics.data?.filter((epic) => epic.status !== 'closed').map((epic) => epic.id));
+	const issues = issueQueries.flatMap((result) => result.data ?? []).filter((issue) => liveEpics.has(issue.epicId));
+	const issuesLoading = issueQueries.some((result) => result.isLoading);
+	const issueError = issueQueries.find((result) => result.isError);
+	const allRecoveryGates = issues.filter((issue) => issue.status !== 'closed' && issue.recovery && issue.recovery.resolution !== 'resume' && issue.recovery.resolution !== 'retry' && issue.recovery.resolution !== 'cancel');
+	const allAuthorityGates = issues.filter((issue) => issue.status !== 'closed' && issue.authority && issue.authority.resolution !== 'approve' && issue.authority.resolution !== 'reject');
+	const allProjectGates = issues.filter((issue) => issue.status !== 'closed' && issue.projectRequest && !['approved', 'rejected'].includes(issue.projectRequest.resolution));
 	const running = queue.data?.filter((item) => liveEpics.has(item.epicId) && item.state === 'running') ?? [];
 	const runningAttemptIDs = new Set(running.map((item) => item.attemptId));
 	const planning = epics.data?.filter((epic) => liveEpics.has(epic.id)).flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
@@ -98,7 +98,7 @@ export function FactoryOverview() {
 	const allMaterializations = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'materialization' && issue.dispatchState === 'ready');
 	const allWorkflowApprovals = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'approval' && ((issue.status === 'open' && issue.dispatchState === 'ready') || (issue.status === 'closed' && issue.outcome === 'failed')));
 	// Stuck epics with an actionable row above are already covered; this catches the dead-ends nothing else surfaces.
-	const allStuck = epics.data?.filter((epic) => epic.progress?.stuck && !allFailedWork.some((issue) => issue.epicId === epic.id) && !allBlockedWork.some((issue) => issue.epicId === epic.id) && !allMaterializations.some((issue) => issue.epicId === epic.id)) ?? [];
+	const allStuck = epics.data?.filter((epic) => epic.status === 'open' && epic.progress?.stuck && !allFailedWork.some((issue) => issue.epicId === epic.id) && !allBlockedWork.some((issue) => issue.epicId === epic.id) && !allMaterializations.some((issue) => issue.epicId === epic.id)) ?? [];
 	// ponytail: answering live prompts stays on the session page.
 	const allPrompts = [...new Map([...running.map((item) => ({ session: sessionByID.get(item.session?.id ?? ''), epic: epicByID.get(item.epicId), issueID: item.id, issueTitle: item.title })), ...planning.map(({ epic, attempt }) => ({ session: sessionByID.get(attempt.session.id), epic, issueID: attempt.workId, issueTitle: 'Planning' }))].filter((item): item is { session: Session; epic: FactoryEpic | undefined; issueID: string; issueTitle: string } => Boolean(item.session?.pendingPermission || item.session?.pendingQuestion)).map((item) => [item.session.id, item])).values()];
 	const matchesAction = (type: string, ...values: Array<string | undefined>) => (actionType === 'all' || actionType === type) && fuzzyMatch(deferredActionQuery, values.join(' '));

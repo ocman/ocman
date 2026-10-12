@@ -42,6 +42,13 @@ beforeEach(() => {
 });
 
 describe('Factory human action cards', () => {
+	it('hides cancelled recovery requests even if their old resolution is still open', async () => {
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'gate', status: 'closed', outcome: 'cancelled', recovery: { issueId: issue.id, epicId: epic.id, attemptId: 'attempt', workId: 'work', question: 'Already cancelled', reason: '', choices: [], resolution: 'open' } }]);
+		const client = renderCard();
+		await waitFor(() => expect(client.getQueryData(['factory-epics', 'ship', 'issues'])).toBeDefined());
+		expect(screen.queryByRole('button', { name: 'Resume work' })).not.toBeInTheDocument();
+		expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
+	});
   it('renders the frozen hierarchy and cross-Epic link in the approval card', async () => {
     vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 2, proposalHash: 'hash' } });
     vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 2, contentHash: 'hash', manifest: {

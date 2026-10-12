@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/sirupsen/logrus"
 )
@@ -18,6 +20,9 @@ import (
 // factoryControlRunTimeout bounds running a confirmed proposal; a variable so
 // tests can make it expire.
 var factoryControlRunTimeout = 5 * time.Minute
+
+// ponytail: serialize confirmed controls; use per-Epic locks if contention matters.
+var factoryControlDecisionMu sync.Mutex
 
 func decodeFactoryControlMutation(raw string) (factory.GraphMutation, error) {
 	var mutation factory.GraphMutation
@@ -100,6 +105,8 @@ func (s *Server) handleFactoryControlAction(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryControlStore, epicID, actionID, verb string) (state.FactoryControlAction, error) {
+	factoryControlDecisionMu.Lock()
+	defer factoryControlDecisionMu.Unlock()
 	action, found, err := store.GetFactoryControlAction(ctx, epicID, actionID)
 	if err != nil {
 		return action, err
@@ -130,18 +137,34 @@ func (s *Server) decideFactoryControlAction(ctx context.Context, store factoryCo
 			action.Status, action.Result = "failed", runErr.Error()
 		}
 		finishCtx, cancelFinish := context.WithTimeout(detached, 10*time.Second)
+		if runErr == nil {
+			if err := store.DismissFactoryControlAlternatives(finishCtx, epicID, actionID); err != nil {
+				logrus.WithError(err).WithField("epic", epicID).Warn("factory: stale control proposals could not be retired")
+			}
+		}
 		_, err := store.TransitionFactoryControlAction(finishCtx, epicID, actionID, "confirmed", action.Status, action.Result)
 		cancelFinish()
 		if err != nil {
 			return action, err
 		}
 		outcome = fmt.Sprintf("The user confirmed: %s\nOutcome: %s %s", action.Summary, action.Status, action.Result)
+		if reconciler, ok := s.factory.(interface{ ReconcileAttention(context.Context) }); ok {
+			reconciler.ReconcileAttention(detached)
+		}
 	}
 	// Tell the control session, if there is one, so it can carry on.
 	postCtx, cancelPost := context.WithTimeout(detached, 2*time.Minute)
 	defer cancelPost()
-	if _, found, _ := store.GetFactoryControlSession(postCtx, epicID); found {
-		if _, err := s.postFactoryControl(postCtx, epicID, outcome); err != nil {
+	if control, found, _ := store.GetFactoryControlSession(postCtx, epicID); found {
+		// Deliver the final outcome without creating another control session.
+		epic, err := s.factory.GetWorkEpic(postCtx, epicID)
+		if err == nil && epic.Status == "closed" {
+			outcome += "\nThe Epic is closed. Report the final state and unfinished work. Do not propose more work or recovery."
+			err = s.queueSvc().Enqueue(postCtx, control.Platform, false, platforms.SendMessageRequest{SessionID: control.SessionID, Message: outcome, Model: epic.Models.Plan})
+		} else if err == nil {
+			_, err = s.postFactoryControl(postCtx, epicID, outcome+"\nRe-read the Epic and issues before recommending another action. Older notifications and proposals may have been superseded.")
+		}
+		if err != nil {
 			logrus.WithError(err).WithField("epic", epicID).Warn("factory: control outcome not delivered")
 		}
 	}
@@ -156,7 +179,20 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 		return "", err
 	}
 	epicID := action.EpicID
+	epic, err := s.factory.GetWorkEpic(ctx, epicID)
+	if err != nil {
+		return "", err
+	}
+	if epic.Status == "closed" {
+		return "", fmt.Errorf("%w: the Epic is closed", factory.ErrInvalidRequest)
+	}
 	switch action.Action {
+	case "claim_plan":
+		_, err := s.factory.ClaimPlan(ctx, epicID, args["issue_id"])
+		return "", err
+	case "materialize":
+		_, err := s.factory.Materialize(ctx, epicID, args["issue_id"])
+		return "", err
 	case "reopen":
 		reopener, ok := s.factory.(interface {
 			ReopenIssue(context.Context, string, string) error
@@ -204,6 +240,16 @@ func (s *Server) runFactoryControlAction(ctx context.Context, action state.Facto
 			return "", factory.ErrFactoryUnavailable
 		}
 		return "", pauser.SetEpicPaused(ctx, epicID, action.Action == "pause")
+	case "stop":
+		stopper, ok := s.factory.(interface {
+			StopEpic(context.Context, string) error
+		})
+		if !ok {
+			return "", factory.ErrFactoryUnavailable
+		}
+		return "Epic stopped without delivery; unfinished work cancelled, files and history preserved.", stopper.StopEpic(ctx, epicID)
+	case "decide_plan", "resolve_authority", "resolve_project":
+		return "", s.runFactoryControlDecision(ctx, epicID, action.Action, args)
 	}
 	return "", fmt.Errorf("%w: unsupported factory control action", factory.ErrInvalidRequest)
 }

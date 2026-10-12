@@ -74,3 +74,22 @@ func TestFactoryControlActionRunsOnce(t *testing.T) {
 		t.Fatalf("finished = %#v", got)
 	}
 }
+
+func TestFactoryControlAlternativesAreEpicScoped(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	for _, action := range []FactoryControlAction{{ID: "chosen", EpicID: "one"}, {ID: "alternative", EpicID: "one"}, {ID: "other", EpicID: "two"}} {
+		if err := db.CreateFactoryControlAction(t.Context(), action, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.DismissFactoryControlAlternatives(t.Context(), "one", "chosen"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ epic, id, status string }{{"one", "chosen", "pending"}, {"one", "alternative", "dismissed"}, {"two", "other", "pending"}} {
+		action, _, err := db.GetFactoryControlAction(t.Context(), tc.epic, tc.id)
+		if err != nil || action.Status != tc.status {
+			t.Fatalf("%s = %#v, %v", tc.id, action, err)
+		}
+	}
+}

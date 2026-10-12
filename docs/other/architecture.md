@@ -177,7 +177,7 @@ flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Routines[internal/routines<br/>saved prompts + schedules]
-    Server --> Factory[internal/factory<br/>YAML workflows + Issue dispatch]
+    Server -->|confirmed Epic controls + dispatch| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory -->|graph + action Inbox reconciliation| State
     State --> FactoryModel
@@ -309,8 +309,13 @@ flowchart TD
    Delivery retries preserve completed implementation Issues.
    Each Epic has one read-only control session that receives every new
    decision Factory needs. Its `factory_control` MCP tool only records proposals
-   (reopen, recovery, deliver as is, graph mutation); the user's Confirm on the
-   rendered card runs them over REST. Implementation agents can also pause behind a
+    for planning, plan decisions, recovery, permission and project gates, graph
+    mutation, pause, resume, delivery, and stop. The user's Confirm on the
+    rendered card runs them over REST. Stop aborts workers before atomically
+    cancelling unfinished work and closing the Epic, preserving partial files.
+    Confirmed controls reconcile the action Inbox and retire stale alternatives.
+    Existing control sessions receive new protocol instructions once on their
+    next opening or Factory update. Implementation agents can also pause behind a
    durable project-admission gate; human REST approval adopts the local project,
    records execution acknowledgement, and launches an additive scoped Plan,
    while rejection resumes the same session with feedback. The browser uses REST

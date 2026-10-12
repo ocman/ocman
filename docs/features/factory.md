@@ -26,13 +26,34 @@ progress, and the session explains it and recommends what to do. **Ask control
 session** on failed or blocked work in the action inbox posts that Issue's state
 and opens the conversation.
 
-The session changes nothing itself. It proposes through the `factory_control`
-MCP tool (reopen work, edit the graph without plan approval, resolve a recovery
-gate, deliver as is, or pause and resume), and Ocman shows each proposal as a
+The session proposes changes through the `factory_control` MCP tool. It can
+start planning, materialize an approved plan, approve or revise a plan, reopen
+work, edit the graph, resolve recovery, permission and project-scope gates,
+deliver as is, pause, resume, or stop. Ocman shows each proposal as a
 card with **Confirm** and **Dismiss**. Only your click runs it, once, and the
 outcome is posted back to the session. A control session that no longer exists
-is replaced, and closing the Epic archives it. Plan approval stays on the Plan
-approval card.
+is replaced, and closing the Epic archives it. Plan decisions bind to the
+revision and hash you reviewed. The Plan approval card remains available.
+
+The control session investigates repeated failures and proposes a changed
+approach rather than repeating the same retry. You can ask it to stop the
+Epic even when recovery or delivery cannot proceed. **Stop epic** on the Epic
+page provides the same confirmed exit without needing the agent to respond.
+It stops workers, closes the Epic without delivery, preserves files and
+history, and records unfinished work as cancelled. It never labels that work
+successful. If a worker cannot be stopped, the Epic stays paused and reports
+the error so you can retry the stop.
+
+Recovery gates still preserve the original worker and its context. **Inspect
+recovery session** is an optional inspection link, not a separate unblock
+conversation you must manage. Resolve the decision from the control session
+or its existing recovery card. Confirmed changes refresh the action inbox,
+archive obsolete requests, and dismiss alternative control proposals based
+on the previous state. Stopping clears outstanding requests for that Epic;
+other Epics' requests remain visible. The control conversation receives the
+final outcome even after the Epic closes.
+Existing control sessions receive the updated instructions on their next
+opening or Factory update, without losing their conversation history.
 
 ## Cost and token usage
 
@@ -450,6 +471,9 @@ waives verification of the current graph revision. Delivery then runs and
 lists the left-out Issues under "Not done" in the pull request, so you can
 finish or revise the delivery branch yourself. Other running implementation
 work must finish first. A later approved amendment needs verification again.
+
+If delivery itself cannot proceed, use **Stop epic** instead. It requires no
+approved plan, completed work, clean checkpoint, or successful delivery.
 
 Any open task Issue can leave the Epic instead: **Transfer to issue tracker**
 in the Issue drawer opens a GitHub or Forgejo issue in the project's

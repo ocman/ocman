@@ -64,9 +64,11 @@ describe('Factory query freshness', () => {
     const cancel = renderHook(() => useCancelFactoryIssueTransfer(), { wrapper });
     await act(() => cancel.result.current.mutateAsync({ epicId: 'epic-1', issueId: 'issue-1' }));
     expect(api.cancelFactoryIssueTransfer).toHaveBeenCalledWith('epic-1', 'issue-1');
-    expect(invalidate).toHaveBeenCalledTimes(8);
+    expect(invalidate).toHaveBeenCalledTimes(16);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-epics'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-queue'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-control-action'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['inbox'] });
   });
 
   it('uses 15-second refreshes for lists, graph issues, comments, and queue', async () => {

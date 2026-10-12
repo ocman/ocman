@@ -246,7 +246,7 @@ export function FactoryEpicDetail() {
 			if (rootMolID) await closeMol.mutateAsync(rootMolID).catch(() => {});
 			await closeEpic.mutateAsync(false);
 		} catch (error) {
-			if (!(error instanceof Error) || (error as Error & { status?: number }).status !== 409 || !window.confirm('This epic still has unfinished work. Close it anyway?')) return;
+			if (!(error instanceof Error) || (error as Error & { status?: number }).status !== 409 || !window.confirm('Stop this epic without delivery? All workers stop, unfinished work is cancelled, and partial files and history are preserved.')) return;
 			closeEpic.mutate(true);
 		}
 	};
@@ -274,6 +274,7 @@ export function FactoryEpicDetail() {
       <FactoryEpicModels epic={epic.data} />
       <ButtonGroup label="Epic controls">
         <Button type="button" onClick={() => void close()} aria-busy={closeEpic.isPending || closeMol.isPending} disabled={closeEpic.isPending || closeMol.isPending}>{closeEpic.isPending || closeMol.isPending ? 'Closing…' : 'Close epic'}</Button>
+        {epic.data.status !== 'closed' && <Button type="button" variant="danger" disabled={closeEpic.isPending} onClick={() => { if (window.confirm('Stop this epic without delivery? All workers stop, unfinished work is cancelled, and partial files and history are preserved.')) closeEpic.mutate(true); }}>Stop epic</Button>}
         {epic.data.status !== 'closed' && progress.deliveryStatus === 'pending' && progress.requiredSucceeded > 0 && <Button type="button" title="Stop verification and deliver the completed work. Unfinished Issues are left out and listed in the pull request." onClick={() => { if (window.confirm('Deliver the completed work as is? Running verification stops, unfinished Issues are left out and listed in the pull request, and you can revise the delivery branch yourself.')) deliverAsIs.mutate(); }} aria-busy={deliverAsIs.isPending} disabled={deliverAsIs.isPending}>{deliverAsIs.isPending ? 'Delivering…' : 'Deliver as is'}</Button>}
         {epic.data.status !== 'closed' && <Button type="button" onClick={() => setPaused.mutate(epic.data!.status !== 'paused')} aria-busy={setPaused.isPending} disabled={setPaused.isPending}>{setPaused.isPending ? (setPaused.variables ? 'Pausing…' : 'Resuming…') : epic.data.status === 'paused' ? 'Resume epic' : 'Pause epic'}</Button>}
       </ButtonGroup>

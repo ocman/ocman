@@ -13,7 +13,7 @@ type factoryControlService interface {
 	ProposeFactoryControl(ctx context.Context, epicID, action string, args map[string]string, summary string) (string, error)
 }
 
-var factoryControlFields = []string{"issue_id", "mutation_json", "recovery_gate_id", "decision", "response"}
+var factoryControlFields = []string{"issue_id", "mutation_json", "recovery_gate_id", "authority_gate_id", "project_gate_id", "decision", "response", "expected_revision", "expected_hash", "implementation_model", "acknowledge_local_execution"}
 
 func factoryControlServerTools(service any) []server.ServerTool {
 	svc, ok := service.(factoryControlService)
@@ -21,7 +21,7 @@ func factoryControlServerTools(service any) []server.ServerTool {
 		return nil
 	}
 	options := []mcplib.ToolOption{
-		mcplib.WithDescription("Proposes a change to a Factory Epic for the user to confirm: reopen (issue_id), mutate_graph (mutation_json, applied without plan approval), resolve_recovery (recovery_gate_id, decision resume|retry|cancel, optional response), deliver_as_is, pause, or resume. Nothing runs until the user clicks Confirm on the card Ocman shows under this call."),
+		mcplib.WithDescription("Proposes a change to a Factory Epic for user confirmation: claim_plan, materialize, or reopen (issue_id), mutate_graph (mutation_json), resolve_recovery (recovery_gate_id, decision resume|retry|cancel, response), resolve_authority (authority_gate_id, decision approve|reject), resolve_project (project_gate_id, decision approve|reject, response, acknowledge_local_execution true for local execution), decide_plan (decision approve|revise|reject, expected_revision, expected_hash, response, implementation_model), deliver_as_is, pause, resume, or stop. Stop ends all Epic work without delivery, preserving partial files and recording unfinished work as cancelled. Nothing runs until the user clicks Confirm."),
 		mcplib.WithString("action", mcplib.Required()),
 		mcplib.WithString("epic_id", mcplib.Required()),
 		mcplib.WithString("summary", mcplib.Required(), mcplib.Description("One line telling the user what confirming does.")),

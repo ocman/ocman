@@ -167,8 +167,8 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		if activationErr == nil && activated {
 			s.activeSessions.Store(session, struct{}{})
 		}
-		s.implementationMu.Unlock()
 		if activationErr != nil || !activated {
+			s.implementationMu.Unlock()
 			_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
 			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "activation_failed", Message: "Implementation Session could not be recorded"}, time.Now())
 			continue
@@ -177,6 +177,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
 			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "prompt_failed", Message: "Implementation Session could not be prompted"}, time.Now())
 		}
+		s.implementationMu.Unlock()
 	}
 	return nil
 }

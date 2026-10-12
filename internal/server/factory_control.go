@@ -17,19 +17,27 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const factoryControlProtocolVersion = 2
+
 const factoryControlProtocol = `You are the control session for Factory Work Epic %[1]s: %[2]s. The user steers this Epic from here, and Factory posts every decision it needs into this conversation.
 
 - Keep replies short: what happened, what the user can decide, and your recommendation.
+- Own resolution of this Epic. Investigate failures and repeated recovery/review cycles, propose a concrete change, and verify its outcome. Never repeat an unsuccessful retry without new evidence or a changed approach. When a loop repeats, offer pause, deliver_as_is, or stop, with the unfinished work named. If the user asks to end it, propose stop immediately rather than requiring another recovery or delivery attempt.
 - Read the Epic with the factory MCP tool (get, issues, issue_comments, proposals) and inspect the repositories without modifying them:
 - %[3]s
 - Never decide for the user and never add work the user did not ask for. Factory agents only implement and report; scope changes are the user's.
 - To change the Epic, call the factory_control MCP tool with epic_id %[1]s, an action, its fields, and a one-line summary for the user. A call only proposes: Ocman shows the user a card with Confirm and Dismiss under it. Tell the user the card is waiting and stop; Factory tells you the outcome. Actions:
   - reopen with issue_id: run failed or cancelled work again.
+  - claim_plan with issue_id: start the ready planning session. materialize with issue_id: apply the approved plan and start ready work.
   - mutate_graph with mutation_json: one batch (epicId, mutations, rationaleMarkdown) that edits, adds, or deletes Issues. It applies directly, without plan approval.
   - resolve_recovery with recovery_gate_id, decision (resume, retry, or cancel) and an optional response for the paused session.
   - deliver_as_is: stop verification, leave unfinished work out, and deliver what is done.
-  - pause or resume the Epic.
-- Plan approval stays on the Epic page's Plan approval card.
+  - stop: stop all Epic workers and close the Epic without delivery. Preserve files and history; unfinished work is cancelled, never reported as completed. This works even when recovery or delivery cannot proceed.
+  - pause or resume: suspend new work or start dispatch again.
+  - decide_plan with decision (approve, revise, reject), expected_revision and expected_hash from the current plan gate, optional response and implementation_model.
+  - resolve_authority with authority_gate_id and decision (approve or reject).
+  - resolve_project with project_gate_id, decision (approve or reject), optional response. Approving execution on this machine also requires acknowledge_local_execution true, explicitly described in the confirmation summary.
+- Recovery worker sessions are optional evidence, not another conversation the user must manage. Resolve Epic decisions here. Before acting on an old notification, read the current Epic and issues. After a confirmed change, re-read them and explain what remains relevant; never ask for decisions on closed gates or cancelled work.
 
 Reply now with a one-paragraph status of the Epic, including anything waiting for the user.`
 
@@ -39,6 +47,7 @@ type factoryControlStore interface {
 	CreateFactoryControlAction(context.Context, state.FactoryControlAction, time.Time) error
 	GetFactoryControlAction(context.Context, string, string) (state.FactoryControlAction, bool, error)
 	TransitionFactoryControlAction(context.Context, string, string, string, string, string) (bool, error)
+	DismissFactoryControlAlternatives(context.Context, string, string) error
 }
 
 func (s *Server) factoryControlStore() (factoryControlStore, error) {
@@ -77,6 +86,14 @@ func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 	if epic.Status == "closed" {
 		return state.FactoryControlSession{}, false, fmt.Errorf("%w: the Epic is closed", factory.ErrInvalidRequest)
 	}
+	projects := make([]string, 0, len(epic.Projects))
+	for _, project := range epic.Projects {
+		projects = append(projects, project.Path)
+	}
+	if len(projects) == 0 {
+		projects = []string{epic.InitialProject}
+	}
+	prompt := factoryIssueProse + "\n\n" + fmt.Sprintf(factoryControlProtocol, epicID, epic.Goal, strings.Join(projects, "\n- "))
 	control, found, err := store.GetFactoryControlSession(ctx, epicID)
 	if err != nil {
 		return state.FactoryControlSession{}, false, err
@@ -84,15 +101,15 @@ func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 	if found {
 		alive, err := s.factoryControlAlive(ctx, control)
 		if err != nil || alive {
+			if err == nil && control.ProtocolVersion < factoryControlProtocolVersion {
+				err = s.queueSvc().Enqueue(ctx, control.Platform, false, platforms.SendMessageRequest{SessionID: control.SessionID, Message: "Updated Factory control instructions. These replace the previous control protocol.\n\n" + prompt, Model: epic.Models.Plan})
+				if err == nil {
+					control.ProtocolVersion = factoryControlProtocolVersion
+					_, err = store.SetFactoryControlSession(ctx, control, time.Now())
+				}
+			}
 			return control, false, err
 		}
-	}
-	projects := make([]string, 0, len(epic.Projects))
-	for _, project := range epic.Projects {
-		projects = append(projects, project.Path)
-	}
-	if len(projects) == 0 {
-		projects = []string{epic.InitialProject}
 	}
 	launcher := factoryPlanningLauncher{server: s}
 	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Projects: projects, Title: "Control: " + epic.Goal + " (@factory)"},
@@ -101,14 +118,13 @@ func (s *Server) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 	if err != nil {
 		return state.FactoryControlSession{}, false, err
 	}
-	prompt := factoryIssueProse + "\n\n" + fmt.Sprintf(factoryControlProtocol, epicID, epic.Goal, strings.Join(projects, "\n- "))
 	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: epic.Models.Plan}); err != nil {
 		// A lost response may mean the prompt was accepted: stop the turn,
 		// keep the history, and never adopt a session without its protocol.
 		_ = launcher.StopPlanningSession(ctx, session)
 		return state.FactoryControlSession{}, false, fmt.Errorf("start control session: %w", err)
 	}
-	control = state.FactoryControlSession{EpicID: epicID, Platform: session.Platform, SessionID: session.ID}
+	control = state.FactoryControlSession{EpicID: epicID, Platform: session.Platform, SessionID: session.ID, ProtocolVersion: factoryControlProtocolVersion}
 	adopted, err := store.SetFactoryControlSession(ctx, control, time.Now())
 	if err == nil && !adopted {
 		// The Epic closed meanwhile: stop the session and keep it out of view.
@@ -191,12 +207,18 @@ func (s *Server) discussFactoryIssue(ctx context.Context, epicID, issueID string
 // factoryControlActions lists what a control proposal may do and the fields
 // each requires.
 var factoryControlActions = map[string][]string{
-	"reopen":           {"issue_id"},
-	"mutate_graph":     {"mutation_json"},
-	"resolve_recovery": {"recovery_gate_id", "decision"},
-	"deliver_as_is":    nil,
-	"pause":            nil,
-	"resume":           nil,
+	"reopen":            {"issue_id"},
+	"claim_plan":        {"issue_id"},
+	"materialize":       {"issue_id"},
+	"mutate_graph":      {"mutation_json"},
+	"resolve_recovery":  {"recovery_gate_id", "decision"},
+	"deliver_as_is":     nil,
+	"pause":             nil,
+	"resume":            nil,
+	"stop":              nil,
+	"decide_plan":       {"decision", "expected_revision", "expected_hash"},
+	"resolve_authority": {"authority_gate_id", "decision"},
+	"resolve_project":   {"project_gate_id", "decision"},
 }
 
 // proposeFactoryControl records an agent's proposal; it does nothing until
@@ -221,6 +243,9 @@ func (s *Server) proposeFactoryControl(ctx context.Context, epicID, action strin
 	}
 	if decision := args["decision"]; action == "resolve_recovery" && decision != "resume" && decision != "retry" && decision != "cancel" {
 		return "", fmt.Errorf("%w: decision must be resume, retry, or cancel", factory.ErrInvalidRequest)
+	}
+	if err := validateFactoryControlDecision(action, args); err != nil {
+		return "", err
 	}
 	epic, err := s.factory.GetWorkEpic(ctx, epicID)
 	if err != nil {
