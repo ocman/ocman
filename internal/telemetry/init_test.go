@@ -24,6 +24,9 @@ func TestInitNoEndpointNoOp(t *testing.T) {
 	if shutdown == nil {
 		t.Fatal("Init returned nil shutdown")
 	}
+	if Enabled() {
+		t.Fatal("empty endpoint enabled telemetry")
+	}
 	if got := len(log.StandardLogger().Hooks[log.InfoLevel]); got != hooksBefore {
 		t.Fatal("disabled telemetry installed a logging hook")
 	}
@@ -43,6 +46,9 @@ func TestInitInvalidEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid scheme, got nil")
 	}
+	if Enabled() {
+		t.Fatal("invalid endpoint enabled telemetry")
+	}
 }
 
 func TestInitHTTPExporterAndShutdown(t *testing.T) {
@@ -55,10 +61,38 @@ func TestInitHTTPExporterAndShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !Enabled() {
+		t.Fatal("successful initialization did not enable telemetry")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	if err := shutdown(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if Enabled() {
+		t.Fatal("shutdown left telemetry enabled")
+	}
+}
+
+func TestInitEnabledFromEnvironment(t *testing.T) {
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(collector.Close)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
+	shutdown, err := Init(t.Context(), "", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			t.Error(err)
+		}
+	})
+	if !Enabled() {
+		t.Fatal("environment endpoint did not enable telemetry")
 	}
 }
 

@@ -329,8 +329,9 @@ and `OTEL_SERVICE_NAME=ocman-dev` for you. See `observability/` for dashboard pr
 
 The provisioned dashboard selects an available `ocman*` service on load. Select
 `ocman-dev` for development runs or `ocman` for the default service name.
-LLM token, cost, and request metrics are collected every 30 seconds even when no
-ocman page is visible. Collection counts new assistant messages after ocman starts;
+When telemetry export is enabled, LLM token, cost, and request metrics are collected
+every 30 seconds even when no ocman page is visible. The scanner stays off when
+telemetry export is disabled. Collection counts new assistant messages after ocman starts;
 existing message history is not imported into these counters.
 
 Logrus logs are exported in batches using the same endpoint and transport, while

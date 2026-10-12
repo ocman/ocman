@@ -127,7 +127,7 @@ const llmMetricsScanInterval = 30 * time.Second
 // current max message time so only messages arriving after ocman
 // starts are counted (avoids a counter spike on restart).
 func (s *Server) runLLMMetricsLoop(ctx context.Context) {
-	if s.db == nil {
+	if !telemetry.Enabled() || s.db == nil {
 		return
 	}
 

@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"sync/atomic"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -11,6 +13,13 @@ import (
 // the library that produced it; using one constant keeps ocman's
 // telemetry findable in a noisy collector.
 const instrumentationName = "github.com/NoUseFreak/ocman"
+
+var enabled atomic.Bool
+
+// Enabled reports whether Init successfully configured telemetry export.
+func Enabled() bool {
+	return enabled.Load()
+}
 
 // Tracer returns the ocman-scoped tracer. When telemetry is disabled,
 // the global TracerProvider is the SDK no-op and this tracer's spans

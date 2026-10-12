@@ -145,6 +145,7 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 	}).Info("OTel telemetry initialised")
 
 	shutdown := func(ctx context.Context) error {
+		enabled.Store(false)
 		var errs []error
 		if err := lp.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("log provider shutdown: %w", err))
@@ -157,6 +158,7 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 		}
 		return errors.Join(errs...)
 	}
+	enabled.Store(true)
 	return shutdown, nil
 }
 

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 func TestLLMMetrics_Record(t *testing.T) {
@@ -94,6 +96,29 @@ func TestLLMMetrics_Record(t *testing.T) {
 		if totalCount != 1 {
 			t.Errorf("duration histogram count = %d, want 1", totalCount)
 		}
+	}
+}
+
+func TestLLMMetricsLoopDisabled(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	shutdown, err := telemetry.Init(t.Context(), "", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	srv := testServer(t)
+	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"metrics"}, TTLMS: 45_000}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	srv.runLLMMetricsLoop(ctx)
+	if ctx.Err() != nil {
+		t.Fatal("disabled telemetry kept the LLM scanner running until cancellation")
 	}
 }
 
