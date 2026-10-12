@@ -44,8 +44,8 @@ type Module struct {
 	// ponytail: one lock for every inbox's key and secret changes; per-inbox locks if that contends.
 	keyMu sync.Mutex
 
-	// mu guards ctx and pollers.Go: Run waits for pollers only once no
-	// request can start another.
+	// mu guards ctx, initial and pollers.Go: Run waits for pollers only
+	// once no request can start another.
 	mu      sync.Mutex
 	ctx     context.Context
 	pollers sync.WaitGroup
@@ -80,7 +80,9 @@ func (m *Module) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	m.initial = inboxes
+	m.mu.Lock()
+	m.initial = append(m.initial, inboxes...)
+	m.mu.Unlock()
 	return nil
 }
 
@@ -89,11 +91,12 @@ func (m *Module) Start(ctx context.Context) error {
 func (m *Module) Run(ctx context.Context) {
 	m.mu.Lock()
 	m.ctx = ctx
+	initial := m.initial
+	m.initial = nil
 	m.mu.Unlock()
-	for _, inbox := range m.initial {
+	for _, inbox := range initial {
 		m.startPoller(inbox)
 	}
-	m.initial = nil
 	ticker := time.NewTicker(historyCleanupInterval)
 	defer ticker.Stop()
 	for {
@@ -109,12 +112,16 @@ func (m *Module) Run(ctx context.Context) {
 	}
 }
 
-// startPoller is a no-op before Run and after shutdown; the next startup
-// polls the inbox.
+// startPoller retains inboxes created before Run installs its context.
+// After shutdown it is a no-op; the next startup polls the inbox.
 func (m *Module) startPoller(inbox state.WebhookInbox) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.ctx == nil || m.ctx.Err() != nil {
+	if m.ctx == nil {
+		m.initial = append(m.initial, inbox)
+		return
+	}
+	if m.ctx.Err() != nil {
 		return
 	}
 	ctx := m.ctx

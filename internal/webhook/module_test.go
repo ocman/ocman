@@ -239,7 +239,6 @@ func TestModuleRunPollsInboxesAndWaitsOnShutdown(t *testing.T) {
 		}
 	}
 	late, _ := m.store.GetWebhookInboxByID(t.Context(), "late")
-	m.startPoller(late) // before Run: dropped, the next startup polls it
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -260,6 +259,43 @@ func TestModuleRunPollsInboxesAndWaitsOnShutdown(t *testing.T) {
 	m.startPoller(late) // after shutdown: dropped
 	if len(polled) != 0 {
 		t.Fatalf("unexpected extra polls: %d", len(polled))
+	}
+}
+
+// A create request may arrive after Start's snapshot but before the Run
+// worker is scheduled. Its inbox must be polled without another create or
+// a process restart.
+func TestModulePollsInboxCreatedBetweenStartAndRun(t *testing.T) {
+	polled := make(chan struct{}, 1)
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/inboxes":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"inbox","ingestionUrl":"/i/inbox","managementToken":"manage","fetchToken":"fetch","acknowledgmentToken":"ack","keyVersion":1}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/inboxes/inbox/"):
+			polled <- struct{}{}
+			_, _ = w.Write([]byte(`{"deliveries":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(relay.Close)
+	m, handler := testModule(t)
+	relayURL = relay.URL
+	if err := m.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, handler, http.MethodPost, "/api/webhook-inboxes", `{"name":"created before Run"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body.String())
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { m.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	select {
+	case <-polled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("inbox created between Start and Run was not polled")
 	}
 }
 
