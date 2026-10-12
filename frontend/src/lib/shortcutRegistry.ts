@@ -13,7 +13,7 @@
 // See `shortcuts.ts` for the project-wide Alt/Option conventions that
 // informed this module. All bindings use `code` (physical key) — never `key`.
 
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { create } from 'zustand';
 import { isMacPlatform } from './shortcuts';
 
@@ -95,7 +95,10 @@ export function useShortcut(shortcut: Shortcut): void {
   const register = useShortcutRegistry((s) => s.register);
   const unregister = useShortcutRegistry((s) => s.unregister);
 
-  useEffect(() => {
+  // Layout effect: the handler must update in the same commit as the DOM it
+  // acts on, or a key pressed right after a re-render runs a stale closure
+  // (e.g. Delete archiving the previous Inbox message again).
+  useLayoutEffect(() => {
     register(shortcut);
     return () => {
       unregister(shortcut.id);
