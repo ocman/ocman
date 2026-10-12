@@ -317,7 +317,10 @@ for (const gesture of ['command', 'middle-click'] as const) {
     await page.goto('/session/new?dir=%2Frepo&draftId=keep&title=Keep');
     await page.getByRole('textbox').fill('Keep this text.');
     await expect.poll(async () => (await storedText(page, 'keep'))?.text).toBe('Keep this text.');
+    // Text and sidebar metadata commit independently; both must survive navigation.
+    await expect.poll(() => storedText(page, 'keep', 'drafts')).toMatchObject({ draftId: 'keep', directory: '/repo' });
     await page.goto('/session/new?dir=%2Frepo&draftId=discard&title=Discard');
+    await expect.poll(() => storedText(page, 'discard', 'drafts')).toMatchObject({ draftId: 'discard', directory: '/repo' });
     await expect(page.getByTestId('session-sidebar').getByRole('button', { name: 'Discard', exact: true })).toBeVisible();
     if (gesture === 'command') {
       await page.getByRole('textbox').fill('/archive');
