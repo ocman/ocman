@@ -134,15 +134,47 @@ func probeIdentity(ctx context.Context, client *http.Client, endpoint, repoRoot 
 		return nil
 	}
 	var payload struct {
+		ID       string `json:"id"`
 		Worktree string `json:"worktree"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil || payload.Worktree == "" {
 		return nil
 	}
+	if payload.ID == "global" {
+		return probeGlobalDirectory(ctx, client, endpoint, repoRoot)
+	}
 	if sameDir(payload.Worktree, repoRoot) {
 		return nil
 	}
 	return fmt.Errorf("%w: %w: endpoint serves %q, expected %q", ErrProbeUnreachable, ErrProbeIdentityMismatch, payload.Worktree, repoRoot)
+}
+
+// Non-Git projects share the global project whose worktree is "/". Its
+// /path directory identifies the server's actual launch directory; never
+// supply a directory query, which would change the identity being checked.
+func probeGlobalDirectory(ctx context.Context, client *http.Client, endpoint, directory string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/path", nil)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrProbeUnreachable, err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrProbeUnreachable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%w: %w: directory identity HTTP %d", ErrProbeUnreachable, ErrProbeNotReady, resp.StatusCode)
+	}
+	var payload struct {
+		Directory string `json:"directory"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil || payload.Directory == "" {
+		return fmt.Errorf("%w: %w: invalid directory identity", ErrProbeUnreachable, ErrProbeNotReady)
+	}
+	if !sameDir(payload.Directory, directory) {
+		return fmt.Errorf("%w: %w: endpoint serves %q, expected %q", ErrProbeUnreachable, ErrProbeIdentityMismatch, payload.Directory, directory)
+	}
+	return nil
 }
 
 // ProbeV2Identity requires a readable, matching server-default location before

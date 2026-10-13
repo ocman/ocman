@@ -259,7 +259,7 @@ func (h *Host) waitForProbe(ctx context.Context, inst *ocruntime.Instance) error
 			return fmt.Errorf("managed OpenCode authentication failed: %w", err)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("opencode launched for %q but did not become healthy within %s", inst.Endpoint, h.portWaitTimeout)
+			return fmt.Errorf("opencode launched for %q but did not become healthy within %s: %w", inst.Endpoint, h.portWaitTimeout, err)
 		}
 		select {
 		case <-ctx.Done():

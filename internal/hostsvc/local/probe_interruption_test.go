@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -210,6 +211,16 @@ func (r *gatedLaunchRuntime) Launch(ctx context.Context, spec ocruntime.LaunchSp
 }
 
 func (r *probeErrorRuntime) Probe(context.Context, *ocruntime.Instance) error { return r.err }
+
+func TestWaitForProbePreservesLastError(t *testing.T) {
+	probeErr := errors.New("endpoint serves /, expected /home/u/project")
+	h := New(Deps{Runtime: &probeErrorRuntime{err: probeErr}})
+	h.portWaitTimeout = 0
+	err := h.waitForProbe(t.Context(), &ocruntime.Instance{Endpoint: "http://127.0.0.1:6666"})
+	if !errors.Is(err, probeErr) || !strings.Contains(err.Error(), "did not become healthy") {
+		t.Fatalf("timeout must retain the last probe error: %v", err)
+	}
+}
 
 func TestEnsureDoesNotKillServerOnAmbiguousProbeFailure(t *testing.T) {
 	for _, probeErr := range []error{
