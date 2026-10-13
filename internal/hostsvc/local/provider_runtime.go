@@ -87,19 +87,8 @@ func (m *ProviderManager) ensureRoot(ctx context.Context, root string) (*hostsvc
 	if m.Runtime == nil || m.State == nil {
 		return nil, fmt.Errorf("provider manager requires runtime and state")
 	}
-	// Per root: a supervisor draining for an upgrade must not block others.
-	m.mu.Lock()
-	if m.roots == nil {
-		m.roots = map[string]*sync.Mutex{}
-	}
-	lock := m.roots[root]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		m.roots[root] = lock
-	}
-	m.mu.Unlock()
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := m.lockRoot(root)
+	defer unlock()
 	r := m.Runtime
 	row, exists, err := m.State.GetManagedProvider(ctx, r.PlatformID, root)
 	if err != nil {

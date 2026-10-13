@@ -238,6 +238,7 @@ flowchart TD
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
     Provider -->|providerprotocol: HTTP + SSE over unix socket, leased snapshot + replay| Supervisor[providersupervisor<br/>sequenced spool, ack, drain]
     Local -.->|ocruntime.BackendRuntime in tmux, one per project| Supervisor
+    Modules -->|idleprojects: idle timeout through hostsvc.IdleProjectRuntime| Local
     Supervisor --> Claude[claudeprovider<br/>index, converter, pooled claude children]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
@@ -308,6 +309,14 @@ flowchart TD
   `Run`. It reads OpenCode only through `internal/db`; the analytics mirror,
   session snapshot, client-activity demand leases, `/api/system/stats` and the
   server's own OTel instruments stay in core.
+- **Idle projects** (`internal/idleprojects`). An owner-local module holds the
+  configurable idle timeout and minute sweep. It checks archive state, live
+  sessions, queued messages, and active background work before calling
+  `hostsvc.IdleProjectRuntime` on the local OpenCode host or provider adapter.
+  Only managed per-project instances are stopped; OpenCode v2 is excluded.
+  Claude fences new turns with `/drain-idle` before stopping its supervisor.
+  Routine dispatch already ensures its runtime before creating or reusing a
+  session, so future schedules do not keep idle projects running.
 - **Project forge** (`internal/projectforge`). The PRs & Issues pane:
   `/api/project/{upstreams,prs,issues,pr-checks,pr-mergeability,forge-user,
   handle}` and `/api/settings/prompt-templates`. Every `/api/project/*` route

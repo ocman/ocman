@@ -17,6 +17,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/filesystem"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/idleprojects"
 	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/notifications"
@@ -137,6 +138,8 @@ type Server struct {
 	// before then.
 	routineMod           *routines.Module
 	routineModOnce       sync.Once
+	idleProjects         *idleprojects.Module
+	idleProjectsOnce     sync.Once
 	lifetimeMu           sync.Mutex
 	lifetimeCtx          context.Context // guarded by lifetimeMu
 	pluginsMod           *pluginsmod.Module

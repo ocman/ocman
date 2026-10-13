@@ -143,10 +143,25 @@ func (r *BackendRuntime) Stop(ctx context.Context, inst *Instance) error {
 
 // Drain is version-independent: it blocks admission before reporting idle.
 func (r *BackendRuntime) Drain(ctx context.Context, inst *Instance) (bool, error) {
+	return r.drain(ctx, inst, "/drain")
+}
+
+// DrainIdle blocks new turns only if the supervisor is already idle.
+// Older supervisors reject this route rather than being drained while busy.
+func (r *BackendRuntime) DrainIdle(ctx context.Context, inst *Instance) (bool, error) {
+	return r.drain(ctx, inst, "/drain-idle")
+}
+
+func (r *BackendRuntime) Resume(ctx context.Context, inst *Instance) error {
+	var result providerprotocol.DrainState
+	return providerCall(ctx, inst, "POST", "/resume", &result)
+}
+
+func (r *BackendRuntime) drain(ctx context.Context, inst *Instance, path string) (bool, error) {
 	var drain struct {
 		Idle *bool `json:"idle"`
 	}
-	if err := providerCall(ctx, inst, "POST", "/drain", &drain); err != nil {
+	if err := providerCall(ctx, inst, "POST", path, &drain); err != nil {
 		return false, err
 	}
 	if drain.Idle == nil {

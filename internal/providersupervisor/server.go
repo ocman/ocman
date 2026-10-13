@@ -41,17 +41,24 @@ func (s *Supervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(hello)
 	case r.Method == http.MethodGet && r.URL.Path == "/events":
 		s.events(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == "/drain":
+	case r.Method == http.MethodPost && (r.URL.Path == "/drain" || r.URL.Path == "/drain-idle"):
 		s.mu.Lock()
-		s.draining = true
 		idle := s.admitted == 0
 		for _, p := range s.sessions {
 			if p.active || len(p.pending) != 0 {
 				idle = false
 			}
 		}
+		if idle || r.URL.Path == "/drain" {
+			s.draining = true
+		}
 		s.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(providerprotocol.DrainState{Idle: idle})
+	case r.Method == http.MethodPost && r.URL.Path == "/resume":
+		s.mu.Lock()
+		s.draining = false
+		s.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(providerprotocol.DrainState{})
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/snapshot"):
 		s.snapshot(w, r)
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/ack"):

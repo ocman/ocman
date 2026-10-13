@@ -52,6 +52,8 @@ prompts to the user.
 | GET /sessions/{id}/snapshot | `Snapshot`, current v1 upserts plus cursor and single-use lease |
 | POST /sessions/{id}/ack | `TurnAck`, exact completed `session.idle` sequence; 204 |
 | POST /drain | `DrainState`, stops new turns before reporting whether all sessions are idle |
+| POST /drain-idle | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
+| POST /resume | `DrainState`, restores admission if an idle-cull stop failed |
 | GET /account | `Account` |
 | POST /hooks | `HookEvent`, status of a session started outside ocman; 204 |
 
@@ -64,6 +66,10 @@ not record yet is 503 with code `reply_unrecorded`
 (`platforms.ErrReplyUnrecorded`): the decision took effect, its event follows. Unsupported methods must be gated locally using `/hello` capabilities.
 Composer gates creation and sending; rename, native queue and account have
 additional protocol capability flags. Browsing and lifecycle reads are required.
+
+Idle culling uses the optional `/drain-idle` route rather than `/drain`, so a
+turn racing a cleanup is never interrupted or left draining. Older supervisors
+that reject the route stay running until they are replaced normally.
 
 SSE frames carry `id: <positive uint64>` and `data: <Event JSON>`. `after` is
 exclusive and defaults to 0. The sequence orders all sessions on this socket,

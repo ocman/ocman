@@ -10,6 +10,10 @@ Choose how each routine uses OpenCode sessions:
 - **Reuse session** starts a session on the first run and continues it later.
 - **Existing session** continues a session you select from the project.
 
+Routines automatically wake a project stopped by [idle-project cleanup](idle-projects.md)
+before creating or continuing its session. Future scheduled runs do not keep an
+idle instance running; a claimed or active run prevents cleanup.
+
 A session a routine starts is titled with the routine's name and launch time (for example
 `Daily check 2026-09-30 15:04`) and tagged as a
 routine session. The session sidebar hides routine sessions and their children

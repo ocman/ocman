@@ -19,6 +19,7 @@ import { PluginSettings } from '../components/PluginSettings';
 import { AutoApproveSection } from '../pages/dashboard/AutoApproveSection';
 import { SharingSettings } from '../components/SharingSettings';
 import { WebhookRelaySettings } from '../components/WebhookRelaySettings';
+import { IdleProjectSettings } from '../components/IdleProjectSettings';
 
 export interface FeatureRoute {
   path: string;
@@ -74,6 +75,7 @@ export const FEATURES: Feature[] = [
     nav: { to: '/artifacts', label: 'Artifacts', icon: 'bi-box-seam' },
   },
   { id: 'plugins', settings: { id: 'plugins', label: 'Plugins', mount: 'active', Section: PluginSettings } },
+  { id: 'idle-projects', settings: { id: 'idle-projects', label: 'Idle projects', mount: 'active', Section: IdleProjectSettings } },
   { id: 'auto-approve', settings: { id: 'auto-approve', label: 'Auto-approve', mount: 'always', Section: AutoApproveSection } },
   { id: 'sharing', settings: { id: 'sharing', label: 'Sharing', mount: 'always', Section: SharingSettings } },
   { id: 'webhooks', settings: { id: 'webhooks', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },

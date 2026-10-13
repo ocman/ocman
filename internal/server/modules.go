@@ -38,6 +38,9 @@ func (s *Server) modules() []module.Module {
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
 	}
+	if m := s.idleProjectsModule(); m != nil {
+		mods = append(mods, m)
+	}
 	if m := s.webhooksModule(); m != nil {
 		mods = append(mods, m)
 	}

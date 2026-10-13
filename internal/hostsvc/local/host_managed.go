@@ -78,6 +78,8 @@ func (h *Host) beforeReplace(ctx context.Context, root, reason string, inst *ocr
 }
 
 func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
+	unlock := h.lockProject(repoRoot)
+	defer unlock()
 	if err := validateReplacementRoot(repoRoot); err != nil {
 		return nil, err
 	}
@@ -136,6 +138,8 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 }
 
 func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
+	unlock := h.lockProject(repoRoot)
+	defer unlock()
 	if err := validateReplacementRoot(repoRoot); err != nil {
 		return nil, err
 	}
@@ -297,6 +301,8 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 		return err
 	}
 	_, err, _ = h.sf.Do(repoRoot, func() (any, error) {
+		unlock := h.lockProject(repoRoot)
+		defer unlock()
 		if stopped, err := h.reconcileStopped(ctx, repoRoot, false); stopped || err != nil {
 			return nil, err
 		}
