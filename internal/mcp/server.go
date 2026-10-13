@@ -1,8 +1,10 @@
 package mcp
 
 import (
+	"context"
 	"net/http"
 
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
@@ -14,6 +16,8 @@ type Deps struct {
 	// Optional: nil disables session tools. The create action also needs
 	// the service to implement CreateSession.
 	SessionService sessionService
+	// Optional: reads an existing instance's directory catalog, without launching it.
+	ModelCatalog func(context.Context, string, platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, string, error)
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
 	// file embedding is unavailable.
@@ -38,6 +42,7 @@ func New(deps Deps) *Server {
 
 	s.AddTools(deps.Tools...)
 	addSessionTools(s, &sessionTools{svc: deps.SessionService})
+	s.AddTools(modelServerTools(deps)...)
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
@@ -61,5 +66,6 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	}
 	tools = append(tools, deps.Tools...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
+	tools = append(tools, modelServerTools(deps)...)
 	return tools
 }

@@ -79,7 +79,18 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
 | `webhooks` | Create and inspect owner-local webhook inboxes, subscribe or unsubscribe routines, inspect recent deliveries, and redeliver a stored delivery by ID to the current subscribers. Actions `help`, `list`, `get`, `create`, `subscribe`, `unsubscribe`, `deliveries`, `redeliver`. Uses the saved relay settings. Ingestion URLs are credentials; shared secrets and relay management credentials are omitted. |
 | `sessions` | Session listing, search, detail inspection, and creation. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With `content: true` it also scans user and assistant message text (not tool output) from the last `since_days` (default 7). Each hit returns up to five `{partId, messageId, role, snippet}` matches. Content search reads this machine's OpenCode database, so it is slow on large databases (tens of seconds for a week) and never covers remote sessions. `get` needs only `session_id`; it asks for `platform` only when that ID exists on more than one platform. `create` starts a new session. The tool cannot cancel or message existing sessions. |
+| `models` | Read the model catalog for an absolute `directory`, with optional `platform`. Pass the target's compound platform ID for a remote machine; omit it only when one platform is available. Returns `platform`, `models`, defaults, `hasProviders`, and `liveConnection`. Each model includes `provider`, `model`, `isAvailable`, and any reasoning variants. Use `provider/model` with `sessions` creation. Reads an existing instance without launching one; historical entries remain visible when live provider data is unavailable. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
+
+For example, list models before choosing one for a new session:
+
+```json
+{"directory":"/absolute/project/path","platform":"opencode"}
+```
+
+Call `models` with these arguments. When `hasProviders` is true, entries with
+`isAvailable: true` belong to connected providers. When it is false, availability
+is unconfirmed and the list falls back to historical models and favorites.
 
 ## Factory
 

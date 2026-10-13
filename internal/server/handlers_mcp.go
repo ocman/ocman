@@ -105,6 +105,9 @@ func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handl
 		SignFile:       s.FileURL,
 		SessionService: sessionService,
 	}
+	if s.sessions != nil {
+		deps.ModelCatalog = s.sessions.DirectoryCatalog
+	}
 	for _, m := range s.modules() {
 		if p, ok := m.(module.ToolProvider); ok {
 			deps.Tools = append(deps.Tools, p.Tools()...)
