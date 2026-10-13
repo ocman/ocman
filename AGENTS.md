@@ -973,6 +973,11 @@ detail into the prose below each one.
 
 ## Conventions
 
+- **Linear Git history is mandatory in this repository.** Fetch and rebase feature branches onto
+  their base branch instead of merging. Never create merge commits, run
+  `git pull` without `--rebase`, or use `--rebase-merges`. PR integration must
+  use squash, rebase, or fast-forward, never a merge commit. Do not force-push
+  without explicit user permission.
 - Application Go packages live under `internal/`. The optional public plugin SDK
   is `sdk/plugin`, with reusable tests in `sdk/plugin/conformance` and a deterministic
   executable example in `examples/ocman-plugin-fixture`. SDK DTOs alias the canonical
