@@ -1,11 +1,14 @@
 import type { SessionModelEntry } from '../../lib/api';
 import type { SearchKey } from '../../lib/weightedSearch';
+import { qualifyModelRef } from '../../lib/modelRef';
 
 // One model row shared by the ModelPicker modal and the ModelSelect field.
 // Derived from either rich server-side entries or plain `provider/model`
 // strings.
 export interface ModelEntry {
-  value: string;             // "provider/model" — what we send to onSelect
+  value: string;             // "[platform:]provider/model" — what we send to onSelect
+  platform: string;          // base platform, '' when the list has one
+  platformName: string;
   provider: string;
   providerName: string;      // human-readable, falls back to provider id
   model: string;
@@ -23,9 +26,11 @@ export interface ModelEntry {
 // provider defaults → available), so we just tag `isCurrent`.
 function fromRich(modelEntries: SessionModelEntry[], currentModel: string | undefined): ModelEntry[] {
   return modelEntries.map((m) => {
-    const value = m.provider ? `${m.provider}/${m.model}` : m.model;
+    const value = qualifyModelRef(m.platform, m.provider ? `${m.provider}/${m.model}` : m.model);
     return {
       value,
+      platform: m.platform || '',
+      platformName: m.platformName || m.platform || '',
       provider: m.provider || '',
       providerName: m.providerName || m.provider || '',
       model: m.model,
@@ -49,6 +54,8 @@ export function fromStrings(models: string[], currentModel: string | undefined):
     const model = idx > 0 ? m.slice(idx + 1) : m;
     return {
       value: m,
+      platform: '',
+      platformName: '',
       provider,
       providerName: provider,
       model,
@@ -72,7 +79,10 @@ export function fromStrings(models: string[], currentModel: string | undefined):
 /** Rich entries take precedence; `rich` unlocks sections and badges. */
 export function buildModelEntries(models: string[], modelEntries: SessionModelEntry[] | undefined, currentModel: string | undefined) {
   const rich = !!(modelEntries && modelEntries.length > 0);
-  return { rich, entries: rich ? fromRich(modelEntries!, currentModel) : fromStrings(models, currentModel) };
+  const entries = rich ? fromRich(modelEntries!, currentModel) : fromStrings(models, currentModel);
+  // The platform badge only tells rows apart when the list spans platforms.
+  const multiPlatform = new Set(entries.map((e) => e.platform || 'opencode')).size > 1;
+  return { rich, multiPlatform, entries };
 }
 
 // A favorited model always wins the Favorites bucket even when it's also a
@@ -96,5 +106,6 @@ export const modelSearchKeys: SearchKey<ModelEntry>[] = [
   { name: 'model', weight: 0.9 },
   { name: 'providerName', weight: 0.5 },
   { name: 'provider', weight: 0.5 },
+  { name: 'platformName', weight: 0.4 },
   { name: 'value', weight: 0.2 },
 ];

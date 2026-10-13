@@ -27,9 +27,9 @@ type Deps struct {
 	// ForDir infers the owner of dir, for routes whose clients name none.
 	ForDir func(dir string) hostsvc.Host
 	// ResolvePlatform picks the new session's platform on host: the requested
-	// one, else the parent session's, else the owner's default. It returns the
-	// compound id and the owner-local base id.
-	ResolvePlatform func(r *http.Request, host hostsvc.Host, requested, parentSessionID string) (id, base string, err error)
+	// one, else the first prompt's model reference, else the parent session's,
+	// else the owner's default. It returns the compound id and the base id.
+	ResolvePlatform func(r *http.Request, host hostsvc.Host, requested, model, parentSessionID string) (id, base string, err error)
 	// InheritPermissions reads the parent's inheritable permissions (it runs
 	// alongside worktree creation) and returns the step that applies them to
 	// the child, reporting the rule count and a soft-fail note.

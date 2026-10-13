@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { SessionModelEntry } from '../lib/api';
 import { weightedSearch } from '../lib/weightedSearch';
+import { splitModelRef } from '../lib/modelRef';
 import { buildModelEntries, fromStrings, isPinnedModel, modelSearchKeys, modelSectionOf, type ModelEntry } from './assistant/modelEntries';
 import { ModelBadges } from './assistant/ModelBadges';
 import { ModelLabel } from './ModelLogo';
@@ -25,7 +26,7 @@ interface ModelSelectProps {
  * pinned favorites/defaults, sections, and badges. An empty value is the default.
  */
 export function ModelSelect({ value, onChange, models, modelEntries, ariaLabel = 'Model', defaultLabel = 'Default model', disabled, allowCustom }: ModelSelectProps) {
-  const { rich, entries } = useMemo(() => {
+  const { rich, multiPlatform, entries } = useMemo(() => {
     const built = buildModelEntries(models, modelEntries, value);
     // Group by section (stable) so a favorite anywhere in the server order gets one header.
     if (built.rich) built.entries.sort((a, b) => sectionOrder.indexOf(modelSectionOf(a)) - sectionOrder.indexOf(modelSectionOf(b)));
@@ -37,8 +38,11 @@ export function ModelSelect({ value, onChange, models, modelEntries, ariaLabel =
     value: e.value,
     label: e.value,
     section: rich ? modelSectionOf(e) : undefined,
-    displayLabel: <><ModelLabel model={e.value}>{e.value}</ModelLabel><ModelBadges entry={e} rich={rich} /></>,
-  }), [rich]);
+    displayLabel: <>
+      <ModelLabel model={e.value}>{splitModelRef(e.value).model}</ModelLabel><ModelBadges entry={e} rich={rich} />
+      {multiPlatform && e.platformName && <span className="oc-model-picker-badge oc-model-picker-badge--platform">{e.platformName}</span>}
+    </>,
+  }), [rich, multiPlatform]);
   const options = useMemo(() => [{ value: '', label: defaultLabel }, ...entries.map(toOption)], [defaultLabel, entries, toOption]);
 
   return (

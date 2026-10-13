@@ -120,3 +120,6 @@
   color: var(--warning);
   padding: 0;
 }
+.oc-model-picker-badge--platform {
+  margin-left: 6px;
+}

@@ -75,6 +75,7 @@ func (s *Service) RecordCooldown(ctx context.Context, provider string, d time.Du
 
 // modelProvider is the provider half of a provider/model id.
 func modelProvider(model string) string {
+	_, model = platforms.SplitModel(model)
 	provider, _, _ := strings.Cut(model, "/")
 	return provider
 }
@@ -87,6 +88,21 @@ func modelProvider(model string) string {
 //     request fails visibly.
 //
 // Soft-fails: a lookup error never blocks the prompt.
+// sessionModel resolves the model a turn runs on and strips its platform
+// prefix (platforms.SplitModel): a request naming another platform's model
+// is refused, and a project model for another platform is skipped.
+func (s *Service) sessionModel(ctx context.Context, p platforms.Platform, sessionID, requested string) (string, error) {
+	base := p.ID().Base()
+	model, err := platforms.ModelFor(base, requested)
+	if err != nil {
+		return "", validation(err.Error())
+	}
+	if model, err = platforms.ModelFor(base, s.selectModel(ctx, p, sessionID, model)); err != nil {
+		return "", nil // the project's model runs elsewhere; the session keeps its own
+	}
+	return model, nil
+}
+
 func (s *Service) selectModel(ctx context.Context, p platforms.Platform, sessionID, model string) string {
 	models, off, ok := s.projectModels(ctx, p, sessionID)
 	if !ok {

@@ -18,9 +18,10 @@ func (d *DB) SetEnabledPlatforms(enabled func() []string) {
 	}
 }
 
-// DefaultPlatform resolves the saved create default independently of model
-// selection. It is always an enabled platform when any is enabled (FR-1/2):
-// the saved choice, else OpenCode, else the first enabled platform by id.
+// DefaultPlatform is the platform a new session starts on when neither a
+// platform nor a prefixed model reference names one. It is always an enabled
+// platform when any is enabled (FR-1/2): a saved choice (no longer set from
+// the UI; the model picks the platform), else OpenCode, else the lowest id.
 func (d *DB) DefaultPlatform(ctx context.Context) (string, error) {
 	if d == nil {
 		return identity.OpenCode, nil
@@ -49,9 +50,4 @@ func PickEnabledPlatform(preferred string, enabled []string) string {
 		return identity.OpenCode
 	}
 	return slices.Min(enabled)
-}
-
-// SetDefaultPlatform saves the platform new conversations start on.
-func (d *DB) SetDefaultPlatform(ctx context.Context, platform string) error {
-	return d.SetSetting(ctx, DefaultPlatformSetting, platform)
 }

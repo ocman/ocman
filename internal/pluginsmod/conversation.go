@@ -157,6 +157,9 @@ func (m *Module) startConversation(ctx context.Context, pluginID string, config 
 // it the prompt. Split out from startConversation so every way of failing
 // after the receipt was consumed reaches the same notice.
 func (m *Module) deliverConversationPrompt(ctx context.Context, key state.PluginConversationKey, dir string, values map[string]json.RawMessage, message plugins.ConversationMessage) error {
+	var agent, model string
+	_ = json.Unmarshal(values["agent"], &agent)
+	_ = json.Unmarshal(values["model"], &model)
 	linked, resumed, err := m.store.GetPluginConversation(ctx, key)
 	if err != nil {
 		return err
@@ -168,7 +171,7 @@ func (m *Module) deliverConversationPrompt(ctx context.Context, key state.Plugin
 				return plugins.ErrInvalidMessage
 			}
 		}
-		if linked, err = m.createConversationSession(ctx, key, dir, platform); err != nil {
+		if linked, err = m.createConversationSession(ctx, key, dir, platform, model); err != nil {
 			return err
 		}
 	}
@@ -179,9 +182,6 @@ func (m *Module) deliverConversationPrompt(ctx context.Context, key state.Plugin
 	// for the next session.idle edge otherwise, preserving arrival order. A
 	// mapped session that can no longer be sent to is set aside by the queue
 	// after repeated failures, with a queue.updated broadcast.
-	var agent, model string
-	_ = json.Unmarshal(values["agent"], &agent)
-	_ = json.Unmarshal(values["model"], &model)
 	return m.deps.Enqueue(ctx, linked.PlatformID,
 		false, platforms.SendMessageRequest{SessionID: linked.SessionID, Message: message.Text, Agent: agent, Model: model})
 }
@@ -190,7 +190,7 @@ func (m *Module) deliverConversationPrompt(ctx context.Context, key state.Plugin
 // session and claims the mapping. Losing the claim is not an error: the winner's
 // session is authoritative and this one is abandoned, so a concurrent first
 // message can never leave the conversation with two mapped sessions.
-func (m *Module) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir, requested string) (state.PluginConversationSession, error) {
+func (m *Module) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir, requested, model string) (state.PluginConversationSession, error) {
 	// The owner is this machine, explicitly. A conversation plugin's binary,
 	// provider credentials, configuration and approved project are all
 	// owner-local, and dir was just validated on this filesystem. Inferring the
@@ -199,7 +199,7 @@ func (m *Module) createConversationSession(ctx context.Context, key state.Plugin
 	// and whose permissive fallback silently degrades a disconnected remote
 	// back to the hub, running the conversation somewhere nobody approved it.
 	host := m.deps.Local()
-	platformID, base, err := m.deps.CreatePlatform(ctx, host, requested)
+	platformID, base, err := m.deps.CreatePlatform(ctx, host, requested, model)
 	if err != nil {
 		return state.PluginConversationSession{}, err
 	}

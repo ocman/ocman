@@ -21,7 +21,7 @@ export interface ModelPickerProps {
   // (true = favorite, false = unfavorite). The parent owns the
   // persistence; the picker just flips the UI via the updated
   // `modelEntries` it receives on re-render.
-  onToggleFavorite?: (provider: string, model: string, nextFavorite: boolean) => void;
+  onToggleFavorite?: (provider: string, model: string, nextFavorite: boolean, platform?: string) => void;
   onClose: () => void;
   onBack?: () => void;
 }
@@ -39,7 +39,7 @@ export function ModelPicker({
   onClose,
   onBack,
 }: ModelPickerProps) {
-  const { rich: useRich, entries } = useMemo(
+  const { rich: useRich, multiPlatform, entries } = useMemo(
     () => buildModelEntries(models, modelEntries, currentModel),
     [modelEntries, models, currentModel],
   );
@@ -69,7 +69,10 @@ export function ModelPicker({
           <ModelLabel model={e.value}>{e.modelName}</ModelLabel>
           <ModelBadges entry={e} rich={useRich} />
         </span>
-        <span className="oc-cmd-meta">{e.providerName || e.provider || ''}</span>
+        <span className="oc-cmd-meta">
+          {e.providerName || e.provider || ''}
+          {multiPlatform && e.platformName && <span className="oc-model-picker-badge oc-model-picker-badge--platform" data-testid="model-platform-badge">{e.platformName}</span>}
+        </span>
       </div>
       {onToggleFavorite && e.provider && (
         <button
@@ -81,7 +84,7 @@ export function ModelPicker({
           // model and close the picker.
           onClick={(ev) => {
             ev.stopPropagation();
-            onToggleFavorite(e.provider, e.model, !e.isFavorite);
+            onToggleFavorite(e.provider, e.model, !e.isFavorite, e.platform || undefined);
           }}
         >
           <i className={e.isFavorite ? 'bi bi-star-fill' : 'bi bi-star'} />

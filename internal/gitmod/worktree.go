@@ -276,7 +276,11 @@ func (m *Module) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// Parent permission reads don't depend on the worktree; overlap them.
-	platform, base, err := m.ResolvePlatform(r, host, req.Platform, req.ParentSessionID)
+	var model string
+	if req.Send != nil {
+		model = req.Send.Model
+	}
+	platform, base, err := m.ResolvePlatform(r, host, req.Platform, model, req.ParentSessionID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

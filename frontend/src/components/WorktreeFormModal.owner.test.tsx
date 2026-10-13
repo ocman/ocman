@@ -22,19 +22,10 @@ vi.mock('../lib/api', () => ({
   },
 }));
 const askedFor: (string | undefined)[] = [];
-const platformsAskedFor: string[] = [];
 vi.mock('../lib/useCapabilities', () => ({
   useOpencodeLaunch: (remoteId?: string) => {
     askedFor.push(remoteId);
     return remoteId !== 'gone';
-  },
-  // The owner runs two platforms, so the form offers an explicit choice.
-  useMachinePlatforms: (remoteId: string) => {
-    platformsAskedFor.push(remoteId);
-    return [
-      { id: `r-${remoteId}:opencode`, displayName: 'OpenCode', available: true, capabilities: { composer: true } },
-      { id: `r-${remoteId}:claudecode`, displayName: 'Claude Code', available: true, capabilities: { composer: true } },
-    ];
   },
 }));
 const seedNewSession = vi.fn();
@@ -197,12 +188,10 @@ describe('WorktreeFormModal machine ownership', () => {
     expect(askedFor).toContain('B');
     fireEvent.change(screen.getByPlaceholderText('feature/login'), { target: { value: 'x' } });
     await waitFor(() => expect(screen.getByLabelText('Base ref')).toHaveValue('main'));
-    expect(platformsAskedFor).toContain('B');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Platform' }), { target: { value: 'r-B:claudecode' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create & launch' }));
 
     expect(await screen.findByTestId('where')).toHaveTextContent('/session/ses_b?platform=r-B%3Aopencode');
-    expect(wt.createAndLaunch).toHaveBeenCalledWith(expect.objectContaining({ projectDir: '/repo', remoteId: 'B', platform: 'r-B:claudecode' }));
+    expect(wt.createAndLaunch).toHaveBeenCalledWith(expect.objectContaining({ projectDir: '/repo', remoteId: 'B' }));
     expect(seedNewSession).toHaveBeenCalledWith('ses_b', '/.worktrees/repo/x', 'r-B:opencode', 'x', 'B');
   });
 

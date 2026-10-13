@@ -39,8 +39,12 @@ func (h stubHost) EnsureRuntime(_ context.Context, platform, dir string) (*hosts
 
 // localPlatforms resolves platforms as the server does for this machine:
 // empty means opencode, and only the listed ones are registered.
-func localPlatforms(ids ...string) (func(context.Context, hostsvc.Host, string) (string, string, error), func(string) (platforms.Platform, bool)) {
-	create := func(_ context.Context, _ hostsvc.Host, requested string) (string, string, error) {
+func localPlatforms(ids ...string) (func(context.Context, hostsvc.Host, string, string) (string, string, error), func(string) (platforms.Platform, bool)) {
+	create := func(_ context.Context, _ hostsvc.Host, requested, model string) (string, string, error) {
+		requested, err := platforms.PlatformForModel(requested, model)
+		if err != nil {
+			return "", "", err
+		}
 		if requested == "" {
 			requested = "opencode"
 		}

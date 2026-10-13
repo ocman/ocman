@@ -30,14 +30,14 @@ func (s *Server) newGitModule(g module.Guards) *gitmod.Module {
 
 // worktreePlatform resolves a worktree session's platform. /wt from a
 // session splits onto the parent's platform, not the default.
-func (s *Server) worktreePlatform(r *http.Request, host hostsvc.Host, requested, parentSessionID string) (string, string, error) {
+func (s *Server) worktreePlatform(r *http.Request, host hostsvc.Host, requested, model, parentSessionID string) (string, string, error) {
 	if requested == "" {
 		requested = platformHint(r)
 	}
-	if requested == "" && parentSessionID != "" && s.registry != nil {
+	if requested == "" && model == "" && parentSessionID != "" && s.registry != nil {
 		if parent, ok := s.registry.PlatformForSession(r.Context(), parentSessionID); ok {
 			requested = string(parent.ID())
 		}
 	}
-	return s.createPlatform(r.Context(), host, requested)
+	return s.createPlatform(r.Context(), host, requested, model)
 }

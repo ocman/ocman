@@ -1405,6 +1405,10 @@ export interface SlashCommand {
 // - isProviderDefault: OpenCode's default for this provider
 // - isAvailable: provider is in /provider's `connected` set (user has it set up)
 export interface SessionModelEntry {
+  // Base platform the model runs on, set when several platforms' models are
+  // listed together (a new conversation); the value sent is qualified with it.
+  platform?: string;
+  platformName?: string;
   provider: string;
   providerName?: string;
   model: string;

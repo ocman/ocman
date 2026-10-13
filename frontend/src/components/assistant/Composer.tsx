@@ -20,7 +20,6 @@ import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinComman
 import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
 import type { ComposerProps } from './composerTypes';
 import { ComposerMachineSelector } from './ComposerMachineSelector';
-import { ComposerPlatformSelector } from './ComposerPlatformSelector';
 import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import { InlineAlert } from '../InlineAlert';
 
@@ -37,7 +36,7 @@ export function Composer({
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
   worktreesSupported, worktrees, permissionControl, composerRef, target, onTargetChange,
-  remoteId, onMachineChange, onPlatformChange,
+  remoteId, onMachineChange,
 }: ComposerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -374,7 +373,6 @@ export function Composer({
                 }
               }}
             />
-            {onPlatformChange && <ComposerPlatformSelector remoteId={remoteId} platform={platform} disabled={selectorDisabled} onSelect={onPlatformChange} />}
           </>)}
           sessionId={sessionId} disabled={disabled} targetDisabled={uiDisabled} target={target} onTargetChange={onTargetChange} isRunning={isRunning} effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded}
           agents={agents} tokensPerSecond={tokensPerSecond} onAbort={onAbort} tokenStats={tokenStats} estimatedCost={estimatedCost}

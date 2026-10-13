@@ -1282,3 +1282,19 @@ func TestCreateDefaultsToRemotePlatform(t *testing.T) {
 		t.Fatalf("local routine = %+v, %v", local, err)
 	}
 }
+
+// A routine creating sessions runs on its model's platform; a model that
+// contradicts an explicit platform is refused.
+func TestRoutinePlatformFollowsModel(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.Platform, input.Model = "", "claudecode:anthropic/sonnet"
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil || routine.Platform != "claudecode" {
+		t.Fatalf("routine = %+v, %v", routine, err)
+	}
+	input.Platform = "opencode"
+	if _, err := h.svc.Create(t.Context(), input); !errors.Is(err, ErrValidation) {
+		t.Fatalf("mismatch = %v", err)
+	}
+}

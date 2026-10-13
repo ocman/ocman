@@ -149,11 +149,11 @@ func TestCreatePlatformDefaultFollowsRemote(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{id: "opencode"})
 	reg.Register(&fakePlatform{id: "r-box:claudecode"})
-	id, base, err := srv.createPlatform(t.Context(), &createPathHost{owner: "box"}, "")
+	id, base, err := srv.createPlatform(t.Context(), &createPathHost{owner: "box"}, "", "")
 	if err != nil || id != "r-box:claudecode" || base != "claudecode" {
 		t.Fatalf("remote default = %q %q %v", id, base, err)
 	}
-	if id, _, err := srv.createPlatform(t.Context(), &createPathHost{}, ""); err != nil || id != "opencode" {
+	if id, _, err := srv.createPlatform(t.Context(), &createPathHost{}, "", ""); err != nil || id != "opencode" {
 		t.Fatalf("local default = %q %v", id, err)
 	}
 }

@@ -248,8 +248,12 @@ utilisation.
 
 ### AD-13: Platform choice
 
-- Composer: platform selector beside the machine selector; draft survives
-  switching, as for machines.
+- Composer: no platform selector. Model references are
+  `[<platform>:]<provider>/<model>` (unprefixed = OpenCode, for stored
+  references); a new conversation lists every platform's models tagged with
+  their platform, and the picked model selects the platform. The prefix is a
+  base platform id; the machine stays a separate choice. Superseded the
+  original selector after review.
 - Factory: platform per Epic, next to the implementation model.
 - Plugin conversations: platform setting per installation next to the
   required `project`.

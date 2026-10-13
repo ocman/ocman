@@ -322,3 +322,36 @@ func TestStartSessionBroadcastsProgress(t *testing.T) {
 		t.Fatalf("progress = %v, want %s", got, want)
 	}
 }
+
+// A new conversation lists every composer platform's models on its machine,
+// each tagged with the platform it runs on, so picking a model picks the
+// platform. Another machine's platforms are left out.
+func TestPrepareSessionMergesPlatformModels(t *testing.T) {
+	srv, reg := startTestServer(t, nil)
+	catalog := func(provider, model string) func(platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+		return func(platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+			return &platforms.DirectoryCatalog{Models: &platforms.SessionModelsResponse{Models: []platforms.SessionModel{{Provider: provider, Model: model}}}}, nil
+		}
+	}
+	composer := platforms.Capabilities{Composer: true}
+	reg.Register(&fakePlatform{id: "opencode", caps: composer, directoryCatalogFn: catalog("anthropic", "claude-sonnet")})
+	reg.Register(&fakePlatform{id: "claudecode", caps: composer, directoryCatalogFn: catalog("anthropic", "sonnet")})
+	reg.Register(&fakePlatform{id: "r-box:claudecode", caps: composer, directoryCatalogFn: catalog("anthropic", "remote")})
+	reg.Register(&fakePlatform{id: "browse-only", directoryCatalogFn: catalog("x", "y")})
+	w := httptest.NewRecorder()
+	srv.handlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare",
+		strings.NewReader(`{"platform":"opencode","directory":"/repo"}`)))
+	var resp struct {
+		Models platforms.SessionModelsResponse `json:"models"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("prepare = %d %s", w.Code, w.Body.String())
+	}
+	var got []string
+	for _, m := range resp.Models.Models {
+		got = append(got, platforms.QualifyModel(platforms.ID(m.Platform), m.Provider+"/"+m.Model)+"|"+m.PlatformName)
+	}
+	if strings.Join(got, ",") != "anthropic/claude-sonnet|OpenCode,claudecode:anthropic/sonnet|Claude Code" {
+		t.Fatalf("models = %v", got)
+	}
+}

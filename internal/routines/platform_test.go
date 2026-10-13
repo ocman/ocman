@@ -32,9 +32,8 @@ func TestRoutinePlatformIsSavedAndDispatched(t *testing.T) {
 			host := &routineRuntimeHost{testHost: h.host}
 			h.svc.router = hostsvc.NewRouter(host)
 			input := validInput()
-			input.Model = "anthropic/claude" // must never decide the platform
 			if explicit {
-				input.Platform = "fake-provider"
+				input.Platform, input.Model = "fake-provider", "fake-provider:anthropic/claude"
 			} else if err := h.db.SetSetting(t.Context(), state.DefaultPlatformSetting, "fake-provider"); err != nil {
 				t.Fatal(err)
 			}

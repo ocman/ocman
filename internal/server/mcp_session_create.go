@@ -17,7 +17,11 @@ import (
 // CreateSession uses the same defaults and owner-local launch paths as the
 // new-conversation composer. Explicit options win over defaults.
 func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.CreateSessionRequest) (internalmcp.CreatedSession, error) {
-	platformID, dir := in.Platform, in.Directory
+	platformID, err := platforms.PlatformForModel(in.Platform, in.Model)
+	if err != nil {
+		return internalmcp.CreatedSession{}, fmt.Errorf("%w: %s", internalmcp.ErrInvalidSessionCreate, err.Error())
+	}
+	dir := in.Directory
 	if dir == "" || (platformID == "" && in.SessionID != "") {
 		detail, err := s.GetSession(ctx, in.Platform, in.SessionID, 0)
 		if err != nil {
@@ -47,7 +51,10 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		return internalmcp.CreatedSession{}, fmt.Errorf("%w: remote %s is not connected", internalmcp.ErrInvalidSessionCreate, owner)
 	}
 	if in.Model == "" {
-		in.Model = s.server.projectDefaultModel(ctx, dir)
+		// The project default only applies when it runs on this platform.
+		if def := s.server.projectDefaultModel(ctx, dir); platforms.ModelPlatform(def) == platforms.ID(base) {
+			in.Model = def
+		}
 	}
 	if in.Agent == "" && s.server.stateDB != nil {
 		var err error

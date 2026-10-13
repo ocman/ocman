@@ -94,7 +94,7 @@ func newHarness(guards module.Guards) *harness {
 			return h.host, true
 		},
 		ForDir: func(string) hostsvc.Host { return h.host },
-		ResolvePlatform: func(*http.Request, hostsvc.Host, string, string) (string, string, error) {
+		ResolvePlatform: func(*http.Request, hostsvc.Host, string, string, string) (string, string, error) {
 			return "r-rem1:opencode", "opencode", nil
 		},
 		InheritPermissions: func(_ *http.Request, _, parent string) func(string) (int, string) {

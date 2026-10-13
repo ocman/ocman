@@ -208,3 +208,21 @@ func TestCreatedSessionSkipsDirectoryLookupOnFirstSend(t *testing.T) {
 		t.Fatalf("lookups = %d, model = %q", p.lookups, p.sent[0].Model)
 	}
 }
+
+// A model reference carries its platform: the session's own prefix is
+// stripped, another platform's is refused, and a project model for another
+// platform leaves the session on its own default.
+func TestSessionModelPlatformPrefix(t *testing.T) {
+	ctx := context.Background()
+	svc, oc := newProjectModelService(map[string][]string{"/repo": {"claudecode:anthropic/sonnet"}})
+	if m, err := svc.sessionModel(ctx, oc, "s", ""); err != nil || m != "" {
+		t.Fatalf("foreign project model = %q %v", m, err)
+	}
+	if _, err := svc.sessionModel(ctx, oc, "s", "claudecode:anthropic/sonnet"); err == nil {
+		t.Fatal("foreign prefix accepted")
+	}
+	oc.id = "r-box:claudecode"
+	if m, err := svc.sessionModel(ctx, oc, "s", "claudecode:anthropic/sonnet"); err != nil || m != "anthropic/sonnet" {
+		t.Fatalf("own prefix = %q %v", m, err)
+	}
+}

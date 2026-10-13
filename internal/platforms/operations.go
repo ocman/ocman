@@ -245,6 +245,11 @@ type SlashCommandEntry struct {
 
 // SessionModel represents one selectable model for a session.
 type SessionModel struct {
+	// Platform is the base platform the model runs on, set where models of
+	// several platforms are listed together (a new conversation's catalog);
+	// the reference to send is QualifyModel(Platform, Provider/Model).
+	Platform          string   `json:"platform,omitempty"`
+	PlatformName      string   `json:"platformName,omitempty"`
 	Provider          string   `json:"provider"`
 	ProviderName      string   `json:"providerName,omitempty"`
 	Model             string   `json:"model"`

@@ -102,14 +102,6 @@ export const SETTINGS = {
     keywords: 'speech tts rate',
     requires: 'Shown only in browsers that support speech playback.',
   },
-  'default-platform': {
-    group: 'sessions',
-    title: 'Default platform for new conversations',
-    description: 'The coding agent a new conversation starts on when you have not picked one in the composer.',
-    example: 'Choose Claude Code to start new conversations with the claude CLI.',
-    keywords: 'platform agent opencode claude composer',
-    requires: 'Shown when more than one platform is enabled.',
-  },
   'worktree-inherit-permissions': {
     group: 'sessions',
     title: 'Worktree sessions inherit parent permissions',

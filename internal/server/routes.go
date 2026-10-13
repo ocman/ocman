@@ -81,7 +81,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Master toggle for public session sharing (on by default).
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
-	mux.HandleFunc("/api/settings/default-platform", s.settingsHandler(s.requireAuth(s.handleDefaultPlatform)))
 	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.settingsHandler(s.requireAuth(s.handleWorktreeInheritPermissions)))
 	mux.HandleFunc("/api/settings/auto-archive", s.settingsHandler(s.requireAuth(s.handleAutoArchiveSettings)))
 	mux.HandleFunc("/api/settings/archive-resurface", s.settingsHandler(s.requireAuth(s.handleArchiveResurface)))

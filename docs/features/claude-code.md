@@ -36,14 +36,16 @@ reads, stores, copies or refreshes your Claude credentials.
    its database, and never runs or looks for it. OpenCode-only features are
    hidden: Settings → Maintenance, the reviewer model, the OpenCode MCP config
    prompt and `/restart-opencode`.
-3. Pick the platform beside the machine selector when starting a new
-   conversation. Settings sets the default platform; OpenCode stays the default
-   when it is enabled, and otherwise the default is a platform the machine runs.
-   The worktree form, routines and plugin conversations (the `platform` setting)
-   offer the same choice when a machine runs more than one platform; `/wt` from
-   a session, PR/Issue launches and MCP `sessions create` from a session use
-   that session's platform. Project pickers list directories from both
-   platforms.
+3. Pick a model when starting a new conversation: the model list holds every
+   platform's models on that machine, each tagged with its platform, and the
+   model you pick decides the platform. A model reference names its platform as
+   a prefix, `claudecode:anthropic/sonnet`; an unprefixed `provider/model` is
+   OpenCode, so existing references keep working. Without a model the
+   conversation starts on OpenCode when it is enabled, otherwise on a platform
+   the machine runs. Routines, Factory models, plugin conversations (`model`)
+   and MCP `sessions create` (`model`) take the same references; `/wt` from a
+   session, PR/Issue launches and MCP `sessions create` from a session use that
+   session's platform. Project pickers list directories from both platforms.
 
 Ocman reads transcripts from `~/.claude/projects`, or from
 `$CLAUDE_CONFIG_DIR/projects` when ocman inherits that variable. Sessions ocman

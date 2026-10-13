@@ -145,8 +145,6 @@ const rows: Array<[string, () => Promise<unknown>, string, string, unknown?]> = 
   ['setSharingEnabled', () => api.setSharingEnabled(true), 'POST', '/api/settings/sharing', { enabled: true }],
   ['getWebhookRelay', () => api.getWebhookRelay(), 'GET', '/api/settings/webhook-relay'],
   ['setWebhookRelay', () => api.setWebhookRelay({ relayUrl: 'u' }), 'POST', '/api/settings/webhook-relay', { relayUrl: 'u' }],
-  ['getDefaultPlatform', () => api.getDefaultPlatform(), 'GET', '/api/settings/default-platform'],
-  ['setDefaultPlatform', () => api.setDefaultPlatform('claudecode'), 'POST', '/api/settings/default-platform', { platform: 'claudecode' }],
   ['getModelFallthroughSettings', () => api.getModelFallthroughSettings(), 'GET', '/api/settings/model-fallthrough'],
   ['setModelFallthroughSettings', () => api.setModelFallthroughSettings({ enabled: true } as never), 'POST', '/api/settings/model-fallthrough', { enabled: true }],
   ['getArchiveResurface', () => api.getArchiveResurface(), 'GET', '/api/settings/archive-resurface'],

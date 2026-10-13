@@ -19,7 +19,8 @@ import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSetti
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
-import { useOpencodeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
+import { useMachinePlatforms, useOpencodeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
+import { basePlatform, modelRefPlatform, qualifyModelRef } from '../../lib/modelRef';
 import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { randomId } from '../../lib/randomId';
@@ -82,7 +83,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   }, [openedWhilePending, draftStart?.error]);
   const [saved] = useState(() => useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId));
   const remoteId = params.remoteId || 'local';
-  const savedSelections = saved?.remoteId === remoteId && saved?.platform === params.platform ? saved : undefined;
+  const savedSelections = saved?.remoteId === remoteId ? saved : undefined;
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
   const worktreesCapable = useOpencodeLaunch(remoteId);
@@ -136,9 +137,11 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const [selectedModel, setSelectedModel] = useState(savedSelections?.model || '');
   const [selectedAgent, setSelectedAgent] = useState(savedSelections?.agent || '');
   const [selectedReasoning, setSelectedReasoning] = useState(savedSelections?.reasoning || '');
-  const [selectionKey, setSelectionKey] = useState(catalogKey);
-  if (selectionKey !== catalogKey) {
-    setSelectionKey(catalogKey);
+  // A model pick re-points the platform, so selections survive a platform change.
+  const machineKey = JSON.stringify([remoteId, directory]);
+  const [selectionKey, setSelectionKey] = useState(machineKey);
+  if (selectionKey !== machineKey) {
+    setSelectionKey(machineKey);
     setSelectedModel(''); setSelectedAgent(''); setSelectedReasoning('');
   }
   const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
@@ -174,29 +177,51 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
 
   const models = useMemo(() => {
     const entries = catalog?.models.models ?? [];
-    return Array.from(new Set([activeModel, ...entries.map((m) => formatModelRef(m.provider, m.model))].filter(Boolean)));
+    return Array.from(new Set([activeModel, ...entries.map((m) => qualifyModelRef(m.platform, formatModelRef(m.provider, m.model)))].filter(Boolean)));
   }, [activeModel, catalog]);
   const agents = useMemo(() => catalog?.agents ?? [], [catalog]);
 
+  // The model's platform is the conversation's: picking another platform's
+  // model re-points the route, which loads that platform's agents and commands.
+  const machinePlatforms = useMachinePlatforms(remoteId);
+  const platformForModel = useCallback((model: string) => {
+    const base = modelRefPlatform(model);
+    return machinePlatforms.find((p) => basePlatform(p.id) === base)?.id;
+  }, [machinePlatforms]);
+  // Re-points the route when model runs on another platform; reports whether it did.
+  const repoint = useCallback((model: string) => {
+    const next = platformForModel(model);
+    if (!next || !platform || basePlatform(next) === basePlatform(platform)) return false;
+    navigate(newSessionPath({ directory, remoteId, platform: next, title, draftId }));
+    return true;
+  }, [directory, remoteId, title, draftId, platform, platformForModel, navigate]);
+  // A default model of another platform (the project's or the last pick)
+  // opens the conversation on that platform.
+  useEffect(() => {
+    if (catalogReady && !selectedModel && activeModel) repoint(activeModel);
+  }, [catalogReady, selectedModel, activeModel, repoint]);
   const handleModelChange = useCallback((model: string) => {
     setSelectedModel(model);
     setSelectedReasoning('');
     saveProjectModel(directory, model);
-  }, [directory]);
+    if (repoint(model)) setSelectedAgent(''); // agents belong to a platform
+  }, [directory, repoint]);
   const handleAgentChange = useCallback((agent: string) => {
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) { setSelectedModel(agentModel); setSelectedReasoning(''); }
   }, [agents]);
-  const handleToggleFavorite = useCallback(async (provider: string, model: string, next: boolean) => {
-    if (!platform) return;
+  // Favorites belong to the platform the model runs on.
+  const handleToggleFavorite = useCallback(async (provider: string, model: string, next: boolean, modelPlatform?: string) => {
+    const owner = (modelPlatform && platformForModel(`${modelPlatform}:${provider}/${model}`)) || platform;
+    if (!owner) return;
     try {
-      await (next ? api.addFavorite(platform, provider, model) : api.removeFavorite(platform, provider, model));
+      await (next ? api.addFavorite(owner, provider, model) : api.removeFavorite(owner, provider, model));
       setCatalogAttempt((value) => value + 1);
     } catch (err) {
       remoteLog.error('Failed to toggle favorite', err);
     }
-  }, [platform]);
+  }, [platform, platformForModel]);
 
   const canWorktree = worktreesCapable && (eligibility.resolved?.canCreate ?? false);
   const effectiveTarget = resolveTarget(target, canWorktree, eligibility.resolved?.worktrees || []);
@@ -255,7 +280,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       const startTarget = resolveTarget(targetPick || ready.catalog.defaults?.worktree || 'worktree', ready.canWorktree, ready.worktrees);
       const res = await api.startSession({
         directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,
-        platform: ready.platform, remoteId, title, prompt: text, send, startId,
+        // The model picks the platform; a pick racing its route change still lands there.
+        platform: (model && platformForModel(model)) || ready.platform, remoteId, title, prompt: text, send, startId,
         worktree: startTarget === 'worktree',
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
@@ -290,7 +316,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId]);
+  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     rememberPendingDraftPayload(draftId, images, files);
@@ -336,10 +362,6 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       setTarget('current');
     }
     navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title, draftId }));
-  };
-
-  const onPlatformChange = (next: string) => {
-    navigate(newSessionPath({ directory, remoteId, platform: next, title, draftId }));
   };
 
   return (
@@ -391,7 +413,6 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
           onTargetChange={setTarget}
           remoteId={remoteId}
           onMachineChange={onMachineChange}
-          onPlatformChange={onPlatformChange}
           draftKey={draftId}
         />
       </div>

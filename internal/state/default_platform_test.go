@@ -52,7 +52,7 @@ func TestDefaultPlatformIsAlwaysEnabled(t *testing.T) {
 		{"gone", nil, "gone"},                                            // nothing known: unfiltered
 	} {
 		enabled = tc.enabled
-		if err := db.SetDefaultPlatform(t.Context(), tc.saved); err != nil {
+		if err := db.SetSetting(t.Context(), DefaultPlatformSetting, tc.saved); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := db.DefaultPlatform(t.Context()); err != nil || got != tc.want {

@@ -5,14 +5,20 @@ import (
 	"fmt"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// createPlatform resolves a default and qualifies it with the authoritative owner.
-func (s *Server) createPlatform(ctx context.Context, host hostsvc.Host, requested string) (string, string, error) {
+// createPlatform picks a new session's platform (requested, else the model
+// reference's prefix, else the owner's default) and qualifies it with the
+// authoritative owner.
+func (s *Server) createPlatform(ctx context.Context, host hostsvc.Host, requested, model string) (string, string, error) {
+	requested, err := platforms.PlatformForModel(requested, model)
+	if err != nil {
+		return "", "", err
+	}
 	if requested == "" {
-		var err error
 		requested, err = s.defaultPlatformFor(ctx, host)
 		if err != nil {
 			return "", "", err

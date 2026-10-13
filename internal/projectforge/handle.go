@@ -87,7 +87,7 @@ func (m *Module) handleHandle(w http.ResponseWriter, r *http.Request) {
 		log.WithError(err).Warn("handle: render prompt; falling back to minimal")
 		prompt = markUntrusted(fallbackPrompt(req, rem, vars))
 	}
-	platform, _, err := m.CreatePlatform(r.Context(), host, req.Platform)
+	platform, _, err := m.CreatePlatform(r.Context(), host, req.Platform, "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return

@@ -64,7 +64,7 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 	cmd.Env = append(os.Environ(), "OCMAN_TEST_NO_OPENCODE=1", "OCMAN_TEST_EXEC_MARKER="+marker,
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir,
 		"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
-		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "WAILS_BINDINGS=")
+		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("startup: %v\n%s", err, out)

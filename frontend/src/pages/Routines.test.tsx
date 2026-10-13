@@ -13,7 +13,7 @@ import { useMachinePlatforms } from '../lib/useCapabilities';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: vi.fn(() => []) }));
-vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn(), stats: vi.fn() }, webhookInboxes: { list: vi.fn(), deliveries: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
+vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), prepareSession: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn(), stats: vi.fn() }, webhookInboxes: { list: vi.fn(), deliveries: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
 
 const routine: Routine = {
   id: 'routine-1', name: 'Morning check', prompt: 'Inspect the build', directory: '/repo', remoteId: 'local',
@@ -104,6 +104,8 @@ describe('Routines', () => {
     vi.mocked(api.sessions).mockResolvedValue([{ id: 'catalog', title: 'Catalog source', directory: '/repo', remoteId: 'local', archived: false } as never]);
     vi.mocked(api.agents).mockResolvedValue([{ name: 'build' }, { name: 'plan' }]);
     vi.mocked(api.sessionModels).mockResolvedValue({ hasProviders: true, models: [{ provider: 'openai', model: 'gpt-5.4' }, { provider: 'anthropic', model: 'claude-sonnet-4' }] });
+    vi.mocked(api.prepareSession).mockResolvedValue({ platform: 'opencode', agents: [{ name: 'build' }, { name: 'plan' }], commands: [],
+      models: { hasProviders: true, models: [{ provider: 'openai', model: 'gpt-5.4' }, { provider: 'anthropic', model: 'claude-sonnet-4' }] } } as never);
     vi.mocked(api.routines.list).mockResolvedValue([routine]);
     vi.mocked(api.routines.history).mockResolvedValue([{ id: 'run-1', routineId: routine.id, routineUpdatedAt: routine.updatedAt, routineName: routine.name, prompt: routine.prompt, directory: '/repo', remoteId: 'local', agent: routine.agent, model: routine.model, sessionMode: 'new', targetSessionId: '', trigger: 'manual', platform: 'opencode', sessionId: 'session-1', state: 'failure', error: 'agent stopped', occurrenceAt: 1_000, createdAt: 1_000 }]);
     vi.mocked(api.routines.create).mockResolvedValue(routine);
@@ -254,13 +256,11 @@ describe('Routines', () => {
     })));
   }, 15_000);
 
-  it('sends the platform chosen for a new-session routine', async () => {
+  it('runs a new-session routine on its model’s platform, with that platform’s agents', async () => {
     const entry = (id: string, displayName: string) => ({ id, displayName, available: true, capabilities: { composer: true } }) as PlatformCapabilityEntry;
     vi.mocked(useMachinePlatforms).mockReturnValue([entry('opencode', 'OpenCode'), entry('claudecode', 'Claude Code')]);
-    vi.mocked(api.sessions).mockResolvedValue([
-      { id: 'oc', title: 'OpenCode', directory: '/repo', remoteId: 'local', platform: 'opencode', archived: false } as never,
-      { id: 'cc', title: 'Claude', directory: '/repo', remoteId: 'local', platform: 'claudecode', archived: false } as never,
-    ]);
+    vi.mocked(api.prepareSession).mockResolvedValue({ platform: 'opencode', agents: [{ name: 'build' }], commands: [],
+      models: { hasProviders: true, models: [{ platform: 'opencode', provider: 'openai', model: 'gpt-5.4' }, { platform: 'claudecode', provider: 'anthropic', model: 'sonnet' }] } } as never);
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText(routine.name);
@@ -270,11 +270,15 @@ describe('Routines', () => {
     await user.click(screen.getByRole('combobox', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: '/repo' }));
     await user.click(screen.getByText('Session and model'));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Platform' }), 'claudecode');
-    // The agent and model catalog comes from a session on that platform.
-    await waitFor(() => expect(api.sessionModels).toHaveBeenLastCalledWith('cc', 'claudecode'));
+    expect(screen.queryByRole('combobox', { name: 'Platform' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).toBeEnabled());
+    await user.click(screen.getByRole('combobox', { name: 'Model' }));
+    await user.click(await screen.findByRole('option', { name: 'claudecode:anthropic/sonnet' }));
+    // The agents come from the model's platform.
+    await waitFor(() => expect(api.prepareSession).toHaveBeenLastCalledWith({ directory: '/repo', remoteId: 'local', platform: 'claudecode' }));
     await user.click(screen.getByRole('button', { name: 'Create routine' }));
-    await waitFor(() => expect(api.routines.create).toHaveBeenCalledWith(expect.objectContaining({ platform: 'claudecode', sessionMode: 'new' })));
+    await waitFor(() => expect(api.routines.create).toHaveBeenCalledWith(expect.objectContaining({ model: 'claudecode:anthropic/sonnet', sessionMode: 'new' })));
+    expect(vi.mocked(api.routines.create).mock.calls[0][0]).not.toHaveProperty('platform');
     vi.mocked(useMachinePlatforms).mockReturnValue([]);
   }, 15_000);
 
@@ -306,7 +310,7 @@ describe('Routines', () => {
   }, 15_000);
 
   it.each([false, true])('filters disconnected models only with live provider data: %s', async (hasProviders) => {
-    vi.mocked(api.sessionModels).mockResolvedValue({ hasProviders, models: [{ provider: 'p', model: 'sol', isAvailable: false }] });
+    vi.mocked(api.prepareSession).mockResolvedValue({ agents: [], commands: [], models: { hasProviders, models: [{ provider: 'p', model: 'sol', isAvailable: false }] } } as never);
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'New routine' }));

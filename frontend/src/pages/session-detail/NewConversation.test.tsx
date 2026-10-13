@@ -45,6 +45,7 @@ vi.mock('../../lib/uiStore', () => ({
 vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => mocks.caps,
+  useMachinePlatforms: (remoteId: string) => ['opencode', 'claudecode'].map((base) => ({ id: remoteId === 'local' ? base : `r-${remoteId}:${base}` })),
 }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn(), warn: vi.fn() } }));
 let composer: ComposerProps;
@@ -616,49 +617,50 @@ describe('NewConversation', () => {
     expect(mocks.start).not.toHaveBeenCalled();
   });
 
-  it('switches platforms by re-pointing the route on the same machine', async () => {
+  it('re-points the route to the platform of a picked model, keeping the selection', async () => {
     mount();
     await waitFor(() => expect(composer.disabled).toBe(false));
-    act(() => composer.onPlatformChange!('claudecode'));
-    expect(navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo&remoteId=machine&platform=claudecode&draftId=new');
+    act(() => composer.onModelChange!('claudecode:anthropic/sonnet'));
+    expect(navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo&remoteId=machine&platform=r-machine%3Aclaudecode&draftId=new');
+    expect(composer.selectedModel).toBe('claudecode:anthropic/sonnet');
     expect(mocks.start).not.toHaveBeenCalled();
   });
 
-  it('preserves an intentional supported custom Claude model beyond static aliases', async () => {
-    mocks.prepare.mockResolvedValue({ platform: 'claudecode', defaultModel: 'anthropic/sonnet', defaultAgent: '', agents: [], commands: [],
-      models: { hasProviders: true, models: [{ provider: 'anthropic', model: 'sonnet' }] } });
+  it('starts on the platform of a custom model reference', async () => {
+    mocks.prepare.mockResolvedValue({ platform: 'claudecode', defaultModel: 'claudecode:anthropic/sonnet', defaultAgent: '', agents: [], commands: [],
+      models: { hasProviders: true, models: [{ platform: 'claudecode', provider: 'anthropic', model: 'sonnet' }] } });
     mount({ directory: '/repo', remoteId: 'local', platform: 'claudecode' });
     await ready();
-    act(() => composer.onModelChange!('anthropic/custom-deployment'));
-    expect(composer.selectedModel).toBe('anthropic/custom-deployment');
+    act(() => composer.onModelChange!('claudecode:anthropic/custom-deployment'));
+    expect(composer.selectedModel).toBe('claudecode:anthropic/custom-deployment');
     await act(() => composer.onSend!('custom prompt'));
-    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ send: expect.objectContaining({ model: 'anthropic/custom-deployment' }) }));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ platform: 'claudecode',
+      send: expect.objectContaining({ model: 'claudecode:anthropic/custom-deployment' }) }));
   });
 
-  it.each([['machine', 'r-machine:claudecode'], ['local', 'claudecode']])('submits the new platform’s model and agent after a switch to %s/%s, keeping the draft', async (remoteId, platform) => {
+  it.each([['machine', 'r-machine:claudecode'], ['local', 'claudecode']])('picking a %s model of another platform moves to %s with its agents, keeping the model and draft', async (remoteId, platform) => {
     const claude = {
-      platform: 'claudecode', liveConnection: true, defaultAgent: '', defaultModel: 'anthropic/haiku', agents: [{ name: 'reviewer', mode: 'subagent' }],
-      commands: [], models: { hasProviders: true, models: [{ provider: 'anthropic', model: 'haiku' }, { provider: 'anthropic', model: 'opus' }] },
+      platform: 'claudecode', liveConnection: true, defaultAgent: '', defaultModel: 'claudecode:anthropic/haiku', agents: [{ name: 'reviewer', mode: 'subagent' }],
+      commands: [], models: { hasProviders: true, models: [{ platform: 'claudecode', provider: 'anthropic', model: 'haiku' }, { platform: 'claudecode', provider: 'anthropic', model: 'opus' }] },
     };
-    const view = mount();
+    const view = mount({ directory: '/repo', remoteId, platform: remoteId === 'local' ? 'opencode' : 'r-machine:opencode' });
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
     act(() => composer.onAgentChange!('build'));
-    act(() => composer.onModelChange!('prov/big')); // remembered for /repo
+    act(() => composer.onModelChange!('claudecode:anthropic/opus'));
+    expect(navigate).toHaveBeenLastCalledWith(`/session/new?dir=%2Frepo${remoteId === 'local' ? '' : `&remoteId=${remoteId}`}&platform=${encodeURIComponent(platform)}&draftId=new`);
     saveDraft('new', 'Fix login');
-      mocks.prepare.mockResolvedValueOnce({ ...claude, platform });
-      view.rerender(<NewConversation params={{ directory: '/repo', remoteId, platform, draftId: 'new' }}
-        whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
-      await waitFor(() => expect(composer.platform).toBe(platform));
-      await waitFor(() => expect(composer.selectedModel).toBe('anthropic/haiku'));
-      expect(composer.selectedAgent).toBe('');
-      expect(composer.draftKey).toBe('new');
-      expect(getDraft('new')).toBe('Fix login');
-      mocks.start.mockClear();
-      await act(() => composer.onSend!('Fix login'));
-      expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
-        platform, remoteId, send: { message: 'Fix login', images: undefined, model: 'anthropic/haiku', agent: undefined, reasoning: undefined },
-      }));
-      saveDraft('new', 'Fix login');
+    mocks.prepare.mockResolvedValueOnce({ ...claude, platform });
+    view.rerender(<NewConversation params={{ directory: '/repo', remoteId, platform, draftId: 'new' }}
+      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    await waitFor(() => expect(composer.platform).toBe(platform));
+    expect(composer.selectedModel).toBe('claudecode:anthropic/opus');
+    expect(composer.selectedAgent).toBe('');
+    expect(getDraft('new')).toBe('Fix login');
+    mocks.start.mockClear();
+    await act(() => composer.onSend!('Fix login'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
+      platform, remoteId, send: { message: 'Fix login', images: undefined, model: 'claudecode:anthropic/opus', agent: undefined, reasoning: undefined },
+    }));
   });
 
   it('does not let an older completion unlock the current generation’s start', async () => {

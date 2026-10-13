@@ -71,7 +71,7 @@ func (m *Module) pluginProjectCatalog(ctx context.Context, input remote.PluginIn
 	// is ensured only when it is that platform. Owner-local, never remote.
 	var platform string
 	_ = json.Unmarshal(input.Values["platform"], &platform)
-	platformID, base, err := m.deps.CreatePlatform(ctx, m.deps.Local(), platform)
+	platformID, base, err := m.deps.CreatePlatform(ctx, m.deps.Local(), platform, "")
 	if err != nil {
 		return nil, err
 	}

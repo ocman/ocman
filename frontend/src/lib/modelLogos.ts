@@ -38,6 +38,7 @@ import togetherLogo from '@lobehub/icons-static-svg/icons/together-color.svg';
 import xAILogo from '@lobehub/icons-static-svg/icons/xai.svg';
 import yiLogo from '@lobehub/icons-static-svg/icons/yi-color.svg';
 import zaiLogo from '@lobehub/icons-static-svg/icons/zai.svg';
+import { splitModelRef } from './modelRef';
 
 export interface ModelLogoDefinition {
   name: string;
@@ -94,7 +95,8 @@ export const LAB_LOGOS: ModelLogoDefinition[] = [
 
 const UNKNOWN_MODEL: ModelLogoDefinition = { name: 'Unknown model', src: llmLogo, patterns: [] };
 
-export function resolveModelLogo(model: string): ModelLogoDefinition {
+export function resolveModelLogo(ref: string): ModelLogoDefinition {
+  const { model } = splitModelRef(ref);
   const slash = model.indexOf('/');
   const provider = slash >= 0 ? model.slice(0, slash) : '';
   const modelID = slash >= 0 ? model.slice(slash + 1) : model;

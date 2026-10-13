@@ -5,6 +5,7 @@ import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { agentModelRef, deriveActiveModelAndAgent } from '../../lib/sessionStatus';
 import { computeTurnStats, latestTurnModel, messageModelRef } from '../../lib/turnStats';
 import { startModels } from './startHandoffs';
+import { modelRefForSession } from '../../lib/modelRef';
 
 export interface UseComposerModelOptions {
   /** Route id — the seed is keyed on this, not on `session.id`. */
@@ -63,16 +64,19 @@ export function useComposerModel({
   const activeModel = useMemo(
     () => {
       const latestUser = messages.findLast((message) => message.data?.role === 'user');
-      return (session?.id === id && id ? startModels.get(id) : '') ||
+      // New-conversation and project picks may name their platform; this
+      // session takes only its own platform's (prefix stripped).
+      const own = (ref: string | undefined) => modelRefForSession(ref || '', session?.platform);
+      return own(session?.id === id && id ? startModels.get(id) : '') ||
         (latestUser ? messageModelRef(latestUser) : '') ||
         latestTurnModel(messages, turnStatsMap) ||
         (messages.length === 0
-          ? session?.projectDefaultModel || getProjectModel(session?.directory || '')
+          ? own(session?.projectDefaultModel) || own(getProjectModel(session?.directory || ''))
           : '') ||
         session?.defaultModel ||
         '';
     },
-    [id, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel],
+    [id, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel, session?.platform],
   );
 
   useEffect(() => {

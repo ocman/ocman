@@ -27,10 +27,6 @@ export function settingsApi(get: typeof fetchJSON, post: typeof postJSON) {
       get<{ enabled: boolean }>('/api/settings/worktree-inherit-permissions', signal),
     setWorktreeInheritPermissions: (enabled: boolean) =>
       post<{ enabled: boolean }>('/api/settings/worktree-inherit-permissions', { enabled }),
-    getDefaultPlatform: (signal?: AbortSignal) =>
-      get<{ platform: string }>('/api/settings/default-platform', signal),
-    setDefaultPlatform: (platform: string) =>
-      post<{ platform: string }>('/api/settings/default-platform', { platform }),
     getAutoArchiveSettings: (signal?: AbortSignal) =>
       get<{ enabled: boolean; ttlDays: number }>('/api/settings/auto-archive', signal),
     setAutoArchiveSettings: (settings: { enabled: boolean; ttlDays: number }) =>

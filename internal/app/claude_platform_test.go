@@ -107,10 +107,17 @@ func assertClaudeOnlyWorkflows(t *testing.T, base string, terminal platforms.Ses
 	if terminal.Session.LiveConnection {
 		t.Fatal("terminal-started session reports a live connection")
 	}
+	// Without a platform or model, a new conversation prepares on the only
+	// enabled platform.
+	resp, err := http.Post(base+"/api/sessions/prepare", "application/json", strings.NewReader(`{"directory":"/work/repo","remoteId":"local"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var def struct{ Platform string }
-	getJSON(t, base+"/api/settings/default-platform", &def)
-	if def.Platform != "claudecode" {
-		t.Fatalf("default platform = %q, want claudecode", def.Platform)
+	err = json.NewDecoder(resp.Body).Decode(&def)
+	resp.Body.Close()
+	if err != nil || def.Platform != "claudecode" {
+		t.Fatalf("default platform = %q, %v", def.Platform, err)
 	}
 	assertClaudeOnlyAnalytics(t, base)
 	var projects []db.ProjectStats
@@ -243,7 +250,7 @@ func startClaudeOcmanCmd(t *testing.T, test, dir string, env ...string) (string,
 	cmd.Env = append(os.Environ(), "OCMAN_TEST_CLAUDE_ADDR="+addr,
 		"PATH="+filepath.Join(dir, "bin")+":/usr/bin:/bin", "HOME="+dir, "CLAUDE_CONFIG_DIR=",
 		"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
-		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "WAILS_BINDINGS=", "OCMAN_TEST_MCP_ADDR=")
+		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=", "OCMAN_TEST_MCP_ADDR=")
 	cmd.Env = append(cmd.Env, env...)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -353,9 +360,9 @@ func TestClaudeComposerStart(t *testing.T) {
 		"OCMAN_FAKE_PROVIDER_PID_DIR="+filepath.Join(dir, "pids"), "FAKE_CLAUDE_STDIN="+stdinLog)
 	defer stop()
 
-	// No platform: the composer's default resolves to the only enabled one.
+	// No platform: the model reference's prefix picks Claude Code.
 	body, _ := json.Marshal(map[string]any{"directory": project, "remoteId": "local", "worktree": false,
-		"prompt": "Reply with exactly SPIKE_OK.", "send": map[string]any{"message": "Reply with exactly SPIKE_OK.", "model": "anthropic/haiku"}})
+		"prompt": "Reply with exactly SPIKE_OK.", "send": map[string]any{"message": "Reply with exactly SPIKE_OK.", "model": "claudecode:anthropic/haiku"}})
 	var started struct {
 		SessionID        string `json:"sessionId"`
 		Platform         string `json:"platform"`

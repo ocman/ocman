@@ -96,7 +96,9 @@ type newSessionTarget struct {
 
 // An explicit owner is authoritative, even when both machines share a path.
 // Older callers may omit it and retain the platform's owner (or local).
-func (t *newSessionTarget) resolvePlatform(ctx context.Context, s *Server, w http.ResponseWriter) bool {
+// model, when set, is the first prompt's model reference; its platform
+// prefix picks the platform when none is named (platforms.SplitModel).
+func (t *newSessionTarget) resolvePlatform(ctx context.Context, s *Server, w http.ResponseWriter, model string) bool {
 	if t.RemoteID == "" {
 		t.RemoteID = remoteIDForPlatform(t.Platform)
 	}
@@ -109,7 +111,7 @@ func (t *newSessionTarget) resolvePlatform(ctx context.Context, s *Server, w htt
 		return false
 	}
 	var err error
-	t.Platform, _, err = s.createPlatform(ctx, host, t.Platform)
+	t.Platform, _, err = s.createPlatform(ctx, host, t.Platform, model)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return false
@@ -140,7 +142,7 @@ func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) || !req.validate(w) {
 		return
 	}
-	if !req.resolvePlatform(r.Context(), s, w) {
+	if !req.resolvePlatform(r.Context(), s, w, "") {
 		return
 	}
 	// Opening the composer or picking a machine must not launch OpenCode:
@@ -166,6 +168,7 @@ func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
 	if catalog.Models == nil {
 		catalog.Models = &platforms.SessionModelsResponse{Models: []platforms.SessionModel{}}
 	}
+	catalog.Models.Models = s.machineModels(r.Context(), platformID, req.Directory, catalog.Models.Models)
 	if s.sessions != nil {
 		for i := range catalog.Models.Models {
 			if t := s.sessions.CooldownUntil(catalog.Models.Models[i].Provider); !t.IsZero() {
@@ -179,7 +182,7 @@ func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
 		"commands":            catalog.Commands,
 		"models":              catalog.Models,
 		"defaultAgent":        catalog.DefaultAgent,
-		"defaultModel":        catalog.DefaultModel,
+		"defaultModel":        platforms.QualifyModel(platforms.ID(platformID).Base(), catalog.DefaultModel),
 		"projectDefaultModel": s.projectDefaultModel(r.Context(), req.Directory),
 		"liveConnection":      catalog.LiveConnection,
 	})
@@ -220,7 +223,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) || !req.validate(w) {
 		return
 	}
-	if !req.resolvePlatform(r.Context(), s, w) {
+	var model string
+	if req.Send != nil {
+		model = req.Send.Model
+	}
+	if !req.resolvePlatform(r.Context(), s, w, model) {
 		return
 	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
@@ -357,4 +364,34 @@ func remoteIDForPlatform(platform string) string {
 		return remoteID
 	}
 	return "local"
+}
+
+// machineModels lists a new conversation's models across every platform its
+// machine runs that can drive a composer, each tagged with its platform, so
+// picking a model picks the platform (platforms.QualifyModel). own is the
+// selected platform's list, which is already loaded.
+func (s *Server) machineModels(ctx context.Context, selected, directory string, own []platforms.SessionModel) []platforms.SessionModel {
+	tag := func(id platforms.ID, models []platforms.SessionModel) []platforms.SessionModel {
+		base := id.Base()
+		for i := range models {
+			models[i].Platform, models[i].PlatformName = string(base), platforms.DisplayName(base)
+		}
+		return models
+	}
+	out := tag(platforms.ID(selected), own)
+	if s.registry == nil {
+		return out
+	}
+	for _, p := range s.registry.Platforms() {
+		if p.ID() == platforms.ID(selected) || remoteIDForPlatform(string(p.ID())) != remoteIDForPlatform(selected) ||
+			!p.Capabilities().Composer || !p.Available(ctx) {
+			continue
+		}
+		catalog, err := p.DirectoryCatalog(ctx, platforms.DirectoryCatalogRequest{Directory: directory})
+		if err != nil || catalog == nil || catalog.Models == nil {
+			continue // another platform's catalog is optional
+		}
+		out = append(out, tag(p.ID(), catalog.Models.Models)...)
+	}
+	return out
 }

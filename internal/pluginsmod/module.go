@@ -44,9 +44,9 @@ type Deps struct {
 	// Local is this machine's host. Conversation sessions always run here,
 	// never on an owner inferred from the directory.
 	Local func() hostsvc.Host
-	// CreatePlatform resolves a requested (or the default) platform for an
-	// owner into its compound ID and base platform.
-	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested string) (id, base string, err error)
+	// CreatePlatform resolves a requested platform, else the model
+	// reference's, else the owner's default, into its compound ID and base.
+	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested, model string) (id, base string, err error)
 	// Platform looks up a registered adapter.
 	Platform func(id string) (platforms.Platform, bool)
 	Sessions Sessions

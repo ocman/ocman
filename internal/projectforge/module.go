@@ -47,9 +47,9 @@ type Deps struct {
 	ResolveForge func(forge.Remote) (forge.Forge, bool)
 	// KnowsForgejo reports whether the hub has a Forgejo client for host.
 	KnowsForgejo func(host string) bool
-	// CreatePlatform resolves a requested (or the default) platform for an
-	// owner into its compound ID and base platform.
-	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested string) (id, base string, err error)
+	// CreatePlatform resolves a requested platform, else the model
+	// reference's, else the owner's default, into its compound ID and base.
+	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested, model string) (id, base string, err error)
 	// Registered reports whether a platform adapter is registered.
 	Registered func(platformID string) bool
 	Sessions   Sessions

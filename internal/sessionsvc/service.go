@@ -142,7 +142,9 @@ func (s *Service) SendMessage(ctx context.Context, platformID string, req platfo
 	if err != nil {
 		return err
 	}
-	req.Model = s.selectModel(ctx, p, req.SessionID, req.Model)
+	if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {
+		return err
+	}
 	return p.SendMessage(ctx, req)
 }
 
@@ -155,7 +157,9 @@ func (s *Service) ExecuteCommand(ctx context.Context, platformID string, req pla
 	if err != nil {
 		return err
 	}
-	req.Model = s.selectModel(ctx, p, req.SessionID, req.Model)
+	if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {
+		return err
+	}
 	return p.ExecuteCommand(ctx, req)
 }
 

@@ -7,7 +7,6 @@ import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { Modal } from './Modal';
-import { PlatformSelectField } from './PlatformSelectField';
 import { ModalHeader } from './ModalHeader';
 import { ModalFooter } from './ModalFooter';
 import { Button, TextField } from './Control';
@@ -120,7 +119,6 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   const [newBranch, setNewBranch] = useState(true);
   const [baseRef, setBaseRef] = useState('');
   // Empty = the owner's default; a /wt from a session uses the session's.
-  const [platform, setPlatform] = useState('');
   const [refError, setRefError] = useState<string | null>(null);
   const [refRevision, setRefRevision] = useState(0);
   const [stage, setStage] = useState<SubmitStage>('idle');
@@ -216,7 +214,6 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
         baseRef: newBranch ? baseRef.trim() : undefined,
         parentSessionId,
         remoteId: owner,
-        ...(platform ? { platform } : {}),
       });
     } catch (err) {
       setStage('idle');
@@ -274,8 +271,6 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
               }} />
           </div>
 
-          {!parentSessionId && <PlatformSelectField className={styles.field} label={<span>Platform</span>}
-            remoteId={owner} value={platform} onChange={setPlatform} disabled={submitting} />}
 
           <label className={styles.field}>
             <span>Branch</span>

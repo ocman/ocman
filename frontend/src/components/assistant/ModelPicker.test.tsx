@@ -58,3 +58,28 @@ describe('ModelPicker cooldown', () => {
     expect(screen.getByTitle('Provider is not connected on this session\'s machine. Connect it or choose another provider.')).toBeInTheDocument();
   });
 });
+
+describe('ModelPicker platforms', () => {
+  beforeAll(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it('badges each row with its platform only when the list spans platforms, and selects the qualified model', () => {
+    const onSelect = vi.fn();
+    const onToggleFavorite = vi.fn();
+    const mixed: SessionModelEntry[] = [
+      { platform: 'opencode', platformName: 'OpenCode', provider: 'anthropic', providerName: 'Anthropic', model: 'claude-sonnet', isAvailable: true },
+      { platform: 'claudecode', platformName: 'Claude Code', provider: 'anthropic', providerName: 'Anthropic', model: 'sonnet', isAvailable: true },
+    ];
+    const view = render(<ModelPicker open models={[]} modelEntries={mixed} onSelect={onSelect} onToggleFavorite={onToggleFavorite} onClose={vi.fn()} />);
+    expect(screen.getAllByTestId('model-platform-badge').map((b) => b.textContent)).toEqual(['OpenCode', 'Claude Code']);
+    const claude = screen.getAllByRole('option').find((o) => o.textContent?.includes('Claude Code'))!;
+    fireEvent.click(claude.querySelector('button')!);
+    expect(onToggleFavorite).toHaveBeenCalledWith('anthropic', 'sonnet', true, 'claudecode');
+    fireEvent.click(claude);
+    expect(onSelect).toHaveBeenCalledWith('claudecode:anthropic/sonnet');
+    view.unmount();
+    render(<ModelPicker open models={[]} modelEntries={[mixed[1]]} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByTestId('model-platform-badge')).not.toBeInTheDocument();
+  });
+});

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { api, type Routine } from '../lib/api';
 import { RoutineEditorForm } from './RoutineEditorDrawer';
 
-vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { create: vi.fn(), update: vi.fn() } } }));
+vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), prepareSession: vi.fn(), routines: { create: vi.fn(), update: vi.fn() } } }));
 vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: () => [] }));
 
 const routine: Routine = {
@@ -19,6 +19,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.projects).mockResolvedValue([]);
   vi.mocked(api.sessions).mockResolvedValue([]);
+  vi.mocked(api.prepareSession).mockResolvedValue({ agents: [], commands: [], models: { models: [] } } as never);
   vi.mocked(api.routines.update).mockResolvedValue(routine);
 });
 

@@ -127,7 +127,7 @@ func TestCreatePathsCarryPlatform(t *testing.T) {
 				r = httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(`{"projectDir":"/repo","branch":"branch","platform":"fake-provider"}`))
 				srv.handleWorktreeCreateAndLaunch(w, r)
 			case "mcp":
-				result, err := (sessionMCPService{server: srv}).CreateSession(t.Context(), internalmcp.CreateSessionRequest{Directory: "/repo", Prompt: "hello", Model: "anthropic/claude"})
+				result, err := (sessionMCPService{server: srv}).CreateSession(t.Context(), internalmcp.CreateSessionRequest{Directory: "/repo", Prompt: "hello", Model: "fake-provider:anthropic/claude"})
 				if err != nil || result.Platform != "fake-provider" {
 					t.Fatalf("MCP = %+v, %v", result, err)
 				}
@@ -167,11 +167,11 @@ func TestCreateDefaultAndOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := &createPathHost{owner: "box"}
-	id, base, err := srv.createPlatform(t.Context(), host, "")
+	id, base, err := srv.createPlatform(t.Context(), host, "", "")
 	if err != nil || id != "r-box:fake-provider" || base != "fake-provider" {
 		t.Fatalf("default = %q %q, %v", id, base, err)
 	}
-	if _, _, err := srv.createPlatform(t.Context(), host, "r-other:fake-provider"); err == nil {
+	if _, _, err := srv.createPlatform(t.Context(), host, "r-other:fake-provider", ""); err == nil {
 		t.Fatal("wrong owner accepted")
 	}
 	for _, body := range []string{`{"directory":"/repo"}`, `{"directory":"/repo","platform":"fake-provider","send":{"message":"hello","model":"openai/test"}}`} {
@@ -184,7 +184,33 @@ func TestCreateDefaultAndOwner(t *testing.T) {
 		}
 	}
 	_ = srv.stateDB.Close()
-	if _, _, err := srv.createPlatform(t.Context(), host, ""); err == nil {
+	if _, _, err := srv.createPlatform(t.Context(), host, "", ""); err == nil {
 		t.Fatal("default read error swallowed")
+	}
+}
+
+// The first prompt's model picks the platform of a new conversation, and a
+// model contradicting the named platform is refused before anything launches.
+func TestStartPlatformFollowsModel(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	host := &createPathHost{}
+	srv.hostRouter = hostsvc.NewRouter(host)
+	var sent platforms.SendMessageRequest
+	reg.Register(&fakePlatform{id: "fake-provider",
+		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			return &platforms.CreateSessionResponse{ID: "child"}, nil
+		},
+		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+	})
+	w := httptest.NewRecorder()
+	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","send":{"message":"hi","model":"fake-provider:acme/m"}}`)))
+	if !strings.Contains(w.Body.String(), `"platform":"fake-provider"`) || host.ensured != "fake-provider" || sent.Model != "acme/m" {
+		t.Fatalf("start = %d %s, ensured %q, sent %+v", w.Code, w.Body.String(), host.ensured, sent)
+	}
+	host.ensured = ""
+	w = httptest.NewRecorder()
+	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","platform":"opencode","send":{"message":"hi","model":"fake-provider:acme/m"}}`)))
+	if w.Code != http.StatusBadRequest || host.ensured != "" {
+		t.Fatalf("mismatch = %d %s, ensured %q", w.Code, w.Body.String(), host.ensured)
 	}
 }

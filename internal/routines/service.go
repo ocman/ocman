@@ -109,14 +109,24 @@ func randomID(prefix string) string {
 }
 
 // targetPlatform makes a routine continuing an existing session run on that
-// session's platform when the caller named none.
-func (s *Service) targetPlatform(ctx context.Context, input *Input) {
-	if input.Platform != "" || input.SessionMode != SessionExisting || input.SessionID == "" || s.platforms == nil {
-		return
+// session's platform when the caller named none; a routine creating sessions
+// runs on its model's platform (platforms.PlatformForModel).
+func (s *Service) targetPlatform(ctx context.Context, input *Input) error {
+	if input.SessionMode != SessionExisting {
+		platform, err := platforms.PlatformForModel(input.Platform, input.Model)
+		if err != nil {
+			return fmt.Errorf("%s: %w", err.Error(), ErrValidation)
+		}
+		input.Platform = platform
+		return nil
+	}
+	if input.Platform != "" || input.SessionID == "" || s.platforms == nil {
+		return nil
 	}
 	if p, ok := s.platforms.PlatformForSession(ctx, input.SessionID); ok {
 		input.Platform = string(p.ID())
 	}
+	return nil
 }
 
 // defaultPlatform resolves the create default against the platforms the
@@ -136,7 +146,9 @@ func (s *Service) defaultPlatform(ctx context.Context, remoteID string) (string,
 }
 
 func (s *Service) Create(ctx context.Context, input Input) (state.Routine, error) {
-	s.targetPlatform(ctx, &input)
+	if err := s.targetPlatform(ctx, &input); err != nil {
+		return state.Routine{}, err
+	}
 	if input.Platform == "" {
 		var err error
 		input.Platform, err = s.defaultPlatform(ctx, input.RemoteID)
@@ -165,7 +177,9 @@ func (s *Service) Update(ctx context.Context, id string, input Input) (state.Rou
 	if err != nil {
 		return state.Routine{}, err
 	}
-	s.targetPlatform(ctx, &input)
+	if err := s.targetPlatform(ctx, &input); err != nil {
+		return state.Routine{}, err
+	}
 	if input.Platform == "" {
 		input.Platform = existing.Platform
 	}
