@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -81,7 +80,6 @@ type live struct {
 	mu        sync.Mutex
 	slots     *sync.Cond // signalled when a child exits or a turn ends
 	owned     map[string]*owned
-	ownedInfo os.FileInfo // the ownership file owned was read from
 	procs     map[string]*proc
 	status    map[string]db.Session // Status and ResetsAt from the process
 	view      map[string][]viewEntry

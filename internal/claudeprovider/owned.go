@@ -14,19 +14,11 @@ import (
 // every project supervisor (AD-3): each one drives only its own sessions,
 // but all of them list, title and route every session ocman launched.
 // Writers serialize on an flock and replace the file atomically; readers
-// reload it when it was replaced.
+// reload the shared snapshot so reused inodes or coarse mtimes cannot hide writes.
 
 // syncOwnedLocked reloads ownership written by another supervisor.
 func (l *live) syncOwnedLocked() {
 	if l.opts.StatePath == "" {
-		return
-	}
-	info, err := os.Stat(l.opts.StatePath)
-	if err != nil {
-		return
-	}
-	// Every write renames a new file, so a changed inode or mtime is a change.
-	if l.ownedInfo != nil && os.SameFile(info, l.ownedInfo) && info.ModTime().Equal(l.ownedInfo.ModTime()) {
 		return
 	}
 	data, err := os.ReadFile(l.opts.StatePath)
@@ -35,7 +27,7 @@ func (l *live) syncOwnedLocked() {
 	}
 	owned := map[string]*owned{}
 	if json.Unmarshal(data, &owned) == nil {
-		l.owned, l.ownedInfo = owned, info
+		l.owned = owned
 	}
 }
 
@@ -62,7 +54,7 @@ func (l *live) updateOwnedLocked(change func()) error {
 	}
 	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	latest := map[string]*owned{}
-	info, err := os.Stat(path)
+	_, err = os.Stat(path)
 	switch {
 	case err == nil:
 		data, err := os.ReadFile(path)
@@ -76,7 +68,7 @@ func (l *live) updateOwnedLocked(change func()) error {
 		return fmt.Errorf("session ownership: %w", err)
 	}
 	// change runs on a private copy: memory follows only a durable write.
-	l.owned, l.ownedInfo = latest, info
+	l.owned = latest
 	data, _ := json.Marshal(latest)
 	change()
 	updated, _ := json.Marshal(l.owned)
@@ -90,7 +82,6 @@ func (l *live) updateOwnedLocked(change func()) error {
 		_ = json.Unmarshal(data, &l.owned)
 		return fmt.Errorf("saving session ownership: %w", err)
 	}
-	l.ownedInfo, _ = os.Stat(path)
 	return nil
 }
 

@@ -368,8 +368,11 @@ func TestPoolCapAndLaunchFailure(t *testing.T) {
 	}
 
 	h.live.mu.Lock()
-	h.live.owned["gone"] = &owned{Directory: filepath.Join(h.dir, "missing")}
+	err := h.live.updateOwnedLocked(func() { h.live.owned["gone"] = &owned{Directory: filepath.Join(h.dir, "missing")} })
 	h.live.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := h.adapter.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: "gone", Message: "hi"}); err != nil {
 		t.Fatal(err)
 	}
