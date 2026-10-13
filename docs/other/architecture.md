@@ -314,6 +314,9 @@ flowchart TD
   sessions, queued messages, and active background work before calling
   `hostsvc.IdleProjectRuntime` on the provider adapter. Membership uses the
   launch resolver, including arbitrary linked worktrees and subdirectories.
+  Deleted session directories use historical identity in the existing
+  `claude-sessions.json` ownership snapshot; unmanaged retained transcripts
+  cannot disable cleanup for unrelated projects.
   Only Claude supervisors are stopped. OpenCode v1 lacks atomic idle draining;
   v2 is machine-wide, so both are excluded. Claude fences new turns with
   `/drain-idle` before stopping its supervisor. Token-scoped rollback and

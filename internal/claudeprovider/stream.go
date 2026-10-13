@@ -177,12 +177,15 @@ func (l *live) started(p *proc, input string) {
 // A failure is returned: a respawn would otherwise reuse --session-id.
 func (l *live) markStartedLocked(id string) error {
 	l.syncOwnedLocked()
-	if o := l.owned[id]; o == nil || (o.Started && o.ForkOf == "") {
+	if o := l.owned[id]; o == nil || (o.Started && o.ForkOf == "" && (o.ProjectRoot != "" || l.opts.ProjectRoot == "")) {
 		return nil
 	}
 	return l.updateOwnedLocked(func() {
 		if o := l.owned[id]; o != nil {
 			o.Started, o.ForkOf = true, ""
+			if o.ProjectRoot == "" {
+				o.ProjectRoot = l.opts.ProjectRoot
+			}
 		}
 	})
 }

@@ -4,6 +4,7 @@ package idleprojects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -160,6 +161,8 @@ func active(status db.SessionStatus) bool {
 func (m *Module) eligible(ctx context.Context, target Target, root string, fresh bool) ([]db.Session, string, bool, error) {
 	platform := target.Platform
 	resolved := map[string]string{}
+	var history map[string]string
+	historyRead := false
 	resolve := func(directory string) (string, error) {
 		if root, ok := resolved[directory]; ok {
 			return root, nil
@@ -177,6 +180,21 @@ func (m *Module) eligible(ctx context.Context, target Target, root string, fresh
 	var sessions []db.Session
 	for _, session := range all {
 		owner, err := resolve(session.Directory)
+		if errors.Is(err, hostsvc.ErrMissingProjectDirectory) {
+			if !historyRead {
+				history, err = target.Runtime.HistoricalSessionRoots(ctx)
+				if err != nil {
+					return nil, "", false, err
+				}
+				historyRead = true
+			}
+			var owned bool
+			owner, owned = history[session.ID]
+			err = nil
+			if owned && owner == "" {
+				err = fmt.Errorf("historical project membership is unknown for session %s", session.ID)
+			}
+		}
 		if err != nil {
 			return nil, "", false, err
 		}

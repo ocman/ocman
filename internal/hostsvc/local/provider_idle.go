@@ -4,16 +4,24 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	gitpkg "github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 )
 
 // ProviderRootForCleanup shares launch identity but never guesses after a
 // failed git probe. Launches outside repositories can still work without git.
 func ProviderRootForCleanup(ctx context.Context, directory string) (string, error) {
+	if _, err := os.Stat(directory); errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("%w: %s", hostsvc.ErrMissingProjectDirectory, directory)
+	} else if err != nil {
+		return "", err
+	}
 	root, err := gitpkg.ResolveMainRepoRoot(ctx, directory)
 	if err == nil {
 		return root, nil

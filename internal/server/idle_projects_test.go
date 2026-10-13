@@ -16,6 +16,9 @@ type nonIdlePlatform struct{ platforms.Platform }
 func (nonIdlePlatform) ID() platforms.ID { return platforms.OpenCodeID }
 
 func (idleProvider) ProjectRoot(context.Context, string) (string, error) { return "/repo", nil }
+func (idleProvider) HistoricalSessionRoots(context.Context) (map[string]string, error) {
+	return nil, nil
+}
 
 func (idleProvider) ID() platforms.ID                                      { return "idle-provider" }
 func (idleProvider) ManagedIdleProjects(context.Context) ([]string, error) { return nil, nil }

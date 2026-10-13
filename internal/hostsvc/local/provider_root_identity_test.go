@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
 func TestProviderRootIncludesArbitraryLinkedWorktreesAndSubdirectories(t *testing.T) {
@@ -52,5 +53,8 @@ func TestCleanupRootAllowsNonRepositoryButDoesNotGuessAfterFailedProbe(t *testin
 	}
 	if _, err := ProviderRootForCleanup(t.Context(), directory); err == nil {
 		t.Fatal("cleanup guessed after missing git")
+	}
+	if _, err := ProviderRootForCleanup(t.Context(), filepath.Join(directory, "gone")); !errors.Is(err, hostsvc.ErrMissingProjectDirectory) {
+		t.Fatalf("definite missing directory was not distinguished: %v", err)
 	}
 }

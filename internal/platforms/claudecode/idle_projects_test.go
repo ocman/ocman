@@ -21,6 +21,9 @@ func TestCullClaudePreservesRunningTurnAndWakesOnSend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if roots, err := p.HistoricalSessionRoots(t.Context()); err != nil || roots[created.ID] != e.repo {
+		t.Fatalf("project supervisor did not persist identity: %v %v", roots, err)
+	}
 	first := e.endpoint(t)
 	if err := p.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: created.ID, Message: "first"}); err != nil {
 		t.Fatal(err)

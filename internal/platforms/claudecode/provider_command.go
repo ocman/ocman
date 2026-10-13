@@ -41,6 +41,7 @@ func claudeProjectOptions(a providerArgs) claudeprovider.Options {
 	}
 	opts := claudeprovider.DefaultOptions(dataDir)
 	opts.NoSync = true
+	opts.ProjectRoot = a.Repo
 	opts.PluginDir = a.PluginDir
 	if a.CLI != "" {
 		opts.CLI = a.CLI

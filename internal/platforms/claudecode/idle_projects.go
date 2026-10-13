@@ -2,11 +2,17 @@ package claudecode
 
 import (
 	"context"
+
+	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
 )
 
 func (p *claudePlatform) ProjectRoot(ctx context.Context, directory string) (string, error) {
 	return local.ProviderRootForCleanup(ctx, directory)
+}
+
+func (p *claudePlatform) HistoricalSessionRoots(context.Context) (map[string]string, error) {
+	return claudeprovider.OwnedProjectRoots(p.projects.statePath)
 }
 
 func (p *claudePlatform) ManagedIdleProjects(ctx context.Context) ([]string, error) {

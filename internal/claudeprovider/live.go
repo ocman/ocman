@@ -40,11 +40,12 @@ func checkCLI(version string) error {
 // owned is a session ocman launched. Only these are driven; sessions started
 // in a terminal stay read-only (FR-4).
 type owned struct {
-	Directory string `json:"directory"`
-	Title     string `json:"title,omitempty"`
-	Created   int64  `json:"created"`
-	Started   bool   `json:"started,omitempty"` // a turn completed: claude has a transcript to --resume
-	ForkOf    string `json:"forkOf,omitempty"`  // first spawn forks this session
+	Directory   string `json:"directory"`
+	ProjectRoot string `json:"projectRoot,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Created     int64  `json:"created"`
+	Started     bool   `json:"started,omitempty"` // a turn completed: claude has a transcript to --resume
+	ForkOf      string `json:"forkOf,omitempty"`  // first spawn forks this session
 	// TitlePending is a rename not yet written to the transcript.
 	TitlePending bool `json:"titlePending,omitempty"`
 	// Config is the Claude config directory (CLAUDE_CONFIG_DIR) it was

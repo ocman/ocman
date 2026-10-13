@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
@@ -45,13 +46,23 @@ type fakeRuntime struct {
 	before       func()
 	membership   map[string]string
 	resolveError error
+	missing      map[string]bool
+	historical   map[string]string
+	historyError error
 }
 
 func (r *fakeRuntime) ProjectRoot(_ context.Context, directory string) (string, error) {
+	if r.missing[directory] {
+		return "", hostsvc.ErrMissingProjectDirectory
+	}
 	if root, ok := r.membership[directory]; ok {
 		return root, r.resolveError
 	}
 	return state.ProjectRootForDirectory(directory), r.resolveError
+}
+
+func (r *fakeRuntime) HistoricalSessionRoots(context.Context) (map[string]string, error) {
+	return r.historical, r.historyError
 }
 
 func (r *fakeRuntime) ManagedIdleProjects(context.Context) ([]string, error) { return r.roots, r.err }

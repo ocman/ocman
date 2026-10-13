@@ -141,7 +141,7 @@ func (l *live) create(req platforms.CreateSessionRequest) (*platforms.CreateSess
 	id := uuid.NewString() // claude's --session-id, so ocman and claude share the id
 	l.mu.Lock()
 	err := l.updateOwnedLocked(func() {
-		l.owned[id] = &owned{Directory: req.Directory, Title: req.Title, Created: now(), Config: l.opts.ConfigDir}
+		l.owned[id] = &owned{Directory: req.Directory, ProjectRoot: l.opts.ProjectRoot, Title: req.Title, Created: now(), Config: l.opts.ConfigDir}
 	})
 	l.mu.Unlock()
 	if err != nil {
@@ -176,9 +176,13 @@ func (l *live) fork(ctx context.Context, src, messageID string) (*platforms.Crea
 		return nil, statusError{http.StatusConflict, errors.New("session has no messages to fork yet")}
 	}
 	id := uuid.NewString()
+	root := l.opts.ProjectRoot
+	if root == "" {
+		root = o.ProjectRoot
+	}
 	l.mu.Lock()
 	err = l.updateOwnedLocked(func() {
-		l.owned[id] = &owned{Directory: o.Directory, Title: o.Title, Created: now(), ForkOf: src, Config: l.opts.ConfigDir}
+		l.owned[id] = &owned{Directory: o.Directory, ProjectRoot: root, Title: o.Title, Created: now(), ForkOf: src, Config: l.opts.ConfigDir}
 	})
 	l.mu.Unlock()
 	if err != nil {

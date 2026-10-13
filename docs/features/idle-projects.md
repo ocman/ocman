@@ -19,6 +19,12 @@ held for the configured duration. New activity, reopening a normal session,
 and uncertain reads reset the timer. Timers also restart when ocman restarts.
 Sessions, transcripts, branches, and worktrees remain available.
 
+For deleted checkouts, cleanup uses the project identity stored with managed
+session ownership. Retained terminal transcripts from unrelated deleted paths
+do not block cleanup. Unreadable ownership or legacy managed records without a
+known historical project keep cleanup conservative; resumed legacy sessions
+record their project identity.
+
 This applies to **Claude project supervisors**. OpenCode v1 is excluded because
 it cannot atomically reject new turns while draining an idle instance. OpenCode
 v2 uses one machine-wide server and is also excluded.
