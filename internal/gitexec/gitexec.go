@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -85,7 +86,36 @@ type Cmd struct {
 func Command(ctx context.Context, args ...string) *Cmd {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = env()
+	if len(args) >= 2 && args[0] == "-C" {
+		if root := checkoutRoot(args[1]); root != "" {
+			// An explicit work tree overrides core.bare even during discovery.
+			cmd.Env = append(cmd.Env, "GIT_WORK_TREE="+root)
+		}
+	}
 	return &Cmd{ctx: ctx, cmd: cmd}
+}
+
+func checkoutRoot(dir string) string {
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
+			return root
+		}
+		// Stop at a bare repository rather than adopting an enclosing checkout.
+		if _, err := os.Stat(filepath.Join(root, "HEAD")); err == nil {
+			if objects, err := os.Stat(filepath.Join(root, "objects")); err == nil && objects.IsDir() {
+				return ""
+			}
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return ""
+		}
+		root = parent
+	}
 }
 
 func (c *Cmd) Output() ([]byte, error) {

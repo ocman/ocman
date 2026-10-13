@@ -58,6 +58,10 @@ func Binary(t testing.TB) string {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build fake claude: %v\n%s", err, out)
 	}
+	// Complete macOS's first-exec binary scan before timed provider probes.
+	if out, err := exec.Command(binary, "--version").CombinedOutput(); err != nil {
+		t.Fatalf("warm fake claude: %v\n%s", err, out)
+	}
 	return binary
 }
 

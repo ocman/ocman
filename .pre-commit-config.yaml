@@ -4,7 +4,7 @@ repos:
       # - id: test-backend
       #   name: go tests
       #   language: system
-      #   entry: make test-backend
+      #   entry: sh -c 'unset $(git rev-parse --local-env-vars); make test-backend'
       #   pass_filenames: false
       #   files: '\.go$'
       # - id: test-frontend

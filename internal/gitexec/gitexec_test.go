@@ -81,6 +81,57 @@ func TestCommandCapsConcurrentGitProcesses(t *testing.T) {
 	}
 }
 
+func TestCommandIgnoresCoreBare(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	linked := filepath.Join(t.TempDir(), "linked")
+	for _, args := range [][]string{
+		{"init", dir},
+		{"-C", dir, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "-m", "fixture"},
+		{"-C", dir, "worktree", "add", "-b", "linked", linked},
+		{"-C", dir, "config", "core.bare", "true"},
+	} {
+		if out, err := Command(ctx, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	for _, root := range []string{dir, linked} {
+		if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		nested := filepath.Join(root, "nested")
+		if err := os.Mkdir(nested, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, target := range []string{root, nested} {
+			out, err := Output(ctx, target, "status", "--porcelain")
+			if err != nil || out != "?? untracked.txt" {
+				t.Fatalf("status in %s with core.bare=true = %q, %v", target, out, err)
+			}
+		}
+	}
+	if bare, err := Output(ctx, dir, "config", "--local", "core.bare"); err != nil || bare != "true" {
+		t.Fatalf("stored core.bare = %q, %v, want unchanged true", bare, err)
+	}
+}
+
+func TestCommandPreservesBareRepository(t *testing.T) {
+	ctx := context.Background()
+	parent := t.TempDir()
+	bare := filepath.Join(parent, "bare.git")
+	for _, args := range [][]string{{"init", parent}, {"init", "--bare", bare}} {
+		if out, err := Command(ctx, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if out, err := Output(ctx, bare, "rev-parse", "--is-bare-repository"); err != nil || out != "true" {
+		t.Fatalf("bare repository = %q, %v, want true", out, err)
+	}
+	if root := checkoutRoot(t.TempDir()); root != "" {
+		t.Fatalf("non-repository checkout root = %q", root)
+	}
+}
+
 func TestWithSlotHonorsPreCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

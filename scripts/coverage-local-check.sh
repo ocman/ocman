@@ -20,6 +20,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Hook-exported Git paths must not redirect fixture commands into this repo.
+unset $(git rev-parse --local-env-vars)
+
 SUITE="${1:-all}"
 case "$SUITE" in
 	go|frontend|all) ;;
