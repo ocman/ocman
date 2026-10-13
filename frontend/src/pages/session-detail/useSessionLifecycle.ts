@@ -63,7 +63,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     // Reset immediately to the target, preserving delta ownership in cached text.
     const nextCached = useApiStore.getState().getCachedSession(sessionId);
     const nextInitial: SessionView = nextCached
-      ? { ...viewFromDetail(sessionId, nextCached), _deltaOwnedFields: seedDeltaOwnedFields(nextCached.parts) }
+      ? { ...viewFromDetail(sessionId, nextCached), _statusFresh: false, _deltaOwnedFields: seedDeltaOwnedFields(nextCached.parts) }
       : initialSessionView(sessionId);
     dispatch({ type: 'load', view: nextInitial });
     setStatus(nextCached ? 'live' : 'loading');

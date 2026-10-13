@@ -122,6 +122,7 @@ export function mergeSidebarSessions(
   activeId?: string,
   requestStart?: readonly Session[],
   pendingReads?: Readonly<Record<string, { timeUpdated: number }>>,
+  statusRevisions?: { started: Readonly<Record<string, number>>; current: Readonly<Record<string, number>> },
 ): Session[] {
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
@@ -131,7 +132,10 @@ export function mergeSidebarSessions(
       ? { ...unarchived, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, pending.timeUpdated) }
       : unarchived;
     const started = requestStart?.find((ls) => ls.id === s.id && ls.platform === s.platform);
-    const statusChangedDuringRequest = started && live.status !== started.status;
+    const key = `${s.platform}:${s.id}`;
+    const statusChangedDuringRequest = statusRevisions
+      ? (statusRevisions.started[key] ?? 0) !== (statusRevisions.current[key] ?? 0)
+      : started && live.status !== started.status;
     const readDuringRequest = live.status === 'interrupted' && (
       (pending !== undefined && pending.timeUpdated >= s.timeUpdated)
       || (!!requestStart && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform))

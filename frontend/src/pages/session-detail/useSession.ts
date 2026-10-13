@@ -80,6 +80,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   const routedPlatform = cachedPlatform?.startsWith('r-') ? cachedPlatform : undefined;
   const initialView: SessionView = cached ? {
     ...initialSessionView(sessionId!),
+    _statusFresh: false,
     session: {
       ...cached.session,
       contextTokenCount: cached.session.contextTokenCount ?? cached.contextTokenCount,
@@ -134,12 +135,12 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   const { id: liveId, platform, status: liveStatus, notice, liveConnection } = view.session ?? {};
   useEffect(() => {
     // Keep the shared row current when the detail stream leads global events.
-    if (!liveId || liveId !== sessionId || lifecycle.loading || lifecycle.refreshing) return;
+    if (!liveId || liveId !== sessionId || view._statusFresh === false) return;
     useApiStore.getState().patchRecentSession(liveId, {
       status: liveStatus, notice, liveConnection,
     }, platform);
   }, [sessionId, liveId, platform, liveStatus, notice, liveConnection,
-    lifecycle.loading, lifecycle.refreshing]);
+    view._statusFresh, view.session]);
 
   const loadMore = useCallback(async () => {
     // The ref makes two same-tick calls re-entrant-safe.

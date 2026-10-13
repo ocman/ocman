@@ -143,6 +143,7 @@ export function useSidebarSessions({
     }
     const promise = withDeadline(15_000, async (signal) => {
       const requestStart = useApiStore.getState().recentSessions;
+      const startedStatusRevisions = useApiStore.getState().recentStatusRevisions;
       const pendingReads = useApiStore.getState().pendingInterruptionReads;
       try {
         const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
@@ -183,6 +184,7 @@ export function useSidebarSessions({
           id,
           requestStart,
           { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads },
+          { started: startedStatusRevisions, current: useApiStore.getState().recentStatusRevisions },
         );
 
         const hash = computeSidebarHash(merged);

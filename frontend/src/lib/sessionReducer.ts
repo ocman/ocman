@@ -65,6 +65,8 @@ export interface SessionView {
   /** Session metadata header (status, agent, timing, ...). `null`
    *  until the first `load` lands. */
   session: SessionMetadata | null;
+  /** False for cached metadata until REST or a status-bearing live event confirms it. */
+  _statusFresh?: boolean;
   /** Ancestors and descendants returned with the detail snapshot. */
   sessionTree: NonNullable<SessionDetail['sessionTree']>;
   /** Chronological messages keyed by id. */
@@ -529,6 +531,7 @@ function reconcileLoad(state: SessionView, incoming: SessionView): SessionView {
     ...state,
     sessionId: incoming.sessionId,
     session: nextSession,
+    _statusFresh: incoming.session ? incoming._statusFresh : state._statusFresh,
     sessionTree: incoming.sessionTree,
     messages: mergedMessages,
     parts: mergedParts,
@@ -826,6 +829,7 @@ function reducePartSnapshot(state: SessionView, props: Record<string, unknown>):
     && nextMessages === state.messages
     && nextSession === state.session
     && nextPendingQuestion === state.pendingQuestion
+    && !(state._statusFresh === false && (status === 'running' || status === 'pending'))
   ) {
     return state;
   }
@@ -835,6 +839,7 @@ function reducePartSnapshot(state: SessionView, props: Record<string, unknown>):
     parts: nextParts,
     session: nextSession,
     pendingQuestion: nextPendingQuestion,
+    _statusFresh: status === 'running' || status === 'pending' ? true : state._statusFresh,
   };
 }
 
@@ -890,6 +895,7 @@ function reducePartDelta(state: SessionView, props: Record<string, unknown>): Se
     parts: nextParts,
     session: nextSession,
     _deltaOwnedFields: ownedFields,
+    _statusFresh: true,
   };
 }
 
@@ -902,7 +908,7 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
   // session.idle — also flag a refetch so the host hook reconciles
   // any missed content.
   const refetch = isSessionStatusIdle({ properties: props });
-  if (state.session && state.session.status === status && !refetch && !notice && !clearRetryNotice) return state;
+  // Even the same status is a new live observation that fences older list reads.
   return {
     ...state,
     session: state.session ? {
@@ -911,6 +917,7 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
       ...(notice ? { notice } : clearRetryNotice ? { notice: undefined } : {}),
     } : state.session,
     _refetchRequested: refetch || state._refetchRequested,
+    _statusFresh: true,
   };
 }
 
@@ -923,6 +930,7 @@ function reduceSessionIdle(state: SessionView): SessionView {
     ...state,
     session: nextSession,
     _refetchRequested: true,
+    _statusFresh: true,
   };
 }
 

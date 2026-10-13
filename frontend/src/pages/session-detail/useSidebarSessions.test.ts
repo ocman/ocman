@@ -44,6 +44,30 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it.each(['busy', 'done'] as const)('preserves a %s transition returning to the request-start status', async (status) => {
+    const row = { id: 'running', platform: 'r-box:opencode', status,
+      timeUpdated: Date.now(), seen: true, seenTimeUpdated: 0 } as Session;
+    const middle = { ...row, status: status === 'busy' ? 'done' : 'busy' } as Session;
+    const local = { ...row, platform: 'opencode' };
+    const localResponse = { ...middle, platform: local.platform };
+    let finish!: (rows: Session[]) => void;
+    const getSessions = vi.fn().mockReturnValueOnce(new Promise<Session[]>((resolve) => { finish = resolve; }))
+      .mockResolvedValue([localResponse, middle]);
+    useApiStore.setState({ getSessions, recentSessions: [local, row], recentSessionsHash: computeSidebarHash([local, row]) });
+    const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    const read = view.result.current.loadRecentSessions();
+    act(() => {
+      useApiStore.getState().patchRecentSession(row.id, { status: middle.status }, row.platform);
+      useApiStore.getState().patchRecentSession(row.id, { status }, row.platform);
+    });
+    await act(async () => { finish([localResponse, middle]); await read; });
+    expect(view.result.current.recentSessions.find(s => s.platform === row.platform)?.status).toBe(status);
+    expect(view.result.current.recentSessions.find(s => s.platform === local.platform)?.status).toBe(middle.status);
+    await act(async () => { await view.result.current.loadRecentSessions(); });
+    expect(view.result.current.recentSessions.find(s => s.platform === row.platform)?.status).toBe(middle.status);
+    view.unmount();
+  });
   it.each(['busy', 'done'] as const)('keeps a newer %s transition when an older list read finishes', async (status) => {
     const row = { id: 'running', platform: 'opencode', status: status === 'busy' ? 'done' : 'busy',
       timeUpdated: Date.now(), seen: true, seenTimeUpdated: 0 } as Session;

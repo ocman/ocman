@@ -854,8 +854,10 @@ flowchart TD
   and failed configuration activation reloads persisted configuration and health.
 - **Client state.** Shared Zustand stores hold broad session state. The
   session detail mirrors fresh REST/SSE status into the owner-qualified sidebar
-  row, so navigation keeps the same status. List reconciliation preserves status
-  transitions received during its request; subsequent fresh reads remain authoritative.
+  row, so navigation keeps the same status. Cached metadata stays unconfirmed after
+  a failed refresh until a successful read or status-bearing live event arrives.
+  List reconciliation fences against owner-qualified status-update revisions,
+  including transitions returning to the starting status; subsequent fresh reads remain authoritative.
   The Routines page polls definitions (each with its latest run) and webhook
   inboxes over REST, pages history only for the open drawer, and keeps its form
   and selected edits locally.

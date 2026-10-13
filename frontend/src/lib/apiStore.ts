@@ -82,6 +82,7 @@ type ApiStore = {
    */
   recentSessions: Session[];
   recentSessionsHash: string;
+  recentStatusRevisions: Record<string, number>;
   setRecentSessions: (sessions: Session[], hash: string) => void;
   patchRecentSession: (id: string, patch: Partial<Session>, platform?: string) => void;
   /**
@@ -160,6 +161,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   cachedSessions: null,
   recentSessions: [],
   recentSessionsHash: '',
+  recentStatusRevisions: {},
   setRecentSessions: (sessions, hash) => {
     const reads = get().pendingInterruptionReads;
     const rows = sessions.map(s => {
@@ -180,11 +182,13 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       const idx = state.recentSessions.findIndex((s) => s.id === id && (!platform || s.platform === platform));
       if (idx === -1) return state;
       const updated = { ...state.recentSessions[idx], ...patch };
+      const key = `${updated.platform}:${id}`;
       const next = [...state.recentSessions];
       next[idx] = updated;
       next.sort(compareSidebarCompletion);
       // Recompute hash so the next poll's dedup check stays accurate.
-      return { recentSessions: next, recentSessionsHash: computeSidebarHash(next) };
+      return { recentSessions: next, recentSessionsHash: computeSidebarHash(next),
+        recentStatusRevisions: patch.status !== undefined ? { ...state.recentStatusRevisions, [key]: (state.recentStatusRevisions[key] ?? 0) + 1 } : state.recentStatusRevisions };
     });
   },
   closedSessionStack: [],

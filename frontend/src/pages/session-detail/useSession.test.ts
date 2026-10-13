@@ -174,6 +174,17 @@ describe('useSession — bounded SSE work (#722)', () => {
     unmount();
   });
 
+  it('records a repeated live busy status as a newer sidebar observation', async () => {
+    useApiStore.setState({ recentSessions: [makeDetail().session] });
+    const { sse, unmount } = await setup();
+    const busy = { type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } };
+    act(() => sse.emitMessage(busy));
+    const revision = useApiStore.getState().recentStatusRevisions[`opencode:${SID}`];
+    act(() => sse.emitMessage(busy));
+    expect(useApiStore.getState().recentStatusRevisions[`opencode:${SID}`]).toBeGreaterThan(revision);
+    unmount();
+  });
+
   it('mirrors a fresh detail status but does not publish stale cached status while loading', async () => {
     const detail = makeDetail();
     const busy = { ...detail, session: { ...detail.session, status: 'busy' as const } };
@@ -192,6 +203,33 @@ describe('useSession — bounded SSE work (#722)', () => {
     fetchSession.mockResolvedValue(detail);
     await act(async () => { await view.result.current.refresh(); });
     expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    view.unmount();
+  });
+
+  it.each(['status', 'delta', 'tool', 'idle'])('does not publish cached status after refresh failure, but accepts a subsequent live %s event', async (eventType) => {
+    const detail = makeDetail();
+    useApiStore.getState().setCachedSession(SID, { ...detail, session: { ...detail.session, status: 'busy' } });
+    useApiStore.setState({ recentSessions: [detail.session] });
+    const view = renderHook(() => useSession(SID, { fetchSession: vi.fn().mockRejectedValue(new Error('offline')) }));
+    await waitFor(() => expect(view.result.current.refreshError).toBe('offline'));
+    expect(view.result.current.session?.status).toBe('busy');
+    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    const sse = FakeEventSource.latest()!;
+    act(() => {
+      sse.emitMessage({ type: 'session.status', properties: { sessionID: 'other', status: { type: 'busy' } } });
+      sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: 'invalid' } });
+    });
+    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    const revision = useApiStore.getState().recentStatusRevisions[`opencode:${SID}`] ?? 0;
+    const events = {
+      status: { type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } },
+      delta: { type: 'message.part.delta', properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: 'live' } },
+      tool: { type: 'message.part.updated', properties: { part: { id: 'p', sessionID: SID, messageID: 'm', type: 'tool', state: { status: 'running' } } } },
+      idle: { type: 'session.idle', properties: { sessionID: SID } },
+    };
+    await act(async () => sse.emitMessage(events[eventType as keyof typeof events]));
+    await waitFor(() => expect(useApiStore.getState().recentSessions[0].status).toBe(eventType === 'idle' ? 'done' : 'busy'));
+    expect(useApiStore.getState().recentStatusRevisions[`opencode:${SID}`]).toBeGreaterThan(revision);
     view.unmount();
   });
 

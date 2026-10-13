@@ -18,6 +18,7 @@ export function viewFromDetail(id: string, detail: SessionDetail): SessionView {
   }
   return {
     ...initialSessionView(id),
+    _statusFresh: true,
     session: {
       ...detail.session,
       contextTokenCount: detail.session.contextTokenCount ?? detail.contextTokenCount,
