@@ -35,6 +35,15 @@ export function AutoApproveSection() {
   const modelSave = useSettingSave();
   const [judgeModel, setJudgeModel] = useState('');
   const [modelCatalog, setModelCatalog] = useState({ models: [] as string[], default: '' });
+  const getPromptSections = useApiStore((s) => s.getPromptSections);
+  const getJudgeDelay = useApiStore((s) => s.getJudgeDelay);
+
+  // Settings keeps this section mounted while open: load what the backend
+  // judge actually uses, even if another client changed it.
+  useEffect(() => {
+    getPromptSections().then(setPromptSections).catch(() => { /* best-effort */ });
+    getJudgeDelay().then(setAutoApproveDelayMs).catch(() => { /* best-effort */ });
+  }, [getPromptSections, getJudgeDelay, setPromptSections, setAutoApproveDelayMs]);
 
   useEffect(() => {
     const controller = new AbortController();

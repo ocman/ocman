@@ -10,7 +10,10 @@ vi.mock('./JudgeEndpointSettings', () => ({ JudgeEndpointSettings: () => null })
 const store = vi.hoisted(() => ({
   getJudgeModel: vi.fn(),
   getJudgeModelOptions: vi.fn(),
+  getPromptSections: vi.fn().mockResolvedValue([]),
+  getJudgeDelay: vi.fn().mockResolvedValue(0),
   setPromptSections: vi.fn(),
+  setAutoApproveDelayMs: vi.fn(),
   setPromptSectionsApi: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -19,7 +22,7 @@ vi.mock('../../lib/uiStore', () => ({
     autoApproveDefault: false,
     setAutoApproveDefault: vi.fn(),
     autoApproveDelayMs: 0,
-    setAutoApproveDelayMs: vi.fn(),
+    setAutoApproveDelayMs: store.setAutoApproveDelayMs,
     promptSections: [],
     setPromptSections: store.setPromptSections,
   }),
@@ -55,6 +58,16 @@ describe('AutoApproveSection reviewer model', () => {
     await vi.waitFor(() => expect(store.getJudgeModelOptions).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByRole('combobox', { name: 'Auto-approve reviewer model' })).toHaveTextContent('Default');
+  });
+
+  it('loads the judge settings the backend uses on mount', async () => {
+    store.getJudgeModel.mockResolvedValue('');
+    store.getJudgeModelOptions.mockResolvedValue({ models: [], default: '' });
+    store.getPromptSections.mockResolvedValueOnce([{ title: 'Repo', content: 'rules' }]);
+    store.getJudgeDelay.mockResolvedValueOnce(2500);
+    render(<AutoApproveSection />);
+    await vi.waitFor(() => expect(store.setPromptSections).toHaveBeenCalledWith([{ title: 'Repo', content: 'rules' }]));
+    await vi.waitFor(() => expect(store.setAutoApproveDelayMs).toHaveBeenCalledWith(2500));
   });
 
   it('lists the catalog and labels the built-in default', async () => {

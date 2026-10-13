@@ -14,7 +14,7 @@ vi.mock('../../lib/externalLinks', async (orig) => ({
 vi.mock('../../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../../components/upstream/PromptTemplateSettings', () => ({ PromptTemplateSettings: () => null }));
 vi.mock('../../components/RemoteSettings', () => ({ RemoteSettings: () => null }));
-vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => null }));
+vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => <p>Sharing controls</p> }));
 vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
 vi.mock('../../components/MaintenanceSettings', () => ({ MaintenanceSettings: () => <p>Database maintenance</p> }));
 vi.mock('./SettingsSections', () => ({
@@ -60,6 +60,21 @@ describe('SettingsTab actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
     expect(screen.getByRole('heading', { name: 'Plugins' })).toBeVisible();
     expect(screen.getByText('Plugin management')).toBeVisible();
+  });
+  it('lists feature groups in their fixed slot among the core groups', () => {
+    render(<SettingsTab />);
+    const groups = screen.getAllByRole('button').map((b) => b.textContent).filter((label) => label !== 'Install' && label !== 'Sign out');
+    expect(groups).toEqual(['Notifications', 'Sessions', 'Remotes', 'Plugins', 'Auto-approve', 'Sharing', 'Webhooks',
+      'PR & Issue templates', 'Link previews', 'Maintenance', 'App', 'Account']);
+  });
+  it('keeps always-mounted feature sections mounted while hidden', () => {
+    render(<SettingsTab />);
+    expect(screen.getByText('Sharing controls')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Sharing' }));
+    expect(screen.getByRole('heading', { name: 'Sharing' })).toBeVisible();
+    expect(screen.getByText('Sharing controls')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    expect(screen.getByText('Sharing controls')).not.toBeVisible();
   });
   it('mounts maintenance only when its group is opened', () => {
     render(<SettingsTab />);

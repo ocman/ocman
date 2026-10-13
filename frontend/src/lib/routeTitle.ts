@@ -1,3 +1,4 @@
+import { featureTitle } from '../features';
 import { shortPath } from './format';
 
 const TITLES: Record<string, string> = {
@@ -6,22 +7,14 @@ const TITLES: Record<string, string> = {
   '/inbox': 'Inbox',
   '/subscription-usage': 'Usage',
   '/projects': 'Projects',
-  '/routines': 'Routines',
-  '/artifacts': 'Artifacts',
-  '/factory/epics': 'Factory',
-  '/factory/overview': 'Factory',
-	'/factory/how-to': 'Factory how to',
-  '/factory/issues': 'Factory',
-	'/factory/queue': 'Factory queue',
-	'/factory/configuration': 'Factory configuration',
   '/settings': 'Settings',
   '/import-share': 'Fork shared conversation',
 };
 
 export function routeTitle(path: string, sessionTitle?: string): string {
   if (path === '/analytics' || path.startsWith('/analytics/')) return 'Analytics';
-  if (path.startsWith('/factory/')) return TITLES[path] || 'Factory';
-  if (path.startsWith('/artifacts/')) return 'Artifacts';
+  const feature = featureTitle(path);
+  if (feature) return feature;
   if (path.startsWith('/session/')) {
     const id = decodeURIComponent(path.slice('/session/'.length).split('/')[0]);
     return sessionTitle || (id === 'new' ? 'New session' : 'Session');

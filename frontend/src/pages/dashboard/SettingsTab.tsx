@@ -1,14 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { usePageTitle } from '../../lib/headerContext';
 import { PromptTemplateSettings } from '../../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../../components/RemoteSettings';
-import { SharingSettings } from '../../components/SharingSettings';
-import { WebhookRelaySettings } from '../../components/WebhookRelaySettings';
-import { PluginSettings } from '../../components/PluginSettings';
 import { MaintenanceSettings } from '../../components/MaintenanceSettings';
 import { useAuthStore } from '../../lib/authStore';
-import { useUiStore } from '../../lib/uiStore';
-import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow, SettingToggle, SettingDescription } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
@@ -19,24 +14,11 @@ import { useRevealSetting, type RevealRequest } from '../../lib/useRevealSetting
 import { settingEntry, type SettingId, type SettingsGroupId } from '../../lib/settingsCatalog';
 import { LinkPreviewTabs } from '../../components/LinkPreviewTabs';
 import { NotificationsSection, SessionsSection } from './SettingsSections';
-import { AutoApproveSection } from './AutoApproveSection';
+import { featureSettings } from '../../features';
 import styles from './SettingsTab.module.css';
 
 export function SettingsTab() {
   usePageTitle('Settings');
-
-  // On mount, load settings from the server and sync to uiStore so the
-  // settings page reflects what the backend judge actually uses, even if
-  // another client or direct API call changed them.
-  const setPromptSections = useUiStore((s) => s.setPromptSections);
-  const setAutoApproveDelayMs = useUiStore((s) => s.setAutoApproveDelayMs);
-  const getPromptSections = useApiStore((s) => s.getPromptSections);
-  const getJudgeDelay = useApiStore((s) => s.getJudgeDelay);
-  useEffect(() => {
-    getPromptSections().then(setPromptSections).catch(() => { /* best-effort */ });
-    getJudgeDelay().then(setAutoApproveDelayMs).catch(() => { /* best-effort */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const authRequired = useAuthStore((s) => s.authRequired);
   const logout = useAuthStore((s) => s.logout);
@@ -59,10 +41,7 @@ export function SettingsTab() {
     { id: 'notifications', label: 'Notifications', show: true },
     { id: 'sessions', label: 'Sessions', show: true },
     { id: 'remotes', label: 'Remotes', show: true },
-    { id: 'plugins', label: 'Plugins', show: true },
-    { id: 'auto-approve', label: 'Auto-approve', show: true },
-    { id: 'sharing', label: 'Sharing', show: true },
-    { id: 'webhooks', label: 'Webhooks', show: true },
+    ...featureSettings.map(({ id, label }) => ({ id, label, show: true })),
     { id: 'templates', label: 'PR & Issue templates', show: true },
     { id: 'link-previews', label: 'Link previews', show: true },
     { id: 'maintenance', label: 'Maintenance', show: true },
@@ -128,10 +107,12 @@ export function SettingsTab() {
             <strong>{missing.title}</strong> is not shown right now. {missing.requires}
           </SettingDescription>
         )}
-        {active === 'plugins' && <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Plugins</h2>
-          <PluginSettings />
-        </div>}
+        {featureSettings.map(({ id, label, mount, Section }) => (mount === 'always' || active === id) && (
+          <div key={id} className={styles.section} hidden={active !== id}>
+            <h2 className={styles.sectionTitle}>{label}</h2>
+            <Section />
+          </div>
+        ))}
         {active === 'maintenance' && <div className={styles.section}>
           <h2 className={styles.sectionTitle}>Maintenance</h2>
           <MaintenanceSettings />
@@ -152,21 +133,6 @@ export function SettingsTab() {
             <RemoteSettings />
           </SettingRow>
         </div>
-
-        <div className={styles.section} hidden={active !== 'auto-approve'}>
-          <h2 className={styles.sectionTitle}>Auto-approve</h2>
-          <AutoApproveSection />
-        </div>
-
-        <div className={styles.section} hidden={active !== 'sharing'}>
-          <h2 className={styles.sectionTitle}>Sharing</h2>
-          <SharingSettings />
-        </div>
-
-        {active === 'webhooks' && <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Webhooks</h2>
-          <WebhookRelaySettings />
-        </div>}
 
         <div className={styles.section} hidden={active !== 'templates'}>
           <h2 className={styles.sectionTitle}>PR &amp; Issue templates</h2>

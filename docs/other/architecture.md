@@ -570,6 +570,9 @@ the owning project's PR/Issue pane.
 
 ```mermaid
 flowchart TD
+    Shell[App routes, MainNav, routeTitle, Settings] -->|iterate| Features[features/<br/>static registry]
+    Features --> Pages
+    Shell --> Pages
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Stores --> Persistence[Browser persistence<br/>IndexedDB drafts, text + receipts]
@@ -589,6 +592,15 @@ flowchart TD
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
 
+- **Feature registry.** `src/features/index.tsx` is a static list in which
+  Factory, routines and artifacts contribute their routes, with layout tier and
+  header titles, plus their main-nav link. Plugins, auto-approve, sharing and
+  webhooks contribute Settings groups, each mounted either always or only while
+  active. `App`'s routes, `MainNav`, `routeTitle` and `SettingsTab` iterate it at
+  fixed slots between their core entries. Everything is still imported eagerly,
+  with no runtime discovery. Backend plugins remain separate and reach the UI
+  only through plugin panes and palette actions. The command palette and the
+  session right-panel tabs still keep their own lists.
 - **Shared controls.** `Control` provides buttons, button groups, text inputs,
   textareas, search inputs, and selects with native form semantics and shared
   focus, disabled, and invalid styles. `IconButton`, `RefreshButton`, and

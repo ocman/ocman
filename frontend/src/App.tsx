@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
@@ -8,11 +8,6 @@ import { ProjectDetail } from './pages/ProjectDetail';
 import { RootRedirect } from './pages/RootRedirect';
 import { WorktreesView } from './pages/WorktreesView';
 import { ProjectSettingsView } from './pages/ProjectSettingsView';
-import { Routines } from './pages/Routines';
-import { Artifacts } from './pages/Artifacts';
-import { ArtifactDetail } from './pages/ArtifactDetail';
-import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryHowTo, FactoryOverview, FactoryQueue } from './pages/Factory';
-import { FactoryIssues } from './pages/FactoryIssues';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
@@ -45,6 +40,7 @@ import { installPerfMonitor } from './lib/perfMonitor';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { Inbox } from './pages/Inbox';
 import { MainNav } from './components/MainNav';
+import { featureRoutes } from './features';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -398,21 +394,12 @@ export function AppRoutes() {
           <Route path="/analytics/:section?" element={<AnalyticsTab />} />
           <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />
           <Route path="/usage" element={<LegacyAnalyticsRedirect section="overview" />} />
-          <Route path="/routines" element={<Routines />} />
-          <Route path="/artifacts" element={<Artifacts />} />
-          <Route path="/artifacts/:id" element={<ArtifactDetail />} />
+          {featureRoutes('dashboard').map((r) => <Route key={r.path} path={r.path} element={r.element} />)}
           <Route path="/settings" element={<SettingsTab />} />
         </Route>
         <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
         <Route path="/project/:dir/settings" element={<ProjectSettingsView />} />
-        <Route path="/factory" element={<Navigate to="/factory/overview" replace />} />
-        <Route path="/factory/overview" element={<FactoryOverview />} />
-        <Route path="/factory/how-to" element={<FactoryHowTo />} />
-        <Route path="/factory/epics" element={<FactoryEpics />} />
-        <Route path="/factory/epics/:id" element={<FactoryEpicDetail />} />
-        <Route path="/factory/issues/:issueId?" element={<FactoryIssues />} />
-        <Route path="/factory/queue" element={<FactoryQueue />} />
-        <Route path="/factory/configuration" element={<FactoryConfiguration />} />
+        {featureRoutes('page').map((r) => <Route key={r.path} path={r.path} element={r.element} />)}
         <Route path="/project/:dir" element={<ProjectDetail />} />
         <Route path="/import-share" element={<ImportSharedConversation />} />
       </Route>

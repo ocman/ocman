@@ -4,6 +4,7 @@ import { useInbox } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
+import { featureNav } from '../features';
 import './MainNav.css';
 
 // activePrefix: sub-pages living outside the link's own path (singular routes, sibling tabs).
@@ -11,9 +12,7 @@ const NAV_ITEMS: { to: string; label: string; icon: string; activePrefix?: strin
   { to: '/', label: 'Home', icon: 'bi-house', activePrefix: '/session/' },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder', activePrefix: '/project/' },
-  { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings', activePrefix: '/factory/' },
-  { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
-  { to: '/artifacts', label: 'Artifacts', icon: 'bi-box-seam' },
+  ...featureNav,
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
 ];
 

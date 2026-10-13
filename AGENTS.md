@@ -974,8 +974,17 @@ detail into the prose below each one.
   `--border`, `--text`, `--text-dim`, `--accent`, `--danger`,
   `--font-conversation-mono`, …). A `var()` naming a token that doesn't
   exist (such as `--text-muted`, `--surface`, `--font-mono`) silently falls
-  back to inherited styles, which is how off-theme UI gets in. Add a new page
-  title to `lib/routeTitle.ts` so the app header labels it.
+  back to inherited styles, which is how off-theme UI gets in. Give a new page
+  a header title: a feature route's `title` in `src/features`, or a core page
+  in `lib/routeTitle.ts`.
+- **Feature pages and settings groups register in `frontend/src/features`.**
+  A feature's routes (with `dashboard`/`page` layout and header titles), its
+  main-nav link and its Settings group (`mount: 'always'` keeps unsaved edits
+  across group switches, `'active'` mounts on demand) go into one `FEATURES`
+  entry. Don't add them to `App.tsx`, `MainNav`, `routeTitle` or
+  `SettingsTab` by hand. Core pages stay in those files. The registry is static
+  and eagerly imported. Backend plugins are a separate mechanism (plugin panes
+  and palette actions).
 - **Terminology**: *platform* = the tool that produced the session
   (OpenCode). *Agent* = a composer-level role within a session
   (OpenCode's `build` / `plan` / user-defined subagent).
