@@ -441,8 +441,11 @@ flowchart TD
   table whose queries live in this package, including the tables of today's
   feature modules. Each module's own tables use a `state.ModuleSchema` and the
   `module_schema_version (module, version)` ledger. The server lists these
-  schemas in `ModuleSchemas()`. Each batch takes a backup before it runs, is
-  transactional and fails closed.
+  schemas in `ModuleSchemas()`. Each batch is transactional and fails closed.
+  An existing database is backed up once per `Open` before anything changes:
+  module migrations reuse the core batch's backup when it ran and take their
+  own only when the core schema was already current. A fresh database gets
+  none.
 - **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
   HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.

@@ -214,9 +214,10 @@ func TestModuleSchemaSkippedForNewerCore(t *testing.T) {
 func TestModuleSchemaValidationFailsClosed(t *testing.T) {
 	ok := func(*sql.Tx) error { return nil }
 	cases := map[string][]ModuleSchema{
-		"without a module name": {{Migrations: []func(*sql.Tx) error{ok}}},
-		"registered twice":      {notesSchema(), notesSchema()},
-		"is nil":                {{Module: "notes", Migrations: []func(*sql.Tx) error{nil}}},
+		"without a module name":             {{Migrations: []func(*sql.Tx) error{ok}}},
+		"registered twice":                  {notesSchema(), notesSchema()},
+		"is nil":                            {{Module: "notes", Migrations: []func(*sql.Tx) error{nil}}},
+		"declares tables but no migrations": {{Module: "notes", Tables: []string{"notes_item"}}},
 		"claimed by modules": {notesSchema(),
 			{Module: "other", Tables: []string{"notes_item"}, Migrations: []func(*sql.Tx) error{ok}}},
 	}

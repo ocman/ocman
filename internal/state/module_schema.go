@@ -118,6 +118,10 @@ func validateModuleSchemas(schemas []ModuleSchema) error {
 			return fmt.Errorf("module schema %q registered twice", schema.Module)
 		}
 		modules[schema.Module] = true
+		if len(schema.Tables) > 0 && len(schema.Migrations) == 0 {
+			// Nothing would ever be pending, so the table checks never run.
+			return fmt.Errorf("module %s declares tables but no migrations", schema.Module)
+		}
 		for i, migration := range schema.Migrations {
 			if migration == nil {
 				return fmt.Errorf("module %s migration v%d is nil", schema.Module, i+1)
