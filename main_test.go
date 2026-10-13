@@ -241,30 +241,39 @@ func TestValidateRemoteTransport(t *testing.T) {
 // TestValidateListenExposure pins the startup refusal: a listener
 // reachable from off-box with no password configured is an open remote
 // control for the operator's coding agents, so ocman must refuse to
-// start unless the operator explicitly opts out.
+// start unless the operator explicitly opts out. A public
+// -public-base-url counts as off-box exposure even on a loopback
+// listener: behind a reverse proxy every request looks local.
 func TestValidateListenExposure(t *testing.T) {
 	tests := []struct {
 		name           string
 		addr           string
+		baseURL        string
 		authConfigured bool
 		allowInsecure  bool
 		wantErr        bool
 	}{
-		{"loopback without auth still starts", "127.0.0.1:8228", false, false, false},
-		{"loopback name without auth still starts", "localhost:8228", false, false, false},
-		{"ipv6 loopback without auth still starts", "[::1]:8228", false, false, false},
-		{"wildcard without auth refuses", "0.0.0.0:8228", false, false, true},
-		{"bare port without auth refuses", ":8228", false, false, true},
-		{"lan address without auth refuses", "192.168.1.10:8228", false, false, true},
-		{"wildcard with auth starts", "0.0.0.0:8228", true, false, false},
-		{"wildcard with explicit opt-out starts", "0.0.0.0:8228", false, true, false},
+		{"loopback without auth still starts", "127.0.0.1:8228", "", false, false, false},
+		{"loopback name without auth still starts", "localhost:8228", "", false, false, false},
+		{"ipv6 loopback without auth still starts", "[::1]:8228", "", false, false, false},
+		{"wildcard without auth refuses", "0.0.0.0:8228", "", false, false, true},
+		{"bare port without auth refuses", ":8228", "", false, false, true},
+		{"lan address without auth refuses", "192.168.1.10:8228", "", false, false, true},
+		{"wildcard with auth starts", "0.0.0.0:8228", "", true, false, false},
+		{"wildcard with explicit opt-out starts", "0.0.0.0:8228", "", false, true, false},
+		{"loopback with loopback base url starts", "127.0.0.1:8228", "http://127.0.0.1:8228", false, false, false},
+		{"loopback with localhost base url starts", "127.0.0.1:8228", "https://localhost:8443", false, false, false},
+		{"loopback with public base url refuses", "127.0.0.1:8228", "https://ocman.example.ts.net", false, false, true},
+		{"loopback with host-only base url refuses", "127.0.0.1:8228", "ocman.example.com", false, false, true},
+		{"loopback with public base url and auth starts", "127.0.0.1:8228", "https://ocman.example.ts.net", true, false, false},
+		{"loopback with public base url and opt-out starts", "127.0.0.1:8228", "https://ocman.example.ts.net", false, true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateListenExposure(tt.addr, tt.authConfigured, tt.allowInsecure)
+			err := validateListenExposure(tt.addr, tt.baseURL, tt.authConfigured, tt.allowInsecure)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("validateListenExposure(%q, auth=%v, insecure=%v) error = %v, wantErr %v",
-					tt.addr, tt.authConfigured, tt.allowInsecure, err, tt.wantErr)
+				t.Fatalf("validateListenExposure(%q, %q, auth=%v, insecure=%v) error = %v, wantErr %v",
+					tt.addr, tt.baseURL, tt.authConfigured, tt.allowInsecure, err, tt.wantErr)
 			}
 			if tt.wantErr && !strings.Contains(err.Error(), "-insecure-no-auth") {
 				t.Errorf("error must name the opt-out flag, got: %v", err)

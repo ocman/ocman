@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -127,7 +128,7 @@ func main() {
 	remoteTLSCert := flag.String("remote-tls-cert", "", "TLS certificate file for the remote-access gRPC server (enables TLS together with -remote-tls-key)")
 	remoteTLSKey := flag.String("remote-tls-key", "", "TLS key file for the remote-access gRPC server")
 	remoteTrustedOverlay := flag.Bool("remote-trusted-overlay", false, "explicitly allow plaintext remote gRPC on a trusted overlay network")
-	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow a non-loopback -addr/-gui-addr with no password configured (also "+insecureNoAuthEnv+"=1)")
+	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow a non-loopback -addr/-gui-addr or a public -public-base-url with no password configured (also "+insecureNoAuthEnv+"=1)")
 	logFile := flag.String("log-file", "", "log file path in addition to stderr (empty = ~/Library/Logs/ocman/ocman.log on macOS, else $XDG_STATE_HOME/ocman/ocman.log; \"-\" or \"off\" = stderr only)")
 	flag.Parse()
 	home, _ := os.UserHomeDir()
@@ -164,13 +165,21 @@ func main() {
 	if *guiMode {
 		httpListenAddr = *guiAddr
 	}
-	if err := validateListenExposure(httpListenAddr, authPasswordValue != "",
+
+	// Resolve the public base URL: flag wins, then env. Empty leaves
+	// the "derive from request Host" behaviour in the server.
+	// Resolved before the exposure check: a public base URL means a
+	// reverse proxy fronts the loopback listener, and every proxied
+	// request then looks loopback to the auth middleware.
+	resolvedBaseURL := *publicBaseURL
+	if resolvedBaseURL == "" {
+		resolvedBaseURL = strings.TrimSpace(os.Getenv(publicBaseURLEnv))
+	}
+	if err := validateListenExposure(httpListenAddr, resolvedBaseURL, authPasswordValue != "",
 		*insecureNoAuth || parseBoolEnv(os.Getenv(insecureNoAuthEnv))); err != nil {
 		fatal("%v", err)
 	}
 
-	// Resolve the public base URL: flag wins, then env. Empty leaves
-	// the "derive from request Host" behaviour in the server.
 	// Resolve the share relay: flag, then env, then the built-in
 	// default. An invalid value stops startup rather than silently
 	// disabling cross-machine sharing.
@@ -181,11 +190,6 @@ func main() {
 	if resolvedRelayURL != "" {
 		log.WithFields(log.Fields{"url": resolvedRelayURL, "source": relaySource}).
 			Info("share relay configured")
-	}
-
-	resolvedBaseURL := *publicBaseURL
-	if resolvedBaseURL == "" {
-		resolvedBaseURL = strings.TrimSpace(os.Getenv(publicBaseURLEnv))
 	}
 
 	// Parse and validate the -platforms flag.
@@ -401,17 +405,43 @@ func resolveOpenCodePassword(fileValue string, generate bool) (string, error) {
 
 // validateListenExposure refuses a startup that would expose ocman's
 // full session-control API — sending messages, running shell commands,
-// launching agents — to anyone who can reach the listen address. Only
-// loopback binds are unauthenticated-safe; everything else needs a
-// password or an explicit opt-out.
-func validateListenExposure(addr string, authConfigured, allowInsecure bool) error {
-	if authConfigured || allowInsecure || isLoopbackAddr(addr) {
+// launching agents — to anyone who can reach it. Only loopback binds
+// are unauthenticated-safe; everything else needs a password or an
+// explicit opt-out.
+//
+// A public -public-base-url counts as exposure even on a loopback
+// bind: it documents a TLS-terminating reverse proxy in front of
+// ocman, and every proxied request arrives from 127.0.0.1, so the
+// loopback peer check is not a credential for off-box clients.
+func validateListenExposure(addr, publicBaseURL string, authConfigured, allowInsecure bool) error {
+	if authConfigured || allowInsecure {
 		return nil
 	}
-	return fmt.Errorf("refusing to listen on %s with no password configured: "+
-		"anyone who can reach that address could drive your coding agents. "+
-		"Set %s (or -auth-password-file), bind to 127.0.0.1, or pass -insecure-no-auth (%s=1) to override",
-		addr, authPasswordEnv, insecureNoAuthEnv)
+	if !isLoopbackAddr(addr) {
+		return fmt.Errorf("refusing to listen on %s with no password configured: "+
+			"anyone who can reach that address could drive your coding agents. "+
+			"Set %s (or -auth-password-file), bind to 127.0.0.1, or pass -insecure-no-auth (%s=1) to override",
+			addr, authPasswordEnv, insecureNoAuthEnv)
+	}
+	if publicBaseURL != "" && !baseURLIsLoopback(publicBaseURL) {
+		return fmt.Errorf("refusing to run with -public-base-url %q and no password configured: "+
+			"behind a reverse proxy every request looks local, so anyone who can reach that URL "+
+			"could drive your coding agents. "+
+			"Set %s (or -auth-password-file), or pass -insecure-no-auth (%s=1) to override",
+			publicBaseURL, authPasswordEnv, insecureNoAuthEnv)
+	}
+	return nil
+}
+
+// baseURLIsLoopback reports whether a public base URL names a loopback
+// host. An unparseable or host-less value is treated as non-loopback:
+// exposure checks fail closed.
+func baseURLIsLoopback(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return isLoopbackAddr(u.Host)
 }
 
 func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay bool) error {

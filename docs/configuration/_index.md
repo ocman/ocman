@@ -148,7 +148,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `-remote-tls-cert` | _(unset)_ | TLS certificate file for the remote-access gRPC server (enables TLS with `-remote-tls-key`). |
 | `-remote-tls-key` | _(unset)_ | TLS key file for the remote-access gRPC server. |
 | `-remote-trusted-overlay` | `false` | Explicitly allow plaintext remote gRPC on a trusted overlay network. |
-| `-insecure-no-auth` | `false` | Allow a non-loopback `-addr` / `-gui-addr` with no password configured. Also `OCMAN_INSECURE_NO_AUTH=1`. |
+| `-insecure-no-auth` | `false` | Allow a non-loopback `-addr` / `-gui-addr` or a public `-public-base-url` with no password configured. Also `OCMAN_INSECURE_NO_AUTH=1`. |
 
 ## Environment variables
 
@@ -182,8 +182,12 @@ GitHub and Forgejo links (`/owner/repo/pull|pulls|issues|commit/…` on github.c
 
 By default ocman binds `127.0.0.1:8228` and serves unauthenticated. Any other listen address
 (`0.0.0.0:8228`, a bare `:8228`, a LAN IP) requires a password. Ocman refuses to start without
-one, because session routes can send messages, run commands, and launch agents. Override that
-with `-insecure-no-auth` (or `OCMAN_INSECURE_NO_AUTH=1`) only on a network you control.
+one, because session routes can send messages, run commands, and launch agents. A public
+`-public-base-url` / `OCMAN_PUBLIC_BASE_URL` requires a password too, even on a loopback
+listener: it documents a reverse proxy in front of ocman, and every proxied request then
+arrives from `127.0.0.1`, so the loopback check is not a credential for off-box clients.
+Override either refusal with `-insecure-no-auth` (or `OCMAN_INSECURE_NO_AUTH=1`) only on a
+network you control.
 
 To require a password, say when exposing ocman over a tunnel, Tailscale, or any non-loopback
 listener, set one of the following (highest precedence first):
