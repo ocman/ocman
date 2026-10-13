@@ -175,6 +175,10 @@ flowchart LR
   do not undo saved merges, and includes the selected target checkout for display.
   Dashboard totals, sidebar groups and project session lists share this identity.
   Merge chains follow the final target, and a transaction rejects cycles.
+  Upstream memberships and saved checkout edges form connected components, so
+  crossed upstream groups keep all saved merge members together. If a component
+  has multiple saved destinations, the lowest stable checkout key selects its
+  display representative independently of inventory order.
   Session directories, owners and transcripts stay intact. Successful merges
   publish `ocman.projects.changed` so other browsers refresh their project list.
 - **Encrypted webhooks.** Providers submit plaintext to the relay's ingestion

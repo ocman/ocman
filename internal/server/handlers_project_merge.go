@@ -18,22 +18,47 @@ func (s *Server) applyProjectMerges(ctx context.Context, projects []db.ProjectSt
 	for _, p := range projects {
 		currentKeys[state.ProjectMergeKey(p.RemoteID, p.Directory)] = p.ProjectKey
 	}
-	groups := state.ProjectMerges{}
-	for _, p := range projects {
-		key := state.ProjectMergeKey(p.RemoteID, p.Directory)
-		target := merges.Resolve(state.ProjectMergeTarget{Key: key})
-		if target.Key == key {
-			continue
+	currentKey := func(checkout string) string {
+		if key, ok := currentKeys[checkout]; ok {
+			return key
 		}
-		if current, ok := currentKeys[target.Key]; ok {
-			target.Key = current
+		return checkout
+	}
+	// Upstream changes can cross saved merge pairs. Treat both kinds of
+	// membership as connected components, not directed group edges.
+	parent := map[string]string{}
+	var root func(string) string
+	root = func(key string) string {
+		if _, ok := parent[key]; !ok {
+			parent[key] = key
 		}
-		groups[p.ProjectKey] = target
+		if parent[key] != key {
+			parent[key] = root(parent[key])
+		}
+		return parent[key]
+	}
+	for source, target := range merges {
+		a, b := root(currentKey(source)), root(currentKey(target.Key))
+		if a < b {
+			parent[b] = a
+		} else {
+			parent[a] = b
+		}
+	}
+	targets := state.ProjectMerges{}
+	for _, saved := range merges {
+		target := merges.Resolve(saved)
+		component := root(currentKey(target.Key))
+		previous, ok := targets[component]
+		// Crossed groups can have multiple saved destinations. Stable checkout
+		// order chooses the same representative regardless of inventory order.
+		if !ok || target.Key < previous.Key {
+			targets[component] = target
+		}
 	}
 	for i, p := range projects {
-		if _, ok := groups[p.ProjectKey]; ok {
-			target := groups.Resolve(state.ProjectMergeTarget{Key: p.ProjectKey})
-			projects[i].ProjectKey = target.Key
+		if target, ok := targets[root(p.ProjectKey)]; ok {
+			projects[i].ProjectKey = currentKey(target.Key)
 			projects[i].MergedIntoDirectory = target.Directory
 			projects[i].MergedIntoRemoteID = target.RemoteID
 		}

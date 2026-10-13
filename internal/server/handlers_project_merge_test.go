@@ -101,3 +101,32 @@ func TestProjectMergeSurvivesMissingTargetAndMergesAgain(t *testing.T) {
 		t.Fatalf("chained merge lost source: %+v", got)
 	}
 }
+
+func TestProjectMergeCombinesCrossedUpstreamGroups(t *testing.T) {
+	srv := testServer(t)
+	projects := []db.ProjectStats{{Directory: "/a"}, {Directory: "/b"}, {Directory: "/c"}, {Directory: "/d"}}
+	srv.remoteProjectsFn = func() []db.ProjectStats { return append([]db.ProjectStats(nil), projects...) }
+	for _, body := range []string{
+		`{"source":{"directory":"/a"},"target":{"directory":"/b"}}`,
+		`{"source":{"directory":"/c"},"target":{"directory":"/d"}}`,
+	} {
+		rr := httptest.NewRecorder()
+		srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
+		}
+	}
+	projects[0].UpstreamKeys, projects[3].UpstreamKeys = []string{"x"}, []string{"x"}
+	projects[1].UpstreamKeys, projects[2].UpstreamKeys = []string{"y"}, []string{"y"}
+	for range 2 {
+		got := getProjects(t, srv)
+		for _, p := range got {
+			if p.ProjectKey != got[0].ProjectKey || p.MergedIntoDirectory != "/b" {
+				t.Fatalf("crossed upstreams split saved merges: %+v", got)
+			}
+		}
+		for i, j := 0, len(projects)-1; i < j; i, j = i+1, j-1 {
+			projects[i], projects[j] = projects[j], projects[i]
+		}
+	}
+}

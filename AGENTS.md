@@ -355,9 +355,12 @@ handlers don't bypass the `Host` seam). User-facing docs:
 Manual project merging is hub-local display bookkeeping. The Projects dashboard
 persists owner-qualified checkout mappings in state.db's `projects.merges` setting.
 `/api/projects` resolves those checkouts against current upstream groups, preserving
-merges when Git remotes change. `projectIdentityIndex` keeps a persisted target alias
-even when its remote is disconnected. Directory scopes filter checkout rows before
-group totals are computed. Sessions retain their original directories and owners.
+merges when Git remotes change. Upstream membership and saved merges form connected
+components, so crossed upstream groups cannot undo saved merges. Multiple saved
+destinations in one component use the lowest stable checkout key as the display
+representative. `projectIdentityIndex` keeps a persisted target alias even when its
+remote is disconnected. Directory scopes filter checkout rows before group totals
+are computed. Sessions retain their original directories and owners.
 
 - `main.go` — entrypoint; embeds the skills and passes the build version to
   `internal/app`. Application startup, flags, database selection, logging,
