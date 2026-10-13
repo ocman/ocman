@@ -88,6 +88,7 @@ PATTERNS=(
 EXCLUDES=(
 	"--glob" "!internal/server/*_test.go"
 	"--glob" "!internal/mcp/*_test.go"
+	"--glob" "!internal/tmuxmod/*_test.go"
 	"--glob" "!internal/server/tmux.go"
 	"--glob" "!internal/server/term.go"
 	"--glob" "!internal/server/host.go"
@@ -99,6 +100,7 @@ for pattern in "${PATTERNS[@]}"; do
 		rg -n --no-messages \
 			--glob 'internal/server/*.go' \
 			--glob 'internal/mcp/*.go' \
+			--glob 'internal/tmuxmod/*.go' \
 			"${EXCLUDES[@]}" \
 			"$pattern" "$ROOT" || true
 	)

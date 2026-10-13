@@ -96,7 +96,7 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 			name: "tmux launch opencode",
 			invoke: func(s *Server, w http.ResponseWriter) {
 				body := `{"directory":"` + dir + `","remoteId":"gone"}`
-				s.handleTmuxLaunchOpencode(w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
+				serveTmux(s, w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
 			},
 		},
 		{
@@ -214,7 +214,7 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				body := `{"directory":"` + dir + `","remoteId":"` + rid + `"}`
-				s.handleTmuxLaunchOpencode(w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
+				serveTmux(s, w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
 			},
 		},
 		{

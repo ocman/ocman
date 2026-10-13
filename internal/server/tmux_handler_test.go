@@ -29,7 +29,7 @@ func TestHandleTmuxLaunchOpencodeRoutesThroughEnsure(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode",
 		bytes.NewBufferString(`{"directory":"`+repo+`","remoteId":"abc"}`))
 	rec := httptest.NewRecorder()
-	srv.handleTmuxLaunchOpencode(rec, req)
+	serveTmux(srv, rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
@@ -42,6 +42,58 @@ func TestHandleTmuxLaunchOpencodeRoutesThroughEnsure(t *testing.T) {
 	// handler surfaces the managed runtime ID as "session".
 	if got["session"] != "sess-name" {
 		t.Fatalf("session = %q, want sess-name (managed runtime ID)", got["session"])
+	}
+}
+
+// serveTmux sends req through the tmux module's routes as a loopback,
+// origin-less client, so the server's real guards and owner resolution run.
+func serveTmux(s *Server, w http.ResponseWriter, req *http.Request) {
+	mux := http.NewServeMux()
+	s.tmuxModule().Routes(moduleRouter{s: s, mux: mux})
+	req.RemoteAddr = "127.0.0.1:12345"
+	mux.ServeHTTP(w, req)
+}
+
+// The tmux routes are mounted from the module registry with the method
+// check ahead of the localhost guard, as when routes.go registered them.
+func TestTmuxRoutesMountedBehindGuards(t *testing.T) {
+	mux, err := testServer(t).routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		method, path, remote string
+		want                 int
+	}{
+		{http.MethodPost, "/api/tmux/clients", "127.0.0.1:1", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/api/tmux/sessions", "192.0.2.1:1", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/tmux/switch", "127.0.0.1:1", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/tmux/launch-opencode", "127.0.0.1:1", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/tmux/clients", "192.0.2.1:1", http.StatusForbidden},
+		{http.MethodGet, "/api/tmux/sessions", "192.0.2.1:1", http.StatusForbidden},
+		{http.MethodPost, "/api/tmux/switch", "192.0.2.1:1", http.StatusForbidden},
+		{http.MethodPost, "/api/tmux/launch-opencode", "192.0.2.1:1", http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path+" from "+tt.remote, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(`{}`))
+			req.RemoteAddr = tt.remote
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
+			}
+		})
+	}
+
+	// A cross-origin browser on loopback is refused too.
+	req := httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", bytes.NewBufferString(`{}`))
+	req.RemoteAddr = "127.0.0.1:1"
+	req.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin status = %d, want 403", rec.Code)
 	}
 }
 

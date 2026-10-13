@@ -67,10 +67,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/git/files", s.get(s.handleRepoFiles))
 	mux.HandleFunc("/api/git/file", s.get(s.handleRepoFile))
 	mux.HandleFunc("/api/git/checkout", requirePOST(s.requireLocalhost(s.handleGitCheckout)))
-	mux.HandleFunc("/api/tmux/clients", requireGET(s.requireLocalhost(s.handleTmuxClients)))
-	mux.HandleFunc("/api/tmux/sessions", requireGET(s.requireLocalhost(s.handleTmuxSessions)))
-	mux.HandleFunc("/api/tmux/switch", requirePOST(s.requireLocalhost(s.handleTmuxSwitch)))
-	mux.HandleFunc("/api/tmux/launch-opencode", requirePOST(s.requireLocalhost(s.handleTmuxLaunchOpencode)))
 	// Live terminal: WebSocket bridge that attaches an in-app xterm.js
 	// terminal to an existing tmux target via a PTY. localhost-only —
 	// this is a live shell. The WS upgrade is a GET that hijacks the
