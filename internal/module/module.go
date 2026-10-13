@@ -45,7 +45,9 @@ type Guards struct {
 }
 
 // Starter runs once, synchronously, before the server accepts requests.
-// An error aborts startup.
+// ctx is cancelled when the server stops; a module whose initialization must
+// outlive that detaches it with context.WithoutCancel. An error aborts
+// startup.
 type Starter interface {
 	Start(ctx context.Context) error
 }

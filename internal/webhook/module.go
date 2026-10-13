@@ -76,7 +76,7 @@ func (m *Module) Routes(r module.Router) {
 
 // Start loads the inboxes so a broken store fails startup, not a poller.
 func (m *Module) Start(ctx context.Context) error {
-	inboxes, err := m.store.ListWebhookInboxes(ctx)
+	inboxes, err := m.store.ListWebhookInboxes(context.WithoutCancel(ctx))
 	if err != nil {
 		return err
 	}

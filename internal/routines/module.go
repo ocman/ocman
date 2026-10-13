@@ -38,7 +38,8 @@ func (m *Module) Routes(r module.Router) {
 }
 
 // Start settles runs a previous process left running before any new tick.
-func (m *Module) Start(ctx context.Context) error { return m.svc.Recover(ctx) }
+// Start recovers persisted runs; recovery completes even if startup is cancelled.
+func (m *Module) Start(ctx context.Context) error { return m.svc.Recover(context.WithoutCancel(ctx)) }
 
 func (m *Module) Run(ctx context.Context) {
 	ticker := time.NewTicker(tickInterval)

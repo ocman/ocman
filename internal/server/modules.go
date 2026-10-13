@@ -241,12 +241,16 @@ func (s *Server) mountModules(mux *http.ServeMux) {
 	}
 }
 
-// startModules runs every Starter, then launches every Runner on workers.
+// Starters get the cancellable server context; one whose initialization must
+// outlive a cancelled startup detaches it itself.
 func (s *Server) startModules(ctx context.Context, workers *sync.WaitGroup) error {
-	mods := s.modules()
+	return startModules(ctx, s.modules(), workers)
+}
+
+func startModules(ctx context.Context, mods []module.Module, workers *sync.WaitGroup) error {
 	for _, m := range mods {
 		if st, ok := m.(module.Starter); ok {
-			if err := st.Start(context.WithoutCancel(ctx)); err != nil {
+			if err := st.Start(ctx); err != nil {
 				return fmt.Errorf("starting %s: %w", m.Name(), err)
 			}
 		}
