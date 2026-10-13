@@ -1,4 +1,4 @@
-package server
+package filesystem
 
 import (
 	"errors"
@@ -7,22 +7,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
-
-// repoFilesOwner parses `dir` + `remoteId` and resolves the owning host.
-func (s *Server) repoFilesOwner(w http.ResponseWriter, r *http.Request) (string, hostsvc.Host, bool) {
-	dir, ok := parseAbsDir(w, r)
-	if !ok {
-		return "", nil, false
-	}
-	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
-	if !ok {
-		return "", nil, false
-	}
-	host, ok := s.resolveOwner(w, dir, remoteID)
-	return dir, host, ok
-}
 
 func writeRepoFilesError(w http.ResponseWriter, err error, what string) {
 	if errors.Is(err, git.ErrNotARepo) || errors.Is(err, git.ErrFileNotFound) {
@@ -40,27 +26,27 @@ func writeRepoFilesError(w http.ResponseWriter, err error, what string) {
 //	GET /api/git/files?dir=<abs>&remoteId=<id>[&ignored=1]
 //	200 {"root": "/repo", "files": ["a.go", ...], "truncated": false}
 //	404 not a repository
-func (s *Server) handleRepoFiles(w http.ResponseWriter, r *http.Request) {
-	dir, host, ok := s.repoFilesOwner(w, r)
+func (m *Module) handleRepoFiles(w http.ResponseWriter, r *http.Request) {
+	dir, files, ok := m.Owner(w, r)
 	if !ok {
 		return
 	}
-	list, err := host.ListRepoFiles(r.Context(), dir, r.URL.Query().Get("ignored") == "1")
+	list, err := files.ListRepoFiles(r.Context(), dir, r.URL.Query().Get("ignored") == "1")
 	if err != nil {
 		writeRepoFilesError(w, err, "list files")
 		return
 	}
-	writeJSON(w, list)
+	httpx.WriteJSON(w, list)
 }
 
 // handleRepoFile returns one listed file (`path`, root-relative) of the
 // repository containing `dir`. Unlisted paths are 404; ignored ones too
-// unless `ignored=1`.
+// unless `ignored=1`. Containment is the owner's: only listed files read.
 //
 //	GET /api/git/file?dir=<abs>&path=<rel>&remoteId=<id>[&ignored=1]
 //	200 {"path": "a.go", "content": "...", "size": 12, "binary": false, "truncated": false}
-func (s *Server) handleRepoFile(w http.ResponseWriter, r *http.Request) {
-	dir, host, ok := s.repoFilesOwner(w, r)
+func (m *Module) handleRepoFile(w http.ResponseWriter, r *http.Request) {
+	dir, files, ok := m.Owner(w, r)
 	if !ok {
 		return
 	}
@@ -69,10 +55,10 @@ func (s *Server) handleRepoFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path query parameter is required", http.StatusBadRequest)
 		return
 	}
-	file, err := host.ReadRepoFile(r.Context(), dir, path, r.URL.Query().Get("ignored") == "1")
+	file, err := files.ReadRepoFile(r.Context(), dir, path, r.URL.Query().Get("ignored") == "1")
 	if err != nil {
 		writeRepoFilesError(w, err, "read file")
 		return
 	}
-	writeJSON(w, file)
+	httpx.WriteJSON(w, file)
 }

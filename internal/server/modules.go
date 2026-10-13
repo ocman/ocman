@@ -45,7 +45,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	return append(mods, s.tmuxModule())
+	return append(mods, s.tmuxModule(), s.filesystemModule())
 }
 
 // tmuxModule is stateless, so it is rebuilt on each call.

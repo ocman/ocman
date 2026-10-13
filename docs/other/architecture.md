@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -218,8 +218,10 @@ flowchart TD
   seed and the headless watcher), Factory (`internal/factorymod`),
   plugins (`internal/pluginsmod`), the `/api/tmux` controls (`internal/tmuxmod`:
   sessions and launches through the owner's `hostsvc.Host`, client list and
-  switch on this machine's tmux), routines, webhooks, artifacts, the Inbox and
-  conversation sharing each own
+  switch on this machine's tmux), routines, webhooks, artifacts, the Inbox,
+  conversation sharing and read-only file browsing (`internal/filesystem`:
+  directory picker, signed `/api/file/` embeds, owner-routed repository file
+  reads) each own
   their routes, background loops, MCP tools and event subscriptions. The
   server lists them once in `modules()` and hands each narrow `Deps` (store,
   guards, lookups); modules never import the server or each other. Webhooks
@@ -414,7 +416,8 @@ flowchart TD
   session creation and `embed_file`, plus the tools modules contribute:
   action-based `factory` and proposal-only `factory_control` (Factory),
   `inbox`, `webhooks`, `routines` and `artifacts`. File embedding uses signed tokens
-  persisted in `state.db`.
+  whose key is persisted in `state.db`; `internal/filesystem` mints and serves
+  them.
 - **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and
   `recall`. Sends write the owning host's `state.db`; remote sends and recalls
   cross the owner-routed gRPC seam. The browser alone lists, reads, and

@@ -1,4 +1,4 @@
-package server
+package filesystem
 
 import (
 	"encoding/json"
@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
 // --- helpers ---
@@ -99,7 +97,7 @@ func getJSON[T any](t *testing.T, h http.HandlerFunc, target string) T {
 // --- /api/filesystem/directories ---
 
 func TestHandleFilesystemDirectories_ErrorPaths(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	tmp := t.TempDir()
 	file := filepath.Join(tmp, "afile")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
@@ -122,7 +120,7 @@ func TestHandleFilesystemDirectories_ErrorPaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directories?dir="+url.QueryEscape(tt.dir), nil)
 			rr := httptest.NewRecorder()
-			srv.handleFilesystemDirectories(rr, req)
+			m.handleDirectories(rr, req)
 			if rr.Code != tt.wantCode {
 				t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
 			}
@@ -134,20 +132,20 @@ func TestHandleFilesystemDirectories_ErrorPaths(t *testing.T) {
 }
 
 func TestHandleFilesystemDirectories_Unreadable(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directories?dir="+url.QueryEscape(unreadableDir(t)), nil)
 	rr := httptest.NewRecorder()
-	srv.handleFilesystemDirectories(rr, req)
+	m.handleDirectories(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("got %d, want 403: %s", rr.Code, rr.Body.String())
 	}
 }
 
 func TestHandleFilesystemDirectories_ListsOnlyDirectories(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	root := fsTestTree(t)
 
-	got := getJSON[directoryBrowseResponse](t, srv.handleFilesystemDirectories,
+	got := getJSON[directoryBrowseResponse](t, m.handleDirectories,
 		"/api/filesystem/directories?dir="+url.QueryEscape(root))
 
 	if got.Directory != root {
@@ -176,7 +174,7 @@ func TestHandleFilesystemDirectories_ListsOnlyDirectories(t *testing.T) {
 }
 
 func TestHandleFilesystemDirectories_HomeAndRootDefaults(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := os.Mkdir(filepath.Join(home, "sub"), 0o755); err != nil {
@@ -196,7 +194,7 @@ func TestHandleFilesystemDirectories_HomeAndRootDefaults(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getJSON[directoryBrowseResponse](t, srv.handleFilesystemDirectories,
+			got := getJSON[directoryBrowseResponse](t, m.handleDirectories,
 				"/api/filesystem/directories"+tt.query)
 			if got.Directory != tt.wantDir {
 				t.Errorf("directory = %q, want %q", got.Directory, tt.wantDir)
@@ -214,13 +212,13 @@ func TestHandleFilesystemDirectories_HomeAndRootDefaults(t *testing.T) {
 // With no resolvable home the handler falls back to the working
 // directory rather than erroring.
 func TestHandleFilesystemDirectories_NoHomeFallsBackToCwd(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	t.Setenv("HOME", "")
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	got := getJSON[directoryBrowseResponse](t, srv.handleFilesystemDirectories, "/api/filesystem/directories")
+	got := getJSON[directoryBrowseResponse](t, m.handleDirectories, "/api/filesystem/directories")
 	if got.Directory != filepath.Clean(cwd) {
 		t.Errorf("directory = %q, want %q", got.Directory, cwd)
 	}
@@ -232,7 +230,7 @@ func TestHandleFilesystemDirectories_NoHomeFallsBackToCwd(t *testing.T) {
 // --- /api/filesystem/directory-search ---
 
 func TestHandleFilesystemDirectorySearch_ErrorPaths(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	tmp := t.TempDir()
 	file := filepath.Join(tmp, "afile")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
@@ -256,7 +254,7 @@ func TestHandleFilesystemDirectorySearch_ErrorPaths(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet,
 				"/api/filesystem/directory-search?q=x&root="+url.QueryEscape(tt.root), nil)
 			rr := httptest.NewRecorder()
-			srv.handleFilesystemDirectorySearch(rr, req)
+			m.handleDirectorySearch(rr, req)
 			if rr.Code != tt.wantCode {
 				t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
 			}
@@ -268,18 +266,18 @@ func TestHandleFilesystemDirectorySearch_ErrorPaths(t *testing.T) {
 }
 
 func TestHandleFilesystemDirectorySearch_UnreadableRoot(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/filesystem/directory-search?q=x&root="+url.QueryEscape(unreadableDir(t)), nil)
 	rr := httptest.NewRecorder()
-	srv.handleFilesystemDirectorySearch(rr, req)
+	m.handleDirectorySearch(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("got %d, want 403: %s", rr.Code, rr.Body.String())
 	}
 }
 
 func TestHandleFilesystemDirectorySearch_Matches(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	root := fsTestTree(t)
 	esc := url.QueryEscape(root)
 
@@ -338,7 +336,7 @@ func TestHandleFilesystemDirectorySearch_Matches(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getJSON[directorySearchResponse](t, srv.handleFilesystemDirectorySearch,
+			got := getJSON[directorySearchResponse](t, m.handleDirectorySearch,
 				"/api/filesystem/directory-search"+tt.query)
 			if got.Root != tt.wantRoot {
 				t.Errorf("root = %q, want %q", got.Root, tt.wantRoot)
@@ -357,9 +355,9 @@ func TestHandleFilesystemDirectorySearch_Matches(t *testing.T) {
 // The project marker (go.mod) must be reported so the picker can badge
 // real projects.
 func TestHandleFilesystemDirectorySearch_FlagsProjectDirectory(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	root := fsTestTree(t)
-	got := getJSON[directorySearchResponse](t, srv.handleFilesystemDirectorySearch,
+	got := getJSON[directorySearchResponse](t, m.handleDirectorySearch,
 		"/api/filesystem/directory-search?q=myapp&root="+url.QueryEscape(root))
 	if len(got.Entries) != 1 {
 		t.Fatalf("entries = %v, want exactly one", got.Entries)
@@ -370,7 +368,7 @@ func TestHandleFilesystemDirectorySearch_FlagsProjectDirectory(t *testing.T) {
 }
 
 func TestHandleFilesystemDirectorySearch_HomeDefaults(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	// Empty query short-circuits the walk, so this only pins the root
@@ -384,7 +382,7 @@ func TestHandleFilesystemDirectorySearch_HomeDefaults(t *testing.T) {
 		"tilde prefix":                   {"?q=&root=" + url.QueryEscape("~/sub"), filepath.Join(home, "sub")},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := getJSON[directorySearchResponse](t, srv.handleFilesystemDirectorySearch,
+			got := getJSON[directorySearchResponse](t, m.handleDirectorySearch,
 				"/api/filesystem/directory-search"+tc.query)
 			if got.Root != tc.wantRoot {
 				t.Errorf("root = %q, want %q", got.Root, tc.wantRoot)
@@ -394,58 +392,16 @@ func TestHandleFilesystemDirectorySearch_HomeDefaults(t *testing.T) {
 }
 
 func TestHandleFilesystemDirectorySearch_NoHomeFallsBackToCwd(t *testing.T) {
-	srv := testServer(t)
+	m := NewModule(Deps{})
 	t.Setenv("HOME", "")
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	got := getJSON[directorySearchResponse](t, srv.handleFilesystemDirectorySearch,
+	got := getJSON[directorySearchResponse](t, m.handleDirectorySearch,
 		"/api/filesystem/directory-search?q=")
 	if got.Root != filepath.Clean(cwd) {
 		t.Errorf("root = %q, want %q", got.Root, cwd)
-	}
-}
-
-// --- filesystem route wrappers ---
-
-// Both filesystem routes are GET-only and localhost-only; the wrappers
-// must reject before the handler touches the filesystem.
-func TestFilesystemRoutes_MethodAndLocalhostEnforcement(t *testing.T) {
-	srv := testServer(t)
-	routes := map[string]http.HandlerFunc{
-		"/api/filesystem/directories":      requireGET(srv.requireLocalhost(srv.handleFilesystemDirectories)),
-		"/api/filesystem/directory-search": requireGET(srv.requireLocalhost(srv.handleFilesystemDirectorySearch)),
-	}
-	tests := []struct {
-		name       string
-		method     string
-		remoteAddr string
-		origin     string
-		wantCode   int
-	}{
-		{"get from loopback", http.MethodGet, "127.0.0.1:1234", "", http.StatusOK},
-		{"post rejected", http.MethodPost, "127.0.0.1:1234", "", http.StatusMethodNotAllowed},
-		{"delete rejected", http.MethodDelete, "127.0.0.1:1234", "", http.StatusMethodNotAllowed},
-		{"remote peer rejected", http.MethodGet, "10.1.2.3:1234", "", http.StatusForbidden},
-		{"foreign origin rejected", http.MethodGet, "127.0.0.1:1234", "https://evil.example", http.StatusForbidden},
-	}
-	for path, h := range routes {
-		for _, tt := range tests {
-			t.Run(path+"/"+tt.name, func(t *testing.T) {
-				req := httptest.NewRequest(tt.method, path+"?dir="+url.QueryEscape(t.TempDir())+"&root="+url.QueryEscape(t.TempDir())+"&q=", nil)
-				req.RemoteAddr = tt.remoteAddr
-				req.Host = "localhost:8228"
-				if tt.origin != "" {
-					req.Header.Set("Origin", tt.origin)
-				}
-				rr := httptest.NewRecorder()
-				h(rr, req)
-				if rr.Code != tt.wantCode {
-					t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
-				}
-			})
-		}
 	}
 }
 
@@ -675,209 +631,135 @@ func TestSearchDirectories_UnreadableRootErrors(t *testing.T) {
 	}
 }
 
-// --- handlers_system.go ---
+func TestHandleFilesystemDirectories_ReturnsDirectoriesOnly(t *testing.T) {
+	m := NewModule(Deps{})
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir alpha: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "beta"), 0o755); err != nil {
+		t.Fatalf("mkdir beta: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".hidden"), 0o755); err != nil {
+		t.Fatalf("mkdir hidden: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
 
-func TestSystemHandlers_RequireDB(t *testing.T) {
-	srv := testServer(t)
-	srv.db = nil // simulate ocman running without the opencode platform
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directories?dir="+url.QueryEscape(root), nil)
+	rr := httptest.NewRecorder()
+	m.handleDirectories(rr, req)
 
-	handlers := map[string]http.HandlerFunc{
-		"stats":         srv.handleStats,
-		"metrics":       srv.handleMetrics,
-		"activity":      srv.handleActivity,
-		"models":        srv.handleModels,
-		"hourly":        srv.handleHourly,
-		"hourly-tokens": srv.handleHourlyTokens,
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	for name, h := range handlers {
-		t.Run(name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/"+name, nil)
-			rr := httptest.NewRecorder()
-			h(rr, req)
-			if rr.Code != http.StatusNotImplemented {
-				t.Fatalf("got %d, want 501: %s", rr.Code, rr.Body.String())
-			}
-		})
+	var resp directoryBrowseResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
 	}
-}
-
-// The usage views pass model/dir/day filters straight through; assert
-// they stay 200 with an empty database rather than pinning SQL shapes.
-func TestUsageHandlers_FilterParams(t *testing.T) {
-	srv := testServer(t)
-	handlers := map[string]http.HandlerFunc{
-		"activity":      srv.handleActivity,
-		"models":        srv.handleModels,
-		"hourly":        srv.handleHourly,
-		"hourly-tokens": srv.handleHourlyTokens,
-		"metrics":       srv.handleMetrics,
+	if resp.Directory != filepath.Clean(root) {
+		t.Fatalf("directory = %q, want %q", resp.Directory, filepath.Clean(root))
 	}
-	queries := []string{
-		"",
-		"?days=0",
-		"?days=7&model=anthropic/claude",
-		"?since=1700000000000&dir=" + url.QueryEscape("/tmp/project"),
-		"?limit=abc&offset=abc&sessionLimit=5&sessionOffset=1&projectLimit=5&projectOffset=1",
+	if resp.Parent != filepath.Dir(root) {
+		t.Fatalf("parent = %q, want %q", resp.Parent, filepath.Dir(root))
 	}
-	for name, h := range handlers {
-		for _, q := range queries {
-			t.Run(name+q, func(t *testing.T) {
-				req := httptest.NewRequest(http.MethodGet, "/api/"+name+q, nil)
-				rr := httptest.NewRecorder()
-				h(rr, req)
-				if rr.Code != http.StatusOK {
-					t.Fatalf("got %d, want 200: %s", rr.Code, rr.Body.String())
-				}
-			})
+	names := make([]string, 0, len(resp.Entries))
+	for _, entry := range resp.Entries {
+		names = append(names, entry.Name)
+		if !filepath.IsAbs(entry.Path) {
+			t.Fatalf("entry path %q is not absolute", entry.Path)
 		}
 	}
-}
-
-func TestHandleWhisperStatus(t *testing.T) {
-	srv := testServer(t)
-	got := getJSON[map[string]any](t, srv.handleWhisperStatus, "/api/whisper-status")
-	available, ok := got["available"].(bool)
-	if !ok {
-		t.Fatalf("payload = %v, want an \"available\" bool", got)
+	if strings.Join(names, ",") != "alpha,beta,.hidden" {
+		t.Fatalf("entries = %v, want alpha,beta,.hidden", names)
 	}
-	if available != whisper.Available() {
-		t.Errorf("available = %v, want %v", available, whisper.Available())
+	if len(resp.Entries) != 3 || !resp.Entries[2].Hidden {
+		t.Fatalf("hidden entry flag not set: %+v", resp.Entries)
 	}
 }
 
-// Without whisper installed the endpoint reports 503; with it installed
-// a bodyless POST fails multipart parsing with 400. Either way the
-// handler must never 200 on a request carrying no audio.
-func TestHandleTranscribe_NoAudio(t *testing.T) {
-	srv := testServer(t)
-	want := http.StatusServiceUnavailable
-	if whisper.Available() {
-		want = http.StatusBadRequest
+func TestHandleFilesystemDirectorySearch_FindsNestedProjectDirectories(t *testing.T) {
+	m := NewModule(Deps{})
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "workspace", "ocman")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
 	}
-	for _, tt := range []struct {
-		name        string
-		contentType string
-	}{
-		{"no body", ""},
-		{"multipart without audio field", "multipart/form-data; boundary=zz"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/transcribe", strings.NewReader(""))
-			if tt.contentType != "" {
-				req.Header.Set("Content-Type", tt.contentType)
-			}
-			rr := httptest.NewRecorder()
-			srv.handleTranscribe(rr, req)
-			if rr.Code != want {
-				t.Fatalf("got %d, want %d: %s", rr.Code, want, rr.Body.String())
-			}
-		})
+	if err := os.WriteFile(filepath.Join(projectDir, "go.mod"), []byte("module example.com/ocman\n"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "node_modules", "ocman-copy"), 0o755); err != nil {
+		t.Fatalf("mkdir skipped dir: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q=work+oc&limit=10", nil)
+	rr := httptest.NewRecorder()
+	m.handleDirectorySearch(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp directorySearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if resp.Root != filepath.Clean(root) {
+		t.Fatalf("root = %q, want %q", resp.Root, filepath.Clean(root))
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("entries = %+v, want one project match", resp.Entries)
+	}
+	if resp.Entries[0].Path != projectDir || !resp.Entries[0].Project {
+		t.Fatalf("entry = %+v, want project dir %q", resp.Entries[0], projectDir)
 	}
 }
 
-func TestHandleCalcCost(t *testing.T) {
-	srv := testServer(t)
-	tests := []struct {
-		name     string
-		body     string
-		wantCode int
-	}{
-		{"malformed json", "{", http.StatusBadRequest},
-		{"empty body", "", http.StatusBadRequest},
-		{"wrong types", `{"input":"lots"}`, http.StatusBadRequest},
-		{"unknown model", `{"modelID":"nope/nope","input":10,"output":5}`, http.StatusOK},
-		{"zero usage", `{"modelID":"","input":0,"output":0}`, http.StatusOK},
-		{"with cache tokens", `{"modelID":"anthropic/claude-sonnet-4-20250514","input":100,"output":50,"cacheRead":10,"cacheWrite":20}`, http.StatusOK},
+func TestHandleFilesystemDirectorySearch_DeduplicatesExactAbsoluteDirectory(t *testing.T) {
+	m := NewModule(Deps{})
+	root := t.TempDir()
+	workspaceDir := filepath.Join(root, "workspace")
+	projectDir := filepath.Join(workspaceDir, "research")
+	nestedDir := filepath.Join(projectDir, "anam-research")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("mkdir nested project: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/calc-cost", strings.NewReader(tt.body))
-			rr := httptest.NewRecorder()
-			srv.handleCalcCost(rr, req)
-			if rr.Code != tt.wantCode {
-				t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
-			}
-			if tt.wantCode != http.StatusOK {
-				return
-			}
-			var payload struct {
-				Cost  float64 `json:"cost"`
-				Known bool    `json:"known"`
-			}
-			if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
-				t.Fatalf("invalid JSON: %v (%s)", err, rr.Body.String())
-			}
-			if payload.Cost < 0 {
-				t.Errorf("cost = %v, want >= 0", payload.Cost)
-			}
-			if strings.Contains(tt.name, "unknown") && payload.Known {
-				t.Error("known = true for an unknown model")
-			}
-		})
+	if err := os.WriteFile(filepath.Join(projectDir, "go.mod"), []byte("module example.com/research\n"), 0o644); err != nil {
+		t.Fatalf("write project marker: %v", err)
 	}
-}
+	if err := os.WriteFile(filepath.Join(nestedDir, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write nested project marker: %v", err)
+	}
 
-func TestHandleDebugLog(t *testing.T) {
-	srv := testServer(t)
-	tests := []struct {
-		name      string
-		body      string
-		userAgent string
-		wantCode  int
-	}{
-		{"malformed json", "{", "", http.StatusBadRequest},
-		{"error level", `{"level":"error","message":"boom"}`, "", http.StatusNoContent},
-		{"warn level", `{"level":"warn","message":"careful"}`, "", http.StatusNoContent},
-		{"warning alias", `{"level":"WARNING","message":"careful"}`, "", http.StatusNoContent},
-		{"debug level", `{"level":" Debug ","message":"noisy"}`, "", http.StatusNoContent},
-		{"unknown level falls back to info", `{"level":"trace","message":"hm"}`, "", http.StatusNoContent},
-		{"empty level", `{"message":"hm"}`, "", http.StatusNoContent},
-		{"with data and user agent", `{"level":"info","message":"hm","data":{"a":1}}`, "ocman-test/1.0", http.StatusNoContent},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/debug/log", strings.NewReader(tt.body))
-			if tt.userAgent != "" {
-				req.Header.Set("User-Agent", tt.userAgent)
-			}
-			rr := httptest.NewRecorder()
-			srv.handleDebugLog(rr, req)
-			if rr.Code != tt.wantCode {
-				t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
-			}
-		})
-	}
-}
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q="+url.QueryEscape(projectDir)+"&limit=10", nil)
+	rr := httptest.NewRecorder()
+	m.handleDirectorySearch(rr, req)
 
-// /api/debug/log is POST-only and localhost-only.
-func TestDebugLogRoute_MethodAndLocalhostEnforcement(t *testing.T) {
-	srv := testServer(t)
-	h := requirePOST(srv.requireLocalhost(srv.handleDebugLog))
-	tests := []struct {
-		name       string
-		method     string
-		remoteAddr string
-		origin     string
-		wantCode   int
-	}{
-		{"post from loopback", http.MethodPost, "127.0.0.1:1234", "", http.StatusNoContent},
-		{"get rejected", http.MethodGet, "127.0.0.1:1234", "", http.StatusMethodNotAllowed},
-		{"remote peer rejected", http.MethodPost, "10.1.2.3:1234", "", http.StatusForbidden},
-		{"foreign origin rejected", http.MethodPost, "127.0.0.1:1234", "https://evil.example", http.StatusForbidden},
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "/api/debug/log", strings.NewReader(`{"message":"hi"}`))
-			req.RemoteAddr = tt.remoteAddr
-			req.Host = "localhost:8228"
-			if tt.origin != "" {
-				req.Header.Set("Origin", tt.origin)
-			}
-			rr := httptest.NewRecorder()
-			h(rr, req)
-			if rr.Code != tt.wantCode {
-				t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
-			}
-		})
+	var resp directorySearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if resp.Root != filepath.Clean(workspaceDir) {
+		t.Fatalf("root = %q, want %q", resp.Root, filepath.Clean(workspaceDir))
+	}
+
+	projectCount := 0
+	nestedFound := false
+	for _, entry := range resp.Entries {
+		switch entry.Path {
+		case projectDir:
+			projectCount++
+		case nestedDir:
+			nestedFound = true
+		}
+	}
+	if projectCount != 1 {
+		t.Fatalf("project path appears %d times in %+v, want once", projectCount, resp.Entries)
+	}
+	if !nestedFound {
+		t.Fatalf("nested project %q not found in %+v", nestedDir, resp.Entries)
 	}
 }

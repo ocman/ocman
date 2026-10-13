@@ -13,7 +13,7 @@ import (
 // Modules depend on each other through interfaces supplied by the server,
 // never through imports. Test imports may use other modules as fixtures.
 func TestFeatureModuleImportBoundaries(t *testing.T) {
-	modules := []string{"routines", "webhook", "artifacts", "inbox", "sharing", "factorymod", "pluginsmod", "autoapprove", "tmuxmod"}
+	modules := []string{"routines", "webhook", "artifacts", "inbox", "sharing", "factorymod", "pluginsmod", "autoapprove", "tmuxmod", "filesystem"}
 	for _, name := range modules {
 		entries, err := os.ReadDir(filepath.Join("..", name))
 		if err != nil {

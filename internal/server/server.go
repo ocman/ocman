@@ -12,6 +12,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
+	"github.com/NoUseFreak/ocman/internal/filesystem"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/module"
@@ -85,12 +86,10 @@ type Server struct {
 	mcpHandlerCached http.Handler
 	mcpHandlerOnce   sync.Once
 
-	// fileKey signs the opaque tokens behind GET /api/file/{token}, the
-	// proxy that lets the browser view assets an agent generated on
-	// disk (see handlers_file.go). Loaded once, on first use.
-	fileKey     []byte
-	fileKeyErr  error
-	fileKeyOnce sync.Once
+	// filesystemMod owns directory browsing, signed embedded files and
+	// repository file reads; built on first use (filesystemModule).
+	filesystemMod     *filesystem.Module
+	filesystemModOnce sync.Once
 
 	// autoapproveMod owns the auto-approve pipeline, its routes and its
 	// watcher; built lazily on first use. See autoapprove_engine.go.

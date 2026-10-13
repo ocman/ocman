@@ -543,6 +543,13 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/sharing/` — module: Markdown export, relay share links (kept
   current on the session-idle `Bus` event) and the sharing setting. The
   relay protocol and encryption are `internal/share`.
+- `internal/filesystem/` — module: read-only file browsing. The hub's
+  localhost-only directory picker (`/api/filesystem/directories`,
+  `/directory-search`), the signed `/api/file/{token}` proxy behind MCP
+  `embed_file` (`Server.FileURL` delegates; HMAC key in the `setting` table,
+  served inert via `httpx`), and `/api/git/files` + `/api/git/file`, whose
+  `Deps.Owner` requires `remoteId` and resolves the owner (503 when that remote
+  is disconnected). Composer uploads and artifact blobs are not here.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost

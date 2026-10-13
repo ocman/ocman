@@ -36,8 +36,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/metric-logs", s.get(s.handleMetricLogs))
 	mux.HandleFunc("/api/permission-stats", s.get(s.handlePermissionStats))
 	mux.HandleFunc("/api/projects", s.get(s.handleProjects))
-	mux.HandleFunc("/api/filesystem/directories", requireGET(s.requireLocalhost(s.handleFilesystemDirectories)))
-	mux.HandleFunc("/api/filesystem/directory-search", requireGET(s.requireLocalhost(s.handleFilesystemDirectorySearch)))
 	mux.HandleFunc("/api/system/stats", s.get(s.handleSystemStats))
 	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
 	mux.HandleFunc("/api/sessions/notify", s.get(s.handleSessionsNotify))
@@ -47,10 +45,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Public, UNAUTHENTICATED share endpoints. A valid share token is
 	// the only credential: anyone with the unguessable URL can view the
 	// conversation read-only, even when password auth is configured.
-	// Signed proxy for agent-generated assets (images, SVG, PDF, ...).
-	// The HMAC in the token is what authorises the path; auth still
-	// applies on top.
-	mux.HandleFunc("/api/file/", s.get(s.handleFileProxy))
 	mux.HandleFunc("/api/activity", s.get(s.handleActivity))
 	mux.HandleFunc("/api/models", s.get(s.handleModels))
 	mux.HandleFunc("/api/hourly", s.get(s.handleHourly))
@@ -64,8 +58,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/git/diff", s.get(s.handleGitDiff))
 	mux.HandleFunc("/api/git/info", s.get(s.handleGitInfo))
 	mux.HandleFunc("/api/git/branches", s.get(s.handleGitBranches))
-	mux.HandleFunc("/api/git/files", s.get(s.handleRepoFiles))
-	mux.HandleFunc("/api/git/file", s.get(s.handleRepoFile))
 	mux.HandleFunc("/api/git/checkout", requirePOST(s.requireLocalhost(s.handleGitCheckout)))
 	// Live terminal: WebSocket bridge that attaches an in-app xterm.js
 	// terminal to an existing tmux target via a PTY. localhost-only —

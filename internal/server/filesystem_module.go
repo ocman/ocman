@@ -1,0 +1,41 @@
+package server
+
+import (
+	"net/http"
+
+	"github.com/NoUseFreak/ocman/internal/filesystem"
+	"github.com/NoUseFreak/ocman/internal/module"
+)
+
+// filesystemModule exists without a state DB too: browsing and repository
+// reads need none, and signed files then fail as before.
+func (s *Server) filesystemModule() *filesystem.Module {
+	s.filesystemModOnce.Do(func() {
+		if s.filesystemMod == nil {
+			s.filesystemMod = filesystem.NewModule(filesystem.Deps{
+				Store:  s.stateDB,
+				Owner:  s.repoFilesOwner,
+				Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+			})
+		}
+	})
+	return s.filesystemMod
+}
+
+// repoFilesOwner requires an explicit remoteId, so a disconnected remote
+// fails closed (503) instead of reading the hub's checkout.
+func (s *Server) repoFilesOwner(w http.ResponseWriter, r *http.Request) (string, filesystem.RepoFiles, bool) {
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
+		return "", nil, false
+	}
+	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return "", nil, false
+	}
+	host, ok := s.resolveOwner(w, dir, remoteID)
+	if !ok {
+		return "", nil, false
+	}
+	return dir, host, true
+}

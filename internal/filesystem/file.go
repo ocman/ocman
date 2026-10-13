@@ -1,4 +1,4 @@
-package server
+package filesystem
 
 import (
 	"context"
@@ -90,39 +90,26 @@ func loadFileTokenSecret(ctx context.Context, sdb *state.DB) ([]byte, error) {
 	return key, nil
 }
 
-// fileTokenSecret memoises loadFileTokenSecret for the process lifetime.
-func (s *Server) fileTokenSecret(ctx context.Context) ([]byte, error) {
-	s.fileKeyOnce.Do(func() {
-		s.fileKey, s.fileKeyErr = loadFileTokenSecret(ctx, s.stateDB)
-	})
-	return s.fileKey, s.fileKeyErr
-}
-
-// publicURL turns an absolute in-app path into an absolute URL for a reader
-// who is not on this machine. The configured -public-base-url /
-// OCMAN_PUBLIC_BASE_URL wins; without it the listen address is the only thing
-// left to guess with, which yields a loopback URL that only works locally.
-// Callers that hand the link to a remote reader should say so in their docs.
-func (s *Server) publicURL(path string) string {
-	base := s.publicBaseURL
-	if base == "" {
-		addr := s.addr
-		if addr == "" {
-			addr = "localhost:8228"
+// fileTokenSecret memoises a successful load for the process lifetime; a
+// failed one (a canceled request's context) is retried by the next caller.
+func (m *Module) fileTokenSecret(ctx context.Context) ([]byte, error) {
+	m.keyMu.Lock()
+	defer m.keyMu.Unlock()
+	if m.key == nil {
+		key, err := loadFileTokenSecret(ctx, m.Store)
+		if err != nil {
+			return nil, err
 		}
-		if strings.HasPrefix(addr, ":") {
-			addr = "localhost" + addr
-		}
-		base = "http://" + addr
+		m.key = key
 	}
-	return strings.TrimRight(base, "/") + path
+	return m.key, nil
 }
 
-// FileURL returns an origin-relative URL that serves the file at
-// absPath. Used by the MCP embed_file tool so an agent can hand the
-// user a viewable link to an asset it generated on disk.
-func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
-	key, err := s.fileTokenSecret(ctx)
+// FileURL returns an origin-relative URL that serves the file at absPath.
+// Backs the MCP embed_file tool, so an agent can hand the user a viewable
+// link to an asset it generated on disk.
+func (m *Module) FileURL(ctx context.Context, absPath string) (string, error) {
+	key, err := m.fileTokenSecret(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -130,17 +117,15 @@ func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
 }
 
 // handleFileProxy serves GET /api/file/{token}: the bytes of a file an
-// agent explicitly embedded via the MCP embed_file tool. The signature is
-// the authorisation — an unsigned or altered path is rejected — on top
-// of the normal dashboard auth guard.
-func (s *Server) handleFileProxy(w http.ResponseWriter, r *http.Request) {
-	key, err := s.fileTokenSecret(r.Context())
+// agent explicitly embedded. The signature is the authorisation — an
+// unsigned or altered path is rejected — on top of the dashboard auth guard.
+func (m *Module) handleFileProxy(w http.ResponseWriter, r *http.Request) {
+	key, err := m.fileTokenSecret(r.Context())
 	if err != nil {
-		serverError(w, "loading file token secret", err)
+		httpx.ServerError(w, "loading file token secret", err)
 		return
 	}
-	token := strings.TrimPrefix(r.URL.Path, filePathPrefix)
-	path, ok := verifyFileToken(key, token)
+	path, ok := verifyFileToken(key, strings.TrimPrefix(r.URL.Path, filePathPrefix))
 	if !ok {
 		http.Error(w, "invalid file token", http.StatusForbidden)
 		return
@@ -160,15 +145,10 @@ func (s *Server) handleFileProxy(w http.ResponseWriter, r *http.Request) {
 
 	ctype := fileContentType(path)
 	w.Header().Set("Content-Type", ctype)
-	setInertFileHeaders(w)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%q", fileDisposition(ctype), filepath.Base(path)))
+	httpx.SetInertFileHeaders(w)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%q", httpx.FileDisposition(ctype), filepath.Base(path)))
 	http.ServeContent(w, r, path, info.ModTime(), f)
 }
-
-var (
-	setInertFileHeaders = httpx.SetInertFileHeaders
-	fileDisposition     = httpx.FileDisposition
-)
 
 // fileContentType maps an extension to a MIME type, defaulting to a
 // generic binary type when the extension is unknown.

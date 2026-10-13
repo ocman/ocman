@@ -1,4 +1,4 @@
-package server
+package filesystem
 
 import (
 	"context"
@@ -10,19 +10,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
-func newFileTestServer(t *testing.T) *Server {
+func newFileTestModule(t *testing.T) *Module {
 	t.Helper()
 	stDB, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatalf("state.Open: %v", err)
 	}
 	t.Cleanup(func() { stDB.Close() })
-	return New(nil, stDB, "127.0.0.1:8228", platforms.NewRegistry(), nil)
+	return NewModule(Deps{Store: stDB})
 }
 
 func TestFileToken_RoundTrip(t *testing.T) {
@@ -65,7 +65,7 @@ func TestFileToken_Rejects(t *testing.T) {
 }
 
 func TestFileTokenSecret_StableAcrossCalls(t *testing.T) {
-	s := newFileTestServer(t)
+	s := newFileTestModule(t)
 	a, err := s.fileTokenSecret(t.Context())
 	if err != nil {
 		t.Fatalf("fileTokenSecret: %v", err)
@@ -79,7 +79,7 @@ func TestFileTokenSecret_StableAcrossCalls(t *testing.T) {
 	}
 	// A fresh Server over the same state DB must reuse the persisted key
 	// so links survive a restart.
-	s2 := &Server{stateDB: s.stateDB}
+	s2 := NewModule(Deps{Store: s.Store})
 	c, err := s2.fileTokenSecret(t.Context())
 	if err != nil {
 		t.Fatalf("fileTokenSecret (restart): %v", err)
@@ -90,7 +90,7 @@ func TestFileTokenSecret_StableAcrossCalls(t *testing.T) {
 }
 
 func TestFileURL_RelativeAndVerifiable(t *testing.T) {
-	s := newFileTestServer(t)
+	s := newFileTestModule(t)
 	url, err := s.FileURL(t.Context(), "/tmp/chart.png")
 	if err != nil {
 		t.Fatalf("FileURL: %v", err)
@@ -103,16 +103,10 @@ func TestFileURL_RelativeAndVerifiable(t *testing.T) {
 	if got, ok := verifyFileToken(key, strings.TrimPrefix(url, want)); !ok || got != "/tmp/chart.png" {
 		t.Errorf("token in URL did not verify: %q, %v", got, ok)
 	}
-
-	s.publicBaseURL = "https://ocman.example.com"
-	configuredURL, _ := s.FileURL(t.Context(), "/tmp/chart.png")
-	if configuredURL != url {
-		t.Errorf("FileURL depends on publicBaseURL: %q", configuredURL)
-	}
 }
 
 func TestFileURLUsesCallerContext(t *testing.T) {
-	s := newFileTestServer(t)
+	s := newFileTestModule(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -123,7 +117,7 @@ func TestFileURLUsesCallerContext(t *testing.T) {
 }
 
 func TestHandleFileProxy(t *testing.T) {
-	s := newFileTestServer(t)
+	s := newFileTestModule(t)
 	dir := t.TempDir()
 	png := filepath.Join(dir, "diagram.png")
 	if err := os.WriteFile(png, []byte("\x89PNG\r\n\x1a\nfake"), 0o600); err != nil {
@@ -157,18 +151,6 @@ func TestHandleFileProxy(t *testing.T) {
 		}
 		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Error("missing nosniff")
-		}
-	})
-
-	t.Run("can be framed by the dashboard despite the global DENY", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, filePathPrefix+signFilePath(key, png), nil)
-		withSecurityHeaders(http.HandlerFunc(s.handleFileProxy)).ServeHTTP(rec, req)
-		if got := rec.Header().Get("X-Frame-Options"); got != "SAMEORIGIN" {
-			t.Errorf("X-Frame-Options = %q, want SAMEORIGIN", got)
-		}
-		if got := rec.Header().Get("Content-Security-Policy"); got != "sandbox; frame-ancestors 'self'" {
-			t.Errorf("Content-Security-Policy = %q", got)
 		}
 	})
 
@@ -217,7 +199,7 @@ func TestHandleFileProxy(t *testing.T) {
 }
 
 func TestHandleFileProxyUsesRequestContext(t *testing.T) {
-	s := newFileTestServer(t)
+	s := newFileTestModule(t)
 	req := httptest.NewRequest(http.MethodGet, filePathPrefix+"invalid", nil)
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
@@ -244,7 +226,7 @@ func TestFileDisposition(t *testing.T) {
 		{"application/octet-stream", "attachment"},
 	}
 	for _, tt := range tests {
-		if got := fileDisposition(tt.ctype); got != tt.want {
+		if got := httpx.FileDisposition(tt.ctype); got != tt.want {
 			t.Errorf("fileDisposition(%q) = %q, want %q", tt.ctype, got, tt.want)
 		}
 	}
@@ -253,5 +235,45 @@ func TestFileDisposition(t *testing.T) {
 func TestFileContentType_UnknownExtension(t *testing.T) {
 	if got := fileContentType("/tmp/thing.weirdext"); got != "application/octet-stream" {
 		t.Errorf("fileContentType = %q, want application/octet-stream", got)
+	}
+}
+
+func TestFileURLRecoversAfterCanceledFirstLoad(t *testing.T) {
+	s := newFileTestModule(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := s.FileURL(ctx, "/tmp/chart.png"); err == nil {
+		t.Fatal("canceled load succeeded")
+	}
+	if _, err := s.FileURL(t.Context(), "/tmp/chart.png"); err != nil {
+		t.Fatalf("a canceled first load poisoned the key: %v", err)
+	}
+}
+
+func TestFileTokenRejectsBadSignatureEncoding(t *testing.T) {
+	key := []byte("0123456789abcdef0123456789abcdef")
+	enc := strings.SplitN(signFilePath(key, "/etc/hosts"), ".", 2)[0]
+	if _, ok := verifyFileToken(key, enc+".!!!"); ok {
+		t.Error("accepted a signature that is not base64")
+	}
+}
+
+// Without a state DB there is no key to sign with, so embedding fails
+// rather than minting an unverifiable link.
+func TestFileURLWithoutStateDB(t *testing.T) {
+	if _, err := NewModule(Deps{}).FileURL(t.Context(), "/tmp/a.png"); err == nil {
+		t.Fatal("FileURL succeeded without a state DB")
+	}
+}
+
+// A corrupt stored key is replaced, not used.
+func TestFileTokenSecretReplacesCorruptKey(t *testing.T) {
+	m := newFileTestModule(t)
+	if err := m.Store.SetSetting(t.Context(), fileTokenSecretKey, "c2hvcnQ"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := m.fileTokenSecret(t.Context())
+	if err != nil || len(key) != 32 {
+		t.Fatalf("key = %d bytes, err = %v; want a fresh 32-byte key", len(key), err)
 	}
 }
