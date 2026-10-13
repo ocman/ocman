@@ -100,6 +100,10 @@ func checkoutRoot(dir string) string {
 	if err != nil {
 		return ""
 	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return ""
+	}
 	for {
 		if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
 			return root

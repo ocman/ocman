@@ -130,6 +130,33 @@ func TestCommandPreservesBareRepository(t *testing.T) {
 	if root := checkoutRoot(t.TempDir()); root != "" {
 		t.Fatalf("non-repository checkout root = %q", root)
 	}
+	if root := checkoutRoot(filepath.Join(t.TempDir(), "missing")); root != "" {
+		t.Fatalf("missing directory checkout root = %q", root)
+	}
+}
+
+func TestCommandFollowsSymlinkToAnotherCheckout(t *testing.T) {
+	ctx := context.Background()
+	a, b := t.TempDir(), t.TempDir()
+	for _, root := range []string{a, b} {
+		if out, err := Command(ctx, "init", root).CombinedOutput(); err != nil {
+			t.Fatalf("init: %v\n%s", err, out)
+		}
+	}
+	nested := filepath.Join(b, "nested")
+	if err := os.Mkdir(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(a, "link")
+	if err := os.Symlink(nested, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b, "target.txt"), []byte("target"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := Output(ctx, link, "status", "--porcelain"); err != nil || out != "?? target.txt" {
+		t.Fatalf("symlink target status = %q, %v, want only target.txt", out, err)
+	}
 }
 
 func TestWithSlotHonorsPreCancellation(t *testing.T) {
