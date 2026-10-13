@@ -7,6 +7,7 @@ import { useInbox } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { Button } from './Control';
 import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose } from './PromptToast';
+import { showSystemNotification } from '../lib/pushNotifications';
 
 const key = (item: InboxItem) => `${item.remoteId}:${item.id}`;
 const target = (item: InboxItem) => item.remoteId === 'local' ? '/factory/overview' : '/inbox?category=factory';
@@ -29,13 +30,10 @@ export function FactoryActionNotify() {
       setToasts((previous) => [...previous, ...fresh]);
       if (!useUiStore.getState().notificationsEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
       for (const item of fresh) {
-        try {
-          const notification = new Notification('ocman — Factory action required', {
+          void showSystemNotification('ocman — Factory action required', {
             body: item.title, tag: `ocman:${key(item)}`, requireInteraction: true,
             icon: '/apple-touch-icon.png', data: { url: target(item) },
-          });
-          notification.onclick = () => { window.focus(); navigate(target(item)); notification.close(); };
-        } catch { /* In-app toast remains available if the OS rejects notifications. */ }
+          }, () => navigate(target(item))).catch(() => { /* In-app toast remains available. */ });
       }
     };
     consume(client.getQueryData<InboxResponse>(['inbox']));

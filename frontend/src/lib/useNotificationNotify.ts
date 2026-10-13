@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { NotifyEntry } from './api';
 import { notifyStateKey, useNotifyBaseline } from './useNotifyBaseline';
 import { useUiStore } from './uiStore';
+import { pushSubscribed, showSystemNotification } from './pushNotifications';
 
 /**
  * Fires OS-level Web Notifications (system toasts / installed-PWA
@@ -153,11 +154,14 @@ export function __notificationDetailsForTests(d: Decision) {
   };
 }
 
-function spawnNotification(d: Decision) {
+async function spawnNotification(d: Decision) {
   if (typeof Notification === 'undefined') return;
   const details = __notificationDetailsForTests(d);
   try {
-    const n = new Notification(details.title, {
+    // The backend owns these alerts on subscribed devices; polling must not
+    // create a second toast for the same event.
+    if (await pushSubscribed()) return;
+    await showSystemNotification(details.title, {
       body: details.body,
       icon: '/apple-touch-icon.png',
       badge: '/favicon-32.png',
@@ -168,19 +172,8 @@ function spawnNotification(d: Decision) {
       // boundary too (used by the SW's notificationclick handler).
       data: { ...d, url: details.url },
     });
-    n.onclick = (event) => {
-      event.preventDefault();
-      window.focus();
-      // Use replace-style nav so the back button returns to wherever
-      // the user came from rather than a blank tab.
-      window.location.assign(details.url);
-      n.close();
-    };
   } catch {
-    // Some platforms throw on `new Notification()` directly inside an
-    // installed PWA and require ServiceWorkerRegistration.showNotification
-    // instead. We swallow rather than surfacing — the favicon/title
-    // and bell already cover the no-toast case.
+    // Browser revocation or OS restrictions can still reject display.
   }
 }
 

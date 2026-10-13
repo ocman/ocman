@@ -4,6 +4,7 @@ go 1.26.9
 
 require (
 	filippo.io/age v1.3.2
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/XSAM/otelsql v0.44.0
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
@@ -51,6 +52,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect

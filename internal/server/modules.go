@@ -12,6 +12,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/notifications"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
@@ -49,6 +50,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
+	mods = append(mods, s.notificationsModule())
 	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule(), s.remotesModule())
 }
 
@@ -92,9 +94,8 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // ModuleSchemas lists the state.db schemas feature modules own; main passes
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
-// Empty until the first module-owned migration.
 func ModuleSchemas() []state.ModuleSchema {
-	return nil
+	return []state.ModuleSchema{notifications.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve

@@ -19,6 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/inbox"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/notifications"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
@@ -134,22 +135,24 @@ type Server struct {
 
 	// routineMod is built on first use (routinesModule); tests may set it
 	// before then.
-	routineMod      *routines.Module
-	routineModOnce  sync.Once
-	lifetimeMu      sync.Mutex
-	lifetimeCtx     context.Context // guarded by lifetimeMu
-	pluginsMod      *pluginsmod.Module
-	pluginsModOnce  sync.Once
-	webhookMod      *webhook.Module
-	webhookModOnce  sync.Once
-	artifactMod     *artifacts.Module
-	artifactModOnce sync.Once
-	inboxMod        *inbox.Module
-	inboxModOnce    sync.Once
-	sharingMod      *sharing.Module
-	sharingModOnce  sync.Once
-	busV            *module.Bus
-	busOnce         sync.Once
+	routineMod           *routines.Module
+	routineModOnce       sync.Once
+	lifetimeMu           sync.Mutex
+	lifetimeCtx          context.Context // guarded by lifetimeMu
+	pluginsMod           *pluginsmod.Module
+	pluginsModOnce       sync.Once
+	webhookMod           *webhook.Module
+	webhookModOnce       sync.Once
+	artifactMod          *artifacts.Module
+	artifactModOnce      sync.Once
+	inboxMod             *inbox.Module
+	inboxModOnce         sync.Once
+	sharingMod           *sharing.Module
+	sharingModOnce       sync.Once
+	busV                 *module.Bus
+	busOnce              sync.Once
+	notificationsMod     *notifications.Module
+	notificationsModOnce sync.Once
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
 	// queueSvcOnce. See queue.go.

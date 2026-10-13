@@ -62,6 +62,8 @@ flowchart LR
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage + reviewer APIs]
+    Ocman -->|encrypted Web Push + VAPID| Push[Browser push services]
+    Push -->|wake service worker + OS notification| Browser
     Ocman <-->|gRPC + token: sessions, upstream identities, hosts, plugins| Remotes[Remote ocman<br/>instances]
     Ocman -->|encrypted webhook poll| Relay[ocman-relay<br/>ciphertext persistence]
     Ocman -.->|OTLP traces, metrics, logs, optional| Otel[Telemetry collector]
@@ -70,6 +72,9 @@ flowchart LR
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
+- **Browser push services.** Opt-in device subscriptions receive encrypted Web
+  Push alerts even with the page closed. The browser service worker displays
+  fixed-text notifications and opens an owner-qualified session route on click.
 - **Telemetry collector.** Optional OTLP/HTTP or gRPC export of traces, metrics,
   and batched Logrus logs through `internal/telemetry`. Logs retain structured
   fields and span context, console output stays enabled, and shutdown flushes
@@ -210,7 +215,7 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir + runtime seam]
     Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, notifications, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -226,6 +231,7 @@ flowchart TD
     Server --> MCP[internal/mcp<br/>MCP tools]
     Modules -->|module tools| MCP
     Modules --> Inbox[internal/inbox<br/>state + owner routing]
+    Modules -->|notifications: subscriptions + durable delivery receipts| State
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> ClaudePlatform[platforms/claudecode<br/>browsing + project routing]
@@ -547,6 +553,13 @@ flowchart TD
   Timeout schedules become an absolute due time when saved. Cron schedules
   use a five-field expression and IANA timezone. Webhook polling is an
   independent owner-local/remote delivery loop.
+- **internal/notifications.** Authenticated, same-origin push subscription routes
+  and a joined background worker. It reuses the server's notification projection,
+  identifies completions by the bounded platform lifecycle read, and persists
+  VAPID keys, subscriptions and delivery receipts under its module schema.
+  `webpush-go` handles encryption and signing. Known browser push-service hosts
+  are allowlisted, redirects are refused, and transient sends have bounded retries.
+  See [Notifications](../features/notifications.md).
 - **Legacy Workflow storage.** The `workflow_*` tables remain in `state.db` as
   inert historical data. No API, MCP tool, UI, or scheduler reads them. A DAG
   cannot be converted losslessly to one routine prompt, so recovery is a

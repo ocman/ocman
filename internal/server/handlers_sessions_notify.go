@@ -38,11 +38,18 @@ type notifyPrompt struct {
 func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	since := parseInt64Param(r, "since", 0)
 	limit := parseIntParam(r, "limit", 500)
-	ctx := r.Context()
-	all := sortAndLimitSessions(s.fanOutSessions(ctx, "", since, nil), limit)
-	if err := s.applyNotifySessionState(ctx, all); err != nil {
+	out, err := s.notificationEntries(r.Context(), since, limit)
+	if err != nil {
 		serverError(w, "fetching session state for notify", err)
 		return
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) notificationEntries(ctx context.Context, since int64, limit int) ([]notifyEntry, error) {
+	all := sortAndLimitSessions(s.fanOutSessions(ctx, "", since, nil), limit)
+	if err := s.applyNotifySessionState(ctx, all); err != nil {
+		return nil, err
 	}
 	out := make([]notifyEntry, 0, len(all))
 	for i := range all {
@@ -70,7 +77,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 			eligible = append(eligible, entry)
 		}
 	}
-	writeJSON(w, eligible)
+	return eligible, nil
 }
 
 // Every owner's identity reads share one bounded budget, in parallel, so a

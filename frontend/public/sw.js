@@ -29,10 +29,30 @@ self.addEventListener('fetch', () => {
   // Intentionally empty: pass through to network.
 });
 
+// Push wakes this worker even when every ocman window is closed. Payloads
+// contain fixed text and a route, never transcripts or permission details.
+self.addEventListener('push', (event) => {
+  event.waitUntil((async () => {
+    let message;
+    try { message = event.data && event.data.json(); } catch { /* Show a generic alert below. */ }
+    let url = '/inbox';
+    try {
+      const target = new URL(message?.url || '/inbox', self.location.origin);
+      if (target.origin === self.location.origin) url = target.pathname + target.search;
+    } catch { /* Malformed targets still show an alert with a safe fallback. */ }
+    await self.registration.showNotification(message?.title || 'ocman', {
+      body: message?.body || 'You have an update in ocman.',
+      tag: message?.tag || 'ocman:update',
+      icon: '/apple-touch-icon.png', badge: '/favicon-32.png',
+      requireInteraction: message?.kind === 'prompt', data: { url },
+    });
+  })());
+});
+
 // Notification click routing.
 //
-// Notifications are constructed in-page by useNotificationNotify with a
-// `data: { url }` payload pointing at /session/<id>. When the user
+// Page-driven and push notifications carry a `data: { url }` payload
+// pointing at /session/<id>. When the user
 // clicks the toast we either focus an existing ocman window (and ask it
 // to navigate via postMessage) or open a fresh one if the PWA isn't
 // running. This is the path that matters for the installed-PWA case
@@ -44,6 +64,9 @@ self.addEventListener('notificationclick', (event) => {
   if (!url) return;
 
   event.waitUntil((async () => {
+    let targetURL;
+    try { targetURL = new URL(url, self.location.origin); } catch { return; }
+    if (targetURL.origin !== self.location.origin) return;
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     // Prefer an existing client on the same origin — focus it and ask
     // it to navigate. We post a message instead of forcing a hard

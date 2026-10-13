@@ -46,7 +46,7 @@ export const SETTINGS = {
   'system-notifications': {
     group: 'notifications',
     title: 'System notifications',
-    description: 'Show a desktop notification when a session finishes or needs your input. Works best after installing ocman as an app.',
+    description: 'Show OS notifications when a session finishes or needs your input, including while the app is closed on devices with Web Push enabled. Enable separately on each device.',
     example: 'A long refactor finishes while you are in another app: a "Session done" notification appears, and clicking it opens the session.',
     keywords: 'desktop alert push',
     requires: 'Shown only in browsers that support notifications.',

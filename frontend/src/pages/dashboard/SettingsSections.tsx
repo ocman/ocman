@@ -11,6 +11,8 @@ import { useUiStore } from '../../lib/uiStore';
 import { api, type ModelFallthroughSettings } from '../../lib/api';
 import { SpeechSettings } from '../../components/SpeechSettings';
 import { DefaultAgentSetting } from '../../components/DefaultAgentSetting';
+import { enablePush, disablePush, pushSupported, pushSubscribed } from '../../lib/pushNotifications';
+import { Button } from '../../components/Control';
 import {
   notificationsSupported,
   requestNotificationPermission,
@@ -27,6 +29,20 @@ export function NotificationsSection() {
   const setBellEnabled = useUiStore((s) => s.setBellEnabled);
   const notifSave = useSettingSave();
   const bellSave = useSettingSave();
+  const [backgroundEnabled, setBackgroundEnabled] = useState<boolean | null>(null);
+  const [notificationError, setNotificationError] = useState('');
+  useEffect(() => { void pushSubscribed().then(setBackgroundEnabled).catch(() => setBackgroundEnabled(false)); }, []);
+
+  async function registerPush() {
+    setNotificationError('');
+    try {
+      await enablePush();
+      setBackgroundEnabled(true);
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : 'Could not enable background notifications. Retry.');
+      throw error;
+    }
+  }
 
   // System notification state. Tracked locally so we can re-render when
   // permission changes (the browser API has no event for that, so we
@@ -39,6 +55,14 @@ export function NotificationsSection() {
 
   async function handleNotificationsToggle(want: boolean) {
     if (!want) {
+      try {
+        await disablePush();
+        setNotificationError('');
+      } catch (error) {
+        setNotificationError(error instanceof Error ? error.message : 'Could not disable notifications. Retry.');
+        throw error;
+      }
+      setBackgroundEnabled(false);
       setNotificationsEnabled(false);
       return;
     }
@@ -46,32 +70,37 @@ export function NotificationsSection() {
     // previously denied it, the browser won't re-prompt — surface that
     // explicitly so the toggle doesn't silently fail.
     if (notifPermission === 'granted') {
+      if (pushSupported()) await registerPush();
       setNotificationsEnabled(true);
       return;
     }
     const result = await requestNotificationPermission();
     setNotifPermission(result);
+    if (result === 'granted' && pushSupported()) await registerPush();
     setNotificationsEnabled(result === 'granted');
   }
 
   return (
     <>
-      {notifSupported && (
-        <SettingRow
-          setting="system-notifications"
-          desc={notifBlocked
+      <SettingRow
+        setting="system-notifications"
+        desc={notificationError || (!notifSupported
+          ? 'Use HTTPS and a browser with notification support. On iPhone/iPad, add ocman to your Home Screen and open it there.'
+          : notifBlocked
             ? 'Notifications are blocked by your browser. Allow them in your browser\u2019s site settings to enable this option.'
-            : undefined}
-        >
-          <SettingToggle
-            ariaLabel="System notifications"
-            checked={notificationsEnabled && notifPermission === 'granted'}
-            disabled={notifBlocked}
-            save={notifSave}
-            onSave={(next) => handleNotificationsToggle(next)}
-          />
-        </SettingRow>
-      )}
+            : 'Alerts for session completion and input requests. Enable on each device to receive them while the app is closed. On iPhone/iPad, install ocman on your Home Screen first.')}
+      >
+        <SettingToggle
+          ariaLabel="System notifications"
+          checked={notificationsEnabled && notifPermission === 'granted'}
+          disabled={!notifSupported || notifBlocked || notifSave.state === 'saving'}
+          save={notifSave}
+          onSave={(next) => handleNotificationsToggle(next)}
+        />
+        {notificationsEnabled && notifPermission === 'granted' && pushSupported() && backgroundEnabled === false && (
+          <Button size="small" disabled={notifSave.state === 'saving'} onClick={() => { void notifSave.track(registerPush).catch(() => {}); }}>Enable background alerts</Button>
+        )}
+      </SettingRow>
       <SettingRow setting="bell-sound">
         <SettingToggle
           ariaLabel="Bell sound"
