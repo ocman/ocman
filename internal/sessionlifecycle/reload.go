@@ -1,20 +1,21 @@
-package server
+package sessionlifecycle
 
 import (
 	"net/http"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-func (s *Server) handleSessionReloadOpencode(w http.ResponseWriter, r *http.Request) {
-	if !s.isPrivilegedRequest(r) {
+func (m *Module) HandleSessionReloadOpencode(w http.ResponseWriter, r *http.Request) {
+	if !m.d.Privileged(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
 		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
 		if err != nil {
-			writePlatformError(w, "loading session", err)
+			httpx.WritePlatformError(w, "loading session", err)
 			return
 		}
 		if detail == nil || detail.Session == nil {
@@ -25,12 +26,12 @@ func (s *Server) handleSessionReloadOpencode(w http.ResponseWriter, r *http.Requ
 		if owner == "" {
 			owner = "local"
 		}
-		host, ok := s.resolveOwner(w, detail.Session.Directory, owner)
+		host, ok := m.d.Owner(w, detail.Session.Directory, owner)
 		if !ok {
 			return
 		}
 		if err := host.ReloadOpencode(r.Context()); err != nil {
-			writePlatformError(w, "reloading OpenCode configuration", err)
+			httpx.WritePlatformError(w, "reloading OpenCode configuration", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

@@ -1,4 +1,4 @@
-package server
+package sessionrecovery
 
 import (
 	"context"
@@ -13,12 +13,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// beginOpencodeReplacementStop is the last callback before runtime.Stop. The
+// BeginOpencodeReplacementStop is the last callback before runtime.Stop. The
 // earlier preparation is not evidence that a turn was still active at Stop.
-func (s *Server) beginOpencodeReplacementStop(ctx context.Context, root string) error {
+func (s *Service) BeginOpencodeReplacementStop(ctx context.Context, root string) error {
 	var inst *ocruntime.Instance
-	if s.stateDB != nil {
-		stored, found, err := s.stateDB.GetManagedOpencode(ctx, root)
+	if s.deps.State != nil {
+		stored, found, err := s.deps.State.GetManagedOpencode(ctx, root)
 		if err != nil {
 			return err
 		}
@@ -26,41 +26,41 @@ func (s *Server) beginOpencodeReplacementStop(ctx context.Context, root string) 
 			inst = &ocruntime.Instance{Endpoint: stored.Endpoint, Kind: stored.Kind, ID: stored.RuntimeID, PID: stored.PID, RepoRoot: root}
 		}
 	}
-	return s.beginOpencodeReplacementStopWithInstance(ctx, root, inst)
+	return s.BeginOpencodeReplacementStopWithInstance(ctx, root, inst)
 }
 
 // The host should pass the actual cleanup handle, including adopted instances
 // that have no managed_opencode row. The two-argument wrapper supports older
 // callback wiring, but recovery fails closed if it could not capture a handle.
-func (s *Server) beginOpencodeReplacementStopWithInstance(ctx context.Context, root string, inst *ocruntime.Instance) error {
-	adapter, ok := s.registry.Get("opencode")
-	if !ok || s.stateDB == nil {
+func (s *Service) BeginOpencodeReplacementStopWithInstance(ctx context.Context, root string, inst *ocruntime.Instance) error {
+	adapter, ok := s.deps.Platform("opencode")
+	if !ok || s.deps.State == nil {
 		return nil
 	}
-	stopped, err := s.stateDB.ReplacementStopped(ctx, "opencode", root)
+	stopped, err := s.deps.State.ReplacementStopped(ctx, "opencode", root)
 	if err != nil || stopped {
 		return err
 	}
-	if pending, err := s.opencodeReplacementStopping(ctx, root); err != nil {
+	if pending, err := s.OpencodeReplacementStopping(ctx, root); err != nil {
 		return err
 	} else if pending != nil {
 		return state.ErrReplacementStopping
 	}
 	admissionStartedAt := time.Now().UnixMilli()
-	prepared, err := s.stateDB.PreparedSessionInterruptions(ctx, "opencode", root)
+	prepared, err := s.deps.State.PreparedSessionInterruptions(ctx, "opencode", root)
 	if err != nil {
 		return err
 	}
 	var sessions []db.Session
-	if s.db != nil {
-		sessions, err = s.db.GetSessionIdentities(ctx)
+	if s.deps.Sessions != nil {
+		sessions, err = s.deps.Sessions.GetSessionIdentities(ctx)
 	} else {
 		sessions, err = adapter.Sessions(ctx, "", 0)
 	}
 	if err != nil {
 		return err
 	}
-	members, err := s.replacementMembership(ctx, root, sessions)
+	members, err := s.ReplacementMembership(ctx, root, sessions)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (s *Server) beginOpencodeReplacementStopWithInstance(ctx context.Context, r
 		prior := prepared[session.ID]
 		prior.MessageID, prior.BaselineStatus = l.LatestMessageID, string(l.Status)
 		prior.BaselineMessageCreated = l.LatestMessageCreated
-		if s.db != nil {
+		if s.deps.Sessions != nil {
 			prior.BaselineMessageCreated = persisted.LatestMessageCreated
 			prior.BaselineErrorName = persisted.LatestErrorName
 		}
@@ -96,7 +96,7 @@ func (s *Server) beginOpencodeReplacementStopWithInstance(ctx context.Context, r
 		}
 		handle = state.ReplacementRuntime{ManagedInstance: state.ManagedInstance{Endpoint: inst.Endpoint, Kind: inst.Kind, RuntimeID: inst.ID, PID: inst.PID}, RepoRoot: inst.RepoRoot}
 	}
-	return s.stateDB.BeginSessionReplacementStopSnapshot(ctx, "opencode", root, state.ReplacementStopSnapshot{
+	return s.deps.State.BeginSessionReplacementStopSnapshot(ctx, "opencode", root, state.ReplacementStopSnapshot{
 		Baseline: baseline, StartedAt: time.Now().UnixMilli(), AdmissionStartedAt: admissionStartedAt,
 		Runtime: handle, Membership: members, Candidates: replacementCandidates(sessions),
 	})
@@ -105,13 +105,13 @@ func (s *Server) beginOpencodeReplacementStopWithInstance(ctx context.Context, r
 // The raw read supplies persisted abort metadata, never settled status. If a
 // turn advances between reads, retry the identity/status pair together. A
 // continuously changing turn fails the callback rather than guessing status.
-func (s *Server) stopLifecycleSnapshot(ctx context.Context, adapter platforms.Platform, sessionID string) (*platforms.SessionLifecycle, db.SessionLifecycle, error) {
+func (s *Service) stopLifecycleSnapshot(ctx context.Context, adapter platforms.Platform, sessionID string) (*platforms.SessionLifecycle, db.SessionLifecycle, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		l, err := interruptionLifecycle(ctx, adapter, sessionID)
-		if err != nil || l == nil || s.db == nil {
+		if err != nil || l == nil || s.deps.Sessions == nil {
 			return l, db.SessionLifecycle{}, err
 		}
-		persisted, err := s.db.GetSessionLifecycle(ctx, sessionID)
+		persisted, err := s.deps.Sessions.GetSessionLifecycle(ctx, sessionID)
 		if err != nil {
 			return nil, db.SessionLifecycle{}, err
 		}
@@ -122,7 +122,7 @@ func (s *Server) stopLifecycleSnapshot(ctx context.Context, adapter platforms.Pl
 	return nil, db.SessionLifecycle{}, fmt.Errorf("session %q advanced during stop revalidation; retry replacement", sessionID)
 }
 
-func replacementAbortDuringStop(l db.SessionLifecycle, prior state.SessionInterruption, sampled bool, stopAt int64, admissionAt ...int64) bool {
+func ReplacementAbortDuringStop(l db.SessionLifecycle, prior state.SessionInterruption, sampled bool, stopAt int64, admissionAt ...int64) bool {
 	if stopAt == 0 || !replacementAbort(l.LatestErrorName) || l.LatestCompleted < stopAt {
 		return false
 	}

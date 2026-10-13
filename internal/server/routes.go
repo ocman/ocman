@@ -14,10 +14,8 @@ import (
 func (s *Server) routes() (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
-	// API routes — read-only endpoints enforce GET, mutating endpoints
-	// enforce POST. Session-scoped routes (/api/session/{id}/...) are
-	// dispatched through a single handler because net/http's ServeMux
-	// doesn't support path patterns.
+	// Core session routes use the fallback dispatcher. Feature modules mount
+	// their more-specific method/path patterns on the same mux.
 	//
 	// s.get / s.post compose method + auth checks so the route table
 	// stays readable. Routes that are localhost-only (tmux, debug log,
@@ -89,8 +87,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Global list of active share links, for inspect/revoke in Settings.
 	// New-session machine picker resolver (multi-remote support).
 	mux.HandleFunc("/api/sessions/resolve-targets", s.post(s.handleResolveTargets))
-	mux.HandleFunc("/api/sessions/prepare", s.post(s.requireLocalhost(s.handlePrepareSession)))
-	mux.HandleFunc("/api/sessions/start", s.post(s.requireLocalhost(s.handleStartSession)))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See

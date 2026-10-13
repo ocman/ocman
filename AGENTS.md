@@ -522,6 +522,18 @@ are computed. Sessions retain their original directories and owners.
   adapter selection, side-effect hooks). REST handlers and the remote
   gRPC server delegate session mutations to it
   (one shared mutation path).
+- `internal/sessionlifecycle/` — module: prepare/start, first prompt and progress,
+  owner-streamed attachments, direct commands/shell and session mutations,
+  reload and user-confirmed restart. Catalog preparation launches nothing;
+  creation resolves the explicit owner and backend before any launch and applies
+  permission defaults before publication or the first prompt. Mutable adapters
+  and options are call-time dependencies. Direct delivery uses the injected
+  shared `SendNow`; queue dispatch, cooldown and idle ordering stay separate.
+- `internal/sessionrecovery/` — workerless owner-local recovery service:
+  interruption history, replacement membership, admission/stop fences and
+  confirmed-stop reconciliation. State queries stay in `internal/state`;
+  runtime hooks and history reads reach it through thin server adapters.
+  Claude supervisor recovery remains in `platforms/claudecode`.
 - `internal/queuesvc/` — follow-up message queue (#58). Queueing is an
   **explicit user gesture**: plain **Enter** in the composer sends
   immediately (mid-turn included — OpenCode interleaves the prompt into
@@ -687,8 +699,8 @@ are computed. Sessions retain their original directories and owners.
   cache, forge error/rate-limit mapping and the "handle this" launch. Owners
   come from the server's `resolveOwner` (fail-closed); detection and cross-fork
   fetches run on the owner's `hostsvc.Host`; forge clients stay in
-  `internal/forge` behind the server's `resolveForge`. Project archive, quick
-  settings and session start remain server code.
+  `internal/forge` behind the server's `resolveForge`. Project archive and quick
+  settings remain server code; session start is owned by `internal/sessionlifecycle`.
 - `internal/gitmod/` — module: `/api/git/{info,branches,checkout,diff}` and
   `/api/worktree/{list,default-base-ref,remove,create-and-launch}`, the
   worktree capability check (`SessionsAvailable`) and the shared

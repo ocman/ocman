@@ -1,4 +1,4 @@
-package server
+package sessionrecovery
 
 import (
 	"context"
@@ -14,33 +14,33 @@ import (
 )
 
 // Runs on the owner, before stopping either a project or machine-wide server.
-func (s *Server) recordOpencodeReplacement(ctx context.Context, root, reason string) error {
-	adapter, ok := s.registry.Get("opencode")
-	if !ok || s.stateDB == nil {
+func (s *Service) RecordOpencodeReplacement(ctx context.Context, root, reason string) error {
+	adapter, ok := s.deps.Platform("opencode")
+	if !ok || s.deps.State == nil {
 		return nil
 	}
 	// AfterStop persisted closure before reconciliation failed. Retrying must
 	// not overwrite that stopped attempt with the now-settled live view.
-	stopped, err := s.stateDB.ReplacementStopped(ctx, "opencode", root)
+	stopped, err := s.deps.State.ReplacementStopped(ctx, "opencode", root)
 	if err != nil || stopped {
 		return err
 	}
-	if pending, err := s.opencodeReplacementStopping(ctx, root); err != nil {
+	if pending, err := s.OpencodeReplacementStopping(ctx, root); err != nil {
 		return err
 	} else if pending != nil {
 		return state.ErrReplacementStopping
 	}
 	var sessions []db.Session
-	if s.db != nil {
+	if s.deps.Sessions != nil {
 		// The display list can omit inactive children or newly-created sessions.
-		sessions, err = s.db.GetSessionIdentities(ctx)
+		sessions, err = s.deps.Sessions.GetSessionIdentities(ctx)
 	} else {
 		sessions, err = adapter.Sessions(ctx, "", 0)
 	}
 	if err != nil {
 		return err
 	}
-	members, err := s.replacementMembership(ctx, root, sessions)
+	members, err := s.ReplacementMembership(ctx, root, sessions)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (s *Server) recordOpencodeReplacement(ctx context.Context, root, reason str
 		text := "The server handling this unfinished turn was confirmed stopped during replacement (" + reason + "). Send a follow-up to continue."
 		pending[session.ID] = state.SessionInterruption{MessageID: lifecycle.LatestMessageID, ObservedAt: at, Message: text, BaselineStatus: string(lifecycle.Status), BaselineMessageCreated: lifecycle.LatestMessageCreated}
 	}
-	if err := s.stateDB.PrepareSessionInterruptions(ctx, "opencode", root, pending, members); err != nil {
+	if err := s.deps.State.PrepareSessionInterruptions(ctx, "opencode", root, pending, members); err != nil {
 		return fmt.Errorf("preparing interruption history: %w", err)
 	}
 	return nil
@@ -96,15 +96,15 @@ func latestHistoryMessage(messages []db.Message) string {
 	return ""
 }
 
-func (s *Server) enrichInterruptionHistory(ctx context.Context, platform, sessionID string, detail *platforms.SessionDetail) {
+func (s *Service) EnrichInterruptionHistory(ctx context.Context, platform, sessionID string, detail *platforms.SessionDetail) {
 	// A dead process may never save an error. Keep the first observation durable.
 	if detail.Session != nil && detail.Session.Status == db.StatusInterrupted {
-		if adapter, ok := s.registry.Get(platforms.ID(platform)); ok {
+		if adapter, ok := s.deps.Platform(platforms.ID(platform)); ok {
 			lifecycle, err := interruptionLifecycle(ctx, adapter, sessionID)
 			if err != nil {
 				log.WithError(err).Warn("reading interrupted session lifecycle")
 			} else if lifecycle != nil && lifecycle.Status == db.StatusInterrupted && lifecycle.LatestMessageID != "" {
-				err := s.stateDB.RecordSessionInterruption(ctx, platform, sessionID, state.SessionInterruption{
+				err := s.deps.State.RecordSessionInterruption(ctx, platform, sessionID, state.SessionInterruption{
 					MessageID: lifecycle.LatestMessageID, ObservedAt: time.Now().UnixMilli(),
 					Message: "This unfinished turn was interrupted: ocman no longer has a live agent connection. Send a follow-up to continue.",
 				})
@@ -114,13 +114,13 @@ func (s *Server) enrichInterruptionHistory(ctx context.Context, platform, sessio
 			}
 		}
 	}
-	notices, err := s.stateDB.SessionInterruptions(ctx, platform, sessionID)
+	notices, err := s.deps.State.SessionInterruptions(ctx, platform, sessionID)
 	if err != nil {
 		log.WithError(err).Warn("loading session interruptions")
 		return
 	}
 	for _, notice := range notices {
 		data, _ := json.Marshal(map[string]string{"type": "text", "text": notice.Message})
-		injectHistoryNotice(sessionID, "ocman-interruption-"+notice.MessageID, notice.ObservedAt, data, &detail.Messages, &detail.Parts)
+		s.deps.InjectHistoryNotice(sessionID, "ocman-interruption-"+notice.MessageID, notice.ObservedAt, data, &detail.Messages, &detail.Parts)
 	}
 }

@@ -1,0 +1,68 @@
+package server
+
+import (
+	"context"
+
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/sessionrecovery"
+	"github.com/NoUseFreak/ocman/internal/state"
+)
+
+// Runtime hooks resolve these dependencies when called, including after tests
+// or startup replace the registry, database or local host.
+func (s *Server) sessionRecovery() *sessionrecovery.Service {
+	var sessions sessionrecovery.SessionReader
+	if s.db != nil {
+		sessions = s.db
+	}
+	return sessionrecovery.New(sessionrecovery.Deps{
+		State: s.stateDB, Sessions: sessions,
+		Platform: func(id platforms.ID) (platforms.Platform, bool) { return s.registry.Get(id) },
+		ManagedRootReader: func() hostsvc.ManagedRootReader {
+			reader, _ := s.router().Local().(hostsvc.ManagedRootReader)
+			return reader
+		},
+		MachineWide: ocv2.InstalledV2, BroadcastSessionChanged: s.broadcastSessionChanged,
+		InjectHistoryNotice: injectHistoryNotice,
+	})
+}
+
+func (s *Server) recordOpencodeReplacement(ctx context.Context, root, reason string) error {
+	return s.sessionRecovery().RecordOpencodeReplacement(ctx, root, reason)
+}
+
+func (s *Server) beginOpencodeReplacementStop(ctx context.Context, root string) error {
+	return s.sessionRecovery().BeginOpencodeReplacementStop(ctx, root)
+}
+
+func (s *Server) beginOpencodeReplacementStopWithInstance(ctx context.Context, root string, inst *ocruntime.Instance) error {
+	return s.sessionRecovery().BeginOpencodeReplacementStopWithInstance(ctx, root, inst)
+}
+
+func (s *Server) confirmOpencodeReplacement(ctx context.Context, root string) error {
+	return s.sessionRecovery().ConfirmOpencodeReplacement(ctx, root)
+}
+
+func (s *Server) opencodeReplacementStopping(ctx context.Context, root string) (*ocruntime.Instance, error) {
+	return s.sessionRecovery().OpencodeReplacementStopping(ctx, root)
+}
+
+func (s *Server) cancelOpencodeReplacementStop(ctx context.Context, root string) error {
+	return s.sessionRecovery().CancelOpencodeReplacementStop(ctx, root)
+}
+
+func (s *Server) enrichInterruptionHistory(ctx context.Context, platform, sessionID string, detail *platforms.SessionDetail) {
+	s.sessionRecovery().EnrichInterruptionHistory(ctx, platform, sessionID, detail)
+}
+
+func (s *Server) replacementMembership(ctx context.Context, root string, sessions []db.Session) (map[string]bool, error) {
+	return s.sessionRecovery().ReplacementMembership(ctx, root, sessions)
+}
+
+func replacementAbortDuringStop(l db.SessionLifecycle, prior state.SessionInterruption, sampled bool, stopAt int64, admissionAt ...int64) bool {
+	return sessionrecovery.ReplacementAbortDuringStop(l, prior, sampled, stopAt, admissionAt...)
+}

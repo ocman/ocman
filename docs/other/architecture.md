@@ -216,6 +216,12 @@ flowchart TD
     Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
     Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, notifications, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
+    Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
+    Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
+    Lifecycle -->|creation, streamed attachments, restart + reload| Router
+    Server --> Recovery[internal/sessionrecovery<br/>interruption history + replacement fences]
+    Recovery -->|owner-local lifecycle reads| Registry
+    Recovery --> State
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -333,7 +339,23 @@ flowchart TD
   time). The module keeps the bounded, collapsed upstream-detection cache and
   launches through the shared session path on the owner's compound platform.
   Prompt templates stay hub-wide settings, not owner-scoped. Project archive,
-  quick settings and session start stay in the server.
+  quick settings stay in the server. Session start belongs to `internal/sessionlifecycle`.
+- **Session lifecycle** (`internal/sessionlifecycle`). Owns prepare/start,
+  progress broadcasts, first delivery, attachment uploads, direct mutations,
+  reload and confirmed restart. Preparation reads catalogs without launching;
+  creation validates the owner and backend before launch and applies permission
+  defaults before publication or delivery. Host operations use the owning
+  `hostsvc.Host`; shared mutations stay in `sessionsvc`. Direct send is an
+  injected callback, shared with the queue. The server retains list/detail/SSE
+  transport, auth, owner resolution, permission/question audit orchestration and
+  queue/cooldown/idle ordering. Compatibility handler wrappers delegate to the
+  module, whose routes are registered through `modules()`.
+- **Session recovery** (`internal/sessionrecovery`). A workerless service owns
+  interruption history, replacement membership, admission and stop fences, and
+  confirmed-stop reconciliation. Runtime hooks and history reads call it through
+  thin server adapters. Persistence stays in `internal/state`; callbacks resolve
+  the current local host and platform. OpenCode v1/v2 replacement uses this
+  service; Claude supervisor recovery stays in `platforms/claudecode`.
 - **autoapprove.Judge.** The safe-command cache runs before backend selection.
   Each uncached permission selects a judge through `Deps.SelectJudge`, defaulting
   to OpenCode port discovery. When no OpenCode instance is reachable and

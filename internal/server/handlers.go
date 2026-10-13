@@ -198,7 +198,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if !req.resolvePlatform(r.Context(), s, w, "") {
+	if !req.ResolvePlatform(r.Context(), s.sessionLifecycleModule(), w, "") {
 		return
 	}
 	log.WithFields(log.Fields{

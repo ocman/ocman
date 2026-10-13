@@ -1,4 +1,4 @@
-package server
+package sessionrecovery
 
 import (
 	"context"
@@ -8,22 +8,20 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 // Membership uses the same owner-local identity as managed launch. Each
 // distinct directory is resolved once per baseline or reconciliation scan.
-func (s *Server) replacementMembership(ctx context.Context, root string, sessions []db.Session) (map[string]bool, error) {
+func (s *Service) ReplacementMembership(ctx context.Context, root string, sessions []db.Session) (map[string]bool, error) {
 	members := make(map[string]bool)
-	if ocv2.InstalledV2() {
+	if s.deps.MachineWide() {
 		for _, session := range sessions {
 			members[session.Directory] = true
 		}
 		return members, nil
 	}
-	reader, ok := s.router().Local().(hostsvc.ManagedRootReader)
-	if !ok {
+	reader := s.deps.ManagedRootReader()
+	if reader == nil {
 		return nil, fmt.Errorf("owner does not support managed project identity")
 	}
 	for _, session := range sessions {
