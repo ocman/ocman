@@ -106,3 +106,26 @@ func (m *Module) unsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (m *Module) subscriptionStatus(w http.ResponseWriter, r *http.Request) {
+	if !m.available(w, r) {
+		return
+	}
+	var input struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if !httpx.ReadJSON(w, r, 8192, &input) {
+		return
+	}
+	if !validEndpoint(input.Endpoint) {
+		http.Error(w, "invalid push endpoint", http.StatusBadRequest)
+		return
+	}
+	active, err := m.store.active(r.Context(), input.Endpoint)
+	if err != nil {
+		httpx.ServerError(w, "reading push subscription", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSON(w, map[string]bool{"active": active})
+}

@@ -199,19 +199,33 @@ describe('useNotificationNotify controller', () => {
 });
 
 describe('notification details', () => {
-  it('routes permission notifications to the target session', () => {
-    expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'session-1', permission: true })).toMatchObject({
-      url: '/session/session-1', requireInteraction: true,
+  it.each([
+    [{ kind: 'completed' as const, sessionId: 's', title: 'Fix checkout', directory: '/repo/shop' }, 'Finished · shop'],
+    [{ kind: 'completed' as const, sessionId: 's', title: 'Fix checkout', directory: '/repo/shop', failed: true }, 'Failed · shop'],
+    [{ kind: 'prompt' as const, sessionId: 's', title: 'Fix checkout', directory: '/repo/shop', permission: true }, 'Permission needed · shop'],
+    [{ kind: 'prompt' as const, sessionId: 's', title: 'Fix checkout', directory: '/repo/shop', question: true }, 'Answer needed · shop'],
+  ])('names the session and explains the event', (decision, body) => {
+    expect(__notificationDetailsForTests(decision)).toMatchObject({ title: 'Fix checkout', body });
+  });
+  it('carries the owner and conversation target in a notification deep link', () => {
+    expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'same-id', platform: 'r-laptop:opencode' })).toMatchObject({
+      url: '/session/same-id?notification=1&platform=r-laptop%3Aopencode',
+      tag: 'ocman:r-laptop:opencode:same-id:prompt',
     });
   });
-  it('keeps existing session notification details unchanged', () => {
+  it('routes permission notifications to the target session', () => {
+    expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'session-1', permission: true })).toMatchObject({
+      url: '/session/session-1?notification=1', requireInteraction: true,
+    });
+  });
+  it('keeps session routing and interaction behavior', () => {
     expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'session-1' })).toMatchObject({
-      title: 'ocman — input required',
-      url: '/session/session-1',
+      title: 'Untitled session',
+      url: '/session/session-1?notification=1',
       requireInteraction: true,
     });
     expect(__notificationDetailsForTests({ kind: 'completed', sessionId: 'session-1' })).toMatchObject({
-      title: 'ocman — session finished',
+      title: 'Untitled session',
       requireInteraction: false,
     });
   });

@@ -46,6 +46,7 @@ export type { InboxItem, InboxResponse } from './api.inbox.types';
  * `omitempty` on the server side.
  */
 export interface NotifyEntry {
+  platform?: string;
   id: string;
   status: string;
   seen: boolean;

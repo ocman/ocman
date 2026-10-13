@@ -22,6 +22,13 @@ func (m *Module) deliver(ctx context.Context) error {
 		return err
 	}
 	for _, d := range due {
+		active, err := m.store.active(ctx, d.endpoint)
+		if err != nil {
+			return err
+		}
+		if !active {
+			continue
+		}
 		var sub webpush.Subscription
 		if err := json.Unmarshal([]byte(d.subscription), &sub); err != nil {
 			return err

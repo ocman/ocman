@@ -27,7 +27,7 @@ const LIMIT = 500;
 type NotifyDataState = {
   /** Latest payload from the server, or null if never fetched. */
   data: NotifyEntry[] | null;
-  /** Epoch ms of the last successful fetch. */
+  /** Start time of the last successful snapshot, for notification freshness. */
   lastFetched: number;
   /** Number of active consumers. */
   refCount: number;
@@ -68,8 +68,9 @@ const fetcher = coalescedRefresh(async () => {
   // rechecks still run while the tab is hidden; only polling pauses.
   if (useNotifyStore.getState().refCount === 0) return;
   const startedAfter = resolutions;
+  const snapshotAt = Date.now();
   const data = await withDeadline(NOTIFY_TIMEOUT_MS, (signal) =>
-    api.sessionsNotify({ since: Date.now() - LOOKBACK_MS, limit: LIMIT }, signal));
+    api.sessionsNotify({ since: Date.now() - LOOKBACK_MS, limit: LIMIT, includeDone: 1 }, signal));
   // Reconcile by owner, prompting session and request identity, rather than
   // the visible ancestor's id. Other outstanding prompts remain visible.
   useNotifyStore.setState({
@@ -85,7 +86,7 @@ const fetcher = coalescedRefresh(async () => {
       };
     }).filter((entry) => entry.pendingPermission || entry.pendingQuestion ||
       (!entry.seen && !entry.suppressTerminal && ['waiting', 'error', 'interrupted'].includes(entry.status))),
-    lastFetched: Date.now(),
+    lastFetched: snapshotAt,
   });
   for (const [id, at] of resolvedAt) if (at <= startedAfter) resolvedAt.delete(id);
 }, NOTIFY_RECHECK_DELAY_MS);

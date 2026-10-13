@@ -24,7 +24,8 @@ interface Options {
 /** Owns the initial load, reconciliation, and the session event connection. */
 export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, reconnectDelay, pageSize, debug,
   dispatch, viewRef, loadMoreAbortRef, loadMoreInFlightRef, setLoadingMore, setTotalMessages }: Options) {
-  const cached = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
+  const candidate = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
+  const cached = candidate && (!routedPlatform || candidate.session.platform === routedPlatform) ? candidate : null;
   const [status, setStatus] = useState<UseSessionStatus>(cached ? 'live' : 'loading');
   const [loading, setLoading] = useState(!cached);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -39,7 +40,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
   const reloadRef = useRef<() => Promise<void>>(async () => {});
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const retryNowRef = useRef<() => void>(() => {});
-  const entryRef = useRef({ id: sessionId, opened: isSessionPageRestore(sessionId) });
+  const entryRef = useRef({ id: sessionId, platform: routedPlatform, opened: isSessionPageRestore(sessionId) });
   const setCachedSession = useApiStore((s) => s.setCachedSession);
   const updateCachedSession = useApiStore((s) => s.updateCachedSession);
   const reload = useCallback(async () => reloadRef.current(), []);
@@ -47,7 +48,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
   const retryNow = useCallback(() => retryNowRef.current(), []);
 
   useEffect(() => {
-    if (entryRef.current.id !== sessionId) entryRef.current = { id: sessionId, opened: false };
+    if (entryRef.current.id !== sessionId || entryRef.current.platform !== routedPlatform) entryRef.current = { id: sessionId, platform: routedPlatform, opened: false };
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resets view state on session switch in the same effect that owns the SSE connection; deriving it in render would need a full lifecycle rewrite
     if (!sessionId) { setStatus('loading'); return; }
     if (sessionId === 'new') {
@@ -61,7 +62,8 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       return;
     }
     // Reset immediately to the target, preserving delta ownership in cached text.
-    const nextCached = useApiStore.getState().getCachedSession(sessionId);
+    const nextCandidate = useApiStore.getState().getCachedSession(sessionId);
+    const nextCached = nextCandidate && (!routedPlatform || nextCandidate.session.platform === routedPlatform) ? nextCandidate : null;
     const nextInitial: SessionView = nextCached
       ? { ...viewFromDetail(sessionId, nextCached), _statusFresh: false, _deltaOwnedFields: seedDeltaOwnedFields(nextCached.parts) }
       : initialSessionView(sessionId);

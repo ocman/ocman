@@ -30,7 +30,7 @@ self.addEventListener('fetch', () => {
 });
 
 // Push wakes this worker even when every ocman window is closed. Payloads
-// contain fixed text and a route, never transcripts or permission details.
+// contain session context and a route, never transcripts or permission details.
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     let message;
@@ -40,11 +40,17 @@ self.addEventListener('push', (event) => {
       const target = new URL(message?.url || '/inbox', self.location.origin);
       if (target.origin === self.location.origin) url = target.pathname + target.search;
     } catch { /* Malformed targets still show an alert with a safe fallback. */ }
-    await self.registration.showNotification(message?.title || 'ocman', {
-      body: message?.body || 'You have an update in ocman.',
+    if (typeof navigator !== 'undefined' && navigator.setAppBadge && Number.isSafeInteger(message?.badgeCount) && message.badgeCount >= 0) {
+      try {
+        if (message.badgeCount > 0) await navigator.setAppBadge(message.badgeCount);
+        else await navigator.clearAppBadge();
+      } catch { /* Badge restrictions must not prevent the notification. */ }
+    }
+    await self.registration.showNotification(message?.title || 'Session update', {
+      body: message?.body || 'Open the session for details.',
       tag: message?.tag || 'ocman:update',
       icon: '/apple-touch-icon.png', badge: '/favicon-32.png',
-      requireInteraction: message?.kind === 'prompt', data: { url },
+      requireInteraction: message?.kind === 'prompt', data: { url, createdAt: Date.now() },
     });
   })());
 });

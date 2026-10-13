@@ -103,7 +103,7 @@ func (s *Server) ListPermissions(ctx context.Context, req *pb.SessionRef) (*pb.J
 	if err != nil {
 		return nil, err
 	}
-	return jsonResp(p.ListPermissions(ctx, req.SessionId))
+	return jsonResp(s.permissionNotifications(ctx, p, req.SessionId))
 }
 
 // An unsupported authoritative read must fail rather than use observed cache.

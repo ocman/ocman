@@ -19,6 +19,8 @@ export type UseSessionStatus = 'loading' | 'live' | 'reconnecting' | 'error';
 export interface SseDebugEvent { at: number; event: string; data: string }
 
 export interface UseSessionOptions {
+  /** Owner supplied by an explicit deep link, authoritative over cached rows. */
+  platform?: string;
   /** Tests inject fixtures through this seam; production uses api.session. */
   fetchSession?: (id: string, limit: number, offset: number, signal?: AbortSignal, platform?: string, peek?: boolean) => Promise<SessionDetail>;
   reconnectDelay?: (attempt: number) => number;
@@ -69,15 +71,16 @@ async function defaultFetchSession(id: string, limit: number, offset: number, si
 
 export function useSession(sessionId: string | undefined, options: UseSessionOptions = {}): UseSessionResult {
   useActivityScope(sessionId && sessionId !== 'new' ? `session:${sessionId}` : undefined);
-  const { fetchSession = defaultFetchSession, reconnectDelay = computeReconnectDelay,
+  const { platform: requestedPlatform, fetchSession = defaultFetchSession, reconnectDelay = computeReconnectDelay,
     pageSize = 30, maxMessages = 0, trimTo = maxMessages, protectedMessageId = null, debug = false } = options;
   // Read a snapshot, not a subscription: cache writes must not restart the stream.
-  const cached = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
+  const cachedCandidate = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
+  const cached = cachedCandidate && (!requestedPlatform || cachedCandidate.session.platform === requestedPlatform) ? cachedCandidate : null;
   // Pin the owner even if hover prefetches evict this entry from the LRU.
   const [owner, setOwner] = useState<{ id: string | undefined; platform: string | undefined }>({ id: sessionId, platform: undefined });
-  const cachedPlatform = cached?.session.platform || (owner.id === sessionId ? owner.platform : undefined);
+  const cachedPlatform = requestedPlatform || cached?.session.platform || (owner.id === sessionId ? owner.platform : undefined);
   if (owner.id !== sessionId || owner.platform !== cachedPlatform) setOwner({ id: sessionId, platform: cachedPlatform });
-  const routedPlatform = cachedPlatform?.startsWith('r-') ? cachedPlatform : undefined;
+  const routedPlatform = requestedPlatform || (cachedPlatform?.startsWith('r-') ? cachedPlatform : undefined);
   const initialView: SessionView = cached ? {
     ...initialSessionView(sessionId!),
     _statusFresh: false,

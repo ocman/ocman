@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disablePush, enablePush, pushSubscribed, pushSupported, showSystemNotification } from './pushNotifications';
+import { disablePush, enablePush, pushSubscribed, pushSupported, showSystemNotification, dismissIrrelevantSessionNotifications } from './pushNotifications';
 import { fetchJSON, postJSON } from './api.requests';
 
 vi.mock('./api.requests', () => ({ fetchJSON: vi.fn(), postJSON: vi.fn() }));
@@ -19,7 +19,7 @@ function setup(existing = false) {
 
 beforeEach(() => {
   vi.mocked(fetchJSON).mockResolvedValue({ publicKey: 'AQID' });
-  vi.mocked(postJSON).mockResolvedValue(undefined);
+  vi.mocked(postJSON).mockImplementation(async (url) => url.endsWith('/subscription') ? { active: true } : undefined);
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
 
@@ -52,6 +52,7 @@ describe('device push subscriptions', () => {
   it('refreshes an existing subscription without creating another', async () => {
     const { registration } = setup(true);
     expect(await pushSubscribed()).toBe(true);
+    vi.mocked(postJSON).mockClear();
     await enablePush();
     expect(registration.pushManager.subscribe).not.toHaveBeenCalled();
     expect(postJSON).toHaveBeenCalledOnce();
@@ -92,6 +93,13 @@ describe('device push subscriptions', () => {
     subscription.unsubscribe.mockResolvedValue(false);
     await expect(disablePush()).rejects.toThrow('Could not unsubscribe');
   });
+  it('reconciles browser-only subscriptions against server registration on reload', async () => {
+    setup(true);
+    vi.mocked(postJSON).mockResolvedValue({ active: false });
+    expect(await pushSubscribed()).toBe(false);
+    vi.mocked(postJSON).mockRejectedValue(new Error('offline'));
+    expect(await pushSubscribed()).toBe(false);
+  });
   it('handles unsupported browsers and devices without a subscription', async () => {
     setup(); await disablePush(); expect(postJSON).not.toHaveBeenCalled();
     vi.stubGlobal('navigator', {}); vi.stubGlobal('PushManager', undefined);
@@ -105,7 +113,7 @@ describe('OS notification display', () => {
     const { registration } = setup();
     const Constructor = vi.fn(); Object.assign(Constructor, { permission: 'granted' }); vi.stubGlobal('Notification', Constructor);
     await showSystemNotification('alert', { data: { url: '/session/s' } });
-    expect(registration.showNotification).toHaveBeenCalledWith('alert', { data: { url: '/session/s' } });
+    expect(registration.showNotification).toHaveBeenCalledWith('alert', expect.objectContaining({ data: expect.objectContaining({ url: '/session/s' }) }));
     expect(Constructor).not.toHaveBeenCalled();
   });
   it('falls back to the desktop constructor and invokes click routing', async () => {
@@ -125,4 +133,27 @@ describe('OS notification display', () => {
     vi.stubGlobal('Notification', undefined); await showSystemNotification('alert', {});
     expect(registration.showNotification).not.toHaveBeenCalled();
   });
+});
+
+it('dismisses read/resolved session alerts while retaining current and newer notifications', async () => {
+  const stale = { tag: 'ocman:opencode:read:completed', data: { createdAt: 10 }, close: vi.fn() };
+  const resolved = { tag: 'ocman:opencode:answered:prompt', data: { createdAt: 10 }, close: vi.fn() };
+  const pending = { tag: 'ocman:opencode:pending:prompt', data: { createdAt: 10 }, close: vi.fn() };
+  const unread = { tag: 'ocman:opencode:unread:completed', data: { createdAt: 10 }, close: vi.fn() };
+  const future = { tag: 'ocman:opencode:new:prompt', data: { createdAt: 200 }, close: vi.fn() };
+  const factory = { tag: 'ocman:local:factory-action', data: { createdAt: 10 }, close: vi.fn() };
+  vi.stubGlobal('navigator', { serviceWorker: { getRegistration: vi.fn().mockResolvedValue({ getNotifications: vi.fn().mockResolvedValue([stale, resolved, pending, unread, future, factory]) }) } });
+  await dismissIrrelevantSessionNotifications([
+    { id: 'pending', platform: 'opencode', status: 'busy', seen: true, pendingQuestion: true },
+    { id: 'unread', platform: 'opencode', status: 'waiting', seen: false },
+  ], 100);
+  expect(stale.close).toHaveBeenCalledOnce(); expect(resolved.close).toHaveBeenCalledOnce();
+  for (const kept of [pending, unread, future, factory]) expect(kept.close).not.toHaveBeenCalled();
+});
+
+it('does not reconcile notifications against an obsolete snapshot', async () => {
+  const close = vi.fn(); const controller = new AbortController();
+  vi.stubGlobal('navigator', { serviceWorker: { getRegistration: vi.fn().mockResolvedValue({ getNotifications: async () => { controller.abort(); return [{ tag: 'ocman:session:completed', data: { createdAt: 10 }, close }]; } }) } });
+  await dismissIrrelevantSessionNotifications([], 100, controller.signal);
+  expect(close).not.toHaveBeenCalled();
 });

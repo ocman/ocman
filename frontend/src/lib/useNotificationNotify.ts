@@ -40,6 +40,11 @@ export type NotifyShape = NotifyEntry;
 export type Decision = {
   kind: 'completed' | 'prompt';
   sessionId: string;
+  platform?: string;
+  title?: string;
+  directory?: string;
+  question?: boolean;
+  failed?: boolean;
   permission?: boolean;
 };
 
@@ -97,11 +102,14 @@ export function __evaluateForTests(input: EvaluateInput): Decision[] {
     // Per-session dedupe across polls: don't fire for the same
     // sessionId+key twice in a row, even if the polling cycle picks it
     // up multiple times before the baseline is rebuilt.
-    const dedupeKey = `${s.id}|${key}`;
+    const dedupeKey = `${s.platform ?? ''}:${s.id}|${key}`;
     if (firedKeys.has(dedupeKey)) continue;
     firedKeys.add(dedupeKey);
 
-    out.push({ kind, sessionId: s.id, ...(s.pendingPermission ? { permission: true } : {}) });
+    out.push({ kind, sessionId: s.id, ...(s.platform ? { platform: s.platform } : {}),
+      ...(s.title ? { title: s.title } : {}), ...(s.directory ? { directory: s.directory } : {}),
+      ...(s.status === 'error' ? { failed: true } : {}),
+      ...(s.pendingPermission ? { permission: true } : s.pendingQuestion ? { question: true } : {}) });
   }
   return out;
 }
@@ -140,16 +148,17 @@ export function notificationsSupported(): boolean {
 
 export function __notificationDetailsForTests(d: Decision) {
   const isPrompt = d.kind === 'prompt';
-  const title = isPrompt ? 'ocman — input required' : 'ocman — session finished';
-  const body = isPrompt
-    ? 'A session is waiting on your response.'
-    : 'A coding-agent session has finished running.';
-  const url = `/session/${d.sessionId}`;
+  const title = Array.from(d.title?.replace(/\s+/g, ' ').trim() || 'Untitled session').slice(0, 160).join('');
+  const action = isPrompt ? d.permission ? 'Permission needed' : d.question ? 'Answer needed' : 'Input needed' : d.failed ? 'Failed' : 'Finished';
+  const project = d.directory?.replaceAll('\\', '/').split('/').filter(Boolean).at(-1);
+  const body = project ? `${action} · ${Array.from(project).slice(0, 80).join('')}` : action;
+  const params = new URLSearchParams({ notification: '1', ...(d.platform ? { platform: d.platform } : {}) });
+  const url = `/session/${encodeURIComponent(d.sessionId)}?${params}`;
   return {
     title,
     body,
     url,
-    tag: `ocman:${d.sessionId}:${d.kind}`,
+    tag: `ocman:${d.platform ? `${d.platform}:` : ''}${d.sessionId}:${d.kind}`,
     requireInteraction: isPrompt,
   };
 }

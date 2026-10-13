@@ -9,8 +9,10 @@ function worker() {
   const showNotification = vi.fn().mockResolvedValue(undefined);
   const openWindow = vi.fn().mockResolvedValue(undefined);
   const matchAll = vi.fn().mockResolvedValue([]);
+  const setAppBadge = vi.fn().mockResolvedValue(undefined);
+  const clearAppBadge = vi.fn().mockResolvedValue(undefined);
   runInNewContext(readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8'), {
-    URL, self: { location: { origin: 'https://ocman.test' }, registration: { showNotification }, clients: { openWindow, matchAll },
+    URL, navigator: { setAppBadge, clearAppBadge }, self: { location: { origin: 'https://ocman.test' }, registration: { showNotification }, clients: { openWindow, matchAll },
       addEventListener: (kind: string, cb: (event: unknown) => void) => { listeners[kind] = cb; } },
   });
   async function emit(kind: string, event: object) {
@@ -18,21 +20,37 @@ function worker() {
     listeners[kind]({ ...event, waitUntil: (promise: Promise<unknown>) => { work = promise; } });
     await work;
   }
-  return { emit, showNotification, openWindow, matchAll };
+  return { emit, showNotification, openWindow, matchAll, setAppBadge, clearAppBadge };
 }
 
 it('displays background push and preserves the owner-qualified target', async () => {
   const w = worker();
   await w.emit('push', { data: { json: () => ({ title: 'ocman — input required', body: 'A session needs input.', kind: 'prompt', tag: 'request', url: '/session/s?platform=r-owner%3Aopencode' }) } });
-  expect(w.showNotification).toHaveBeenCalledWith('ocman — input required', expect.objectContaining({ requireInteraction: true, data: { url: '/session/s?platform=r-owner%3Aopencode' } }));
+  expect(w.showNotification).toHaveBeenCalledWith('ocman — input required', expect.objectContaining({ requireInteraction: true, data: expect.objectContaining({ url: '/session/s?platform=r-owner%3Aopencode' }) }));
+});
+
+it('updates the installed icon badge from push and clears a zero count', async () => {
+  const w = worker();
+  await w.emit('push', { data: { json: () => ({ badgeCount: 3 }) } });
+  expect(w.setAppBadge).toHaveBeenCalledWith(3);
+  await w.emit('push', { data: { json: () => ({ badgeCount: 0 }) } });
+  expect(w.clearAppBadge).toHaveBeenCalledOnce();
+  await w.emit('push', { data: { json: () => ({ badgeCount: -1 }) } });
+  expect(w.setAppBadge).toHaveBeenCalledOnce();
+});
+
+it('still displays notifications if OS badging is rejected', async () => {
+  const w = worker(); w.setAppBadge.mockRejectedValue(new Error('denied'));
+  await w.emit('push', { data: { json: () => ({ badgeCount: 1 }) } });
+  expect(w.showNotification).toHaveBeenCalledOnce();
 });
 
 it('shows a safe generic alert for missing or malformed push data', async () => {
   const w = worker();
   await w.emit('push', { data: { json: () => { throw new Error('invalid JSON'); } } });
-  expect(w.showNotification).toHaveBeenCalledWith('ocman', expect.objectContaining({ data: { url: '/inbox' } }));
+  expect(w.showNotification).toHaveBeenCalledWith('Session update', expect.objectContaining({ data: expect.objectContaining({ url: '/inbox' }) }));
   await w.emit('push', { data: { json: () => ({ url: 'https://evil.test/steal' }) } });
-  expect(w.showNotification).toHaveBeenLastCalledWith('ocman', expect.objectContaining({ data: { url: '/inbox' } }));
+  expect(w.showNotification).toHaveBeenLastCalledWith('Session update', expect.objectContaining({ data: expect.objectContaining({ url: '/inbox' }) }));
 });
 
 it('opens a session when no app window exists', async () => {

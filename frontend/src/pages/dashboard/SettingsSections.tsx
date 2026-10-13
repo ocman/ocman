@@ -59,6 +59,7 @@ export function NotificationsSection() {
         await disablePush();
         setNotificationError('');
       } catch (error) {
+        setBackgroundEnabled(await pushSubscribed());
         setNotificationError(error instanceof Error ? error.message : 'Could not disable notifications. Retry.');
         throw error;
       }

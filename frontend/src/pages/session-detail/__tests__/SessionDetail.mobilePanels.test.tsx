@@ -45,6 +45,17 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it('reveals the conversation when a notification targets the session already open', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    const page = renderSessionPage({ sessionId: 'sess_1' });
+    try {
+      await screen.findByRole('textbox');
+      fireEvent.click(screen.getByTestId('mobile-details-toggle'));
+      expect(screen.getByTestId('session-layout').className).toContain('mobile-details-open');
+      await act(async () => { page.navigate('/session/sess_1?notification=1&platform=opencode'); await flushPromises(); });
+      expect(screen.getByTestId('session-layout').className).not.toContain('mobile-details-open');
+    } finally { page.result.unmount(); vi.unstubAllGlobals(); }
+  });
   it.each(['j', 'k'])('does not navigate after leaving during a pending Alt+%s read', async (key) => {
     vi.stubGlobal('innerWidth', 390);
     const current = makeSession({ id: 'sess_1' });

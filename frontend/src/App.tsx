@@ -20,6 +20,7 @@ import { AppHeader } from './components/AppHeader';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
+import { useAppBadge } from './lib/useAppBadge';
 import { useBellNotify } from './lib/useBellNotify';
 import { useNotificationNotify } from './lib/useNotificationNotify';
 import { PromptToastNotify } from './components/PromptToastNotify';
@@ -209,6 +210,7 @@ export function GlobalHotkeys() {
 
 function FaviconNotify() {
   useFaviconNotify();
+  useAppBadge();
   return null;
 }
 

@@ -1404,6 +1404,7 @@ func notifyReference(t *testing.T, srv *Server, since int64, limit int) []notify
 		}
 		out = append(out, notifyEntry{
 			ID:                se.ID,
+			Platform:          se.Platform,
 			Status:            se.Status,
 			Seen:              se.Seen,
 			PendingPermission: se.PendingPermission,
@@ -1477,8 +1478,8 @@ func TestHandleSessionsNotify_JSONShape(t *testing.T) {
 	got := getNotifyJSON(t, srv, "")
 	// Both land in the same 5-minute recency bucket, so the sort falls
 	// through to ProjectID ("proj-bare" < "proj-full").
-	want := `[{"id":"bare","status":"waiting","seen":false},` +
-		`{"id":"full","status":"busy","seen":false,"pendingPermission":true,"pendingQuestion":true,"title":"titled","directory":"/repo/a"}]`
+	want := `[{"id":"bare","platform":"fake","status":"waiting","seen":false},` +
+		`{"id":"full","platform":"fake","status":"busy","seen":false,"pendingPermission":true,"pendingQuestion":true,"title":"titled","directory":"/repo/a"}]`
 	if got != want {
 		t.Errorf("notify JSON = %s\nwant %s", got, want)
 	}
@@ -1501,7 +1502,7 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 	}{
 		{
 			name: "disabled keeps current behavior",
-			want: `[{"id":"pending","status":"waiting","seen":false,` +
+			want: `[{"id":"pending","platform":"fake","status":"waiting","seen":false,` +
 				`"pendingPermission":true,"title":"pending","directory":"/repo"}]`,
 		},
 		{
@@ -1513,7 +1514,7 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 		{
 			name:        "enabled fails open when review was not observed",
 			autoApprove: true,
-			want: `[{"id":"pending","status":"waiting","seen":false,` +
+			want: `[{"id":"pending","platform":"fake","status":"waiting","seen":false,` +
 				`"pendingPermission":true,"title":"pending","directory":"/repo"}]`,
 		},
 		{
@@ -1521,14 +1522,14 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 			autoApprove: true,
 			aiReviewing: true,
 			status:      db.StatusError,
-			want: `[{"id":"pending","status":"error","seen":false,` +
+			want: `[{"id":"pending","platform":"fake","status":"error","seen":false,` +
 				`"title":"pending","directory":"/repo"}]`,
 		},
 		{
 			name:        "enabled shows permission after AI declines",
 			autoApprove: true,
 			aiDeclined:  true,
-			want: `[{"id":"pending","status":"waiting","seen":false,` +
+			want: `[{"id":"pending","platform":"fake","status":"waiting","seen":false,` +
 				`"pendingPermission":true,"title":"pending","directory":"/repo"}]`,
 		},
 		{
@@ -1536,7 +1537,7 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 			autoApprove:     true,
 			aiReviewing:     true,
 			pendingQuestion: true,
-			want: `[{"id":"pending","status":"waiting","seen":false,` +
+			want: `[{"id":"pending","platform":"fake","status":"waiting","seen":false,` +
 				`"pendingQuestion":true,"title":"pending","directory":"/repo","suppressTerminal":true}]`,
 		},
 	} {

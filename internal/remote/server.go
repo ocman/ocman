@@ -23,16 +23,17 @@ import (
 // operations. Mutations use the same sessionsvc service as REST handlers.
 type Server struct {
 	pb.UnimplementedOcmanServer
-	registry          *platforms.Registry
-	sessions          *sessionsvc.Service
-	host              hostsvc.Host
-	inboxStore        *state.DB
-	instanceID        string
-	version           string
-	enrichSession     func(context.Context, string, string, *platforms.SessionDetail)
-	proxyEvents       func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
-	webhookDispatcher webhook.RoutineDispatcher
-	plugins           PluginHandler
+	registry                       *platforms.Registry
+	sessions                       *sessionsvc.Service
+	host                           hostsvc.Host
+	inboxStore                     *state.DB
+	instanceID                     string
+	version                        string
+	enrichSession                  func(context.Context, string, string, *platforms.SessionDetail)
+	proxyEvents                    func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
+	permissionNotificationDeferred func(string, string) bool
+	webhookDispatcher              webhook.RoutineDispatcher
+	plugins                        PluginHandler
 }
 
 func (s *Server) UseInboxStore(store *state.DB) *Server { s.inboxStore = store; return s }

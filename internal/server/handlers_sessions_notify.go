@@ -17,7 +17,9 @@ import (
 type notifyEntry struct {
 	platform          string
 	terminalEligible  bool
+	push              bool
 	ID                string           `json:"id"`
+	Platform          string           `json:"platform,omitempty"`
 	Status            db.SessionStatus `json:"status"`
 	Seen              bool             `json:"seen"`
 	PendingPermission bool             `json:"pendingPermission,omitempty"`
@@ -40,7 +42,14 @@ type notifyPrompt struct {
 func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	since := parseInt64Param(r, "since", 0)
 	limit := parseIntParam(r, "limit", 500)
-	out, err := s.notificationEntries(r.Context(), since, limit)
+	var out []notifyEntry
+	var err error
+	if r.URL.Query().Get("includeDone") == "1" {
+		all := sortAndLimitSessions(s.fanOutSessions(r.Context(), "", since, nil), limit)
+		out, err = s.notificationEntriesForSessions(r.Context(), all, false, true)
+	} else {
+		out, err = s.notificationEntries(r.Context(), since, limit)
+	}
 	if err != nil {
 		serverError(w, "fetching session state for notify", err)
 		return
@@ -50,10 +59,10 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) notificationEntries(ctx context.Context, since int64, limit int) ([]notifyEntry, error) {
 	all := sortAndLimitSessions(s.fanOutSessions(ctx, "", since, nil), limit)
-	return s.notificationEntriesForSessions(ctx, all, false)
+	return s.notificationEntriesForSessions(ctx, all, false, false)
 }
 
-func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Session, push bool) ([]notifyEntry, error) {
+func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Session, push, includeDone bool) ([]notifyEntry, error) {
 	if err := s.applyNotifySessionState(ctx, all); err != nil {
 		return nil, err
 	}
@@ -63,20 +72,21 @@ func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Se
 		deferredPermission := false
 		if se.PendingPermission {
 			var err error
-			deferredPermission, err = s.deferPermissionNotification(ctx, se)
+			deferredPermission, err = s.deferPermissionNotification(ctx, se, push)
 			if push && err != nil {
 				return nil, err
 			}
 		}
 		pendingPermission := se.PendingPermission && !deferredPermission
 		hasPrompt := pendingPermission || se.PendingQuestion
-		isUnseenTerminal := (se.Status == db.StatusError || se.Status == db.StatusInterrupted || (se.Status == db.StatusWaiting && !deferredPermission) || (push && se.Status == db.StatusDone)) && !se.Seen
+		isUnseenTerminal := (se.Status == db.StatusError || se.Status == db.StatusInterrupted || (se.Status == db.StatusWaiting && !deferredPermission) || (includeDone && se.Status == db.StatusDone)) && !se.Seen
 		if !hasPrompt && !isUnseenTerminal {
 			continue
 		}
 		entry := notifyEntry{
+			push:     push,
 			platform: se.Platform, terminalEligible: isUnseenTerminal,
-			ID: se.ID, Status: se.Status, Seen: se.Seen,
+			ID: se.ID, Platform: se.Platform, Status: se.Status, Seen: se.Seen,
 			PendingPermission: pendingPermission, PendingQuestion: se.PendingQuestion,
 			Title: se.Title, Directory: se.Directory,
 			SuppressTerminal: deferredPermission && se.Status == db.StatusWaiting,
@@ -149,28 +159,34 @@ func (s *Server) notifyPromptIdentities(ctx context.Context, session *db.Session
 	} else {
 		return platforms.ErrUnsupported
 	}
-	refs := func(prompts []platforms.LivePrompt) []notifyPrompt {
+	refs := func(prompts []platforms.LivePrompt, permission bool) ([]notifyPrompt, int) {
 		out := []notifyPrompt{}
+		filtered := 0
 		for _, prompt := range prompts {
 			id, _ := prompt["id"].(string)
 			sid, _ := prompt["sessionID"].(string)
 			if id != "" && sid != "" {
+				deferred, known := prompt[platforms.NotificationDeferredField].(bool)
+				if permission && isRemotePlatformID(session.Platform) && (deferred || (entry.push && !known)) {
+					filtered++
+					continue
+				}
 				out = append(out, notifyPrompt{Platform: session.Platform, SessionID: sid, RequestID: id})
 			}
 		}
-		return out
+		return out, filtered
 	}
 	if entry.PendingPermission && permissionErr == nil {
-		identities := refs(permissions)
-		if len(identities) != len(permissions) {
+		identities, filtered := refs(permissions, true)
+		if len(identities)+filtered != len(permissions) {
 			permissionErr = errors.New("permission prompt missing identity")
 		}
 		entry.Permissions = &identities
 		entry.PendingPermission = len(identities) > 0
 	}
 	if entry.PendingQuestion && questionErr == nil {
-		identities := refs(questions)
-		if len(identities) != len(questions) {
+		identities, filtered := refs(questions, false)
+		if len(identities)+filtered != len(questions) {
 			questionErr = errors.New("question prompt missing identity")
 		}
 		entry.Questions = &identities
@@ -182,12 +198,28 @@ func (s *Server) notifyPromptIdentities(ctx context.Context, session *db.Session
 	return nil
 }
 
-func (s *Server) deferPermissionNotification(ctx context.Context, session *db.Session) (bool, error) {
-	if isRemotePlatformID(session.Platform) || s.registry == nil {
+func (s *Server) deferPermissionNotification(ctx context.Context, session *db.Session, push bool) (bool, error) {
+	if s.registry == nil {
 		return false, nil
 	}
 	adapter, ok := s.registry.Get(platforms.ID(session.Platform))
-	if !ok || !adapter.Capabilities().AutoApprove {
+	if !ok {
+		return false, platforms.ErrNotFound
+	}
+	if isRemotePlatformID(session.Platform) {
+		prompts, err := adapter.ListPermissions(ctx, session.ID)
+		if err != nil || len(prompts) == 0 {
+			return false, err
+		}
+		for _, prompt := range prompts {
+			deferred, known := prompt[platforms.NotificationDeferredField].(bool)
+			if !deferred && (!push || known) {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	if !adapter.Capabilities().AutoApprove {
 		return false, nil
 	}
 	enabled := s.autoApproveDefault

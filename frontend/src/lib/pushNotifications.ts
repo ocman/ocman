@@ -1,4 +1,7 @@
 import { fetchJSON, postJSON } from './api.requests';
+import type { NotifyEntry } from './api.types';
+
+const pageNotifications = new Set<Notification>();
 
 export function pushSupported() {
   return typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof PushManager !== 'undefined';
@@ -7,7 +10,15 @@ export function pushSupported() {
 export async function pushSubscribed(): Promise<boolean> {
   if (typeof navigator === 'undefined' || !navigator.serviceWorker) return false;
   const registration = await navigator.serviceWorker.getRegistration();
-  return !!(await registration?.pushManager?.getSubscription());
+  const subscription = await registration?.pushManager?.getSubscription();
+  if (!subscription) return false;
+  try {
+    const status = await postJSON<{ active: boolean }>('/api/notifications/subscription', { endpoint: subscription.endpoint });
+    return status.active;
+  } catch {
+    // Suppress page alerts only with confirmed server registration.
+    return false;
+  }
 }
 
 export async function enablePush(): Promise<void> {
@@ -48,6 +59,7 @@ export async function disablePush(): Promise<void> {
 
 export async function showSystemNotification(title: string, options: NotificationOptions, onClick?: () => void) {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  options = { ...options, data: { ...options.data, createdAt: Date.now() } };
   const registration = typeof navigator !== 'undefined' && navigator.serviceWorker
     ? await navigator.serviceWorker.getRegistration() : undefined;
   if (registration) {
@@ -55,10 +67,34 @@ export async function showSystemNotification(title: string, options: Notificatio
     return;
   }
   const notification = new Notification(title, options);
+  pageNotifications.add(notification);
+  notification.onclose = () => { pageNotifications.delete(notification); };
   notification.onclick = () => {
     window.focus();
     if (onClick) onClick();
     else if (options.data?.url) window.location.assign(options.data.url);
+    pageNotifications.delete(notification);
     notification.close();
   };
+}
+
+export async function dismissIrrelevantSessionNotifications(entries: NotifyEntry[], snapshotAt: number, signal?: AbortSignal) {
+  if (!snapshotAt) return;
+  const registration = typeof navigator !== 'undefined' && navigator.serviceWorker ? await navigator.serviceWorker.getRegistration() : undefined;
+  const notifications = [...pageNotifications, ...(registration?.getNotifications ? await registration.getNotifications() : [])];
+  if (signal?.aborted) return;
+  const active = new Set<string>();
+  for (const entry of entries) {
+    const prefixes = [`ocman:${entry.id}`, ...(entry.platform ? [`ocman:${entry.platform}:${entry.id}`] : [])];
+    for (const prefix of prefixes) {
+      if (entry.pendingPermission || entry.pendingQuestion) active.add(`${prefix}:prompt`);
+      if (!entry.seen && !entry.suppressTerminal && !entry.pendingPermission && !entry.pendingQuestion && entry.status !== 'busy') active.add(`${prefix}:completed`);
+    }
+  }
+  for (const notification of notifications) {
+    // A push newer than the snapshot is unknown, not irrelevant. Factory and
+    // other notification categories are owned by their own state projections.
+    if (notification.data?.createdAt >= snapshotAt || !/^ocman:.*:(prompt|completed)$/.test(notification.tag)) continue;
+    if (!active.has(notification.tag)) { notification.close(); pageNotifications.delete(notification); }
+  }
 }

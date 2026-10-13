@@ -30,8 +30,8 @@ export function FactoryActionNotify() {
       setToasts((previous) => [...previous, ...fresh]);
       if (!useUiStore.getState().notificationsEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
       for (const item of fresh) {
-          void showSystemNotification('ocman — Factory action required', {
-            body: item.title, tag: `ocman:${key(item)}`, requireInteraction: true,
+          void showSystemNotification(item.title || 'Factory action required', {
+            body: 'Factory action required', tag: `ocman:${key(item)}`, requireInteraction: true,
             icon: '/apple-touch-icon.png', data: { url: target(item) },
           }, () => navigate(target(item))).catch(() => { /* In-app toast remains available. */ });
       }

@@ -161,6 +161,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [navigate]);
 
   const { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel } = useMobilePanel(id);
+  useEffect(() => { if (searchParams.has('notification')) closeMobilePanel(); }, [searchParams, closeMobilePanel]);
   const sidebarVisible = usePanelVisible(mobilePanel === 'sidebar');
   const detailsVisible = usePanelOpen(mobilePanel === 'details');
   const documentVisible = useDocumentVisible();
@@ -182,6 +183,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     ? scrollToMessageBookmark.id
     : commitSourceJump && commitSourceJump.sessionId === id ? commitSourceJump.messageId : null;
   const view = useSession(id, {
+    platform: searchParams.get('platform') || undefined,
     debug: debugMode,
     maxMessages: MAX_RETAINED_MESSAGES,
     trimTo: TRIMMED_RETAINED_MESSAGES,

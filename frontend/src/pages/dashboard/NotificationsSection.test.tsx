@@ -49,6 +49,18 @@ it('does not mark disabled when device removal fails', async () => {
   expect(useUiStore.getState().notificationsEnabled).toBe(true);
 });
 
+it('offers re-registration immediately if server removal succeeded but browser cleanup failed', async () => {
+  useUiStore.setState({ notificationsEnabled: true });
+  vi.mocked(pushSubscribed).mockResolvedValueOnce(true).mockResolvedValue(false);
+  vi.mocked(disablePush).mockRejectedValue(new Error('Browser cleanup failed'));
+  render(<NotificationsSection />);
+  await act(async () => {});
+  expect(screen.queryByRole('button', { name: 'Enable background alerts' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('System notifications'));
+  expect(await screen.findByRole('button', { name: 'Enable background alerts' })).toBeInTheDocument();
+  expect(useUiStore.getState().notificationsEnabled).toBe(true);
+});
+
 it('unsubscribes when notifications are turned off', async () => {
   useUiStore.setState({ notificationsEnabled: true });
   render(<NotificationsSection />);

@@ -6,6 +6,24 @@ weight: 18
 Ocman can send OS notifications when a session finishes or needs a permission
 decision or an answer to a question. Clicking an alert opens the session on its
 owning machine, including prompts from a session's children.
+On an existing window the conversation is revealed, including when a mobile
+details panel was open. The link's owner takes precedence over cached sessions.
+
+## App icon count
+
+On supported installed PWAs, the icon shows the number of distinct unread or
+attention sessions. A session needing both permission and question input counts
+once; same-id sessions on different owners count separately. Reading or resolving
+the sessions clears the badge when the app refreshes its notification state.
+Push alerts also carry the current count so a closed app can update its badge.
+Without a new push, changes made on another device refresh when this app opens.
+While open, the app dismisses session alerts once their unread/input state is
+resolved. Notifications newer than the fetched snapshot remain until a fresh
+snapshot confirms their state, so cleanup cannot erase a newly arrived alert.
+
+Numeric badges depend on the browser and operating system. iOS/iPadOS and
+supported desktop browsers can show a number. Android generally shows the OS's
+notification dot instead; the browser does not provide exact numeric control.
 
 ## Enable on each device
 
@@ -22,6 +40,9 @@ accessing ocman over the network. Localhost is also a secure context on desktop.
 Enable notifications separately on every device you want to receive alerts.
 Turning the setting off removes that device's server subscription and
 unsubscribes its browser. Other devices keep their subscriptions.
+If browser cleanup fails after server removal, page notifications keep working
+and Settings offers registration again. The page confirms server registration
+before suppressing its own alerts, including after a reload.
 
 ## Delivery
 
@@ -37,8 +58,14 @@ baseline. A separate joined worker delivers alerts, so slow push services do not
 delay observation. The first snapshot after startup
 or after subscribing the first device is a baseline, so existing completed
 sessions and pending prompts do not cause a flood of historical alerts. New
-alerts contain fixed text and a session link, never titles, transcript text,
-commands or permission details.
+alerts use the session title, a status such as "Finished" or "Permission needed",
+the project/worktree name, and a session link. The OS already identifies ocman as
+the sender, so the notification does not repeat its name. Transcript text,
+commands and permission details are not included.
+
+Remote permission alerts use the owning machine's judge decision. Upgrade the
+remote ocman too to receive these alerts; owners without that decision metadata
+are kept quiet rather than asking for input on a permission still being judged.
 
 VAPID signing keys, subscriptions, pending deliveries and deduplication receipts
 live in this installation's `state.db`. Pending sends survive a restart;

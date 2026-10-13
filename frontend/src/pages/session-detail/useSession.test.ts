@@ -85,6 +85,15 @@ class FakeEventSource {
 
 const SID = 'sess-1';
 
+it('routes a notification deep link to its explicit owner instead of a same-id cached owner', async () => {
+  const detail = makeDetail();
+  useApiStore.getState().setCachedSession(SID, detail);
+  const fetchSession = vi.fn().mockResolvedValue({ ...detail, session: { ...detail.session, platform: 'r-laptop:opencode' } });
+  const { unmount } = renderHook(() => useSession(SID, { platform: 'r-laptop:opencode', fetchSession }));
+  await waitFor(() => expect(fetchSession).toHaveBeenCalledWith(SID, 30, 0, expect.any(AbortSignal), 'r-laptop:opencode', false));
+  unmount();
+});
+
 function makeDetail(overrides: Partial<SessionDetail> = {}): SessionDetail {
   return {
     session: {

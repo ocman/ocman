@@ -9,7 +9,7 @@ export const sessionApi = {
     fetchJSON<{ count: number }>('/api/sessions?view=running-count', signal),
   sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) =>
     fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
-  sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) =>
+  sessionsNotify: (params?: { since?: number; limit?: number; includeDone?: 1 }, signal?: AbortSignal) =>
     fetchJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
   // Reads preserve archives; only a navigation fetch explicitly opens a session.
   session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = true) => {

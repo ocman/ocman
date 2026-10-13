@@ -89,6 +89,12 @@ func (s *store) count(ctx context.Context) (int, error) {
 	return n, err
 }
 
+func (s *store) active(ctx context.Context, endpoint string) (bool, error) {
+	var active bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM push_subscription WHERE endpoint=?)`, endpoint).Scan(&active)
+	return active, err
+}
+
 func (s *store) enqueue(ctx context.Context, c Candidate) error {
 	data, err := json.Marshal(c.Notification)
 	if err != nil {

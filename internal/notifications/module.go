@@ -13,11 +13,12 @@ import (
 )
 
 type Notification struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	URL   string `json:"url"`
-	Tag   string `json:"tag"`
-	Kind  string `json:"kind"`
+	Title      string `json:"title"`
+	Body       string `json:"body"`
+	URL        string `json:"url"`
+	Tag        string `json:"tag"`
+	Kind       string `json:"kind"`
+	BadgeCount int    `json:"badgeCount"`
 }
 
 // Key identifies a prompt request or the final assistant message, not a poll.
@@ -52,6 +53,7 @@ func (*Module) Name() string { return "notifications" }
 func (m *Module) Routes(r module.Router) {
 	r.Handle("GET /api/notifications/push-key", m.d.Guards.Auth(m.publicKey))
 	r.Handle("POST /api/notifications/subscribe", m.d.Guards.Auth(m.subscribe))
+	r.Handle("POST /api/notifications/subscription", m.d.Guards.Auth(m.subscriptionStatus))
 	r.Handle("POST /api/notifications/unsubscribe", m.d.Guards.Auth(m.unsubscribe))
 }
 

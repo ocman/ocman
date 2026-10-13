@@ -3,7 +3,10 @@ package notifications
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -122,5 +125,74 @@ func TestFailedInitialSnapshotRecoveryDoesNotReplayHistory(t *testing.T) {
 	rows, err := m.store.due(ctx)
 	if err != nil || len(rows) != 0 {
 		t.Fatal("historical alert enqueued on recovery")
+	}
+}
+
+func TestSubscriptionStatusReflectsServerRegistration(t *testing.T) {
+	m := fixture(t)
+	sub := subscription(t)
+	ctx := t.Context()
+	if err := m.store.save(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	for _, active := range []bool{true, false} {
+		r := httptest.NewRequest(http.MethodPost, "https://ocman.test/api/notifications/subscription", strings.NewReader(`{"endpoint":"`+sub.Endpoint+`"}`))
+		r.Header.Set("Origin", "https://ocman.test")
+		w := httptest.NewRecorder()
+		m.subscriptionStatus(w, r)
+		if w.Code != http.StatusOK || strings.Contains(w.Body.String(), `"active":true`) != active {
+			t.Fatalf("wrong registration status: %s", w.Body.String())
+		}
+		if err := m.store.remove(ctx, sub.Endpoint); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestSubscriptionStatusRejectsInvalidAndFailedReads(t *testing.T) {
+	m := fixture(t)
+	for _, input := range []string{"{", `{"endpoint":"https://127.0.0.1/private"}`} {
+		r := httptest.NewRequest(http.MethodPost, "https://ocman.test/", strings.NewReader(input))
+		r.Header.Set("Origin", "https://ocman.test")
+		w := httptest.NewRecorder()
+		m.subscriptionStatus(w, r)
+		if w.Code != http.StatusBadRequest {
+			t.Fatal(w.Code)
+		}
+	}
+	if err := m.store.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "https://ocman.test/", strings.NewReader(`{"endpoint":"https://fcm.googleapis.com/device"}`))
+	r.Header.Set("Origin", "https://ocman.test")
+	w := httptest.NewRecorder()
+	m.subscriptionStatus(w, r)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatal(w.Code)
+	}
+}
+
+func TestExpiredEndpointSkipsRemainingMaterializedDeliveries(t *testing.T) {
+	m := fixture(t)
+	ctx := t.Context()
+	sub := subscription(t)
+	if err := m.store.save(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"first", "second"} {
+		if err := m.store.enqueue(ctx, Candidate{Key: key}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls := 0
+	m.client.Transport = transport(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusGone, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})
+	if err := m.deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("expired endpoint received %d requests", calls)
 	}
 }

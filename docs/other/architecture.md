@@ -74,7 +74,7 @@ flowchart LR
   Vite server on :8228 proxies `/api` to the air backend on :8229.
 - **Browser push services.** Opt-in device subscriptions receive encrypted Web
   Push alerts even with the page closed. The browser service worker displays
-  fixed-text notifications and opens an owner-qualified session route on click.
+  session-context notifications and opens an owner-qualified session route on click.
 - **Telemetry collector.** Optional OTLP/HTTP or gRPC export of traces, metrics,
   and batched Logrus logs through `internal/telemetry`. Logs retain structured
   fields and span context, console output stays enabled, and shutdown flushes
@@ -560,6 +560,12 @@ flowchart TD
   VAPID keys, subscriptions and delivery receipts under its module schema.
   `webpush-go` handles encryption and signing. Known browser push-service hosts
   are allowlisted, redirects are refused, and transient sends have bounded retries.
+  The page confirms server subscription state before suppressing local alerts.
+  Shared notification snapshots and push payloads update the installed app's
+  numeric attention badge. Notification routes carry an explicit owner and reveal
+  the conversation even when a mobile overlay was already open.
+  The owner's `ListPermissions` RPC annotates cloned prompts with its judge
+  deferral decision, so the hub does not guess remote notification eligibility.
   See [Notifications](../features/notifications.md).
 - **Legacy Workflow storage.** The `workflow_*` tables remain in `state.db` as
   inert historical data. No API, MCP tool, UI, or scheduler reads them. A DAG
