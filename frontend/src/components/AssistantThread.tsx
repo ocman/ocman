@@ -537,6 +537,7 @@ export function AssistantThread({
   onToggleMessageBookmark,
   scrollToMessageId,
   scrollToMessageTick,
+  scrollToBottomTick,
   scrollToToolCall,
 }: {
   hasMore?: boolean;
@@ -550,6 +551,7 @@ export function AssistantThread({
   onToggleMessageBookmark?: (messageId: string) => void;
   scrollToMessageId?: string | null;
   scrollToMessageTick?: number;
+  scrollToBottomTick?: number;
   scrollToToolCall?: { messageId: string; toolCallId: string; tick: number } | null;
 }) {
   trackRender('AssistantThread');
@@ -646,6 +648,9 @@ export function AssistantThread({
   // the user gestures away from it, and drives the scroll-to-bottom
   // affordance. See lib/useStickyBottom.ts.
   const { showScrollToBottom, scrollToBottom } = useStickyBottom(viewportRef);
+  useEffect(() => {
+    if (scrollToBottomTick) scrollToBottom();
+  }, [scrollToBottomTick, scrollToBottom]);
 
   // Alt+H / Alt+L (Option+H / Option+L on Mac) jump between user messages in
   // the history. Alt+H: previous user message (up). Alt+L: next user message

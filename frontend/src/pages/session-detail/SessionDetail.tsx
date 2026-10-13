@@ -140,6 +140,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const newConversation = id === NEW_SESSION_ID ? parseNewSessionParams(searchParams) : null;
   const factoryEpicID = searchParams.get('factoryEpic') ?? '';
   const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
+  const [sidebarScroll, setSidebarScroll] = useState({ sessionId: '', tick: 0 });
   const [commitSourceJump, setCommitSourceJump] = useState<{
     sessionId: string;
     platformId: string;
@@ -168,6 +169,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // (command palette, auto-redirect, closed-session reopen).
   const navigateFromSidebar = useCallback((nextId: string) => {
     closeMobilePanel();
+    setSidebarScroll((previous) => ({ sessionId: nextId, tick: previous.tick + 1 }));
     navigateToSession(nextId);
   }, [closeMobilePanel, navigateToSession]);
 
@@ -975,6 +977,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               >
                 <PreviewOwnerContext.Provider value={session.remoteId || 'local'}>
                 <AssistantThread
+                  scrollToBottomTick={sidebarScroll.sessionId === session.id ? sidebarScroll.tick : 0}
                   hasMore={hasMore}
                   loadingMore={loadingMore}
                   onLoadMore={loadMore}
