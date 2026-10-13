@@ -2,7 +2,8 @@
 # Test-only tmux substitute. Executes the fake provider as a detached child.
 # With OCMAN_FAKE_TMUX_ENV naming a file of NAME=value lines, the provider
 # gets only that environment, like a tmux server started earlier.
-shift 2
+# Drops the server selection: -L <server> -f /dev/null.
+shift 4
 command="$1"
 shift
 case "$command" in

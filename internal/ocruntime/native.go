@@ -18,8 +18,8 @@ import (
 // KindNativeTmux is the Instance.Kind reported by the native runtime.
 const KindNativeTmux = "native-tmux"
 
-// NativeRuntime hosts headless OpenCode on the dedicated ocman-opencode
-// tmux server, using the caller-allocated port and loopback HTTP.
+// NativeRuntime hosts headless OpenCode on ocman's managed agent tmux
+// server (tmux.ManagedServer), using the caller-allocated port and loopback HTTP.
 type NativeRuntime struct {
 	// launch/kill are seams so tests exercise Launch/Stop without a real
 	// tmux binary. Nil values fall back to the tmux package defaults.

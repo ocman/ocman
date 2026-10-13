@@ -187,7 +187,7 @@ native-tmux implementation today and a container runtime planned (epic
 `Router.ForDir`) is the only path that launches opencode for a project.
 It **allocates a free loopback port itself**
 (`ocruntime.AllocateLoopbackPort`, bind→close) and launches headless
-`opencode serve --port N` on `tmux -L ocman-opencode -f /dev/null`, isolated
+`opencode serve --port N` on `tmux -L ocman-agents -f /dev/null`, isolated
 from the user's tmux server and configuration. The managed path no longer relies on `lsof` port
 discovery. Health is an **API probe**: `GET {endpoint}/config` returning
 200, not mere listener presence. Concurrent ensure calls for one repo
@@ -573,7 +573,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/ocruntime/` — runtime-neutral managed-opencode lifecycle
   (#376). A `Runtime` interface (`Launch`/`Probe`/`Stop`) abstracts how a
   project's opencode instance is hosted; the native-tmux implementation
-  runs headless `opencode serve --port N` on the dedicated `ocman-opencode`
+  runs headless `opencode serve --port N` on the dedicated `ocman-agents`
   tmux server with no user config, using an ocman-allocated loopback port, and probes
   `GET {endpoint}/config` for health. Plug point for the container
   runtime (epic #375). Driven by `hostsvc/local`'s
@@ -582,7 +582,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   recovery). Launch capability is surfaced as the `HostCaps.OpencodeLaunch`
   (`opencodeLaunch`) flag, distinct from `Tmux`; the frontend gates
   managed-launch UI on it. `ProviderRuntime` hosts `ocman provider <id>`
-  in tmux (`tmux -L ocman-provider`) on a unix socket, probed with
+  on the same `ocman-agents` tmux server on a unix socket, probed with
   `/hello` and persisted in `managed_provider`; it hosts Claude's
   per-project supervisors.
 - `internal/term/` — in-app browser terminals: window naming/hashing,

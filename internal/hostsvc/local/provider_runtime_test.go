@@ -35,7 +35,7 @@ func providerManager(t *testing.T) (*ProviderManager, string, string) {
 	// macOS validates a newly written executable on its first exec, measured at
 	// 0.1-0.4s idle and past tmux's 2s command deadline under coverage load.
 	// Pay that here, outside the deadline; "has-session" on no pid exits 1.
-	_ = exec.Command(filepath.Join(dir, "tmux"), "-L", "ocman-provider", "has-session", "-t", "warm").Run()
+	_ = exec.Command(filepath.Join(dir, "tmux"), "-L", "ocman-agents", "-f", "/dev/null", "has-session", "-t", "warm").Run()
 	db, err := state.Open(filepath.Join(dir, "state.db"))
 	if err != nil {
 		t.Fatal(err)

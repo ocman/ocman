@@ -505,7 +505,7 @@ flowchart TD
 - **internal/ocruntime.** The runtime abstraction behind the managed launch
   path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides how a project's
   opencode is hosted; the native-tmux implementation runs headless
-  `opencode serve --port N` on `tmux -L ocman-opencode -f /dev/null`,
+  `opencode serve --port N` on `tmux -L ocman-agents -f /dev/null`,
   isolated from the user's tmux server and configuration. V1 runs one server
   per project; v2 runs one per machine, kept up by `RunMachineSupervisor`.
   The runtime uses an ocman-allocated loopback port and

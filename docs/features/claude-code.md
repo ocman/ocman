@@ -180,7 +180,7 @@ itself. Sign-in stays with the CLI: run `claude` to log in or renew it.
 
 - Terminal-started sessions are read-only.
 - Sessions ocman launches run in one background supervisor per repository
-  (a `tmux -L ocman-provider` session), so a running turn and a pending
+  (a session on ocman's `tmux -L ocman-agents` server, shared with OpenCode), so a running turn and a pending
   permission survive an ocman restart, including a crash. A reboot ends them;
   the session stays drivable and the next send starts a new supervisor. A
   supervisor left by an incompatible ocman version keeps its waiting

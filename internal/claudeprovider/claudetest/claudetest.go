@@ -34,7 +34,7 @@ func InstallFakeTmux(t testing.TB, bin, pids string) {
 	if err := os.WriteFile(filepath.Join(bin, "tmux"), script, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_ = exec.Command(filepath.Join(bin, "tmux"), "-L", "x", "has-session", "-t", "warm").Run()
+	_ = exec.Command(filepath.Join(bin, "tmux"), "-L", "x", "-f", "/dev/null", "has-session", "-t", "warm").Run()
 	t.Cleanup(func() {
 		paths, _ := filepath.Glob(filepath.Join(pids, "*.pid"))
 		for _, path := range paths {

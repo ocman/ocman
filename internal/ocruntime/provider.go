@@ -6,14 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -48,20 +46,8 @@ type ProviderRuntime struct {
 func NewProviderRuntime(providerID, binary, directory string) *ProviderRuntime {
 	return &ProviderRuntime{ProviderID: providerID, Binary: binary, Directory: directory,
 		launch: func(ctx context.Context, _ string, args []string) error { return tmux.Run(ctx, args...) },
-		stop: func(ctx context.Context, id string) error {
-			return tmux.Run(ctx, "-L", "ocman-provider", "kill-session", "-t", id)
-		},
-		alive: func(ctx context.Context, id string) (bool, error) {
-			_, err := tmux.Output(ctx, "-L", "ocman-provider", "has-session", "-t", id)
-			if err == nil {
-				return true, nil
-			}
-			var exit *exec.ExitError
-			if errors.As(err, &exit) && exit.ExitCode() == 1 {
-				return false, nil
-			}
-			return false, err
-		},
+		stop:   tmux.KillManagedSession,
+		alive:  tmux.HasManagedSession,
 	}
 }
 
@@ -84,8 +70,9 @@ func (r *ProviderRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instanc
 		return nil, err
 	}
 	// tmux accepts an executable plus argv; avoid a shell quoting layer entirely.
-	args := []string{"-L", "ocman-provider", "new-session", "-d", "-s", name, "-n", "provider", "-c", spec.RepoRoot, "--",
-		r.Binary, "provider", r.ProviderID, "--socket", socket, "--spool", filepath.Join(dir, "spool"), "--repo", spec.RepoRoot}
+	// Shares the managed server with OpenCode (tmux.ManagedServer).
+	args := tmux.ManagedArgs("new-session", "-d", "-s", name, "-n", "provider", "-c", spec.RepoRoot, "--",
+		r.Binary, "provider", r.ProviderID, "--socket", socket, "--spool", filepath.Join(dir, "spool"), "--repo", spec.RepoRoot)
 	if r.Args != nil {
 		args = append(args, r.Args()...)
 	}
