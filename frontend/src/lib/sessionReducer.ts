@@ -445,7 +445,7 @@ function normaliseStatus(raw: unknown): SessionMetadata['status'] | null {
   if (!s) return null;
   if (s === 'idle') return 'done';
   if (s === 'retry') return 'busy';
-  if (s === 'waiting' || s === 'busy' || s === 'done' || s === 'error' || s === 'interrupted') return s;
+  if (s === 'waiting' || s === 'busy' || s === 'limited' || s === 'done' || s === 'error' || s === 'interrupted') return s;
   return null;
 }
 
@@ -903,6 +903,8 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
   const status = normaliseStatus(props.status);
   if (!status) return state;
   const notice = retryNotice(props.status);
+  const rawStatus = props.status && typeof props.status === 'object' ? props.status as Record<string, unknown> : props;
+  const resetsAt = status === 'limited' && typeof rawStatus.resetsAt === 'number' ? rawStatus.resetsAt : 0;
   const clearRetryNotice = !notice && ['retry', 'rate_limit', 'provider_overloaded'].includes(state.session?.notice?.kind ?? '');
   // Treat `session.status` with status === idle the same as
   // session.idle — also flag a refetch so the host hook reconciles
@@ -914,6 +916,7 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
     session: state.session ? {
       ...state.session,
       status,
+      resetsAt,
       ...(notice ? { notice } : clearRetryNotice ? { notice: undefined } : {}),
     } : state.session,
     _refetchRequested: refetch || state._refetchRequested,
@@ -924,7 +927,7 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
 function reduceSessionIdle(state: SessionView): SessionView {
   let nextSession = state.session;
   if (state.session && state.session.status !== 'done') {
-    nextSession = { ...state.session, status: 'done' };
+    nextSession = { ...state.session, status: 'done', resetsAt: 0 };
   }
   return {
     ...state,

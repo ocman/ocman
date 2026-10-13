@@ -95,6 +95,13 @@ describe('SessionModals', () => {
     expect(p.pending.clear).toHaveBeenCalled();
   });
 
+  it('forks only the full session without fork-at-message', () => {
+    renderModals({ openModal: 'fork', forkAtMessage: false });
+    expect(screen.queryByText('First prompt')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Full session'));
+    expect(api.forkSession).toHaveBeenLastCalledWith('s1', undefined);
+  });
+
   it('hydrates history before jumping to a message not in the live window', () => {
     const p = renderModals({
       openModal: 'jump',

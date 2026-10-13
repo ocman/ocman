@@ -1,0 +1,62 @@
+package providerprotocol
+
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+)
+
+func TestVersionNegotiation(t *testing.T) {
+	for _, version := range []int{PreviousVersion, CurrentVersion} {
+		if err := CheckVersion(version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var versionError *VersionError
+	err := CheckVersion(CurrentVersion + 1)
+	if !errors.As(err, &versionError) || versionError.Version != CurrentVersion+1 || !strings.Contains(err.Error(), "unsupported provider protocol version") {
+		t.Fatal(err)
+	}
+}
+
+func TestHelloWireCapabilities(t *testing.T) {
+	var hello Hello
+	err := json.Unmarshal([]byte(`{"protocolVersion":1,"providerId":"test","cliVersion":"1.2.3","capabilities":{"composer":true,"events":true,"nativeQueue":true,"rename":true,"account":true}}`), &hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hello.ProviderID != "test" || hello.CLIVersion != "1.2.3" || !hello.Capabilities.Composer || !hello.Capabilities.Events || !hello.Capabilities.NativeQueue || !hello.Capabilities.Rename || !hello.Capabilities.Account {
+		t.Fatal(hello)
+	}
+	data, err := json.Marshal(hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copy Hello
+	if err := json.Unmarshal(data, &copy); err != nil {
+		t.Fatal(err)
+	}
+	if copy != hello {
+		t.Fatal("handshake changed in round trip")
+	}
+}
+
+func TestExactPatternRoundTrip(t *testing.T) {
+	for in, want := range map[string]string{
+		"echo *":           `echo \*`,
+		"https://x/?a=1":   `https://x/\?a=1`,
+		`grep "a\|b"`:      `grep "a\|b"`,
+		`a\*`:              `a\\\*`,
+		`a\\`:              `a\\\`,
+		`trailing\`:        `trailing\`,
+		"plain command -x": "plain command -x",
+	} {
+		if got := ExactPattern(in); got != want {
+			t.Errorf("ExactPattern(%q) = %q, want %q", in, got, want)
+		}
+		if back := PatternValue(ExactPattern(in)); back != in {
+			t.Errorf("PatternValue(ExactPattern(%q)) = %q", in, back)
+		}
+	}
+}

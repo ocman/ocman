@@ -5,6 +5,7 @@
 .status-done { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
 .status-error { background: rgba(243, 139, 168, 0.15); color: var(--danger); }
 .status-interrupted { background: rgba(240, 136, 62, 0.15); color: var(--accent4); }
+.status-limited { background: var(--bg-card); color: var(--accent4); }
 .status-indicator.status-pending {
   background: rgba(240, 136, 62, 0.15);
   color: var(--accent4);

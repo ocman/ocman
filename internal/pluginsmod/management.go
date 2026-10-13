@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -51,12 +51,14 @@ func (m *Module) handlePluginRescan(w http.ResponseWriter, r *http.Request) {
 func (m *Module) handlePluginProjectCatalog(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Directory string `json:"directory"`
+		Platform  string `json:"platform"`
 	}
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &input) || input.Directory == "" {
 		http.Error(w, "directory is required", http.StatusBadRequest)
 		return
 	}
-	values := map[string]json.RawMessage{"directory": json.RawMessage(strconv.Quote(input.Directory))}
+	values := map[string]json.RawMessage{"directory": json.RawMessage(strconv.Quote(input.Directory)),
+		"platform": json.RawMessage(strconv.Quote(input.Platform))}
 	m.servePluginOperation(w, r, remote.PluginRequest{Operation: "project-catalog", PluginID: "org.ocman.slack", Input: remote.PluginInput{Values: values}})
 }
 
@@ -65,13 +67,40 @@ func (m *Module) pluginProjectCatalog(ctx context.Context, input remote.PluginIn
 	if input.Values == nil || json.Unmarshal(input.Values["directory"], &directory) != nil || directory == "" {
 		return nil, plugins.ErrInvalidMessage
 	}
-	ensured, err := m.deps.Local().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: directory})
-	if err != nil || ensured == nil {
-		return nil, err
-	}
-	agents, models, err := opencode.ProjectCatalog(ctx, ensured.Endpoint, directory)
+	// The installation's platform setting picks the catalog (AD-13); OpenCode
+	// is ensured only when it is that platform. Owner-local, never remote.
+	var platform string
+	_ = json.Unmarshal(input.Values["platform"], &platform)
+	platformID, base, err := m.deps.CreatePlatform(ctx, m.deps.Local(), platform)
 	if err != nil {
 		return nil, err
+	}
+	adapter, ok := m.deps.Platform(platformID)
+	if !ok {
+		return nil, plugins.ErrInvalidMessage
+	}
+	var agents, models []string
+	if adapter.ID() == platforms.OpenCodeID {
+		ensured, err := m.deps.Local().EnsureRuntime(ctx, base, directory)
+		if err != nil || ensured == nil {
+			return nil, err
+		}
+		if agents, models, err = opencode.ProjectCatalog(ctx, ensured.Endpoint, directory); err != nil {
+			return nil, err
+		}
+	} else {
+		catalog, err := adapter.DirectoryCatalog(ctx, platforms.DirectoryCatalogRequest{Directory: directory})
+		if err != nil {
+			return nil, err
+		}
+		for _, agent := range catalog.Agents {
+			agents = append(agents, agent.Name)
+		}
+		if catalog.Models != nil {
+			for _, model := range catalog.Models.Models {
+				models = append(models, model.Provider+"/"+model.Model)
+			}
+		}
 	}
 	return struct {
 		Agents []string `json:"agents"`

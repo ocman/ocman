@@ -43,7 +43,12 @@ type Deps struct {
 	Store *state.DB
 	// Local is this machine's host. Conversation sessions always run here,
 	// never on an owner inferred from the directory.
-	Local    func() hostsvc.Host
+	Local func() hostsvc.Host
+	// CreatePlatform resolves a requested (or the default) platform for an
+	// owner into its compound ID and base platform.
+	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested string) (id, base string, err error)
+	// Platform looks up a registered adapter.
+	Platform func(id string) (platforms.Platform, bool)
 	Sessions Sessions
 	// Enqueue holds a message in the session's follow-up queue.
 	Enqueue func(ctx context.Context, platform string, forceQueue bool, req platforms.SendMessageRequest) error

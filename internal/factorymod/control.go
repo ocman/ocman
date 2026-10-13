@@ -112,7 +112,7 @@ func (m *Module) ensureFactoryControlSessionOnce(ctx context.Context, epicID str
 		}
 	}
 	launcher := PlanningLauncher{m}
-	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Projects: projects, Title: "Control: " + epic.Goal + " (@factory)"},
+	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Platform: epic.Platform, Repository: epic.InitialProject, Projects: projects, Title: "Control: " + epic.Goal + " (@factory)"},
 		platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"},
 		platforms.PermissionRule{Permission: "mcp_factory_control", Pattern: "factory_control", Action: "allow"})
 	if err != nil {

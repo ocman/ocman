@@ -189,14 +189,16 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Platform  string `json:"platform"`
-		Directory string `json:"directory"`
-		Title     string `json:"title"`
+		newSessionTarget
+		Title string `json:"title"`
 		// ParentSessionID seeds the new session with that session's
 		// permission posture, as /wt does for a new worktree.
 		ParentSessionID string `json:"parentSessionId"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if !req.resolvePlatform(r.Context(), s, w) {
 		return
 	}
 	log.WithFields(log.Fields{

@@ -21,6 +21,11 @@ export interface UsePromptSyncOptions {
   parts: Part[];
   recentSessions: Session[];
   portAvailable: boolean;
+  /**
+   * The owner's stream delivers every reply (AD-7a), so no dismissal poll
+   * runs: the stream's replied/rejected events clear the prompt.
+   */
+  pushPrompts?: boolean;
   /** The active session plus every descendant in its tree. */
   promptSessionIds: string[];
   pendingPermission: PendingPermission | null;
@@ -44,6 +49,7 @@ export function usePromptSync({
   parts,
   recentSessions,
   portAvailable,
+  pushPrompts = false,
   promptSessionIds,
   pendingPermission,
   pendingQuestion,
@@ -139,7 +145,7 @@ export function usePromptSync({
   // than an empty list) avoids dismissing a freshly-asked follow-up.
   const pendingQuestionRequestId = pendingQuestion?.requestId ?? null;
   useEffect(() => {
-    if (!id || !pendingQuestionRequestId || !portAvailable) return;
+    if (!id || !pendingQuestionRequestId || !portAvailable || pushPrompts) return;
     let cancelled = false;
 
     const check = () => {
@@ -167,7 +173,7 @@ export function usePromptSync({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [id, pendingQuestionRequestId, portAvailable, listQuestions, clearPrompt]);
+  }, [id, pendingQuestionRequestId, portAvailable, pushPrompts, listQuestions, clearPrompt]);
 
   // Same fallback for permissions. A reply that lands while the stream
   // is down (sleep, judge auto-approval, another tab) is never replayed,
@@ -180,7 +186,7 @@ export function usePromptSync({
   // Descendants run on the viewed session's owner.
   const ownerPlatform = session?.platform;
   useEffect(() => {
-    if (!pendingPermissionSessionId || !pendingPermissionId || !ownerPlatform || !portAvailable) return;
+    if (!pendingPermissionSessionId || !pendingPermissionId || !ownerPlatform || !portAvailable || pushPrompts) return;
     let cancelled = false;
     let misses = 0;
     const timer = window.setInterval(() => {
@@ -200,7 +206,7 @@ export function usePromptSync({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [pendingPermissionSessionId, pendingPermissionId, ownerPlatform, portAvailable, refreshPermissions, clearPrompt]);
+  }, [pendingPermissionSessionId, pendingPermissionId, ownerPlatform, portAvailable, pushPrompts, refreshPermissions, clearPrompt]);
 
   // Restore pending question from sessionStorage when navigating
   // back to a page whose parts still show a pending question tool.

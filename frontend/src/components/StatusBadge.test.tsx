@@ -5,6 +5,18 @@ import { SessionStatusIndicator } from './SessionStatusIndicator';
 import { StatusBadge } from './StatusBadge';
 
 describe('StatusBadge', () => {
+  it('shows limited in the header and compact list badge', () => {
+    const { getByText, getByLabelText } = render(<><StatusBadge status="limited" /><StatusBadge status="limited" compact /></>);
+    expect(getByText('Limited')).toBeInTheDocument();
+    expect(getByLabelText('Session status: Limited')).toBeInTheDocument();
+  });
+  it('shows the reset time even for seen sessions and notice overrides', () => {
+    const resetsAt = Date.UTC(2030, 0, 1, 12);
+    const label = `Limited until ${new Date(resetsAt).toLocaleString()}`;
+    const { getByText, getByLabelText } = render(<><StatusBadge status="limited" resetsAt={resetsAt} /><StatusBadge status="limited" resetsAt={resetsAt} compact seen draft titleOverride="Usage limit" /></>);
+    expect(getByText(label)).toBeInTheDocument();
+    expect(getByLabelText(`Session status: ${label}`)).toHaveAttribute('data-state', 'limited');
+  });
   it('hides an unlabelled status indicator from assistive technology', () => {
     const { container } = render(<SessionStatusIndicator state="busy" />);
     expect(container.querySelector('.session-status-indicator')?.getAttribute('aria-hidden')).toBe('true');

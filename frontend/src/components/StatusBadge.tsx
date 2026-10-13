@@ -7,6 +7,7 @@ const labels: Record<string, string> = {
   done: 'Done',
   error: 'Error',
   interrupted: 'Interrupted',
+  limited: 'Limited',
 };
 
 /** Tooltip for states whose one-word label doesn't explain itself. */
@@ -16,6 +17,7 @@ const hints: Record<string, string> = {
 
 interface StatusBadgeProps {
   status: string;
+  resetsAt?: number;
   compact?: boolean;
   seen?: boolean;
   /** A pending permission/question prompt needs the user's attention. */
@@ -29,6 +31,7 @@ interface StatusBadgeProps {
 function indicatorState(status: string, seen?: boolean, pending?: boolean, draft?: boolean): SessionStatusIndicatorState {
   if (pending) return 'permission';
   if (status === 'error') return 'error';
+  if (status === 'limited') return 'limited';
   // A draft on a running turn keeps the spinner, in the draft colour.
   if (draft) return status === 'busy' ? 'draft-busy' : 'draft';
   if (seen) return 'viewed';
@@ -36,13 +39,14 @@ function indicatorState(status: string, seen?: boolean, pending?: boolean, draft
   return 'done';
 }
 
-export function StatusBadge({ status, compact, seen, pending, draft, titleOverride }: StatusBadgeProps) {
+export function StatusBadge({ status, resetsAt, compact, seen, pending, draft, titleOverride }: StatusBadgeProps) {
   const state = indicatorState(status, seen, pending, draft);
-  const title = pending
+  const label = status === 'limited' && resetsAt ? `Limited until ${new Date(resetsAt).toLocaleString()}` : labels[status] || status;
+  const title = status === 'limited' ? label : pending
     ? 'Waiting for your response'
     : draft
       ? status === 'busy' ? 'Unsent draft — still working' : 'Unsent draft'
-      : titleOverride || hints[status] || labels[status] || status;
+      : titleOverride || hints[status] || label;
   if (compact) {
     return (
       <SessionStatusIndicator
@@ -56,7 +60,7 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
   return (
     <span className={`status-indicator status-${pending ? 'pending' : status}`} title={pending || hints[status] ? title : undefined}>
       <SessionStatusIndicator state={state} />
-      {pending ? 'Prompt' : labels[status] || status}
+      {pending ? 'Prompt' : label}
     </span>
   );
 }

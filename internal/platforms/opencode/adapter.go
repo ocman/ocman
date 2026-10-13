@@ -24,7 +24,7 @@ import (
 )
 
 // PlatformID is the stable identifier used in URLs and state.db rows.
-const PlatformID platforms.ID = "opencode"
+const PlatformID platforms.ID = platforms.OpenCodeID
 
 // FavoritesReader is the subset of the ocman state DB the adapter
 // needs to read model favorites. Kept as an interface so tests can
@@ -112,6 +112,7 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		Abort:             true,
 		Compact:           true,
 		Fork:              true,
+		ForkAtMessage:     true,
 		Move:              true,
 		Events:            true,
 		AgentCatalog:      true,
@@ -122,6 +123,8 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		SessionInfo:       true,
 		AutoApprove:       true,
 		PermissionRules:   true,
+		Revert:            true,
+		RuntimeRestart:    true,
 		// ocman launches and manages the OpenCode instance for each
 		// project itself (EnsureProjectOpencode), so no live connection
 		// means the managed instance isn't running yet.

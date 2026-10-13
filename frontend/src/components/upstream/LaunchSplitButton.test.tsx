@@ -5,6 +5,7 @@ import { LaunchSplitButton } from './LaunchSplitButton';
 import * as api from '../../lib/upstreamApi';
 import { useApiStore } from '../../lib/apiStore';
 import userEvent from '@testing-library/user-event';
+import { LaunchPlatformContext } from './launchPlatform';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -29,6 +30,15 @@ describe('LaunchSplitButton', () => {
     finish({ childSessionId: 'review-1', mode: 'session', platform: 'r-box:opencode', remoteId: 'box' });
     await waitFor(() => expect(screen.getByTestId('launch-default')).toBeEnabled());
     expect(useApiStore.getState().recentSessions[0]?.id).toBe('review-1');
+  });
+
+  it('launches on the active session\'s platform', async () => {
+    const spy = vi.spyOn(api, 'postHandle').mockResolvedValue({ childSessionId: 'c', mode: 'session', platform: 'claudecode', remoteId: 'local' });
+    render(<LaunchPlatformContext.Provider value="claudecode">
+      <LaunchSplitButton directory="/repo" remoteId="local" remote="origin" type="issue" number={9} crossFork={false} />
+    </LaunchPlatformContext.Provider>);
+    fireEvent.click(screen.getByTestId('launch-default'));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(expect.objectContaining({ platform: 'claudecode', mode: 'session' })));
   });
 
   it('dismisses launch options with Escape and restores trigger focus', async () => {

@@ -2,7 +2,8 @@
 import { useRef, useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackendUnavailableError, api } from '../../lib/api';
+import { BackendUnavailableError, api, fetchJSON, type PrepareSessionResponse } from '../../lib/api';
+import { clearSettingsCache } from '../../lib/projectSettingsCache';
 import { clearDraft, getDraft, resetDraftTextsForTests, saveDraft } from '../../lib/composerDraft';
 import { clearFailedSends, listFailedSends } from '../../lib/failedSends';
 import { saveProjectModel } from '../../lib/projectModel';
@@ -24,6 +25,7 @@ import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath'
 vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => ({ shellExec: true }),
+  useMachinePlatforms: () => [],
 }));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
 vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
@@ -50,7 +52,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const prepared = { platform: 'opencode', agents: [], commands: [], models: { hasProviders: true, models: [] }, liveConnection: true };
+const prepared: PrepareSessionResponse = { platform: 'opencode', defaultAgent: 'build', agents: [{ name: 'build' }], commands: [], models: { hasProviders: true, models: [] }, liveConnection: true };
 const created = { sessionId: 'child', platform: 'opencode', remoteId: 'local', directory: '/repo', firstMessageSent: true, firstMessageError: '' };
 
 /** Another tab over the same database. */
@@ -115,6 +117,10 @@ function Flow({ params = { directory: '/repo', platform: 'opencode' } }: { param
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearSettingsCache();
+  vi.mocked(fetchJSON).mockImplementation(async (url) => (url.startsWith('/api/project/settings') ? { models: [], off: false, defaultAgent: 'build' }
+    : url.startsWith('/api/worktree/default-base-ref') ? { baseRef: 'main' } : url.startsWith('/api/worktree/list')
+      ? { worktrees: [{ path: '/repo', branch: 'main', main: true }] } : { '/repo': { branch: 'main' } }) as never);
   resetFirstSubmissionForTests();
   window.localStorage.clear();
   resetDraftTextsForTests();
@@ -130,6 +136,40 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it.each(['settings-platform', 'prepare-platform', 'settings-machine', 'prepare-machine'])('filters incompatible implicit defaults on %s while retaining the rendered draft', async (source) => {
+    clearSettingsCache();
+    const settings = { models: [], off: false, defaultAgent: 'plan', defaults: { model: source.startsWith('settings') ? 'openai/gpt-4.1' : '', agent: 'plan', worktree: 'current' } };
+    vi.mocked(fetchJSON).mockImplementation(async (url) => (url.startsWith('/api/project/settings') ? settings
+      : url.startsWith('/api/worktree/default-base-ref') ? { baseRef: 'main' }
+      : url.startsWith('/api/worktree/list') ? { worktrees: [{ path: '/repo', main: true }] }
+      : { '/repo': { branch: 'main' } }) as never);
+    vi.mocked(api.prepareSession).mockResolvedValue({ ...prepared, defaultAgent: 'build', defaultModel: 'openai/gpt-4.1',
+      agents: [{ name: 'build' }, { name: 'plan' }], models: { hasProviders: true, models: [{ provider: 'openai', model: 'gpt-4.1' }] } });
+    const props = { params: { directory: '/repo', platform: 'opencode', draftId: 'new' }, composerRef: null, whisperAvailable: false, navigate: vi.fn(), navigateToSession: vi.fn() };
+    const view = render(<NewConversation {...props} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /gpt-4.1/ })).toBeInTheDocument());
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'keep this prompt' } });
+    fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['image'], 'kept.png', { type: 'image/png' })] } });
+    await screen.findByRole('img', { name: 'Attachment 1' });
+    const remoteId = source.endsWith('machine') ? 'box' : 'local';
+    const platform = remoteId === 'box' ? 'r-box:claudecode' : 'claudecode';
+    saveProjectModel('/repo', 'openai/gpt-4.1');
+    vi.mocked(api.prepareSession).mockResolvedValue({ ...prepared, platform, defaultModel: 'anthropic/sonnet', defaultAgent: '',
+      projectDefaultModel: source.startsWith('prepare') ? 'openai/gpt-4.1' : '', agents: [{ name: 'reviewer', mode: 'subagent' }],
+      models: { hasProviders: true, models: [{ provider: 'anthropic', model: 'sonnet' }, { provider: 'openai', model: 'gpt-4.1', isAvailable: false }] } });
+    view.rerender(<NewConversation {...props} params={{ ...props.params, platform, remoteId }} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /sonnet/ })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /gpt-4.1/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveValue('keep this prompt');
+    expect(screen.getByRole('img', { name: 'Attachment 1' })).toBeInTheDocument();
+    expect(useNewConversationDrafts.getState().drafts[0].draftId).toBe('new');
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.startSession).mock.calls[0][0]).toMatchObject({ platform, remoteId, send: { message: 'keep this prompt', model: 'anthropic/sonnet' } });
+    expect(vi.mocked(api.startSession).mock.calls[0][0].send?.agent).toBeUndefined();
+    expect(vi.mocked(api.startSession).mock.calls[0][0].send?.images).toEqual([expect.objectContaining({ mime: 'image/png' })]);
+  });
+
   it('retires a pre-prepare submission when its model is automatically seeded', async () => {
     const catalog = deferred<typeof prepared & { defaultModel: string }>();
     vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
@@ -790,7 +830,7 @@ describe('new-conversation submission lifecycle', () => {
     const catalog = deferred<typeof prepared & { projectDefaultModel: string }>();
     vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
     render(<Flow />);
-    await act(async () => catalog.resolve({ ...prepared, projectDefaultModel: 'p/configured' }));
+    await act(async () => catalog.resolve({ ...prepared, projectDefaultModel: 'p/configured', models: { hasProviders: true, models: [{ provider: 'p', model: 'configured' }] } }));
     const input = screen.getByRole('textbox');
     await waitFor(() => expect(input).not.toBeDisabled());
     fireEvent.input(input, { target: { value: 'use configured model' } });

@@ -55,10 +55,10 @@ type analyticsOverview struct {
 }
 
 func (m *Module) handleAnalyticsOverview(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
-	stats, err := m.deps.DB.GetStats(r.Context())
+	stats, err := m.deps.Analytics.GetStats(r.Context())
 	if err != nil {
 		httpx.ServerError(w, "fetching analytics session totals", err)
 		return

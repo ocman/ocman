@@ -37,6 +37,7 @@ func (d *DB) ClaimRoutineRun(ctx context.Context, run RoutineRun) (RoutineRun, b
 	}
 	run.RoutineUpdatedAt, run.RoutineName, run.Prompt, run.Directory, run.RemoteID, run.Agent, run.Model, run.SessionMode, run.TargetSessionID = routine.UpdatedAt, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID, routine.Agent, routine.Model, routine.SessionMode, routine.SessionID
 	run.ArchiveSessionAfterSuccess, run.NotifyOnSuccess = routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess
+	run.Platform = routine.Platform
 	run.Worktree, run.CleanupWorktree = routine.Worktree, routine.CleanupWorktree
 	result, err := tx.ExecContext(ctx, `INSERT INTO routine_run (`+routineRunColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING`, run.ID, run.RoutineID, run.RoutineUpdatedAt, run.RoutineName, run.Prompt,

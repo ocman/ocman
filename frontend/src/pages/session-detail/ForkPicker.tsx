@@ -17,6 +17,8 @@ export interface ForkPickerProps {
   open: boolean;
   messages: Message[];
   parts: Part[];
+  /** Offer only the full session (the platform cannot fork at a message). */
+  fullSessionOnly?: boolean;
   onSelect: (messageID?: string) => void;
   onClose: () => void;
 }
@@ -34,8 +36,10 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export function ForkPicker({ open, messages, parts, onSelect, onClose }: ForkPickerProps) {
+export function ForkPicker({ open, messages, parts, fullSessionOnly, onSelect, onClose }: ForkPickerProps) {
   const entries = useMemo<ForkEntry[]>(() => {
+    const full: ForkEntry = { value: FULL_SESSION, label: 'Full session', time: '' };
+    if (fullSessionOnly) return [full];
     const partsByMessage = new Map<string, string[]>();
     for (const part of parts) {
       const text = partText(part);
@@ -55,8 +59,8 @@ export function ForkPicker({ open, messages, parts, onSelect, onClose }: ForkPic
       .filter((entry) => entry.label)
       .reverse();
 
-    return [{ value: FULL_SESSION, label: 'Full session', time: '' }, ...prompts];
-  }, [messages, parts]);
+    return [full, ...prompts];
+  }, [messages, parts, fullSessionOnly]);
 
   return (
     <CommandListPicker<ForkEntry>

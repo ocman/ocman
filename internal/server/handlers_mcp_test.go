@@ -311,3 +311,26 @@ func TestMainMuxMCPProposesExecutableIssueCreation(t *testing.T) {
 		t.Fatalf("MutateGraph = %+v, want agent proposal", svc.mutation)
 	}
 }
+
+type mcpAddrPlatform struct {
+	*fakePlatform
+	addr string
+}
+
+func (p *mcpAddrPlatform) SetMCPAddr(addr string) { p.addr = addr }
+
+// Platforms that launch agents get the bound listener address, never the
+// configured ":0".
+func TestMCPListenerTellsPlatformsBoundAddress(t *testing.T) {
+	srv := testServer(t)
+	p := &mcpAddrPlatform{fakePlatform: &fakePlatform{id: "launcher"}}
+	srv.registry.Register(p)
+	srv.mcpAddr = "127.0.0.1:0"
+	defer srv.startMCPListener()()
+	if p.addr == "" || p.addr != srv.mcpAddr || strings.HasSuffix(p.addr, ":0") {
+		t.Fatalf("platform got %q, listener bound %q", p.addr, srv.mcpAddr)
+	}
+	if (&Server{}).registryPlatforms() != nil {
+		t.Fatal("nil registry")
+	}
+}

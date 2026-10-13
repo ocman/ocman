@@ -20,6 +20,8 @@ import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinComman
 import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
 import type { ComposerProps } from './composerTypes';
 import { ComposerMachineSelector } from './ComposerMachineSelector';
+import { ComposerPlatformSelector } from './ComposerPlatformSelector';
+import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import { InlineAlert } from '../InlineAlert';
 
 export type { AttachedImage } from './useComposerAttachments';
@@ -35,7 +37,7 @@ export function Composer({
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
   worktreesSupported, worktrees, permissionControl, composerRef, target, onTargetChange,
-  remoteId, onMachineChange,
+  remoteId, onMachineChange, onPlatformChange,
 }: ComposerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -100,7 +102,8 @@ export function Composer({
   const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
   const effectiveAgent = selectedAgent || activeAgent || '';
   const hasVariants = modelHasVariants(selectedModel, modelEntries);
-  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants }, commands, platform);
+  const { revert, runtimeRestart } = usePlatformCapabilities(platform);
+  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants, revert, runtimeRestart }, commands, platform);
   const pickers = useComposerPickers({
     inputRef, sessionIdRef: draftKeyRef, scheduleDraftSave, models, agents, agentOptions,
     onModelChange, onAgentChange, onRefreshModels,
@@ -134,6 +137,8 @@ export function Composer({
   // Switching machines captures the draft once, so no new dictation may start mid-switch.
   const audioDisabled = disabled || switchingMachine;
   const { isRecording, isBusy: audioBusy, micError, setMicError, micRef, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled: audioDisabled, inputRef });
+  // Attachments are bound to the current target, so they block switching it.
+  const selectorDisabled = sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0;
   const clearAfterSubmit = () => {
     if (inputRef.current) inputRef.current.value = '';
     slash.close();
@@ -354,12 +359,12 @@ export function Composer({
             micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} onAbort={onAbort} sending={sending} submit={submit} />
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}
-          machineControl={newConversation && directory && onMachineChange && (
+          machineControl={newConversation && directory && onMachineChange && (<>
             <ComposerMachineSelector
               key={`${sessionId}:${directory}:${remoteId}`}
               directory={directory}
               remoteId={remoteId}
-              disabled={disabled || sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0}
+              disabled={disabled || selectorDisabled}
               onSelect={async (machine) => {
                 setSwitchingMachine(true);
                 try {
@@ -369,7 +374,8 @@ export function Composer({
                 }
               }}
             />
-          )}
+            {onPlatformChange && <ComposerPlatformSelector remoteId={remoteId} platform={platform} disabled={selectorDisabled} onSelect={onPlatformChange} />}
+          </>)}
           sessionId={sessionId} disabled={disabled} targetDisabled={uiDisabled} target={target} onTargetChange={onTargetChange} isRunning={isRunning} effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded}
           agents={agents} tokensPerSecond={tokensPerSecond} onAbort={onAbort} tokenStats={tokenStats} estimatedCost={estimatedCost}
           sessionTreeStats={sessionTreeStats} contextTokens={contextTokens} effectiveModel={effectiveModel}

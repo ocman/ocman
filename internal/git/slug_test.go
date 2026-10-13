@@ -108,3 +108,16 @@ func hasHashSuffix(s string, n int) bool {
 	}
 	return true
 }
+
+func TestTitleSlug(t *testing.T) {
+	for in, want := range map[string]string{
+		"Fix Login Redirect":     "fix-login-redirect",
+		"\n  Add OAuth (v2)!\nx": "add-oauth-v2",
+		"":                       "",
+		"A very long generated title that keeps going well past the limit": "a-very-long-generated-title-that-keeps-going-wel",
+	} {
+		if got := TitleSlug(in); got != want {
+			t.Errorf("TitleSlug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

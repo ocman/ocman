@@ -86,6 +86,13 @@ function buildHook(initial: HookProps) {
 }
 
 describe('useSessionStatus', () => {
+  it('keeps limited despite an errored transcript or a pending send', () => {
+    for (const message of [erroredAssistantMessage('m1', 1), userMessage('m2', 2)]) {
+      const { result, unmount } = buildHook({ lastMsg: message, messages: [message], subagentTokens: new Map(), sessionStatus: 'limited', awaitingAssistantResponse: true, isRunning: false, pendingPermission: null, pendingQuestion: null });
+      expect(result.current.displayStatus).toBe('limited');
+      unmount();
+    }
+  });
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
     vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
@@ -100,6 +107,7 @@ describe('useSessionStatus', () => {
   // message list — that is what used to overwrite the authoritative value.
   it.each<[SessionStatus]>([
     ['busy'],
+    ['limited'],
     ['waiting'],
     ['done'],
     ['error'],

@@ -21,11 +21,23 @@ func (d *DB) CreateFactoryEpicWithProjects(ctx context.Context, preferredID, goa
 	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, nil)
 }
 
-func (d *DB) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule) (model.NativeEpic, error) {
-	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, rules)
+func (d *DB) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule, platform ...string) (model.NativeEpic, error) {
+	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, rules, platform...)
 }
 
-func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule) (model.NativeEpic, error) {
+func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule, requested ...string) (model.NativeEpic, error) {
+	var platform string
+	if len(requested) > 0 {
+		platform = requested[0]
+	}
+	explicitPlatform := platform != ""
+	if platform == "" {
+		var err error
+		platform, err = d.DefaultPlatform(ctx)
+		if err != nil {
+			return model.NativeEpic{}, err
+		}
+	}
 	if err := validateNativeFormula(formula, map[string]bool{}); err != nil {
 		return model.NativeEpic{}, err
 	}
@@ -36,7 +48,7 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 	}
 	defer func() { _ = tx.Rollback() }()
 	if instantiationID != "" {
-		existing, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE instantiation_id = ?`, instantiationID))
+		existing, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash, platform FROM factory_epic WHERE instantiation_id = ?`, instantiationID))
 		if err == nil {
 			existing.Projects, err = listFactoryEpicProjectsWith(ctx, tx, existing.ID)
 			if err != nil {
@@ -46,7 +58,7 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 			if err != nil {
 				return model.NativeEpic{}, err
 			}
-			if existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) && (rules == nil || slices.Equal(existing.PermissionRules, rules)) {
+			if (!explicitPlatform || existing.Platform == platform) && existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) && (rules == nil || slices.Equal(existing.PermissionRules, rules)) {
 				return existing, nil
 			}
 			return model.NativeEpic{}, model.ErrNativeInstantiationConflict
@@ -69,13 +81,13 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 			return model.NativeEpic{}, err
 		}
 		if instantiationID != "" {
-			existing, lookupErr := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE instantiation_id = ?`, instantiationID))
+			existing, lookupErr := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash, platform FROM factory_epic WHERE instantiation_id = ?`, instantiationID))
 			if lookupErr == nil {
 				existing.Projects, lookupErr = listFactoryEpicProjectsWith(ctx, tx, existing.ID)
 				if lookupErr == nil {
 					existing.PermissionRules, lookupErr = getFactoryEpicPermissionRules(ctx, tx, existing.ID)
 				}
-				if lookupErr == nil && existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) && (rules == nil || slices.Equal(existing.PermissionRules, rules)) {
+				if lookupErr == nil && (!explicitPlatform || existing.Platform == platform) && existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) && (rules == nil || slices.Equal(existing.PermissionRules, rules)) {
 					return existing, nil
 				}
 			}
@@ -83,7 +95,7 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 		}
 		return model.NativeEpic{}, err
 	}
-	epic := model.NativeEpic{ID: id, Status: "open", Goal: goal, Brief: brief, InitialProject: project, InstantiationID: instantiationID, FormulaID: formula.ID, FormulaVersion: formula.Version, FormulaHash: formula.Hash}
+	epic := model.NativeEpic{Platform: platform, ID: id, Status: "open", Goal: goal, Brief: brief, InitialProject: project, InstantiationID: instantiationID, FormulaID: formula.ID, FormulaVersion: formula.Version, FormulaHash: formula.Hash}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_epic_project (epic_id, project_path, is_epic) VALUES (?, ?, 1)`, id, project); err != nil {
 		return model.NativeEpic{}, fmt.Errorf("recording Factory Epic project: %w", err)
 	}
@@ -94,7 +106,7 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 		}
 		epic.Projects = append(epic.Projects, model.EpicProject{Path: path, Removable: true})
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE factory_epic SET formula_id = ?, formula_version = ?, formula_hash = ? WHERE id = ?`, formula.ID, formula.Version, formula.Hash, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_epic SET formula_id = ?, formula_version = ?, formula_hash = ?, platform = ? WHERE id = ?`, formula.ID, formula.Version, formula.Hash, platform, id); err != nil {
 		return model.NativeEpic{}, fmt.Errorf("recording Factory Formula: %w", err)
 	}
 	if rules != nil {
@@ -146,7 +158,7 @@ func (d *DB) ListFactoryDispatchEpics(ctx context.Context) ([]model.NativeEpic, 
 }
 
 func (d *DB) listFactoryEpics(ctx context.Context, dispatchOnly bool) ([]model.NativeEpic, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE (? = 0 OR status = 'open') ORDER BY created_at, id`, dispatchOnly)
+	rows, err := d.db.QueryContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash, platform FROM factory_epic WHERE (? = 0 OR status = 'open') ORDER BY created_at, id`, dispatchOnly)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory Epics: %w", err)
 	}
@@ -192,7 +204,7 @@ func (d *DB) listFactoryEpics(ctx context.Context, dispatchOnly bool) ([]model.N
 }
 
 func (d *DB) GetFactoryEpic(ctx context.Context, id string) (model.NativeEpic, error) {
-	epic, err := scanFactoryEpic(d.db.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE id = ?`, id))
+	epic, err := scanFactoryEpic(d.db.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash, platform FROM factory_epic WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.ErrNativeEpicNotFound
 	}

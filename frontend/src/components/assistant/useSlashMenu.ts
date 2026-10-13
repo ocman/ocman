@@ -8,6 +8,10 @@ export interface SlashMenuVisibility {
   hasAgents: boolean;
   activeAgent: string | undefined;
   hasVariants: boolean;
+  /** Platform supports /undo and /redo. */
+  revert?: boolean;
+  /** Platform can restart its managed instance (/restart-opencode). */
+  runtimeRestart?: boolean;
 }
 
 export function reloadSlashCommands(sessionId: string, platform: string) {
@@ -65,6 +69,8 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
       if (cmd.name === 'model' && !vis.hasModels) return false;
       if ((cmd.name === 'agent' || cmd.name === 'agents') && !vis.hasAgents && !vis.activeAgent) return false;
       if (cmd.name === 'skills' && !hasSkills) return false;
+      if ((cmd.name === 'undo' || cmd.name === 'redo') && !vis.revert) return false;
+      if (cmd.name === 'restart-opencode' && !vis.runtimeRestart) return false;
       // Mirror OpenCode: /variants is hidden when the model exposes no variants.
       return !(cmd.name === 'variants' && !vis.hasVariants);
     })

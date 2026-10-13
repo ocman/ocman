@@ -9,6 +9,7 @@ export interface Routine {
   prompt: string;
   directory: string;
   remoteId: string;
+  platform?: string;
   agent: string;
   model: string;
   sessionMode: RoutineSessionMode;
@@ -63,6 +64,7 @@ export interface RoutineInput {
   prompt: string;
   directory: string;
   remoteId: string;
+  platform?: string;
   agent: string;
   model: string;
   sessionMode: RoutineSessionMode;

@@ -70,6 +70,20 @@ func TestBuildInheritedRules(t *testing.T) {
 			count: 1,
 		},
 		{
+			// Claude MCP tools ("Allow always" on mcp__server__tool) inherit;
+			// a key that could widen past one tool is still dropped.
+			name: "mcp tool keys inherited",
+			rows: []state.ApprovedPermission{
+				ap("mcp__ocman__sessions", "*"),
+				ap("mcp__*"),
+				ap("mcp__Bad Key"),
+			},
+			want: []platforms.PermissionRule{
+				{Permission: "mcp__ocman__sessions", Pattern: "*", Action: "allow"},
+			},
+			count: 1,
+		},
+		{
 			name: "patternable key with no patterns falls back to star",
 			rows: []state.ApprovedPermission{
 				ap("read"),
@@ -262,4 +276,16 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
+}
+
+// Claude approvals carry their exact scope: a webfetch Allow-always is
+// inherited for that URL only, while OpenCode keeps its flat webfetch rule.
+func TestFlatKeysAreExactOnClaude(t *testing.T) {
+	rows := []state.ApprovedPermission{{PermissionText: "webfetch", Patterns: []string{`https://x/\?a=1`}, ApprovedBy: state.ApprovalActorUser, Reply: state.ApprovalReplyAlways}}
+	for platform, want := range map[string]string{"claudecode": `https://x/\?a=1`, "r-abc:claudecode": `https://x/\?a=1`, "opencode": ""} {
+		rules, _, err := BuildInheritedRules(t.Context(), fakeLister{rows: rows}, platform, "ses")
+		if err != nil || len(rules) != 1 || rules[0].Pattern != want {
+			t.Errorf("%s: %+v %v, want pattern %q", platform, rules, err, want)
+		}
+	}
 }

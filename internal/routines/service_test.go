@@ -40,6 +40,10 @@ func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectO
 	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "test"}}, nil
 }
 
+func (h *testHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+	return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+}
+
 type testPlatform struct {
 	platforms.Platform
 	mu              sync.Mutex
@@ -1259,5 +1263,22 @@ func TestScheduleEditDuringScheduledRunIsKept(t *testing.T) {
 	}
 	if got, _ := h.db.GetRoutine(t.Context(), routine.ID); got.NextDueAt != edited.NextDueAt {
 		t.Fatalf("run overwrote the edited schedule: next due %d, edited %d", got.NextDueAt, edited.NextDueAt)
+	}
+}
+
+// A routine for a remote without a platform starts on one that remote runs,
+// not on the hub's default (FR-2).
+func TestCreateDefaultsToRemotePlatform(t *testing.T) {
+	h := newHarness(t)
+	h.svc.platforms.Register(&testPlatform{id: "r-box:claudecode"})
+	input := validInput()
+	input.RemoteID = "box"
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil || routine.Platform != "claudecode" {
+		t.Fatalf("routine = %+v, %v", routine, err)
+	}
+	local, err := h.svc.Create(t.Context(), Input{Name: "Local", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleNone}})
+	if err != nil || local.Platform != "opencode" {
+		t.Fatalf("local routine = %+v, %v", local, err)
 	}
 }

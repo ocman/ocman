@@ -22,7 +22,7 @@ func (d *DB) PourFactoryEpic(ctx context.Context, id string, formula model.Nativ
 		return model.NativeEpic{}, nil, fmt.Errorf("beginning Factory pour: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	epic, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE id = ?`, id))
+	epic, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash, platform FROM factory_epic WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, nil, model.ErrNativeEpicNotFound
 	}

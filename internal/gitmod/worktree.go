@@ -32,11 +32,14 @@ func SessionsAvailable(reg *platforms.Registry) bool {
 	if _, err := exec.LookPath("git"); err != nil {
 		return false
 	}
-	if _, err := exec.LookPath("opencode"); err != nil {
-		return false
-	}
 	for _, p := range reg.Platforms() {
-		if p.ID() == "opencode" {
+		if p.ID() == platforms.OpenCodeID {
+			if _, err := exec.LookPath(string(platforms.OpenCodeID)); err != nil {
+				continue
+			}
+			return true
+		}
+		if p.Capabilities().Composer {
 			return true
 		}
 	}
@@ -199,6 +202,7 @@ func (m *Module) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		// RemoteID, when set, runs the worktree create on the owning
 		// remote host (FR-10/AD-16b). Empty / "local" = this machine.
 		RemoteID string `json:"remoteId"`
+		Platform string `json:"platform"`
 		// ParentSessionID, when set + the worktree.inherit_permissions
 		// setting is on, seeds the new session with the parent's
 		// accumulated always-allow permissions (issue #101).
@@ -272,9 +276,15 @@ func (m *Module) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// Parent permission reads don't depend on the worktree; overlap them.
+	platform, base, err := m.ResolvePlatform(r, host, req.Platform, req.ParentSessionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	inherited := make(chan func(string) (int, string), 1)
-	go func() { inherited <- m.InheritPermissions(r, req.ParentSessionID) }()
+	go func() { inherited <- m.InheritPermissions(r, platform, req.ParentSessionID) }()
 	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
+		Platform:   base,
 		ProjectDir: req.ProjectDir,
 		Branch:     req.Branch,
 		NewBranch:  req.NewBranch,
@@ -295,7 +305,6 @@ func (m *Module) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 
 	// Permissions first, then the prompt, so the first turn already runs
 	// under the inherited posture.
-	platform := m.PlatformFor(host)
 	sent, sendErr := false, ""
 	if req.Send != nil {
 		images := make([]platforms.ImageAttachment, 0, len(req.Send.Images))

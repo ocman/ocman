@@ -43,7 +43,7 @@ func TestFailedNativeStopLeavesHistoryUnconfirmedAndServerRetained(t *testing.T)
 	runtime := &untrackedTestRuntime{NativeRuntime: ocruntime.NewNativeRuntimeWithAuth(ocapi.Auth{}), endpoint: api.URL}
 	port := ""
 	host := hostlocal.New(hostlocal.Deps{Runtime: runtime, BeforeReplace: srv.recordOpencodeReplacement, BeforeStop: srv.beginOpencodeReplacementStopWithInstance, AfterStop: srv.confirmOpencodeReplacement, ReplacementStopped: srv.opencodeReplacementStopped, ReplacementStopping: srv.opencodeReplacementStopping, CancelReplacementStop: srv.cancelOpencodeReplacementStop, SetMachineServer: func(value string) { port = value }})
-	if _, err := host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); err != nil {
+	if _, err := host.EnsureRuntime(t.Context(), "opencode", ""); err != nil {
 		t.Fatal(err)
 	}
 	oldPort := port

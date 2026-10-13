@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
@@ -103,26 +104,9 @@ Examples: a vague diagnosis request -> diagnose-issue; a Slack link to investiga
 		if part.Type != "text" {
 			continue
 		}
-		if name := branchSlug(part.Text); name != "" {
+		if name := git.TitleSlug(part.Text); name != "" {
 			return name, nil
 		}
 	}
 	return "", errors.New("small model returned no branch name")
-}
-
-// branchSlug turns a generated title into a branch name: first non-empty
-// line, lowercase alphanumerics joined by hyphens, at most 48 characters.
-func branchSlug(title string) string {
-	for _, line := range strings.Split(title, "\n") {
-		name := strings.Join(strings.FieldsFunc(strings.ToLower(line), func(r rune) bool {
-			return (r < 'a' || r > 'z') && (r < '0' || r > '9')
-		}), "-")
-		if len(name) > 48 {
-			name = strings.TrimRight(name[:48], "-")
-		}
-		if name != "" {
-			return name
-		}
-	}
-	return ""
 }

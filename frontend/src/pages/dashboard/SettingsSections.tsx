@@ -10,6 +10,7 @@ import { useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { api, type ModelFallthroughSettings } from '../../lib/api';
 import { SpeechSettings } from '../../components/SpeechSettings';
+import { DefaultPlatformSetting } from '../../components/DefaultPlatformSetting';
 import { DefaultAgentSetting } from '../../components/DefaultAgentSetting';
 import {
   notificationsSupported,
@@ -182,6 +183,7 @@ export function SessionsSection() {
         />
       </SettingRow>
       <SpeechSettings />
+      <DefaultPlatformSetting />
       <SettingRow setting="worktree-inherit-permissions">
         <SettingToggle
           testId="worktree-inherit-toggle"

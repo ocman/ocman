@@ -63,6 +63,7 @@ export function SidebarSessionRow({
   const statusBadge = (
     <StatusBadge
       status={displayStatus}
+      resetsAt={sib.resetsAt}
       compact
       seen={isTerminalStatus(displayStatus) && sib.seen}
       pending={sib.pendingPermission || sib.pendingQuestion}

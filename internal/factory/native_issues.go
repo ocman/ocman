@@ -140,7 +140,7 @@ func nativeEpic(epic model.NativeEpic) WorkEpic {
 	if epic.FormulaID == BuiltInTracerFormula().ID {
 		origin = FormulaOriginBuiltIn
 	}
-	return WorkEpic{ID: epic.ID, Status: epic.Status, Goal: epic.Goal, Brief: epic.Brief, InitialProject: epic.InitialProject, Projects: epic.Projects, InstantiationID: epic.InstantiationID, FormulaID: epic.FormulaID, FormulaVersion: epic.FormulaVersion, FormulaRevision: epic.FormulaVersion, FormulaHash: epic.FormulaHash, FormulaOrigin: origin}
+	return WorkEpic{Platform: epic.Platform, ID: epic.ID, Status: epic.Status, Goal: epic.Goal, Brief: epic.Brief, InitialProject: epic.InitialProject, Projects: epic.Projects, InstantiationID: epic.InstantiationID, FormulaID: epic.FormulaID, FormulaVersion: epic.FormulaVersion, FormulaRevision: epic.FormulaVersion, FormulaHash: epic.FormulaHash, FormulaOrigin: origin}
 }
 func nativeEpics(epics []model.NativeEpic) []WorkEpic {
 	out := make([]WorkEpic, len(epics))

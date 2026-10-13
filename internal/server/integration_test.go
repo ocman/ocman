@@ -217,6 +217,9 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 		},
 	})
 	srv.registry = reg
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{Host: srv.router().Local(), ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		return &hostsvc.EnsureRuntimeResult{Endpoint: "unix:///tmp/fake.sock", RepoRoot: req.ProjectDir}, nil
+	}})
 
 	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatalf("initial projects refresh: %v", err)
@@ -295,7 +298,7 @@ func TestHandleCreateSession_RemoteEnsuresBeforeCreate(t *testing.T) {
 		t.Fatal("local host must not be ensured for a remote session")
 		return nil, nil
 	}})
-	srv.hostRouter.RegisterRemote("rem1", &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter.RegisterRemote("rem1", &ensureHost{owner: "rem1", ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		ensured = req.ProjectDir
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 	}})

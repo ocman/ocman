@@ -47,8 +47,9 @@ func TestRemotePlatform_AllReadMethods(t *testing.T) {
 	if string(rp.ID()) != "r-rid:opencode" {
 		t.Errorf("ID = %q", rp.ID())
 	}
-	// Capabilities is fetched + cached over gRPC.
-	if caps := rp.Capabilities(); !caps.Composer {
+	// Capabilities is fetched + cached over gRPC. A remote OpenCode that
+	// predates the revert/restart/fork-at-message flags still offers them.
+	if caps := rp.Capabilities(); !caps.Composer || !caps.Revert || !caps.RuntimeRestart || !caps.ForkAtMessage {
 		t.Errorf("Capabilities = %+v", caps)
 	}
 	// Second call hits the cache (still correct).

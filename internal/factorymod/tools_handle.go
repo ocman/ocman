@@ -48,6 +48,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			}
 		}
 		epic, err := t.svc.CreateWorkEpic(ctx, factory.CreateWorkEpicRequest{
+			Platform:                  req.GetString("platform", ""),
 			InstantiationID:           req.GetString("instantiation_id", ""),
 			EpicID:                    req.GetString("epic_id", ""),
 			Goal:                      req.GetString("goal", ""),

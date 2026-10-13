@@ -8,7 +8,7 @@
 
 export type SettingsGroupId =
   | 'notifications' | 'sessions' | 'remotes' | 'plugins' | 'auto-approve' | 'sharing'
-  | 'webhooks' | 'templates' | 'link-previews' | 'maintenance' | 'behaviour' | 'app' | 'account'
+  | 'webhooks' | 'templates' | 'link-previews' | 'maintenance' | 'provider-accounts' | 'behaviour' | 'app' | 'account'
   /** Per-project settings page; not part of the global Settings search. */
   | 'project';
 
@@ -101,6 +101,14 @@ export const SETTINGS = {
     example: '1.3× reads a long summary noticeably faster while staying easy to follow.',
     keywords: 'speech tts rate',
     requires: 'Shown only in browsers that support speech playback.',
+  },
+  'default-platform': {
+    group: 'sessions',
+    title: 'Default platform for new conversations',
+    description: 'The coding agent a new conversation starts on when you have not picked one in the composer.',
+    example: 'Choose Claude Code to start new conversations with the claude CLI.',
+    keywords: 'platform agent opencode claude composer',
+    requires: 'Shown when more than one platform is enabled.',
   },
   'worktree-inherit-permissions': {
     group: 'sessions',
@@ -210,6 +218,7 @@ export const SETTINGS = {
     description: 'The model that judges permission prompts. A fast, cheap model is usually the right pick.',
     example: 'Pick "anthropic/claude-haiku" for quick, low-cost decisions.',
     keywords: 'judge llm',
+    requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'reviewer-prompt-sections': {
     group: 'auto-approve',
@@ -299,6 +308,7 @@ export const SETTINGS = {
     description: 'Where OpenCode\'s database lives and how large it is.',
     example: '~/.local/share/opencode/opencode.db · 12.4 GB',
     keywords: 'sqlite size disk',
+    requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'remove-old-diffs': {
     group: 'maintenance',
@@ -306,6 +316,7 @@ export const SETTINGS = {
     description: 'Remove the per-message file patches of old sessions and compact the database. ocman stops its managed opencode instances while it runs, and keeps the removed patches in a dump so they can be restored.',
     example: 'A 12 GB database shrinks to 3 GB after removing diffs from sessions older than 30 days.',
     keywords: 'cleanup vacuum disk space compact',
+    requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'removed-diffs': {
     group: 'maintenance',
@@ -313,6 +324,7 @@ export const SETTINGS = {
     description: 'The dump of patches removed by the cleanup. Restore puts them back; deleting the dump makes the cleanup permanent.',
     example: 'Restore if OpenCode\'s per-turn changes view is missing a diff you need.',
     keywords: 'dump restore',
+    requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'open-links-in-chrome': {
     group: 'behaviour',

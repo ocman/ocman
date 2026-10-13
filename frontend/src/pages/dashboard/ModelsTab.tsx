@@ -10,6 +10,7 @@ import { useDashboard } from './context';
 import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
 import { buildCostByModelDatasets } from './metricsChartData';
 import { DataTable } from '../../components/DataTable';
+import { ProviderLimitsCard } from './ProviderAccountSettings';
 
 export function ModelsTab() {
   const { dirScope } = useDashboard();
@@ -31,6 +32,7 @@ export function ModelsTab() {
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {errors.map((error) => <InlineAlert key={error.message}>{error.message}</InlineAlert>)}
+      <ProviderLimitsCard />
       <div className="analytics-chart-pair">
         <ChartSlot isLoading={modelsQ.isLoading} label="Loading model usage"><ChartCard title="Model Usage">
               <Doughnut data={{ labels: top.map((item) => item.model), datasets: [{ data: top.map((item) => item.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={DOUGHNUT_OPTIONS} />

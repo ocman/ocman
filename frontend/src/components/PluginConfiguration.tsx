@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Project } from '../lib/api';
+import { useMachinePlatforms } from '../lib/useCapabilities';
 import type { PluginInput, PluginRegistration } from '../lib/plugins';
 import { plugins } from '../lib/plugins';
 import { SearchSelect } from './SearchSelect';
@@ -27,7 +28,12 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
   // derived rather than cleared from an effect: a project with no answer yet
   // renders empty instead of briefly showing the previous project's lists.
   const project = slack && typeof values.project === 'string' ? values.project : '';
-  const options = project && catalog.project === project ? catalog : emptyCatalog;
+  // The installation's platform picks the catalog (AD-13); base ids, since the
+  // owner resolves them against its own platforms.
+  const platform = slack ? String(values.platform ?? '') : '';
+  const platformOptions = useMachinePlatforms(plugin.ownerId).map((p) => ({ value: p.id.slice(p.id.indexOf(':') + 1), label: p.displayName }));
+  const catalogKey = `${platform}\0${project}`;
+  const options = project && catalog.project === catalogKey ? catalog : emptyCatalog;
 
   useEffect(() => {
     if (!slack) return;
@@ -39,11 +45,11 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
   useEffect(() => {
     if (!project) return;
     const controller = new AbortController();
-    plugins.projectCatalog(plugin.ownerId, project, controller.signal)
-      .then((next) => setCatalog({ project, ...next }))
-      .catch(() => setCatalog({ project, agents: [], models: [] }));
+    plugins.projectCatalog(plugin.ownerId, project, platform, controller.signal)
+      .then((next) => setCatalog({ project: catalogKey, ...next }))
+      .catch(() => setCatalog({ project: catalogKey, agents: [], models: [] }));
     return () => controller.abort();
-  }, [plugin.ownerId, project]);
+  }, [plugin.ownerId, project, platform, catalogKey]);
 
   const selectValue = (key: string, value: string) => setValues((previous) => ({ ...previous, [key]: value }));
   const selectOptions = (items: string[], current: string, empty: string) => [
@@ -73,6 +79,10 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
         })} /> : slack && s.key === 'project' ? <SearchSelect className={styles.control} ariaLabel={s.label} searchLabel="Search projects" placeholder="Select a project" value={String(values.project ?? '')}
         options={selectOptions(projects.map((project) => project.directory), String(values.project ?? ''), 'Select a project')}
         onChange={(project) => setValues((previous) => ({ ...previous, project, agent: '', model: '' }))} />
+      : slack && s.key === 'platform' ? <SearchSelect className={styles.control} ariaLabel={s.label} searchLabel="Search platforms" placeholder="Default platform" value={platform}
+        options={[{ value: '', label: 'Default platform' }, ...platformOptions,
+          ...(platform && !platformOptions.some((option) => option.value === platform) ? [{ value: platform, label: platform }] : [])]}
+        onChange={(next) => setValues((previous) => ({ ...previous, platform: next, agent: '', model: '' }))} />
       : slack && (s.key === 'agent' || s.key === 'model') ? <SearchSelect className={styles.control} ariaLabel={s.label} searchLabel={`Search ${s.key}s`} placeholder={`Default ${s.key}`} disabled={!values.project}
         value={String(values[s.key] ?? '')} options={selectOptions(s.key === 'agent' ? options.agents : options.models, String(values[s.key] ?? ''), `Default ${s.key}`)}
         onChange={(value) => selectValue(s.key, value)} />

@@ -17,6 +17,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -26,6 +27,7 @@ const PRHeadFetchTimeout = 30 * time.Second
 
 // handleRequest is the body of POST /api/project/handle.
 type handleRequest struct {
+	Platform  string `json:"platform,omitempty"`
 	Dir       string `json:"dir"`
 	Remote    string `json:"remote"`
 	RemoteID  string `json:"remoteId,omitempty"`
@@ -85,9 +87,13 @@ func (m *Module) handleHandle(w http.ResponseWriter, r *http.Request) {
 		log.WithError(err).Warn("handle: render prompt; falling back to minimal")
 		prompt = markUntrusted(fallbackPrompt(req, rem, vars))
 	}
-	platform := m.PlatformFor(host)
+	platform, _, err := m.CreatePlatform(r.Context(), host, req.Platform)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
 	if m.Registered == nil || !m.Registered(platform) {
-		http.Error(w, "OpenCode platform not registered", http.StatusServiceUnavailable)
+		http.Error(w, "platform not registered", http.StatusServiceUnavailable)
 		return
 	}
 	if req.Mode == "session" {
@@ -100,7 +106,13 @@ func (m *Module) handleHandle(w http.ResponseWriter, r *http.Request) {
 // launchSession creates a session in the project directory, no checkout.
 func (m *Module) launchSession(w http.ResponseWriter, r *http.Request, req handleRequest, host hostsvc.Host, platform, prompt string) {
 	port := ""
-	if ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: state.ProjectRootForDirectory(req.Dir)}); err == nil && ensured != nil {
+	_, base := remote.SplitPlatformID(platform)
+	ensured, err := host.EnsureRuntime(r.Context(), base, state.ProjectRootForDirectory(req.Dir))
+	if err != nil && base != string(platforms.OpenCodeID) {
+		http.Error(w, "launching runtime: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err == nil && ensured != nil {
 		port = ensured.Port()
 	}
 	created, err := m.Sessions.Create(r.Context(), platform, platforms.CreateSessionRequest{Directory: req.Dir, Port: port})
@@ -146,7 +158,8 @@ func (m *Module) launchWorktree(
 			}
 		}
 	}
-	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{ProjectDir: repoRoot, Branch: branch, NewBranch: newBranch})
+	_, base := remote.SplitPlatformID(platform)
+	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: repoRoot, Branch: branch, NewBranch: newBranch})
 	if err != nil {
 		log.WithError(err).Warn("handle worktree: launch")
 		http.Error(w, "launching worktree session: "+err.Error(), http.StatusBadGateway)

@@ -57,6 +57,9 @@ func (p *remotePlatform) DisplayName() string {
 	if p.base == "opencode" {
 		return "OpenCode"
 	}
+	if p.base == "claudecode" {
+		return "Claude Code"
+	}
 	return p.base
 }
 
@@ -83,6 +86,10 @@ func (p *remotePlatform) Capabilities() platforms.Capabilities {
 	var caps platforms.Capabilities
 	if err := unmarshalJSON(resp.Payload, &caps); err != nil {
 		return platforms.Capabilities{}
+	}
+	if p.base == string(platforms.OpenCodeID) {
+		// Remotes predating these flags always supported both on OpenCode.
+		caps.Revert, caps.RuntimeRestart, caps.ForkAtMessage = true, true, true
 	}
 	p.mu.Lock()
 	p.caps = caps
@@ -128,15 +135,23 @@ func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset i
 		detail.Session.Platform = string(p.ID())
 		detail.Session.RemoteID = p.remoteID()
 		detail.Session.RemoteName = p.nameFn()
-		detail.Session.LiveConnection = true
+		detail.Session.LiveConnection = p.live(detail.Session.LiveConnection)
 	}
 	for i := range detail.SessionTree {
 		detail.SessionTree[i].Platform = string(p.ID())
 		detail.SessionTree[i].RemoteID = p.remoteID()
 		detail.SessionTree[i].RemoteName = p.nameFn()
-		detail.SessionTree[i].LiveConnection = true
+		detail.SessionTree[i].LiveConnection = p.live(detail.SessionTree[i].LiveConnection)
 	}
 	return &detail, nil
+}
+
+// live reports a remote session's write availability. A connected remote
+// OpenCode is always drivable (the owner launches its instance on send);
+// a provider reports per session, so a terminal-started Claude session stays
+// read-only from the hub too (FR-4).
+func (p *remotePlatform) live(owner bool) bool {
+	return owner || p.base == string(platforms.OpenCodeID)
 }
 
 // Owns is cache-only: it consults the ownership map populated by

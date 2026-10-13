@@ -32,12 +32,12 @@ func (h *fakeHost) TmuxSessions(context.Context) ([]hostsvc.TmuxSession, error) 
 	return h.sessions, nil
 }
 
-func (h *fakeHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	h.ensured = append(h.ensured, req.ProjectDir)
+func (h *fakeHost) EnsureRuntime(_ context.Context, _, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+	h.ensured = append(h.ensured, dir)
 	if h.ensureErr != nil {
 		return nil, h.ensureErr
 	}
-	return &hostsvc.EnsureProjectOpencodeResult{Runtime: ocruntime.Instance{ID: "managed-1"}}, nil
+	return &hostsvc.EnsureRuntimeResult{Runtime: ocruntime.Instance{ID: "managed-1"}}, nil
 }
 
 func passthrough(h http.HandlerFunc) http.HandlerFunc { return h }

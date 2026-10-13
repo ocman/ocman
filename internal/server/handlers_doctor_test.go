@@ -83,3 +83,24 @@ func TestDoctorChecksHealthy(t *testing.T) {
 		t.Errorf("opencode-db without db = %+v", c)
 	}
 }
+
+// A Claude-only ocman lists no OpenCode database check, so the setup
+// panel never blocks on it (FR-1).
+func TestDoctorWithoutOpenCodeSkipsItsDatabase(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	reg.Register(&fakePlatform{id: "claudecode"})
+	srv.hostRouter = hostsvc.NewRouter(doctorHost{})
+	rr := httptest.NewRecorder()
+	srv.handleDoctor(rr, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
+	var got struct {
+		Checks []hostsvc.DoctorCheck `json:"checks"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range got.Checks {
+		if c.ID == "opencode-db" || (c.Required && !c.OK) {
+			t.Fatalf("blocking check without OpenCode: %+v", c)
+		}
+	}
+}

@@ -265,14 +265,18 @@ func (l ImplementationLauncher) LaunchImplementationSession(ctx context.Context,
 			return factory.PlanningSession{}, err
 		}
 	}
-	ensured, err := owner.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Repository})
+	platformID, base, err := l.m.deps.CreatePlatform(ctx, owner, req.Platform)
+	if err != nil {
+		return factory.PlanningSession{}, err
+	}
+	ensured, err := owner.EnsureRuntime(ctx, base, req.Repository)
 	if err != nil {
 		return factory.PlanningSession{}, fmt.Errorf("ensure Factory runtime: %w", err)
 	}
 	if ensured == nil {
 		return factory.PlanningSession{}, errors.New("ensure Factory runtime returned no instance")
 	}
-	if err := PlanningLauncher(l).ensureMCP(ctx, ensured); err != nil {
+	if err := PlanningLauncher(l).ensurePlatformMCP(ctx, base, ensured); err != nil {
 		return factory.PlanningSession{}, err
 	}
 	rules := ImplementationRules(req.Verification)
@@ -288,16 +292,16 @@ func (l ImplementationLauncher) LaunchImplementationSession(ctx context.Context,
 		rules = append(rules, ExternalDirectoryRules()...)
 	}
 	rules = append(rules, ScratchRules(req.Repository, local)...)
-	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
+	rules = append(rules, factoryMCPRules(base, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})...)
 	// Append Epic-level user rules last so they override the profile defaults.
 	for _, r := range req.PermissionRules {
 		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})
 	}
-	created, err := owner.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{ProjectDir: req.Repository, Branch: req.Branch, BaseRef: req.BaseRef, MustCreateBranch: req.BaseRef != "", Title: "IMPL " + req.WorkID + " (@factory)", NewBranch: true, PermissionRules: rules})
+	created, err := owner.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: req.Repository, Branch: req.Branch, BaseRef: req.BaseRef, MustCreateBranch: req.BaseRef != "", Title: "IMPL " + req.WorkID + " (@factory)", NewBranch: true, PermissionRules: rules})
 	if err != nil {
 		return factory.PlanningSession{}, fmt.Errorf("create Factory worktree: %w", err)
 	}
-	return factory.PlanningSession{Platform: "opencode", ID: created.SessionID}, nil
+	return factory.PlanningSession{Platform: platformID, ID: created.SessionID}, nil
 }
 
 func (l ImplementationLauncher) PromptImplementationSession(ctx context.Context, session factory.PlanningSession, req factory.ImplementationSessionRequest) error {

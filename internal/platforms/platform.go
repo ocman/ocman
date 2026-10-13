@@ -73,6 +73,9 @@ type Capabilities struct {
 	// Fork reports whether the adapter can branch a session into a new
 	// child session (Platform.ForkSession). Surfaced as caps.fork.
 	Fork bool `json:"fork"`
+	// ForkAtMessage reports that ForkSessionRequest.MessageID is honoured;
+	// without it only the whole session forks (caps.forkAtMessage).
+	ForkAtMessage bool `json:"forkAtMessage"`
 	// Move reports whether the adapter can relocate a session to
 	// another project directory (Platform.MoveSession). Surfaced as
 	// caps.move.
@@ -117,6 +120,20 @@ type Capabilities struct {
 	// SetPermissionRules). Frontend gates the session permission-mode
 	// lock on this flag.
 	PermissionRules bool `json:"permissionRules"`
+
+	// Revert reports whether /undo and /redo (Platform revert/unrevert)
+	// work; the composer hides them otherwise (FR-8).
+	Revert bool `json:"revert"`
+
+	// RuntimeRestart reports whether ocman can restart the managed
+	// instance serving a session (/restart-opencode).
+	RuntimeRestart bool `json:"runtimeRestart"`
+
+	// PushPrompts reports that every prompt and its resolution reach the
+	// headless and session event streams (AD-7a), so nothing polls for
+	// prompt state: the frontend's dismissal polls and the Inbox
+	// reconciliation skip the platform.
+	PushPrompts bool `json:"pushPrompts"`
 }
 
 // LiveState captures in-memory live status for a session, updated by
@@ -174,6 +191,15 @@ type LiveTool struct {
 // observed cache, a successful result's absence means the prompt resolved.
 type PermissionRefresher interface {
 	RefreshPermissions(ctx context.Context, sessionID string) ([]LivePrompt, error)
+}
+
+// ReplyOutcomeReporter is implemented by platforms whose prompt replies can
+// fail ambiguously. ReplyOutcomes is false when a failed reply in sessionID
+// may still have reached the agent without saying so (ErrReplyUnrecorded):
+// an automatic reply's provenance could not be kept, so callers leave the
+// prompt to the user.
+type ReplyOutcomeReporter interface {
+	ReplyOutcomes(ctx context.Context, sessionID string) bool
 }
 
 type Platform interface {
@@ -354,6 +380,9 @@ type SessionLifecycle struct {
 	LatestMessageID      string           `json:"latestMessageId,omitempty"`
 	LatestMessageCreated int64            `json:"latestMessageCreated,omitempty"`
 	LatestMessageRole    string           `json:"latestMessageRole,omitempty"`
+	// ReadOnly marks a session ocman can observe but not drive (a Claude
+	// session started in a terminal): sends and queued follow-ups are refused.
+	ReadOnly bool `json:"readOnly,omitempty"`
 }
 
 // LifecycleReader is optional: adapters that can read a session's

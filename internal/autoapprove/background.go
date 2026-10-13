@@ -3,6 +3,7 @@ package autoapprove
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"time"
 
@@ -154,12 +155,12 @@ func (s *Service) backgroundAutoApprove(
 	}
 	s.markAutoApproveChecking(sessionID, permissionID)
 	logger.Info("background auto-approve: judging permission")
-	inputs.sections = s.resolveJudgeSections(ctx, inputs.directory, sessionID)
+	inputs.sections = s.resolveJudgeSections(ctx, adapter, inputs.directory, sessionID)
 	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{
 		JudgeStartedAt:   time.Now().UnixMilli(),
 		EvaluationMethod: state.PermissionEvaluationJudge,
 	})
-	result := s.judge.JudgeWithCallback(ctx, inputs.directory, permission, patterns, metadata, inputs.sections, s.emitChecking(sessionID, permissionID))
+	result := s.judgePermission(ctx, platformID, inputs.directory, permission, patterns, metadata, inputs.sections, s.emitChecking(sessionID, permissionID))
 	s.completeJudgeLifecycle(asked, sessionID, permissionID, result)
 	if ctx.Err() != nil {
 		logger.WithField("ctxErr", ctx.Err()).Debug("background auto-approve: cancelled before result could be applied")
@@ -240,12 +241,17 @@ func (s *Service) respondAndPersistSafeApproval(
 	permission, patterns := asked.permission, asked.patterns
 	respondCtx, respondCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer respondCancel()
+	if r, ok := adapter.(platforms.ReplyOutcomeReporter); ok && !r.ReplyOutcomes(respondCtx, sessionID) {
+		s.handleUnsafeVerdict(platformID, sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe,
+			Reasoning: "auto-approve is unavailable until this session's provider is replaced; answer it yourself"})
+		return
+	}
 	s.beginAIResponse(sessionID, permissionID)
 	if err := adapter.RespondPermission(respondCtx, platforms.RespondPermissionRequest{
 		SessionID:    sessionID,
 		PermissionID: permissionID,
 		Reply:        "once",
-	}); err != nil {
+	}); err != nil && !errors.Is(err, platforms.ErrReplyUnrecorded) {
 		s.finishAIResponse(sessionID, permissionID, false)
 		logger.WithError(err).Warn("background auto-approve: failed to respond to permission")
 		s.handleUnsafeVerdict(platformID, sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: "auto-approve could not submit its approval"})
@@ -368,7 +374,7 @@ func (s *Service) emitFlagged(sessionID, permissionID, reasoning string) {
 // first flagged broadcast arrived before the prompt became listable.
 func (s *Service) SurfacePermissionNotification(sessionID, permissionID string) {
 	status, ok := s.lookupAutoApproveStatus(sessionID, permissionID)
-	if ok && status.verdict == verdictUnsafe && status.manualResolvedAt == 0 {
+	if ok && (status.verdict == verdictUnsafe || status.verdict == verdictNeedsUser) && status.manualResolvedAt == 0 {
 		s.emitFlagged(sessionID, permissionID, status.reasoning)
 	}
 }

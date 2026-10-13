@@ -4,7 +4,7 @@
 // directory and machine never change under the user afterwards.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, postJSON, type PrepareSessionResponse, type StartSessionRequest } from '../../lib/api';
+import { api, postJSON, type StartSessionRequest } from '../../lib/api';
 import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
@@ -15,7 +15,7 @@ import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
-import { loadProjectSettings, useSettingsRevision, type ProjectDefaults } from '../../lib/projectSettingsCache';
+import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSettingsCache';
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
@@ -23,7 +23,7 @@ import { useOpencodeLaunch, usePlatformCapabilities } from '../../lib/useCapabil
 import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { randomId } from '../../lib/randomId';
-import { availabilityUnknown } from '../../lib/modelCatalogCache';
+import { draftDefaultModel, prepareDraftCatalog, type DraftCatalog } from './draftCatalog';
 import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
 import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
 import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
@@ -46,7 +46,6 @@ export interface NewConversationProps {
 }
 
 /** What a submission needs before it can start: the catalog and the resolved target. */
-type DraftCatalog = PrepareSessionResponse & { defaults?: ProjectDefaults };
 interface Ready { catalog: DraftCatalog; canWorktree: boolean; worktrees: { path: string }[]; platform?: string; model: string }
 /** A server-delivered prompt, or work the client runs on the new session. */
 interface Submission {
@@ -83,6 +82,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   }, [openedWhilePending, draftStart?.error]);
   const [saved] = useState(() => useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId));
   const remoteId = params.remoteId || 'local';
+  const savedSelections = saved?.remoteId === remoteId && saved?.platform === params.platform ? saved : undefined;
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
   const worktreesCapable = useOpencodeLaunch(remoteId);
@@ -123,11 +123,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       loadProjectSettings(directory, remoteId),
     ]).then(([result, settings]) => {
       if (controller.signal.aborted) return;
-      const catalog = { ...result, defaultAgent: settings.defaultAgent || 'build',
-        defaults: settings.defaults,
-        projectDefaultModel: settings.defaults?.model || result.projectDefaultModel,
-        models: { ...result.models, models: result.models.hasProviders ? result.models.models : availabilityUnknown(result.models.models) },
-      };
+      const catalog = prepareDraftCatalog(result, settings);
       cacheNewSessionCatalog(catalogKey, catalog);
       setPrepared({ key: catalogKey, request: catalogRequest, catalog });
     }).catch((err) => {
@@ -137,9 +133,14 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     return () => controller.abort();
   }, [directory, remoteId, params.platform, catalogKey, catalogRequest]);
 
-  const [selectedModel, setSelectedModel] = useState(saved?.model || '');
-  const [selectedAgent, setSelectedAgent] = useState(saved?.agent || '');
-  const [selectedReasoning, setSelectedReasoning] = useState(saved?.reasoning || '');
+  const [selectedModel, setSelectedModel] = useState(savedSelections?.model || '');
+  const [selectedAgent, setSelectedAgent] = useState(savedSelections?.agent || '');
+  const [selectedReasoning, setSelectedReasoning] = useState(savedSelections?.reasoning || '');
+  const [selectionKey, setSelectionKey] = useState(catalogKey);
+  if (selectionKey !== catalogKey) {
+    setSelectionKey(catalogKey);
+    setSelectedModel(''); setSelectedAgent(''); setSelectedReasoning('');
+  }
   const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
   const target = targetPick || catalog?.defaults?.worktree || 'worktree';
   useEffect(() => {
@@ -168,7 +169,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
 
   // Same precedence as an existing empty session: project setting, then
   // the last pick in this project, then the directory's most recent model.
-  const activeModel = catalog?.projectDefaultModel || getProjectModel(directory) || catalog?.defaultModel || '';
+  const activeModel = draftDefaultModel(catalog, getProjectModel(directory));
   const attachmentPayload = usePendingDraftPayload(draftId);
 
   const models = useMemo(() => {
@@ -337,6 +338,10 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title, draftId }));
   };
 
+  const onPlatformChange = (next: string) => {
+    navigate(newSessionPath({ directory, remoteId, platform: next, title, draftId }));
+  };
+
   return (
     // Same shell as AssistantThread: an empty viewport pushes the composer
     // to the bottom with the thread's padding.
@@ -386,6 +391,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
           onTargetChange={setTarget}
           remoteId={remoteId}
           onMachineChange={onMachineChange}
+          onPlatformChange={onPlatformChange}
           draftKey={draftId}
         />
       </div>

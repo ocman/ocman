@@ -96,6 +96,7 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	}
 	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)", PermissionRules: attempt.FrozenPolicy.PermissionRules}
 	request.Model = attempt.FrozenPolicy.Model
+	request.Platform = attempt.FrozenPolicy.Platform
 	if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
 		_, request.ScopeExpansion, err = projectRequests.GetFactoryProjectRequestGateForPlan(ctx, issueID)
 		if err != nil {

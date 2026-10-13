@@ -15,7 +15,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
@@ -33,30 +32,23 @@ func (l PlanningLauncher) launchReadOnlySession(ctx context.Context, req factory
 			return factory.PlanningSession{}, fmt.Errorf("invalid admitted project path %q", project)
 		}
 	}
-	var platformID string
-	for _, candidate := range l.m.deps.Registry.Platforms() {
-		remoteID, _ := remote.SplitPlatformID(string(candidate.ID()))
-		if remoteID != "" || !candidate.Available(ctx) || !candidate.Capabilities().PermissionRules {
-			continue
-		}
-		if platformID != "" {
-			return factory.PlanningSession{}, errors.New("multiple local planning platforms are available")
-		}
-		platformID = string(candidate.ID())
+	host := l.m.deps.Router().Local()
+	platformID, base, err := l.m.deps.CreatePlatform(ctx, host, req.Platform)
+	if err != nil {
+		return factory.PlanningSession{}, err
 	}
-	if platformID == "" {
+	candidate, ok := l.m.deps.Registry.Get(platforms.ID(platformID))
+	if !ok || !candidate.Available(ctx) || !candidate.Capabilities().PermissionRules {
 		return factory.PlanningSession{}, errors.New("no local planning platform with permission rules is available")
 	}
-	host := l.m.deps.Router().Local()
-	ensureReq := hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Repository}
-	ensured, err := host.EnsureProjectOpencode(ctx, ensureReq)
+	ensured, err := host.EnsureRuntime(ctx, base, req.Repository)
 	if err != nil {
 		return factory.PlanningSession{}, fmt.Errorf("ensure planning runtime: %w", err)
 	}
 	if ensured == nil {
 		return factory.PlanningSession{}, errors.New("ensure planning runtime returned no instance")
 	}
-	if err := l.ensureMCP(ctx, ensured); err != nil {
+	if err := l.ensurePlatformMCP(ctx, platformID, ensured); err != nil {
 		return factory.PlanningSession{}, err
 	}
 	rules := []platforms.PermissionRule{
@@ -79,7 +71,9 @@ func (l PlanningLauncher) launchReadOnlySession(ctx context.Context, req factory
 		platforms.PermissionRule{Permission: "task", Pattern: "*", Action: "deny"},
 		platforms.PermissionRule{Permission: "webfetch", Pattern: "*", Action: "deny"},
 	)
-	rules = append(rules, mcpRules...)
+	for _, rule := range mcpRules {
+		rules = append(rules, factoryMCPRules(base, rule)...)
+	}
 	// Append Epic-level user rules last so they override the profile defaults.
 	for _, r := range req.PermissionRules {
 		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})

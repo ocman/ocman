@@ -41,7 +41,7 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			rt := &recoveryWiringRuntime{}
 			srv.runtime = rt
 			originalHost := srv.newLocalHost()
-			res, err := originalHost.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+			res, err := originalHost.EnsureRuntime(t.Context(), "opencode", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,7 +105,7 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			if restart {
 				_, err = host.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
 			} else {
-				_, err = host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+				_, err = host.EnsureRuntime(t.Context(), "opencode", "")
 			}
 			if err != nil {
 				t.Fatal(err)

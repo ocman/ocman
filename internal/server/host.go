@@ -9,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/tmux"
@@ -133,18 +134,45 @@ func (s *Server) hostFetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadReq
 func (s *Server) hostCaps() hostsvc.HostCaps {
 	tmuxOK := tmux.IsAvailable()
 	gitOK := lookPathOK("git")
-	opencodeOK := lookPathOK("opencode")
+	enabled := false
+	if s.registry != nil {
+		_, enabled = s.registry.Get(platforms.OpenCodeID)
+	}
+	opencodeOK := enabled && lookPathOK(string(platforms.OpenCodeID))
+	// Providers report their own native launch prerequisites independently of browsing.
+	launch := opencodeOK && tmuxOK || s.providerRuntime()
 	return hostsvc.HostCaps{
 		GitDiff:   gitOK,
-		Worktrees: tmuxOK && gitOK && opencodeOK,
+		Worktrees: gitOK && launch,
 		Tmux:      tmuxOK,
-		Projects:  s.db != nil,
-		Whisper:   whisper.Available(),
+		// The projects index merges every local platform's directories.
+		Projects: s.db != nil || len(s.localPlatformIDs()) > 0,
+		Whisper:  whisper.Available(),
 		// Launch availability is opencode-on-PATH plus the native runtime's
 		// prerequisite (tmux) today; a future container runtime drops the
 		// tmux dependency. Gated separately from Tmux (#390 / AD-8).
-		OpencodeLaunch: opencodeOK && tmuxOK,
+		// The frontend gates every managed-launch affordance (/wt, worktrees
+		// view) on this flag, so a provider runtime sets it too.
+		OpencodeLaunch: launch,
+		OpenCode:       enabled,
 	}
+}
+
+// providerRuntime reports whether a registered non-OpenCode adapter hosts
+// its own runtime (hostsvc.RuntimeEnsurer).
+func (s *Server) providerRuntime() bool {
+	if s.registry == nil {
+		return false
+	}
+	for _, adapter := range s.registry.Platforms() {
+		if _, ok := adapter.(hostsvc.RuntimeEnsurer); ok {
+			if availability, ok := adapter.(hostsvc.RuntimeAvailability); ok && !availability.RuntimeAvailable() {
+				continue
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func lookPathOK(bin string) bool {
@@ -162,18 +190,9 @@ func lookPathOK(bin string) bool {
 // instance, not launch a second one keyed on the worktree's toplevel.
 func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (string, error) {
 	dir = projectRootForDirectory(dir)
-	res, err := s.router().ForDir(dir).EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	res, err := s.router().ForDir(dir).EnsureRuntime(ctx, string(platforms.OpenCodeID), dir)
 	if err != nil {
 		return "", err
 	}
 	return res.Port(), nil
-}
-
-// opencodePlatformForHost is the compound OpenCode platform id of the
-// sessions a host owns: "opencode" on the hub, r-<id>:opencode remotely.
-func opencodePlatformForHost(host hostsvc.Host) string {
-	if remoteID := host.RemoteID(); remoteID != "" && remoteID != "local" {
-		return remote.CompoundPlatformID(remoteID, "opencode")
-	}
-	return "opencode"
 }

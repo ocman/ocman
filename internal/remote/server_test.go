@@ -233,6 +233,13 @@ func (localStubHost) LaunchTmux(context.Context, hostsvc.LaunchTmuxRequest) (*ho
 func (localStubHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "sess"}}, nil
 }
+
+func (h localStubHost) EnsureRuntime(ctx context.Context, platform string, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+	if platform == "fake" {
+		return &hostsvc.EnsureRuntimeResult{Endpoint: "unix:///tmp/provider.sock", RepoRoot: dir}, nil
+	}
+	return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+}
 func (localStubHost) StopProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) error {
 	return nil
 }

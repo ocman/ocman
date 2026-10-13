@@ -48,7 +48,9 @@ func (s *Service) setLifecycleMethod(asked askedPermission, sessionID, permissio
 func (s *Service) completeJudgeLifecycle(asked askedPermission, sessionID, permissionID string, result JudgeResult) {
 	completedAt := time.Now().UnixMilli()
 	evaluation := state.PermissionEvaluationUnsafe
-	if result.EvaluationFailed {
+	// An unavailable backend made no safety assessment. Keep the existing
+	// evaluation-error audit category while leaving the prompt for the user.
+	if result.EvaluationFailed || result.Verdict == verdictNeedsUser {
 		evaluation = state.PermissionEvaluationError
 	} else if result.Verdict == verdictSafe {
 		evaluation = state.PermissionEvaluationSafe

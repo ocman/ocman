@@ -1,5 +1,10 @@
 # Codex Adapter — Paper Design
 
+> **Superseded (2026-10-05):** written against the removed `claudecode`
+> adapter. A future Codex integration is a provider behind the protocol in
+> `architecture.md` (AD-2), not a native adapter. Kept for the Codex CLI
+> surface notes only.
+
 **Status**: paper design only (SC-6). Not merged. Serves as a sanity
 check that the `Platform` interface holds up for a third coding-agent
 platform.

@@ -10,7 +10,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
@@ -19,20 +18,29 @@ import (
 // new-conversation composer. Explicit options win over defaults.
 func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.CreateSessionRequest) (internalmcp.CreatedSession, error) {
 	platformID, dir := in.Platform, in.Directory
-	if dir == "" {
+	if dir == "" || (platformID == "" && in.SessionID != "") {
 		detail, err := s.GetSession(ctx, in.Platform, in.SessionID, 0)
 		if err != nil {
 			return internalmcp.CreatedSession{}, err
 		}
-		dir = projectRootForDirectory(detail.Session.Directory)
+		if dir == "" {
+			dir = projectRootForDirectory(detail.Session.Directory)
+		}
+		if platformID == "" {
+			platformID = detail.Session.Platform
+		}
 	}
 	if platformID == "" {
-		platformID = string(opencode.PlatformID)
+		var err error
+		platformID, err = s.server.stateDB.DefaultPlatform(ctx)
+		if err != nil {
+			return internalmcp.CreatedSession{}, err
+		}
 	}
 	if !s.server.sessions.KnownPlatform(platformID) {
 		return internalmcp.CreatedSession{}, fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate)
 	}
-	remoteID, _ := remote.SplitPlatformID(platformID)
+	remoteID, base := remote.SplitPlatformID(platformID)
 	owner := remoteIDForPlatform(platformID)
 	host, ok := s.server.router().LookupRemote(owner)
 	if !ok {
@@ -61,7 +69,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 	created := internalmcp.CreatedSession{Platform: platformID, Directory: dir}
 	if worktree {
 		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
-			ProjectDir: dir, AutoName: true, Prompt: in.Prompt, Title: in.Title,
+			Platform: base, ProjectDir: dir, AutoName: true, Prompt: in.Prompt, Title: in.Title,
 		})
 		if err != nil {
 			return internalmcp.CreatedSession{}, err
@@ -69,9 +77,9 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		created.SessionID, created.Directory = res.SessionID, res.WorktreePath
 	} else {
 		var port string
-		ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: projectRootForDirectory(dir)})
+		ensured, err := host.EnsureRuntime(ctx, base, projectRootForDirectory(dir))
 		switch {
-		case err != nil && remoteID != "":
+		case err != nil && (remoteID != "" || base != string(platforms.OpenCodeID)):
 			return internalmcp.CreatedSession{}, err
 		case err == nil:
 			port = ensured.Port()

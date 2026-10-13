@@ -91,3 +91,20 @@ func branchHash(branch string, n int) string {
 	sum := sha256.Sum256([]byte(branch))
 	return hex.EncodeToString(sum[:])[:n]
 }
+
+// TitleSlug turns a generated title into a branch name: first non-empty
+// line, lowercase alphanumerics joined by hyphens, at most 48 characters.
+func TitleSlug(title string) string {
+	for _, line := range strings.Split(title, "\n") {
+		name := strings.Join(strings.FieldsFunc(strings.ToLower(line), func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+		}), "-")
+		if len(name) > 48 {
+			name = strings.TrimRight(name[:48], "-")
+		}
+		if name != "" {
+			return name
+		}
+	}
+	return ""
+}

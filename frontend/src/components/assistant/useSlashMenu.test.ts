@@ -11,6 +11,16 @@ import { useSlashMenu } from './useSlashMenu';
 const vis = { hasModels: true, hasAgents: true, activeAgent: 'build', hasVariants: false };
 
 describe('useSlashMenu', () => {
+  it('lists /undo, /redo and /restart-opencode only where the platform supports them', () => {
+    commands.mockResolvedValue([]);
+    const names = (v: typeof vis & { revert?: boolean; runtimeRestart?: boolean }) =>
+      renderHook(() => useSlashMenu(undefined, v, [])).result.current.filtered.map((c) => c.name);
+    expect(names(vis)).not.toEqual(expect.arrayContaining(['undo']));
+    expect(names(vis)).not.toContain('redo');
+    expect(names(vis)).not.toContain('restart-opencode');
+    expect(names({ ...vis, revert: true, runtimeRestart: true })).toEqual(expect.arrayContaining(['undo', 'redo', 'restart-opencode']));
+  });
+
   it('fetches and reloads the right owner when session IDs are duplicated', async () => {
     commands.mockImplementation((_id, _signal, platform) => Promise.resolve([{ name: platform === 'opencode' ? 'local-skill' : 'remote-skill', source: 'skill' }]));
     const local = renderHook(() => useSlashMenu('duplicate', vis, undefined, 'opencode'));

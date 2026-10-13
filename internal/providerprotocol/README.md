@@ -1,0 +1,147 @@
+# Internal provider protocol
+
+HTTP/1.1 with JSON bodies over an owner-local unix socket. Requests and responses
+use the exported DTOs in `protocol.go`; request field spelling follows those
+shared DTOs. No credentials are exchanged. The runtime owns socket permissions.
+Negotiate `/hello` before other calls. Only version 3 is accepted; an explicit
+`VersionError` signals runtime management to drain before replacing a provider.
+Version 2 publishes exact (escaped) prompt patterns, see below, and answers a
+reply the agent received but could not record with 503 `reply_unrecorded`;
+version 3 marks replayed lifecycle events of acknowledged turns. A draining
+version-1 supervisor sends raw tool arguments, which the adapter escapes on
+arrival, and its generic 503 may follow a delivered reply, so the adapter
+reports `ReplyOutcomes` false and the auto-approve pipeline leaves its
+prompts to the user.
+
+| Method and path | Request / response |
+| --- | --- |
+| GET /hello | `Hello` |
+| GET /sessions?directory=&since= | `[]Session`, since is Unix milliseconds |
+| GET /sessions?live=1 | `[]Session` with only id, status and resetsAt: the statuses this process settled |
+| GET /sessions/{id}?limit=&offset= | `SessionDetail`, message paging |
+| GET /sessions/{id}/lifecycle | `SessionLifecycle`, bounded read |
+| POST /sessions | `CreateSessionRequest` / `CreateSessionResponse` |
+| POST /sessions/{id}/fork | `ForkSessionRequest` / `CreateSessionResponse` |
+| POST /sessions/{id}/rename | `RenameSessionRequest` |
+| POST /sessions/{id}/compact | `CompactRequest` |
+| POST /sessions/{id}/abort | `AbortRequest` |
+| POST /sessions/{id}/send | `SendMessageRequest` |
+| POST /sessions/{id}/hold | `SendMessageRequest`, Delivery="queue" |
+| GET /sessions/{id}/held | `[]NativeQueuedMessage`, oldest first |
+| POST /sessions/{id}/held/{messageId}/cancel | `CancelNativeQueuedRequest` |
+| POST /sessions/{id}/command | `ExecuteCommandRequest` |
+| POST /sessions/{id}/shell | `RunShellRequest` |
+| GET /permissions?sessionID= | `[]LivePrompt`, reconciliation only |
+| POST /permissions/{id}/reply | `RespondPermissionRequest` |
+| GET /questions?sessionID= | `[]LivePrompt`, reconciliation only |
+| POST /questions/{id}/reply | `RespondQuestionRequest` |
+| POST /questions/{id}/reject | `RejectQuestionRequest` |
+| GET /sessions/{id}/rules | `[]PermissionRule` |
+| POST /sessions/{id}/rules | `SetPermissionRulesRequest` |
+| GET /catalog?directory= | `DirectoryCatalog` |
+| GET /events?after= | SSE, described below |
+| GET /sessions/{id}/snapshot | `Snapshot`, current v1 upserts plus cursor and single-use lease |
+| POST /sessions/{id}/ack | `TurnAck`, exact completed `session.idle` sequence; 204 |
+| POST /drain | `DrainState`, stops new turns before reporting whether all sessions are idle |
+| GET /account | `Account` |
+| POST /hooks | `HookEvent`, status of a session started outside ocman; 204 |
+
+Optional Platform capabilities also support GET `/sessions/{id}/changes`, GET
+`/sessions/{id}/info`, and POST `/sessions/{id}/move` using the shared Platform
+DTOs. Mutations with no response return 204. Errors return JSON `Error`; 404 means
+not found, 409 busy, 501 unsupported. Other 4xx errors retain the provider's
+message. A prompt reply the agent received but whose event the provider could
+not record yet is 503 with code `reply_unrecorded`
+(`platforms.ErrReplyUnrecorded`): the decision took effect, its event follows. Unsupported methods must be gated locally using `/hello` capabilities.
+Composer gates creation and sending; rename, native queue and account have
+additional protocol capability flags. Browsing and lifecycle reads are required.
+
+SSE frames carry `id: <positive uint64>` and `data: <Event JSON>`. `after` is
+exclusive and defaults to 0. The sequence orders all sessions on this socket,
+so one cursor can replay all sessions. A provider must not reuse a sequence
+within a supervisor lifetime. The runtime must create a fresh adapter when it
+replaces the supervisor. Comment heartbeats keep an idle stream alive.
+Frames are limited to 8 MiB. A replay must retain the initializing
+`message.part.updated` before a part's deltas, so replay reconstructs the part
+rather than appending to the browser's REST snapshot. Event properties are the existing OpenCode v1 shapes
+for `message.updated`, `message.part.updated`, `message.part.delta`,
+`session.status`, `session.idle`, `permission.asked`, `permission.replied`,
+`question.asked`, `question.replied` and `question.rejected`. Status also allows
+`limited` with `resetsAt` in Unix milliseconds. Interrupted prompts are removed
+by a replied event with a cancelled reason.
+
+A permission prompt's `patterns` and `always` use OpenCode's wildcard syntax
+plus one escape (`ExactPattern`, `PatternValue` in `pattern.go`): a backslash
+before `*`, `?` or `\` makes it literal. A provider publishes a call's
+argument as an exact pattern, so "Allow always" grants that call only.
+
+A headless reconnect re-delivers still-pending prompts under new sequences;
+that re-delivery does not reopen a turn whose idle edge was already published.
+A prompt resolved after its turn was acknowledged keeps its ask in the spool
+until a later acknowledgment, so a consumer replaying the resolution has the
+prompt's metadata. The lifecycle events (`session.status`, `session.idle`) of
+that acknowledged turn are still in the spool: the headless stream sends them
+with `acknowledged: true`, and the adapter rebuilds state from them without
+running turn-end side effects (queue drain, routines, prompt pipeline).
+
+The adapter's `WatchEvents(ctx)` is the headless, reconnecting consumer. Install
+the shared lifecycle sink first and `SetEventHandler` for the headless prompt
+pipeline. `ProxyEvents` replays v1 payloads to the browser for its session from
+sequence zero, covering changes between the REST snapshot and connection.
+Prompts already consumed by the headless watcher come from the current pending
+cache on connection rather than being replayed into the judge. Both update instance-local caches, with sequence
+deduplication for sink delivery. Pending lists are read from those caches;
+explicit refresh operations reconcile them with the provider. Session ownership
+is learned from listing, details, creation and events without network calls from
+`Owns`. Session-scoped catalogs resolve the cached directory, fetching detail
+only when it is unknown.
+
+Providers advertising `capabilities.replay` implement explicit turn acknowledgment
+and snapshot leases. This is an additive extension supported on both internal
+versions 1 and 0; a provider without this capability retains the legacy stream
+behavior and must not truncate its spool. `/drain` is a version-independent
+runtime control, including on supervisors outside the negotiated version range.
+It remains available during draining, as do permission/question replies and abort.
+Busy, waiting and limited sessions are not idle. These, with `GET /hello`,
+the `GET /permissions` / `GET /questions` reconciliation lists and the headless
+event stream `GET /events?consumer=headless&after=<n>` (SSE `id:`/`data:`
+framing; of its events only `permission.*` and `question.*` are read), are the
+version-independent routes: while an out-of-range supervisor drains, the
+dashboard reaches it only through them (`provider.NewDraining`). Its prompts,
+including ones asked later in the draining turn, are pushed to the prompt
+pipeline (rules, judge, Inbox) and to the session's browser stream, never
+polled, so they stay answerable and the drain can finish; turns are not
+acknowledged. A supervisor launched with
+another launch configuration (CLI or Claude config, `ProviderRuntime.Identity`)
+is drained the same way with its regular adapter. Their shapes must not change
+between versions.
+
+Only the headless watcher acknowledges turns, after applying their terminal event
+to the lifecycle and prompt handlers. Failed acknowledgments retry on reconnect.
+An acknowledgment cannot target an unfinished event and is idempotent. The
+supervisor retains whole turns, including part initialization, until completion,
+acknowledgment and all attached replay consumers have passed their end. Pending
+permissions and questions prevent truncation.
+
+For browsers, `ProxyEvents` takes a fresh snapshot containing v1 upserts for the
+session's current messages, parts and status, plus unresolved prompts. It writes
+those upserts before attaching to `/events?after=<cursor>&lease=<lease>`. The
+snapshot's cursor is captured under the same lock as publishing and the provider's
+state update. The single-use lease pins intervening events for 60 seconds; expired
+leases return 409 and require a fresh snapshot. Each tab has its own lease. This
+repairs a stale REST snapshot even if an earlier turn was already acknowledged
+and truncated, without appending historical deltas to that snapshot. Headless
+connections use `consumer=headless`; unresolved requests at or before their
+cursor are reissued with a new sequence so adapter dedup does not drop them.
+
+Backend turn-start handlers call `Supervisor.BeginTurn` synchronously before
+scheduling asynchronous child work or returning success. It records busy under
+the same lock as `/drain`, rejecting a start once draining begins. Publish the
+terminal idle event only after that child's turn has actually finished.
+
+Rules are decided by ocman, never evaluated in the supervisor. The rules endpoint
+is a transport for the authoritative ruleset, not permission evaluation. An
+adapter given an ocman-owned `Rules` store (`SetRules`, used for Claude) serves
+rulesets locally and answers rule-decided prompts itself before they reach its
+pending map, its event handler or a browser stream; such a provider may answer
+the rules endpoints with 501.

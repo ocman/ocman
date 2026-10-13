@@ -31,3 +31,32 @@ func TestAgentWaitsObserveQuestionsAndManualPermissions(t *testing.T) {
 	s.onAgentPromptResolved("missing", "permission", "p")
 	s.onPromptNeedsUser("opencode", "missing", "question", "q")
 }
+
+func TestProviderIdleResolvesOwnerWaits(t *testing.T) {
+	s := testServer(t)
+	start := time.Now().UnixMilli() - 1000
+	for _, platform := range []string{"opencode", "claudecode"} {
+		if err := s.stateDB.StartAgentUserWait(t.Context(), platform, "s", "question", "q", start); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.sessionEventSink().OnSessionIdle("claudecode", "s")
+	until := time.Now().UnixMilli() + 10000
+	waits, err := s.stateDB.AgentUserWaits(t.Context(), "claudecode", start-1, until)
+	if err != nil || len(waits) == 0 {
+		t.Fatalf("waits=%v, %v", waits, err)
+	}
+	resolved := false
+	for _, wait := range waits {
+		if wait.End < until {
+			resolved = true
+		}
+	}
+	if !resolved {
+		t.Fatal("provider wait remained open")
+	}
+	other, err := s.stateDB.AgentUserWaits(t.Context(), "opencode", start-1, until)
+	if err != nil || len(other) != 1 || other[0].End != until {
+		t.Fatalf("other owner's wait=%v, %v", other, err)
+	}
+}

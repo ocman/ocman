@@ -43,6 +43,7 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
+	analytics          *db.DB
 	db                 *db.DB
 	stateDB            *state.DB
 	addr               string
@@ -205,6 +206,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	}
 	s := &Server{
 		db:           database,
+		analytics:    database,
 		stateDB:      stateDB,
 		addr:         addr,
 		registry:     registry,
@@ -216,6 +218,8 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 
 		runtime: ocruntime.NewNativeRuntime(),
 	}
+	registry.SetSessionEventSink(s.sessionEventSink())
+	stateDB.SetEnabledPlatforms(s.localPlatformIDs)
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.
 	// registryRef (not the registry itself) so the service follows a
@@ -244,6 +248,19 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		CooldownTimes: s.cooldownTimes,
 	})
 	return s
+}
+
+func (s *Server) localPlatformIDs() []string {
+	var ids []string
+	if s.registry == nil {
+		return nil
+	}
+	for _, p := range s.registry.Platforms() {
+		if id := string(p.ID()); !isRemotePlatformID(id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // WithOpenCodeAuth configures managed launch, probes, judge, and watcher
@@ -414,4 +431,13 @@ func (s *Server) get(h http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) post(h http.HandlerFunc) http.HandlerFunc {
 	return requirePOST(s.requireAuth(h))
+}
+
+// WithAnalytics sets the usage-analytics store when it is not OpenCode's
+// database (another platform feeds the mirror).
+func (s *Server) WithAnalytics(analytics *db.DB) *Server {
+	if analytics != nil {
+		s.analytics = analytics
+	}
+	return s
 }

@@ -27,7 +27,10 @@ type ModuleDeps struct {
 	// ModelOptions lists selectable judge models; nil asks the running
 	// OpenCode instances.
 	ModelOptions func(context.Context) []string
-	Guards       module.Guards
+	// OpenCode reports whether this machine runs OpenCode; without it the
+	// headless watcher and model discovery stay off. Nil means enabled.
+	OpenCode func() bool
+	Guards   module.Guards
 }
 
 // Module owns the auto-approve routes, the judge settings, the judge delay
@@ -84,7 +87,13 @@ func (m *Module) Start(ctx context.Context) error {
 
 // Run is the headless watcher: it subscribes to every OpenCode instance's
 // event stream so permission prompts are judged with no browser open.
-func (m *Module) Run(ctx context.Context) { m.svc.RunWatcher(ctx) }
+func (m *Module) Run(ctx context.Context) {
+	if m.openCode() {
+		m.svc.RunWatcher(ctx)
+	}
+}
+
+func (m *Module) openCode() bool { return m.OpenCode == nil || m.OpenCode() }
 
 // runningModelOptions lists every "provider/model" OpenCode knows about,
 // asking whichever running instance answers first. Any instance will do:

@@ -127,7 +127,7 @@ test.describe('auth required', () => {
     await page.goto('/settings');
     // authRequired loads async from /api/auth/me; wait for the Account
     // sidebar item to appear (and settle) before selecting it.
-    const accountNav = page.getByRole('button', { name: 'Account' });
+    const accountNav = page.getByRole('button', { name: 'Account', exact: true });
     await expect(accountNav).toBeVisible();
     await accountNav.click();
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
@@ -151,7 +151,7 @@ test.describe('auth required', () => {
 
     // Sign out lives in the "Account" settings group — select it first.
     // Wait for the async-loaded Account nav item to settle before clicking.
-    const accountNav = page.getByRole('button', { name: 'Account' });
+    const accountNav = page.getByRole('button', { name: 'Account', exact: true });
     await expect(accountNav).toBeVisible();
     await accountNav.click();
     await page.getByRole('button', { name: 'Sign out' }).click();

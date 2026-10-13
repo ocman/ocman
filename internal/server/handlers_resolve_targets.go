@@ -41,11 +41,16 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 
 	// With no remote manager (single-host), the only candidate is local.
 	if s.remotes == nil {
+		platform, err := s.defaultPlatformFor(r.Context(), owner)
+		if err != nil {
+			serverError(w, "resolving the default platform", err)
+			return
+		}
 		writeJSON(w, map[string]any{
 			"candidates": []remote.TargetCandidate{{
 				RemoteID:   "local",
 				RemoteName: "This machine",
-				Platform:   "opencode",
+				Platform:   platform,
 				Dir:        req.Dir,
 			}},
 			"remotes": []remote.TargetCandidate{},

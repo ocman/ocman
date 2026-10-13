@@ -34,6 +34,10 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// conversation read-only, even when password auth is configured.
 	mux.HandleFunc("/api/capabilities", s.get(s.handleCapabilities))
 	mux.HandleFunc("/api/doctor", s.get(s.handleDoctor))
+	mux.HandleFunc("/api/provider-accounts", requireGET(s.requireLocalhost(s.handleProviderAccounts)))
+	mux.HandleFunc("/api/hook-plugin", requireGET(s.requireLocalhost(s.handleHookPlugin)))
+	mux.HandleFunc("/api/hook-plugin/install", requirePOST(s.requireLocalhost(s.handleHookPlugin)))
+	mux.HandleFunc("/api/hook-plugin/uninstall", requirePOST(s.requireLocalhost(s.handleHookPlugin)))
 	mux.HandleFunc("/api/favorites", s.requireAuth(s.handleFavoritesRoot)) // GET = list, POST = add, DELETE = remove
 	mux.HandleFunc("/api/whisper/status", s.get(s.handleWhisperStatus))
 	mux.HandleFunc("/api/transcribe", s.post(s.handleTranscribe))
@@ -77,6 +81,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Master toggle for public session sharing (on by default).
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
+	mux.HandleFunc("/api/settings/default-platform", s.settingsHandler(s.requireAuth(s.handleDefaultPlatform)))
 	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.settingsHandler(s.requireAuth(s.handleWorktreeInheritPermissions)))
 	mux.HandleFunc("/api/settings/auto-archive", s.settingsHandler(s.requireAuth(s.handleAutoArchiveSettings)))
 	mux.HandleFunc("/api/settings/archive-resurface", s.settingsHandler(s.requireAuth(s.handleArchiveResurface)))

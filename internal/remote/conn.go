@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,7 @@ type RemoteConn struct {
 	hostname        string
 	protocolVersion int
 	lastSeen        time.Time
+	platforms       []string
 }
 
 // NewRemoteConn creates a RemoteConn for the given address and token.
@@ -135,9 +137,20 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 	c.remoteID = hello.InstanceId
 	c.hostname = hello.Hostname
 	c.protocolVersion = int(hello.ProtocolVersion)
+	c.platforms = hello.Platforms
 	c.lastSeen = time.Now()
 	c.mu.Unlock()
 	return nil
+}
+
+// Platforms returns the advertised base ids, with the legacy OpenCode default.
+func (c *RemoteConn) Platforms() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.platforms) == 0 {
+		return []string{"opencode"}
+	}
+	return append([]string(nil), c.platforms...)
 }
 
 // healthPingInterval is how often WaitForDrop probes a connected remote
@@ -159,6 +172,7 @@ func (c *RemoteConn) WaitForDrop(ctx context.Context) {
 	conn := c.conn
 	client := c.client
 	wantID := c.remoteID
+	wantPlatforms := append([]string(nil), c.platforms...)
 	c.mu.RUnlock()
 	if conn == nil || client == nil {
 		return
@@ -178,7 +192,7 @@ func (c *RemoteConn) WaitForDrop(ctx context.Context) {
 				c.markOffline()
 				return
 			}
-			if hello.InstanceId != wantID {
+			if hello.InstanceId != wantID || !slices.Equal(hello.Platforms, wantPlatforms) {
 				// Remote restarted with a new identity.
 				return
 			}

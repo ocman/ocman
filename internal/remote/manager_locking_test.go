@@ -86,7 +86,7 @@ func TestNameForRemoteIDLocked(t *testing.T) {
 
 // TestManagedRemoteAdapterFieldsAreLocked reproduces the managedRemote
 // adapter-field race: the supervisor goroutine assigned and cleared
-// mr.platform / mr.host with no lock while sessionCount and
+// mr.platforms / mr.host with no lock while sessionCount and
 // unregisterLocked read them under m.mu, so Stop()/disconnect() could
 // observe a half-written adapter pair. Run under -race.
 func TestManagedRemoteAdapterFieldsAreLocked(t *testing.T) {
@@ -107,7 +107,7 @@ func TestManagedRemoteAdapterFieldsAreLocked(t *testing.T) {
 			platform := newRemotePlatform(mr.conn, m.base, func() string { return m.displayNameFor(1) })
 			host := newRemoteHost(mr.conn)
 			m.mu.Lock()
-			mr.platform, mr.host = platform, host
+			mr.platforms, mr.host = []*remotePlatform{platform}, host
 			m.mu.Unlock()
 			m.registry.Register(platform)
 			m.unregisterAdapters(mr)

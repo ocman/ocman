@@ -261,6 +261,31 @@ func TestLocalSessionLaunchWithConnectedRemote(t *testing.T) {
 	}
 }
 
+// A Claude target on a disconnected remote fails closed like OpenCode does:
+// an explicit remoteId never degrades to the hub.
+func TestClaudeRemoteFailsClosedWhenDisconnected(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	srv.hostRouter = hostsvc.NewRouter(nil)
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+		path    string
+		body    string
+	}{
+		{"prepare", srv.handlePrepareSession, "/api/sessions/prepare", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo"}`},
+		{"start", srv.handleStartSession, "/api/sessions/start", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo","prompt":"hi"}`},
+		{"start worktree", srv.handleStartSession, "/api/sessions/start", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo","worktree":true}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.handler(w, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body)))
+			if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "remote_not_connected") {
+				t.Fatalf("status %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 // With a startId, each step is broadcast as it happens for that client.
 func TestStartSessionBroadcastsProgress(t *testing.T) {
 	srv, reg := startTestServer(t, nil)

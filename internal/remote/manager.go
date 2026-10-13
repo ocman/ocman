@@ -25,7 +25,7 @@ type Manager struct {
 	registry *platforms.Registry
 	router   *hostsvc.Router
 	store    *state.DB
-	base     string // base platform id remotes expose (v1: "opencode")
+	base     string // default local platform for target selection
 
 	// baseCtx is the manager's own lifetime context, replaced in Start.
 	// Background connect goroutines derive from it (not a request ctx)
@@ -116,15 +116,14 @@ func (m *Manager) SetWebhookDispatcher(dispatcher webhook.RoutineDispatcher) {
 // managedRemote bundles a RemoteConn with its registered adapters and the
 // hub-side config row it came from.
 type managedRemote struct {
-	localID  int64
-	conn     *RemoteConn
-	platform *remotePlatform
-	host     *remoteHost
-	name     string // hub display name (live)
+	localID   int64
+	conn      *RemoteConn
+	platforms []*remotePlatform
+	host      *remoteHost
+	name      string // hub display name (live)
 }
 
-// NewManager creates a Manager. base is the platform id remotes expose
-// (v1 OpenCode-only).
+// NewManager creates a Manager. base is the default local platform for targets.
 func NewManager(registry *platforms.Registry, router *hostsvc.Router, store *state.DB, base string) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{
@@ -291,11 +290,14 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		// calls it. Anything added there (or in router.RegisterRemote)
 		// that reads a platform's display name self-deadlocks while
 		// holding m.mu, stalling every remote operation.
-		platform := newRemotePlatform(mr.conn, m.base, func() string {
-			return m.displayNameFor(localID)
-		})
+		var adapters []*remotePlatform
+		for _, base := range mr.conn.Platforms() {
+			adapters = append(adapters, newRemotePlatform(mr.conn, base, func() string {
+				return m.displayNameFor(localID)
+			}))
+		}
 		host := newRemoteHost(mr.conn)
-		if !m.publishAdapters(localID, mr, platform, host) {
+		if !m.publishAdapters(localID, mr, adapters, host) {
 			// Superseded while connecting, or an unusable handshake: a
 			// newer dial or a disconnect/removal owns this id now. Record
 			// the connect we did make, drop the transport we just brought
@@ -362,7 +364,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 // Breaking that invariant means moving both this and unregisterLocked's
 // call-outs out from under m.mu behind one outermost registration mutex,
 // not patching this function alone.
-func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *remotePlatform, host *remoteHost) bool {
+func (m *Manager) publishAdapters(localID int64, mr *managedRemote, adapters []*remotePlatform, host *remoteHost) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.remotes[localID] != mr {
@@ -387,7 +389,7 @@ func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *re
 	// sessions. RemoteConn.RemoteID/setHealth take only the conn's own
 	// lock, so this respects publishAdapters' no-reentry invariant.
 	for otherLocalID, other := range m.remotes {
-		if otherLocalID == localID || other.platform == nil || other.conn == nil {
+		if otherLocalID == localID || other.host == nil || other.conn == nil {
 			continue
 		}
 		if other.conn.RemoteID() == rid {
@@ -400,12 +402,14 @@ func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *re
 			return false
 		}
 	}
-	// mr.platform / mr.host are read under m.mu by sessionCount and
+	// mr.platforms / mr.host are read under m.mu by sessionCount and
 	// unregisterLocked, so publish them under the same lock — a
 	// concurrent Stop()/disconnect() must never observe a half-written
 	// adapter pair.
-	mr.platform, mr.host = platform, host
-	m.registry.Register(platform)
+	mr.platforms, mr.host = adapters, host
+	for _, platform := range adapters {
+		m.registry.Register(platform)
+	}
 	m.router.RegisterRemote(rid, host)
 	return true
 }
@@ -425,11 +429,11 @@ func (m *Manager) stillManaged(localID int64, mr *managedRemote) bool {
 // publishes them under it, then does the deregistration outside.
 func (m *Manager) unregisterAdapters(mr *managedRemote) {
 	m.mu.Lock()
-	platform, host := mr.platform, mr.host
-	mr.platform, mr.host = nil, nil
+	adapters, host := mr.platforms, mr.host
+	mr.platforms, mr.host = nil, nil
 	m.mu.Unlock()
 
-	if platform != nil {
+	for _, platform := range adapters {
 		m.registry.Unregister(platform.ID())
 	}
 	if host != nil && mr.conn != nil {
@@ -475,13 +479,21 @@ func nextDelay(d time.Duration) time.Duration {
 // refreshInventory fetches a connected remote's project inventory and
 // stores it in the cache keyed by the remote's instance ID (AD-8).
 func (m *Manager) refreshInventory(ctx context.Context, mr *managedRemote) {
-	if mr.host == nil || mr.conn.RemoteID() == "" {
+	m.mu.RLock()
+	host := mr.host
+	m.mu.RUnlock()
+	if host == nil || mr.conn.RemoteID() == "" {
 		return
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	idents, err := mr.host.ProjectIdentities(cctx)
+	idents, err := host.ProjectIdentities(cctx)
 	if err != nil {
+		return
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.remotes[mr.localID] != mr || mr.host != host {
 		return
 	}
 	m.invMu.Lock()
@@ -561,14 +573,18 @@ func (m *Manager) displayNameFor(localID int64) string {
 
 // unregisterLocked tears down a managed remote's adapters. Caller holds m.mu.
 func (m *Manager) unregisterLocked(mr *managedRemote) {
-	if mr.platform != nil {
-		m.registry.Unregister(mr.platform.ID())
+	for _, platform := range mr.platforms {
+		m.registry.Unregister(platform.ID())
 	}
-	if mr.conn != nil {
+	mr.platforms = nil
+	if mr.host != nil && mr.conn != nil {
 		if rid := mr.conn.RemoteID(); rid != "" {
 			m.router.UnregisterRemote(rid)
 			m.evictInventory(rid)
 		}
+	}
+	mr.host = nil
+	if mr.conn != nil {
 		mr.conn.Close()
 	}
 }
@@ -662,17 +678,18 @@ func (m *Manager) List(ctx context.Context) ([]RemoteStatus, error) {
 func (m *Manager) sessionCount(localID int64) int {
 	m.mu.RLock()
 	mr, ok := m.remotes[localID]
-	var platform *remotePlatform
+	var adapters []*remotePlatform
 	if ok {
-		platform = mr.platform
+		adapters = mr.platforms
 	}
 	m.mu.RUnlock()
-	if platform == nil {
-		return 0
+	count := 0
+	for _, platform := range adapters {
+		platform.mu.RLock()
+		count += len(platform.owned)
+		platform.mu.RUnlock()
 	}
-	platform.mu.RLock()
-	defer platform.mu.RUnlock()
-	return len(platform.owned)
+	return count
 }
 
 // Add persists a new remote and dials it in the background. Returns the
@@ -777,7 +794,7 @@ func (m *Manager) EnabledRemotes() []TargetCandidate {
 		out = append(out, TargetCandidate{
 			RemoteID:   rid,
 			RemoteName: m.nameForRemoteIDLocked(rid),
-			Platform:   CompoundPlatformID(rid, m.base),
+			Platform:   CompoundPlatformID(rid, selectPlatform(mr.conn.Platforms(), m.base)),
 		})
 	}
 	return out
@@ -798,8 +815,11 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 	var out []db.ProjectStats
 	for remoteID, idents := range inv {
 		name := m.nameForRemoteID(remoteID)
-		platform := CompoundPlatformID(remoteID, m.base)
 		for _, p := range idents {
+			base := p.Platform
+			if base == "" {
+				base = selectPlatform(m.remotePlatforms(remoteID), m.base)
+			}
 			out = append(out, db.ProjectStats{
 				Directory:      p.Dir,
 				UpstreamKeys:   identityUpstreams(p),
@@ -811,7 +831,7 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 				TotalCost:      p.TotalCost,
 				RemoteID:       remoteID,
 				RemoteName:     name,
-				Platform:       platform,
+				Platform:       CompoundPlatformID(remoteID, base),
 			})
 		}
 	}

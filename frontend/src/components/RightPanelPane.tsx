@@ -206,7 +206,7 @@ export function Pane({
               projectId={upstreamTarget.projectId}
               currentDirectory={directory}
               actionsEnabled={session?.id === sessionId && !!directory}
-              remoteId={upstreamTarget.remoteId}
+              remoteId={upstreamTarget.remoteId} launchPlatform={platformId}
               upstreams={upstreams}
               upstreamLoading={upstreamLoading}
               upstreamsReady={!upstreamLoading && !upstreamError}

@@ -30,7 +30,7 @@ export type { AgentMetrics } from './api.agentMetrics.types';
  * - `interrupted` a turn was in flight but the agent process that owned
  *                 it is gone, so it will never finish
  */
-export type SessionStatus = 'waiting' | 'busy' | 'done' | 'error' | 'interrupted';
+export type SessionStatus = 'waiting' | 'busy' | 'limited' | 'done' | 'error' | 'interrupted';
 
 export type { InboxItem, InboxResponse } from './api.inbox.types';
 
@@ -630,6 +630,15 @@ export interface McpConfigStatus {
   unavailable?: boolean;
 }
 
+export interface HookPluginStatus { available: boolean; installed: boolean }
+export interface ProviderAccount {
+  platform: string;
+  displayName: string;
+  status: 'ok' | 'signed_out' | 'unavailable';
+  subscriptionType: string;
+  rateLimits: { name: string; utilization: number; resetsAt: number }[];
+}
+
 // Result of writing the ocman entry. `backupPath` is empty when there
 // was no pre-existing config to back up.
 export interface McpConfigInstallResult {
@@ -1078,6 +1087,7 @@ export interface PlatformCapabilities {
   compact: boolean;
   /** Whether the platform can fork a session into a new child session. */
   fork: boolean;
+  forkAtMessage?: boolean;
   /** Whether the platform can move a session to another project directory. */
   move: boolean;
   events: boolean;
@@ -1124,6 +1134,9 @@ export interface PlatformCapabilities {
    * Gates the permission-mode lock in the session header.
    */
   permissionRules: boolean;
+  revert?: boolean;
+  runtimeRestart?: boolean;
+  pushPrompts?: boolean;
 }
 
 /**
@@ -1159,6 +1172,7 @@ export interface HostCapabilities {
    * tmux. Launch affordances gate on this, not on `tmux` (AD-8, #393).
    */
   opencodeLaunch: boolean;
+  opencode?: boolean;
 }
 
 /** One machine's host capabilities, grouped under its host identity. */
@@ -1311,6 +1325,7 @@ export interface WorktreeCreateRequest {
    * permissions at split time (#101).
    */
   parentSessionId?: string;
+  platform?: string;
   /** Owning machine ('local' or a remote id). Omit only when unknown. */
   remoteId?: string;
 }

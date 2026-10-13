@@ -44,6 +44,10 @@ type HostCaps struct {
 	// tmux binary can be present without opencode on PATH. The frontend
 	// gates managed-launch UI on this flag (#390 / AD-8).
 	OpencodeLaunch bool `json:"opencodeLaunch"`
+	// OpenCode reports that the OpenCode platform is enabled on the host.
+	// OpenCode-only settings (maintenance, its MCP config, the judge
+	// model) are shown only when it is (FR-1).
+	OpenCode bool `json:"opencode"`
 }
 
 // TermWindow is one in-app terminal window with a display title. Mirrors
@@ -112,6 +116,7 @@ type FetchPRHeadRequest struct {
 
 // WorktreeSessionRequest captures a create-worktree-and-launch action.
 type WorktreeSessionRequest struct {
+	Platform         string
 	ProjectDir       string
 	AutoName         bool
 	Prompt           string
@@ -171,11 +176,31 @@ type EnsureProjectOpencodeRequest struct {
 // runtime, kept for observability), and whether this call launched it.
 // The managed path is runtime-neutral: callers use Endpoint (or the
 // Port() accessor) and never depend on lsof discovery (#390 / AD-2).
-type EnsureProjectOpencodeResult struct {
+type EnsureRuntimeResult struct {
 	Endpoint string             `json:"endpoint"`
 	RepoRoot string             `json:"repoRoot"`
 	Runtime  ocruntime.Instance `json:"runtime"`
 	Launched bool               `json:"launched"`
+}
+
+// EnsureProjectOpencodeResult is retained for OpenCode-specific runtime controls.
+type EnsureProjectOpencodeResult = EnsureRuntimeResult
+
+// RuntimeEnsurer is implemented by adapters that host a non-OpenCode runtime.
+type RuntimeEnsurer interface {
+	EnsureRuntime(context.Context, string) (*EnsureRuntimeResult, error)
+}
+
+// RuntimeAvailability separates launch prerequisites from transcript browsing.
+// Adapters without native prerequisites may omit it.
+type RuntimeAvailability interface {
+	RuntimeAvailable() bool
+}
+
+// WorktreeNamer is implemented by adapters that name automatic worktrees
+// without OpenCode: it titles prompt, run in dir, as a branch slug.
+type WorktreeNamer interface {
+	WorktreeName(ctx context.Context, dir, prompt string) (string, error)
 }
 
 // ManagedOpencode identifies a project with a managed OpenCode instance.
@@ -189,7 +214,7 @@ type ManagedOpencode struct {
 // Port returns the TCP port from the instance Endpoint, or "" when the
 // endpoint is missing or unparseable. Provided for callers that still
 // thread a raw port (e.g. CreateSession) rather than a full URL.
-func (r EnsureProjectOpencodeResult) Port() string {
+func (r EnsureRuntimeResult) Port() string {
 	if r.Endpoint == "" {
 		return ""
 	}
@@ -281,17 +306,10 @@ type Host interface {
 	// LaunchTmux launches opencode in a tmux session for a directory.
 	LaunchTmux(ctx context.Context, req LaunchTmuxRequest) (*LaunchTmuxResult, error)
 
-	// EnsureProjectOpencode guarantees exactly one running opencode
-	// instance for the project containing req.ProjectDir, rooted at the
-	// project's main checkout. It checks the current managed instance and
-	// its health (Probe) and, if none exists or it is unhealthy, launches
-	// exactly one via the host's ocruntime.Runtime (seeding a scoped
-	// external_directory permission) and waits for it to serve.
-	// Idempotent and concurrency-safe: overlapping calls for one repo root
-	// launch at most one instance and all receive the same healthy
-	// endpoint. Returns git.ErrNotARepo when the directory is not inside a
-	// repo. Runs on the owning host (R-C).
-	EnsureProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
+	// EnsureRuntime guarantees a reachable runtime for the owner-local
+	// platform and directory. OpenCode keeps its singleflight project/machine
+	// lifecycle. Non-TCP providers return an endpoint without a port.
+	EnsureRuntime(ctx context.Context, platform, dir string) (*EnsureRuntimeResult, error)
 
 	// StopProjectOpencode stops and forgets the project's tracked managed
 	// instance. It is a no-op when no instance is tracked.

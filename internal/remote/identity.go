@@ -15,6 +15,7 @@ type ProjectIdentity struct {
 	Basename     string   `json:"basename"`
 	Dir          string   `json:"dir"`
 	UpstreamKeys []string `json:"upstreamKeys,omitempty"`
+	Platform     string   `json:"platform,omitempty"`
 
 	// Aggregate stats carried across the wire so the hub's project list
 	// can show real counts for remote projects (not just identities).

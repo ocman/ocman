@@ -10,6 +10,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 )
 
@@ -181,6 +182,26 @@ func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.Ensu
 		return nil, err
 	}
 	var out hostsvc.EnsureProjectOpencodeResult
+	return &out, unmarshalJSON(resp.Payload, &out)
+}
+
+func (h *remoteHost) EnsureRuntime(ctx context.Context, platform, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	b, err := marshalJSON(map[string]string{"platform": platform, "projectDir": dir})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.EnsureRuntime(ctx, &pb.JsonReq{Payload: b})
+	if status.Code(err) == codes.Unimplemented && platform == string(platforms.OpenCodeID) {
+		return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out hostsvc.EnsureRuntimeResult
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 

@@ -46,6 +46,20 @@ func TestPermissionInboxReconciliationUsesLiveSnapshot(t *testing.T) {
 	}
 }
 
+// AD-7a: a push-only platform's prompts are never polled; its Inbox items
+// resolve from the stream's permission.replied.
+func TestPermissionInboxReconciliationNeverPollsPushOnlyPlatforms(t *testing.T) {
+	srv := testServer(t)
+	adapter := &refreshingInboxPlatform{fakePlatform: fakePlatform{id: "claudecode", caps: platforms.Capabilities{PushPrompts: true}}, err: errors.New("polled")}
+	srv.registry.Register(adapter)
+	srv.notifyPermissionInbox(state.InboxPermission{Platform: "claudecode", SessionID: "ses-1", PermissionID: "perm-1", Permission: "bash"})
+	adapter.err = nil // an empty authoritative read would archive it if polled
+	srv.inboxModule().Reconcile(t.Context())
+	if items, _ := srv.stateDB.ListInboxItems(t.Context()); len(items) != 1 {
+		t.Fatal("reconciliation polled a push-only platform")
+	}
+}
+
 func TestPermissionInboxReplyLifecycle(t *testing.T) {
 	for _, reply := range []string{"once", "always", "reject"} {
 		t.Run(reply, func(t *testing.T) {

@@ -35,7 +35,7 @@ func TestManager_DisablePreservesConfigAndRemovesAvailability(t *testing.T) {
 	mr := &managedRemote{localID: id, conn: connectedConn("remote-1", "host-1"), name: "Box"}
 	mgr.remotes[id] = mr
 	platform := newRemotePlatform(mr.conn, mgr.base, func() string { return "Box" })
-	if !mgr.publishAdapters(id, mr, platform, newRemoteHost(mr.conn)) {
+	if !mgr.publishAdapters(id, mr, []*remotePlatform{platform}, newRemoteHost(mr.conn)) {
 		t.Fatal("publish failed")
 	}
 	mgr.inventory["remote-1"] = []ProjectIdentity{{Dir: "/remote/project"}}
@@ -164,7 +164,7 @@ func TestPublishAdapters_DisconnectAfterwardsTearsDownExactlyWhatWasPublished(t 
 	}
 	platform := newRemotePlatform(mr.conn, m.base, func() string { return m.displayNameFor(1) })
 
-	if !m.publishAdapters(1, mr, platform, newRemoteHost(mr.conn)) {
+	if !m.publishAdapters(1, mr, []*remotePlatform{platform}, newRemoteHost(mr.conn)) {
 		t.Fatal("publishAdapters reported failure for the managed remote")
 	}
 	if _, ok := reg.Get(platform.ID()); !ok {
@@ -201,7 +201,7 @@ func TestPublishAdapters_SkipsASupersededRemote(t *testing.T) {
 	}
 	platform := newRemotePlatform(old.conn, m.base, func() string { return m.displayNameFor(1) })
 
-	if m.publishAdapters(1, old, platform, newRemoteHost(old.conn)) {
+	if m.publishAdapters(1, old, []*remotePlatform{platform}, newRemoteHost(old.conn)) {
 		t.Fatal("publishAdapters reported success for a superseded remote")
 	}
 	if _, ok := reg.Get(platform.ID()); ok {
@@ -210,7 +210,7 @@ func TestPublishAdapters_SkipsASupersededRemote(t *testing.T) {
 	if got := router.Remotes(); len(got) != 0 {
 		t.Errorf("superseded remote registered a host: %v", got)
 	}
-	if old.platform != nil || old.host != nil {
+	if old.platforms != nil || old.host != nil {
 		t.Error("superseded remote published its adapter fields")
 	}
 }
@@ -232,7 +232,7 @@ func TestPublishAdapters_SkipsARemoteWithoutAnInstanceID(t *testing.T) {
 	}
 	platform := newRemotePlatform(mr.conn, m.base, func() string { return m.displayNameFor(1) })
 
-	if m.publishAdapters(1, mr, platform, newRemoteHost(mr.conn)) {
+	if m.publishAdapters(1, mr, []*remotePlatform{platform}, newRemoteHost(mr.conn)) {
 		t.Fatal("publishAdapters reported success for a remote with no instance ID")
 	}
 	if _, ok := reg.Get(platform.ID()); ok {
@@ -241,7 +241,7 @@ func TestPublishAdapters_SkipsARemoteWithoutAnInstanceID(t *testing.T) {
 	if got := router.Remotes(); len(got) != 0 {
 		t.Errorf("registered a host without a remote ID: %v", got)
 	}
-	if mr.platform != nil || mr.host != nil {
+	if mr.platforms != nil || mr.host != nil {
 		t.Error("published adapter fields for a remote with no instance ID")
 	}
 }
@@ -251,6 +251,8 @@ func TestPublishAdapters_RejectsDuplicateRemoteIdentity(t *testing.T) {
 	router := hostsvc.NewRouter(localStubHost{})
 	first := &managedRemote{localID: 1, conn: connectedConn("shared-id", "host-1")}
 	second := &managedRemote{localID: 2, conn: connectedConn("shared-id", "host-2")}
+	first.conn.platforms = []string{"opencode", "claudecode"}
+	second.conn.platforms = []string{"other"}
 	m := &Manager{
 		base:      "opencode",
 		registry:  reg,
@@ -259,12 +261,13 @@ func TestPublishAdapters_RejectsDuplicateRemoteIdentity(t *testing.T) {
 		inventory: map[string][]ProjectIdentity{},
 	}
 	firstPlatform := newRemotePlatform(first.conn, m.base, func() string { return "first" })
+	firstClaude := newRemotePlatform(first.conn, "claudecode", func() string { return "first" })
 	firstHost := newRemoteHost(first.conn)
-	if !m.publishAdapters(1, first, firstPlatform, firstHost) {
+	if !m.publishAdapters(1, first, []*remotePlatform{firstPlatform, firstClaude}, firstHost) {
 		t.Fatal("first remote was not published")
 	}
-	secondPlatform := newRemotePlatform(second.conn, m.base, func() string { return "second" })
-	if m.publishAdapters(2, second, secondPlatform, newRemoteHost(second.conn)) {
+	secondPlatform := newRemotePlatform(second.conn, "other", func() string { return "second" })
+	if m.publishAdapters(2, second, []*remotePlatform{secondPlatform}, newRemoteHost(second.conn)) {
 		t.Fatal("duplicate remote identity was published")
 	}
 
@@ -276,7 +279,7 @@ func TestPublishAdapters_RejectsDuplicateRemoteIdentity(t *testing.T) {
 	if !ok || routed != firstHost {
 		t.Fatal("duplicate registration replaced the original host")
 	}
-	if second.platform != nil || second.host != nil {
+	if second.platforms != nil || second.host != nil {
 		t.Fatal("rejected remote retained published adapters")
 	}
 	// The refused remote is closed and abandoned, so its health is the
@@ -287,9 +290,21 @@ func TestPublishAdapters_RejectsDuplicateRemoteIdentity(t *testing.T) {
 	if got := first.conn.Health(); got != HealthConnected {
 		t.Errorf("surviving remote health = %q, want %q", got, HealthConnected)
 	}
+	for range 100 {
+		if got := m.remotePlatforms("shared-id"); len(got) != 2 || got[0] != "opencode" {
+			t.Fatalf("rejected remote influenced platform selection: %v", got)
+		}
+	}
 	m.unregisterAdapters(second)
+	m.disconnect(2)
 	if registered, ok := reg.Get(firstPlatform.ID()); !ok || registered != firstPlatform {
 		t.Fatal("tearing down rejected remote removed the original platform")
+	}
+	if registered, ok := reg.Get(firstClaude.ID()); !ok || registered != firstClaude {
+		t.Fatal("tearing down rejected remote removed the original Claude platform")
+	}
+	if routed, ok := router.LookupRemote("shared-id"); !ok || routed != firstHost {
+		t.Fatal("disconnecting rejected remote removed the original host")
 	}
 }
 

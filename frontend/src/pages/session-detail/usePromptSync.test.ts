@@ -141,6 +141,18 @@ describe('usePromptSync', () => {
     expect(o.clearPrompt).not.toHaveBeenCalled();
   });
 
+  // AD-7a: a push-only owner's stream delivers every reply; nothing polls.
+  it('never polls prompts for a push-only owner', async () => {
+    vi.useFakeTimers();
+    const perm = { permissionId: 'perm-1', permission: 'Run shell', patterns: [], sessionId: 'child-1', askedAt: 0 };
+    const o = opts({ pendingPermission: perm, pendingQuestion: pendingQ, pushPrompts: true });
+    renderHook(() => usePromptSync(o));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(refreshPermissions).not.toHaveBeenCalled();
+    expect(listQuestions).not.toHaveBeenCalled();
+    expect(o.clearPrompt).not.toHaveBeenCalled();
+  });
+
   it('keeps the permission when the authoritative refresh fails', async () => {
     vi.useFakeTimers();
     refreshPermissions.mockRejectedValue(new Error('unreachable'));

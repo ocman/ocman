@@ -79,6 +79,8 @@ service Ocman {
   rpc RemoveWorktree(JsonReq) returns (Empty);
   rpc LaunchTmux(JsonReq) returns (JsonResp);
   rpc EnsureProjectOpencode(JsonReq) returns (JsonResp);
+  // EnsureProjectOpencode is retained as an OpenCode-only alias for one release.
+  rpc EnsureRuntime(JsonReq) returns (JsonResp); // {platform, projectDir}
   rpc StopProjectOpencode(JsonReq) returns (Empty);
   rpc RestartProjectOpencode(JsonReq) returns (JsonResp);
   rpc ReloadOpencode(Empty) returns (Empty);
@@ -124,6 +126,7 @@ message HelloResp {
   string instance_id = 2;
   string hostname = 3;
   string ocman_version = 4;
+  repeated string platforms = 5; // enabled local base platform ids; absent means opencode
 }
 
 // PlatformRef carries the base platform id.

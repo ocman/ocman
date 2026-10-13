@@ -141,7 +141,7 @@ func (s *nativeStoreFake) CreateFactoryEpicWithProjects(ctx context.Context, pre
 	return epic, err
 }
 
-func (s *nativeStoreFake) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule) (model.NativeEpic, error) {
+func (s *nativeStoreFake) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule, platform ...string) (model.NativeEpic, error) {
 	epic, err := s.CreateFactoryEpicWithProjects(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary)
 	if err == nil {
 		epic.PermissionRules = append([]model.PermissionRule(nil), rules...)

@@ -8,9 +8,11 @@ import { Routines } from './Routines';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
 import { StrictMode } from 'react';
 import { formatDateTimeShort } from '../lib/format';
-import type { RoutineRun, WebhookInbox } from '../lib/api.types';
+import type { PlatformCapabilityEntry, RoutineRun, WebhookInbox } from '../lib/api.types';
+import { useMachinePlatforms } from '../lib/useCapabilities';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
+vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: vi.fn(() => []) }));
 vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn(), stats: vi.fn() }, webhookInboxes: { list: vi.fn(), deliveries: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
 
 const routine: Routine = {
@@ -250,6 +252,30 @@ describe('Routines', () => {
       archiveSessionAfterSuccess: true,
       notifyOnSuccess: false, // successes stay out of the Inbox unless opted in
     })));
+  }, 15_000);
+
+  it('sends the platform chosen for a new-session routine', async () => {
+    const entry = (id: string, displayName: string) => ({ id, displayName, available: true, capabilities: { composer: true } }) as PlatformCapabilityEntry;
+    vi.mocked(useMachinePlatforms).mockReturnValue([entry('opencode', 'OpenCode'), entry('claudecode', 'Claude Code')]);
+    vi.mocked(api.sessions).mockResolvedValue([
+      { id: 'oc', title: 'OpenCode', directory: '/repo', remoteId: 'local', platform: 'opencode', archived: false } as never,
+      { id: 'cc', title: 'Claude', directory: '/repo', remoteId: 'local', platform: 'claudecode', archived: false } as never,
+    ]);
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await screen.findByText(routine.name);
+    await user.click(screen.getByRole('button', { name: 'New routine' }));
+    await user.type(screen.getByLabelText('Name'), 'Claude check');
+    await user.type(screen.getByLabelText('Prompt'), 'Check it');
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    await user.click(screen.getByRole('option', { name: '/repo' }));
+    await user.click(screen.getByText('Session and model'));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Platform' }), 'claudecode');
+    // The agent and model catalog comes from a session on that platform.
+    await waitFor(() => expect(api.sessionModels).toHaveBeenLastCalledWith('cc', 'claudecode'));
+    await user.click(screen.getByRole('button', { name: 'Create routine' }));
+    await waitFor(() => expect(api.routines.create).toHaveBeenCalledWith(expect.objectContaining({ platform: 'claudecode', sessionMode: 'new' })));
+    vi.mocked(useMachinePlatforms).mockReturnValue([]);
   }, 15_000);
 
   it('selects an existing project session and its host', async () => {

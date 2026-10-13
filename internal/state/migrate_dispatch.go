@@ -9,7 +9,7 @@ import (
 // v101 adds artifacts and their relay shares (artifacts.go).
 // v102 adds viewer-scoped Inbox item pins.
 // v113 indexes running routine runs in scheduler polling order.
-const latestSchemaVersion = 121
+const latestSchemaVersion = 122
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -376,6 +376,18 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateUIUsage(tx)
 	case 121:
 		return migrateRoutineWorktrees(tx)
+	case 122:
+		// Main and the provider branch independently used v112/v113.
+		// Replay main's idempotent steps for an existing provider database.
+		for _, version := range []int{112, 113} {
+			if err := applyMigration(tx, version); err != nil {
+				return err
+			}
+		}
+		if err := migrateToV112(tx); err != nil {
+			return err
+		}
+		return migrateToV113(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

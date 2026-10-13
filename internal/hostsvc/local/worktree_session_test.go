@@ -176,6 +176,56 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 	}
 }
 
+// A provider platform names its automatic worktree with its own namer, in
+// the repo root; a failed call keeps the provisional branch.
+func TestProviderWorktreeNaming(t *testing.T) {
+	for name, answer := range map[string]string{"named": "fix-login", "failed": ""} {
+		t.Run(name, func(t *testing.T) {
+			repo := initRepo(t)
+			var gotDir, gotPrompt string
+			h := New(Deps{
+				Runtimes: map[string]func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error){
+					"claudecode": func(_ context.Context, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+						return &hostsvc.EnsureRuntimeResult{RepoRoot: dir}, nil
+					},
+				},
+				WorktreeNamers: map[string]func(context.Context, string, string) (string, error){
+					"claudecode": func(_ context.Context, dir, prompt string) (string, error) {
+						gotDir, gotPrompt = dir, prompt
+						if answer == "" {
+							return "", io.ErrUnexpectedEOF
+						}
+						return answer, nil
+					},
+				},
+				CreatePlatformSession: func(_ context.Context, platform string, req platforms.CreateSessionRequest, _ []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+					if platform != "claudecode" || req.Directory == repo || req.Port != "" {
+						t.Fatalf("create %s %+v", platform, req)
+					}
+					return &platforms.CreateSessionResponse{ID: "s"}, nil
+				},
+			})
+			res, err := h.CreateWorktreeSession(t.Context(), hostsvc.WorktreeSessionRequest{Platform: "claudecode", ProjectDir: repo, AutoName: true, Prompt: "Fix login"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.background.Wait()
+			root, _ := filepath.EvalSymlinks(repo)
+			if gotPrompt != "Fix login" || (gotDir != repo && gotDir != root) {
+				t.Fatalf("namer called with %q %q", gotDir, gotPrompt)
+			}
+			want := res.Branch
+			if answer != "" {
+				want = answer + "-" + strings.TrimPrefix(res.Branch, provisionalPrefix)
+			}
+			out, err := exec.Command("git", "-C", res.WorktreePath, "branch", "--show-current").Output()
+			if err != nil || strings.TrimSpace(string(out)) != want {
+				t.Fatalf("branch = %q, want %q (%v)", out, want, err)
+			}
+		})
+	}
+}
+
 // Every step of a worktree start is reported on the request's context, so
 // the new conversation can show the instance and checkout in parallel.
 func TestWorktreeSessionReportsProgress(t *testing.T) {

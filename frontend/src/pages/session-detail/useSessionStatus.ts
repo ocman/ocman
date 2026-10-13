@@ -86,6 +86,7 @@ function resolveDisplayStatus(
 ): Session['status'] {
   // A live turn outranks the tail: an errored message from the previous
   // turn must not mask the one that is running now.
+  if (sessionStatus === 'limited') return 'limited';
   if (justSentPrompt || sessionStatus === 'busy') return 'busy';
   if (lastMsgErrored) return 'error';
   return sessionStatus ?? 'done';

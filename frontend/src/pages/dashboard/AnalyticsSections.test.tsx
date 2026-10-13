@@ -13,6 +13,7 @@ vi.mock('react-chartjs-2', () => ({
     return <div data-testid="line-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />;
   },
 }));
+vi.mock('./ProviderAccountSettings', () => ({ ProviderLimitsCard: () => <div>subscription limits</div> }));
 vi.mock('../../components/ProjectScopePicker', () => ({ ProjectScopePicker: () => <div>project scope</div> }));
 vi.mock('./context', () => ({ useDashboard: () => ({ projects: [], dirScope: '/repo', setDirScope: vi.fn() }) }));
 
@@ -207,6 +208,7 @@ describe('analytics sections', () => {
     expect(screen.getByText('Cost Distribution by Model')).toBeInTheDocument();
     expect(screen.getByText('Estimated Cost Distribution by Type')).toBeInTheDocument();
     expect(screen.getByText('Agent breakdown')).toBeInTheDocument();
+    expect(screen.getByText('subscription limits')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
   });
 

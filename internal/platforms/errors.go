@@ -30,6 +30,11 @@ var ErrBusy = errors.New("platforms: session is currently processing a prompt")
 // can offer to launch the missing process (see launchOpencodeInTmux).
 var ErrPlatformUnreachable = errors.New("platforms: no running instance for this location")
 
+// ErrReplyUnrecorded is returned by a prompt reply that reached the agent
+// but whose event is not recorded yet (it is retried). The decision took
+// effect: callers attribute it to whoever sent it, not to a later observer.
+var ErrReplyUnrecorded = errors.New("platforms: the agent received the reply; recording it is retried")
+
 // ErrSSEIdleTimeout is returned by ProxyEvents and the headless event
 // watcher when no bytes have arrived from the upstream within the idle
 // window (SSEIdleTimeout). It is not a fatal error — the browser's

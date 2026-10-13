@@ -93,7 +93,13 @@ func jsonResp(v any, err error) (*pb.JsonResp, error) {
 }
 func (s *Server) Hello(_ context.Context, _ *pb.HelloReq) (*pb.HelloResp, error) {
 	hostname, _ := os.Hostname()
-	return &pb.HelloResp{ProtocolVersion: ProtocolVersion, InstanceId: s.instanceID, Hostname: hostname, OcmanVersion: s.version}, nil
+	var enabled []string
+	for _, p := range s.registry.Platforms() {
+		if owner, _ := SplitPlatformID(string(p.ID())); owner == "" {
+			enabled = append(enabled, string(p.ID()))
+		}
+	}
+	return &pb.HelloResp{ProtocolVersion: ProtocolVersion, InstanceId: s.instanceID, Hostname: hostname, OcmanVersion: s.version, Platforms: enabled}, nil
 }
 
 func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsServer) error {

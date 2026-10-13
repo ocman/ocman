@@ -81,7 +81,7 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if !ok {
 		return WorkEpic{}, ErrFactoryUnavailable
 	}
-	epic, err := store.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary, modelRules)
+	epic, err := store.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary, modelRules, req.Platform)
 	switch {
 	case errors.Is(err, model.ErrNativeInstantiationConflict):
 		err = ErrInstantiationConflict

@@ -17,6 +17,7 @@ type Registry struct {
 	order []ID // registration order for stable Platforms() output
 	byID  map[ID]Platform
 	bySID map[string]ID // session-id -> owning platform (populated by RememberSessions)
+	sink  SessionEventSink
 }
 
 // NewRegistry returns an empty registry.
@@ -41,6 +42,21 @@ func (r *Registry) Register(p Platform) {
 		r.order = append(r.order, id)
 	}
 	r.byID[id] = p
+	if source, ok := p.(SessionEventSource); ok {
+		source.SetSessionEventSink(r.sink)
+	}
+}
+
+// SetSessionEventSink wires existing adapters and any registered later.
+func (r *Registry) SetSessionEventSink(sink SessionEventSink) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sink = sink
+	for _, p := range r.byID {
+		if source, ok := p.(SessionEventSource); ok {
+			source.SetSessionEventSink(sink)
+		}
+	}
 }
 
 // Unregister removes an adapter by ID and drops any reverse-lookup

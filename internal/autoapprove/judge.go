@@ -94,7 +94,7 @@ type JudgeResult struct {
 
 func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, permission string, patterns []string, metadata map[string]any, customSections []PromptSection, onSessionCreated func(judgeSessionID string)) (result JudgeResult) {
 	if j == nil {
-		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
+		return JudgeResult{Verdict: verdictNeedsUser}
 	}
 	ctx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
@@ -111,12 +111,12 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 		return judgeEndpoint(ctx, config, permission, patterns, metadata, customSections)
 	}
 	if j.openCodePort == nil {
-		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
+		return JudgeResult{Verdict: verdictNeedsUser}
 	}
 	port := j.openCodePort(directory)
 	if port == "" {
 		log.WithField("directory", directory).Warn("auto-approve judge: no running OpenCode instance found, falling through to human")
-		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
+		return JudgeResult{Verdict: verdictNeedsUser}
 	}
 	sessionID, err := j.createSession(ctx, port, directory, "(auto-approve subagent)")
 	if err != nil {

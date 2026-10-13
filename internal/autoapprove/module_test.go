@@ -210,6 +210,12 @@ func TestModuleJudgeModelOptions(t *testing.T) {
 	if rec.Code != 200 || len(models) != 2 || models[0] != "anthropic/x" || def != DefaultJudgeModel {
 		t.Fatalf("options: %d %s", rec.Code, rec.Body)
 	}
+	// Without OpenCode no instance is discovered at all.
+	m.OpenCode = func() bool { return false }
+	if models, _ = decode(serve(m, http.MethodGet, "/api/settings/judge-model/options", "").Body.Bytes()); len(models) != 0 {
+		t.Fatalf("models without OpenCode = %v", models)
+	}
+	m.OpenCode = nil
 	// No reachable instance: an empty array, never a JSON null.
 	options = nil
 	if models, _ = decode(serve(m, http.MethodGet, "/api/settings/judge-model/options", "").Body.Bytes()); models == nil || len(models) != 0 {

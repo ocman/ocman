@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
+import { LaunchPlatformContext } from './launchPlatform';
 import { postHandle, UpstreamApiError } from '../../lib/upstreamApi';
 import { useApiStore } from '../../lib/apiStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../DropdownMenu';
@@ -42,6 +43,7 @@ export function LaunchSplitButton({
   const [error, setError] = useState<string | null>(null);
   const [confirmFetch, setConfirmFetch] = useState<null | { fetchTarget: string }>(null);
   const seedNewSession = useApiStore((s) => s.seedNewSession);
+  const platform = useContext(LaunchPlatformContext);
 
   // Track the mode/action to retry with after a cross-fork fetch confirm.
   const [pendingAction, setPendingAction] = useState<Action>('handle');
@@ -65,6 +67,7 @@ export function LaunchSplitButton({
         mode,
         action,
         fetchHead,
+        ...(platform ? { platform } : {}),
       });
       // For session mode the user stays put; seed the new session into the
       // sidebar list so it shows up immediately instead of waiting for the

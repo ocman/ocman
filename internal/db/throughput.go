@@ -34,8 +34,8 @@ func modelDuration(start, end int64, tools []toolTiming) int64 {
 	return end - start - waiting
 }
 
-// Read the compact mirror projection, falling back to source payloads only
-// when the message scan also uses the source (e.g. before the initial build).
+// Read the compact mirror projection, falling back to OpenCode's parts only
+// when the message scan also reads OpenCode (e.g. before the initial build).
 func (d *DB) applyThroughput(ctx context.Context, source *sql.DB, requests []requestRow) error {
 	const batchSize = 400
 	for offset := 0; offset < len(requests); offset += batchSize {
@@ -47,7 +47,7 @@ func (d *DB) applyThroughput(ctx context.Context, source *sql.DB, requests []req
 		query := `SELECT message_id, json_extract(data, '$.state.time') FROM part
 			WHERE message_id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",") + `)
 			AND json_extract(data, '$.type') = 'tool'`
-		if source != d.db {
+		if d.mirror != nil && source == d.mirror.db {
 			query = `SELECT message_id, time FROM tool_timing WHERE message_id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",") + `)`
 		}
 		rows, err := source.QueryContext(ctx, query, args...)

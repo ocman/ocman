@@ -121,6 +121,9 @@ func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID s
 			metadata_json    = excluded.metadata_json,
 			asked_at         = excluded.asked_at,
 			approved_at      = excluded.approved_at
+		-- The AI's recorded approval stands: a later observation of the same
+		-- reply (replayed after a restart) carries no provenance of its own.
+		WHERE auto_approved_permission.approved_by != 'ai' OR excluded.approved_by = 'ai'
 	`, platform, sessionID, p.PermissionID, p.PermissionText, patternsJSON, p.JudgeSessionID, p.Reasoning,
 		p.ApprovedBy, p.Reply, metadataJSON, p.AskedAt, p.ApprovedAt)
 	if err != nil {
@@ -132,13 +135,31 @@ func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID s
 // ListApprovedPermissions returns all auto-approved permissions for a
 // session, ordered by approval time ascending.
 func (d *DB) ListApprovedPermissions(ctx context.Context, platform, sessionID string) ([]ApprovedPermission, error) {
+	return d.listApprovedPermissions(ctx, `platform = ? AND session_id = ?`, platform, sessionID)
+}
+
+// ApprovedPermission returns the recorded approval of one permission.
+func (d *DB) ApprovedPermission(ctx context.Context, platform, sessionID, permissionID string) (ApprovedPermission, bool, error) {
+	rows, err := d.listApprovedPermissions(ctx, `platform = ? AND session_id = ? AND permission_id = ?`, platform, sessionID, permissionID)
+	if err != nil || len(rows) == 0 {
+		return ApprovedPermission{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+// ListPlatformApprovals returns the approvals of every session of platform.
+func (d *DB) ListPlatformApprovals(ctx context.Context, platform string) ([]ApprovedPermission, error) {
+	return d.listApprovedPermissions(ctx, `platform = ?`, platform)
+}
+
+func (d *DB) listApprovedPermissions(ctx context.Context, where string, args ...any) ([]ApprovedPermission, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT permission_id, permission_text, patterns_json, judge_session_id, reasoning,
 		       approved_by, reply, metadata_json, asked_at, approved_at
 		FROM auto_approved_permission
-		WHERE platform = ? AND session_id = ?
+		WHERE `+where+`
 		ORDER BY approved_at ASC
-	`, platform, sessionID)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing approved permissions: %w", err)
 	}

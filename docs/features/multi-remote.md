@@ -32,6 +32,17 @@ the hub tunnels the browser WebSocket to the owner over a bidirectional gRPC
 stream, so keystrokes and PTY output cross the wire while the shell, cwd and
 tmux windows all stay on the remote.
 
+A remote advertises the platforms it runs (`-platforms`). One started with
+`claudecode` shows its Claude Code sessions on the hub too: listing, turns,
+permission prompts and new sessions all run on the remote, under the remote's
+own `claude` login. The hub needs no Claude install for this. A remote that
+runs both platforms appears once per platform (`r-<id>:opencode`,
+`r-<id>:claudecode`); an older remote that does not advertise its platforms
+is treated as OpenCode-only. Things tied to the Claude install are per
+machine: the terminal-session hooks are installed from the remote machine's
+own ocman Settings, and Settings → Provider accounts on the hub lists only the hub's
+own Claude account. See [Claude Code](claude-code.md).
+
 ## Prerequisites
 
 - ocman running on each machine you want to manage. The same version is

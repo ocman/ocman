@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
@@ -19,9 +20,11 @@ var (
 // Doctor reports this machine's prerequisite checks, in display order.
 func (h *Host) Doctor(context.Context) []hostsvc.DoctorCheck {
 	checks := []hostsvc.DoctorCheck{
-		binCheck("opencode", "OpenCode", true, "Install OpenCode: https://opencode.ai"),
 		binCheck("tmux", "tmux", false, "brew install tmux"),
 		binCheck("git", "git", true, "brew install git"),
+	}
+	if h.deps.PlatformEnabled == nil || h.deps.PlatformEnabled(string(platforms.OpenCodeID)) {
+		checks = append([]hostsvc.DoctorCheck{binCheck(string(platforms.OpenCodeID), "OpenCode", true, "Install OpenCode: https://opencode.ai")}, checks...)
 	}
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		checks = append(checks, binCheck("lsof", "lsof", false, "Install lsof; discovering externally started OpenCode instances needs it"))

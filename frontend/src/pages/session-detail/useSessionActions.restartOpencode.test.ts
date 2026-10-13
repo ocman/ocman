@@ -37,7 +37,7 @@ function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionAc
   return {
     session: { id: 'sess-1', platform: 'opencode', directory: '/p', timeUpdated: 0 },
     portAvailable: true,
-    caps: { shellExec: true } as UseSessionActionsOptions['caps'],
+    caps: { shellExec: true, revert: true, runtimeRestart: true } as UseSessionActionsOptions['caps'],
     pendingPermission: null,
     pendingQuestion: null,
     selectedModel: '',

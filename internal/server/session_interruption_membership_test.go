@@ -33,7 +33,7 @@ func TestRestartSkipsDeletedHistoricalCheckout(t *testing.T) {
 	host := srv.newLocalHost()
 	srv.hostRouter = hostsvc.NewRouter(host)
 	req := hostsvc.EnsureProjectOpencodeRequest{ProjectDir: main}
-	if _, err := host.EnsureProjectOpencode(t.Context(), req); err != nil {
+	if _, err := host.EnsureRuntime(t.Context(), "opencode", req.ProjectDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := host.RestartProjectOpencode(t.Context(), req); err != nil {

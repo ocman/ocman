@@ -93,9 +93,11 @@ func newHarness(guards module.Guards) *harness {
 			}
 			return h.host, true
 		},
-		ForDir:      func(string) hostsvc.Host { return h.host },
-		PlatformFor: func(hostsvc.Host) string { return "r-rem1:opencode" },
-		InheritPermissions: func(_ *http.Request, parent string) func(string) (int, string) {
+		ForDir: func(string) hostsvc.Host { return h.host },
+		ResolvePlatform: func(*http.Request, hostsvc.Host, string, string) (string, string, error) {
+			return "r-rem1:opencode", "opencode", nil
+		},
+		InheritPermissions: func(_ *http.Request, _, parent string) func(string) (int, string) {
 			h.steps = append(h.steps, "build:"+parent)
 			return func(child string) (int, string) {
 				h.steps = append(h.steps, "apply:"+child)
@@ -191,9 +193,9 @@ func TestExplicitOwnerFailsClosed(t *testing.T) {
 func TestGitInfoRequiresOwnerAndAbsoluteDirs(t *testing.T) {
 	h := newHarness(module.Guards{Auth: pass, Localhost: pass})
 	for path, want := range map[string]int{
-		"/api/git/info?dirs=/r":                          http.StatusBadRequest,
-		"/api/git/info?dirs=/r,rel&remoteId=local":       http.StatusBadRequest,
-		"/api/git/info?dirs=,&remoteId=local":            http.StatusBadRequest,
+		"/api/git/info?dirs=/r":                            http.StatusBadRequest,
+		"/api/git/info?dirs=/r,rel&remoteId=local":         http.StatusBadRequest,
+		"/api/git/info?dirs=,&remoteId=local":              http.StatusBadRequest,
 		"/api/git/info?dir=/a,b%20c&dirs=/x&remoteId=rem1": http.StatusOK,
 	} {
 		if got := h.serve(http.MethodGet, path, "").Code; got != want {

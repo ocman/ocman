@@ -142,6 +142,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			description = strings.TrimSpace(description + "\n\n" + issue.OutcomeReason)
 		}
 		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery, PermissionRules: attempt.FrozenPolicy.PermissionRules}
+		request.Platform = attempt.FrozenPolicy.Platform
 		request.Prompt = prompt
 		request.Verification = issue.Workflow != nil && issue.Workflow.Kind == "verification"
 		if request.Verification {

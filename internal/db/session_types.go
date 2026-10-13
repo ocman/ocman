@@ -6,6 +6,7 @@ type SessionStatus string
 
 const (
 	StatusBusy        SessionStatus = "busy"
+	StatusLimited     SessionStatus = "limited"
 	StatusWaiting     SessionStatus = "waiting"
 	StatusDone        SessionStatus = "done"
 	StatusError       SessionStatus = "error"
@@ -21,6 +22,7 @@ const (
 	TurnUnobserved TurnState = iota
 	TurnRunning
 	TurnSettled
+	TurnLimited
 )
 
 // SettleSessionStatus is the single rule combining live lifecycle and stored
@@ -28,6 +30,8 @@ const (
 // an unfinished turn is interrupted; stored messages identify terminal states.
 func SettleSessionStatus(turn TurnState, live bool, inferred SessionStatus) SessionStatus {
 	switch turn {
+	case TurnLimited:
+		return StatusLimited
 	case TurnRunning:
 		return StatusBusy
 	case TurnSettled:
@@ -95,6 +99,7 @@ type Session struct {
 	TotalEffectiveCost float64 `json:"totalEffectiveCost"`
 	// Always produced by SettleSessionStatus, never raw inference alone.
 	Status            SessionStatus `json:"status"`
+	ResetsAt          int64         `json:"resetsAt,omitempty"`
 	LiveConnection    bool          `json:"liveConnection"`
 	PendingPermission bool          `json:"pendingPermission"`
 	PendingQuestion   bool          `json:"pendingQuestion"`

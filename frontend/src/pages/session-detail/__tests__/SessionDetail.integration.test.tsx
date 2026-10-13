@@ -18,6 +18,7 @@ import { recordFailedSend, clearFailedSends } from '../../../lib/failedSends';
 import { useApiStore } from '../../../lib/apiStore';
 import { formatDate } from '../../../lib/format';
 import { useUiStore } from '../../../lib/uiStore';
+import { __handleSessionChangedForTests } from '../../../lib/useGlobalEvents';
 
 beforeEach(() => {
   useUiStore.getState().setSidebarView('recent');
@@ -864,7 +865,7 @@ describe('SessionDetail — session tree usage', () => {
     expect(title.parentElement).toHaveTextContent('Input90');
     expect(title.parentElement).toHaveTextContent('Output120');
     expect(title.parentElement).toHaveTextContent('Reported cost$0.3000');
-    expect(title.parentElement).toHaveTextContent('Est. cost$0.7500');
+    expect(title.parentElement).toHaveTextContent('API-equivalent cost$0.7500');
     expect(title.parentElement).toHaveTextContent('Cost$0.6500');
     expect(handle.api.sessions).not.toHaveBeenCalled();
   });
@@ -884,13 +885,14 @@ describe('SessionDetail — session tree usage', () => {
       apiOverrides: { calcCost },
     });
 
-    const cost = await screen.findByTitle('Click for cost and token usage details');
+    // Nothing reported (subscription): the figure is labelled API-equivalent.
+    const cost = await screen.findByTitle(/^API-equivalent cost: .*Click for details$/);
     expect(cost.tagName).toBe('BUTTON');
     expect(cost).toHaveTextContent('$0.43');
 
     fireEvent.click(cost);
-    const estimate = await screen.findByText('Est. cost');
-    expect(estimate.parentElement).toHaveTextContent('Est. cost$0.4260');
+    const estimate = await screen.findByText('API-equivalent cost');
+    expect(estimate.parentElement).toHaveTextContent('API-equivalent cost$0.4260');
     expect(handle.api.calcCost).not.toHaveBeenCalled();
   });
 });
@@ -1503,6 +1505,28 @@ describe('SessionDetail — status badge follows the backend', () => {
 
     expect(handle.result.container.querySelector('[data-state="busy"]')).toBeInTheDocument();
     expect(handle.result.container.querySelector('[data-state="error"]')).not.toBeInTheDocument();
+  });
+
+  it('renders limited with its reset time in the session header', async () => {
+    const slot = document.createElement('div');
+    slot.id = 'header-actions-slot';
+    document.body.append(slot);
+    try {
+      const resetsAt = Date.UTC(2030, 0, 1, 12);
+      const session = makeSession({ status: 'busy' });
+      const handle = renderSessionPage({ detail: makeSessionDetail(session) });
+      await flushPromises();
+      await waitFor(() => expect(handle.result.getByLabelText('Session actions')).toBeInTheDocument());
+      act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: session.id, platform: 'other', patch: { status: 'limited', resetsAt } })));
+      expect(slot).not.toHaveTextContent('Limited');
+      act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: session.id, platform: session.platform, patch: { status: 'limited', resetsAt } })));
+      await waitFor(() => expect(slot).toHaveTextContent(`Limited until ${new Date(resetsAt).toLocaleString()}`));
+      act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: session.id, platform: session.platform, patch: { status: 'busy', resetsAt: 0 } })));
+      await waitFor(() => expect(slot).not.toHaveTextContent('Limited'));
+      handle.result.unmount();
+    } finally {
+      slot.remove();
+    }
   });
 
   // The production failure sequence. OpenCode's `session.status`

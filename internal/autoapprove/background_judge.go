@@ -47,7 +47,7 @@ func (s *Service) resolveJudgeInputs(ctx context.Context, directory string, dire
 	return inputs, nil
 }
 
-func (s *Service) resolveJudgeSections(ctx context.Context, directory, sessionID string) []PromptSection {
+func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Platform, directory, sessionID string) []PromptSection {
 	var sections []PromptSection
 	if s.deps.Store != nil {
 		if stored, err := s.deps.Store.GetPromptSections(ctx); err == nil {
@@ -56,14 +56,15 @@ func (s *Service) resolveJudgeSections(ctx context.Context, directory, sessionID
 			}
 		}
 	}
-	if s.judge == nil || s.judge.openCodePort == nil {
-		return sections
+	var messages []string
+	if s.judge != nil && s.judge.openCodePort != nil {
+		if port := s.judge.openCodePort(directory); port != "" {
+			messages = s.judge.recentUserMessages(ctx, port, sessionID)
+		}
 	}
-	port := s.judge.openCodePort(directory)
-	if port == "" {
-		return sections
+	if len(messages) == 0 {
+		messages = recentUserMessagesFromSession(ctx, adapter, sessionID)
 	}
-	messages := s.judge.recentUserMessages(ctx, port, sessionID)
 	if len(messages) == 0 {
 		return sections
 	}

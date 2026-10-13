@@ -7,6 +7,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -149,6 +150,9 @@ func (s *Server) CreateWorktreeSession(ctx context.Context, req *pb.JsonReq) (*p
 	if err := unmarshalJSON(req.Payload, &wr); err != nil {
 		return nil, err
 	}
+	if wr.Platform == "" {
+		wr.Platform = string(platforms.OpenCodeID)
+	}
 	return jsonResp(s.host.CreateWorktreeSession(ctx, wr))
 }
 func (s *Server) RemoveWorktree(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
@@ -172,7 +176,18 @@ func (s *Server) EnsureProjectOpencode(ctx context.Context, req *pb.JsonReq) (*p
 		return nil, err
 	}
 	log.WithField("projectDir", er.ProjectDir).Info("remote: ensure-project-opencode request from hub")
-	return jsonResp(s.host.EnsureProjectOpencode(ctx, er))
+	return jsonResp(s.host.EnsureRuntime(ctx, string(platforms.OpenCodeID), er.ProjectDir))
+}
+
+func (s *Server) EnsureRuntime(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var in struct {
+		Platform   string `json:"platform"`
+		ProjectDir string `json:"projectDir"`
+	}
+	if err := unmarshalJSON(req.Payload, &in); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.EnsureRuntime(ctx, in.Platform, in.ProjectDir))
 }
 func (s *Server) StopProjectOpencode(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
 	var er hostsvc.EnsureProjectOpencodeRequest

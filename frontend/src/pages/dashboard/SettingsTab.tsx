@@ -3,7 +3,10 @@ import { usePageTitle } from '../../lib/headerContext';
 import { PromptTemplateSettings } from '../../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../../components/RemoteSettings';
 import { MaintenanceSettings } from '../../components/MaintenanceSettings';
+import { ProviderAccountSettings } from './ProviderAccountSettings';
+import { HookPluginSettings } from '../../components/HookPluginSettings';
 import { useAuthStore } from '../../lib/authStore';
+import { useLocalOpenCode } from '../../lib/useCapabilities';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow, SettingToggle, SettingDescription } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
@@ -32,6 +35,8 @@ export function SettingsTab() {
   const showAppSection = canInstall || installed;
   // Behaviour holds only the iOS-only Chrome toggle, so it is hidden elsewhere.
   const showBehaviour = isIOS();
+  // Maintenance works on OpenCode's database only (FR-1).
+  const showMaintenance = useLocalOpenCode();
   const [openInChrome, setOpenInChromeState] = useState(getOpenInChrome);
   const chromeSave = useSettingSave();
 
@@ -44,7 +49,8 @@ export function SettingsTab() {
     ...featureSettings.map(({ id, label }) => ({ id, label, show: true })),
     { id: 'templates', label: 'PR & Issue templates', show: true },
     { id: 'link-previews', label: 'Link previews', show: true },
-    { id: 'maintenance', label: 'Maintenance', show: true },
+    { id: 'maintenance', label: 'Maintenance', show: showMaintenance },
+    { id: 'provider-accounts', label: 'Provider accounts', show: true },
     { id: 'behaviour', label: 'Behaviour', show: showBehaviour },
     { id: 'app', label: 'App', show: showAppSection },
     { id: 'account', label: 'Account', show: authRequired },
@@ -113,6 +119,11 @@ export function SettingsTab() {
             <Section />
           </div>
         ))}
+        {active === 'provider-accounts' && <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Provider accounts</h2>
+          <ProviderAccountSettings />
+          <HookPluginSettings />
+        </div>}
         {active === 'maintenance' && <div className={styles.section}>
           <h2 className={styles.sectionTitle}>Maintenance</h2>
           <MaintenanceSettings />

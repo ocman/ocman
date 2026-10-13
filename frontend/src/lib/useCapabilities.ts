@@ -18,6 +18,7 @@ const EMPTY_CAPS: PlatformCapabilities = {
   abort: false,
   compact: false,
   fork: false,
+  forkAtMessage: false,
   move: false,
   events: false,
   agentCatalog: false,
@@ -29,6 +30,8 @@ const EMPTY_CAPS: PlatformCapabilities = {
   liveConnectionHint: '',
   autoApprove: false,
   permissionRules: false,
+  revert: false,
+  runtimeRestart: false,
 };
 
 let cached: CapabilitiesResponse | null = null;
@@ -214,6 +217,12 @@ export function useOpencodeLaunch(remoteId?: string): boolean {
   return host?.capabilities.opencodeLaunch === true;
 }
 
+/** Whether this machine runs OpenCode; gates OpenCode-only settings (FR-1). */
+export function useLocalOpenCode(): boolean {
+  const hosts = useCapabilities()?.hosts ?? [];
+  return (hosts.find((h) => h.remoteId === 'local') ?? hosts[0])?.capabilities.opencode === true;
+}
+
 /**
  * Returns true when more than one host (machine) is present — i.e. at
  * least one remote is connected in addition to the local machine. Host
@@ -224,4 +233,10 @@ export function useOpencodeLaunch(remoteId?: string): boolean {
 export function useMultiHost(): boolean {
   const all = useCapabilities();
   return (all?.hosts?.length ?? 0) > 1;
+}
+
+/** Platforms registered for one machine; remote entries carry their remoteId. */
+export function useMachinePlatforms(remoteId = 'local'): PlatformCapabilityEntry[] {
+  const all = useCapabilities();
+  return (all?.platforms ?? []).filter((p) => (p.remoteId ?? 'local') === remoteId);
 }

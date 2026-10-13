@@ -7,6 +7,7 @@ import { agentColor } from '../../lib/agentColor';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
 import { formatCurrency, formatDate, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { ModelLabel } from '../ModelLogo';
+import { API_EQUIVALENT_TITLE } from '../ApiEquivalentCost';
 import { Skeleton } from '../Skeleton';
 import { TargetSelector } from './ComposerSelectorRow';
 import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
@@ -62,6 +63,7 @@ export function ComposerFooter({
 
   useClickOutside(tokenPopoverRef, showTokenPopover, () => setShowTokenPopover(false));
   const effectiveCost = sessionTreeStats?.totalEffectiveCost ?? tokenStats?.totalCost ?? 0;
+  const reportedCost = sessionTreeStats?.totalCost ?? tokenStats?.totalCost ?? 0;
 
   return (
     <div className="oc-composer-footer">
@@ -95,7 +97,7 @@ export function ComposerFooter({
       <span className="oc-composer-footer-right">
         {tokenStats && (
           <span className="oc-context-usage-wrap" ref={tokenPopoverRef}>
-            <button type="button" className="oc-session-cost" title="Click for cost and token usage details" onClick={() => setShowTokenPopover((value) => !value)}>
+            <button type="button" className="oc-session-cost" title={reportedCost > 0 ? 'Click for cost and token usage details' : `${API_EQUIVALENT_TITLE}. Click for details`} onClick={() => setShowTokenPopover((value) => !value)}>
               {formatCurrency(effectiveCost, 2)}
             </button>
             {contextTokens != null && contextTokens > 0 && (
@@ -129,7 +131,7 @@ export function ComposerFooter({
                   {tokenStats.totalCost > 0 && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reported cost</span><span className="oc-token-popover-value">${tokenStats.totalCost.toFixed(4)}</span></div>}
                   <div className="oc-token-popover-divider" />
                   <div className="oc-token-popover-row oc-token-popover-cost">
-                    <span className="oc-token-popover-label">Est. cost</span>
+                    <span className="oc-token-popover-label" title={API_EQUIVALENT_TITLE}>API-equivalent cost</span>
                     <span className="oc-token-popover-value">{estimatedCost != null ? `$${estimatedCost.toFixed(4)}` : 'n/a'}</span>
                   </div>
                   {timeCreated != null && (
@@ -148,7 +150,7 @@ export function ComposerFooter({
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Input</span><span className="oc-token-popover-value">{sessionTreeStats.input.toLocaleString()}</span></div>
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Output</span><span className="oc-token-popover-value">{sessionTreeStats.output.toLocaleString()}</span></div>
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reported cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalCost.toFixed(4)}</span></div>
-                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Est. cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalEstCost.toFixed(4)}</span></div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label" title={API_EQUIVALENT_TITLE}>API-equivalent cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalEstCost.toFixed(4)}</span></div>
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalEffectiveCost.toFixed(4)}</span></div>
                     </>
                   )}

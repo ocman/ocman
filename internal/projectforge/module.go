@@ -47,8 +47,9 @@ type Deps struct {
 	ResolveForge func(forge.Remote) (forge.Forge, bool)
 	// KnowsForgejo reports whether the hub has a Forgejo client for host.
 	KnowsForgejo func(host string) bool
-	// PlatformFor is the compound OpenCode platform id of a host.
-	PlatformFor func(hostsvc.Host) string
+	// CreatePlatform resolves a requested (or the default) platform for an
+	// owner into its compound ID and base platform.
+	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested string) (id, base string, err error)
 	// Registered reports whether a platform adapter is registered.
 	Registered func(platformID string) bool
 	Sessions   Sessions

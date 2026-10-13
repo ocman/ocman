@@ -31,9 +31,26 @@ const provisionalPrefix = "session-"
 // never sits on the first message's critical path; nameWorktree renames the
 // branch and title afterwards while the worktree path stays put.
 func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
+	if req.Platform == "" {
+		if h.deps.DefaultPlatform != nil {
+			var err error
+			req.Platform, err = h.deps.DefaultPlatform(ctx)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			req.Platform = string(platforms.OpenCodeID)
+		}
+	}
 	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
+	}
+	if h.deps.PlatformEnabled != nil && !h.deps.PlatformEnabled(req.Platform) {
+		return nil, fmt.Errorf("platform %q is disabled", req.Platform)
+	}
+	if req.Platform != string(platforms.OpenCodeID) && h.deps.Runtimes[req.Platform] == nil {
+		return nil, fmt.Errorf("runtime for platform %q is unavailable", req.Platform)
 	}
 	suffix := ""
 	if req.AutoName {
@@ -62,7 +79,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	ensuredCh := make(chan ensureResult, 1)
 	hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
 	go func() {
-		res, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repoRoot})
+		res, err := h.EnsureRuntime(ctx, req.Platform, repoRoot)
 		hostsvc.FinishStep(ctx, hostsvc.StepOpencode, err)
 		ensuredCh <- ensureResult{res, err}
 	}()
@@ -87,11 +104,11 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		rollback()
 		return nil, fmt.Errorf("ensuring project opencode: %w", ensured.err)
 	}
-	if !res.Reused {
+	if !res.Reused && req.Platform == string(platforms.OpenCodeID) {
 		seedOpencodeDeps(ctx, repoRoot, res.Path)
 	}
 	port := ensured.res.Port()
-	if h.deps.CreateSession == nil {
+	if h.deps.CreateSession == nil && h.deps.CreatePlatformSession == nil {
 		rollback()
 		return nil, fmt.Errorf("CreateWorktreeSession: CreateSession dep not wired")
 	}
@@ -103,7 +120,9 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	}
 	var created *platforms.CreateSessionResponse
 	hostsvc.ReportProgress(ctx, hostsvc.StepSession, hostsvc.StepActive)
-	if req.PermissionRules != nil {
+	if h.deps.CreatePlatformSession != nil {
+		created, err = h.deps.CreatePlatformSession(ctx, req.Platform, request, req.PermissionRules)
+	} else if req.PermissionRules != nil {
 		if h.deps.CreateConfiguredSession == nil {
 			rollback()
 			return nil, fmt.Errorf("CreateWorktreeSession: CreateConfiguredSession dep not wired")
@@ -117,13 +136,13 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		rollback()
 		return nil, fmt.Errorf("creating worktree session: %w", err)
 	}
-	if req.AutoName {
+	if name := h.worktreeNamer(req.Platform, port); req.AutoName && name != nil {
 		h.background.Add(1)
 		go func() {
 			defer h.background.Done()
 			bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
-			h.nameWorktree(bg, port, repoRoot, req.Branch, suffix, req.Prompt)
+			h.nameWorktree(bg, name, repoRoot, req.Branch, suffix, req.Prompt)
 		}()
 	}
 	return &hostsvc.WorktreeSessionResult{
@@ -188,10 +207,21 @@ func seedOpencodeDeps(ctx context.Context, repoRoot, worktree string) {
 	}
 }
 
+// worktreeNamer picks the platform's naming call: OpenCode's title agent on
+// the project instance, else the adapter's own (Claude: `claude -p` on Haiku).
+func (h *Host) worktreeNamer(platform, port string) func(context.Context, string, string) (string, error) {
+	if platform == string(platforms.OpenCodeID) {
+		return func(ctx context.Context, dir, prompt string) (string, error) {
+			return opencode.WorktreeName(ctx, port, dir, prompt)
+		}
+	}
+	return h.deps.WorktreeNamers[platform]
+}
+
 // nameWorktree asks the small model for a descriptive name and renames the
 // provisional branch. Best-effort: on any failure the provisional name stays.
-func (h *Host) nameWorktree(ctx context.Context, port, repoRoot, branch, suffix, prompt string) {
-	name, err := opencode.WorktreeName(ctx, port, repoRoot, prompt)
+func (h *Host) nameWorktree(ctx context.Context, namer func(context.Context, string, string) (string, error), repoRoot, branch, suffix, prompt string) {
+	name, err := namer(ctx, repoRoot, prompt)
 	if err != nil {
 		log.WithError(err).Warn("worktree: keeping provisional name")
 		return

@@ -6,6 +6,8 @@ import { SettingsTab } from './SettingsTab';
 const logout = vi.fn();
 const promptInstall = vi.fn();
 const ios = vi.hoisted(() => ({ value: false }));
+const openCode = vi.hoisted(() => ({ value: true }));
+vi.mock('../../lib/useCapabilities', () => ({ useLocalOpenCode: () => openCode.value }));
 vi.mock('../../lib/externalLinks', async (orig) => ({
   ...(await orig<typeof import('../../lib/externalLinks')>()),
   isIOS: () => ios.value,
@@ -65,7 +67,7 @@ describe('SettingsTab actions', () => {
     render(<SettingsTab />);
     const groups = screen.getAllByRole('button').map((b) => b.textContent).filter((label) => label !== 'Install' && label !== 'Sign out');
     expect(groups).toEqual(['Notifications', 'Sessions', 'Remotes', 'Plugins', 'Auto-approve', 'Sharing', 'Webhooks',
-      'PR & Issue templates', 'Link previews', 'Maintenance', 'App', 'Account']);
+      'PR & Issue templates', 'Link previews', 'Maintenance', 'Provider accounts', 'App', 'Account']);
   });
   it('keeps always-mounted feature sections mounted while hidden', () => {
     render(<SettingsTab />);
@@ -75,6 +77,15 @@ describe('SettingsTab actions', () => {
     expect(screen.getByText('Sharing controls')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
     expect(screen.getByText('Sharing controls')).not.toBeVisible();
+  });
+  it('hides the OpenCode maintenance group without OpenCode', () => {
+    openCode.value = false;
+    try {
+      render(<SettingsTab />);
+      expect(screen.queryByRole('button', { name: 'Maintenance' })).not.toBeInTheDocument();
+    } finally {
+      openCode.value = true;
+    }
   });
   it('mounts maintenance only when its group is opened', () => {
     render(<SettingsTab />);

@@ -233,7 +233,8 @@ and repositories without a usable base use the current checkout. Set
 fresh worktree. Git probe failures return an error rather than choosing a target.
 `directory` must be absolute. When omitted, the target is the project root of the
 calling session, identified with `platform` and `session_id`. The calling session also
-determines which machine runs the new one. New sessions use the platform's
+determines which machine runs the new one and, without `platform`, its platform.
+With neither, the default platform applies. New sessions use the platform's
 default permissions and do not inherit the caller's rules.
 
 OpenCode permissions apply to whole tools, so requiring approval for `create`

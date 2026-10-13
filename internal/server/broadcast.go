@@ -85,9 +85,13 @@ func newBroadcastHub() *broadcastHub {
 func coalesceKey(event string, data []byte) string {
 	var p struct {
 		SessionID string `json:"sessionID"`
+		Platform  string `json:"platform"`
 		RunID     string `json:"runId"`
 	}
 	if err := json.Unmarshal(data, &p); err == nil && p.SessionID != "" {
+		if p.Platform != "" {
+			return event + "\x00" + p.Platform + "\x00" + p.SessionID
+		}
 		return event + "\x00" + p.SessionID
 	}
 	if p.RunID != "" {

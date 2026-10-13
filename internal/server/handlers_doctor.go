@@ -17,7 +17,12 @@ func (s *Server) WithToolPathError(err error) *Server {
 // explain what is missing and how to fix it. Host-scoped checks come
 // from the local Host; process-scoped ones are added around them.
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
-	checks := []hostsvc.DoctorCheck{s.openCodeDBCheck()}
+	var checks []hostsvc.DoctorCheck
+	// OpenCode's database is a prerequisite only when OpenCode was asked for:
+	// a Claude-only ocman must not be blocked on it (FR-1).
+	if db := s.openCodeDBCheck(); s.openCodeEnabled() || db.Hint != "" {
+		checks = append(checks, db)
+	}
 	checks = append(checks, s.router().Local().Doctor(r.Context())...)
 	checks = append(checks, s.mcpListenerCheck(), s.loginShellPathCheck())
 	writeJSON(w, map[string]any{"checks": checks, "logPath": s.logPath})

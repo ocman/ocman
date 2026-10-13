@@ -16,14 +16,28 @@ func (s *Server) gitModule() *gitmod.Module {
 
 func (s *Server) newGitModule(g module.Guards) *gitmod.Module {
 	return gitmod.NewModule(gitmod.Deps{
-		Owner:       s.resolveOwner,
-		ForDir:      func(dir string) hostsvc.Host { return s.router().ForDir(dir) },
-		PlatformFor: opencodePlatformForHost,
-		InheritPermissions: func(r *http.Request, parentSessionID string) func(string) (int, string) {
-			in := s.buildInheritedPermissions(r, platformHint(r), parentSessionID)
+		Owner:           s.resolveOwner,
+		ForDir:          func(dir string) hostsvc.Host { return s.router().ForDir(dir) },
+		ResolvePlatform: s.worktreePlatform,
+		InheritPermissions: func(r *http.Request, platform, parentSessionID string) func(string) (int, string) {
+			in := s.buildInheritedPermissions(r, platform, parentSessionID)
 			return func(child string) (int, string) { return s.applyInheritedPermissions(r, in, child) }
 		},
 		SendNow: s.sendNow,
 		Guards:  g,
 	})
+}
+
+// worktreePlatform resolves a worktree session's platform. /wt from a
+// session splits onto the parent's platform, not the default.
+func (s *Server) worktreePlatform(r *http.Request, host hostsvc.Host, requested, parentSessionID string) (string, string, error) {
+	if requested == "" {
+		requested = platformHint(r)
+	}
+	if requested == "" && parentSessionID != "" && s.registry != nil {
+		if parent, ok := s.registry.PlatformForSession(r.Context(), parentSessionID); ok {
+			requested = string(parent.ID())
+		}
+	}
+	return s.createPlatform(r.Context(), host, requested)
 }

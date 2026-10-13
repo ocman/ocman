@@ -35,6 +35,7 @@ type PermissionRule struct {
 }
 
 type NativeEpic struct {
+	Platform        string
 	ID              string
 	Status          string
 	Goal            string
@@ -263,6 +264,7 @@ const (
 )
 
 type FactoryAttemptPolicy struct {
+	Platform           string           `json:"platform,omitempty"`
 	Model              string           `json:"model,omitempty"`
 	Branch             string           `json:"branch,omitempty"`
 	BaseRef            string           `json:"baseRef,omitempty"`

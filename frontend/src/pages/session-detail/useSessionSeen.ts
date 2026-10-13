@@ -109,7 +109,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   // Upstream renames (OpenCode auto-title, TUI /rename, another tab). For a
   // slow client the hub merges patches, and collapses anything involving an
   // identity-only change into one identity-only event, so re-read the title
-  // on those. Status-only patches never hide a title and are ignored.
+  // on those. Owner-scoped lifecycle patches also update the open header.
   const peekSession = useApiStore((state) => state.peekSession);
   useEffect(() => {
     if (!sessionSeenId) return;
@@ -135,6 +135,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     const unsubscribe = onSessionChanged((changedId, _session, patch, platform) => {
       if (changedId !== sessionSeenId) return;
       if (platform && platform !== sessionSeenPlatform) return;
+      if (platform && patch?.status) patchSession({ status: patch.status, resetsAt: patch.resetsAt ?? 0 });
       if (patch?.archived !== undefined) {
         revision++;
         if (patch.archived) closeArchivedSession();

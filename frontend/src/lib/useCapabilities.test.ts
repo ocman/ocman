@@ -363,4 +363,23 @@ describe('useMultiPlatform / useWorktreeSessions', () => {
     expect(tickHook(() => mod.useOpencodeLaunch('local'))).toBe(true);
     expect(tickHook(() => mod.useOpencodeLaunch('B'))).toBe(false);
   });
+
+  // FR-1: OpenCode-only settings follow the local host's opencode flag.
+  it('useLocalOpenCode reads the local host, false when absent', async () => {
+    const caps = (opencode?: boolean) => ({ gitDiff: true, worktrees: true, tmux: true, projects: true, whisper: true, opencodeLaunch: true, opencode });
+    const { mod, tickHook, flush } = await loadFreshModule(makeResponse({
+      hosts: [
+        { remoteId: 'B', remoteName: 'Box', capabilities: caps(true) },
+        { remoteId: 'local', remoteName: 'This machine', capabilities: caps(false) },
+      ],
+    }));
+    tickHook(() => mod.useCapabilities());
+    await flush();
+    expect(tickHook(() => mod.useLocalOpenCode())).toBe(false);
+    vi.resetModules();
+    const on = await loadFreshModule(makeResponse({ hosts: [{ remoteId: 'local', remoteName: 'This machine', capabilities: caps(true) }] }));
+    on.tickHook(() => on.mod.useCapabilities());
+    await on.flush();
+    expect(on.tickHook(() => on.mod.useLocalOpenCode())).toBe(true);
+  });
 });

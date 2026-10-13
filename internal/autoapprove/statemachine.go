@@ -362,7 +362,7 @@ func (s *Service) replayAutoApproveState(sessionID, permissionID, permission str
 		// message stream by injectApprovalNotices when the session
 		// detail loads.
 		return
-	case st.verdict == verdictUnsafe:
+	case st.verdict == verdictUnsafe || st.verdict == verdictNeedsUser:
 		// Unsafe verdicts: the prompt stays pending for the human, so
 		// the frontend needs the flagged reasoning to render the
 		// "AI flagged this" annotation.

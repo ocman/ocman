@@ -7,6 +7,7 @@ import type { McpConfigStatus, McpConfigInstallResult } from '../lib/api.types';
 const mocks = vi.hoisted(() => ({
   getMcpConfig: vi.fn(),
   installMcpConfig: vi.fn(),
+  openCode: true,
 }));
 
 vi.mock('../lib/api', () => ({
@@ -15,6 +16,7 @@ vi.mock('../lib/api', () => ({
     installMcpConfig: mocks.installMcpConfig,
   },
 }));
+vi.mock('../lib/useCapabilities', () => ({ useLocalOpenCode: () => mocks.openCode }));
 vi.mock('../lib/remoteLog', () => ({ remoteLog: { error: vi.fn(), info: vi.fn() } }));
 
 const WANT = 'http://127.0.0.1:8227/mcp';
@@ -44,6 +46,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   store.clear();
+});
+
+describe('McpConfigPrompt without OpenCode', () => {
+  it('neither checks nor offers OpenCode\'s config', () => {
+    mocks.openCode = false;
+    try {
+      const { container } = render(<McpConfigPrompt />);
+      expect(container).toBeEmptyDOMElement();
+      expect(mocks.getMcpConfig).not.toHaveBeenCalled();
+    } finally {
+      mocks.openCode = true;
+    }
+  });
 });
 
 describe('McpConfigPrompt', () => {

@@ -12,7 +12,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
   return {
     session: { id: 's1', platform: 'opencode', directory: '/repo', timeUpdated: 1 },
     portAvailable: true,
-    caps: { fork: true, move: false },
+    caps: { fork: true, move: false, revert: true, runtimeRestart: true },
     pending: { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
     recentSessionsRef: { current: [] },
     messagesRef: { current: [] },
@@ -134,5 +134,15 @@ describe('runSlashCommand', () => {
     const c = ctx({ portAvailable: false });
     await runSlashCommand(c, 'undo', '');
     expect(c.setShowDisconnectedToast).toHaveBeenCalledWith(true);
+  });
+
+  it('refuses commands the platform does not support, visibly', async () => {
+    const c = ctx({ caps: { fork: true, move: false, revert: false, runtimeRestart: false } });
+    for (const command of ['undo', 'redo', 'restart-opencode']) {
+      expect(await runSlashCommand(c, command, '')).toBe(true);
+      expect(c.pending.fail).toHaveBeenLastCalledWith(`/${command} is not available for this session`);
+    }
+    expect(c.setShowDisconnectedToast).not.toHaveBeenCalled();
+    expect(c.setRestartToastMessage).not.toHaveBeenCalled();
   });
 });

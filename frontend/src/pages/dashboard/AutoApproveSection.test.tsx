@@ -16,6 +16,8 @@ const store = vi.hoisted(() => ({
   setAutoApproveDelayMs: vi.fn(),
   setPromptSectionsApi: vi.fn().mockResolvedValue(undefined),
 }));
+const openCode = vi.hoisted(() => ({ value: true }));
+vi.mock('../../lib/useCapabilities', () => ({ useLocalOpenCode: () => openCode.value }));
 
 vi.mock('../../lib/uiStore', () => ({
   useUiStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
@@ -75,5 +77,18 @@ describe('AutoApproveSection reviewer model', () => {
     store.getJudgeModelOptions.mockResolvedValue({ models: ['anthropic/claude-haiku-4-5'], default: 'anthropic/claude-haiku-4-5' });
     render(<AutoApproveSection />);
     expect(await screen.findByRole('combobox', { name: 'Auto-approve reviewer model' })).toHaveTextContent('Default (anthropic/claude-haiku-4-5)');
+  });
+
+  it('hides the OpenCode reviewer model without OpenCode', async () => {
+    openCode.value = false;
+    try {
+      store.getJudgeModel.mockResolvedValue('');
+      store.getJudgeModelOptions.mockResolvedValue({ models: [], default: '' });
+      render(<AutoApproveSection />);
+      await vi.waitFor(() => expect(store.getJudgeModelOptions).toHaveBeenCalled());
+      expect(screen.queryByRole('combobox', { name: 'Auto-approve reviewer model' })).not.toBeInTheDocument();
+    } finally {
+      openCode.value = true;
+    }
   });
 });

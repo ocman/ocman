@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
@@ -68,14 +69,16 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if err := s.startModules(ctx, &workers); err != nil {
 		return err
 	}
+	s.watchProviderPrompts(ctx)
 
 	workers.Go(func() { s.runAutoArchiveLoop(ctx) })
 	workers.Go(func() { s.runProjectsIndexLoop(ctx) })
 	workers.Go(func() { s.runQueueSweep(ctx) })
-	workers.Go(func() { ocv2.WatchInstalledVersion(ctx) })
-	// OpenCode v2 runs one server per machine; keep it online.
-	if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
-		workers.Go(func() { sup.RunMachineSupervisor(ctx) })
+	if _, enabled := s.registry.Get(platforms.OpenCodeID); enabled {
+		workers.Go(func() { ocv2.WatchInstalledVersion(ctx) })
+		if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
+			workers.Go(func() { sup.RunMachineSupervisor(ctx) })
+		}
 	}
 
 	mux, err := s.routes()

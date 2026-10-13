@@ -96,7 +96,7 @@ func (m *Manager) PluginOperation(ctx context.Context, owner string, req PluginR
 	m.mu.RLock()
 	var conn *RemoteConn
 	for _, mr := range m.remotes {
-		if mr.conn != nil && mr.platform != nil && mr.conn.RemoteID() == owner {
+		if mr.conn != nil && mr.host != nil && mr.conn.RemoteID() == owner {
 			conn = mr.conn
 			break
 		}

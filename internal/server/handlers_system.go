@@ -37,8 +37,8 @@ func (s *Server) WithVersion(v string) *Server {
 func (s *Server) LogPath() string { return s.logPath }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
-	// Local hub projects flow through the host seam (AD-16). Without an
-	// OpenCode DB the local list is empty but remote projects still show.
+	// Local hub projects flow through the host seam (AD-16): OpenCode's
+	// database plus every other local platform's session directories.
 	projects, err := s.router().Local().Projects(r.Context())
 	if err != nil {
 		serverError(w, "fetching projects", err)

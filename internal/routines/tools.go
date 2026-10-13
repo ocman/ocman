@@ -34,7 +34,7 @@ type routineAction struct {
 }
 
 var routineInputRequired = []string{"name", "prompt", "directory"}
-var routineInputOptional = []string{"remote_id", "agent", "model", "session_mode", "session_id", "worktree", "cleanup_worktree", "schedule_kind", "timeout_ms", "at", "cron", "timezone", "enabled", "delete_after_success", "archive_session_after_success", "notify_on_success", "permission_rules"}
+var routineInputOptional = []string{"platform", "remote_id", "agent", "model", "session_mode", "session_id", "worktree", "cleanup_worktree", "schedule_kind", "timeout_ms", "at", "cron", "timezone", "enabled", "delete_after_success", "archive_session_after_success", "notify_on_success", "permission_rules"}
 
 var routineActions = []routineAction{
 	{name: "help", description: "Describes every available routine action.", example: `{"action":"help"}`, output: "Routine action documentation"},
@@ -54,6 +54,7 @@ func routineServerTools(tools *routineTools) []server.ServerTool {
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("routines",
 		mcplib.WithDescription("Create, inspect, run, and manage routines. Use action help for schemas and examples."),
+		mcplib.WithString("platform"),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("routine_id"), mcplib.WithString("name"), mcplib.WithString("prompt"),
 		mcplib.WithString("directory"), mcplib.WithString("remote_id"), mcplib.WithString("agent"), mcplib.WithString("model"),
 		mcplib.WithString("session_mode"), mcplib.WithString("session_id"), mcplib.WithString("schedule_kind"), mcplib.WithNumber("timeout_ms"),
@@ -186,7 +187,8 @@ func routineInput(req mcplib.CallToolRequest, arguments map[string]any) (Input, 
 		}
 	}
 	return Input{
-		Name: req.GetString("name", ""), Prompt: req.GetString("prompt", ""), Directory: req.GetString("directory", ""),
+		Platform: req.GetString("platform", ""),
+		Name:     req.GetString("name", ""), Prompt: req.GetString("prompt", ""), Directory: req.GetString("directory", ""),
 		RemoteID: req.GetString("remote_id", ""), Agent: req.GetString("agent", ""), Model: req.GetString("model", ""),
 		SessionMode: req.GetString("session_mode", SessionNew), SessionID: req.GetString("session_id", ""),
 		Worktree: boolArgument(arguments, "worktree"), CleanupWorktree: boolArgument(arguments, "cleanup_worktree"),
@@ -208,7 +210,7 @@ func patchRoutineInput(existing state.Routine, req mcplib.CallToolRequest, argum
 	has := func(name string) bool { _, ok := arguments[name]; return ok }
 	for name, field := range map[string]*string{
 		"name": &input.Name, "prompt": &input.Prompt, "directory": &input.Directory, "remote_id": &input.RemoteID,
-		"agent": &input.Agent, "model": &input.Model, "session_mode": &input.SessionMode, "session_id": &input.SessionID,
+		"platform": &input.Platform, "agent": &input.Agent, "model": &input.Model, "session_mode": &input.SessionMode, "session_id": &input.SessionID,
 		"schedule_kind": &input.Schedule.Kind, "cron": &input.Schedule.Cron, "timezone": &input.Schedule.Timezone,
 	} {
 		if has(name) {

@@ -386,7 +386,7 @@ export function GroupedSessionTable({
                               {depth > 0 && (
                                 <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
                               )}
-                              <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
+                              <StatusBadge status={s.status} resetsAt={s.resetsAt} compact seen={seenLatest} pending={pending} />
                               <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
                               <UnreadBadge session={s} />
                             </div>
@@ -488,7 +488,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
                     {depth > 0 && (
                       <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
                     )}
-                    <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
+                    <StatusBadge status={s.status} resetsAt={s.resetsAt} compact seen={seenLatest} pending={pending} />
                     <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
                     <UnreadBadge session={s} />
                   </div>

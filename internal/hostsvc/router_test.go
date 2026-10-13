@@ -9,6 +9,10 @@ import (
 	"github.com/NoUseFreak/ocman/internal/git"
 )
 
+func (h stubHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*EnsureRuntimeResult, error) {
+	return h.EnsureProjectOpencode(ctx, EnsureProjectOpencodeRequest{ProjectDir: dir})
+}
+
 // stubHost is a minimal Host that records its identity for routing tests.
 type stubHost struct{ id string }
 

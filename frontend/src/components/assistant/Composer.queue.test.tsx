@@ -126,9 +126,10 @@ describe('Composer input', () => {
 
   it('prefills a routine prompt without sending it', async () => {
     const onSend = vi.fn();
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([
-      { id: 'routine-1', name: 'Review', prompt: 'Review this diff' },
-    ]), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    // A fresh response per call: the composer also loads capabilities.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(new Response(JSON.stringify(
+      String(url).includes('routines') ? [{ id: 'routine-1', name: 'Review', prompt: 'Review this diff' }] : { platforms: [], hosts: [] },
+    ), { status: 200, headers: { 'Content-Type': 'application/json' } }))));
     render(<Composer isRunning={false} onSend={onSend} />);
     const input = screen.getByRole('textbox');
     fireEvent.input(input, { target: { value: '/routines' } });

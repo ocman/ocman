@@ -88,4 +88,6 @@ export interface ComposerProps {
   composerRef?: Ref<ComposerHandle>;
   remoteId?: string;
   onMachineChange?: (target: TargetCandidate) => Promise<void>;
+  /** New conversations only: re-point the route to another platform. */
+  onPlatformChange?: (platform: string) => void;
 }

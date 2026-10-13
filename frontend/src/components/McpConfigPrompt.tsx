@@ -3,6 +3,7 @@ import * as Toast from '@radix-ui/react-toast';
 import { api } from '../lib/api';
 import type { McpConfigStatus } from '../lib/api.types';
 import { remoteLog } from '../lib/remoteLog';
+import { useLocalOpenCode } from '../lib/useCapabilities';
 import { SubmitButton } from './Control';
 import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
 
@@ -45,16 +46,19 @@ export function McpConfigPrompt() {
   const [installing, setInstalling] = useState(false);
   const [installed, setInstalled] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The prompt writes OpenCode's config: offer it only when OpenCode runs here.
+  const openCode = useLocalOpenCode();
 
   useEffect(() => {
+    if (!openCode) return;
     let cancelled = false;
     api.getMcpConfig()
       .then((s) => { if (!cancelled) setStatus(s); })
       .catch((err) => remoteLog.error('mcp config status failed', err));
     return () => { cancelled = true; };
-  }, []);
+  }, [openCode]);
 
-  if (!status || status.configured) return null;
+  if (!openCode || !status || status.configured) return null;
   if (installed === null && dismissedUrl === status.wantUrl) return null;
 
   function dismiss() {

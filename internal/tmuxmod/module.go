@@ -19,6 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 
 	log "github.com/sirupsen/logrus"
@@ -154,7 +155,7 @@ func (m *Module) handleLaunchOpencode(w http.ResponseWriter, r *http.Request) {
 	// EnsureProjectOpencode, not the raw tmux launcher: the manual launch
 	// shares the singleflight guard and managed registry with the
 	// automatic paths, so it cannot start a competing instance (#376 AC-3).
-	res, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Directory})
+	res, err := host.EnsureRuntime(r.Context(), string(platforms.OpenCodeID), req.Directory)
 	if err != nil {
 		log.WithError(err).Error("failed to launch opencode in tmux")
 		httpx.ServerError(w, "launching opencode in tmux", err)

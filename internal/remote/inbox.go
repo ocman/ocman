@@ -149,7 +149,7 @@ func (m *Manager) inboxOwner(source string) (*state.DB, *RemoteConn, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, mr := range m.remotes {
-		if mr.conn != nil && mr.platform != nil && mr.conn.RemoteID() == source {
+		if mr.conn != nil && mr.host != nil && mr.conn.RemoteID() == source {
 			return nil, mr.conn, nil
 		}
 	}
@@ -187,7 +187,7 @@ func (m *Manager) InboxSources() []string {
 		sources = append(sources, "local")
 	}
 	for _, mr := range m.remotes {
-		if mr.platform != nil && mr.conn != nil && mr.conn.RemoteID() != "" {
+		if mr.host != nil && mr.conn != nil && mr.conn.RemoteID() != "" {
 			sources = append(sources, mr.conn.RemoteID())
 		}
 	}

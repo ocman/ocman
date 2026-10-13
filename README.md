@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A web dashboard for browsing and driving your coding-agent sessions.
-Supports [OpenCode](https://github.com/anomalyco/opencode).
+Supports [OpenCode](https://github.com/anomalyco/opencode) and
+[Claude Code](docs/features/claude-code.md) (your own `claude` CLI and login).
 
 ![ocman dashboard](docs/sessions.png)
 
@@ -87,7 +88,8 @@ Without `--port`, externally launched sessions are still readable but the compos
 ./ocman                              # default: listens on 127.0.0.1:8228
 ./ocman -addr localhost:9090         # custom listen address
 ./ocman -db /path/to/opencode.db     # custom OpenCode database path
-./ocman -platforms opencode,claude-code  # enable multiple platforms
+./ocman -platforms opencode,claudecode   # enable OpenCode and Claude Code
+./ocman -platforms claudecode            # Claude Code only, no OpenCode needed
 ```
 
 See [Configuration](docs/configuration/_index.md) for the full flag and environment variable reference, including authentication setup.

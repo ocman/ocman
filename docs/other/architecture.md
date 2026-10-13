@@ -55,6 +55,9 @@ flowchart LR
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
+    Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
+    Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
+    ClaudeHooks[claude hook plugin<br/>terminal sessions, opt-in] -->|ocman hook → /hook| Ocman
     Ocman -->|exec| Shell[git / tmux / lsof<br/>host tools]
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
@@ -119,6 +122,14 @@ flowchart LR
   the background, and the rebuild time is persisted so restarts cannot
   postpone it. Delete the file and it is rebuilt
   (`internal/db/analytics_mirror.go`).
+- **Claude Code** (`-platforms claudecode`). Ocman reads the transcripts under
+  `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`) into the disposable
+  `claude-index.db` beside state.db and drives the sessions it starts by
+  spawning the user's own `claude` binary with pipes (stream-json and the
+  control protocol), so every call runs under the user's own account. The
+  opt-in hook plugin, installed with `claude plugin install`, reports terminal
+  sessions' status to the MCP listener with a 1 s timeout and always exits 0.
+  See [Claude Code](../features/claude-code.md).
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;
   provider tokens and account identifiers never reach the browser.
@@ -165,6 +176,12 @@ flowchart LR
   dispatches, then acknowledges the relay. A lost acknowledgment is retried
   without duplicate scheduling.
 
+Remotes advertise enabled local platform ids in `Hello`. The hub registers
+one adapter per platform under `r-<instanceId>:<platform>`, sharing one host
+adapter and connection. Older remotes without the list remain OpenCode-only.
+Duplicate instance ids are rejected for the whole remote, even when the
+advertised platforms differ.
+
 ## 2. Backend composition
 
 Server shutdown cancels and joins its owned background loops before returning,
@@ -174,8 +191,13 @@ The Go package graph, collapsed to the seams that matter.
 
 ```mermaid
 flowchart TD
+    Main[main.go<br/>embedded skills + build version] --> App[internal/app<br/>startup + composition]
+    App --> Server
+    App --> Registry
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
-    Server --> Router[hostsvc.Router<br/>host/dir seam]
+    Server --> Router[hostsvc.Router<br/>host/dir + runtime seam]
+    Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
+    AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
     Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
@@ -194,6 +216,12 @@ flowchart TD
     Modules --> Inbox[internal/inbox<br/>state + owner routing]
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
+    Registry --> ClaudePlatform[platforms/claudecode<br/>browsing + project routing]
+    ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
+    Provider -->|providerprotocol: HTTP + SSE over unix socket, leased snapshot + replay| Supervisor[providersupervisor<br/>sequenced spool, ack, drain]
+    Local -.->|ocruntime.ProviderRuntime in tmux, one per project| Supervisor
+    Supervisor --> Claude[claudeprovider<br/>index, converter, pooled claude children]
+    Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
     Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
     Registry -->|session detail, summary, lifecycle + usage reads| RP[internal/remote<br/>platform adapter + owner RPCs]
@@ -213,6 +241,13 @@ flowchart TD
     PluginSDK[sdk/plugin<br/>optional public Go SDK] -->|canonical DTO aliases + validators| Plugins
 ```
 
+- **internal/app.** Application startup owns flags, database selection,
+  authentication, logging, platform registration and HTTP/desktop composition.
+  The root entrypoint only supplies embedded skills and the build version.
+- **platforms/claudecode.** The Claude adapter composes the browsing and
+  per-project supervisors, routes session operations, and recovers/drains
+  project runtimes. Its constructor receives skills and the MCP address
+  explicitly. Provider and hook subcommands live in the same module.
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux launcher and terminal host wiring, and whisper. Its session paths (SSE tee,
   notify, permission replies) still drive the auto-approve pipeline. It is the
@@ -266,6 +301,12 @@ flowchart TD
   launches through the shared session path on the owner's compound platform.
   Prompt templates stay hub-wide settings, not owner-scoped. Project archive,
   quick settings and session start stay in the server.
+- **autoapprove.Judge.** The safe-command cache runs before backend selection.
+  Each uncached permission selects a judge through `Deps.SelectJudge`, defaulting
+  to OpenCode port discovery. When no OpenCode instance is reachable and
+  `claudecode` is enabled, `autoapprove.ClaudeJudge` runs `claude -p --model
+  haiku` with no tools. With neither, an explicit `needs-user` verdict leaves the
+  prompt unanswered.
 - **Session summary reads.** Pinned sessions outside the recent window use
   `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound
@@ -295,6 +336,44 @@ flowchart TD
   RPC fall back to session detail. A guarded sweep reads lifecycle under the
   session lock and checks guard generation before reusing that read.
   Idle-edge flushes still trust the edge regardless of the status read.
+- **platforms.SessionEventSink.** The registry installs status and idle callbacks
+  on lifecycle-producing adapters, including adapters registered later. OpenCode's
+  watcher feeds the same server callbacks. Adapters update their live view before
+  calling the sink; idle means a completed turn. A `limited` session carries
+  `resetsAt` in Unix milliseconds and stays non-idle for queue sweeps, routine
+  completion and plugin replies. The status patch updates the browser's list and
+  header without a new protocol or polling loop.
+- **platforms/provider.** The generic adapter negotiates capabilities and protocol
+  versions through `/hello`. Shared DTOs in `internal/providerprotocol` define the
+  socket contract. Each adapter owns its session, live-status and pending-prompt
+  caches; `WatchEvents` replays sequenced v1 events and feeds the shared status and
+  idle sinks even without a browser. Runtime management owns the watch context.
+- **providersupervisor / ocruntime.ProviderRuntime.** A supervisor wraps a
+  provider `Backend` and serves it on a private unix socket. Claude browsing
+  runs inside the ocman process, one per machine. Sessions ocman launches run
+  in `ocman provider claudecode`, which `ocruntime.ProviderRuntime` hosts in
+  tmux, one per repository root, persisted in `managed_provider` and re-probed
+  with `/hello` on recovery, so turns and prompts survive an ocman restart.
+  Out-of-range versions stop new turns through `/drain` and are replaced only
+  after all sessions settle. Each outbound event is appended and synced to its
+  session spool before publication. The headless watcher acknowledges completed
+  turns; browser snapshots pin replay cursors until their stream attaches, so
+  truncation cannot erase the REST-to-SSE gap.
+- **claudeprovider.** The `claudecode` platform's backend. The in-process
+  browsing supervisor indexes `<CLAUDE_CONFIG_DIR or ~/.claude>/projects`
+  into the disposable `claude-index.db` beside `state.db` (path, mtime and size
+  keys; list projection, per-message byte offsets, subagent links), kept current
+  by directory watches plus a 5 s mtime sweep. Detail pages read only their byte
+  range through the single Claude to v1 converter; subagents are child sessions
+  linked from their Task/Agent part. Sessions ocman launches are driven by pooled
+  `claude` children in the project supervisors (pipes, cap 4 across the
+  machine, 10 min idle, `--resume` on the next send)
+  started with `--permission-prompt-tool stdio`: each `can_use_tool` becomes a v1
+  `permission.asked`/`question.asked`, decided first by the adapter's ocman-side
+  `provider.Rules` store, then by the autoapprove pipeline and the user. Their
+  status comes from the process; terminal sessions use hook events when the
+  plugin is installed, else the transcript tail settled by
+  `db.SettleSessionStatus`.
 - **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
   handshake and stream-order validation, executable discovery, and description
   validation. `internal/pluginsmod` mounts it: its `Start` scans once (right
@@ -386,16 +465,24 @@ flowchart TD
   only stores them, which avoids making Factory depend on its SQLite adapter.
 - **platforms.Registry.** The session-scoped seam. One adapter per platform;
   remotes register as compound-ID platforms so handlers can't tell local from
-  remote.
+  remote. `platforms/identity` holds built-in IDs without depending on adapters
+  or databases.
 - **hostsvc.Router.** The directory-scoped seam (git, worktrees, tmux,
   projects and forge-repository detection/fetch). It resolves the owning host
   and delegates, the same transparency
-  trick as the registry. Worktree sessions run in-app on the project's single
-  opencode instance, one per project, ensured through
-  `EnsureProjectOpencode`, with a per-session working directory. There is no
-  opencode or tmux process per worktree. `EnsureProjectOpencodeResult` is
-  runtime-neutral: callers use the full `Endpoint` URL (or its `Port()`) plus
-  an opaque `ocruntime.Instance`. The owning host may use discovery once to
+  trick as the registry. Create requests carry a platform, defaulted from
+  `platform.default` independently of the model. Routines and Factory Epics
+  persist that choice. `EnsureRuntime(ctx, platform, dir)` selects the
+  owner's runtime; adapters can implement `hostsvc.RuntimeEnsurer` for
+  non-OpenCode runtimes. Optional `hostsvc.RuntimeAvailability` reports native
+  launch prerequisites separately from browsing. Claude requires its resolved
+  CLI and tmux; missing either leaves transcript browsing available.
+  `EnsureRuntimeResult` carries an endpoint and an
+  opaque `ocruntime.Instance`; `Port()` is empty for non-TCP endpoints.
+  OpenCode worktrees still share one project instance, or the v2 machine
+  server, with a per-session working directory. There is no process per
+  worktree. The old `EnsureProjectOpencode` gRPC method remains an OpenCode
+  alias for one release. The owning host may use discovery once to
   adopt a healthy instance that started before its managed registry entry
   existed. `RestartProjectOpencode` stops and relaunches the tracked
   instance. Owner-local replacement callbacks use the read-only
@@ -407,6 +494,8 @@ flowchart TD
   `/api/location/reload` endpoint through the same Host/gRPC seam, retaining
   the process and running turns while refreshing configuration and the owner's
   cached catalogs. Pending permission and question prompts are cancelled.
+  Terminal hook installation and removal target the local Host through the
+  optional `HookPluginManager` seam; hook status events still reach the platform.
 - **internal/composerattachments.** Owner-local attachment cache storage and
   seven-day cleanup. HTTP uploads stream through `Host.SaveComposerAttachment`;
   remote owners receive a metadata packet followed by bounded byte chunks over

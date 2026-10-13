@@ -88,6 +88,7 @@ const (
 )
 
 type CreateWorkEpicRequest struct {
+	Platform        string `json:"platform,omitempty"`
 	InstantiationID string `json:"instantiationId"`
 	// EpicID is an optional human-friendly kebab-case ID for the Epic,
 	// normally supplied by the agent that creates it. Empty means the ID is
@@ -129,6 +130,7 @@ type ProjectDeliveryStatus struct {
 }
 
 type WorkEpic struct {
+	Platform        string                 `json:"platform"`
 	ID              string                 `json:"id"`
 	Status          string                 `json:"status"`
 	Goal            string                 `json:"goal"`
@@ -152,6 +154,7 @@ type PlanningSession = model.PlanningSession
 type FactoryAuditRecord = model.AuditRecord
 
 type PlanningSessionRequest struct {
+	Platform                                                 string
 	Model                                                    string
 	Prompt                                                   string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title string
@@ -183,7 +186,7 @@ type nativeProjectSetStore interface {
 }
 
 type configuredEpicStore interface {
-	CreateFactoryEpicWithProjectsAndPermissionRules(context.Context, string, string, string, string, string, model.NativeFormula, []string, []model.PermissionRule) (model.NativeEpic, error)
+	CreateFactoryEpicWithProjectsAndPermissionRules(context.Context, string, string, string, string, string, model.NativeFormula, []string, []model.PermissionRule, ...string) (model.NativeEpic, error)
 }
 type nativeProjectRequestStore interface {
 	CreateFactoryProjectRequestGate(context.Context, string, string, string, time.Time) (model.ProjectRequestGate, error)
@@ -313,6 +316,7 @@ type NativeService struct {
 }
 
 type ImplementationSessionRequest struct {
+	Platform                                                                                        string
 	Verification                                                                                    bool
 	Prompt                                                                                          string
 	Criteria                                                                                        string // verification only: approved Issues and their acceptance criteria

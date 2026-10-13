@@ -141,7 +141,7 @@ func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
 		_ = ev
 	}
 	for _, ev := range sub.takeBatch() {
-		if coalesceKey(ev.event, ev.data) == "ocman.session.changed\x00x" {
+		if coalesceKey(ev.event, ev.data) == "ocman.session.changed\x00opencode\x00x" {
 			collect(ev)
 		}
 	}

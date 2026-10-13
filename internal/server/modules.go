@@ -102,10 +102,10 @@ func ModuleSchemas() []state.ModuleSchema {
 func (s *Server) projectForgeModule() *projectforge.Module {
 	s.projectForgeModOnce.Do(func() {
 		d := projectforge.Deps{
-			Owner:        s.resolveOwner,
-			ResolveForge: s.resolveForge,
-			KnowsForgejo: s.knowsForgejo,
-			PlatformFor:  opencodePlatformForHost,
+			Owner:          s.resolveOwner,
+			ResolveForge:   s.resolveForge,
+			KnowsForgejo:   s.knowsForgejo,
+			CreatePlatform: s.createPlatform,
 			Registered: func(id string) bool {
 				if s.registry == nil {
 					return false
@@ -165,6 +165,7 @@ func (s *Server) newFactoryModule(svc factorymod.Service) *factorymod.Module {
 		ResolveProject: factoryProjectResolver{s}.ResolveLocalProject,
 		OpenCodeAuth:   func() ocapi.Auth { return s.openCodeAuth },
 		MCPURL:         s.mcpServerURL,
+		CreatePlatform: s.createPlatform,
 		Guards:         module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	})
 }
@@ -374,8 +375,15 @@ func launchModules(ctx context.Context, mods []module.Module) (func(), error) {
 func (s *Server) pluginsModule() *pluginsmod.Module {
 	s.pluginsModOnce.Do(func() {
 		s.pluginsMod = pluginsmod.NewModule(pluginsmod.Deps{
-			Store:    s.stateDB,
-			Local:    func() hostsvc.Host { return s.router().Local() },
+			Store:          s.stateDB,
+			Local:          func() hostsvc.Host { return s.router().Local() },
+			CreatePlatform: s.createPlatform,
+			Platform: func(id string) (platforms.Platform, bool) {
+				if s.registry == nil {
+					return nil, false
+				}
+				return s.registry.Get(platforms.ID(id))
+			},
 			Sessions: s.sessions,
 			Enqueue: func(ctx context.Context, platform string, forceQueue bool, req platforms.SendMessageRequest) error {
 				return s.queueSvc().Enqueue(ctx, platform, forceQueue, req)

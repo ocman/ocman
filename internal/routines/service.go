@@ -52,6 +52,7 @@ type Schedule struct {
 }
 
 type Input struct {
+	Platform                   string
 	Name                       string
 	Prompt                     string
 	Directory                  string
@@ -107,7 +108,42 @@ func randomID(prefix string) string {
 	return prefix + hex.EncodeToString(raw[:])
 }
 
+// targetPlatform makes a routine continuing an existing session run on that
+// session's platform when the caller named none.
+func (s *Service) targetPlatform(ctx context.Context, input *Input) {
+	if input.Platform != "" || input.SessionMode != SessionExisting || input.SessionID == "" || s.platforms == nil {
+		return
+	}
+	if p, ok := s.platforms.PlatformForSession(ctx, input.SessionID); ok {
+		input.Platform = string(p.ID())
+	}
+}
+
+// defaultPlatform resolves the create default against the platforms the
+// target machine runs: a remote's advertised adapters, else this machine's.
+func (s *Service) defaultPlatform(ctx context.Context, remoteID string) (string, error) {
+	preferred, err := s.store.DefaultPlatform(ctx)
+	if err != nil || remoteID == "" || remoteID == state.LocalRemoteID || s.platforms == nil {
+		return preferred, err
+	}
+	var bases []string
+	for _, p := range s.platforms.Platforms() {
+		if owner, base := remote.SplitPlatformID(string(p.ID())); owner == remoteID {
+			bases = append(bases, base)
+		}
+	}
+	return state.PickEnabledPlatform(preferred, bases), nil
+}
+
 func (s *Service) Create(ctx context.Context, input Input) (state.Routine, error) {
+	s.targetPlatform(ctx, &input)
+	if input.Platform == "" {
+		var err error
+		input.Platform, err = s.defaultPlatform(ctx, input.RemoteID)
+		if err != nil {
+			return state.Routine{}, err
+		}
+	}
 	if input.KeepSchedule {
 		return state.Routine{}, fmt.Errorf("a new routine has no schedule to keep: %w", ErrValidation)
 	}
@@ -128,6 +164,10 @@ func (s *Service) Update(ctx context.Context, id string, input Input) (state.Rou
 	existing, err := s.store.GetRoutine(ctx, id)
 	if err != nil {
 		return state.Routine{}, err
+	}
+	s.targetPlatform(ctx, &input)
+	if input.Platform == "" {
+		input.Platform = existing.Platform
 	}
 	now := s.now()
 	routine, err := buildRoutine(input, now)
@@ -264,13 +304,26 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 	if !ok {
 		return s.failDispatch(ctx, run, fmt.Errorf("routine target %q is unavailable", run.RemoteID))
 	}
-	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: run.Directory})
+	platformID := run.Platform
+	if platformID == "" {
+		platformID, err = s.defaultPlatform(ctx, run.RemoteID)
+		if err != nil {
+			return s.failDispatch(ctx, run, err)
+		}
+	}
+	owner, base := remote.SplitPlatformID(platformID)
+	if owner != "" && owner != host.RemoteID() {
+		return s.failDispatch(ctx, run, errors.New("routine platform does not belong to target"))
+	}
+	if host.RemoteID() != "" && host.RemoteID() != "local" {
+		platformID = remote.CompoundPlatformID(host.RemoteID(), base)
+	}
+	if !s.sessions.KnownPlatform(platformID) {
+		return s.failDispatch(ctx, run, fmt.Errorf("routine platform %q is unavailable", platformID))
+	}
+	ensured, err := host.EnsureRuntime(ctx, base, run.Directory)
 	if err != nil {
 		return s.failDispatch(ctx, run, err)
-	}
-	platformID := "opencode"
-	if host.RemoteID() != "" && host.RemoteID() != "local" {
-		platformID = remote.CompoundPlatformID(host.RemoteID(), platformID)
 	}
 	sessionID := run.TargetSessionID
 	link := func(id string) error {

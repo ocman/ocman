@@ -148,7 +148,7 @@ type factoryEpicScanner interface{ Scan(...any) error }
 
 func scanFactoryEpic(scanner factoryEpicScanner) (model.NativeEpic, error) {
 	var epic model.NativeEpic
-	if err := scanner.Scan(&epic.ID, &epic.Status, &epic.Goal, &epic.Brief, &epic.InitialProject, &epic.InstantiationID, &epic.FormulaID, &epic.FormulaVersion, &epic.FormulaHash); err != nil {
+	if err := scanner.Scan(&epic.ID, &epic.Status, &epic.Goal, &epic.Brief, &epic.InitialProject, &epic.InstantiationID, &epic.FormulaID, &epic.FormulaVersion, &epic.FormulaHash, &epic.Platform); err != nil {
 		return model.NativeEpic{}, err
 	}
 	return epic, nil

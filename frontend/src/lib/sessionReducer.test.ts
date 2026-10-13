@@ -447,6 +447,15 @@ describe('reduceSessionView — message.part.delta', () => {
 });
 
 describe('reduceSessionView — session.status / session.idle', () => {
+  it('keeps limited and its reset time until a new lifecycle event', () => {
+    let view = makeView({ session: makeSession({ status: 'busy' }) });
+    view = reduceSessionView(view, { type: 'sse', event: sseEvent('session.status', { status: { type: 'limited', resetsAt: 12345 } }) });
+    expect(view.session).toMatchObject({ status: 'limited', resetsAt: 12345 });
+    view = reduceSessionView(view, { type: 'sse', event: sseEvent('session.status', { status: { type: 'limited', resetsAt: 23456 } }) });
+    expect(view.session).toMatchObject({ status: 'limited', resetsAt: 23456 });
+    view = reduceSessionView(view, { type: 'sse', event: sseEvent('session.status', { status: 'busy' }) });
+    expect(view.session).toMatchObject({ status: 'busy', resetsAt: 0 });
+  });
   it('updates session.status from properties.status', () => {
     let view = makeView();
     view = reduceSessionView(view, {
@@ -1110,6 +1119,29 @@ describe('reduceSessionView — judge reasoning surfacing', () => {
     const noticePart = after.parts.find((p) => p.id === 'ocman-notice-perm-3-part');
     expect(noticePart).toBeDefined();
     expect(decode(noticePart!).reasoning).toBe('Modifies documentation only.');
+  });
+
+  // A restarted backend replays an AI approval's reply: it reports the
+  // recorded AI approval, so the notice is the AI's whether the event or the
+  // persisted notice reaches the browser first.
+  it('shows a replayed AI approval as the AI before or after the persisted notice', () => {
+    const replay = {
+      type: 'sse' as const,
+      event: sseEvent('ocman.permission.auto-approved', {
+        permissionId: 'perm-ai', sessionID: SID, permission: 'bash', patterns: ['make'],
+        reasoning: 'Builds.', approvedBy: 'ai', reply: 'once', approvedAt: 7000,
+      }),
+    };
+    const persisted = {
+      type: 'addNotice' as const,
+      notice: { permissionId: 'perm-ai', permission: 'bash', patterns: ['make'], reasoning: 'Builds.', approvedBy: 'ai' as const, reply: 'once' as const, approvedAt: 7000 },
+    };
+    for (const order of [[replay, persisted], [persisted, replay]]) {
+      const view = order.reduce((state, action) => reduceSessionView(state, action), makeView());
+      const parts = view.parts.filter((p) => p.id === 'ocman-notice-perm-ai-part');
+      expect(parts).toHaveLength(1);
+      expect(decode(parts[0])).toMatchObject({ approvedBy: 'ai', reply: 'once', reasoning: 'Builds.' });
+    }
   });
 });
 

@@ -202,7 +202,10 @@ func (m *Module) handleJudgeModel(w http.ResponseWriter, r *http.Request) {
 // selectable models plus the built-in default. An empty list means no
 // OpenCode instance answered; the field stays free-text.
 func (m *Module) handleJudgeModelOptions(w http.ResponseWriter, r *http.Request) {
-	models := m.ModelOptions(r.Context())
+	var models []string
+	if m.openCode() { // the options come from running OpenCode instances
+		models = m.ModelOptions(r.Context())
+	}
 	if models == nil {
 		models = []string{}
 	}

@@ -6,6 +6,7 @@ import { InlineAlert } from '../components/InlineAlert';
 import { ModalFooter } from '../components/ModalFooter';
 import { SearchSelect } from '../components/SearchSelect';
 import { PermissionRulesEditor } from '../components/PermissionRulesEditor';
+import { PlatformSelectField } from '../components/PlatformSelectField';
 import { WebhookTriggerFields } from '../components/WebhookTriggerFields';
 import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
 import type { WebhookInbox } from '../lib/api.types';
@@ -17,6 +18,7 @@ const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 type FormState = {
   name: string; prompt: string; directory: string; agent: string; model: string;
   sessionMode: RoutineSessionMode; sessionId: string; remoteId: string;
+  platform: string;
   worktree: boolean; cleanupWorktree: boolean;
   kind: RoutineScheduleKind; timeoutMinutes: string; at: string; cron: string; timezone: string;
   enabled: boolean; deleteAfterSuccess: boolean; archiveSessionAfterSuccess: boolean; notifyOnSuccess: boolean;
@@ -26,6 +28,7 @@ const emptyForm = (): FormState => ({
   name: '', prompt: '', directory: '', agent: '', model: '', sessionMode: 'new', sessionId: '', remoteId: '', kind: 'none', timeoutMinutes: '30', at: '', cron: '', timezone,
   enabled: true, deleteAfterSuccess: false, archiveSessionAfterSuccess: false, notifyOnSuccess: false,
   worktree: false, cleanupWorktree: false,
+  platform: '',
 });
 
 function formFor(routine: Routine): FormState {
@@ -34,6 +37,7 @@ function formFor(routine: Routine): FormState {
     name: routine.name, prompt: routine.prompt, directory: routine.directory, agent: routine.agent, model: routine.model,
     sessionMode: routine.sessionMode, sessionId: routine.sessionId, remoteId: routine.remoteId, kind: routine.scheduleKind,
     worktree: routine.worktree ?? false, cleanupWorktree: routine.cleanupWorktree ?? false,
+    platform: routine.platform ?? '',
     timeoutMinutes: String(Math.max(1, Math.round((routine.nextDueAt - routine.updatedAt) / 60_000))),
     at: config.at ? new Date(config.at - new Date(config.at).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
     cron: config.cron ?? '', timezone: config.timezone ?? timezone, enabled: routine.enabled,
@@ -46,6 +50,7 @@ function inputFor(form: FormState, permissionRules: PermissionRule[]): RoutineIn
     name: form.name, prompt: form.prompt, directory: form.directory, remoteId: form.remoteId || 'local', agent: form.agent, model: form.model,
     sessionMode: form.sessionMode, sessionId: form.sessionId,
     worktree: form.worktree, cleanupWorktree: form.cleanupWorktree,
+    ...(form.platform && form.sessionMode !== 'existing' ? { platform: form.platform } : {}),
     schedule: {
       kind: form.kind,
       ...(form.kind === 'timeout' ? { timeoutMs: Number(form.timeoutMinutes) * 60_000 } : {}),
@@ -114,7 +119,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   useEffect(() => {
     let active = true;
     const load = () => {
-      const source = sessions.find((session) => session.directory === form.directory && (session.remoteId || 'local') === (form.remoteId || 'local') && !session.parentId && !session.stale);
+      const source = sessions.find((session) => session.directory === form.directory && (session.remoteId || 'local') === (form.remoteId || 'local') && !session.parentId && !session.stale && (!form.platform || session.platform === form.platform));
       if (!source) { setCatalog({ agents: [], models: [] }); return; }
       setCatalogLoading(true);
       Promise.all([api.agents(source.id, undefined, source.platform), api.sessionModels(source.id, source.platform)]).then(
@@ -124,7 +129,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
     };
     load();
     return () => { active = false; };
-  }, [form.directory, form.remoteId, sessions]);
+  }, [form.directory, form.remoteId, form.platform, sessions]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError('');
@@ -164,7 +169,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
         <label className={styles.field}>Prompt<TextareaField className={styles.prompt} required value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} /></label>
         <div className={styles.field}><span>Project</span><SearchSelect value={selectedProjectKey} options={projectOptions} ariaLabel="Project" placeholder="Select a project" searchLabel="Search projects" disabled={busy} onChange={(key) => {
           const project = availableProjects.find((item) => sessionKey(item.remoteId || 'local', item.directory) === key);
-          if (project) setForm({ ...form, directory: project.directory, remoteId: project.remoteId || 'local', sessionId: '', agent: '', model: '' });
+          if (project) setForm({ ...form, directory: project.directory, remoteId: project.remoteId || 'local', platform: (project.remoteId || 'local') === (form.remoteId || 'local') ? form.platform : '', sessionId: '', agent: '', model: '' });
         }} /></div>
         <label className={styles.field}>Trigger<SelectField aria-label="Trigger" value={trigger.inboxId ? `webhook:${trigger.inboxId}` : form.kind} onChange={(event) => {
           const value = event.target.value;
@@ -182,6 +187,8 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
         <CheckboxField label="Enabled" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
         <details className={styles.group}>
           <summary>Session and model</summary><div className={styles.groupFields}>
+            {form.sessionMode !== 'existing' && <PlatformSelectField className={styles.field} label="Platform" remoteId={form.remoteId} value={form.platform} disabled={busy}
+              onChange={(platform) => setForm({ ...form, platform, agent: '', model: '' })} />}
             <label className={styles.field}>Session<SelectField aria-label="Session" value={form.sessionMode} onChange={(event) => setForm({ ...form, sessionMode: event.target.value as RoutineSessionMode, sessionId: '', worktree: false, cleanupWorktree: false })}><option value="new">New session</option><option value="reuse">Reuse session</option><option value="existing">Existing session</option></SelectField><small className={styles.help}>{form.sessionMode === 'new' ? 'Create a fresh session for every run.' : form.sessionMode === 'reuse' ? 'Create one on the first run, then keep using it.' : 'Continue a session from this project.'}</small></label>
             {form.sessionMode === 'new' && <label className={styles.field}>Workspace<SelectField aria-label="Workspace" value={form.worktree ? 'worktree' : 'local'} onChange={(event) => setForm({ ...form, worktree: event.target.value === 'worktree', cleanupWorktree: false })}><option value="local">Current checkout</option><option value="worktree">Worktree</option></SelectField><small className={styles.help}>Worktree creates a separate branch and checkout for every run.</small></label>}
             {form.worktree && <div><CheckboxField label="Clean up worktree after a successful run" checked={form.cleanupWorktree} onChange={(event) => setForm({ ...form, cleanupWorktree: event.target.checked })} /><p className={styles.help}>Removes the clean checkout, retaining its branch and session history. Failed runs and worktrees with uncommitted files are kept.</p></div>}

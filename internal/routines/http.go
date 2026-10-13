@@ -15,6 +15,7 @@ import (
 )
 
 type routineRequest struct {
+	Platform                   string                     `json:"platform"`
 	Name                       string                     `json:"name"`
 	Prompt                     string                     `json:"prompt"`
 	Directory                  string                     `json:"directory"`
@@ -46,7 +47,8 @@ func (req routineRequest) input() (Input, error) {
 		return Input{}, ErrValidation
 	}
 	return Input{
-		Name: req.Name, Prompt: req.Prompt, Directory: req.Directory, RemoteID: req.RemoteID, Agent: req.Agent, Model: req.Model, SessionMode: req.SessionMode, SessionID: req.SessionID,
+		Platform: req.Platform,
+		Name:     req.Name, Prompt: req.Prompt, Directory: req.Directory, RemoteID: req.RemoteID, Agent: req.Agent, Model: req.Model, SessionMode: req.SessionMode, SessionID: req.SessionID,
 		Worktree: req.Worktree, CleanupWorktree: req.CleanupWorktree,
 		Schedule: Schedule{
 			Kind: req.Schedule.Kind, Timeout: time.Duration(req.Schedule.TimeoutMS) * time.Millisecond,

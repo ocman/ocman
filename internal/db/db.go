@@ -176,7 +176,7 @@ func OpenReadWrite(path string) (*DB, error) {
 
 // Close closes the database.
 func (d *DB) Close() error {
-	if d.mirror != nil {
+	if d.mirror != nil && d.mirror.db != d.db {
 		_ = d.mirror.db.Close()
 	}
 	return d.db.Close()

@@ -31,6 +31,9 @@ import (
 type Deps struct {
 	// DB is OpenCode's read-only database; nil when the platform is off.
 	DB *db.DB
+	// Analytics serves the usage views: the analytics mirror, which other
+	// platforms feed too. Defaults to DB.
+	Analytics *db.DB
 	// Store is ocman's state database; may be nil.
 	Store *state.DB
 	// Version is the build version reported by /api/stats, read per request.
@@ -56,6 +59,9 @@ type Module struct {
 }
 
 func NewModule(deps Deps) *Module {
+	if deps.Analytics == nil {
+		deps.Analytics = deps.DB
+	}
 	if deps.Version == nil {
 		deps.Version = func() string { return "" }
 	}
@@ -118,6 +124,15 @@ func method(want string, h http.HandlerFunc) http.HandlerFunc {
 func (m *Module) requireDB(w http.ResponseWriter) bool {
 	if m.deps.DB == nil {
 		http.Error(w, "OpenCode platform is not enabled", http.StatusNotImplemented)
+		return false
+	}
+	return true
+}
+
+// requireAnalytics writes 501 when no platform contributes analytics.
+func (m *Module) requireAnalytics(w http.ResponseWriter) bool {
+	if m.deps.Analytics == nil {
+		http.Error(w, "no analytics database: enable a platform", http.StatusNotImplemented)
 		return false
 	}
 	return true

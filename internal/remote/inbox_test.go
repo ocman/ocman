@@ -172,7 +172,7 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	t.Cleanup(mgr.Stop)
 	mr := &managedRemote{localID: 1, conn: conn}
 	mgr.remotes[1] = mr
-	if !mgr.publishAdapters(1, mr, newRemotePlatform(conn, "opencode", func() string { return "remote" }), newRemoteHost(conn)) {
+	if !mgr.publishAdapters(1, mr, []*remotePlatform{newRemotePlatform(conn, "opencode", func() string { return "remote" })}, newRemoteHost(conn)) {
 		t.Fatal("publishing remote")
 	}
 
@@ -264,7 +264,7 @@ func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 	}
 
 	conn := &RemoteConn{remoteID: "offline", health: HealthOffline}
-	mr := &managedRemote{localID: 1, conn: conn, platform: &remotePlatform{}}
+	mr := &managedRemote{localID: 1, conn: conn, host: newRemoteHost(conn)}
 	mgr.remotes[1] = mr
 	if _, err := mgr.InboxItems(t.Context(), "offline"); !errors.Is(err, ErrRemoteOffline) {
 		t.Fatalf("InboxItems offline = %v, want ErrRemoteOffline", err)

@@ -234,6 +234,9 @@ func (s *Server) mcpServerURL() string {
 // the fallback URL would be dead after the next launch. A fixed main
 // port (CLI mode, or a pinned -gui-addr) stays a valid fallback.
 func (s *Server) mcpUnavailableReason() string {
+	if !s.openCodeEnabled() {
+		return "OpenCode is not enabled on this machine"
+	}
 	if s.mcpAddr != "" {
 		return ""
 	}
@@ -295,6 +298,11 @@ func (s *Server) startMCPListener() func() {
 	// Resolve the bound address so a ":0" request reports the real port
 	// through mcpServerURL / the boot log.
 	s.mcpAddr = ln.Addr().String()
+	for _, p := range s.registryPlatforms() {
+		if sink, ok := p.(interface{ SetMCPAddr(string) }); ok {
+			sink.SetMCPAddr(s.mcpAddr)
+		}
+	}
 
 	mux := http.NewServeMux()
 	// requireLoopbackPeer is belt-and-braces: the listener is already
@@ -304,6 +312,7 @@ func (s *Server) startMCPListener() func() {
 	h := s.requireLoopbackPeer(s.mcpHandler().ServeHTTP)
 	mux.HandleFunc("/mcp", h)
 	mux.HandleFunc("/mcp/", h)
+	mux.HandleFunc("/hook", requirePOST(s.requireLoopbackPeer(s.handleHook)))
 	srv := newHTTPServer(ln.Addr().String(), withSecurityHeaders(mux))
 
 	go func() {
@@ -317,4 +326,11 @@ func (s *Server) startMCPListener() func() {
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	}
+}
+
+func (s *Server) registryPlatforms() []platforms.Platform {
+	if s.registry == nil {
+		return nil
+	}
+	return s.registry.Platforms()
 }

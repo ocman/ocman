@@ -31,6 +31,7 @@ export interface Session {
   totalEstCost?: number;
   totalEffectiveCost?: number;
   status: SessionStatus;
+  resetsAt?: number;
   liveConnection: boolean;
   pendingPermission: boolean;
   pendingQuestion: boolean;

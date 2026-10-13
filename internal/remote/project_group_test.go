@@ -51,3 +51,24 @@ func TestResolveProjectTargetsCommonUpstreams(t *testing.T) {
 		t.Fatalf("empty identity = %v", got)
 	}
 }
+
+// Switching a remote project's composer to this machine offers a platform
+// this machine enabled: a Claude-only hub never gets the disabled OpenCode.
+func TestLocalTargetUsesEnabledPlatform(t *testing.T) {
+	m := newInvManager(t)
+	m.inventory["remote"] = []ProjectIdentity{{Dir: "/remote/clone", UpstreamKeys: []string{"host/repo"}}}
+	local := []ProjectIdentity{{Dir: "/local/repo", UpstreamKeys: []string{"host/repo"}}}
+	source := db.ProjectStats{Directory: "/remote/clone", RemoteID: "remote", Platform: "r-remote:opencode", UpstreamKeys: []string{"host/repo"}}
+	m.registry.Register(&fakePlatform{id: "claudecode"})
+	for _, c := range m.ResolveProjectTargets(source, local) {
+		if c.RemoteID == "local" && c.Platform != "claudecode" {
+			t.Fatalf("local candidate = %+v, want the enabled claudecode", c)
+		}
+	}
+	m.registry.Register(&fakePlatform{id: "opencode"})
+	for _, c := range m.ResolveProjectTargets(source, local) {
+		if c.RemoteID == "local" && c.Platform != "opencode" {
+			t.Fatalf("with both enabled the default stays: %+v", c)
+		}
+	}
+}

@@ -123,3 +123,24 @@ describe('Stats log table rows are keyboard reachable', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/session/sess-1');
   });
 });
+
+describe('Subscription-backed cost', () => {
+  it('labels the token estimate API-equivalent when the platform reports $0', () => {
+    const metrics = makeMetrics();
+    const subscription = { ...metrics.sessions[0], id: 'claude-1', title: 'Claude session', cost: 0, calcCost: 1.25, effectiveCost: 1.25 };
+    renderTable(<SessionLogTable sessions={[metrics.sessions[0], subscription]} pageOffset={0} />);
+
+    const rows = screen.getAllByRole('row');
+    const billed = rows.find((row) => row.textContent?.includes('Example session'))!;
+    const claude = rows.find((row) => row.textContent?.includes('Claude session'))!;
+    expect(claude).toHaveTextContent('$1.2500 API-equivalent');
+    expect(claude.querySelector('[title^="API-equivalent cost"]')).not.toBeNull();
+    expect(billed).not.toHaveTextContent('API-equivalent');
+  });
+
+  it('labels subscription requests too', () => {
+    const request = { ...makeMetrics().requests[0], cost: 0, calcCost: 0.3, effectiveCost: 0.3 };
+    renderTable(<RequestLogTable requests={[request]} pageOffset={0} />);
+    expect(screen.getByTitle(/^API-equivalent cost/)).toHaveTextContent('API-equivalent');
+  });
+});

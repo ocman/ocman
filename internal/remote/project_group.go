@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"context"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -90,13 +91,68 @@ func (m *Manager) ResolveProjectTargets(source db.ProjectStats, localProjects []
 			}
 			continue
 		}
-		candidate := TargetCandidate{RemoteID: p.RemoteID, Dir: p.Directory, Platform: m.base, RemoteName: "This machine"}
+		// The hub's own default among its enabled platforms, never a
+		// disabled one (FR-1/2).
+		candidate := TargetCandidate{RemoteID: p.RemoteID, Dir: p.Directory, Platform: m.localDefault(), RemoteName: "This machine"}
 		if p.RemoteID != "local" {
-			candidate.Platform = CompoundPlatformID(p.RemoteID, m.base)
+			_, preferred := SplitPlatformID(source.Platform)
+			if preferred == "" {
+				preferred = m.base
+			}
+			candidate.Platform = CompoundPlatformID(p.RemoteID, selectPlatform(m.remotePlatforms(p.RemoteID), preferred))
 			candidate.RemoteName = m.nameForRemoteID(p.RemoteID)
 		}
 		seen[p.RemoteID] = len(out)
 		out = append(out, candidate)
 	}
 	return out
+}
+
+func (m *Manager) remotePlatforms(remoteID string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, mr := range m.remotes {
+		if mr.host != nil && mr.conn != nil && mr.conn.RemoteID() == remoteID {
+			return mr.conn.Platforms()
+		}
+	}
+	return []string{"opencode"}
+}
+
+// localDefault is the saved default platform when this machine enabled it,
+// else one it did enable.
+func (m *Manager) localDefault() string {
+	preferred := m.base
+	if m.store != nil {
+		if saved, err := m.store.DefaultPlatform(context.Background()); err == nil && saved != "" {
+			preferred = saved
+		}
+	}
+	return selectPlatform(m.localPlatforms(), preferred)
+}
+
+// localPlatforms lists the platforms this machine registered itself.
+func (m *Manager) localPlatforms() []string {
+	var out []string
+	if m.registry == nil {
+		return out
+	}
+	for _, p := range m.registry.Platforms() {
+		if owner, base := SplitPlatformID(string(p.ID())); owner == "" {
+			out = append(out, base)
+		}
+	}
+	return out
+}
+
+func selectPlatform(enabled []string, preferred string) string {
+	if len(enabled) == 0 {
+		return preferred
+	}
+	for _, base := range enabled {
+		if base == preferred {
+			return base
+		}
+	}
+	return enabled[0]
 }

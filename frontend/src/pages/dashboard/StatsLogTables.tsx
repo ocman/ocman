@@ -31,6 +31,7 @@ import {
 import { MetricCard, ChartCard } from './shared';
 import { ModelLabel } from '../../components/ModelLogo';
 import { DataTable } from '../../components/DataTable';
+import { ApiEquivalentCost } from '../../components/ApiEquivalentCost';
 import { EmptyState } from '../../components/EmptyState';
 
 const dim = { color: 'var(--text-dim)' } as const;
@@ -46,8 +47,8 @@ export function MetricsSummaryCards({ metrics }: { metrics: MetricsPerformance }
       <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
       <MetricCard label="Total Wall Clock" value={formatSeconds(metrics.summary.totalDurationMs / 1000)} tone="blue" subvalue="sum of response times" />
       <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
-      <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, est. when plan reports $0" />
-      <MetricCard label="Reported / Est." value={`${formatCurrency(metrics.summary.totalCost)} / ${formatCurrency(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / token estimate" />
+      <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, API-equivalent when plan reports $0" />
+      <MetricCard label="Reported / API-eq." value={`${formatCurrency(metrics.summary.totalCost)} / ${formatCurrency(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / API-equivalent estimate" />
     </div>
   );
 }
@@ -143,11 +144,11 @@ function MetricsRowCells({ e }: { e: SessionOrProject }) {
       <td className="mono">{formatTokenCache(e.cacheReadTokens, e.cacheWriteTokens)}</td>
       <td>{e.avgTokensPerSec > 0 ? e.avgTokensPerSec.toFixed(1) : '-'}</td>
       <td>{e.totalDurationMs > 0 ? formatSeconds(e.totalDurationMs / 1000) : '-'}</td>
-      <td>{e.effectiveCost > 0 ? formatCurrency(e.effectiveCost) : dash}</td>
+      <td><ApiEquivalentCost reported={e.cost} effective={e.effectiveCost} fallback={dash} /></td>
       <td className="metrics-cost-detail">
         <span title="Platform-reported (billed)">{e.cost > 0 ? formatCurrency(e.cost) : dash}</span>
         <span style={dim}> / </span>
-        <span title="Token-based estimate" style={{ color: 'var(--accent4)' }}>{e.calcCost > 0 ? formatCurrency(e.calcCost) : '—'}</span>
+        <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{e.calcCost > 0 ? formatCurrency(e.calcCost) : '—'}</span>
       </td>
       <td>{renderModels(e.models)}</td>
       <td>{e.errorCount > 0
@@ -194,8 +195,8 @@ const ENTITY_HEADERS = (
     <th>Cache</th>
     <th title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
     <th>Duration</th>
-    <th title="Platform-billed cost; falls back to the token-based estimate when the plan reports $0">Cost</th>
-    <th title="Platform-reported (billed) / token-based estimate">Reported / Est.</th>
+    <th title="Platform-billed cost; when the plan reports $0 (subscription) it is the API-equivalent token estimate">Cost</th>
+    <th title="Platform-reported (billed) / API-equivalent token estimate">Reported / API-eq.</th>
     <th>Models</th>
     <th title="Assistant messages that finished with an error">Errors</th>
   </>
@@ -323,8 +324,8 @@ export function RequestLogTable({
             <th>Cache</th>
             <th title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
             <th>Duration</th>
-            <th title="Platform-billed cost; falls back to the token-based estimate when the plan reports $0">Cost</th>
-            <th title="Platform-reported (billed) / token-based estimate">Reported / Est.</th>
+            <th title="Platform-billed cost; when the plan reports $0 (subscription) it is the API-equivalent token estimate">Cost</th>
+            <th title="Platform-reported (billed) / API-equivalent token estimate">Reported / API-eq.</th>
             <th>Stop</th>
           </tr>
         </thead>
@@ -346,11 +347,11 @@ export function RequestLogTable({
               <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
               <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
               <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
-              <td>{request.effectiveCost > 0 ? formatCurrency(request.effectiveCost) : dash}</td>
+              <td><ApiEquivalentCost reported={request.cost} effective={request.effectiveCost} fallback={dash} /></td>
               <td className="metrics-cost-detail">
                 <span title="Platform-reported (billed)">{request.cost > 0 ? formatCurrency(request.cost) : dash}</span>
                 <span style={dim}> / </span>
-                <span title="Token-based estimate" style={{ color: 'var(--accent4)' }}>{request.calcCost > 0 ? formatCurrency(request.calcCost) : '—'}</span>
+                <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{request.calcCost > 0 ? formatCurrency(request.calcCost) : '—'}</span>
               </td>
               <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
             </tr>

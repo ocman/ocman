@@ -179,7 +179,7 @@ it('uses project-scoped selectors for Slack configuration', async () => {
   await waitFor(() => expect(api.projects).toHaveBeenCalled());
   fireEvent.click(screen.getByRole('combobox', { name: 'Project directory' }));
   fireEvent.click(await screen.findByRole('option', { name: '/repo' }));
-  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', expect.any(AbortSignal)));
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', '', expect.any(AbortSignal)));
   fireEvent.click(screen.getByRole('combobox', { name: 'Agent (optional)' }));
   fireEvent.click(screen.getByRole('option', { name: 'build' }));
   fireEvent.click(screen.getByRole('combobox', { name: 'Model (optional provider/model)' }));
@@ -188,6 +188,28 @@ it('uses project-scoped selectors for Slack configuration', async () => {
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', 'org.ocman.slack', 'configuration', {
     values: { mode: 'good', project: '/repo', agent: 'build', model: 'openai/gpt-5' }, secrets: {},
   }));
+});
+
+it('reads the Slack catalog on the installation platform', async () => {
+  plugin.description.id = 'org.ocman.slack';
+  plugin.description.settings = [
+    { key: 'project', type: 'string', label: 'Project directory', required: true },
+    { key: 'platform', type: 'string', label: 'Platform' },
+    { key: 'agent', type: 'string', label: 'Agent (optional)' },
+  ];
+  plugin.configuration.values = { mode: 'good', project: '/repo', platform: 'claudecode' };
+  vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', sessionCount: 0, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 }]);
+  vi.mocked(plugins.projectCatalog).mockResolvedValue({ agents: ['general'], models: [] });
+  await open();
+  click('Configure');
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', 'claudecode', expect.any(AbortSignal)));
+  expect(screen.getByRole('combobox', { name: 'Platform' })).toHaveTextContent('claudecode');
+  // Back to the default platform: the catalog is read again and the
+  // platform-specific agent is cleared.
+  fireEvent.click(screen.getByRole('combobox', { name: 'Platform' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Default platform' }));
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenLastCalledWith('local', '/repo', '', expect.any(AbortSignal)));
+  plugin.configuration.values = { mode: 'good' };
 });
 
 it('does not offer the previous project catalog while a new project is pending', async () => {
@@ -214,7 +236,7 @@ it('does not offer the previous project catalog while a new project is pending',
   // pending catalog belongs to /other, so nothing is selectable until it lands.
   fireEvent.click(screen.getByRole('combobox', { name: 'Project directory' }));
   fireEvent.click(await screen.findByRole('option', { name: '/other' }));
-  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/other', expect.any(AbortSignal)));
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/other', '', expect.any(AbortSignal)));
   fireEvent.click(screen.getByRole('combobox', { name: 'Agent (optional)' }));
   expect(screen.queryByRole('option', { name: 'build' })).not.toBeInTheDocument();
 });

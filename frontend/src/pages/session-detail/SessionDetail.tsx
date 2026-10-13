@@ -76,6 +76,7 @@ import { SessionToasts } from './SessionToasts';
 import { useSessionToasts } from './useSessionToasts';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
+import { StatusBadge } from '../../components/StatusBadge';
 import { useMobilePanel } from './useMobilePanel';
 import { SessionModals, type MessageJumpHistory } from './SessionModals';
 import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
@@ -559,6 +560,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     parts,
     recentSessions,
     portAvailable,
+    pushPrompts: caps.pushPrompts ?? false,
     promptSessionIds,
     pendingPermission,
     pendingQuestion,
@@ -911,6 +913,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         </PerfProfiler>
         <div className="session-main" data-testid="session-main">
           {session && mobilePanel !== 'sidebar' && <HeaderPortal>
+            {session.status === 'limited' && <StatusBadge status={session.status} resetsAt={session.resetsAt} />}
             <SessionActionsMenu
               sessionId={session.id}
               tmuxAvailable={tmux.available}
@@ -931,7 +934,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <SessionLoadError message={loadError} onRetry={() => { void reload(); }} />
           ) : newConversation && !session ? (
             <NewConversation
-              key={`${newConversation.remoteId}:${newConversation.directory}`}
+              key={`${newConversation.remoteId}:${newConversation.directory}:${newConversation.platform ?? ''}`}
               params={newConversation}
               whisperAvailable={whisperAvailable}
               composerRef={composerRef}
@@ -1130,6 +1133,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 recentSessions={recentSessions}
                 messageJumpHistory={messageJumpHistory}
                 pending={pending}
+                forkAtMessage={!!caps.forkAtMessage}
                 openModal={modal.openModal}
                 onClose={modal.close}
                 onOpen={modal.open}

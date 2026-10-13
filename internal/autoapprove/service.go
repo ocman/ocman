@@ -57,6 +57,16 @@ type Deps struct {
 	// OpenCodeAuth authenticates judge and headless watcher traffic.
 	OpenCodeAuth ocapi.Auth
 
+	// SelectJudge chooses a backend per permission. A nil result leaves the
+	// prompt for the user. When unset, use a discovered OpenCode instance.
+	SelectJudge func(platformID platforms.ID, directory string) Judge
+	// FallbackJudge decides when SelectJudge is unset and no OpenCode
+	// instance is reachable for the directory (AD-8's Claude judge). May be nil.
+	FallbackJudge Judge
+	// OpenCodeDisabled keeps the OpenCode judge and its port discovery
+	// (`opencode --version`, lsof) out of a Claude-only ocman (FR-1/AD-1).
+	OpenCodeDisabled bool
+
 	// Store persists/loads settings and approval audit rows. May be nil.
 	Store SettingsStore
 	// CommitStore persists live terminal observations independently of judge
@@ -160,7 +170,7 @@ func (s *Service) ObserveQuestionPrompt(platformID platforms.ID, prompt platform
 type Service struct {
 	deps Deps
 
-	// judge runs the LLM verdict. Nil in some tests.
+	// judge is the default OpenCode backend and owns its model settings.
 	judge *PermissionJudge
 
 	// judgeDelayMs is the cached value of the judge delay setting.
@@ -197,6 +207,9 @@ type Service struct {
 func NewService(deps Deps) *Service {
 	judge := newPermissionJudge(deps.OpenCodeAuth)
 	judge.store = deps.Store
+	if deps.OpenCodeDisabled {
+		judge.openCodePort = nil
+	}
 	return &Service{
 		deps:             deps,
 		judge:            judge,

@@ -49,6 +49,14 @@ func (s *Server) sendHeld(ctx context.Context, platformID string, req platforms.
 
 // enqueueFollowUp holds send for the session's next idle edge.
 func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send platforms.SendMessageRequest) error {
+	// A read-only session would accept the hold and fail every flush (FR-4).
+	if adapter, ok := s.adapterForSession(ctx, platformID, send.SessionID); ok {
+		if reader, ok := adapter.(platforms.LifecycleReader); ok {
+			if lc, err := reader.SessionLifecycle(ctx, send.SessionID); err == nil && lc.ReadOnly {
+				return &platforms.UpstreamError{Status: http.StatusForbidden, Message: "session is read-only in ocman"}
+			}
+		}
+	}
 	// Messages already held by ocman (queued while the platform was
 	// unreachable) go first: a native follow-up would overtake them.
 	if held, err := s.queueSvc().List(ctx, platformID, send.SessionID); err == nil && len(held) > 0 {

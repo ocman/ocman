@@ -12,7 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -163,7 +162,13 @@ func (m *Module) deliverConversationPrompt(ctx context.Context, key state.Plugin
 		return err
 	}
 	if !resumed {
-		if linked, err = m.createConversationSession(ctx, key, dir); err != nil {
+		var platform string
+		if raw := values["platform"]; len(raw) != 0 {
+			if err := json.Unmarshal(raw, &platform); err != nil {
+				return plugins.ErrInvalidMessage
+			}
+		}
+		if linked, err = m.createConversationSession(ctx, key, dir, platform); err != nil {
 			return err
 		}
 	}
@@ -185,7 +190,7 @@ func (m *Module) deliverConversationPrompt(ctx context.Context, key state.Plugin
 // session and claims the mapping. Losing the claim is not an error: the winner's
 // session is authoritative and this one is abandoned, so a concurrent first
 // message can never leave the conversation with two mapped sessions.
-func (m *Module) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir string) (state.PluginConversationSession, error) {
+func (m *Module) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir, requested string) (state.PluginConversationSession, error) {
 	// The owner is this machine, explicitly. A conversation plugin's binary,
 	// provider credentials, configuration and approved project are all
 	// owner-local, and dir was just validated on this filesystem. Inferring the
@@ -194,12 +199,18 @@ func (m *Module) createConversationSession(ctx context.Context, key state.Plugin
 	// and whose permissive fallback silently degrades a disconnected remote
 	// back to the hub, running the conversation somewhere nobody approved it.
 	host := m.deps.Local()
-	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	platformID, base, err := m.deps.CreatePlatform(ctx, host, requested)
+	if err != nil {
+		return state.PluginConversationSession{}, err
+	}
+	if _, ok := m.deps.Platform(platformID); !ok {
+		return state.PluginConversationSession{}, plugins.ErrUnavailable
+	}
+	ensured, err := host.EnsureRuntime(ctx, base, dir)
 	if err != nil {
 		return state.PluginConversationSession{}, err
 	}
 	// Owner-local by construction, so the platform is never remote-qualified.
-	const platformID = "opencode"
 	created, err := m.deps.Sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Port: ensured.Port()})
 	if err != nil {
 		return state.PluginConversationSession{}, err

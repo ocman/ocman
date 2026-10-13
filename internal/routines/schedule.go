@@ -60,7 +60,8 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 		return state.Routine{}, fmt.Errorf("invalid permission rules: %w", ErrValidation)
 	}
 	return state.Routine{
-		Name: name, Prompt: input.Prompt, Directory: directory, RemoteID: remoteID,
+		Platform: input.Platform,
+		Name:     name, Prompt: input.Prompt, Directory: directory, RemoteID: remoteID,
 		Agent: strings.TrimSpace(input.Agent), Model: strings.TrimSpace(input.Model),
 		SessionMode: sessionMode, SessionID: sessionID,
 		Worktree: input.Worktree, CleanupWorktree: input.CleanupWorktree,

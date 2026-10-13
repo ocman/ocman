@@ -20,6 +20,9 @@ import (
 
 // EnsureProjectOpencode shares one managed instance across a project's worktrees.
 func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	if !h.opencodeEnabled() {
+		return nil, fmt.Errorf("OpenCode is disabled")
+	}
 	if ocv2.InstalledV2() {
 		return h.ensureMachine(ctx, req.ProjectDir, h.ensureLocked)
 	}
@@ -275,6 +278,9 @@ func worktreesRoot(repoRoot string) string {
 }
 
 func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
+	if !h.opencodeEnabled() {
+		return nil
+	}
 	if ocv2.InstalledV2() {
 		if filepath.Clean(req.ProjectDir) != machineRoot() {
 			return nil
@@ -314,6 +320,9 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 }
 
 func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	if !h.opencodeEnabled() {
+		return nil, fmt.Errorf("OpenCode is disabled")
+	}
 	if ocv2.InstalledV2() {
 		return h.ensureMachine(ctx, req.ProjectDir, h.restartLocked)
 	}
@@ -325,6 +334,9 @@ func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsurePro
 }
 
 func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode, error) {
+	if !h.opencodeEnabled() {
+		return nil, nil
+	}
 	if h.store == nil {
 		return nil, nil
 	}

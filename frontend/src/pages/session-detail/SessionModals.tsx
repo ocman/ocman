@@ -25,6 +25,8 @@ export interface SessionModalsProps {
   /** Full history fetched for the jump picker; falls back to `messages`. */
   messageJumpHistory: MessageJumpHistory | null;
   pending: UsePendingSendResult;
+  /** The platform can fork from a chosen message; otherwise only the full session. */
+  forkAtMessage?: boolean;
 
   openModal: SessionModal | null;
   onClose: () => void;
@@ -46,6 +48,7 @@ export function SessionModals({
   recentSessions,
   messageJumpHistory,
   pending,
+  forkAtMessage = true,
   openModal,
   onClose,
   onOpen,
@@ -93,6 +96,7 @@ export function SessionModals({
           open
           messages={messages}
           parts={parts}
+          fullSessionOnly={!forkAtMessage}
           onClose={onClose}
           onSelect={(messageID) => {
             onClose();

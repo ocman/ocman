@@ -345,6 +345,14 @@ describe('useGlobalEvents session.changed handler', () => {
     expect(cb).toHaveBeenLastCalledWith('shared', session, undefined, session.platform);
     unsub();
   });
+  it('preserves the owner of a lifecycle patch', () => {
+    const cb = vi.fn();
+    const unsub = onSessionChanged(cb);
+    const patch = { status: 'limited', resetsAt: 12345 };
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'same', platform: 'fake', patch }));
+    expect(cb).toHaveBeenCalledWith('same', undefined, patch, 'fake');
+    unsub();
+  });
 
   it('ignores malformed or session-less payloads', () => {
     const cb = vi.fn();

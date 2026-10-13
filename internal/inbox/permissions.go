@@ -58,7 +58,8 @@ func (m *Module) Reconcile(ctx context.Context) {
 		if !loaded {
 			pending[key] = nil
 			adapter, ok := m.Platform(platforms.ID(key.platform))
-			if !ok {
+			// Push-only platforms settle Inbox items from replayed reply events.
+			if !ok || adapter.Capabilities().PushPrompts {
 				continue
 			}
 			readCtx, cancel := context.WithTimeout(ctx, permissionCallTimeout)

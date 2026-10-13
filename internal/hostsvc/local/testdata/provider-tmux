@@ -1,0 +1,40 @@
+#!/bin/sh
+# Test-only tmux substitute. Executes the fake provider as a detached child.
+# With OCMAN_FAKE_TMUX_ENV naming a file of NAME=value lines, the provider
+# gets only that environment, like a tmux server started earlier.
+shift 2
+command="$1"
+shift
+case "$command" in
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -s) name="$2"; shift 2 ;;
+        --) shift; break ;;
+        *) shift ;;
+      esac
+    done
+    if [ -n "$OCMAN_FAKE_TMUX_ENV" ]; then
+      pids="$OCMAN_FAKE_PROVIDER_PID_DIR"
+      # shellcheck disable=SC2046
+      env -i $(cat "$OCMAN_FAKE_TMUX_ENV") "$@" >"$pids/$name.log" 2>&1 &
+    else
+      "$@" >"$OCMAN_FAKE_PROVIDER_PID_DIR/$name.log" 2>&1 &
+    fi
+    printf '%s' "$!" >"$OCMAN_FAKE_PROVIDER_PID_DIR/$name.pid"
+    ;;
+  kill-session)
+    shift
+    kill "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/$1.pid")"
+    ;;
+  has-session)
+    shift
+    [ -f "$OCMAN_FAKE_PROVIDER_PID_DIR/$1.pid" ] || exit 1
+    # A container PID1 may leave the exited orphan unreaped. kill -0 still
+    # succeeds for that zombie, but a real tmux session is already gone.
+    state=$(ps -o stat= -p "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/$1.pid")") || exit 1
+    case "$state" in *Z*) exit 1 ;; esac
+    ;;
+  *) exit 1 ;;
+esac

@@ -154,7 +154,7 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	var created platforms.CreateSessionRequest
 	var sent platforms.SendMessageRequest
 	var rules platforms.SetPermissionRulesRequest
-	platform := &fakePlatform{id: "local-agent", caps: platforms.Capabilities{PermissionRules: true}}
+	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
 	platform.createSessionFn = func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		created = req
 		return &platforms.CreateSessionResponse{ID: "session-1"}, nil
@@ -177,7 +177,7 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != (factory.PlanningSession{Platform: "local-agent", ID: "session-1"}) || ensured != "/repo" {
+	if got != (factory.PlanningSession{Platform: "opencode", ID: "session-1"}) || ensured != "/repo" {
 		t.Fatalf("session = %#v, ensured = %q", got, ensured)
 	}
 	if err := (srv.factoryModule().PlanningLauncher()).PromptPlanningSession(context.Background(), got, req); err != nil {
@@ -234,7 +234,7 @@ func TestFactoryPlanningLauncherRejectsUnsafeProjectPattern(t *testing.T) {
 
 func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *testing.T) {
 	endpoint := connectedPlanningMCP(t)
-	platform := &fakePlatform{id: "local-agent", caps: platforms.Capabilities{PermissionRules: true}}
+	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
 	platform.createSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		return &platforms.CreateSessionResponse{ID: "restricted-session"}, nil
 	}
@@ -248,7 +248,7 @@ func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *test
 	}})
 
 	got, err := (srv.factoryModule().PlanningLauncher()).LaunchPlanningSession(context.Background(), factory.PlanningSessionRequest{Repository: "/repo", Title: "Plan: Ship"})
-	if err == nil || got != (factory.PlanningSession{Platform: "local-agent", ID: "restricted-session"}) {
+	if err == nil || got != (factory.PlanningSession{Platform: "opencode", ID: "restricted-session"}) {
 		t.Fatalf("LaunchPlanningSession = %#v, %v", got, err)
 	}
 }
@@ -266,7 +266,7 @@ func TestFactoryPlanningLauncherRejectsStaleMCPConfigWithoutRestart(t *testing.T
 		ensured: &hostsvc.EnsureProjectOpencodeResult{Endpoint: stale.URL, RepoRoot: "/repo"},
 	}
 	var created platforms.CreateSessionRequest
-	platform := &fakePlatform{id: "local-agent", caps: platforms.Capabilities{PermissionRules: true}}
+	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
 	platform.createSessionFn = func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		created = req
 		return &platforms.CreateSessionResponse{ID: "session-1"}, nil

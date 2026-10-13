@@ -22,7 +22,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	epic, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE id = ?`, epicID))
+	epic, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash, platform FROM factory_epic WHERE id = ?`, epicID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, model.ErrNativeEpicNotFound
 	}
@@ -130,6 +130,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		attemptPolicy.Branch, attemptPolicy.BaseRef, attemptPolicy.CheckpointSHA = "", "", ""
 	}
 	attemptPolicy.Repository = project
+	attemptPolicy.Platform = epic.Platform
 	projects, err := listFactoryEpicProjectsWith(ctx, tx, epicID)
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
@@ -217,7 +218,7 @@ func (d *DB) ClaimFactoryPlan(ctx context.Context, epicID, issueID, profile stri
 		return model.NativeEpic{}, model.FactoryAttempt{}, fmt.Errorf("beginning Factory Plan claim: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	epic, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE id = ?`, epicID))
+	epic, err := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash, platform FROM factory_epic WHERE id = ?`, epicID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, model.ErrNativeEpicNotFound
 	}
@@ -270,7 +271,7 @@ func (d *DB) ClaimFactoryPlan(ctx context.Context, epicID, issueID, profile stri
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	now := at.UnixMilli()
-	policy := model.FactoryAttemptPolicy{Repository: epic.InitialProject, Profile: profile}
+	policy := model.FactoryAttemptPolicy{Platform: epic.Platform, Repository: epic.InitialProject, Profile: profile}
 	steps, err := workflowSteps(ctx, tx, epicID)
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err

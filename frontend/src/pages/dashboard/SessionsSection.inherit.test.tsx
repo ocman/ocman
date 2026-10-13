@@ -18,6 +18,7 @@ import { SessionsSection } from './SettingsSections';
 import { useUiStore } from '../../lib/uiStore';
 
 // Mock the server-backed settings so these rows load and save known values.
+vi.mock('../../lib/useCapabilities', async (original) => ({ ...(await original<object>()), useMachinePlatforms: () => [] }));
 vi.mock('../../lib/api', () => ({
   fetchJSON: vi.fn().mockResolvedValue({ defaultAgent: 'build' }),
   postJSON: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('../../lib/api', () => ({
     getModelFallthroughSettings: vi.fn(),
     setModelFallthroughSettings: vi.fn(),
     getArchiveResurface: vi.fn().mockResolvedValue({ mode: 'halt' }),
+    getDefaultPlatform: vi.fn().mockResolvedValue({ platform: 'opencode' }),
     setArchiveResurface: vi.fn(),
   },
 }));

@@ -9,7 +9,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
@@ -133,7 +132,7 @@ func (i *sessionStatusReader) TurnRunning(ctx context.Context, platform, session
 	if !ok {
 		return false, false
 	}
-	return l.Status == db.StatusBusy, true
+	return l.Status == db.StatusBusy || l.Status == db.StatusLimited, true
 }
 
 func (i *sessionStatusReader) LatestMessageState(ctx context.Context, platform, sessionID string) (string, int64, bool, bool, bool) {
@@ -141,7 +140,7 @@ func (i *sessionStatusReader) LatestMessageState(ctx context.Context, platform, 
 	if !ok {
 		return "", 0, false, false, false
 	}
-	running := l.Status == db.StatusBusy
+	running := l.Status == db.StatusBusy || l.Status == db.StatusLimited
 	if l.LatestMessageID == "" {
 		return "", 0, running, !running, true
 	}
@@ -199,7 +198,8 @@ func (s *Server) relaunchOpencodeForSession(ctx context.Context, platformID, ses
 			Warn("not relaunching opencode: session owner is not connected")
 		return false
 	}
-	res, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	_, base := remote.SplitPlatformID(platformID)
+	res, err := host.EnsureRuntime(ctx, base, dir)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"sessionID": sessionID, "directory": dir}).
 			Warn("relaunching opencode for unreachable session")

@@ -42,7 +42,7 @@ func TestProductionPublicationRetiresRuntimeBeforeColdRecovery(t *testing.T) {
 			rt := &recoveryWiringRuntime{}
 			srv.runtime = rt
 			host := srv.newLocalHost()
-			res, err := host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+			res, err := host.EnsureRuntime(t.Context(), "opencode", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,7 +117,7 @@ func TestProductionPublicationRetiresRuntimeBeforeColdRecovery(t *testing.T) {
 				return nil
 			}
 			cold := srv.newLocalHost()
-			res, err = cold.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+			res, err = cold.EnsureRuntime(t.Context(), "opencode", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -147,7 +147,7 @@ func TestProductionRestartDrainsHistoricalSessionsInFirstRequest(t *testing.T) {
 			rt := &recoveryWiringRuntime{stop: func() error { return nil }}
 			srv.runtime = rt
 			host := srv.newLocalHost()
-			if _, err := host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); err != nil {
+			if _, err := host.EnsureRuntime(t.Context(), "opencode", ""); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := host.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); err != nil {

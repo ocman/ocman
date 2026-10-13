@@ -86,7 +86,7 @@ func TestReplacementReviewFailedStopRefreshesTurn(t *testing.T) {
 	stopErr := errors.New("stop failed")
 	rt := &replacementReviewRuntime{stop: func() error { return stopErr }}
 	host := replacementReviewHost(t, srv, rt)
-	if _, err := host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); err != nil {
+	if _, err := host.EnsureRuntime(t.Context(), "opencode", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := host.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); !errors.Is(err, stopErr) {
@@ -144,7 +144,7 @@ func TestReplacementReviewAbortDuringStopAndRecovery(t *testing.T) {
 				return err
 			}}
 			host := replacementReviewHost(t, srv, rt)
-			if _, err := host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); err != nil {
+			if _, err := host.EnsureRuntime(t.Context(), "opencode", ""); err != nil {
 				t.Fatal(err)
 			}
 			_, err = host.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})

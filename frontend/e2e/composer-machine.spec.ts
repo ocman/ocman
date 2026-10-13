@@ -20,7 +20,7 @@ test('machine selection re-points the new conversation and the first prompt crea
   } }));
   await page.route('**/api/sessions/prepare', (route) => route.fulfill({ json: {
     platform: JSON.parse(route.request().postData() ?? '{}').platform || source.platform,
-    agents: [], commands: [], models: { hasProviders: true, models: [] }, liveConnection: true,
+    defaultAgent: 'build', agents: [{ name: 'build' }], commands: [], models: { hasProviders: true, models: [] }, liveConnection: true,
   } }));
   await page.route('**/api/git/info*', (route) => route.fulfill({ json: {} }));
   await page.route('**/api/worktree/list*', (route) => route.fulfill({ json: { worktrees: [] } }));

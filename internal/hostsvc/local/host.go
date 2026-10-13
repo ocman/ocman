@@ -23,6 +23,12 @@ import (
 
 // Deps injects server-owned services and runtime seams into the local host.
 type Deps struct {
+	DefaultPlatform         func(context.Context) (string, error)
+	PlatformEnabled         func(string) bool
+	Runtimes                map[string]func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error)
+	WorktreeNamers          map[string]func(context.Context, string, string) (string, error)
+	HookPlugin              func() hostsvc.HookPluginManager
+	CreatePlatformSession   func(context.Context, string, platforms.CreateSessionRequest, []platforms.PermissionRule) (*platforms.CreateSessionResponse, error)
 	LaunchTmux              func(context.Context, string) (string, error)
 	CreateSession           func(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	CreateConfiguredSession func(context.Context, platforms.CreateSessionRequest, []platforms.PermissionRule) (*platforms.CreateSessionResponse, error)

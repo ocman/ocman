@@ -106,7 +106,7 @@ func TestProductionHostRecoversStoppedReplacementWithoutRuntimeRow(t *testing.T)
 			}}
 			srv.runtime = rt
 			host := srv.newLocalHost()
-			if _, err := host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); err != nil {
+			if _, err := host.EnsureRuntime(t.Context(), "opencode", ""); err != nil {
 				t.Fatal(err)
 			}
 			rows, err := srv.stateDB.ManagedOpencodes(t.Context())
@@ -151,7 +151,7 @@ func TestProductionHostRecoversStoppedReplacementWithoutRuntimeRow(t *testing.T)
 					_, err := host.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
 					return err
 				}
-				_, err := host.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+				_, err := host.EnsureRuntime(t.Context(), "opencode", "")
 				return err
 			}
 			probes := rt.probes

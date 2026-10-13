@@ -26,12 +26,14 @@ type Deps struct {
 	Owner func(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool)
 	// ForDir infers the owner of dir, for routes whose clients name none.
 	ForDir func(dir string) hostsvc.Host
-	// PlatformFor is the compound OpenCode platform id of a host's sessions.
-	PlatformFor func(hostsvc.Host) string
+	// ResolvePlatform picks the new session's platform on host: the requested
+	// one, else the parent session's, else the owner's default. It returns the
+	// compound id and the owner-local base id.
+	ResolvePlatform func(r *http.Request, host hostsvc.Host, requested, parentSessionID string) (id, base string, err error)
 	// InheritPermissions reads the parent's inheritable permissions (it runs
 	// alongside worktree creation) and returns the step that applies them to
 	// the child, reporting the rule count and a soft-fail note.
-	InheritPermissions func(r *http.Request, parentSessionID string) func(childSessionID string) (int, string)
+	InheritPermissions func(r *http.Request, platform, parentSessionID string) func(childSessionID string) (int, string)
 	// SendNow delivers the first message immediately, never queued.
 	SendNow func(ctx context.Context, platformID string, req platforms.SendMessageRequest) error
 	Guards  module.Guards

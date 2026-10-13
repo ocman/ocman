@@ -19,6 +19,7 @@ import type {
   FactoryFormulaValidationRequest, FactoryFormulaSaveRequest, FactoryCapacityPolicy, DoctorReport,
   McpConfigStatus, McpConfigInstallResult, ActivityDay, ModelUsage, FavoriteEntry, HourlyData,
   HourlyTokensByModel, CapabilitiesResponse, Routine, RoutineInput, RoutineRun, SystemStats, AuthMe,
+  ProviderAccount, HookPluginStatus,
 } from './api.types';
 
 // Keep existing consumers on the same public module.
@@ -57,6 +58,9 @@ export const api = {
   agentRunHours: (params: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<{ timestamp: number; minutes: number }[]>(`/api/analytics/agent-run-hours${queryString(params)}`, signal),
   subscriptionUsage: (signal?: AbortSignal) => fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
+  providerAccounts: (signal?: AbortSignal) => fetchJSON<{ accounts: ProviderAccount[] }>('/api/provider-accounts', signal),
+  hookPlugin: (signal?: AbortSignal) => fetchJSON<HookPluginStatus>('/api/hook-plugin', signal),
+  setHookPlugin: (install: boolean) => postJSON<HookPluginStatus>(`/api/hook-plugin/${install ? 'install' : 'uninstall'}`, undefined),
   metricLogs: (params: { kind: MetricsLogKind; agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsLog>(`/api/metric-logs${queryString(params)}`, signal),
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>

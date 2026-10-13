@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/XSAM/otelsql"
@@ -31,6 +32,8 @@ type DB struct {
 	// artifactMu orders blob writes, artifact inserts and blob GC so a delete
 	// never removes a blob a concurrent create is about to reference.
 	artifactMu sync.Mutex
+	// enabledPlatforms filters DefaultPlatform; see SetEnabledPlatforms.
+	enabledPlatforms atomic.Pointer[func() []string]
 }
 
 // DefaultDBPath returns the default path to the ocman state database.

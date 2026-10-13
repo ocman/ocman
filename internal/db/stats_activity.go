@@ -43,7 +43,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 			GROUP BY day
 			ORDER BY day
 		`
-		rows, err := d.db.QueryContext(ctx, query, args...)
+		rows, err := d.sessionsDB(ctx).QueryContext(ctx, query, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -288,7 +288,7 @@ func (d *DB) GetHourlyActivity(ctx context.Context, since int64, dir string) ([]
 		GROUP BY hour
 		ORDER BY hour
 	`
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.sessionsDB(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

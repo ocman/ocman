@@ -22,9 +22,15 @@ import (
 type ownerSpy struct {
 	hostsvc.Host
 	calls int32
+	owner string
 }
 
-func (h *ownerSpy) RemoteID() string { return "local" }
+func (h *ownerSpy) RemoteID() string {
+	if h.owner != "" {
+		return h.owner
+	}
+	return "local"
+}
 
 func (h *ownerSpy) hit()       { atomic.AddInt32(&h.calls, 1) }
 func (h *ownerSpy) count() int { return int(atomic.LoadInt32(&h.calls)) }
@@ -284,7 +290,7 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 // rejected without launching a managed opencode instance on that remote.
 func TestCreateSessionValidatesPlatformBeforeEnsure(t *testing.T) {
 	local := &ownerSpy{}
-	remoteSpy := &ownerSpy{}
+	remoteSpy := &ownerSpy{owner: "build-box"}
 	s := newOwnerTestServer(local)
 	s.hostRouter.RegisterRemote("build-box", remoteSpy)
 	reg := platforms.NewRegistry()
@@ -310,7 +316,7 @@ func TestCreateSessionValidatesPlatformBeforeEnsure(t *testing.T) {
 // The valid-platform remote create still ensures then creates.
 func TestCreateSessionEnsuresForValidRemotePlatform(t *testing.T) {
 	local := &ownerSpy{}
-	remoteSpy := &ownerSpy{}
+	remoteSpy := &ownerSpy{owner: "build-box"}
 	s := newOwnerTestServer(local)
 	s.hostRouter.RegisterRemote("build-box", remoteSpy)
 	reg := platforms.NewRegistry()

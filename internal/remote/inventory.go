@@ -233,6 +233,7 @@ func projectIdentities(stats []db.ProjectStats) []ProjectIdentity {
 			Basename:       basenameOf(p.Directory),
 			Dir:            p.Directory,
 			UpstreamKeys:   slices.Clone(p.UpstreamKeys),
+			Platform:       p.Platform,
 			SessionCount:   p.SessionCount,
 			MessageCount:   p.MessageCount,
 			LastUsed:       p.LastUsed,

@@ -3,6 +3,15 @@ import { SESSION_CACHE_MAX, resetWhisperStatusCache, useApiStore } from './apiSt
 import { api, type SessionDetail, type Session } from './api';
 import { computeSidebarHash } from './sidebarHelpers';
 
+it('scopes lifecycle patches to the owning platform', () => {
+  const local = makeSessionDetail('same').session;
+  const remote = { ...local, platform: 'r-A:opencode' };
+  useApiStore.setState({ recentSessions: [local, remote] });
+  useApiStore.getState().patchRecentSession('same', { status: 'limited', resetsAt: 12345 }, remote.platform);
+  expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)?.status).toBe('done');
+  expect(useApiStore.getState().recentSessions.find(s => s.platform === remote.platform)).toMatchObject({ status: 'limited', resetsAt: 12345 });
+});
+
 function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): SessionDetail {
   const session: Session = {
     id,

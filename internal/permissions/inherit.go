@@ -7,6 +7,8 @@ package permissions
 
 import (
 	"context"
+	"regexp"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -51,6 +53,25 @@ var knownKeys = map[string]bool{
 	"lsp":                true,
 	"doom_loop":          true,
 	"skill":              true,
+}
+
+// mcpKey matches an MCP tool's permission key as the Claude provider
+// records it (`mcp__<server>__<tool>`, lowercased). The charset keeps schema
+// drift from injecting a key that could match more than that tool.
+var mcpKey = regexp.MustCompile(`^mcp__[a-z0-9_-]+$`)
+
+func supportedKey(key string) bool { return knownKeys[key] || mcpKey.MatchString(key) }
+
+// exactScopePlatforms record an approval's exact grant as its patterns
+// (providerprotocol.ExactPattern): Claude asks webfetch/websearch per URL or
+// query, so those keys are inherited per pattern there, never as a flat
+// allow-all. OpenCode's flat keys keep OpenCode's flat inheritance.
+var exactScopePlatforms = map[string]bool{"claudecode": true}
+
+// flatKey reports a key inherited as one pattern-less rule on platform
+// (a local id or a remote's compound r-<id>:<platform>).
+func flatKey(platform, key string) bool {
+	return flatActionKeys[key] && !exactScopePlatforms[platform[strings.LastIndex(platform, ":")+1:]]
 }
 
 // ApprovalLister is the slice of *state.DB the builder needs.
@@ -144,7 +165,7 @@ func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, p
 			continue
 		}
 		key := permissionKey(ap.PermissionText)
-		if !knownKeys[key] {
+		if !supportedKey(key) {
 			log.WithField("permissionText", ap.PermissionText).
 				Debug("permissions: dropping approval with unknown permission key")
 			continue
@@ -153,7 +174,7 @@ func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, p
 			keyOrder = append(keyOrder, key)
 			patternsByKey[key] = nil
 		}
-		if flatActionKeys[key] {
+		if flatKey(platform, key) {
 			continue // flat keys carry no patterns
 		}
 		pats := ap.Patterns
@@ -172,7 +193,7 @@ func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, p
 
 	var rules []platforms.PermissionRule
 	for _, key := range keyOrder {
-		if flatActionKeys[key] {
+		if flatKey(platform, key) {
 			rules = append(rules, platforms.PermissionRule{
 				Permission: key,
 				Pattern:    "",

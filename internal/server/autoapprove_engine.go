@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -35,6 +36,7 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 		Store:          s.stateDB,
 		Session:        s.resolvePlatformForSession,
 		DefaultEnabled: func() bool { return s.autoApproveDefault },
+		OpenCode:       s.openCodeEnabled,
 		Guards:         module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	})
 }
@@ -42,19 +44,7 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 	deps := autoapprove.Deps{
 		OpenCodeAuth: s.openCodeAuth,
-		SessionDir: func(sessionID string) (string, error) {
-			if s.db == nil {
-				return "", errors.New("no OpenCode DB")
-			}
-			sess, err := s.db.GetSession(context.Background(), sessionID)
-			if err != nil {
-				return "", err
-			}
-			if sess == nil {
-				return "", errors.New("session not found")
-			}
-			return sess.Directory, nil
-		},
+		SessionDir:   s.autoApproveSessionDir,
 		ParentSessionID: func(ctx context.Context, childID string) (string, bool) {
 			if s.db == nil {
 				return "", false
@@ -112,9 +102,53 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		deps.Store = s.stateDB
 		deps.CommitStore = s.stateDB
 	}
+	// Without a reachable OpenCode instance, the Claude CLI judges (AD-8).
+	if s.registry != nil {
+		deps.OpenCodeDisabled = !s.openCodeEnabled()
+		if p, ok := s.registry.Get(claudeprovider.PlatformID); ok {
+			judge := autoapprove.ClaudeJudge{CLI: "claude"}
+			if h, ok := p.(interface {
+				HelperSlot(context.Context) (func(), error)
+			}); ok {
+				judge.Slot = h.HelperSlot
+			}
+			deps.FallbackJudge = judge
+		}
+	}
 	return deps
 }
 
+// openCodeEnabled reports whether this machine runs the OpenCode platform.
+// Nothing OpenCode-only (judge discovery, its config, skills) runs without
+// it. A server without a registry (bare test construction) keeps the
+// OpenCode behaviour.
+func (s *Server) openCodeEnabled() bool {
+	if s.registry == nil {
+		return true
+	}
+	_, ok := s.registry.Get(opencode.PlatformID)
+	return ok
+}
+
+// autoApproveSessionDir reads OpenCode sessions from its database and any
+// other platform's sessions through the adapter that owns them.
+func (s *Server) autoApproveSessionDir(sessionID string) (string, error) {
+	ctx := context.Background()
+	if s.db != nil {
+		if sess, err := s.db.GetSession(ctx, sessionID); err == nil && sess != nil {
+			return sess.Directory, nil
+		}
+	}
+	if s.registry != nil {
+		if p, ok := s.registry.PlatformForSession(ctx, sessionID); ok {
+			if detail, err := p.Session(ctx, sessionID, 1, 0); err == nil && detail.Session != nil && detail.Session.Directory != "" {
+				return detail.Session.Directory, nil
+			}
+		}
+	}
+	return "", errors.New("session not found")
+}
+
 func (s *Server) onLocalSessionStatus(sessionID string, status db.SessionStatus) {
-	s.broadcastSessionStatus(sessionID, status)
+	s.sessionEventSink().OnSessionStatus(string(opencode.PlatformID), sessionID, status, 0)
 }

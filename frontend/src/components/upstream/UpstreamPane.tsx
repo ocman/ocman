@@ -5,6 +5,7 @@ import type { PaneSummary } from '../SessionChangesSidebar';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { ProjectLabel } from '../ProjectLabel';
 import { UpstreamRemoteGroup } from './UpstreamRemoteGroup';
+import { LaunchPlatformContext } from './launchPlatform';
 import { clearPRChecksCache } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
@@ -23,6 +24,7 @@ function UpstreamDetectionStatus() {
 }
 
 interface UpstreamPaneProps {
+  launchPlatform?: string;
   /** Project directory the upstreams were detected for; keys the lists. */
   directory: string | undefined;
   projectId?: string;
@@ -76,6 +78,7 @@ export function UpstreamPane({
   currentDirectory = directory,
   actionsEnabled = true,
   remoteId,
+  launchPlatform,
   upstreams,
   upstreamLoading = false,
   upstreamsReady = true,
@@ -108,6 +111,7 @@ export function UpstreamPane({
   }
 
   return (
+    <LaunchPlatformContext.Provider value={launchPlatform}>
     <Tabs value={tab} onValueChange={(value) => setPreferences({ tab: value === 'issues' ? 'issues' : 'prs' })} className="oc-upstream-pane" data-testid="upstream-pane">
       <TabsList aria-label="Pull requests and issues">
         <TabsTrigger value="prs" data-testid="upstream-tab-prs">PRs</TabsTrigger>
@@ -153,6 +157,7 @@ export function UpstreamPane({
         />
       </TabsContent>
     </Tabs>
+    </LaunchPlatformContext.Provider>
   );
 }
 

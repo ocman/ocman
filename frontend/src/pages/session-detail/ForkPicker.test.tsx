@@ -45,6 +45,15 @@ describe('ForkPicker', () => {
     expect(onSelect).toHaveBeenLastCalledWith('msg-user-2');
   });
 
+  it('offers only the full session when the platform cannot fork at a message', () => {
+    const onSelect = vi.fn();
+    render(<ForkPicker open fullSessionOnly messages={messages} parts={parts} onSelect={onSelect} onClose={vi.fn()} />);
+
+    expect(screen.queryByText('First prompt')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Full session'));
+    expect(onSelect).toHaveBeenLastCalledWith(undefined);
+  });
+
   it('filters prompts by text', () => {
     render(<ForkPicker open messages={messages} parts={parts} onSelect={vi.fn()} onClose={vi.fn()} />);
 

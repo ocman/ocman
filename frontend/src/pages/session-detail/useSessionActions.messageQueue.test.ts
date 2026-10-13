@@ -46,7 +46,7 @@ function makeOptions(isRunningRef: MutableRefObject<boolean>): UseSessionActions
   return {
     session: { id: 'sess-1', platform: 'opencode', directory: '/p', timeUpdated: 0 },
     portAvailable: true,
-    caps: {} as UseSessionActionsOptions['caps'],
+    caps: { revert: true, runtimeRestart: true } as UseSessionActionsOptions['caps'],
     pendingPermission: null,
     pendingQuestion: null,
     selectedModel: 'anthropic/x',

@@ -18,7 +18,30 @@ import (
 // dependency-injected local Host (which owns the the git package call
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
+	runtimes := map[string]func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error){}
+	namers := map[string]func(context.Context, string, string) (string, error){}
+	if s.registry != nil {
+		for _, adapter := range s.registry.Platforms() {
+			if runtime, ok := adapter.(hostsvc.RuntimeEnsurer); ok {
+				runtimes[string(adapter.ID())] = runtime.EnsureRuntime
+			}
+			if namer, ok := adapter.(hostsvc.WorktreeNamer); ok {
+				namers[string(adapter.ID())] = namer.WorktreeName
+			}
+		}
+	}
 	return hostlocal.New(hostlocal.Deps{
+		DefaultPlatform: s.stateDB.DefaultPlatform,
+		Runtimes:        runtimes,
+		WorktreeNamers:  namers,
+		HookPlugin:      func() hostsvc.HookPluginManager { return s.hookPlugin() },
+		PlatformEnabled: func(id string) bool {
+			if s.registry == nil {
+				return false
+			}
+			_, ok := s.registry.Get(platforms.ID(id))
+			return ok
+		},
 		LaunchTmux:            s.gateLaunchTmux(tmux.LaunchOpencode),
 		Runtime:               s.gatedRuntime(),
 		BeforeReplace:         s.recordOpencodeReplacement,
@@ -36,11 +59,11 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/gRPC).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
-		CreateSession: func(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-			return s.sessions.Client("opencode").CreateSession(ctx, req)
-		},
-		CreateConfiguredSession: func(ctx context.Context, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
-			return s.sessions.CreateConfigured(ctx, "opencode", req, rules)
+		CreatePlatformSession: func(ctx context.Context, id string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+			if rules != nil {
+				return s.sessions.CreateConfigured(ctx, id, req, rules)
+			}
+			return s.sessions.Client(id).CreateSession(ctx, req)
 		},
 		TmuxSessions:     s.hostTmuxSessions,
 		Projects:         s.hostProjects,

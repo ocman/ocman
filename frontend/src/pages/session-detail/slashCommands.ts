@@ -29,7 +29,7 @@ export interface CommandSession {
 export interface CommandContext {
   session: CommandSession;
   portAvailable: boolean;
-  caps: Pick<PlatformCapabilities, 'fork' | 'move'>;
+  caps: Pick<PlatformCapabilities, 'fork' | 'move' | 'revert' | 'runtimeRestart'>;
   pending: UsePendingSendResult;
   recentSessionsRef: MutableRefObject<Session[]>;
   loadNavigationSessions?: () => Promise<void>;
@@ -58,6 +58,8 @@ export interface CommandContext {
 export interface SlashCommand {
   /** Requires `portAvailable`; skipped silently when the port is down. */
   live?: boolean;
+  /** Platform capability the command needs; refused visibly without it. */
+  requires?: 'revert' | 'runtimeRestart';
   run: (ctx: CommandContext, args: string, command: string) => Promise<void> | void;
 }
 
@@ -114,6 +116,7 @@ const worktree: SlashCommand = {
 };
 
 const restartOpencode: SlashCommand = {
+  requires: 'runtimeRestart',
   run: async ({ session, pending, setRestartToastMessage, reloadCapabilities }, args) => {
     const flags = args.trim() ? args.trim().toLowerCase().split(/\s+/) : [];
     if (flags.some((flag) => flag !== 'all' && flag !== 'now') || new Set(flags).size !== flags.length) {
@@ -229,6 +232,7 @@ const copy: SlashCommand = {
 
 // Unlike `live` commands, undo/redo tell the user why nothing happened.
 const undoRedo: SlashCommand = {
+  requires: 'revert',
   run: async ({ session, portAvailable, messagesRef, refreshThread, setShowDisconnectedToast }, _args, command) => {
     if (!portAvailable) {
       setShowDisconnectedToast(true);
@@ -340,6 +344,10 @@ export async function runSlashCommand(ctx: CommandContext, command: string, args
   const entry = SLASH_COMMANDS[command];
   if (!entry) return false;
   if (entry.live && !ctx.portAvailable) return true;
+  if (entry.requires && !ctx.caps[entry.requires]) {
+    ctx.pending.fail(`/${command} is not available for this session`);
+    return true;
+  }
   await entry.run(ctx, args, command);
   return true;
 }

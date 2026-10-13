@@ -7,6 +7,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
@@ -32,7 +33,7 @@ func (s *Server) WithOpenCodeDBPath(path string) *Server {
 			return local().StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root})
 		},
 		Start: func(ctx context.Context, root string) error {
-			_, err := local().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root})
+			_, err := local().EnsureRuntime(ctx, string(platforms.OpenCodeID), root)
 			return err
 		},
 		Holders:   ocmaint.LsofHolders,

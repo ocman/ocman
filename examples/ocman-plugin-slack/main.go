@@ -60,6 +60,7 @@ func description() plugin.Description {
 		RequestedGrants: []string{plugin.ConversationSessionGrant},
 		Settings: []plugin.Setting{
 			{Key: plugin.ConversationProjectSetting, Label: "Project directory", Type: "string", Required: true},
+			{Key: "platform", Label: "Platform (optional)", Type: "string"},
 			{Key: "appToken", Label: "App-level token (xapp-)", Type: "string", Required: true, Secret: true},
 			{Key: "botToken", Label: "Bot token (xoxb-)", Type: "string", Required: true, Secret: true},
 			{Key: "allowedUsers", Label: "Authorized Slack user IDs (comma separated)", Type: "string", Required: true},

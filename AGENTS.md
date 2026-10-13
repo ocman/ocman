@@ -7,6 +7,57 @@ A web dashboard for viewing coding-agent session data. Ocman supports:
 - **OpenCode** — reads OpenCode's SQLite database (read-only) and
   proxies live data from running OpenCode instances via their HTTP
   API.
+- **Claude Code** (`-platforms claudecode`) — indexes the transcripts
+  under `~/.claude/projects` and drives the sessions ocman starts through
+  the user's own `claude` binary, via the provider layer below. User
+  docs: `docs/features/claude-code.md`.
+
+**Provider layer.** Platforms other than OpenCode plug in through an
+ocman-owned, internal provider protocol (`internal/providerprotocol`,
+spec AD-2): HTTP + SSE over an owner-local unix socket, `/hello`
+handshake with protocol version and capabilities, and events in the
+OpenCode v1 shapes the frontend already reduces (plus `limited` status
+with `resetsAt`). One generic adapter, `internal/platforms/provider`,
+implements `platforms.Platform` against any socket and keeps its own
+per-instance caches (session ownership, live status, pending prompts;
+never package globals). The provider side is a
+`providersupervisor.Supervisor` wrapping a provider `Backend`: it
+sequences every outbound event, syncs it to a per-session spool before
+publishing, replays `GET /events?after=<seq>` on reconnect, and only
+truncates a spool after the headless watcher acknowledged the completed
+turn (browser snapshots lease their cursor until the SSE stream
+attaches). `/drain` stops new turns before an out-of-range supervisor is
+replaced. The protocol table is in `internal/providerprotocol/README.md`.
+Claude browsing runs in an **in-process** supervisor, one per machine, on
+a private temp-dir socket (`startClaudeBrowser` in `internal/platforms/claudecode/platform.go`):
+it lists every transcript and launches nothing. Sessions ocman launches
+are driven by **one tmux-hosted supervisor per repository root**
+(`ocman provider claudecode`, hosted by `ocruntime.ProviderRuntime` +
+`hostsvc/local.ProviderManager`, persisted in `managed_provider`),
+created by `EnsureRuntime`/create/send and reached through its own
+adapter (`internal/platforms/claudecode/projects.go`). Each `claude` child runs in its
+session's worktree; the cap of 4 children is machine-wide (flock slots
+under `<data>/claude-slots`), one-shot helper calls (probes, Claude judge,
+worktree naming) have a separate machine-wide budget of 2
+(`claudeprovider.HelperSlot`), and a slot store I/O error fails the turn rather
+than waiting. Ownership (`claude-sessions.json`) is shared under a file lock;
+each owned session records the `CLAUDE_CONFIG_DIR` it was launched under and is
+read-only under any other. On restart ocman re-probes the persisted
+endpoints, reattaches live supervisors and replays their unacknowledged turns
+and pending prompts; a dead one is relaunched by the next send. One that is
+out of protocol range, or was launched with another `claude` or
+`CLAUDE_CONFIG_DIR` (`ProviderRuntime.Identity`, hashed into the tmux name),
+drains and is replaced only once idle: meanwhile its prompts stay answerable
+(`provider.NewDraining` uses only the version-independent routes: its prompt
+events are pushed through the headless stream, prompt replies and abort)
+and new turns for that root get `ErrBusy`. Launches pass the resolved CLI,
+`CLAUDE_CONFIG_DIR`, ocman's skills plugin and its bound MCP address, which is
+also written to `claude-launch.json` so surviving supervisors' next children
+reach a rebound listener. Idle edges are published with
+`Supervisor.PublishIf`, atomically with `BeginTurn`, so a send racing a result
+never sees a stale idle; persistence failures (rules, ownership, spool) are
+returned or fail the turn, never acknowledged. Spec:
+`spec/multi-agent-support/`.
 
 OpenCode **v1 and v2** are both supported (`internal/ocv2`). The installed
 version is read once from `opencode --version` (`ocv2.InstalledV2`; a later
@@ -301,9 +352,10 @@ handlers don't bypass the `Host` seam). User-facing docs:
 
 ## Repository layout
 
-- `main.go` — entrypoint; parses the CLI flags (run `ocman -h`, or read
-  the `flag.` block in `main.go` for the authoritative list), opens
-  databases, registers platform adapters, starts the server. Note
+- `main.go` — entrypoint; embeds the skills and passes the build version to
+  `internal/app`. Application startup, flags, database selection, logging,
+  authentication and server composition live in `internal/app` (run `ocman -h`,
+  or read the `flag.` block in `internal/app/run.go` for the authoritative list). Note
   `-gui` / `-gui-addr`: with `-gui` the process opens a native Wails
   desktop window (`internal/gui`) around the same HTTP server instead
   of only serving HTTP.
@@ -421,6 +473,37 @@ handlers don't bypass the `Host` seam). User-facing docs:
   tells operators to set it before pointing a plugin at a remote provider.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
+- `internal/platforms/claudecode/` — Claude browsing/project adapter composition,
+  project supervisor recovery and draining, plus the provider and hook
+  subcommands. Skills and the MCP address are passed in by application startup;
+  the adapter does not read application flags. Installation of terminal hooks
+  goes through the local Host's `hostsvc.HookPluginManager` seam.
+- `internal/platforms/provider/` — the generic provider adapter: one
+  `platforms.Platform` per provider socket, with per-instance caches,
+  `WatchEvents` (headless, reconnecting, acknowledges completed turns and
+  feeds the status/idle sinks), `ProxyEvents` (browser replay from a leased
+  snapshot) and the optional ocman-side `Rules` store.
+- `internal/providerprotocol/` — the internal provider protocol's DTOs,
+  version range and route table (`README.md`). Internal only; no stability
+  promise until a second provider exists.
+- `internal/providersupervisor/` — the provider-side server: `/hello`,
+  sequenced spool-backed `/events`, snapshot leases, `/ack`, `/drain`.
+  Wraps a provider `Backend`; `providertest` is the fake provider used by
+  the adapter, runtime and replay tests.
+- `internal/claudeprovider/` — Claude Code provider (`claudecode`): the
+  disposable `claude-index.db` transcript index, directory watcher, the
+  single Claude→v1 converter and the protocol backend, which browses every transcript and drives the sessions ocman launches through a pooled set of `claude` children (cap 4, 10 min idle). Children run with
+  `--permission-prompt-tool stdio`; every `can_use_tool` becomes a v1
+  `permission.asked`/`question.asked`, decided in ocman by the adapter's
+  `provider.Rules` store (`claude-rules.json`), then the autoapprove pipeline
+  (`HandleProviderEvent`, started by `Server.watchProviderPrompts`) and the user;
+  without OpenCode the judge is `autoapprove.ClaudeJudge`. Terminal-started
+  sessions get live status from the opt-in hook plugin (FR-6): `ocman hook
+  <event>` posts to `/hook` on the MCP listener (1 s, always exit 0), the
+  server forwards it as provider `POST /hooks`, and hooks for sessions ocman
+  drives are ignored. Install/uninstall run `claude plugin …`. Tests
+  never run `claude`; `claudetest.Binary` builds a fake that replays
+  `internal/claudeprovider/testdata/<version>/` fixtures.
 - `internal/ocv2/` — OpenCode v2 compatibility: version detection, the
   v1-on-v2 RoundTripper (`compat.go`, `routes_*.go`), the event translator
   (`events*.go`) and the v2→v1 converters (`message.go`, `tools.go`,
@@ -498,7 +581,10 @@ handlers don't bypass the `Host` seam). User-facing docs:
   instance in `state.db`'s `managed_opencode` table (v35, probe-on-
   recovery). Launch capability is surfaced as the `HostCaps.OpencodeLaunch`
   (`opencodeLaunch`) flag, distinct from `Tmux`; the frontend gates
-  managed-launch UI on it.
+  managed-launch UI on it. `ProviderRuntime` hosts `ocman provider <id>`
+  in tmux (`tmux -L ocman-provider`) on a unix socket, probed with
+  `/hello` and persisted in `managed_provider`; it hosts Claude's
+  per-project supervisors.
 - `internal/term/` — in-app browser terminals: window naming/hashing,
   window management in the dedicated `ocman-term` tmux session on its own
   named server (`tmux -L ocman-term`), and
@@ -793,7 +879,8 @@ minimal and match the surrounding code.
 ## Key details
 
 - **`-platforms` flag**: comma-separated list of platforms to enable
-  (default `"opencode"`). Currently the only valid value is `opencode`.
+  (default `"opencode"`). Valid values are `opencode` and `claudecode`
+  (Claude Code via `internal/claudeprovider`; terminal sessions are read-only).
   Only the listed adapters are registered; the OpenCode database is
   not required when `opencode` is omitted from the list.
 - **Pure-Go SQLite**: uses `modernc.org/sqlite` (no CGo, no C compiler required).
@@ -816,7 +903,10 @@ minimal and match the surrounding code.
   (`internal/db/analytics_mirror.go`). It uses OpenCode's table names, so the
   same SQL runs against either database, and it falls back to opencode.db
   until the first build finishes. It has no migrations: a schema bump or a
-  different `-db` wipes and rebuilds it.
+  different `-db` wipes and rebuilds it. Other platforms (Claude) add rows via
+  `AddAnalyticsSource`; from then on reads never fall back to opencode.db.
+  Without OpenCode it is the analytics database itself
+  (`db.OpenAnalyticsStore`, served as `Server.analytics`).
 - **OpenCode port discovery** uses `lsof` to find processes named
   `opencode` listening on TCP, then resolves their cwd. macOS/Linux
   only. Cached with a 10-second TTL.

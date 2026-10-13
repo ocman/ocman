@@ -9,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -27,7 +28,8 @@ func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensur
 	}
 	done := s.sessions.BeginRoutineCreation()
 	defer done()
-	created, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{ProjectDir: run.Directory, Branch: "routine/" + run.ID, NewBranch: true, MustCreateBranch: true, Title: title, PermissionRules: rules})
+	_, base := remote.SplitPlatformID(platformID)
+	created, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: run.Directory, Branch: "routine/" + run.ID, NewBranch: true, MustCreateBranch: true, Title: title, PermissionRules: rules})
 	if err != nil {
 		return "", err
 	}
@@ -50,7 +52,7 @@ func (s *Service) cleanupRunWorktree(ctx context.Context, run state.RoutineRun, 
 		return ""
 	}
 	for _, session := range detail.SessionTree {
-		if session.Status == db.StatusBusy || session.Status == db.StatusWaiting {
+		if session.Status == db.StatusBusy || session.Status == db.StatusWaiting || session.Status == db.StatusLimited {
 			return "Worktree retained: a child session still needs attention."
 		}
 	}

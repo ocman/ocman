@@ -96,8 +96,7 @@ func helperExecutable(t *testing.T, dir, name, mode string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// macOS can spend seconds validating a newly linked test binary on its
-	// first execution. Do that in fixture setup, outside describe's deadline.
+	// Fails fast if the test binary itself cannot run.
 	warmDescribeHelper.Do(func() {
 		warmDescribeHelperErr = exec.Command(exe, "-test.run=^$").Run()
 	})

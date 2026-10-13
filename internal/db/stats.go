@@ -72,8 +72,9 @@ func modelKey(provider, model string) string {
 // GetStats returns aggregate statistics using SQL aggregation.
 func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	s := &Stats{}
+	sessions := d.sessionsDB(ctx)
 
-	err := d.db.QueryRowContext(ctx, `
+	err := sessions.QueryRowContext(ctx, `
 		SELECT count(*), COALESCE(SUM(instr(title, '@') > 0), 0)
 		FROM session
 	`).Scan(&s.TotalSessions, &s.SubagentSessions)
@@ -84,7 +85,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = d.db.QueryRowContext(ctx, `SELECT count(DISTINCT directory) FROM session`).Scan(&s.TotalProjects)
+	err = sessions.QueryRowContext(ctx, `SELECT count(DISTINCT directory) FROM session`).Scan(&s.TotalProjects)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +97,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 		SELECT COALESCE(SUM(tokens_input), 0), COALESCE(SUM(tokens_output), 0), COALESCE(SUM(cost), 0)
 		FROM session`
 	totalsDB := d.db
-	if !d.sessionTotals {
+	if !d.sessionTotals || d.mirrorOnly() {
 		totalsDB = d.analytics(ctx)
 		totals = `
 		SELECT

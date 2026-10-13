@@ -89,7 +89,10 @@ type Deps struct {
 	OpenCodeAuth   func() ocapi.Auth
 	// MCPURL is the endpoint Factory sessions must have configured.
 	MCPURL func() string
-	Guards module.Guards
+	// CreatePlatform resolves a requested (or the default) platform for an
+	// owner into its compound ID and base platform.
+	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested string) (id, base string, err error)
+	Guards         module.Guards
 }
 
 // Module is the mounted Factory feature.

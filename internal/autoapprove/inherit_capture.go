@@ -148,6 +148,9 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 		return
 	}
 	s.autoApproveMu.Unlock()
+	if s.replayRecordedAIApproval(ctx, sessionID, permissionID) {
+		return
+	}
 	s.recordUserLifecycle(sessionID, permissionID, reply, repliedAt)
 	s.scheduleUserReplyCapture(ctx, sessionID, permissionID, reply)
 }
@@ -349,4 +352,56 @@ func cloneMetadata(metadata map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return cloned
+}
+
+// approvalReader is the optional store read that resolves who answered a
+// permission (*state.DB).
+type approvalReader interface {
+	ApprovedPermission(ctx context.Context, platform, sessionID, permissionID string) (state.ApprovedPermission, bool, error)
+}
+
+// replayRecordedAIApproval handles the reply to a permission the AI already
+// approved and recorded, observed again by a pipeline that has no memory of
+// it (a restart replays the agent's events): lifecycle, notice and
+// resolution report the AI's recorded approval, never a user reply.
+func (s *Service) replayRecordedAIApproval(ctx context.Context, sessionID, permissionID string) bool {
+	reader, ok := s.deps.Store.(approvalReader)
+	asked, cached := s.getAsked(sessionID, permissionID)
+	if !ok || !cached {
+		return false
+	}
+	row, found, err := reader.ApprovedPermission(ctx, asked.platformID, sessionID, permissionID)
+	if err != nil {
+		log.WithError(err).WithFields(log.Fields{"sessionID": sessionID, "permissionID": permissionID}).
+			Warn("autoapprove: reading the recorded approval; attributing the reply to the user")
+	}
+	if !found || row.ApprovedBy != state.ApprovalActorAI {
+		return false
+	}
+	s.forgetAsked(sessionID, permissionID)
+	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{
+		ResolvedAt: row.ApprovedAt,
+		Resolution: state.PermissionResolutionAutoApproved,
+	})
+	patterns := row.Patterns
+	if patterns == nil {
+		patterns = []string{}
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"permissionId": permissionID,
+		"sessionID":    sessionID,
+		"permission":   row.PermissionText,
+		"patterns":     patterns,
+		"reasoning":    row.Reasoning,
+		"approvedBy":   string(row.ApprovedBy),
+		"reply":        string(row.Reply),
+		"metadata":     row.Metadata,
+		"askedAt":      row.AskedAt,
+		"approvedAt":   row.ApprovedAt,
+	})
+	if err == nil {
+		s.emitSessionSseEvent(sessionID, "ocman.permission.auto-approved", payload)
+	}
+	s.broadcastPermissionResolved(sessionID, permissionID, "auto-approved")
+	return true
 }

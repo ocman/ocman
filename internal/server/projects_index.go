@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
@@ -58,7 +59,7 @@ func (s *Server) runProjectsIndexTick(ctx context.Context) {
 }
 
 func (s *Server) runProjectsIndexLoop(ctx context.Context) {
-	if s.db == nil {
+	if s.db == nil && len(s.localPlatformIDs()) == 0 {
 		return
 	}
 
@@ -97,7 +98,7 @@ var errProjectsRefreshAborted = errors.New("projects index refresh aborted")
 func (s *Server) refreshProjectsIndex(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	if s.db == nil && s.projects.fetch == nil {
+	if s.db == nil && s.projects.fetch == nil && len(s.localPlatformIDs()) == 0 {
 		return nil
 	}
 
@@ -269,7 +270,56 @@ func (s *Server) getProjects(ctx context.Context) ([]db.ProjectStats, error) {
 	if fetch := s.projects.fetch; fetch != nil {
 		return fetch()
 	}
-	return s.db.GetProjects(ctx)
+	var projects []db.ProjectStats
+	if s.db != nil {
+		var err error
+		if projects, err = s.db.GetProjects(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return s.mergePlatformProjects(ctx, projects), nil
+}
+
+// mergePlatformProjects adds the directories of every other local platform's
+// sessions, so pickers offer projects that have only Claude sessions (FR-2).
+// OpenCode's rows come from its database; a failing adapter is skipped.
+// ponytail: lists every session per refresh; add a per-adapter projects
+// operation if a platform's list gets slow.
+func (s *Server) mergePlatformProjects(ctx context.Context, projects []db.ProjectStats) []db.ProjectStats {
+	index := map[string]int{}
+	for i, p := range projects {
+		index[p.Directory] = i
+	}
+	for _, adapter := range s.registry.Platforms() {
+		id := string(adapter.ID())
+		if isRemotePlatformID(id) || (id == string(platforms.OpenCodeID) && s.db != nil) {
+			continue
+		}
+		sessions, err := adapter.Sessions(ctx, "", 0)
+		if err != nil {
+			log.WithError(err).WithField("platform", id).Warn("projects index: listing sessions")
+			continue
+		}
+		for _, session := range sessions {
+			if session.Directory == "" || session.ParentID != "" {
+				continue
+			}
+			i, ok := index[session.Directory]
+			if !ok {
+				i = len(projects)
+				index[session.Directory] = i
+				projects = append(projects, db.ProjectStats{Directory: session.Directory})
+			}
+			p := &projects[i]
+			p.SessionCount++
+			p.MessageCount += session.MessageCount
+			p.LastUsed = max(p.LastUsed, session.TimeUpdated)
+			p.TotalTokensIn += session.TotalInputTokens
+			p.TotalTokensOut += session.TotalOutputTokens
+			p.TotalCost += session.TotalCost
+		}
+	}
+	return projects
 }
 
 func (s *Server) projectsSnapshot() ([]db.ProjectStats, bool) {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os/exec"
@@ -64,7 +65,7 @@ func (s *Server) draftOwner(w http.ResponseWriter, platform, directory string) (
 }
 
 func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, platform, directory string) (hostsvc.Host, string, bool) {
-	remoteID, _ := remote.SplitPlatformID(platform)
+	remoteID, base := remote.SplitPlatformID(platform)
 	host, ok := s.draftOwner(w, platform, directory)
 	if !ok {
 		return nil, "", false
@@ -72,10 +73,10 @@ func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, 
 	// A worktree runs on the project's shared instance rooted at the main
 	// checkout; fold the path back so ensuring a worktree directory can't
 	// launch a second instance for the same project.
-	ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: projectRootForDirectory(directory)})
+	ensured, err := host.EnsureRuntime(r.Context(), base, projectRootForDirectory(directory))
 	fields := log.Fields{"platform": platform, "directory": directory}
 	switch {
-	case err != nil && remoteID != "":
+	case err != nil && (remoteID != "" || base != string(platforms.OpenCodeID)):
 		log.WithError(err).WithFields(fields).Warn("hub: ensure project opencode failed")
 		writeSessionSvcError(w, "creating session", err)
 		return nil, "", false
@@ -95,7 +96,7 @@ type newSessionTarget struct {
 
 // An explicit owner is authoritative, even when both machines share a path.
 // Older callers may omit it and retain the platform's owner (or local).
-func (t *newSessionTarget) resolvePlatform(s *Server, w http.ResponseWriter) bool {
+func (t *newSessionTarget) resolvePlatform(ctx context.Context, s *Server, w http.ResponseWriter) bool {
 	if t.RemoteID == "" {
 		t.RemoteID = remoteIDForPlatform(t.Platform)
 	}
@@ -107,8 +108,15 @@ func (t *newSessionTarget) resolvePlatform(s *Server, w http.ResponseWriter) boo
 	if !ok {
 		return false
 	}
-	if t.Platform == "" {
-		t.Platform = opencodePlatformForHost(host)
+	var err error
+	t.Platform, _, err = s.createPlatform(ctx, host, t.Platform)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+	if !s.sessions.KnownPlatform(t.Platform) {
+		http.Error(w, "unknown platform", http.StatusBadRequest)
+		return false
 	}
 	return true
 }
@@ -132,7 +140,7 @@ func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) || !req.validate(w) {
 		return
 	}
-	if !req.resolvePlatform(s, w) {
+	if !req.resolvePlatform(r.Context(), s, w) {
 		return
 	}
 	// Opening the composer or picking a machine must not launch OpenCode:
@@ -212,7 +220,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) || !req.validate(w) {
 		return
 	}
-	if !req.resolvePlatform(s, w) {
+	if !req.resolvePlatform(r.Context(), s, w) {
 		return
 	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
@@ -240,6 +248,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	)
 	if req.Worktree {
 		remoteID, _ := remote.SplitPlatformID(req.Platform)
+		_, base := remote.SplitPlatformID(req.Platform)
 		if remoteID == "" {
 			// git is a host-local precondition; a remote validates its own.
 			if _, err := exec.LookPath("git"); err != nil {
@@ -264,6 +273,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			hostsvc.ReportProgress(ctx, hostsvc.StepWorktree, hostsvc.StepActive)
 		}
 		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
+			Platform:   base,
 			ProjectDir: req.Directory, AutoName: true, Prompt: req.Prompt, Title: req.Title,
 			PermissionRules: permissionRules,
 		})
@@ -275,7 +285,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			gitmod.WriteCreateError(w, err)
 			return
 		}
-		platform, sessionID, directory, worktreePath, branch = opencodePlatformForHost(host), res.SessionID, res.WorktreePath, res.WorktreePath, res.Branch
+		platform, sessionID, directory, worktreePath, branch = req.Platform, res.SessionID, res.WorktreePath, res.WorktreePath, res.Branch
 	} else {
 		resolved, err := s.sessions.ResolvePlatformID(r.Context(), req.Platform)
 		if err != nil {

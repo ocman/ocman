@@ -11,10 +11,11 @@ func (s *Server) analyticsModule() *analytics.Module {
 	s.analyticsModOnce.Do(func() {
 		if s.analyticsMod == nil {
 			s.analyticsMod = analytics.NewModule(analytics.Deps{
-				DB:      s.db,
-				Store:   s.stateDB,
-				Version: func() string { return s.version },
-				Guards:  module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+				DB:        s.db,
+				Analytics: s.analytics,
+				Store:     s.stateDB,
+				Version:   func() string { return s.version },
+				Guards:    module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 			})
 		}
 	})

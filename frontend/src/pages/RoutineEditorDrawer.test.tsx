@@ -6,6 +6,7 @@ import { api, type Routine } from '../lib/api';
 import { RoutineEditorForm } from './RoutineEditorDrawer';
 
 vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { create: vi.fn(), update: vi.fn() } } }));
+vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: () => [] }));
 
 const routine: Routine = {
   id: 'r', name: 'Check', prompt: 'Inspect', directory: '/repo', remoteId: 'local', agent: '', model: '',

@@ -16,7 +16,7 @@ import (
 
 func TestConversationReplyReady(t *testing.T) {
 	for status, want := range map[db.SessionStatus]bool{
-		db.StatusBusy: false, db.StatusInterrupted: false,
+		db.StatusBusy: false, db.StatusLimited: false, db.StatusInterrupted: false,
 		db.StatusWaiting: true, db.StatusDone: true, db.StatusError: true,
 	} {
 		if got := conversationReplyReady(status); got != want {
@@ -25,10 +25,36 @@ func TestConversationReplyReady(t *testing.T) {
 	}
 }
 
-type stubHost struct{ hostsvc.Host }
+type stubHost struct {
+	hostsvc.Host
+	ensured *string
+}
 
-func (stubHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: req.ProjectDir}, nil
+func (h stubHost) EnsureRuntime(_ context.Context, platform, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+	if h.ensured != nil {
+		*h.ensured = platform
+	}
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: dir}, nil
+}
+
+// localPlatforms resolves platforms as the server does for this machine:
+// empty means opencode, and only the listed ones are registered.
+func localPlatforms(ids ...string) (func(context.Context, hostsvc.Host, string) (string, string, error), func(string) (platforms.Platform, bool)) {
+	create := func(_ context.Context, _ hostsvc.Host, requested string) (string, string, error) {
+		if requested == "" {
+			requested = "opencode"
+		}
+		return requested, requested, nil
+	}
+	lookup := func(id string) (platforms.Platform, bool) {
+		for _, known := range ids {
+			if id == known {
+				return nil, true
+			}
+		}
+		return nil, false
+	}
+	return create, lookup
 }
 
 type stubSessions struct {
@@ -55,8 +81,10 @@ func TestConversationConfiguredModelAndAgentAreQueued(t *testing.T) {
 	}
 	var got []enqueued
 	sessions := &stubSessions{}
+	create, lookup := localPlatforms("opencode")
 	m := NewModule(Deps{
 		Store: store, Local: func() hostsvc.Host { return stubHost{} }, Sessions: sessions,
+		CreatePlatform: create, Platform: lookup,
 		Enqueue: func(_ context.Context, platform string, force bool, req platforms.SendMessageRequest) error {
 			got = append(got, enqueued{platform, force, req})
 			return nil
@@ -80,5 +108,32 @@ func TestConversationConfiguredModelAndAgentAreQueued(t *testing.T) {
 	// A redelivered event is dropped by its receipt: no second prompt.
 	if err := m.startConversation(t.Context(), "org.example.chatops", config, message); err != nil || len(got) != 1 {
 		t.Fatalf("redelivery: %v, %d prompts", err, len(got))
+	}
+}
+
+// The installation's platform value picks the session's platform; an invalid
+// or unregistered one creates nothing.
+func TestConversationPlatformValue(t *testing.T) {
+	for raw, want := range map[string]string{`"claudecode"`: "claudecode", `17`: "", `"unknown"`: ""} {
+		t.Run(raw, func(t *testing.T) {
+			store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			var ensured string
+			create, lookup := localPlatforms("opencode", "claudecode")
+			m := NewModule(Deps{
+				Store: store, Local: func() hostsvc.Host { return stubHost{ensured: &ensured} }, Sessions: &stubSessions{},
+				CreatePlatform: create, Platform: lookup,
+				Enqueue: func(context.Context, string, bool, platforms.SendMessageRequest) error { return nil },
+			})
+			key := state.PluginConversationKey{PluginID: "p", AccountID: "a", ThreadID: "t"}
+			_ = m.deliverConversationPrompt(t.Context(), key, "/repo", map[string]json.RawMessage{"platform": json.RawMessage(raw)}, plugins.ConversationMessage{Text: "hi"})
+			linked, found, err := store.GetPluginConversation(t.Context(), key)
+			if err != nil || found != (want != "") || linked.PlatformID != want || ensured != want {
+				t.Fatalf("linked = %+v, found %v, runtime %q, %v", linked, found, ensured, err)
+			}
+		})
 	}
 }

@@ -24,6 +24,7 @@ import { useBellNotify } from './lib/useBellNotify';
 import { useNotificationNotify } from './lib/useNotificationNotify';
 import { PromptToastNotify } from './components/PromptToastNotify';
 import { McpConfigPrompt } from './components/McpConfigPrompt';
+import { HookPluginPrompt } from './components/HookPluginPrompt';
 import { SetupPrompt } from './components/SetupPrompt';
 import { BackendStatusBanner } from './components/BackendStatusBanner';
 import { AuthGate } from './components/AuthGate';
@@ -354,6 +355,7 @@ function AuthenticatedShell() {
       <NotificationNotify />
       <PromptToastNotify />
       <McpConfigPrompt />
+      <HookPluginPrompt />
       <SetupPrompt />
       <ServiceWorkerNavListener />
       <PerformanceCleanup />

@@ -50,7 +50,7 @@ func TestPluginOperationAuthenticationAndRouting(t *testing.T) {
 	t.Cleanup(mgr.Stop)
 	mr := &managedRemote{localID: 1, conn: conn}
 	mgr.remotes[1] = mr
-	if !mgr.publishAdapters(1, mr, newRemotePlatform(conn, "opencode", func() string { return "Owner" }), newRemoteHost(conn)) {
+	if !mgr.publishAdapters(1, mr, []*remotePlatform{newRemotePlatform(conn, "opencode", func() string { return "Owner" })}, newRemoteHost(conn)) {
 		t.Fatal("publish failed")
 	}
 	req := PluginRequest{Operation: "configuration", PluginID: "org.example.test", Input: PluginInput{Secrets: map[string]string{"token": "private"}}}

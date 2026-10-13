@@ -6,9 +6,31 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
+
+func (s *Server) sessionEventSink() platforms.SessionEventSink {
+	return platforms.SessionEventSink{OnSessionStatus: s.onSessionStatus, OnSessionIdle: func(platform, session string) {
+		s.onAgentWaitIdle(platform, session)
+		s.onSessionIdle(platform, session)
+	}}
+}
+
+func (s *Server) onSessionStatus(platformID, sessionID string, status db.SessionStatus, resetsAt int64) {
+	if platformID == "" || sessionID == "" {
+		return
+	}
+	if status != db.StatusLimited {
+		resetsAt = 0
+	}
+	payload, err := json.Marshal(map[string]any{"platform": platformID, "sessionID": sessionID,
+		"patch": map[string]any{"status": status, "resetsAt": resetsAt}})
+	if err == nil {
+		s.broadcastGlobalEvent("ocman.session.changed", payload)
+	}
+}
 
 // broadcastSessionIdle updates bell/favicon indicators without a notify poll.
 func (s *Server) broadcastSessionIdle(sessionID string) {
@@ -26,7 +48,7 @@ func (s *Server) broadcastSessionChanged(sessionID string) {
 	if sessionID == "" {
 		return
 	}
-	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID})
+	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID, "platform": opencode.PlatformID})
 	if err != nil {
 		return
 	}

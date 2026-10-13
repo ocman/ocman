@@ -118,6 +118,8 @@ export interface HandleRequest {
   action?: 'handle' | 'review';
   fetchHead?: boolean;
   intent?: string;
+  /** Platform to launch on; omitted uses the owner's default. */
+  platform?: string;
 }
 
 export interface HandleResponse {

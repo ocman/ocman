@@ -127,3 +127,12 @@ func TestFactoryVerificationPrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestFactoryMCPRules(t *testing.T) {
+	rule := platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"}
+	for platform, want := range map[string]int{"opencode": 1, "r-box:opencode": 1, "claudecode": 2, "r-box:claudecode": 2} {
+		if got := factoryMCPRules(platform, rule); len(got) != want || got[0] != rule {
+			t.Errorf("%s = %+v", platform, got)
+		}
+	}
+}

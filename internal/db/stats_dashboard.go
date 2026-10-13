@@ -800,7 +800,7 @@ func (d *DB) lookupSessionMetadata(ctx context.Context, ids []string) (titles, d
 		args[i] = id
 	}
 	q := "SELECT id, title, directory FROM session WHERE id IN (" + strings.Join(placeholders, ",") + ")"
-	rows, err := d.db.QueryContext(ctx, q, args...)
+	rows, err := d.sessionsDB(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, nil, err
 	}

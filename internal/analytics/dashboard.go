@@ -12,10 +12,10 @@ import (
 )
 
 func (m *Module) handleStats(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
-	stats, err := m.deps.DB.GetStats(r.Context())
+	stats, err := m.deps.Analytics.GetStats(r.Context())
 	if err != nil {
 		httpx.ServerError(w, "fetching stats", err)
 		return
@@ -25,10 +25,10 @@ func (m *Module) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
-	metrics, err := m.deps.DB.GetMetricsDashboard(r.Context(), metricsOptions(r))
+	metrics, err := m.deps.Analytics.GetMetricsDashboard(r.Context(), metricsOptions(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching metrics", err)
 		return
@@ -37,10 +37,10 @@ func (m *Module) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleMetricsPerformance(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
-	metrics, err := m.deps.DB.GetMetricsPerformance(r.Context(), metricsOptions(r))
+	metrics, err := m.deps.Analytics.GetMetricsPerformance(r.Context(), metricsOptions(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching performance metrics", err)
 		return
@@ -49,7 +49,7 @@ func (m *Module) handleMetricsPerformance(w http.ResponseWriter, r *http.Request
 }
 
 func (m *Module) handleMetricLogs(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
 	kind := db.MetricsLogKind(strings.TrimSpace(r.URL.Query().Get("kind")))
@@ -57,7 +57,7 @@ func (m *Module) handleMetricLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "kind must be request, session, or project", http.StatusBadRequest)
 		return
 	}
-	logs, err := m.deps.DB.GetMetricsLog(r.Context(), metricsOptions(r), kind)
+	logs, err := m.deps.Analytics.GetMetricsLog(r.Context(), metricsOptions(r), kind)
 	if err != nil {
 		httpx.ServerError(w, "fetching metric logs", err)
 		return
@@ -103,11 +103,11 @@ func (m *Module) handlePermissionStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleActivity(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
-	activity, err := m.deps.DB.GetDailyActivity(r.Context(), sinceParam(r), model, dirParam(r))
+	activity, err := m.deps.Analytics.GetDailyActivity(r.Context(), sinceParam(r), model, dirParam(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching activity", err)
 		return
@@ -116,10 +116,10 @@ func (m *Module) handleActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleModels(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
-	models, err := m.deps.DB.GetModelUsage(r.Context(), sinceParam(r), dirParam(r))
+	models, err := m.deps.Analytics.GetModelUsage(r.Context(), sinceParam(r), dirParam(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching model usage", err)
 		return
@@ -128,11 +128,11 @@ func (m *Module) handleModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
-	data, err := m.deps.DB.GetHourlyTokensByModel(r.Context(), intParam(r, "days", 0), sinceParam(r), model, dirParam(r))
+	data, err := m.deps.Analytics.GetHourlyTokensByModel(r.Context(), intParam(r, "days", 0), sinceParam(r), model, dirParam(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching hourly tokens by model", err)
 		return
@@ -141,10 +141,10 @@ func (m *Module) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleHourly(w http.ResponseWriter, r *http.Request) {
-	if !m.requireDB(w) {
+	if !m.requireAnalytics(w) {
 		return
 	}
-	hourly, err := m.deps.DB.GetHourlyActivity(r.Context(), sinceParam(r), dirParam(r))
+	hourly, err := m.deps.Analytics.GetHourlyActivity(r.Context(), sinceParam(r), dirParam(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching hourly activity", err)
 		return

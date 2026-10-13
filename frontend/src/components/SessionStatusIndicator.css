@@ -27,6 +27,7 @@
 
 .session-status-indicator[data-state="viewed"] { background: var(--text-dim); }
 .session-status-indicator[data-state="interrupted"] { background: var(--accent4); }
+.session-status-indicator[data-state="limited"] { background: var(--accent4); }
 .session-status-indicator[data-state="draft"] {
   background: transparent;
   box-shadow: inset 0 0 0 2px var(--accent4);
