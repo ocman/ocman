@@ -3,17 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
@@ -73,7 +69,7 @@ func TestHandleProjectUpstreams_DetectsGitHubRemote(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir="+dir+"&remoteId=local", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -100,7 +96,7 @@ func TestHandleProjectUpstreams_UsesExplicitRemoteOwnerForRemoteOnlyPath(t *test
 	srv.hostRouter.RegisterRemote("rem1", host)
 
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=rem1", nil))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=rem1", nil))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"repo":"alice/myproj"`) {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -109,333 +105,26 @@ func TestHandleProjectUpstreams_UsesExplicitRemoteOwnerForRemoteOnlyPath(t *test
 func TestHandleProjectUpstreams_RejectsUnknownExplicitOwner(t *testing.T) {
 	srv := testServer(t)
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=gone", nil))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=gone", nil))
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestDetectUpstreams_CachesByOwnerAndDirectory(t *testing.T) {
-	now := time.Unix(100, 0)
-	srv := testServer(t)
-	srv.upstreamNow = func() time.Time { return now }
-	a := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/repo"), remoteID: "rem1"}
-	b := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/repo"), remoteID: "rem2"}
-
-	for range 2 {
-		if _, _, err := srv.detectUpstreams(context.Background(), a, "/repo"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, _, err := srv.detectUpstreams(context.Background(), b, "/repo"); err != nil {
-		t.Fatal(err)
-	}
-	if a.upstreamCalls != 1 || b.upstreamCalls != 1 {
-		t.Fatalf("calls before expiry = %d, %d; want 1, 1", a.upstreamCalls, b.upstreamCalls)
-	}
-
-	now = now.Add(projectUpstreamsTTL + time.Millisecond)
-	if _, _, err := srv.detectUpstreams(context.Background(), a, "/repo"); err != nil {
-		t.Fatal(err)
-	}
-	if a.upstreamCalls != 2 {
-		t.Fatalf("calls after expiry = %d, want 2", a.upstreamCalls)
-	}
-}
-
-func TestDetectUpstreams_TTLStartsAfterDetection(t *testing.T) {
-	now := time.Unix(100, 0)
-	srv := testServer(t)
-	srv.upstreamNow = func() time.Time { return now }
-	host := &projectHandleRemoteHost{
-		upstreams: githubProjectUpstreams("/repo"), remoteID: "rem1",
-		onUpstream: func() { now = now.Add(projectUpstreamsTTL) },
-	}
-	for range 2 {
-		if _, _, err := srv.detectUpstreams(context.Background(), host, "/repo"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if host.upstreamCalls != 1 {
-		t.Fatalf("upstream calls = %d, want cached result after slow detection", host.upstreamCalls)
-	}
-}
-
-type cancelAwareUpstreamHost struct {
-	hostsvc.Host
-	started chan struct{}
-	release chan struct{}
-	once    sync.Once
-}
-
-type boundedUpstreamHost struct {
-	hostsvc.Host
-	mu      sync.Mutex
-	active  int
-	max     int
-	calls   int
-	started chan struct{}
-	release chan struct{}
-}
-
-func (h *boundedUpstreamHost) RemoteID() string { return "rem1" }
-func (h *boundedUpstreamHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
-	h.mu.Lock()
-	h.active++
-	h.calls++
-	if h.active > h.max {
-		h.max = h.active
-	}
-	h.mu.Unlock()
-	h.started <- struct{}{}
-	<-h.release
-	h.mu.Lock()
-	h.active--
-	h.mu.Unlock()
-	return githubProjectUpstreams("/repo"), nil
-}
-
-func TestDetectUpstreams_CanceledRequestsDoNotQueueDetachedWork(t *testing.T) {
-	const limit = 8
-	srv := testServer(t)
-	host := &boundedUpstreamHost{started: make(chan struct{}, 64), release: make(chan struct{})}
-	done := make(chan error, limit)
-	for i := range limit {
-		go func() {
-			_, _, err := srv.detectUpstreams(context.Background(), host, fmt.Sprintf("/active/%d", i))
-			done <- err
-		}()
-	}
-	for range limit {
-		<-host.started
-	}
-	canceledDone := make(chan error, 20)
-	cancels := make([]context.CancelFunc, 0, 20)
-	for i := range 20 {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancels = append(cancels, cancel)
-		go func() {
-			_, _, err := srv.detectUpstreams(ctx, host, fmt.Sprintf("/canceled/%d", i))
-			canceledDone <- err
-		}()
-	}
-	time.Sleep(20 * time.Millisecond)
-	for _, cancel := range cancels {
-		cancel()
-	}
-	for range 20 {
-		if err := <-canceledDone; !errors.Is(err, context.Canceled) {
-			t.Fatalf("canceled request error = %v", err)
-		}
-	}
-	close(host.release)
-	for range limit {
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
-	}
-	time.Sleep(50 * time.Millisecond)
-	host.mu.Lock()
-	defer host.mu.Unlock()
-	if host.calls != limit {
-		t.Fatalf("owner calls = %d, want %d", host.calls, limit)
-	}
-}
-
-func TestDetectUpstreams_QueuedCreatorCancellationKeepsLiveWaiter(t *testing.T) {
-	const limit = 8
-	srv := testServer(t)
-	host := &boundedUpstreamHost{started: make(chan struct{}, 16), release: make(chan struct{})}
-	activeDone := make(chan error, limit)
-	for i := range limit {
-		go func() {
-			_, _, err := srv.detectUpstreams(context.Background(), host, fmt.Sprintf("/active/%d", i))
-			activeDone <- err
-		}()
-	}
-	for range limit {
-		<-host.started
-	}
-	creatorCtx, cancelCreator := context.WithCancel(context.Background())
-	creatorDone := make(chan error, 1)
-	go func() {
-		_, _, err := srv.detectUpstreams(creatorCtx, host, "/shared")
-		creatorDone <- err
-	}()
-	time.Sleep(20 * time.Millisecond)
-	waiterDone := make(chan error, 1)
-	go func() {
-		_, _, err := srv.detectUpstreams(context.Background(), host, "/shared")
-		waiterDone <- err
-	}()
-	time.Sleep(20 * time.Millisecond)
-	cancelCreator()
-	if err := <-creatorDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("creator error = %v", err)
-	}
-	close(host.release)
-	for range limit {
-		if err := <-activeDone; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := <-waiterDone; err != nil {
-		t.Fatalf("live waiter error = %v", err)
-	}
-}
-
-func TestDetectUpstreams_NewRequestReplacesAbandonedPendingWork(t *testing.T) {
-	const limit = 8
-	srv := testServer(t)
-	host := &boundedUpstreamHost{started: make(chan struct{}, 16), release: make(chan struct{})}
-	activeDone := make(chan error, limit)
-	for i := range limit {
-		go func() {
-			_, _, err := srv.detectUpstreams(context.Background(), host, fmt.Sprintf("/active/%d", i))
-			activeDone <- err
-		}()
-	}
-	for range limit {
-		<-host.started
-	}
-	abandonedCtx, cancel := context.WithCancel(context.Background())
-	abandonedDone := make(chan error, 1)
-	go func() {
-		_, _, err := srv.detectUpstreams(abandonedCtx, host, "/shared")
-		abandonedDone <- err
-	}()
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	if err := <-abandonedDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("abandoned error = %v", err)
-	}
-	replacementDone := make(chan error, 1)
-	go func() {
-		_, _, err := srv.detectUpstreams(context.Background(), host, "/shared")
-		replacementDone <- err
-	}()
-	close(host.release)
-	for range limit {
-		if err := <-activeDone; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := <-replacementDone; err != nil {
-		t.Fatalf("replacement error = %v", err)
-	}
-}
-
-func TestDetectUpstreams_BoundsConcurrentOwners(t *testing.T) {
-	const limit = 8
-	srv := testServer(t)
-	host := &boundedUpstreamHost{started: make(chan struct{}, limit+1), release: make(chan struct{})}
-	done := make(chan error, limit+1)
-	for i := range limit + 1 {
-		go func() {
-			_, _, err := srv.detectUpstreams(context.Background(), host, fmt.Sprintf("/repo/%d", i))
-			done <- err
-		}()
-	}
-	for range limit {
-		<-host.started
-	}
-	select {
-	case <-host.started:
-		t.Fatal("more than the configured upstream detections started")
-	case <-time.After(20 * time.Millisecond):
-	}
-	close(host.release)
-	for range limit + 1 {
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
-	}
-	host.mu.Lock()
-	defer host.mu.Unlock()
-	if host.max != limit {
-		t.Fatalf("max concurrency = %d, want %d", host.max, limit)
-	}
-}
-
-func TestDetectUpstreams_DuplicateWaitersDoNotBlockOtherProjects(t *testing.T) {
-	srv := testServer(t)
-	host := &boundedUpstreamHost{started: make(chan struct{}, 2), release: make(chan struct{})}
-	done := make(chan error, 9)
-	for range 8 {
-		go func() {
-			_, _, err := srv.detectUpstreams(context.Background(), host, "/same")
-			done <- err
-		}()
-	}
-	<-host.started
-	go func() {
-		_, _, err := srv.detectUpstreams(context.Background(), host, "/other")
-		done <- err
-	}()
-	select {
-	case <-host.started:
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("duplicate waiters blocked an unrelated project")
-	}
-	close(host.release)
-	for range 9 {
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func (h *cancelAwareUpstreamHost) RemoteID() string { return "rem1" }
-func (h *cancelAwareUpstreamHost) ProjectUpstreams(ctx context.Context, _ string) (*hostsvc.ProjectUpstreams, error) {
-	h.once.Do(func() { close(h.started) })
-	select {
-	case <-h.release:
-		return githubProjectUpstreams("/repo"), nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func TestDetectUpstreams_CallerCancellationDoesNotFailOtherWaiters(t *testing.T) {
-	srv := testServer(t)
-	host := &cancelAwareUpstreamHost{started: make(chan struct{}), release: make(chan struct{})}
-	firstCtx, cancel := context.WithCancel(context.Background())
-	first := make(chan error, 1)
-	second := make(chan error, 1)
-	go func() {
-		_, _, err := srv.detectUpstreams(firstCtx, host, "/repo")
-		first <- err
-	}()
-	<-host.started
-	go func() {
-		_, _, err := srv.detectUpstreams(context.Background(), host, "/repo")
-		second <- err
-	}()
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	if err := <-first; !errors.Is(err, context.Canceled) {
-		t.Fatalf("first error = %v, want context canceled", err)
-	}
-	close(host.release)
-	if err := <-second; err != nil {
-		t.Fatalf("second error = %v, want success", err)
-	}
-}
-
-func TestDetectUpstreams_ClassifiesForgejoWithHubConfiguration(t *testing.T) {
+func TestProjectUpstreams_ClassifiesForgejoWithHubConfiguration(t *testing.T) {
 	srv := testServer(t)
 	registerForgejoClient(srv, "code.example.com", "https://code.example.com")
 	host := &projectHandleRemoteHost{upstreams: &hostsvc.ProjectUpstreams{
 		RepoRoot: "/remote/repo",
 		Remotes:  []forge.Remote{{Name: "origin", Host: "code.example.com", Repo: "owner/repo"}},
 	}}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
 
-	_, remotes, err := srv.detectUpstreams(context.Background(), host, "/remote/repo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(remotes) != 1 || remotes[0].Type != forge.RemoteTypeForgejo {
-		t.Fatalf("remotes = %+v, want hub-classified Forgejo remote", remotes)
+	rr := httptest.NewRecorder()
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/repo&remoteId=rem1", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"type":"forgejo"`) {
+		t.Fatalf("status = %d, body = %s, want hub-classified Forgejo remote", rr.Code, rr.Body.String())
 	}
 }
 
@@ -472,7 +161,7 @@ func TestHandleProjectUpstreams_RemoteNotARepoReturns404(t *testing.T) {
 	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
 	srv.hostRouter.RegisterRemote("rem1", host)
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/nope&remoteId=rem1", nil))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/nope&remoteId=rem1", nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -484,7 +173,7 @@ func TestHandleProjectUpstreams_RejectsInvalidOwnerResult(t *testing.T) {
 	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
 	srv.hostRouter.RegisterRemote("rem1", host)
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/repo&remoteId=rem1", nil))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/repo&remoteId=rem1", nil))
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -494,7 +183,7 @@ func TestHandleProjectUpstreams_RejectsNonAbsoluteDir(t *testing.T) {
 	srv := testServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=relative/path", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, req)
+	serveProjectForge(srv, rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", rr.Code)
 	}
@@ -520,15 +209,15 @@ func TestProjectUpstreamEndpointsRequireExplicitOwnerAndAbsoluteDir(t *testing.T
 			req := httptest.NewRequest(http.MethodGet, target, nil)
 			switch req.URL.Path {
 			case "/api/project/upstreams":
-				srv.handleProjectUpstreams(rr, req)
+				serveProjectForge(srv, rr, req)
 			case "/api/project/prs":
-				srv.handleProjectPRs(rr, req)
+				serveProjectForge(srv, rr, req)
 			case "/api/project/issues":
-				srv.handleProjectIssues(rr, req)
+				serveProjectForge(srv, rr, req)
 			case "/api/project/forge-user":
-				srv.handleProjectForgeUser(rr, req)
+				serveProjectForge(srv, rr, req)
 			case "/api/project/pr-checks":
-				srv.handleProjectPRChecks(rr, req)
+				serveProjectForge(srv, rr, req)
 			}
 			if rr.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
@@ -542,7 +231,7 @@ func TestHandleProjectUpstreams_404WhenNotARepo(t *testing.T) {
 	notARepo := t.TempDir()
 	req := httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir="+notARepo+"&remoteId=local", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, req)
+	serveProjectForge(srv, rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 	}
@@ -573,7 +262,7 @@ func TestHandleProjectUpstreams_EmptyWhenNoSupportedRemotes(t *testing.T) {
 	// No remotes at all — should produce []
 	req := httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir="+dir+"&remoteId=local", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectUpstreams(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -647,7 +336,7 @@ func TestHandleProjectPRs_ReturnsList(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&state=open", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRs(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -674,7 +363,7 @@ func TestHandleProjectPRs_MineFiltersToAssigneeOrReviewer(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&mine=alice", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRs(rr, req)
+	serveProjectForge(srv, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d", rr.Code)
 	}
@@ -690,7 +379,7 @@ func TestHandleProjectPRs_MineFiltersToAssigneeOrReviewer(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet,
 		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&mine=bob", nil)
 	rr = httptest.NewRecorder()
-	srv.handleProjectPRs(rr, req)
+	serveProjectForge(srv, rr, req)
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if len(resp.PRs) != 1 {
 		t.Errorf("bob should match (reviewer), got %d", len(resp.PRs))
@@ -700,7 +389,7 @@ func TestHandleProjectPRs_MineFiltersToAssigneeOrReviewer(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet,
 		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&mine=stranger", nil)
 	rr = httptest.NewRecorder()
-	srv.handleProjectPRs(rr, req)
+	serveProjectForge(srv, rr, req)
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if len(resp.PRs) != 0 {
 		t.Errorf("stranger should match nothing, got %d", len(resp.PRs))
@@ -717,7 +406,7 @@ func TestHandleProjectIssues_ReturnsList(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/issues?dir="+dir+"&remoteId=local&remote=origin", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectIssues(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -740,7 +429,7 @@ func TestHandleProjectIssues_MineFiltersAssignees(t *testing.T) {
 
 	for login, want := range map[string]int{"alice": 1, "stranger": 0} {
 		rr := httptest.NewRecorder()
-		srv.handleProjectIssues(rr, httptest.NewRequest(http.MethodGet,
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet,
 			"/api/project/issues?dir="+dir+"&remoteId=local&remote=origin&mine="+login, nil))
 		var resp struct {
 			Issues []forge.Issue `json:"issues"`
@@ -774,11 +463,11 @@ func TestProjectForgeMetadataErrorsAreMapped(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			switch tt.name {
 			case "prs":
-				srv.handleProjectPRs(rr, req)
+				serveProjectForge(srv, rr, req)
 			case "issues":
-				srv.handleProjectIssues(rr, req)
+				serveProjectForge(srv, rr, req)
 			default:
-				srv.handleProjectForgeUser(rr, req)
+				serveProjectForge(srv, rr, req)
 			}
 			if rr.Code != tt.status {
 				t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
@@ -795,10 +484,10 @@ func TestProjectForgeEndpointsRequireConfiguredClient(t *testing.T) {
 		path string
 		run  func(http.ResponseWriter, *http.Request)
 	}{
-		{"/api/project/prs?dir=" + dir + "&remoteId=local&remote=origin", srv.handleProjectPRs},
-		{"/api/project/issues?dir=" + dir + "&remoteId=local&remote=origin", srv.handleProjectIssues},
-		{"/api/project/forge-user?dir=" + dir + "&remoteId=local&remote=origin", srv.handleProjectForgeUser},
-		{"/api/project/pr-checks?dir=" + dir + "&remoteId=local&remote=origin&sha=abc", srv.handleProjectPRChecks},
+		{"/api/project/prs?dir=" + dir + "&remoteId=local&remote=origin", projectForgeRoute(srv)},
+		{"/api/project/issues?dir=" + dir + "&remoteId=local&remote=origin", projectForgeRoute(srv)},
+		{"/api/project/forge-user?dir=" + dir + "&remoteId=local&remote=origin", projectForgeRoute(srv)},
+		{"/api/project/pr-checks?dir=" + dir + "&remoteId=local&remote=origin&sha=abc", projectForgeRoute(srv)},
 	}
 	for _, tt := range tests {
 		rr := httptest.NewRecorder()
@@ -819,7 +508,7 @@ func TestHandleProjectForgeUser_ReturnsLogin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/forge-user?dir="+dir+"&remoteId=local&remote=origin", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectForgeUser(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -837,7 +526,7 @@ func TestHandleProjectPRs_404ForUnknownRemote(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/prs?dir="+dir+"&remoteId=local&remote=nonexistent", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRs(rr, req)
+	serveProjectForge(srv, rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 	}
@@ -849,7 +538,7 @@ func TestHandleProjectPRs_RejectsInvalidState(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&state=invalid", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRs(rr, req)
+	serveProjectForge(srv, rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
 	}
@@ -865,7 +554,7 @@ func TestHandleProjectPRChecks_ReturnsRolledUpStatus(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin&sha=abc123", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRChecks(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -892,7 +581,7 @@ func TestHandleProjectPRChecks_RequiresParams(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRChecks(rr, req)
+	serveProjectForge(srv, rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for missing sha, got %d", rr.Code)
 	}
@@ -904,7 +593,7 @@ func TestHandleProjectPRChecks_404ForUnknownRemote(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=nope&sha=abc123", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRChecks(rr, req)
+	serveProjectForge(srv, rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 	}
@@ -925,7 +614,7 @@ func TestHandleProjectPRChecks_502WhenForgeErrors(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin&sha=abc123", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRChecks(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d body=%s", rr.Code, rr.Body.String())
@@ -948,7 +637,7 @@ func TestHandleProjectPRChecks_NormalisesNilChecksToEmptyArray(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin&sha=abc123", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjectPRChecks(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())

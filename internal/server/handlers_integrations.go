@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
@@ -20,6 +21,37 @@ func newForgeClients() *forgeClients {
 		GitHub:  github.New(),
 		Forgejo: forgejo.NewRegistry(),
 	}
+}
+
+// resolveForge returns the hub's client for a classified remote, or false
+// when its type is unsupported or its host has no configured client.
+func (s *Server) resolveForge(rem forge.Remote) (forge.Forge, bool) {
+	if s.integrations == nil {
+		return nil, false
+	}
+	switch rem.Type {
+	case forge.RemoteTypeGitHub:
+		if s.integrations.GitHub == nil {
+			return nil, false
+		}
+		return s.integrations.GitHub, true
+	case forge.RemoteTypeForgejo:
+		if s.integrations.Forgejo == nil {
+			return nil, false
+		}
+		c := s.integrations.Forgejo.ForHost(rem.Host)
+		if c == nil {
+			return nil, false
+		}
+		return c, true
+	}
+	return nil, false
+}
+
+// knowsForgejo reports whether the hub has a Forgejo client for host; it
+// classifies an owner's remotes.
+func (s *Server) knowsForgejo(host string) bool {
+	return s.integrations != nil && s.integrations.Forgejo != nil && s.integrations.Forgejo.Knows(host)
 }
 
 // ---------------------------------------------------------------------------

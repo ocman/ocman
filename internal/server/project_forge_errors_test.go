@@ -63,13 +63,13 @@ func TestProjectForgeFailureMapping(t *testing.T) {
 				rr := httptest.NewRecorder()
 				switch route {
 				case "prs":
-					srv.handleProjectPRs(rr, req)
+					serveProjectForge(srv, rr, req)
 				case "issues":
-					srv.handleProjectIssues(rr, req)
+					serveProjectForge(srv, rr, req)
 				case "forge-user":
-					srv.handleProjectForgeUser(rr, req)
+					serveProjectForge(srv, rr, req)
 				default:
-					srv.handleProjectPRChecks(rr, req)
+					serveProjectForge(srv, rr, req)
 				}
 				want := tc.want
 				if tc.upstream == 404 && route == "pr-checks" {

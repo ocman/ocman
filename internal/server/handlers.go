@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -46,6 +45,10 @@ var (
 	setBodyReadDeadline   = httpx.SetBodyReadDeadline
 	clearBodyReadDeadline = httpx.ClearBodyReadDeadline
 	readAndUnmarshal      = httpx.ReadJSON
+	// Shared with the project forge module so both validate identically.
+	parseAbsDir            = httpx.AbsDir
+	normaliseDirParam      = httpx.NormaliseDir
+	requireProjectRemoteID = httpx.RemoteID
 )
 
 // --- Platform dispatch helpers ---
@@ -160,22 +163,6 @@ func parseInt64Param(r *http.Request, name string, fallback int64) int64 {
 	return n
 }
 
-// parseAbsDir reads the required ?dir= query parameter and validates
-// that it is an absolute path, writing the HTTP error itself on
-// failure. Returns the directory and whether to proceed.
-func parseAbsDir(w http.ResponseWriter, r *http.Request) (string, bool) {
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	if dir == "" {
-		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
-		return "", false
-	}
-	if !filepath.IsAbs(dir) {
-		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
-		return "", false
-	}
-	return dir, true
-}
-
 // parseSinceParam reads the ?days= query param and returns a Unix
 // millisecond cutoff. Returns 0 (no filter) when the param is absent
 // or zero.
@@ -187,19 +174,6 @@ func parseSinceParam(r *http.Request) int64 {
 		}
 	}
 	return 0
-}
-
-// normaliseDirParam trims surrounding whitespace and a single trailing slash
-// from a directory-prefix filter.
-func normaliseDirParam(raw string) string {
-	dir := strings.TrimSpace(raw)
-	if dir == "" {
-		return ""
-	}
-	if strings.HasSuffix(dir, "/") && dir != "/" {
-		dir = dir[:len(dir)-1]
-	}
-	return dir
 }
 
 // sortAndLimitSessions sorts a combined multi-platform session slice by

@@ -249,7 +249,8 @@ user-customizable template under Settings → "PR & Issue templates",
 persisted in the `setting` table of `state.db` (migration v12). See
 `spec/pr-issue-sidebar/` for the full spec.
 
-PR/Issue backend operations are owner-routed. Every project forge endpoint
+PR/Issue backend operations are owner-routed and live in the
+`internal/projectforge` feature module. Every project forge endpoint
 requires `remoteId` (`local` for the hub); named remotes fail closed when
 disconnected. Repository detection and cross-fork fetches run through the
 owner's `hostsvc.Host`, while the hub uses its forge clients for PR/Issue
@@ -550,6 +551,14 @@ handlers don't bypass the `Host` seam). User-facing docs:
   served inert via `httpx`), and `/api/git/files` + `/api/git/file`, whose
   `Deps.Owner` requires `remoteId` and resolves the owner (503 when that remote
   is disconnected). Composer uploads and artifact blobs are not here.
+- `internal/projectforge/` — module: the PRs & Issues pane's routes
+  (`/api/project/{upstreams,prs,issues,pr-checks,pr-mergeability,forge-user,
+  handle}`), the prompt templates setting, the per-owner upstream-detection
+  cache, forge error/rate-limit mapping and the "handle this" launch. Owners
+  come from the server's `resolveOwner` (fail-closed); detection and cross-fork
+  fetches run on the owner's `hostsvc.Host`; forge clients stay in
+  `internal/forge` behind the server's `resolveForge`. Project archive, quick
+  settings and session start remain server code.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost

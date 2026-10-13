@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge/github"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/projectforge"
 )
 
 type projectHandleRemoteHost struct {
@@ -64,7 +65,7 @@ func TestHandleProjectHandleRequiresExplicitOwnerAndAbsoluteDir(t *testing.T) {
 		`{"dir":"relative","remote":"origin","remoteId":"local","type":"issue","number":7,"mode":"session"}`,
 	} {
 		rr := httptest.NewRecorder()
-		srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("body = %s: status = %d, response = %s", body, rr.Code, rr.Body.String())
 		}
@@ -160,7 +161,7 @@ func TestHandleProjectHandle_WorktreePRFetchesMetadataOnce(t *testing.T) {
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -219,7 +220,7 @@ func TestHandleProjectHandle_SessionMode(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -273,7 +274,7 @@ func TestHandleProjectHandle_SessionModeUsesOwningRemotePlatform(t *testing.T) {
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"issue","number":7,"mode":"session"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -312,7 +313,7 @@ func TestHandleProjectHandle_SendFailureReturnsCreatedSession(t *testing.T) {
 
 	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"issue","number":7,"mode":"session"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"childSessionId":"child"`) || !strings.Contains(rr.Body.String(), `"promptError"`) {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -336,7 +337,7 @@ func TestHandleProjectHandle_FallsBackWhenMetadataIsUnavailable(t *testing.T) {
 	})
 	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"issue","number":7,"mode":"session","intent":"check logs"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusOK || !strings.Contains(prompt, "Please handle issue #7 on github.com/alice/myproj") || !strings.Contains(prompt, "check logs") || !strings.Contains(prompt, "untrusted forge content") {
 		t.Fatalf("status = %d, prompt = %q, body = %s", rr.Code, prompt, rr.Body.String())
 	}
@@ -368,7 +369,7 @@ func TestHandleProjectHandle_LooksUpSelectedPRDirectly(t *testing.T) {
 	})
 	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"pr","number":101,"mode":"session"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusOK || !strings.Contains(prompt, "Later PR") || !strings.Contains(prompt, "PR body details") || !strings.Contains(prompt, "untrusted forge content") {
 		t.Fatalf("status = %d, prompt = %q, body = %s", rr.Code, prompt, rr.Body.String())
 	}
@@ -400,7 +401,7 @@ func TestHandleProjectHandle_ReportsLaunchErrors(t *testing.T) {
 			}
 			body := fmt.Sprintf(`{"dir":%q,"remoteId":"rem1","remote":"origin","type":%q,"number":%d,"mode":%q}`, dir, itemType, number, mode)
 			rr := httptest.NewRecorder()
-			srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+			serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 			if rr.Code != http.StatusBadGateway {
 				t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 			}
@@ -420,7 +421,7 @@ func TestHandleProjectHandle_RejectsInvalidWorktreeResult(t *testing.T) {
 	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode"})
 	body := `{"dir":"/remote/repo","remoteId":"rem1","remote":"origin","type":"issue","number":7,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -437,7 +438,7 @@ func TestHandleProjectHandle_RequiresRegisteredPlatform(t *testing.T) {
 	srv.hostRouter.RegisterRemote("rem1", host)
 	body := `{"dir":"/remote/repo","remoteId":"rem1","remote":"origin","type":"issue","number":7,"mode":"session"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -448,7 +449,7 @@ func TestHandleProjectHandle_RejectsUnavailableDependencies(t *testing.T) {
 	t.Run("owner", func(t *testing.T) {
 		srv := testServer(t)
 		rr := httptest.NewRecorder()
-		srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 		if rr.Code != http.StatusServiceUnavailable {
 			t.Fatalf("status = %d", rr.Code)
 		}
@@ -459,7 +460,7 @@ func TestHandleProjectHandle_RejectsUnavailableDependencies(t *testing.T) {
 		srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
 		srv.hostRouter.RegisterRemote("rem1", host)
 		rr := httptest.NewRecorder()
-		srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 		if rr.Code != http.StatusBadGateway {
 			t.Fatalf("status = %d", rr.Code)
 		}
@@ -471,7 +472,7 @@ func TestHandleProjectHandle_RejectsUnavailableDependencies(t *testing.T) {
 		srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
 		srv.hostRouter.RegisterRemote("rem1", host)
 		rr := httptest.NewRecorder()
-		srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d", rr.Code)
 		}
@@ -486,7 +487,7 @@ func TestHandleProjectHandle_RejectsUnavailableDependencies(t *testing.T) {
 		srv.hostRouter.RegisterRemote("rem1", host)
 		srv.registry = nil
 		rr := httptest.NewRecorder()
-		srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 		if rr.Code != http.StatusServiceUnavailable {
 			t.Fatalf("status = %d", rr.Code)
 		}
@@ -511,14 +512,14 @@ func TestHandleProjectHandle_CrossForkFetchRunsOnOwner(t *testing.T) {
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree","fetchHead":true}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 	if host.fetch != (hostsvc.FetchPRHeadRequest{RepoRoot: dir, Remote: "origin", Number: 42}) {
 		t.Fatalf("owner fetch = %+v", host.fetch)
 	}
-	if !host.hasDeadline || time.Until(host.deadline) <= 0 || time.Until(host.deadline) > prHeadFetchTimeout {
+	if !host.hasDeadline || time.Until(host.deadline) <= 0 || time.Until(host.deadline) > projectforge.PRHeadFetchTimeout {
 		t.Fatalf("owner fetch deadline = %v", host.deadline)
 	}
 }
@@ -538,7 +539,7 @@ func TestHandleProjectHandle_CrossForkFetchFailureIsSanitized(t *testing.T) {
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree","fetchHead":true}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 	if rr.Code != http.StatusBadGateway || strings.Contains(rr.Body.String(), "credential-secret") {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
@@ -568,7 +569,7 @@ func TestHandleProjectHandle_WorktreeModeUsesOwningRemotePlatform(t *testing.T) 
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"issue","number":7,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
@@ -605,7 +606,7 @@ func TestHandleProjectHandle_RejectsInvalidBody(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body))
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
-			srv.handleProjectHandle(rr, req)
+			serveProjectForge(srv, rr, req)
 			if rr.Code != http.StatusBadRequest {
 				t.Errorf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
 			}
@@ -654,7 +655,7 @@ func TestHandleProjectHandle_CrossForkRequiresConfirmation(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	srv.handleProjectHandle(rr, req)
+	serveProjectForge(srv, rr, req)
 
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("expected 409 (requires_fetch), got %d body=%s", rr.Code, rr.Body.String())
@@ -673,28 +674,6 @@ func TestHandleProjectHandle_CrossForkRequiresConfirmation(t *testing.T) {
 	}
 	if envelope.Error.FetchTarget != "ocman/pr-42" {
 		t.Errorf("expected fetchTarget=ocman/pr-42, got %q", envelope.Error.FetchTarget)
-	}
-}
-
-func TestIssueBranchName_VariousTitles(t *testing.T) {
-	cases := []struct {
-		title string
-		want  string
-	}{
-		{"", "issue/7"},
-		{"Simple title", "issue/7-simple-title"},
-		{"  Padded ", "issue/7-padded"},
-		{"!!!", "issue/7"},
-		{"Make the foo do the bar", "issue/7-make-the-foo-do-the-bar"},
-		// Slug is capped at 40 chars (not counting the "issue/<n>-" prefix);
-		// trailing partial words become a partial slug + trim.
-		{"Long title with many many many many many many many words to truncate", "issue/7-long-title-with-many-many-many-many-many"},
-	}
-	for _, tc := range cases {
-		got := issueBranchName(7, tc.title)
-		if got != tc.want {
-			t.Errorf("issueBranchName(7, %q) = %q, want %q", tc.title, got, tc.want)
-		}
 	}
 }
 

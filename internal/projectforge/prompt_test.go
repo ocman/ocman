@@ -1,23 +1,27 @@
-package server
+package projectforge
 
 import (
 	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestHandleGetPromptTemplates_DefaultsWhenUnset(t *testing.T) {
-	srv := testServer(t)
+	m := newStoreModule(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/settings/prompt-templates", nil)
 	rr := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr, req)
+	m.handlePromptTemplates(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
 	}
-	var got promptTemplatesResponse
+	var got promptTemplates
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -33,19 +37,19 @@ func TestHandleGetPromptTemplates_DefaultsWhenUnset(t *testing.T) {
 }
 
 func TestHandleSetPromptTemplates_ReviewPersistsAndRenders(t *testing.T) {
-	srv := testServer(t)
+	m := newStoreModule(t)
 
 	body := `{"review": "REVIEW #{number}"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/settings/prompt-templates", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr, req)
+	m.handlePromptTemplates(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
 	}
 
 	// promptTemplateFor with action=review must return the persisted value.
-	got, err := srv.promptTemplateFor(t.Context(), "pr", "review")
+	got, err := m.promptTemplateFor(t.Context(), "pr", "review")
 	if err != nil {
 		t.Fatalf("promptTemplateFor: %v", err)
 	}
@@ -53,28 +57,28 @@ func TestHandleSetPromptTemplates_ReviewPersistsAndRenders(t *testing.T) {
 		t.Errorf("review template not persisted, got %q", got)
 	}
 	// action=handle still returns the PR (handle) template default.
-	if got, _ := srv.promptTemplateFor(t.Context(), "pr", "handle"); got != DefaultPRPromptTemplate {
+	if got, _ := m.promptTemplateFor(t.Context(), "pr", "handle"); got != DefaultPRPromptTemplate {
 		t.Errorf("handle action should use PR template, got %q", got)
 	}
 	// review action for an issue falls back to the issue template.
-	if got, _ := srv.promptTemplateFor(t.Context(), "issue", "review"); got != DefaultIssuePromptTemplate {
+	if got, _ := m.promptTemplateFor(t.Context(), "issue", "review"); got != DefaultIssuePromptTemplate {
 		t.Errorf("issue+review should use issue template, got %q", got)
 	}
 }
 
 func TestHandleSetPromptTemplates_PersistsAndReturns(t *testing.T) {
-	srv := testServer(t)
+	m := newStoreModule(t)
 
 	body := `{"pr": "PR template here", "issue": "Issue template here"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/settings/prompt-templates", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr, req)
+	m.handlePromptTemplates(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
 	}
-	var got promptTemplatesResponse
+	var got promptTemplates
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -85,8 +89,8 @@ func TestHandleSetPromptTemplates_PersistsAndReturns(t *testing.T) {
 	// Read-back: GET returns the persisted values, not the defaults.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/settings/prompt-templates", nil)
 	rr2 := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr2, req2)
-	var got2 promptTemplatesResponse
+	m.handlePromptTemplates(rr2, req2)
+	var got2 promptTemplates
 	if err := json.Unmarshal(rr2.Body.Bytes(), &got2); err != nil {
 		t.Fatalf("decode 2: %v", err)
 	}
@@ -96,7 +100,7 @@ func TestHandleSetPromptTemplates_PersistsAndReturns(t *testing.T) {
 }
 
 func TestHandleSetPromptTemplates_PartialUpdateKeepsOther(t *testing.T) {
-	srv := testServer(t)
+	m := newStoreModule(t)
 
 	// First, set both.
 	post := func(body string) {
@@ -104,7 +108,7 @@ func TestHandleSetPromptTemplates_PartialUpdateKeepsOther(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/settings/prompt-templates", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
-		srv.handlePromptTemplates(rr, req)
+		m.handlePromptTemplates(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
 		}
@@ -115,8 +119,8 @@ func TestHandleSetPromptTemplates_PartialUpdateKeepsOther(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/settings/prompt-templates", nil)
 	rr := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr, req)
-	var got promptTemplatesResponse
+	m.handlePromptTemplates(rr, req)
+	var got promptTemplates
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -129,13 +133,13 @@ func TestHandleSetPromptTemplates_PartialUpdateKeepsOther(t *testing.T) {
 }
 
 func TestHandleSetPromptTemplates_EmptyStringIsExplicitOverride(t *testing.T) {
-	srv := testServer(t)
+	m := newStoreModule(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/settings/prompt-templates",
 		bytes.NewBufferString(`{"pr": ""}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr, req)
+	m.handlePromptTemplates(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
 	}
@@ -145,8 +149,8 @@ func TestHandleSetPromptTemplates_EmptyStringIsExplicitOverride(t *testing.T) {
 	// stored value wins over defaults when present.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/settings/prompt-templates", nil)
 	rr2 := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr2, req2)
-	var got promptTemplatesResponse
+	m.handlePromptTemplates(rr2, req2)
+	var got promptTemplates
 	if err := json.Unmarshal(rr2.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -156,11 +160,62 @@ func TestHandleSetPromptTemplates_EmptyStringIsExplicitOverride(t *testing.T) {
 }
 
 func TestHandlePromptTemplates_RejectsOtherMethods(t *testing.T) {
-	srv := testServer(t)
+	m := newStoreModule(t)
 	req := httptest.NewRequest(http.MethodDelete, "/api/settings/prompt-templates", nil)
 	rr := httptest.NewRecorder()
-	srv.handlePromptTemplates(rr, req)
+	m.handlePromptTemplates(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestIssueBranchName_VariousTitles(t *testing.T) {
+	cases := []struct {
+		title string
+		want  string
+	}{
+		{"", "issue/7"},
+		{"Simple title", "issue/7-simple-title"},
+		{"  Padded ", "issue/7-padded"},
+		{"!!!", "issue/7"},
+		{"Make the foo do the bar", "issue/7-make-the-foo-do-the-bar"},
+		// Slug is capped at 40 chars (not counting the "issue/<n>-" prefix);
+		// trailing partial words become a partial slug + trim.
+		{"Long title with many many many many many many many words to truncate", "issue/7-long-title-with-many-many-many-many-many"},
+	}
+	for _, tc := range cases {
+		got := issueBranchName(7, tc.title)
+		if got != tc.want {
+			t.Errorf("issueBranchName(7, %q) = %q, want %q", tc.title, got, tc.want)
+		}
+	}
+}
+
+func newStoreModule(t *testing.T) *Module {
+	t.Helper()
+	store, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	m := newTestModule()
+	m.Store = store
+	return m
+}
+
+func TestPromptTemplatesWithoutStore(t *testing.T) {
+	m := newTestModule()
+	rr := httptest.NewRecorder()
+	m.handlePromptTemplates(rr, httptest.NewRequest(http.MethodGet, "/api/settings/prompt-templates", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Please handle PR") {
+		t.Fatalf("defaults: status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	m.handlePromptTemplates(rr, httptest.NewRequest(http.MethodPost, "/api/settings/prompt-templates", bytes.NewBufferString(`{"pr":"x"}`)))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("save without store: status = %d", rr.Code)
+	}
+	if got, err := m.promptTemplateFor(t.Context(), "issue", ""); err != nil || got != DefaultIssuePromptTemplate {
+		t.Fatalf("template without store = %q, %v", got, err)
 	}
 }

@@ -9,7 +9,7 @@ import { useSaveStatus } from '../../lib/useSaveStatus';
 import { Button, TextareaField } from '../Control';
 import './PromptTemplateSettings.css';
 
-// Defaults match the Go constants in internal/server/handlers_prompt_templates.go.
+// Defaults match the Go constants in internal/projectforge/prompt.go.
 // Kept in sync manually — these strings are *user-facing defaults*, so a
 // change here is a UX choice, not a backend change. The backend's
 // fallback applies independently if the user resets without explicit

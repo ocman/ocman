@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/pluginsmod"
+	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sharing"
@@ -45,7 +46,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	return append(mods, s.tmuxModule(), s.filesystemModule())
+	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule())
 }
 
 // tmuxModule is stateless, so it is rebuilt on each call.
@@ -63,6 +64,33 @@ func (s *Server) tmuxModule() *tmuxmod.Module {
 // Empty until the first module-owned migration.
 func ModuleSchemas() []state.ModuleSchema {
 	return nil
+}
+
+// projectForgeModule exists without a state DB too: templates then serve
+// the defaults. Owner, forge clients and platforms are read at call time.
+func (s *Server) projectForgeModule() *projectforge.Module {
+	s.projectForgeModOnce.Do(func() {
+		d := projectforge.Deps{
+			Owner:        s.resolveOwner,
+			ResolveForge: s.resolveForge,
+			KnowsForgejo: s.knowsForgejo,
+			PlatformFor:  opencodePlatformForHost,
+			Registered: func(id string) bool {
+				if s.registry == nil {
+					return false
+				}
+				_, ok := s.registry.Get(platforms.ID(id))
+				return ok
+			},
+			Sessions: s.sessions,
+			Guards:   module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+		}
+		if s.stateDB != nil {
+			d.Store = s.stateDB // untyped nil otherwise
+		}
+		s.projectForgeMod = projectforge.NewModule(d)
+	})
+	return s.projectForgeMod
 }
 
 // bus delivers server events to every module that subscribes; built on

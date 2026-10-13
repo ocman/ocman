@@ -9,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/whisper"
@@ -55,7 +56,7 @@ func (s *Server) router() *hostsvc.Router {
 // honest semantic: the machine that owns this work is unreachable right
 // now, and the request may succeed once it reconnects. The structured
 // envelope follows the `requires_fetch` precedent in
-// handlers_project_handle.go so clients can branch on a code, not prose.
+// internal/projectforge/handle.go so clients can branch on a code, not prose.
 func (s *Server) resolveOwner(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool) {
 	if remoteID == "" {
 		return s.router().ForDir(dir), true
@@ -122,7 +123,7 @@ type anyForgejoHost struct{}
 func (anyForgejoHost) Knows(string) bool { return true }
 
 func (s *Server) hostFetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, prHeadFetchTimeout)
+	ctx, cancel := context.WithTimeout(ctx, projectforge.PRHeadFetchTimeout)
 	defer cancel()
 	return git.FetchPRHead(ctx, req.RepoRoot, req.Remote, req.Number)
 }
@@ -166,4 +167,13 @@ func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (str
 		return "", err
 	}
 	return res.Port(), nil
+}
+
+// opencodePlatformForHost is the compound OpenCode platform id of the
+// sessions a host owns: "opencode" on the hub, r-<id>:opencode remotely.
+func opencodePlatformForHost(host hostsvc.Host) string {
+	if remoteID := host.RemoteID(); remoteID != "" && remoteID != "local" {
+		return remote.CompoundPlatformID(remoteID, "opencode")
+	}
+	return "opencode"
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/pluginsmod"
+	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
@@ -183,11 +184,8 @@ type Server struct {
 	statsMu           sync.Mutex
 	statsSnapshot     *db.Stats
 
-	projectUpstreamsMu      sync.Mutex
-	projectUpstreams        map[string]projectUpstreamsCacheEntry
-	projectUpstreamsPending map[string]*projectUpstreamsPending
-	projectUpstreamsSlots   chan struct{}
-	upstreamNow             func() time.Time
+	projectForgeMod     *projectforge.Module
+	projectForgeModOnce sync.Once
 }
 
 type factoryProjectResolver struct{ server *Server }

@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -202,6 +202,7 @@ flowchart TD
     Inbox --> State
     Inbox -.->|remote RPC| Router
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
+    Modules -->|"projectforge: PR/issue lists, checks, handle via owner Host"| Forge
     State -.->|registration types| Plugins[internal/plugins<br/>protocol, supervision, action broker]
     Modules -->|"pluginsmod: routes, supervision, conversation outbox"| Plugins
     Plugins -->|token-bound NDJSON + private configuration fd| PluginExec[External plugin process]
@@ -230,6 +231,16 @@ flowchart TD
   Factory launches (`module.Launcher`) once the MCP listener is up, because
   its sessions verify their ocman MCP connection, and closes (`module.Closer`)
   after the HTTP and MCP listeners stop.
+- **Project forge** (`internal/projectforge`). The PRs & Issues pane:
+  `/api/project/{upstreams,prs,issues,pr-checks,pr-mergeability,forge-user,
+  handle}` and `/api/settings/prompt-templates`. Every route takes an explicit
+  owner, resolved by the server's `resolveOwner` (503 `remote_not_connected`
+  for a disconnected remote); the owner's `hostsvc.Host` detects upstreams and
+  fetches cross-fork heads, while the hub classifies remotes and calls the
+  forge with its own clients (`ResolveForge`, `KnowsForgejo`, read at call
+  time). The module keeps the bounded, collapsed upstream-detection cache and
+  launches through the shared session path on the owner's compound platform.
+  Project archive, quick settings and session start stay in the server.
 - **Session summary reads.** Pinned sessions outside the recent window use
   `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound

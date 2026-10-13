@@ -79,22 +79,13 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(s.requireLocalhost(s.handleWorktreeCreateAndLaunch)))
 	mux.HandleFunc("/api/worktree/remove", requirePOST(s.requireLocalhost(s.handleWorktreeRemove)))
 
-	// PR/Issue sidebar endpoints — see spec/pr-issue-sidebar/. Read-only
-	// proxies to GitHub / Forgejo, scoped to the project at ?dir=<abs>.
-	mux.HandleFunc("/api/project/upstreams", s.get(s.handleProjectUpstreams))
-	mux.HandleFunc("/api/project/prs", requireGET(s.requireLocalhost(s.handleProjectPRs)))
-	mux.HandleFunc("/api/project/issues", requireGET(s.requireLocalhost(s.handleProjectIssues)))
-	mux.HandleFunc("/api/project/pr-checks", requireGET(s.requireLocalhost(s.handleProjectPRChecks)))
-	mux.HandleFunc("/api/project/pr-mergeability", requireGET(s.requireLocalhost(s.handleProjectPRMergeability)))
-	mux.HandleFunc("/api/project/forge-user", requireGET(s.requireLocalhost(s.handleProjectForgeUser)))
+	// PR/Issue sidebar endpoints (upstreams, lists, checks, handle) and the
+	// prompt templates belong to the project forge module.
 	// Project archive state (own state.db; no launch), same auth posture
 	// as the per-session archive endpoint.
 	mux.HandleFunc("/api/project/archive", s.post(s.handleProjectArchive))
 	// Per-project model list (own state.db setting row), same posture.
 	mux.HandleFunc("/api/project/settings", s.settingsHandler(s.requireAuth(s.handleProjectSettings)))
-	// Launch endpoint: spawns tmux/opencode, so localhost-only like
-	// the worktree create-and-launch endpoint.
-	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
 	s.mountModules(mux)
 
 	// MCP server — localhost-only, enabled by default.
@@ -137,9 +128,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Settings endpoints — user preferences that must be shared with the
 	// backend. The judge settings belong to the auto-approve module.
 	mux.HandleFunc("/api/settings/default-agent", s.settingsHandler(s.requireAuth(s.handleDefaultAgent)))
-	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
-	// action. Stored in state.db's generic `setting` table (schema v12).
-	mux.HandleFunc("/api/settings/prompt-templates", s.settingsHandler(s.requireAuth(s.handlePromptTemplates)))
 	mux.HandleFunc("/api/settings/link-preview-rules", s.settingsHandler(s.requireAuth(s.handleLinkPreviewRules)))
 	// Master toggle for public session sharing (on by default).
 	// Toggle for worktree sessions inheriting the parent's always-allow

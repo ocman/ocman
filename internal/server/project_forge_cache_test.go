@@ -37,8 +37,8 @@ func TestProjectForgeReadsRefreshOnlyWithinBudget(t *testing.T) {
 			}))
 			defer upstream.Close()
 			s.integrations.GitHub = github.NewForTest(upstream.URL, "token", upstream.Client())
-			handler := map[string]http.HandlerFunc{"prs": s.handleProjectPRs, "issues": s.handleProjectIssues,
-				"pr-checks": s.handleProjectPRChecks, "pr-mergeability": s.handleProjectPRMergeability, "forge-user": s.handleProjectForgeUser}[endpoint]
+			handler := map[string]http.HandlerFunc{"prs": projectForgeRoute(s), "issues": projectForgeRoute(s),
+				"pr-checks": projectForgeRoute(s), "pr-mergeability": projectForgeRoute(s), "forge-user": projectForgeRoute(s)}[endpoint]
 			request := func(refresh bool) {
 				url := "/api/project/" + endpoint + "?dir=" + dir + "&remoteId=local&remote=origin&sha=abc123&number=42"
 				if refresh {

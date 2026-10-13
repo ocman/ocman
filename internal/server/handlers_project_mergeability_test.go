@@ -36,7 +36,7 @@ func TestProjectPRMergeability(t *testing.T) {
 			srv.integrations.GitHub = github.NewForTest(upstream.URL, "test-token", upstream.Client())
 			req := httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil)
 			rr := httptest.NewRecorder()
-			srv.handleProjectPRMergeability(rr, req)
+			serveProjectForge(srv, rr, req)
 			if value == "error" {
 				if rr.Code != http.StatusBadGateway {
 					t.Fatalf("status: %d", rr.Code)
@@ -65,7 +65,7 @@ func TestProjectPRMergeabilityInvalidTarget(t *testing.T) {
 		{"number=42&dir=" + dir + "&remote=origin&remoteId=missing", http.StatusServiceUnavailable},
 	} {
 		rr := httptest.NewRecorder()
-		srv.handleProjectPRMergeability(rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?"+tc.query, nil))
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?"+tc.query, nil))
 		if rr.Code != tc.status {
 			t.Errorf("%s: status=%d want=%d body=%s", tc.query, rr.Code, tc.status, rr.Body.String())
 		}
@@ -91,7 +91,7 @@ func TestProjectPRMergeabilityReviewFailure(t *testing.T) {
 			defer upstream.Close()
 			srv.integrations.GitHub = github.NewForTest(upstream.URL, "test-token", upstream.Client())
 			rr := httptest.NewRecorder()
-			srv.handleProjectPRMergeability(rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil))
+			serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil))
 			wantStatus := http.StatusBadGateway
 			if upstreamStatus == http.StatusTooManyRequests {
 				wantStatus = http.StatusTooManyRequests
