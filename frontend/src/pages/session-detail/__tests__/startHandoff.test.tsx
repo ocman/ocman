@@ -55,7 +55,10 @@ describe('new-session handoff', () => {
     await act(async () => page.sse()!.emitMessage({ type: 'message.part.updated', properties: { part: {
       id: 'part-first', messageID: message.id, sessionID: 'child', type: 'text', text: 'Fix login',
     } } }));
-    await waitFor(() => expect(screen.queryByTestId('start-progress')).not.toBeInTheDocument());
-    expect(screen.getAllByText('Fix login')).toHaveLength(1);
+    // The real part may render a tick after the handoff clears.
+    await waitFor(() => {
+      expect(screen.queryByTestId('start-progress')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Fix login')).toHaveLength(1);
+    });
   });
 });

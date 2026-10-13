@@ -102,21 +102,24 @@ func DefaultDBPath() string {
 // connection pool.
 //
 // DSN flags:
-//   - mode=ro          opens the file read-only at the OS level.
-//   - _journal_mode=WAL keeps WAL semantics so we don't fight
-//     OpenCode's writer.
-//   - _query_only=1    SQLite-level "this connection cannot write",
-//     defense-in-depth on top of mode=ro.
+//   - mode=ro          opens the file read-only at the OS level; every
+//     write to it fails with SQLITE_READONLY.
 //   - _busy_timeout=5000 wait politely for up to 5 s if a checkpoint
 //     or backup briefly contends with us, instead of failing
 //     SQLITE_BUSY straight away.
+//
+// modernc.org/sqlite >= 1.60 applies mattn-style keys it used to ignore,
+// so two are deliberately absent: _journal_mode (it belongs to OpenCode's
+// writer; setting WAL on a non-WAL file fails a read-only open) and
+// _query_only (it would forbid the TEMP views the v2 reader creates;
+// mode=ro already keeps the file untouched).
 //
 // The pool is capped (see maxOpenReadConns / maxIdleReadConns) so
 // ocman can't accidentally hold dozens of long-running read
 // transactions, which would prevent OpenCode from checkpointing the
 // WAL.
 func Open(path string) (*DB, error) {
-	dsn := fmt.Sprintf("file:%s?mode=ro&_journal_mode=WAL&_query_only=1&_busy_timeout=5000", path)
+	dsn := fmt.Sprintf("file:%s?mode=ro&_busy_timeout=5000", path)
 	v2 := ocv2.InstalledV2()
 	if v2 {
 		useV2Views(dsn)

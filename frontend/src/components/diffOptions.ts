@@ -28,7 +28,7 @@ const CATPPUCCIN_CSS = `
   }
 `;
 
-export const DIFF_OPTIONS: NonNullable<MultiFileDiffProps<undefined>['options']> = {
+export const DIFF_OPTIONS: NonNullable<MultiFileDiffProps<undefined, undefined>['options']> = {
   theme: 'catppuccin-mocha',
   diffStyle: 'unified',
   disableFileHeader: true,
@@ -38,7 +38,7 @@ export const DIFF_OPTIONS: NonNullable<MultiFileDiffProps<undefined>['options']>
 };
 
 // Same look for a single full file (Explore modal).
-export const FILE_OPTIONS: NonNullable<FileProps<undefined>['options']> = {
+export const FILE_OPTIONS: NonNullable<FileProps<undefined, undefined>['options']> = {
   theme: 'catppuccin-mocha',
   overflow: 'scroll',
   unsafeCSS: CATPPUCCIN_CSS,
