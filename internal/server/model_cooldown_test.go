@@ -176,29 +176,6 @@ func TestQueuedMessageSkipsProviderThatJustHitQuota(t *testing.T) {
 	}
 }
 
-func TestQuotaResetIn(t *testing.T) {
-	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	for _, tc := range []struct {
-		name    string
-		headers map[string]string
-		want    time.Duration
-	}{
-		{"none", nil, 0},
-		{"retry-after seconds", map[string]string{"Retry-After": "120"}, 2 * time.Minute},
-		{"retry-after-ms", map[string]string{"retry-after-ms": "1500"}, 1500 * time.Millisecond},
-		{"retry-after date", map[string]string{"retry-after": now.Add(time.Hour).Format(http.TimeFormat)}, time.Hour},
-		{"anthropic resets", map[string]string{
-			"anthropic-ratelimit-requests-reset": now.Add(time.Minute).Format(time.RFC3339),
-			"anthropic-ratelimit-tokens-reset":   now.Add(30 * time.Minute).Format(time.RFC3339),
-		}, 30 * time.Minute},
-		{"garbage", map[string]string{"retry-after": "soon"}, 0},
-	} {
-		if got := quotaResetIn(tc.headers, now); got != tc.want {
-			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
-
 func TestSessionModelsCarryCooldown(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{

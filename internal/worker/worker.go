@@ -15,6 +15,10 @@ type Worker[T any] struct {
 	outstanding int
 	wake        chan struct{}
 	idle        chan struct{}
+	closed      bool
+	stop        chan struct{}
+	done        chan struct{}
+	stopOnce    sync.Once
 }
 
 func New[T any](handle func(T)) *Worker[T] {
@@ -26,13 +30,17 @@ func New[T any](handle func(T)) *Worker[T] {
 func NewKeyed[T any](handle func(T), key func(T) string) *Worker[T] {
 	idle := make(chan struct{})
 	close(idle)
-	w := &Worker[T]{handle: handle, key: key, active: make(map[string]bool), wake: make(chan struct{}, 1), idle: idle}
+	w := &Worker[T]{handle: handle, key: key, active: make(map[string]bool), wake: make(chan struct{}, 1), idle: idle, stop: make(chan struct{}), done: make(chan struct{})}
 	go w.run()
 	return w
 }
 
 func (w *Worker[T]) Enqueue(v T) {
 	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return
+	}
 	if w.outstanding == 0 {
 		w.idle = make(chan struct{})
 	}
@@ -59,7 +67,13 @@ func (w *Worker[T]) Drain(ctx context.Context) error {
 }
 
 func (w *Worker[T]) run() {
-	for range w.wake {
+	defer close(w.done)
+	for {
+		select {
+		case <-w.stop:
+			return
+		case <-w.wake:
+		}
 		for {
 			w.mu.Lock()
 			i := -1
@@ -85,6 +99,16 @@ func (w *Worker[T]) run() {
 			go w.handleOne(key, v)
 		}
 	}
+}
+
+// Close stops admission, finishes admitted work, and joins the dispatcher.
+func (w *Worker[T]) Close() {
+	w.mu.Lock()
+	w.closed = true
+	w.mu.Unlock()
+	_ = w.Drain(context.Background())
+	w.stopOnce.Do(func() { close(w.stop) })
+	<-w.done
 }
 
 func (w *Worker[T]) handleOne(key string, v T) {

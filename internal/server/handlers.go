@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,12 +28,9 @@ const maxSendMessageBody = httpx.MaxSendMessageBody
 // maxAudioUpload is the maximum allowed audio upload size (25 MB).
 const maxAudioUpload = 25 << 20
 
-// validIDPattern matches safe session/resource IDs (alphanumeric, hyphens, underscores).
-var validIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-
 // validateID checks that an ID is safe for use in URLs and log messages.
 func validateID(id string) bool {
-	return id != "" && len(id) <= 256 && validIDPattern.MatchString(id)
+	return httpx.ValidID(id)
 }
 
 // uploadReadTimeout bounds body reads for the upload handlers (audio,
@@ -106,22 +102,13 @@ func (s *Server) withSessionAdapter(w http.ResponseWriter, r *http.Request, fn s
 // without resolving the adapter. Mutation handlers use it and delegate
 // adapter resolution to the session service.
 func (s *Server) withSessionPath(w http.ResponseWriter, r *http.Request, fn func(w http.ResponseWriter, r *http.Request, sessionID, rest string)) {
-	sessionID, rest, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if !validateID(sessionID) {
-		http.Error(w, "invalid session ID", http.StatusBadRequest)
-		return
-	}
-	fn(w, r, sessionID, rest)
+	httpx.WithSessionPath(w, r, fn)
 }
 
 // platformHint returns the explicit ?platform= query value, if any
 // (AD-2b: remote sessions are addressed by their compound platform key).
 func platformHint(r *http.Request) string {
-	return strings.TrimSpace(r.URL.Query().Get("platform"))
+	return httpx.PlatformHint(r)
 }
 
 // --- Query param helpers ---

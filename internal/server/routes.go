@@ -83,7 +83,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.settingsHandler(s.requireAuth(s.handleWorktreeInheritPermissions)))
 	mux.HandleFunc("/api/settings/auto-archive", s.settingsHandler(s.requireAuth(s.handleAutoArchiveSettings)))
 	mux.HandleFunc("/api/settings/archive-resurface", s.settingsHandler(s.requireAuth(s.handleArchiveResurface)))
-	mux.HandleFunc("/api/settings/model-fallthrough", s.settingsHandler(s.requireAuth(s.handleModelFallthroughSettings)))
 	// Global list of active share links, for inspect/revoke in Settings.
 	// New-session machine picker resolver (multi-remote support).
 	mux.HandleFunc("/api/sessions/resolve-targets", s.post(s.handleResolveTargets))

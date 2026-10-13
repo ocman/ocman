@@ -543,7 +543,17 @@ are computed. Sessions retain their original directories and owners.
   non-persisted Haiku helper with its native 2.1.289 title prompt and helper
   slots; `/auto-title` updates only sessions without a custom title, atomically
   preserving manual renames. No naming command appears in the conversation.
-- `internal/queuesvc/` — follow-up message queue (#58). Queueing is an
+- `internal/queuemod/` — feature module for follow-up queue routes, native
+  inbox coordination, idle flush workers, sweep recovery, model quota detection,
+  continuation notices, project model-list caching and model-fallthrough settings.
+  Adapter and session-service lookups run at call time. `Start` binds the lifetime
+  context; `Run` stops idle admission and joins accepted sends and the keyed
+  dispatcher before state.db closes. Accepted sends finish their durable receipt
+  through shutdown rather than cancelling between admission and dequeue.
+  `Server.onSessionIdle` records cooldown and admits the flush through the module
+  before publishing the synchronous typed bus event. Direct send and owner-routed
+  runtime recovery remain the shared server seam in `session_send.go`.
+- `internal/queuesvc/` — follow-up message queue domain service (#58). Queueing is an
   **explicit user gesture**: plain **Enter** in the composer sends
   immediately (mid-turn included — OpenCode interleaves the prompt into
   the running turn), while **Ctrl/Cmd+Enter** holds it in `state.db`
@@ -561,7 +571,9 @@ are computed. Sessions retain their original directories and owners.
   Each drain decision makes one owner-routed `platforms.LifecycleReader`
   read (settled status + latest message; no parts, tree or costs; the
   `SessionLifecycle` RPC for remotes), never a transcript-sized `Session`.
-  Wired in `internal/server/queue.go`.
+  Wired by `internal/server/queue_module.go`; routes and workers live in
+  `internal/queuemod`. Queue rows and cooldown storage keep their existing
+  `internal/state` tables and migration sequence.
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.
 - `internal/state/` — writable SQLite database

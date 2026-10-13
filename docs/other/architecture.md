@@ -217,7 +217,7 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir + runtime seam]
     Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Lifecycle -->|creation, streamed attachments, restart + reload| Router
@@ -282,7 +282,9 @@ flowchart TD
   composition root for feature modules.
 - **Feature modules** (`internal/module`). Auto-approve (`internal/autoapprove`:
   per-session toggle, approved-permission notices, judge settings, judge-delay
-  seed and the headless watcher), Factory (`internal/factorymod`),
+  seed and the headless watcher), follow-up delivery (`internal/queuemod`:
+  queue routes, native inbox coordination, idle flush and sweep workers,
+  model quota cooldown, continuation notices and fallthrough settings), Factory (`internal/factorymod`),
   plugins (`internal/pluginsmod`), the `/api/tmux` controls (`internal/tmuxmod`:
   sessions and launches through the owner's `hostsvc.Host`, client list and
   switch on this machine's tmux), the browser terminals (`internal/termmod`:
@@ -395,7 +397,12 @@ flowchart TD
   usage unsupported without falling back to hub-local sessions. Routine stats
   retain all-run counts and average duration and refresh billing at most every
   30 seconds while their tab is open.
-- **Follow-up queue.** `internal/queuesvc` drains one held message per turn.
+- **Follow-up queue.** `internal/queuemod` owns delivery coordination over
+  `internal/queuesvc`, which drains one held message per turn. Queueing remains
+  an explicit composer gesture. Native backend inboxes are preferred only when
+  no durable hub backlog exists; uncertain native sends are surfaced without
+  replaying into the hub queue. Direct send and runtime recovery are injected
+  server functions shared with the other session paths.
   Each decision uses `platforms.LifecycleReader` for settled status and the
   latest message identity. The local adapter reads one session and its newest
   message, without parts, tree or costs. Remotes settle on the owner and return
@@ -403,6 +410,14 @@ flowchart TD
   RPC fall back to session detail. A guarded sweep reads lifecycle under the
   session lock and checks guard generation before reusing that read.
   Idle-edge flushes still trust the edge regardless of the status read.
+  The server records model-provider cooldown through the module before admitting
+  a flush and publishing `module.SessionIdle` to ordered bus subscribers. A
+  continuation consumes that edge so held follow-ups wait for its turn to end.
+  Retry resets and notices use compound platform/session identities. The module's
+  `Run` stops admission on cancellation and joins accepted sends and the worker
+  dispatcher, allowing durable dequeue receipts to finish before state.db closes.
+  Project model settings and provider cooldown persistence retain their existing
+  state tables; the combined project-defaults route invalidates the module cache.
 - **platforms.SessionEventSink.** The registry installs status and idle callbacks
   on lifecycle-producing adapters, including adapters registered later. OpenCode's
   watcher feeds the same server callbacks. Adapters update their live view before

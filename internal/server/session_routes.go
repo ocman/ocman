@@ -46,11 +46,8 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodGet, "{id}/questions", (*Server).handleSessionQuestions},
 	{http.MethodGet, "{id}/events", (*Server).handleSessionEvents},
 	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},
-	{http.MethodGet, "{id}/queue", (*Server).handleSessionQueueList},
 
 	// Session-scoped POSTs (specific patterns first).
-	{http.MethodPost, "{id}/queue/{qmid}/move", (*Server).handleSessionQueueMove},
-	{http.MethodDelete, "{id}/queue/{qmid}", (*Server).handleSessionQueueDelete},
 	{http.MethodPost, "{id}/questions/{qid}/reject", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/questions/{qid}", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/permissions/{pid}", (*Server).handleSessionPermission},

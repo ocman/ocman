@@ -27,7 +27,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/pluginsmod"
 	"github.com/NoUseFreak/ocman/internal/projectforge"
-	"github.com/NoUseFreak/ocman/internal/queuesvc"
+	"github.com/NoUseFreak/ocman/internal/queuemod"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
@@ -36,7 +36,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/webhook"
-	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
 const (
@@ -52,10 +51,6 @@ type Server struct {
 	addr               string
 	registry           *platforms.Registry
 	sessions           *sessionsvc.Service
-	projectModels      projectModelCache
-	retryNext          sync.Map // session → latest retry next attempt; 429 reset fallback
-	fallAborted        sync.Map // fallKey → provider whose parked retry ocman aborted
-	fallNotices        sync.Map // fallKey → fallNotice
 	auth               *Auth
 	integrations       *forgeClients
 	startTime          time.Time
@@ -159,13 +154,8 @@ type Server struct {
 	busOnce              sync.Once
 	notificationsMod     *notifications.Module
 	notificationsModOnce sync.Once
-	// queueSvcCached is the follow-up message queue service (#58), built
-	// lazily on first use. Guarded by
-	// queueSvcOnce. See queue.go.
-	queueSvcCached  *queuesvc.Service
-	queueSvcOnce    sync.Once
-	queueWorker     *worker.Worker[queueFlush]
-	queueWorkerOnce sync.Once
+	queueMod             *queuemod.Module
+	queueModOnce         sync.Once
 
 	// runtime is the local Host's ocruntime.Runtime, injected into
 	// newLocalHost. Defaults to the native tmux runtime; tests override it

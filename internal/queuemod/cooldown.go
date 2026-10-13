@@ -1,4 +1,4 @@
-package server
+package queuemod
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
@@ -19,16 +18,16 @@ var quotaActionReasons = map[string]bool{"account_rate_limit": true, "free_tier_
 // onSessionRetry cools the session's provider when a retry parks longer
 // than the patience threshold or names a quota wall. A short backoff is
 // OpenCode's business.
-func (s *Server) onSessionRetry(sessionID string, st autoapprove.SessionStatus) {
+func (s *Module) OnSessionRetry(sessionID string, nextAttempt int64, actionReason string) {
 	var wait time.Duration
-	if st.Next > 0 {
-		next := time.UnixMilli(st.Next)
+	if nextAttempt > 0 {
+		next := time.UnixMilli(nextAttempt)
 		// ponytail: one entry per retrying session, dropped on its idle edge.
-		s.retryNext.Store(sessionID, next)
+		s.retryNext.Store(fallKey(string(opencode.PlatformID), sessionID), next)
 		wait = time.Until(next)
 	}
 	ctx := context.Background()
-	if patience, _ := s.cooldownTimes(ctx); !quotaActionReasons[st.ActionReason] && wait <= patience {
+	if patience, _ := s.CooldownTimes(ctx); !quotaActionReasons[actionReason] && wait <= patience {
 		return
 	}
 	if msg, ok := s.latestAssistant(ctx, string(opencode.PlatformID), sessionID); ok {
@@ -41,8 +40,8 @@ func (s *Server) onSessionRetry(sessionID string, st autoapprove.SessionStatus) 
 // and returns it ("" when the turn did not die on a quota wall).
 // Auth failures and context overflow are deliberately ignored: another
 // model fixes neither, and switching would hide the misconfiguration.
-func (s *Server) recordQuotaCooldown(ctx context.Context, platformID, sessionID string) string {
-	next, _ := s.retryNext.LoadAndDelete(sessionID)
+func (s *Module) recordQuotaCooldown(ctx context.Context, platformID, sessionID string) string {
+	next, _ := s.retryNext.LoadAndDelete(fallKey(platformID, sessionID))
 	msg, ok := s.latestAssistant(ctx, platformID, sessionID)
 	if !ok || msg.Error == nil || msg.Error.Name != "APIError" || msg.Error.Data.StatusCode != http.StatusTooManyRequests {
 		return ""
@@ -55,9 +54,9 @@ func (s *Server) recordQuotaCooldown(ctx context.Context, platformID, sessionID 
 	return msg.ProviderID
 }
 
-func (s *Server) recordCooldown(ctx context.Context, provider string, d time.Duration) {
-	if s.sessions != nil && provider != "" {
-		s.sessions.RecordCooldown(ctx, provider, d)
+func (s *Module) recordCooldown(ctx context.Context, provider string, d time.Duration) {
+	if svc := s.d.Sessions(); svc != nil && provider != "" {
+		svc.RecordCooldown(ctx, provider, d)
 	}
 }
 
@@ -77,12 +76,9 @@ type assistantMessage struct {
 
 // latestAssistant returns the session's newest message when it is an
 // assistant message.
-func (s *Server) latestAssistant(ctx context.Context, platformID, sessionID string) (assistantMessage, bool) {
+func (s *Module) latestAssistant(ctx context.Context, platformID, sessionID string) (assistantMessage, bool) {
 	var msg assistantMessage
-	if s.registry == nil {
-		return msg, false
-	}
-	p, ok := s.adapterForSession(ctx, platformID, sessionID)
+	p, ok := s.d.Adapter(ctx, platformID, sessionID)
 	if !ok {
 		return msg, false
 	}

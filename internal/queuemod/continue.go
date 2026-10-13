@@ -1,4 +1,4 @@
-package server
+package queuemod
 
 import (
 	"context"
@@ -37,11 +37,11 @@ func fallKey(platformID, sessionID string) string { return platformID + "\x00" +
 // message waits for the continuation's own turn to end. The walk is
 // bounded by the cooldown floor: every failure cools its provider, so
 // each model is tried at most once before the list is exhausted.
-func (s *Server) continueSession(ctx context.Context, platformID, sessionID, provider string) bool {
-	if s.sessions == nil || provider == "" {
+func (s *Module) continueSession(ctx context.Context, platformID, sessionID, provider string) bool {
+	if s.d.Sessions() == nil || provider == "" {
 		return false
 	}
-	model, recovers, ok := s.sessions.Fallthrough(ctx, platformID, sessionID)
+	model, recovers, ok := s.d.Sessions().Fallthrough(ctx, platformID, sessionID)
 	if !ok {
 		return false
 	}
@@ -49,7 +49,7 @@ func (s *Server) continueSession(ctx context.Context, platformID, sessionID, pro
 		s.setExhaustedNotice(platformID, sessionID, recovers)
 		return true
 	}
-	if err := s.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: continuationPrompt, Model: model}); err != nil {
+	if err := s.d.SendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: continuationPrompt, Model: model}); err != nil {
 		log.WithError(err).WithField("sessionID", sessionID).Warn("continuing session on next model")
 		return false
 	}
@@ -63,16 +63,16 @@ func (s *Server) continueSession(ctx context.Context, platformID, sessionID, pro
 // abortParkedRetry stops a turn OpenCode parked on a cooled provider so
 // the idle edge can continue it on the next model. Only one abort per
 // park: the marker is consumed by that idle edge.
-func (s *Server) abortParkedRetry(ctx context.Context, sessionID, provider string) {
+func (s *Module) abortParkedRetry(ctx context.Context, sessionID, provider string) {
 	platformID := string(opencode.PlatformID)
 	key := fallKey(platformID, sessionID)
-	if s.sessions == nil || provider == "" {
+	if s.d.Sessions() == nil || provider == "" {
 		return
 	}
 	if _, parked := s.fallAborted.LoadOrStore(key, provider); parked {
 		return
 	}
-	model, recovers, ok := s.sessions.Fallthrough(ctx, platformID, sessionID)
+	model, recovers, ok := s.d.Sessions().Fallthrough(ctx, platformID, sessionID)
 	if ok && model == "" {
 		s.setExhaustedNotice(platformID, sessionID, recovers)
 	}
@@ -80,13 +80,13 @@ func (s *Server) abortParkedRetry(ctx context.Context, sessionID, provider strin
 		s.fallAborted.Delete(key)
 		return
 	}
-	if err := s.sessions.Abort(ctx, platformID, platforms.AbortRequest{SessionID: sessionID}); err != nil {
+	if err := s.d.Sessions().Abort(ctx, platformID, platforms.AbortRequest{SessionID: sessionID}); err != nil {
 		s.fallAborted.Delete(key)
 		log.WithError(err).WithField("sessionID", sessionID).Warn("aborting parked retry")
 	}
 }
 
-func (s *Server) setExhaustedNotice(platformID, sessionID string, recovers time.Time) {
+func (s *Module) setExhaustedNotice(platformID, sessionID string, recovers time.Time) {
 	s.setFallNotice(platformID, sessionID, db.SessionNotice{
 		Kind:    "models_exhausted",
 		Message: "Every model in the project list is cooled down; nothing was sent",
@@ -94,14 +94,14 @@ func (s *Server) setExhaustedNotice(platformID, sessionID string, recovers time.
 	}, recovers)
 }
 
-func (s *Server) setFallNotice(platformID, sessionID string, n db.SessionNotice, until time.Time) {
+func (s *Module) setFallNotice(platformID, sessionID string, n db.SessionNotice, until time.Time) {
 	// ponytail: one entry per switched session, overwritten, never evicted.
 	s.fallNotices.Store(fallKey(platformID, sessionID), fallNotice{notice: n, until: until})
-	s.broadcastSessionChanged(sessionID)
+	s.d.SessionChanged(sessionID)
 }
 
 // applyFallNotice replaces a session's notice with a live fallthrough one.
-func (s *Server) applyFallNotice(platformID string, sess *db.Session) {
+func (s *Module) ApplyFallNotice(platformID string, sess *db.Session) {
 	v, ok := s.fallNotices.Load(fallKey(platformID, sess.ID))
 	if !ok {
 		return

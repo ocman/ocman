@@ -1,4 +1,4 @@
-package server
+package queuemod
 
 import (
 	"context"
@@ -32,11 +32,11 @@ func mergeQueued(ocman, native []queuedMessageView) []queuedMessageView {
 // sendHeld delivers one message from ocman's queue. While the platform
 // still holds older follow-ups natively, it joins the back of that queue
 // instead of being sent at once, so it cannot overtake them.
-func (s *Server) sendHeld(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
+func (s *Module) sendHeld(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
 	if len(s.nativeQueuedViews(ctx, platformID, req.SessionID)) > 0 {
 		native := req
 		native.Delivery = "queue"
-		err := s.sessions.SendMessage(ctx, platformID, native)
+		err := s.d.Sessions().SendMessage(ctx, platformID, native)
 		if !errors.Is(err, platforms.ErrUnsupported) {
 			return err
 		}
@@ -44,13 +44,13 @@ func (s *Server) sendHeld(ctx context.Context, platformID string, req platforms.
 		// Keep this head for the next idle edge without spending retries.
 		return queuesvc.ErrDeferred
 	}
-	return s.sendNow(ctx, platformID, req)
+	return s.d.SendNow(ctx, platformID, req)
 }
 
 // enqueueFollowUp holds send for the session's next idle edge.
-func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send platforms.SendMessageRequest) error {
+func (s *Module) EnqueueFollowUp(ctx context.Context, platformID string, send platforms.SendMessageRequest) error {
 	// A read-only session would accept the hold and fail every flush (FR-4).
-	if adapter, ok := s.adapterForSession(ctx, platformID, send.SessionID); ok {
+	if adapter, ok := s.d.Adapter(ctx, platformID, send.SessionID); ok {
 		if reader, ok := adapter.(platforms.LifecycleReader); ok {
 			if lc, err := reader.SessionLifecycle(ctx, send.SessionID); err == nil && lc.ReadOnly {
 				return &platforms.UpstreamError{Status: http.StatusForbidden, Message: "session is read-only in ocman"}
@@ -59,8 +59,8 @@ func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send pl
 	}
 	// Messages already held by ocman (queued while the platform was
 	// unreachable) go first: a native follow-up would overtake them.
-	if held, err := s.queueSvc().List(ctx, platformID, send.SessionID); err == nil && len(held) > 0 {
-		return s.queueSvc().Enqueue(ctx, platformID, true, send)
+	if held, err := s.queue.List(ctx, platformID, send.SessionID); err == nil && len(held) > 0 {
+		return s.queue.Enqueue(ctx, platformID, true, send)
 	}
 	if nq := s.nativeQueue(ctx, platformID, send.SessionID); nq != nil {
 		// Listing doubles as the capability probe: it answers
@@ -68,9 +68,9 @@ func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send pl
 		if _, err := nq.NativeQueued(ctx, send.SessionID); err == nil {
 			native := send
 			native.Delivery = "queue"
-			err := s.sessions.SendMessage(ctx, platformID, native)
+			err := s.d.Sessions().SendMessage(ctx, platformID, native)
 			if err == nil {
-				s.broadcastQueueUpdated(ctx, platformID, send.SessionID)
+				s.BroadcastQueueUpdated(ctx, platformID, send.SessionID)
 				return nil
 			}
 			// Only a definitive "no native queue" falls back. Any other
@@ -91,12 +91,12 @@ func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send pl
 			}
 		}
 	}
-	return s.queueSvc().Enqueue(ctx, platformID, true, send)
+	return s.queue.Enqueue(ctx, platformID, true, send)
 }
 
 // nativeQueue returns the session's adapter when it can hold follow-ups.
-func (s *Server) nativeQueue(ctx context.Context, platformID, sessionID string) platforms.NativeQueue {
-	adapter, ok := s.adapterForSession(ctx, platformID, sessionID)
+func (s *Module) nativeQueue(ctx context.Context, platformID, sessionID string) platforms.NativeQueue {
+	adapter, ok := s.d.Adapter(ctx, platformID, sessionID)
 	if !ok {
 		return nil
 	}
@@ -106,7 +106,7 @@ func (s *Server) nativeQueue(ctx context.Context, platformID, sessionID string) 
 
 // nativeQueuedViews lists platform-held follow-ups; nil when there are
 // none or the platform keeps no queue.
-func (s *Server) nativeQueuedViews(ctx context.Context, platformID, sessionID string) []queuedMessageView {
+func (s *Module) nativeQueuedViews(ctx context.Context, platformID, sessionID string) []queuedMessageView {
 	nq := s.nativeQueue(ctx, platformID, sessionID)
 	if nq == nil {
 		return nil
@@ -130,7 +130,7 @@ func (s *Server) nativeQueuedViews(ctx context.Context, platformID, sessionID st
 
 // cancelNativeQueued drops a platform-held follow-up. handled is false
 // when id is not a native item (ocman queue ids never use the prefix).
-func (s *Server) cancelNativeQueued(ctx context.Context, platformID, sessionID, id string) (handled bool, err error) {
+func (s *Module) cancelNativeQueued(ctx context.Context, platformID, sessionID, id string) (handled bool, err error) {
 	if !strings.HasPrefix(id, "msg_") {
 		return false, nil
 	}
@@ -141,6 +141,6 @@ func (s *Server) cancelNativeQueued(ctx context.Context, platformID, sessionID, 
 	if err := nq.CancelNativeQueued(ctx, platforms.CancelNativeQueuedRequest{SessionID: sessionID, ID: id}); err != nil {
 		return true, err
 	}
-	s.broadcastQueueUpdated(ctx, platformID, sessionID)
+	s.BroadcastQueueUpdated(ctx, platformID, sessionID)
 	return true, nil
 }

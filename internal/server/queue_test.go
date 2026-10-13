@@ -215,7 +215,7 @@ func TestSessionStatusReaderLatestMessageState(t *testing.T) {
 			}, nil
 		},
 	})
-	inferer := &sessionStatusReader{s: srv}
+	inferer := srv.queueModule()
 	if running, ok := inferer.TurnRunning(t.Context(), "fake", "s1"); running || !ok {
 		t.Fatalf("waiting turn = (%v, %v), want (false, true)", running, ok)
 	}
@@ -869,7 +869,7 @@ func TestSessionStatusReaderUsesBoundedLifecycle(t *testing.T) {
 		lifecycle: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageID: "m2", LatestMessageCreated: 200, LatestMessageRole: "assistant"},
 	}
 	reg.Register(fake)
-	inferer := &sessionStatusReader{s: srv}
+	inferer := srv.queueModule()
 
 	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "m2" || createdAt != 200 || running || !completed || !ok {
 		t.Fatalf("latest = (%q, %d, %v, %v, %v), want completed m2", id, createdAt, running, completed, ok)
