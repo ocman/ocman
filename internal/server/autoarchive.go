@@ -100,13 +100,17 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 			if _, ok := archived[key]; ok || keep[key] {
 				continue
 			}
-			if err := s.stateDB.ArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
+			inserted, err := s.stateDB.AutoArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated)
+			if err != nil {
 				span.RecordError(err)
 				log.WithFields(log.Fields{
 					"platform":  adapter.ID(),
 					"sessionID": session.ID,
 					"error":     err,
 				}).Error("auto-archiving inactive session")
+				continue
+			}
+			if !inserted {
 				continue
 			}
 			archivedCount++

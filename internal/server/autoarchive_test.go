@@ -60,3 +60,28 @@ func TestArchiveRemoteTimeoutDoesNotStarveLocalMaintenance(t *testing.T) {
 		t.Errorf("remote timeout prevented attachment cleanup: %v", err)
 	}
 }
+
+type snoozeDuringArchivePlatform struct {
+	fakePlatform
+	store *state.DB
+	until int64
+}
+
+func (p *snoozeDuringArchivePlatform) SessionsInactiveBefore(ctx context.Context, _ int64) ([]db.SessionArchiveCandidate, error) {
+	// The archive snapshot has already been read when the adapter is called.
+	if err := p.store.SnoozeSession(ctx, string(p.ID()), "s1", p.until); err != nil {
+		return nil, err
+	}
+	return []db.SessionArchiveCandidate{{ID: "s1", TimeUpdated: 1}}, nil
+}
+
+func TestAutoArchivePreservesConcurrentSnooze(t *testing.T) {
+	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
+	until := time.Now().Add(time.Hour).UnixMilli()
+	srv.registry.Register(&snoozeDuringArchivePlatform{fakePlatform: fakePlatform{id: "fake"}, store: srv.stateDB, until: until})
+	srv.autoArchiveInactiveSessions(t.Context())
+	keys, err := srv.stateDB.WakeSnoozedSessions(t.Context(), until)
+	if err != nil || len(keys) != 1 || keys[0] != (state.Key{Platform: "fake", SessionID: "s1"}) {
+		t.Fatalf("auto-archive erased accepted snooze: %v %v", keys, err)
+	}
+}

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import { api, type Session } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { snoozeDeadline, SNOOZE_OPTIONS } from '../lib/snooze';
@@ -11,8 +10,7 @@ import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
 import { ModalFooter } from './ModalFooter';
 
-export function SnoozeButton({ session, active = false, disabled = false }: { session: Session; active?: boolean; disabled?: boolean }) {
-  const navigate = useNavigate();
+export function SnoozeButton({ session, disabled = false }: { session: Session; disabled?: boolean }) {
   const [custom, setCustom] = useState(false);
   const [value, setValue] = useState('');
   const [valid, setValid] = useState(false);
@@ -24,9 +22,9 @@ export function SnoozeButton({ session, active = false, disabled = false }: { se
     setError('');
     try {
       await api.snoozeSession(session.platform, session.id, deadline);
-      useApiStore.getState().patchRecentSession(session.id, { archived: true });
+      useApiStore.getState().patchRecentSession(session.id, { archived: true }, session.platform);
       setCustom(false);
-      if (active) navigate('/session/new');
+      // The archive SSE event closes the active conversation through useSessionSeen.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not snooze conversation');
       setCustom(true);

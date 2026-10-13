@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Session } from '../lib/api';
 import { SnoozeButton } from './SnoozeButton';
 import { snoozeDeadline, SNOOZE_OPTIONS } from '../lib/snooze';
+import { useApiStore } from '../lib/apiStore';
 
 vi.mock('../lib/api', () => ({ api: { snoozeSession: vi.fn() } }));
-const patchRecentSession = vi.fn();
-vi.mock('../lib/apiStore', () => ({ useApiStore: { getState: () => ({ patchRecentSession }) } }));
 const session = { id: 's1', platform: 'r-box:claudecode' } as Session;
+const localSession = { ...session, platform: 'opencode', archived: false };
 
-beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.snoozeSession).mockResolvedValue({ ok: true }); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(api.snoozeSession).mockResolvedValue({ ok: true });
+  useApiStore.setState({ recentSessions: [localSession, { ...session, archived: false }] });
+});
 
 describe('snooze deadlines', () => {
   it('uses exact durations and local 9 AM, including the next Monday', () => {
@@ -37,7 +41,8 @@ describe('SnoozeButton', () => {
     for (const label of SNOOZE_OPTIONS) expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: 'In 30 mins' }));
     await waitFor(() => expect(api.snoozeSession).toHaveBeenCalledWith(session.platform, 's1', expect.any(Number)));
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { archived: true });
+    expect(useApiStore.getState().recentSessions.find((row) => row.platform === session.platform)?.archived).toBe(true);
+    expect(useApiStore.getState().recentSessions.find((row) => row.platform === localSession.platform)?.archived).toBe(false);
     expect(click).not.toHaveBeenCalled();
   });
 
@@ -55,9 +60,27 @@ describe('SnoozeButton', () => {
     vi.mocked(api.snoozeSession).mockRejectedValueOnce(new Error('Offline'));
     await user.click(submit);
     expect(await screen.findByRole('alert')).toHaveTextContent('Offline');
-    expect(patchRecentSession).not.toHaveBeenCalled();
+    expect(useApiStore.getState().recentSessions.every((row) => !row.archived)).toBe(true);
     await user.click(screen.getByRole('button', { name: 'Snooze' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.snoozeSession).toHaveBeenLastCalledWith(session.platform, 's1', new Date('2099-01-02T14:30').getTime());
+  });
+
+  it.each(['/session/next', '/session/selected'])('preserves navigation to %s while the snooze response is pending', async (destination) => {
+    let resolve!: (value: { ok: boolean }) => void;
+    vi.mocked(api.snoozeSession).mockReturnValue(new Promise((done) => { resolve = done; }));
+    function Harness() {
+      const navigate = useNavigate();
+      const location = useLocation();
+      return <><SnoozeButton session={session} /><button onClick={() => navigate(destination)}>Switch conversation</button><output>{location.pathname}</output></>;
+    }
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/session/s1']}><Harness /></MemoryRouter>);
+    await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
+    await user.click(screen.getByRole('menuitem', { name: 'In 30 mins' }));
+    expect(screen.getByRole('button', { name: 'Snooze conversation' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Switch conversation' }));
+    await act(async () => { resolve({ ok: true }); });
+    expect(screen.getByRole('status')).toHaveTextContent(destination);
   });
 });

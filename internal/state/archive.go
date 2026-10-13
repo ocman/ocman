@@ -53,6 +53,20 @@ func (d *DB) ArchiveSession(ctx context.Context, platform, sessionID string, ses
 	return d.clearUnarchive(ctx, unarchiveKindSession, LocalRemoteID, sessionKey(platform, sessionID))
 }
 
+// AutoArchiveSession inserts an archive without replacing a concurrent manual
+// archive or snooze. Manual ArchiveSession intentionally cancels snooze instead.
+func (d *DB) AutoArchiveSession(ctx context.Context, platform, sessionID string, sessionTimeUpdated int64) (bool, error) {
+	result, err := d.db.ExecContext(ctx, `INSERT INTO archived_session
+		(platform, session_id, session_time_updated, archived_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(platform, session_id) DO NOTHING`,
+		platform, sessionID, sessionTimeUpdated, time.Now().UnixMilli())
+	if err != nil {
+		return false, fmt.Errorf("auto-archiving session: %w", err)
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
 // UnarchiveSession removes a session's archived marker (per platform)
 // and records the user's intent so auto-archive does not immediately
 // re-hide it.

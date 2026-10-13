@@ -27,8 +27,15 @@ func TestFactoryControlSessionLifecycle(t *testing.T) {
 	if got, found, err := db.GetFactoryControlSession(ctx, epic.ID); err != nil || !found || got != want {
 		t.Fatalf("control = %#v, %v, %v", got, found, err)
 	}
+	until := time.Now().Add(time.Hour).UnixMilli()
+	if err := db.SnoozeSession(ctx, "opencode", "ses-2", until); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.CloseFactoryEpic(ctx, epic.ID, true); err != nil {
 		t.Fatal(err)
+	}
+	if keys, err := db.WakeSnoozedSessions(ctx, until); err != nil || len(keys) != 0 {
+		t.Fatalf("closed Factory session woke: %v %v", keys, err)
 	}
 	archived, err := db.ArchivedSessions(ctx)
 	if err != nil {

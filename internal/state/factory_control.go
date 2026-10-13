@@ -71,7 +71,7 @@ func archiveFactoryControlSessionTx(ctx context.Context, tx *sql.Tx, now int64, 
 	_, err := tx.ExecContext(ctx, `INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)
 		SELECT json_extract(metadata_json, '$.platform'), json_extract(metadata_json, '$.sessionId'), 9223372036854775807, ?
 		FROM factory_external_mapping WHERE system = 'factory' AND external_kind = ? AND entity_kind = 'epic' AND entity_id = ?
-		ON CONFLICT(platform, session_id) DO UPDATE SET session_time_updated = excluded.session_time_updated, archived_at = excluded.archived_at`,
+		ON CONFLICT(platform, session_id) DO UPDATE SET session_time_updated = excluded.session_time_updated, archived_at = excluded.archived_at, snoozed_until = 0`,
 		now, factoryControlKind, epicID)
 	return err
 }

@@ -265,7 +265,7 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 	// activity from immediately auto-unarchiving the completed session.
 	if _, err := tx.ExecContext(ctx, `INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)
 		SELECT session_platform, session_id, 9223372036854775807, ? FROM factory_attempt WHERE id = ? AND session_id <> ''
-		ON CONFLICT(platform, session_id) DO UPDATE SET session_time_updated = excluded.session_time_updated, archived_at = excluded.archived_at`, now, id); err != nil {
+		ON CONFLICT(platform, session_id) DO UPDATE SET session_time_updated = excluded.session_time_updated, archived_at = excluded.archived_at, snoozed_until = 0`, now, id); err != nil {
 		return false, fmt.Errorf("archiving completed Factory session: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM unarchived_entity WHERE kind = 'session' AND remote_id = 'local' AND entity_key = (SELECT session_platform || char(0) || session_id FROM factory_attempt WHERE id = ?)`, id); err != nil {

@@ -22,6 +22,8 @@ one hour, three hours, until tomorrow at 9:00 AM, or until next Monday at 9:00 A
 timezone. Snoozed conversations return automatically within a minute of their
 wake-up time, including after an ocman restart. Activity does not wake them early.
 Opening the conversation or archiving it again cancels its snooze.
+Snooze follows the sidebar's existing archive visibility rules: pinned sessions
+and pending prompts can remain visible, and **Show archived** includes snoozed sessions.
 
 Use **Filter sessions → Project** to select a project or return to **All projects**.
 Search the picker for a directory prefix such as `github.com/nousefreak`, then

@@ -174,7 +174,7 @@ export function SidebarSessionRow({
           </button>
           <ArchiveButton className="session-sidebar-archive-btn" label="Archive session"
             onClick={(e) => onArchiveSession(e, sib)} disabled={archiving} />
-          <SnoozeButton session={sib} active={active} disabled={archiving} />
+          <SnoozeButton session={sib} disabled={archiving} />
         </span>
       </span>
     </SidebarRow>

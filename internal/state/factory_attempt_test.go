@@ -286,8 +286,15 @@ func TestClaimFactoryImplementation(t *testing.T) {
 	if changed, err := db.StopFactoryAttempt(ctx, attempt.ID, time.Now()); err != nil || !changed {
 		t.Fatalf("stop implementation = %v, %v", changed, err)
 	}
+	until := time.Now().Add(time.Hour).UnixMilli()
+	if err := db.SnoozeSession(ctx, "opencode", "session", until); err != nil {
+		t.Fatal(err)
+	}
 	if changed, err := db.CompleteFactoryImplementationAttempt(ctx, attempt.ID, attempt.AgentToken, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done", PRURL: "https://forge.example/pr/1"}, time.Now()); err != nil || !changed {
 		t.Fatalf("complete implementation = %v, %v", changed, err)
+	}
+	if keys, err := db.WakeSnoozedSessions(ctx, until); err != nil || len(keys) != 0 {
+		t.Fatalf("completed Factory session woke: %v %v", keys, err)
 	}
 	issues, err = db.ListFactoryIssues(ctx, epic.ID)
 	if err != nil {
