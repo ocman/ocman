@@ -150,10 +150,16 @@ func TestBaselineDedupAndRetryAcrossRestart(t *testing.T) {
 	if err := m.tick(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err := m.deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if calls != 1 {
 		t.Fatal(calls)
 	}
 	if err := m.tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.deliver(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {
@@ -168,6 +174,9 @@ func TestBaselineDedupAndRetryAcrossRestart(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
 	if err := restarted.tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.deliver(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 {

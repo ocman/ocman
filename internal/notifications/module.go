@@ -4,6 +4,7 @@ package notifications
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/module"
@@ -55,14 +56,26 @@ func (m *Module) Routes(r module.Router) {
 }
 
 func (m *Module) Run(ctx context.Context) {
+	m.run(ctx, 10*time.Second)
+}
+
+func (m *Module) run(ctx context.Context, interval time.Duration) {
 	if m.store.db == nil {
 		return
 	}
-	ticker := time.NewTicker(10 * time.Second)
+	wake := make(chan struct{}, 1)
+	var workers sync.WaitGroup
+	workers.Go(func() { m.runDelivery(ctx, interval, wake) })
+	defer workers.Wait()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		if err := m.tick(ctx); err != nil && ctx.Err() == nil {
 			log.WithError(err).Warn("checking Web Push notifications")
+		}
+		select {
+		case wake <- struct{}{}:
+		default:
 		}
 		select {
 		case <-ctx.Done():
@@ -72,11 +85,23 @@ func (m *Module) Run(ctx context.Context) {
 	}
 }
 
-func (m *Module) tick(ctx context.Context) error {
-	// Delivery retries do not depend on a healthy session snapshot.
-	if err := m.deliver(ctx); err != nil {
-		return err
+func (m *Module) runDelivery(ctx context.Context, interval time.Duration, wake <-chan struct{}) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-wake:
+		case <-ticker.C:
+		}
+		if err := m.deliver(ctx); err != nil && ctx.Err() == nil {
+			log.WithError(err).Warn("delivering Web Push notifications")
+		}
 	}
+}
+
+func (m *Module) tick(ctx context.Context) error {
 	n, err := m.store.count(ctx)
 	if err != nil {
 		return err
@@ -100,5 +125,5 @@ func (m *Module) tick(ctx context.Context) error {
 		}
 	}
 	m.baseline = next
-	return m.deliver(ctx)
+	return nil
 }

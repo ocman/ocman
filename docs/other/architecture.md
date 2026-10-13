@@ -554,7 +554,8 @@ flowchart TD
   use a five-field expression and IANA timezone. Webhook polling is an
   independent owner-local/remote delivery loop.
 - **internal/notifications.** Authenticated, same-origin push subscription routes
-  and a joined background worker. It reuses the server's notification projection,
+  and joined observation/delivery workers. Slow sends do not stall snapshots;
+  failed or stale owner reads preserve the baseline. It reuses the server's notification projection,
   identifies completions by the bounded platform lifecycle read, and persists
   VAPID keys, subscriptions and delivery receipts under its module schema.
   `webpush-go` handles encryption and signing. Known browser push-service hosts

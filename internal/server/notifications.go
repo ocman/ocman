@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"time"
 
@@ -26,7 +27,11 @@ func (s *Server) notificationsModule() *notifications.Module {
 func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	entries, err := s.notificationEntries(ctx, time.Now().Add(-24*time.Hour).UnixMilli(), 500)
+	all, err := s.fanOutSessionsResult(ctx, "", time.Now().Add(-24*time.Hour).UnixMilli(), nil)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.notificationEntriesForSessions(ctx, sortAndLimitSessions(all, 500), true)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +74,13 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 			continue
 		}
 		life, err := reader.SessionLifecycle(ctx, entry.ID)
-		if err != nil || life == nil || life.LatestMessageRole != "assistant" || life.LatestMessageID == "" {
+		if err != nil {
+			return nil, fmt.Errorf("reading notification lifecycle for %s/%s: %w", entry.platform, entry.ID, err)
+		}
+		if life == nil {
+			return nil, fmt.Errorf("missing notification lifecycle for %s/%s", entry.platform, entry.ID)
+		}
+		if life.LatestMessageRole != "assistant" || life.LatestMessageID == "" {
 			continue
 		}
 		if life.Status != db.StatusWaiting && life.Status != db.StatusError && life.Status != db.StatusDone {

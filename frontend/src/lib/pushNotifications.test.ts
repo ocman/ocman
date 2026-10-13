@@ -21,9 +21,26 @@ beforeEach(() => {
   vi.mocked(fetchJSON).mockResolvedValue({ publicKey: 'AQID' });
   vi.mocked(postJSON).mockResolvedValue(undefined);
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.resetAllMocks(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
 
 describe('device push subscriptions', () => {
+  it('times out stalled readiness without subscribing or persisting', async () => {
+    vi.useFakeTimers();
+    const { registration } = setup();
+    Object.assign(navigator.serviceWorker, { ready: new Promise(() => {}) });
+    const rejected = expect(enablePush()).rejects.toThrow('Service worker did not become ready');
+    await vi.advanceTimersByTimeAsync(10_000);
+    await rejected;
+    expect(registration.pushManager.subscribe).not.toHaveBeenCalled();
+    expect(postJSON).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('clears the readiness timer after success', async () => {
+    vi.useFakeTimers();
+    setup();
+    await enablePush();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('subscribes with the server key and persists the device', async () => {
     const { registration } = setup();
     expect(pushSupported()).toBe(true);

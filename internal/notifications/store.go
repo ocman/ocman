@@ -68,8 +68,19 @@ func (s *store) save(ctx context.Context, sub webpush.Subscription) error {
 }
 
 func (s *store) remove(ctx context.Context, endpoint string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM push_subscription WHERE endpoint=?`, endpoint)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Legacy state databases with pre-existing violations keep foreign keys
+	// off. Removal must still erase queued alerts before a device can rejoin.
+	for _, query := range []string{`DELETE FROM push_delivery WHERE endpoint=?`, `DELETE FROM push_subscription WHERE endpoint=?`} {
+		if _, err := tx.ExecContext(ctx, query, endpoint); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *store) count(ctx context.Context) (int, error) {

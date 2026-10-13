@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -40,17 +42,26 @@ func isRemotePlatformID(id string) bool {
 // remotePlatform adapter). remember is called for each adapter's result
 // (may be nil) so the registry's reverse-lookup cache stays warm.
 func (s *Server) fanOutSessions(ctx context.Context, dir string, since int64, remember func(platforms.ID, []db.Session)) []db.Session {
+	all, _ := s.fanOutSessionsResult(ctx, dir, since, remember)
+	return all
+}
+
+// The dashboard tolerates partial results. Push observation must reject them
+// rather than advance its baseline as if a failed owner's sessions disappeared.
+func (s *Server) fanOutSessionsResult(ctx context.Context, dir string, since int64, remember func(platforms.ID, []db.Session)) ([]db.Session, error) {
 	adapters := s.registry.Platforms()
 
 	type result struct {
 		id       platforms.ID
 		sessions []db.Session
+		err      error
 	}
 	results := make([]result, len(adapters))
 
 	var wg sync.WaitGroup
 	for i, adapter := range adapters {
 		if !adapter.Available(ctx) {
+			results[i].err = fmt.Errorf("platform %s unavailable", adapter.ID())
 			continue
 		}
 		wg.Add(1)
@@ -66,17 +77,31 @@ func (s *Server) fanOutSessions(ctx context.Context, dir string, since int64, re
 
 			sessions, err := adapter.Sessions(callCtx, dir, since)
 			if err != nil {
+				results[i].err = fmt.Errorf("listing %s sessions: %w", adapter.ID(), err)
 				log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
 					Warn("listing sessions from platform")
 				return
 			}
 			results[i] = result{id: adapter.ID(), sessions: sessions}
+			if !adapter.Available(callCtx) {
+				results[i].err = fmt.Errorf("platform %s became unavailable", adapter.ID())
+			}
+			for _, session := range sessions {
+				if session.Stale {
+					results[i].err = fmt.Errorf("platform %s returned stale sessions", adapter.ID())
+					break
+				}
+			}
 		}(i, adapter)
 	}
 	wg.Wait()
 
 	var all []db.Session
+	var failures []error
 	for _, r := range results {
+		if r.err != nil {
+			failures = append(failures, r.err)
+		}
 		if r.sessions == nil {
 			continue
 		}
@@ -85,5 +110,5 @@ func (s *Server) fanOutSessions(ctx context.Context, dir string, since int64, re
 		}
 		all = append(all, r.sessions...)
 	}
-	return all
+	return all, errors.Join(failures...)
 }

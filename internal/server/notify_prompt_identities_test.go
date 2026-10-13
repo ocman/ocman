@@ -50,7 +50,9 @@ func TestNotifyCachedLookupFailurePreservesFlags(t *testing.T) {
 	s := testServer(t)
 	s.registry.Register(&failedCachedNotifyPlatform{fakePlatform{id: "fake"}})
 	entry := notifyEntry{ID: "parent", PendingPermission: true, PendingQuestion: true}
-	s.notifyPromptIdentities(t.Context(), &db.Session{ID: "parent", Platform: "fake"}, &entry)
+	if err := s.notifyPromptIdentities(t.Context(), &db.Session{ID: "parent", Platform: "fake"}, &entry); err == nil {
+		t.Fatal("lookup failure was not reported")
+	}
 	if !entry.PendingPermission || !entry.PendingQuestion || entry.Permissions != nil || entry.Questions != nil {
 		t.Fatalf("lookup failure hid pending child prompts: %+v", entry)
 	}
@@ -106,7 +108,9 @@ func TestNotifyIdentitiesEmptySnapshotClearsEarlierFlags(t *testing.T) {
 	entry := notifyEntry{ID: "parent", PendingPermission: true, PendingQuestion: true}
 	// Fan-out captured pending=true, then the child prompt resolved before
 	// identity collection. Successful empty reads must clear the stale flags.
-	s.notifyPromptIdentities(t.Context(), &row, &entry)
+	if err := s.notifyPromptIdentities(t.Context(), &row, &entry); err != nil {
+		t.Fatal(err)
+	}
 	body, _ := json.Marshal(entry)
 	if entry.PendingPermission || entry.PendingQuestion || string(body) != `{"id":"parent","status":"","seen":false,"permissions":[],"questions":[]}` {
 		t.Fatalf("entry=%+v JSON=%s", entry, body)
@@ -125,7 +129,9 @@ func TestNotifyIdentitiesStalledRemoteDoesNotBlockHealthyOwner(t *testing.T) {
 	start := time.Now()
 	done := make(chan struct{})
 	go func() {
-		s.enrichNotifyPrompts(t.Context(), rows, entries)
+		if err := s.enrichNotifyPrompts(t.Context(), rows, entries); err == nil {
+			t.Error("partial enrichment was not reported")
+		}
 		close(done)
 	}()
 	select {
@@ -143,18 +149,26 @@ func TestNotifyPromptIdentities(t *testing.T) {
 	s.registry.Register(&cachedNotifyPlatform{fakePlatform{id: "r-laptop:opencode"}})
 	row := db.Session{ID: "parent", Platform: "r-laptop:opencode"}
 	entry := notifyEntry{ID: "parent", PendingPermission: true, PendingQuestion: true}
-	s.notifyPromptIdentities(t.Context(), &row, &entry)
+	if err := s.notifyPromptIdentities(t.Context(), &row, &entry); err == nil {
+		t.Fatal("malformed prompt identity was not reported")
+	}
 	if !reflect.DeepEqual(*entry.Permissions, []notifyPrompt{{"r-laptop:opencode", "child", "p1"}}) ||
 		!reflect.DeepEqual(*entry.Questions, []notifyPrompt{{"r-laptop:opencode", "grandchild", "q1"}}) {
 		t.Fatalf("entry=%+v", entry)
 	}
 	entry = notifyEntry{}
-	s.notifyPromptIdentities(t.Context(), &row, &entry)
+	if err := s.notifyPromptIdentities(t.Context(), &row, &entry); err != nil {
+		t.Fatal(err)
+	}
 	if entry.Permissions != nil || entry.Questions != nil {
 		t.Fatal("non-pending entry fetched prompt identities")
 	}
 	row.Platform = "absent"
-	s.notifyPromptIdentities(t.Context(), &row, &entry)
+	if err := s.notifyPromptIdentities(t.Context(), &row, &entry); err != nil {
+		t.Fatal(err)
+	}
 	s.registry = nil
-	s.notifyPromptIdentities(t.Context(), &row, &entry)
+	if err := s.notifyPromptIdentities(t.Context(), &row, &entry); err != nil {
+		t.Fatal(err)
+	}
 }

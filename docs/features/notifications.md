@@ -31,7 +31,10 @@ ocman endpoint are not required. An HTTPS Tailscale address works; the device
 still needs access to that address when opening a notification.
 
 The backend checks the same notification snapshot as the dashboard every ten
-seconds, only while devices are subscribed. The first snapshot after startup
+seconds, only while devices are subscribed, with push-specific eligibility for
+completed shell envelopes. Incomplete or stale owner reads preserve the previous
+baseline. A separate joined worker delivers alerts, so slow push services do not
+delay observation. The first snapshot after startup
 or after subscribing the first device is a baseline, so existing completed
 sessions and pending prompts do not cause a flood of historical alerts. New
 alerts contain fixed text and a session link, never titles, transcript text,

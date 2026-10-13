@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -12,15 +13,63 @@ import (
 
 type pushTestPlatform struct {
 	*fakePlatform
-	prompts []platforms.LivePrompt
-	life    *platforms.SessionLifecycle
+	prompts   []platforms.LivePrompt
+	life      *platforms.SessionLifecycle
+	lifeErr   error
+	promptErr error
 }
 
 func (p *pushTestPlatform) NotificationPrompts(context.Context, string) ([]platforms.LivePrompt, []platforms.LivePrompt, error) {
-	return p.prompts, nil, nil
+	return p.prompts, nil, p.promptErr
 }
 func (p *pushTestPlatform) SessionLifecycle(context.Context, string) (*platforms.SessionLifecycle, error) {
-	return p.life, nil
+	return p.life, p.lifeErr
+}
+
+func TestPushSnapshotIncludesDoneWithoutChangingBrowserProjection(t *testing.T) {
+	s := testServer(t)
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{{ID: "shell", Platform: "fake", Status: db.StatusDone, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusDone, LatestMessageID: "assistant-shell", LatestMessageRole: "assistant"}}
+	s.registry.Register(p)
+	rows, err := s.pushSnapshot(t.Context())
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("done completion missing: %+v %v", rows, err)
+	}
+	browser, err := s.notificationEntries(t.Context(), 0, 500)
+	if err != nil || len(browser) != 0 {
+		t.Fatalf("browser contract changed: %+v %v", browser, err)
+	}
+}
+
+func TestPushSnapshotRejectsPartialReads(t *testing.T) {
+	for _, kind := range []string{"sessions", "lifecycle", "nil-lifecycle", "prompts", "invalid-prompts", "stale", "unavailable"} {
+		t.Run(kind, func(t *testing.T) {
+			s := testServer(t)
+			p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "r-owner:opencode", sessions: []db.Session{{ID: "old", Platform: "r-owner:opencode", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageID: "old-message", LatestMessageRole: "assistant"}}
+			switch kind {
+			case "sessions":
+				p.sessionsErr = errors.New("sessions failed")
+			case "lifecycle":
+				p.lifeErr = errors.New("lifecycle failed")
+			case "nil-lifecycle":
+				p.life = nil
+			case "prompts":
+				p.sessions[0].PendingPermission = true
+				p.promptErr = errors.New("prompts failed")
+			case "invalid-prompts":
+				p.sessions[0].PendingPermission = true
+				p.prompts = []platforms.LivePrompt{{"id": "missing-session"}}
+			case "stale":
+				p.sessions[0].Stale = true
+			case "unavailable":
+				available := false
+				p.available = &available
+			}
+			s.registry.Register(p)
+			if _, err := s.pushSnapshot(t.Context()); err == nil {
+				t.Fatal("partial snapshot committed as complete")
+			}
+		})
+	}
 }
 
 func TestPushSnapshotOwnerIdentityAndFixedText(t *testing.T) {

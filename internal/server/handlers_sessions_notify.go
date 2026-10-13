@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -48,16 +50,27 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) notificationEntries(ctx context.Context, since int64, limit int) ([]notifyEntry, error) {
 	all := sortAndLimitSessions(s.fanOutSessions(ctx, "", since, nil), limit)
+	return s.notificationEntriesForSessions(ctx, all, false)
+}
+
+func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Session, push bool) ([]notifyEntry, error) {
 	if err := s.applyNotifySessionState(ctx, all); err != nil {
 		return nil, err
 	}
 	out := make([]notifyEntry, 0, len(all))
 	for i := range all {
 		se := &all[i]
-		deferredPermission := se.PendingPermission && s.deferPermissionNotification(ctx, se)
+		deferredPermission := false
+		if se.PendingPermission {
+			var err error
+			deferredPermission, err = s.deferPermissionNotification(ctx, se)
+			if push && err != nil {
+				return nil, err
+			}
+		}
 		pendingPermission := se.PendingPermission && !deferredPermission
 		hasPrompt := pendingPermission || se.PendingQuestion
-		isUnseenTerminal := (se.Status == db.StatusError || se.Status == db.StatusInterrupted || (se.Status == db.StatusWaiting && !deferredPermission)) && !se.Seen
+		isUnseenTerminal := (se.Status == db.StatusError || se.Status == db.StatusInterrupted || (se.Status == db.StatusWaiting && !deferredPermission) || (push && se.Status == db.StatusDone)) && !se.Seen
 		if !hasPrompt && !isUnseenTerminal {
 			continue
 		}
@@ -70,7 +83,9 @@ func (s *Server) notificationEntries(ctx context.Context, since int64, limit int
 		}
 		out = append(out, entry)
 	}
-	s.enrichNotifyPrompts(ctx, all, out)
+	if err := s.enrichNotifyPrompts(ctx, all, out); push && err != nil {
+		return nil, err
+	}
 	eligible := out[:0]
 	for _, entry := range out {
 		if entry.PendingPermission || entry.PendingQuestion || entry.terminalEligible {
@@ -82,11 +97,12 @@ func (s *Server) notificationEntries(ctx context.Context, since int64, limit int
 
 // Every owner's identity reads share one bounded budget, in parallel, so a
 // stalled remote cannot hold healthy owners behind a serial question scan.
-func (s *Server) enrichNotifyPrompts(ctx context.Context, sessions []db.Session, entries []notifyEntry) {
+func (s *Server) enrichNotifyPrompts(ctx context.Context, sessions []db.Session, entries []notifyEntry) error {
 	ctx, cancel := context.WithTimeout(ctx, remoteFanoutTimeout)
 	defer cancel()
 	// Entry ordering matches the filtered session ordering.
 	var wg sync.WaitGroup
+	errorsByEntry := make([]error, len(entries))
 	index := 0
 	for i := range sessions {
 		if index >= len(entries) {
@@ -96,23 +112,25 @@ func (s *Server) enrichNotifyPrompts(ctx context.Context, sessions []db.Session,
 			continue
 		}
 		entry, row := &entries[index], &sessions[i]
+		entryIndex := index
 		index++
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.notifyPromptIdentities(ctx, row, entry)
+			errorsByEntry[entryIndex] = s.notifyPromptIdentities(ctx, row, entry)
 		}()
 	}
 	wg.Wait()
+	return errors.Join(errorsByEntry...)
 }
 
-func (s *Server) notifyPromptIdentities(ctx context.Context, session *db.Session, entry *notifyEntry) {
+func (s *Server) notifyPromptIdentities(ctx context.Context, session *db.Session, entry *notifyEntry) error {
 	if s.registry == nil || (!entry.PendingPermission && !entry.PendingQuestion) {
-		return
+		return nil
 	}
 	adapter, ok := s.registry.Get(platforms.ID(session.Platform))
 	if !ok {
-		return
+		return fmt.Errorf("notification platform %s disappeared", session.Platform)
 	}
 	var permissions, questions []platforms.LivePrompt
 	var permissionErr, questionErr error
@@ -129,7 +147,7 @@ func (s *Server) notifyPromptIdentities(ctx context.Context, session *db.Session
 			questions, questionErr = adapter.ListQuestions(ctx, session.ID)
 		}
 	} else {
-		return
+		return platforms.ErrUnsupported
 	}
 	refs := func(prompts []platforms.LivePrompt) []notifyPrompt {
 		out := []notifyPrompt{}
@@ -144,47 +162,57 @@ func (s *Server) notifyPromptIdentities(ctx context.Context, session *db.Session
 	}
 	if entry.PendingPermission && permissionErr == nil {
 		identities := refs(permissions)
+		if len(identities) != len(permissions) {
+			permissionErr = errors.New("permission prompt missing identity")
+		}
 		entry.Permissions = &identities
 		entry.PendingPermission = len(identities) > 0
 	}
 	if entry.PendingQuestion && questionErr == nil {
 		identities := refs(questions)
+		if len(identities) != len(questions) {
+			questionErr = errors.New("question prompt missing identity")
+		}
 		entry.Questions = &identities
 		entry.PendingQuestion = len(identities) > 0
 	}
+	if err := errors.Join(permissionErr, questionErr); err != nil {
+		return fmt.Errorf("reading notification prompts for %s/%s: %w", session.Platform, session.ID, err)
+	}
+	return nil
 }
 
-func (s *Server) deferPermissionNotification(ctx context.Context, session *db.Session) bool {
+func (s *Server) deferPermissionNotification(ctx context.Context, session *db.Session) (bool, error) {
 	if isRemotePlatformID(session.Platform) || s.registry == nil {
-		return false
+		return false, nil
 	}
 	adapter, ok := s.registry.Get(platforms.ID(session.Platform))
 	if !ok || !adapter.Capabilities().AutoApprove {
-		return false
+		return false, nil
 	}
 	enabled := s.autoApproveDefault
 	if s.stateDB != nil {
 		value, exists, err := s.stateDB.GetAutoApprove(ctx, session.Platform, session.ID)
 		if err != nil {
-			return false
+			return false, err
 		}
 		if exists {
 			enabled = value
 		}
 	}
 	if !enabled {
-		return false
+		return false, nil
 	}
 	prompts, err := adapter.ListPermissions(ctx, session.ID)
 	if err != nil || len(prompts) == 0 {
-		return false
+		return false, err
 	}
 	for _, prompt := range prompts {
 		permissionID, _ := prompt["id"].(string)
 		promptSessionID, _ := prompt["sessionID"].(string)
 		if permissionID == "" || promptSessionID == "" || !s.aaSvc().DeferPermissionNotification(promptSessionID, permissionID) {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
