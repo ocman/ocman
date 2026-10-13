@@ -25,6 +25,7 @@ export function projectIdentityIndex(projects: Checkout[]) {
   for (const project of projects) {
     if (!project.mergedIntoDirectory) continue;
     const key = byCheckout.get(checkoutKey(projectRootForDirectory(project.directory), project.remoteId))!;
+    byCheckout.set(checkoutKey(projectRootForDirectory(project.mergedIntoDirectory), project.mergedIntoRemoteId), key);
     const target = projects.find(p => p.directory === project.mergedIntoDirectory
       && (p.remoteId || 'local') === (project.mergedIntoRemoteId || 'local'));
     representatives.set(key, { directory: project.mergedIntoDirectory,
@@ -41,8 +42,7 @@ export function projectIdentityIndex(projects: Checkout[]) {
   };
 }
 
-export function groupProjects(projects: Project[]): Project[] {
-  const identity = projectIdentityIndex(projects);
+export function groupProjects(projects: Project[], identity = projectIdentityIndex(projects)): Project[] {
   const groups = new Map<string, Project>();
   for (const project of projects) {
     const target = identity(project.directory, project.remoteId);

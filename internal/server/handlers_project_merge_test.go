@@ -50,3 +50,54 @@ func TestProjectMergeKeepsCheckoutsAndIncludesRemoteMembers(t *testing.T) {
 	merge(`{"source":{"directory":"/missing"},"target":{"directory":"/target"}}`, http.StatusBadRequest)
 	merge(`{`, http.StatusBadRequest)
 }
+
+func TestProjectMergeSurvivesUpstreamChanges(t *testing.T) {
+	for _, changed := range []string{"source", "target", "both"} {
+		t.Run(changed, func(t *testing.T) {
+			srv := testServer(t)
+			source := db.ProjectStats{Directory: "/source", SessionCount: 2}
+			target := db.ProjectStats{Directory: "/target", SessionCount: 1}
+			srv.remoteProjectsFn = func() []db.ProjectStats { return []db.ProjectStats{source, target} }
+			rr := httptest.NewRecorder()
+			srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(`{"source":{"directory":"/source"},"target":{"directory":"/target"}}`)))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
+			}
+			if changed != "target" {
+				source.UpstreamKeys = []string{"new-source"}
+			}
+			if changed != "source" {
+				target.UpstreamKeys = []string{"new-target"}
+			}
+			projects := getProjects(t, srv)
+			if projects[0].ProjectKey != projects[1].ProjectKey {
+				t.Fatalf("upstream change undid merge: %+v", projects)
+			}
+		})
+	}
+}
+
+func TestProjectMergeSurvivesMissingTargetAndMergesAgain(t *testing.T) {
+	srv := testServer(t)
+	projects := []db.ProjectStats{{Directory: "/source"}, {Directory: "/target", RemoteID: "box"}, {Directory: "/next"}}
+	srv.remoteProjectsFn = func() []db.ProjectStats { return append([]db.ProjectStats(nil), projects...) }
+	merge := func(body string) {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
+		}
+	}
+	merge(`{"source":{"directory":"/source"},"target":{"directory":"/target","remoteId":"box"}}`)
+	projects = []db.ProjectStats{projects[0], projects[2]}
+	got := getProjects(t, srv)
+	if got[0].ProjectKey != "dir:box:/target" || got[0].MergedIntoDirectory != "/target" {
+		t.Fatalf("missing target erased merge: %+v", got)
+	}
+	merge(`{"source":{"directory":"/target","remoteId":"box"},"target":{"directory":"/next"}}`)
+	got = getProjects(t, srv)
+	if got[0].ProjectKey != got[1].ProjectKey || got[0].MergedIntoDirectory != "/next" {
+		t.Fatalf("chained merge lost source: %+v", got)
+	}
+}

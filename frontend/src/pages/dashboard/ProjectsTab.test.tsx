@@ -55,6 +55,16 @@ function renderTab(ctx: Partial<DashboardCtx>) {
 }
 
 describe('ProjectsTab', () => {
+  it.each(['/source', '/target'])('only totals checkout rows within the %s directory scope', (dirScope) => {
+    const projects = [
+      makeProject({ directory: '/source', projectKey: 'merged', mergedIntoDirectory: '/target', sessionCount: 2 }),
+      makeProject({ directory: '/target', projectKey: 'merged', sessionCount: 7 }),
+    ];
+    renderTab({ projects, dirScope });
+    expect(screen.getByText('/target')).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: dirScope === '/source' ? '2' : '7' })).toBeInTheDocument();
+    expect(screen.queryByText('No projects found')).not.toBeInTheDocument();
+  });
   it('selects a different project, merges it, and refreshes the list', async () => {
     const merge = vi.spyOn(api, 'mergeProjects').mockResolvedValue({ ok: true });
     const refetchProjects = vi.fn();

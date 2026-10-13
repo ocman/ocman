@@ -3,6 +3,12 @@ import { groupProjects, projectIdentityIndex } from './projectIdentity';
 import type { Project } from './api';
 
 describe('projectIdentityIndex', () => {
+  it('keeps the persisted target addressable when its remote checkout disappears', () => {
+    const index = projectIdentityIndex([
+      { directory: '/source', projectKey: 'merged', mergedIntoDirectory: '/target', mergedIntoRemoteId: 'box' },
+    ]);
+    expect(index('/target', 'box').key).toBe(index('/source').key);
+  });
   it('uses the selected merge target for dashboard and session grouping', () => {
     const projects = [
       { directory: '/source', projectKey: 'target', mergedIntoDirectory: '/target', mergedIntoRemoteId: 'box', sessionCount: 2, messageCount: 3, totalTokensIn: 4, totalTokensOut: 5, lastUsed: 6 },

@@ -20,6 +20,10 @@ type ProjectMergeTarget struct {
 
 type ProjectMerges map[string]ProjectMergeTarget
 
+func ProjectMergeKey(remoteID, directory string) string {
+	return "dir:" + NormalizeRemoteID(remoteID) + ":" + ProjectRootForDirectory(directory)
+}
+
 func (m ProjectMerges) Resolve(target ProjectMergeTarget) ProjectMergeTarget {
 	// Bound traversal so a corrupt setting cannot hang a project listing.
 	for range len(m) {
@@ -57,7 +61,7 @@ func (d *DB) ProjectMerges(ctx context.Context) (ProjectMerges, error) {
 	return readProjectMerges(ctx, d.db)
 }
 
-func (d *DB) MergeProjects(ctx context.Context, source string, target ProjectMergeTarget) error {
+func (d *DB) MergeProjects(ctx context.Context, sources []string, target ProjectMergeTarget) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -67,12 +71,16 @@ func (d *DB) MergeProjects(ctx context.Context, source string, target ProjectMer
 	if err != nil {
 		return err
 	}
-	source = merges.Resolve(ProjectMergeTarget{Key: source}).Key
 	target = merges.Resolve(target)
-	if source == target.Key {
-		return ErrSameProject
+	for i, source := range sources {
+		sources[i] = merges.Resolve(ProjectMergeTarget{Key: source}).Key
+		if sources[i] == target.Key {
+			return ErrSameProject
+		}
 	}
-	merges[source] = target
+	for _, source := range sources {
+		merges[source] = target
+	}
 	value, err := json.Marshal(merges)
 	if err != nil {
 		return err

@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ProjectDetail } from './ProjectDetail';
 
-const merging = vi.hoisted(() => ({ enabled: false }));
+const merging = vi.hoisted(() => ({ enabled: false, missingTarget: false }));
 
 const history = vi.hoisted(() => ({ sessions: [
   { id: 'a', title: 'Fix header', directory: '/repos/ocman' },
@@ -14,7 +14,9 @@ const history = vi.hoisted(() => ({ sessions: [
 ] }));
 
 vi.mock('../lib/queries', () => ({
-  useProjects: () => ({ isLoading: false, data: [
+  useProjects: () => ({ isLoading: false, data: merging.missingTarget ? [
+    { directory: '/elsewhere', projectKey: 'merged', mergedIntoDirectory: '/remote/gone', mergedIntoRemoteId: 'gone' },
+  ] : [
     { directory: '/repos/ocman', projectKey: 'git:shared' },
     { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' },
     ...(merging.enabled ? [{ directory: '/elsewhere', projectKey: 'git:shared', mergedIntoDirectory: '/repos/ocman' }] : []),
@@ -27,6 +29,7 @@ vi.mock('../lib/queries', () => ({
 
 beforeEach(() => {
   merging.enabled = false;
+  merging.missingTarget = false;
   history.sessions = history.sessions.filter(s => !s.id.startsWith('unrelated-'));
 });
 vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => true }));
@@ -66,6 +69,14 @@ it('includes manually merged sessions under the target while preserving their di
   </MemoryRouter>);
   expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(['Fix header', 'Add search', 'Remote change', 'Unrelated']);
   expect(history.sessions.find(s => s.id === 'd')?.directory).toBe('/elsewhere');
+});
+
+it('opens surviving source sessions through a disconnected target alias', () => {
+  merging.missingTarget = true;
+  render(<MemoryRouter initialEntries={['/project/%2Fremote%2Fgone?remoteId=gone']}>
+    <Routes><Route path="/project/:dir" element={<ProjectDetail />} /></Routes>
+  </MemoryRouter>);
+  expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(['Unrelated']);
 });
 
 it('keeps project sessions beyond 500 newer unrelated sessions in both time-range and All views', () => {

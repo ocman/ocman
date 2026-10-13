@@ -16,7 +16,7 @@ for (const width of [1280, 390]) {
     failed = false;
     await retry.click();
     await expect(alert).toBeHidden();
-    await expect(page.getByTitle(MOCK_PROJECT.directory)).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'projects/myapp', exact: true })).toBeVisible();
   });
 
   test(`analytics failures use shared alerts at ${width}px`, async ({ mockedPage: page }) => {

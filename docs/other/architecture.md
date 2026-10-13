@@ -169,9 +169,10 @@ flowchart LR
   matching host. Actions still target a specific owner and directory. Repositories
   without network remotes fall back to owner-scoped directories, with the existing
   worktree folding. Local filesystem remotes never identify cross-host projects.
-  The dashboard's merge action saves a source-group to target-group mapping in
+  The dashboard's merge action saves owner-qualified source-checkout to target-checkout mappings in
   the hub's `state.db` setting `projects.merges`. `/api/projects` applies it after
-  upstream grouping and includes the selected target checkout for display.
+  upstream grouping, resolving the checkouts' current keys so Git remote changes
+  do not undo saved merges, and includes the selected target checkout for display.
   Dashboard totals, sidebar groups and project session lists share this identity.
   Merge chains follow the final target, and a transaction rejects cycles.
   Session directories, owners and transcripts stay intact. Successful merges
