@@ -416,6 +416,9 @@ flowchart TD
   Retry resets and notices use compound platform/session identities. The module's
   `Run` stops admission on cancellation and joins accepted sends and the worker
   dispatcher, allowing durable dequeue receipts to finish before state.db closes.
+  Owner-side cooldown reads run outside the admission mutex with a lifetime-bound
+  deadline. Shutdown joins admitted idle handlers before closing the dispatcher;
+  a cancelled read leaves its queued payload held for recovery.
   Project model settings and provider cooldown persistence retain their existing
   state tables; the combined project-defaults route invalidates the module cache.
 - **platforms.SessionEventSink.** The registry installs status and idle callbacks

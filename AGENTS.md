@@ -550,6 +550,9 @@ are computed. Sessions retain their original directories and owners.
   context; `Run` stops idle admission and joins accepted sends and the keyed
   dispatcher before state.db closes. Accepted sends finish their durable receipt
   through shutdown rather than cancelling between admission and dequeue.
+  Admission bookkeeping releases its mutex before owner-side cooldown reads.
+  Those reads have a lifetime-bound deadline; shutdown joins admitted idle
+  handlers before closing the dispatcher. A cancelled read leaves its payload held.
   `Server.onSessionIdle` records cooldown and admits the flush through the module
   before publishing the synchronous typed bus event. Direct send and owner-routed
   runtime recovery remain the shared server seam in `session_send.go`.

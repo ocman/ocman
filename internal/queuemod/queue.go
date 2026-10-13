@@ -15,6 +15,8 @@ import (
 // missed, including rows left by a crash. Idle events enqueue a flush now.
 const queueSweepInterval = time.Minute
 
+const cooldownReadTimeout = 10 * time.Second
+
 type queueFlush struct {
 	ctx        context.Context
 	platformID string
@@ -134,19 +136,34 @@ func (q *Module) SendNow(ctx context.Context, platformID string, req platforms.S
 // this machine drain a remote session that happened to share the id.
 func (s *Module) OnSessionIdle(platformID, sessionID string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.stopped || s.ctx.Err() != nil || s.d.Store == nil || platformID == "" {
+		s.mu.Unlock()
 		return
 	}
+	s.idleHandlers.Add(1)
+	lifetime := s.ctx
+	s.mu.Unlock()
+	defer s.idleHandlers.Done()
+
+	ctx, cancel := context.WithTimeout(lifetime, cooldownReadTimeout)
+	defer cancel()
 	// Synchronously, before the flush is enqueued: a held message must
 	// see the dead provider's cooldown when it drains.
-	cooled := s.recordQuotaCooldown(context.Background(), platformID, sessionID)
+	cooled := s.recordQuotaCooldown(ctx, platformID, sessionID)
+	if ctx.Err() != nil {
+		return // Keep the payload held when quota detection did not finish.
+	}
 	if p, ok := s.fallAborted.LoadAndDelete(fallKey(platformID, sessionID)); ok && cooled == "" {
 		cooled = p.(string)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped || lifetime.Err() != nil {
+		return
+	}
 	// An admitted send must finish its durable receipt even during shutdown.
 	// Run joins it before the database closes; cancellation stops admission.
-	s.queueFlushWorker().Enqueue(queueFlush{ctx: context.WithoutCancel(s.ctx), platformID: platformID, sessionID: sessionID, cooled: cooled})
+	s.queueFlushWorker().Enqueue(queueFlush{ctx: context.WithoutCancel(lifetime), platformID: platformID, sessionID: sessionID, cooled: cooled})
 }
 
 // broadcastQueueUpdated broadcasts that a session's follow-up queue

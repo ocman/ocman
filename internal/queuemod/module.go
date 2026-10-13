@@ -50,6 +50,7 @@ type Module struct {
 	mu                                  sync.Mutex
 	ctx                                 context.Context
 	stopped                             bool
+	idleHandlers                        sync.WaitGroup
 }
 
 func NewModule(d Deps) *Module {
@@ -87,6 +88,9 @@ func (m *Module) Run(ctx context.Context) {
 	m.runQueueSweep(ctx)
 	m.mu.Lock()
 	m.stopped = true
+	m.mu.Unlock()
+	m.idleHandlers.Wait()
+	m.mu.Lock()
 	w := m.worker
 	m.mu.Unlock()
 	if w != nil {
