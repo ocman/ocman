@@ -34,11 +34,8 @@ graphify-out/
 *.crt
 *.key
 
-# Beads / Dolt files (added by bd init)
-.dolt/
+# Local databases
 *.db
-.beads-credential-key
-.beads/proxieddb/
 
 # Hugo site build output (site/)
 site/public/

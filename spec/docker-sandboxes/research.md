@@ -10,7 +10,7 @@ The strongest reason to investigate is stronger host isolation plus managed netw
 
 ## Scope and evidence
 
-Research only. No Docker installation, sandbox execution, test-provider calls, Factory mutations, branch changes, or implementation changes were performed. This is the only report added. Location follows the existing `spec/beads-status-sidebar/research.md` convention. A research subagent inspected the primary sources; no runtime probes were executed.
+Research only. No Docker installation, sandbox execution, test-provider calls, Factory mutations, branch changes, or implementation changes were performed. This is the only report added. A research subagent inspected the primary sources; no runtime probes were executed.
 
 Evidence labels used below:
 

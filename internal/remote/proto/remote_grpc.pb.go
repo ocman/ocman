@@ -75,7 +75,6 @@ const (
 	Ocman_ManagedOpencodes_FullMethodName       = "/ocman.remote.v1.Ocman/ManagedOpencodes"
 	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
-	Ocman_BeadsStatus_FullMethodName            = "/ocman.remote.v1.Ocman/BeadsStatus"
 	Ocman_RegisterWebhookInbox_FullMethodName   = "/ocman.remote.v1.Ocman/RegisterWebhookInbox"
 	Ocman_PollWebhookInbox_FullMethodName       = "/ocman.remote.v1.Ocman/PollWebhookInbox"
 	Ocman_InboxItems_FullMethodName             = "/ocman.remote.v1.Ocman/InboxItems"
@@ -175,7 +174,6 @@ type OcmanClient interface {
 	ManagedOpencodes(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
-	BeadsStatus(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	RegisterWebhookInbox(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	PollWebhookInbox(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	// --- Owner-local Inbox ---
@@ -779,16 +777,6 @@ func (c *ocmanClient) HostCapabilities(ctx context.Context, in *Empty, opts ...g
 	return out, nil
 }
 
-func (c *ocmanClient) BeadsStatus(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(JsonResp)
-	err := c.cc.Invoke(ctx, Ocman_BeadsStatus_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *ocmanClient) RegisterWebhookInbox(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -1024,7 +1012,6 @@ type OcmanServer interface {
 	ManagedOpencodes(context.Context, *Empty) (*JsonResp, error)
 	TmuxSessions(context.Context, *Empty) (*JsonResp, error)
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
-	BeadsStatus(context.Context, *JsonReq) (*JsonResp, error)
 	RegisterWebhookInbox(context.Context, *JsonReq) (*JsonResp, error)
 	PollWebhookInbox(context.Context, *JsonReq) (*Empty, error)
 	// --- Owner-local Inbox ---
@@ -1223,9 +1210,6 @@ func (UnimplementedOcmanServer) TmuxSessions(context.Context, *Empty) (*JsonResp
 }
 func (UnimplementedOcmanServer) HostCapabilities(context.Context, *Empty) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method HostCapabilities not implemented")
-}
-func (UnimplementedOcmanServer) BeadsStatus(context.Context, *JsonReq) (*JsonResp, error) {
-	return nil, status.Error(codes.Unimplemented, "method BeadsStatus not implemented")
 }
 func (UnimplementedOcmanServer) RegisterWebhookInbox(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterWebhookInbox not implemented")
@@ -2280,24 +2264,6 @@ func _Ocman_HostCapabilities_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Ocman_BeadsStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(JsonReq)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(OcmanServer).BeadsStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Ocman_BeadsStatus_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(OcmanServer).BeadsStatus(ctx, req.(*JsonReq))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Ocman_RegisterWebhookInbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -2754,10 +2720,6 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HostCapabilities",
 			Handler:    _Ocman_HostCapabilities_Handler,
-		},
-		{
-			MethodName: "BeadsStatus",
-			Handler:    _Ocman_BeadsStatus_Handler,
 		},
 		{
 			MethodName: "RegisterWebhookInbox",
