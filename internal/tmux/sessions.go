@@ -153,7 +153,11 @@ func ListClients(ctx context.Context) ([]Client, error) {
 
 // ListSessions returns all tmux sessions.
 func ListSessions(ctx context.Context) ([]Session, error) {
-	out, err := outputCommand(ctx, "list-sessions", "-F", "#{session_name}\t#{session_windows}")
+	return listSessions(ctx, "list-sessions", "-F", "#{session_name}\t#{session_windows}")
+}
+
+func listSessions(ctx context.Context, args ...string) ([]Session, error) {
+	out, err := outputCommand(ctx, args...)
 	if err != nil {
 		return nil, err
 	}

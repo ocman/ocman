@@ -15,6 +15,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 type pluginManagementTest struct {
@@ -45,9 +46,7 @@ func newPluginManagementTest(t *testing.T) *pluginManagementTest {
 		}}
 	hello, _ := json.Marshal(plugins.Envelope{Type: plugins.TypeHello, Hello: &plugins.Hello{Mode: "$1", Token: "$OCMAN_PLUGIN_TOKEN", Description: &d}})
 	script := "#!/bin/sh\nif [ \"$1\" = serve ]; then\nIFS= read -r config <&3\nprintf '%s\\n' \"$config\" >&2\ncase \"$config\" in *'\"bad\"'*) exit 1;; *'\"hang\"'*) /bin/sleep 10; exit 1;; esac\nfi\nIFS= read -r hello <<EOF\n" + string(hello) + "\nEOF\nprintf '%s\\n' \"$hello\"\nif [ \"$1\" = serve ]; then\nread -r ack\necho started >> starts\nread -r shutdown\nfi\n"
-	if err := os.WriteFile(filepath.Join(dir, "ocman-plugin-management"), []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, filepath.Join(dir, "ocman-plugin-management"), script)
 	mux, err := s.routes()
 	if err != nil {
 		t.Fatal(err)

@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -33,6 +34,15 @@ func TestDefaultTmuxRunner_NewWindowRunsCommandLiterally(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not on PATH")
 	}
+	// Keep sockets short enough for macOS and away from the user's servers.
+	dir, err := os.MkdirTemp("/tmp", "ocman-tmux-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Setenv("TMUX_TMPDIR", dir)
+	t.Setenv("TMUX", "")
+	t.Setenv("SHELL", "/bin/sh")
 
 	socket := fmt.Sprintf("ocman-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() {
@@ -42,7 +52,7 @@ func TestDefaultTmuxRunner_NewWindowRunsCommandLiterally(t *testing.T) {
 	sessionName := "newwindow-cmd"
 	// Start an empty session whose first window just runs `cat` so it
 	// stays alive for the duration of the test.
-	if err := exec.Command("tmux", "-L", socket, "new-session", "-d", "-s", sessionName, "-c", "/tmp", "cat").Run(); err != nil {
+	if err := exec.Command("tmux", "-L", socket, "-f", "/dev/null", "new-session", "-d", "-s", sessionName, "-c", "/tmp", "cat").Run(); err != nil {
 		t.Fatalf("tmux new-session: %v", err)
 	}
 

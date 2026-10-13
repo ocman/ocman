@@ -26,6 +26,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
 )
 
@@ -241,9 +242,7 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 		t.Fatal(err)
 	}
 	script := fmt.Sprintf("#!/bin/sh\nexec %q -test.run=^TestConversationPluginHelper$ -- %q \"$@\"\n", exe, f.record)
-	if err := os.WriteFile(filepath.Join(pluginDir, "ocman-plugin-chatops"), []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, filepath.Join(pluginDir, "ocman-plugin-chatops"), script)
 	if f.mux, err = f.s.routes(); err != nil {
 		t.Fatal(err)
 	}

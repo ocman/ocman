@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // The marker delays only valid serve handshakes, not discovery or bad config.
@@ -18,9 +20,7 @@ func slowPluginManagementFixture(t *testing.T) *pluginManagementTest {
 	}
 	delay := "\nif [ \"$1\" = serve ] && [ -f slow-start ]; then\nIFS= read -r delay < slow-start\n/bin/sleep \"$delay\"\nfi\nIFS= read -r hello <<EOF"
 	script = []byte(strings.Replace(string(script), "\nIFS= read -r hello <<EOF", delay, 1))
-	if err := os.WriteFile(path, script, 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, path, string(script))
 	f.call(t, "POST", "/rescan", `{}`, 200)
 	f.call(t, "POST", "/"+f.description.ID+"/configuration", `{"secrets":{"token":"working"}}`, 200)
 	return f

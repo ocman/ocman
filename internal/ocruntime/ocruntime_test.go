@@ -74,6 +74,9 @@ func TestNativeLaunch_ThreadsPortPermissionAndPassword(t *testing.T) {
 		t.Error("launch did not receive the caller context")
 	}
 	// Port threaded into the command, not --port 0.
+	if !strings.Contains(f.command, "opencode serve --port") {
+		t.Errorf("command %q does not launch headlessly", f.command)
+	}
 	if !strings.Contains(f.command, "--port 41235") {
 		t.Errorf("command %q missing --port 41235", f.command)
 	}

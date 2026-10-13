@@ -415,9 +415,11 @@ flowchart TD
   remove their partial file; multipart bodies are not spooled on the hub.
 - **internal/ocruntime.** The runtime abstraction behind the managed launch
   path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides how a project's
-  opencode is hosted; the native-tmux implementation runs `opencode --port N`
-  (v1, one per project) or `opencode serve --port N` (v2, one per machine,
-  kept up by `RunMachineSupervisor`) on an ocman-allocated loopback port and
+  opencode is hosted; the native-tmux implementation runs headless
+  `opencode serve --port N` on `tmux -L ocman-opencode -f /dev/null`,
+  isolated from the user's tmux server and configuration. V1 runs one server
+  per project; v2 runs one per machine, kept up by `RunMachineSupervisor`.
+  The runtime uses an ocman-allocated loopback port and
   probes authenticated `GET {endpoint}/config` for health. It is where the container runtime (epic
   #375) plugs in as a second implementation.
 - **internal/ocv2.** OpenCode v2 compatibility. `ocapi.Auth.Transport` wraps

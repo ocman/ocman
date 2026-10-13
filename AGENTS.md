@@ -135,8 +135,9 @@ native-tmux implementation today and a container runtime planned (epic
 #375). `EnsureProjectOpencode` (on `hostsvc.Host`, owner-routed via
 `Router.ForDir`) is the only path that launches opencode for a project.
 It **allocates a free loopback port itself**
-(`ocruntime.AllocateLoopbackPort`, bind→close) and launches
-`opencode --port N` — the managed path no longer relies on `lsof` port
+(`ocruntime.AllocateLoopbackPort`, bind→close) and launches headless
+`opencode serve --port N` on `tmux -L ocman-opencode -f /dev/null`, isolated
+from the user's tmux server and configuration. The managed path no longer relies on `lsof` port
 discovery. Health is an **API probe**: `GET {endpoint}/config` returning
 200, not mere listener presence. Concurrent ensure calls for one repo
 root collapse via `singleflight` (at-most-one launch); the call probes
@@ -489,7 +490,8 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/ocruntime/` — runtime-neutral managed-opencode lifecycle
   (#376). A `Runtime` interface (`Launch`/`Probe`/`Stop`) abstracts how a
   project's opencode instance is hosted; the native-tmux implementation
-  runs `opencode --port N` on an ocman-allocated loopback port and probes
+  runs headless `opencode serve --port N` on the dedicated `ocman-opencode`
+  tmux server with no user config, using an ocman-allocated loopback port, and probes
   `GET {endpoint}/config` for health. Plug point for the container
   runtime (epic #375). Driven by `hostsvc/local`'s
   `EnsureProjectOpencode` / `RestartProjectOpencode`, which persist each

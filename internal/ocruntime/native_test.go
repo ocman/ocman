@@ -14,11 +14,11 @@ func TestNativeRuntimeLaunchUsesExistingTmuxSession(t *testing.T) {
 	repo := filepath.Join(home, "src/repo")
 	session := tmux.SessionNameForPath(repo)
 
-	originalRunner := tmux.DefaultRunner
-	t.Cleanup(func() { tmux.DefaultRunner = originalRunner })
+	originalRunner := tmux.ManagedRunner
+	t.Cleanup(func() { tmux.ManagedRunner = originalRunner })
 
 	var command string
-	tmux.DefaultRunner = tmux.Runner{
+	tmux.ManagedRunner = tmux.Runner{
 		ListSessions: func(context.Context) ([]tmux.Session, error) {
 			return []tmux.Session{{Name: session, ResolvedPath: repo}}, nil
 		},
@@ -34,7 +34,7 @@ func TestNativeRuntimeLaunchUsesExistingTmuxSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	if want := tmux.OpencodeCommandForPort(43210); command != want {
+	if want := tmux.OpencodeServeCommandForPort(43210); command != want {
 		t.Fatalf("managed command = %q, want %q", command, want)
 	}
 }

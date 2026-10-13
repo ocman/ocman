@@ -104,7 +104,7 @@ func TestNativeLaunchV1IgnoresOpencodeDB(t *testing.T) {
 	if _, err := rt.Launch(t.Context(), LaunchSpec{RepoRoot: "/r", Port: 4242, PermissionJSON: "{}"}); err != nil {
 		t.Fatal(err)
 	}
-	if f.command != tmux.OpencodeCommandForPort(4242) {
+	if f.command != tmux.OpencodeServeCommandForPort(4242) {
 		t.Errorf("command = %q", f.command)
 	}
 	if f.env["OPENCODE_PERMISSION"] != "{}" {

@@ -180,6 +180,13 @@ Authorization and other permanent client errors wait for an explicit refresh.
 
 ## Also included
 
+- **Managed OpenCode.** Ocman launches `opencode serve` headlessly on its own
+  tmux server, `ocman-opencode`, without loading your tmux configuration.
+  Launch and restart do not control your default tmux server. Inspect managed
+  sessions with `tmux -L ocman-opencode list-sessions` on the owning machine.
+  Existing OpenCode processes are reused while healthy. Sessions launched by
+  older versions stay on their original server; stop those manually before
+  asking ocman to relaunch them on the dedicated server.
 - **Terminals.** In-app browser terminals backed by tmux.
   They use a separate server, `tmux -L ocman-term`, so they do not appear in
   your default server's session list. To attach outside ocman, run

@@ -18,9 +18,8 @@ import (
 // KindNativeTmux is the Instance.Kind reported by the native runtime.
 const KindNativeTmux = "native-tmux"
 
-// NativeRuntime hosts OpenCode as ocman always has: one opencode process
-// per project in a tmux session, launched with the caller-allocated
-// port and reachable over loopback HTTP.
+// NativeRuntime hosts headless OpenCode on the dedicated ocman-opencode
+// tmux server, using the caller-allocated port and loopback HTTP.
 type NativeRuntime struct {
 	// launch/kill are seams so tests exercise Launch/Stop without a real
 	// tmux binary. Nil values fall back to the tmux package defaults.
@@ -42,16 +41,16 @@ func NewNativeRuntimeWithAuth(auth ocapi.Auth) *NativeRuntime {
 	return &NativeRuntime{
 		launch: func(ctx context.Context, directory, command string, env map[string]string) (string, error) {
 			// The host already checked for a healthy project server. A tmux
-			// session alone may only contain shells or a stale OpenCode window.
-			name, _, err := tmux.LaunchOpencodeCmdEnvWith(ctx, tmux.DefaultRunner, directory, command, false, env)
+			// session alone may only contain a stale OpenCode window.
+			name, _, err := tmux.LaunchOpencodeCmdEnvWith(ctx, tmux.ManagedRunner, directory, command, false, env)
 			return name, err
 		},
-		kill: tmux.DefaultRunner.KillSession,
+		kill: tmux.ManagedRunner.KillSession,
 		auth: auth,
 	}
 }
 
-// Launch threads spec.Port into `opencode --port N`, seeds
+// Launch threads spec.Port into `opencode serve --port N`, seeds
 // OPENCODE_PERMISSION, and returns the loopback endpoint + tmux session
 // name as the instance ID.
 func (r *NativeRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance, error) {
@@ -72,9 +71,8 @@ func (r *NativeRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance,
 	}
 	r.auth.AddServerEnv(env)
 
-	command := tmux.OpencodeCommandForPort(spec.Port)
+	command := tmux.OpencodeServeCommandForPort(spec.Port)
 	if spec.V2 {
-		command = tmux.OpencodeServeCommandForPort(spec.Port)
 		// tmux panes inherit the tmux server's environment, not ocman's:
 		// carry an OPENCODE_DB override so ocman reads the database the
 		// server it launched writes.
