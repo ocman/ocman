@@ -2,6 +2,8 @@ package previews
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/linkpreview"
@@ -68,4 +70,28 @@ func (r testRouter) LocalSetting(p string, h http.HandlerFunc) { r.mux.HandleFun
 func moduleGuards() module.Guards {
 	pass := func(h http.HandlerFunc) http.HandlerFunc { return h }
 	return module.Guards{Auth: pass, Localhost: pass}
+}
+
+// Without a state DB every credential and rule route answers 503 instead of
+// panicking; the integration status needs none.
+func TestRoutesWithoutStore(t *testing.T) {
+	mux := harnessOn(nil).mux()
+	for _, c := range []struct{ method, target string }{
+		{http.MethodGet, "/api/previews/providers"}, {http.MethodGet, "/api/previews/apps"},
+		{http.MethodGet, previewCallback}, {http.MethodGet, "/api/settings/link-preview-rules"},
+		{http.MethodPost, "/api/previews/resolve"}, {http.MethodPost, "/api/previews/token"},
+		{http.MethodPost, "/api/previews/connect"}, {http.MethodPost, "/api/previews/disconnect"},
+		{http.MethodPost, "/api/previews/apps/save"}, {http.MethodPost, "/api/previews/apps/remove"},
+	} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(c.method, c.target, strings.NewReader("{}")))
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s %s = %d", c.method, c.target, rr.Code)
+		}
+	}
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/integrations/status", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
 }
