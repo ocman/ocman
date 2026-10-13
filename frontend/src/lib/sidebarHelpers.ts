@@ -102,7 +102,8 @@ export async function resolveOpenSession(opts: {
  * `status` is not sticky either: sticky-busy used to live here because
  * the server derived status from the last message's shape and could not
  * be trusted to be current; it now reports the agent's own turn state,
- * so overriding it would only keep a finished turn spinning.
+ * so overriding it would only keep a finished turn spinning. A transition
+ * observed during an in-flight request does win over that older response.
  *
  * The pending permission/question flags are deliberately NOT sticky.
  * They used to be merged as `live.pending… || server`, which also
@@ -129,12 +130,15 @@ export function mergeSidebarSessions(
     if (!live) return s.status === 'interrupted' && pending && pending.timeUpdated >= s.timeUpdated
       ? { ...unarchived, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, pending.timeUpdated) }
       : unarchived;
+    const started = requestStart?.find((ls) => ls.id === s.id && ls.platform === s.platform);
+    const statusChangedDuringRequest = started && live.status !== started.status;
     const readDuringRequest = live.status === 'interrupted' && (
       (pending !== undefined && pending.timeUpdated >= s.timeUpdated)
       || (!!requestStart && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform))
     );
     return {
       ...unarchived,
+      ...(statusChangedDuringRequest ? { status: live.status, notice: live.notice } : {}),
       seen: s.seen || ((s.status !== 'interrupted' || readDuringRequest) && live.seen && live.seenTimeUpdated >= s.timeUpdated),
       seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),
       timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),

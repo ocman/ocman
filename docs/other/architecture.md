@@ -853,7 +853,10 @@ flowchart TD
   Enabling requires checksum and grant review. Secret inputs are write-only,
   and failed configuration activation reloads persisted configuration and health.
 - **Client state.** Shared Zustand stores hold broad session state. The
-  Routines page polls definitions (each with its latest run) and webhook
+  session detail mirrors fresh REST/SSE status into the owner-qualified sidebar
+  row, so navigation keeps the same status. List reconciliation preserves status
+  transitions received during its request; subsequent fresh reads remain authoritative.
+  The Routines page polls definitions (each with its latest run) and webhook
   inboxes over REST, pages history only for the open drawer, and keeps its form
   and selected edits locally.
 - **Plugin actions.** The command palette merges `action.v1` contributions for

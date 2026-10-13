@@ -131,6 +131,16 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
     dispatch, viewRef, loadMoreAbortRef, loadMoreInFlightRef, setLoadingMore, setTotalMessages,
   });
 
+  const { id: liveId, platform, status: liveStatus, notice, liveConnection } = view.session ?? {};
+  useEffect(() => {
+    // Keep the shared row current when the detail stream leads global events.
+    if (!liveId || liveId !== sessionId || lifecycle.loading || lifecycle.refreshing) return;
+    useApiStore.getState().patchRecentSession(liveId, {
+      status: liveStatus, notice, liveConnection,
+    }, platform);
+  }, [sessionId, liveId, platform, liveStatus, notice, liveConnection,
+    lifecycle.loading, lifecycle.refreshing]);
+
   const loadMore = useCallback(async () => {
     // The ref makes two same-tick calls re-entrant-safe.
     if (!sessionId || loadMoreInFlightRef.current) return;

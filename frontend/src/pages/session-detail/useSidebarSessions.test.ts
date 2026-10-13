@@ -44,6 +44,23 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it.each(['busy', 'done'] as const)('keeps a newer %s transition when an older list read finishes', async (status) => {
+    const row = { id: 'running', platform: 'opencode', status: status === 'busy' ? 'done' : 'busy',
+      timeUpdated: Date.now(), seen: true, seenTimeUpdated: 0 } as Session;
+    let finish!: (rows: Session[]) => void;
+    const getSessions = vi.fn().mockReturnValueOnce(new Promise<Session[]>((resolve) => { finish = resolve; }))
+      .mockResolvedValue([row]);
+    useApiStore.setState({ getSessions, recentSessions: [row], recentSessionsHash: computeSidebarHash([row]) });
+    const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    const read = view.result.current.loadRecentSessions();
+    act(() => useApiStore.getState().patchRecentSession(row.id, { status }, row.platform));
+    await act(async () => { finish([row]); await read; });
+    expect(view.result.current.recentSessions[0].status).toBe(status);
+    await act(async () => { await view.result.current.loadRecentSessions(); });
+    expect(view.result.current.recentSessions[0].status).toBe(row.status);
+    view.unmount();
+  });
   it('recovers on resume after a stalled pre-hide read times out', async () => {
     vi.useFakeTimers();
     const row = { id: 'fresh', platform: 'opencode', status: 'done', timeUpdated: Date.now() } as Session;

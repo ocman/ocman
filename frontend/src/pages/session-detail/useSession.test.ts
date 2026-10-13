@@ -130,7 +130,7 @@ function makeDetail(overrides: Partial<SessionDetail> = {}): SessionDetail {
 
 beforeEach(() => {
   FakeEventSource.reset();
-  useApiStore.setState({ sessionCache: new Map(), sessionCacheOrder: [] });
+  useApiStore.setState({ sessionCache: new Map(), sessionCacheOrder: [], recentSessions: [], recentSessionsHash: '' });
 });
 
 afterEach(() => {
@@ -160,6 +160,40 @@ describe('useSession — bounded SSE work (#722)', () => {
     await act(async () => {});
     return { ...hook, fetchSession, sse: FakeEventSource.latest()!, frame: () => act(() => frame(0)) };
   }
+
+  it('keeps the sidebar running after navigating away from a live session', async () => {
+    const row = makeDetail().session;
+    useApiStore.setState({ recentSessions: [row, { ...row, platform: 'r-box:opencode' }], recentSessionsHash: '' });
+    const { result, sse, frame, rerender, unmount } = await setup();
+    act(() => sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } }));
+    frame();
+    expect(result.current.session?.status).toBe('busy');
+    await act(async () => rerender({ id: 'other' }));
+    expect(useApiStore.getState().recentSessions.find(s => s.id === SID)?.status).toBe('busy');
+    expect(useApiStore.getState().recentSessions.find(s => s.platform === 'r-box:opencode')?.status).toBe('done');
+    unmount();
+  });
+
+  it('mirrors a fresh detail status but does not publish stale cached status while loading', async () => {
+    const detail = makeDetail();
+    const busy = { ...detail, session: { ...detail.session, status: 'busy' as const } };
+    useApiStore.getState().setCachedSession(SID, busy);
+    useApiStore.setState({ recentSessions: [detail.session] });
+    let finish!: (detail: SessionDetail) => void;
+    const fetchSession = vi.fn().mockReturnValue(new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+    const view = renderHook(() => useSession(SID, { fetchSession }));
+    expect(view.result.current.session?.status).toBe('busy');
+    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    await act(async () => finish(busy));
+    expect(useApiStore.getState().recentSessions[0].status).toBe('busy');
+    await act(async () => FakeEventSource.latest()!.emitMessage({ type: 'session.idle', properties: { sessionID: SID } }));
+    // The reconciled REST snapshot remains authoritative.
+    expect(useApiStore.getState().recentSessions[0].status).toBe('busy');
+    fetchSession.mockResolvedValue(detail);
+    await act(async () => { await view.result.current.refresh(); });
+    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    view.unmount();
+  });
 
   it('reduces an ordered burst once per frame, with a 50ms background fallback', async () => {
     const { result, sse, frame, unmount } = await setup();

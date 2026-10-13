@@ -1613,10 +1613,8 @@ describe('SessionDetail — status badge follows the backend', () => {
     }
   });
 
-  // Regression guard for the shared-state overwrite: the page's display
-  // status is local, and must never be written back into the row every
-  // other view reads.
-  it('does not write its display status into shared recent-session state', async () => {
+  // Only API/SSE status is shared; the page's display-only error overlay stays local.
+  it('mirrors authoritative status without writing its display-only status into shared state', async () => {
     const patchRecentSession = vi.fn();
     const handle = renderSessionPage({
       sessionId: 'sess_1',
@@ -1631,9 +1629,10 @@ describe('SessionDetail — status badge follows the backend', () => {
     });
     await flushPromises(8);
 
-    for (const call of patchRecentSession.mock.calls) {
-      expect(call[1]).not.toHaveProperty('status');
-    }
+    await waitFor(() => expect(handle.result.container.querySelector('[data-state="error"]')).toBeInTheDocument());
+    const statusPatches = patchRecentSession.mock.calls.filter((call) => 'status' in call[1]);
+    expect(statusPatches.length).toBeGreaterThan(0);
+    for (const call of statusPatches) expect(call[1].status).toBe('done');
   });
 });
 
