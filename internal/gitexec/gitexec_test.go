@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestCommandCapsConcurrentGitProcesses(t *testing.T) {
@@ -18,9 +20,9 @@ func TestCommandCapsConcurrentGitProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := filepath.Join(dir, "git")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch \"$GITEXEC_MARKERS/$$\"\nwhile [ ! -f \"$GITEXEC_RELEASE\" ]; do sleep 0.01; done\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// WriteScript runs the fixture once first: macOS assesses a new
+	// executable on its first exec, which under load outlasts the deadline.
+	testutil.WriteScript(t, script, "#!/bin/sh\ntouch \"$GITEXEC_MARKERS/$$\"\nwhile [ ! -f \"$GITEXEC_RELEASE\" ]; do sleep 0.01; done\n")
 	release := filepath.Join(dir, "release")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GITEXEC_MARKERS", markers)
