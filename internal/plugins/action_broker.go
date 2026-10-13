@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,7 +40,7 @@ type actionArtifact struct {
 // It never evicts and re-executes an ID. Capacity exhaustion fails closed. The host
 // call adapter also reserves durable operation receipts before dispatch, so retries
 // across a host restart return conflict rather than repeat an uncertain effect.
-// ponytail: bounded host-lifetime result cache; persist results if restart recovery is needed.
+// ponytail: bounded host-lifetime result cache; only artifacts persist (ArtifactRoot).
 type ActionBroker struct {
 	authorize  ActionAuthorization
 	call       ActionCall
@@ -46,6 +49,21 @@ type ActionBroker struct {
 	artifacts  map[string]actionArtifact
 	bytes      int
 	timeout    time.Duration
+	// ArtifactRoot maps a plugin ID to its private data root. When set, artifacts
+	// persist under <root>/artifacts so a handle survives a host restart.
+	ArtifactRoot func(pluginID string) (string, error)
+	// ResolveDirectory resolves an opaque project ID to its directory on the executing
+	// host. It runs at dispatch, after grant authorization, only for project
+	// placements declaring context.project.path. An empty result omits the field.
+	ResolveDirectory func(ctx context.Context, projectID string) string
+}
+
+// artifactMeta is the on-disk record that lets a restarted broker re-run the
+// authorization check for a persisted artifact.
+type artifactMeta struct {
+	Request ActionRequest `json:"request"`
+	Hash    [32]byte      `json:"hash"`
+	Name    string        `json:"name"`
 }
 
 func NewActionBroker(authorize ActionAuthorization, call ActionCall) *ActionBroker {
@@ -149,6 +167,14 @@ func (b *ActionBroker) Invoke(ctx context.Context, request ActionRequest) Action
 		}
 		op.done = make(chan struct{})
 		admitted = true
+		// Resolve the directory here, after authorizedAction proved the grant and
+		// after op.request was copied, so neither the operation hash nor persisted
+		// artifact metadata ever carries a host path. Minimize still gates it on
+		// the required grant and placement.
+		request.Context.Directory = ""
+		if b.ResolveDirectory != nil && request.Placement == "project" && slices.Contains(a.RequiredGrants, "context.project.path") {
+			request.Context.Directory = b.ResolveDirectory(ctx, request.Context.ProjectID)
+		}
 		params, _ := json.Marshal(ActionInvocation{ActionID: a.ID, Context: a.Minimize(request.Context)})
 		deadline, _ := ctx.Deadline()
 		replies, err = b.call(ctx, request.PluginID, Call{OperationID: request.OperationID, Capability: "action", Version: ActionCapability.Version, Method: "invoke", DeadlineUnixMS: deadline.UnixMilli(), Params: params})
@@ -252,17 +278,87 @@ func (b *ActionBroker) storeArtifacts(op *actionOperation, response ActionRespon
 		if r.Kind != "artifact" {
 			continue
 		}
-		r.Handle = rand.Text()
-		b.artifacts[r.Handle] = actionArtifact{operation: op, name: r.Label, data: r.Data}
+		id := rand.Text()
+		r.Handle = base64.RawURLEncoding.EncodeToString([]byte(op.request.PluginID)) + "." + id
+		if err := b.persistArtifact(op, id, r.Label, r.Data); err != nil {
+			return actionFailure(ErrUnavailable)
+		}
+		// Persisted artifacts are always read back from disk, so permanent
+		// removal of the data root revokes the handle in this broker too.
+		if b.ArtifactRoot == nil {
+			b.artifacts[r.Handle] = actionArtifact{operation: op, name: r.Label, data: r.Data}
+		}
 		r.Data = nil
 	}
 	return response
+}
+
+func (b *ActionBroker) artifactDir(pluginID string) (*os.Root, error) {
+	dir, err := b.ArtifactRoot(pluginID)
+	if err != nil {
+		return nil, err
+	}
+	// os.Root keeps plugin-planted symlinks from escaping the data root.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := root.Mkdir("artifacts", 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		_ = root.Close()
+		return nil, err
+	}
+	sub, err := root.OpenRoot("artifacts")
+	_ = root.Close()
+	return sub, err
+}
+
+func (b *ActionBroker) persistArtifact(op *actionOperation, id, name string, data []byte) error {
+	if b.ArtifactRoot == nil {
+		return nil
+	}
+	root, err := b.artifactDir(op.request.PluginID)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	meta, _ := json.Marshal(artifactMeta{Request: op.request, Hash: op.hash, Name: name})
+	if err := root.WriteFile(id+"-"+name, data, 0o600); err != nil {
+		return err
+	}
+	return root.WriteFile(id+".json", meta, 0o600)
+}
+
+// loadArtifact recovers an artifact persisted by an earlier broker instance.
+func (b *ActionBroker) loadArtifact(handle string) (actionArtifact, bool) {
+	encoded, id, ok := strings.Cut(handle, ".")
+	plugin, err := base64.RawURLEncoding.DecodeString(encoded)
+	if !ok || err != nil || b.ArtifactRoot == nil || id == "" || strings.Trim(id, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") != "" {
+		return actionArtifact{}, false
+	}
+	root, err := b.artifactDir(string(plugin))
+	if err != nil {
+		return actionArtifact{}, false
+	}
+	defer root.Close()
+	raw, err := root.ReadFile(id + ".json")
+	var meta artifactMeta
+	if err != nil || json.Unmarshal(raw, &meta) != nil || meta.Request.PluginID != string(plugin) || meta.Name == "" || strings.ContainsAny(meta.Name, `/\`) {
+		return actionArtifact{}, false
+	}
+	data, err := root.ReadFile(id + "-" + meta.Name)
+	if err != nil {
+		return actionArtifact{}, false
+	}
+	return actionArtifact{operation: &actionOperation{request: meta.Request, hash: meta.Hash}, name: meta.Name, data: data}, true
 }
 
 func (b *ActionBroker) Artifact(ctx context.Context, handle string) (string, []byte, error) {
 	b.mu.Lock()
 	a, ok := b.artifacts[handle]
 	b.mu.Unlock()
+	if !ok {
+		a, ok = b.loadArtifact(handle)
+	}
 	if !ok {
 		return "", nil, &WireError{Category: ErrorNotFound}
 	}

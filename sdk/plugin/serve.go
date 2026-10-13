@@ -49,6 +49,16 @@ func Run(ctx context.Context, mode Mode, token string, description Description, 
 // process, so a downgraded host only loses that direction. A nil or closed
 // channel behaves exactly like Run.
 func RunWithEvents(ctx context.Context, mode Mode, token string, description Description, input io.ReadCloser, output io.WriteCloser, handler Handler, events <-chan Event) error {
+	return run(ctx, mode, token, description, input, output, handler, events, nil)
+}
+
+// RunWithRequests also serves plugin-initiated calls. Each request needs a
+// buffered Replies channel; it receives one correlated Result, including errors.
+func RunWithRequests(ctx context.Context, mode Mode, token string, description Description, input io.ReadCloser, output io.WriteCloser, handler Handler, events <-chan Event, requests <-chan Request) error {
+	return run(ctx, mode, token, description, input, output, handler, events, requests)
+}
+
+func run(ctx context.Context, mode Mode, token string, description Description, input io.ReadCloser, output io.WriteCloser, handler Handler, events <-chan Event, requests <-chan Request) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	closed := make(chan struct{})
@@ -109,6 +119,10 @@ func RunWithEvents(ctx context.Context, mode Mode, token string, description Des
 		}
 	}()
 	active := map[uint64]context.CancelFunc{}
+	requestState := newRequests()
+	defer requestState.close()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
 	defer func() {
 		for _, stop := range active {
 			stop()
@@ -127,6 +141,10 @@ func RunWithEvents(ctx context.Context, mode Mode, token string, description Des
 				return err
 			}
 			switch e.Type {
+			case TypeResult:
+				if err := requestState.result(*e.Result); err != nil {
+					return err
+				}
 			case TypeShutdown:
 				return nil
 			case TypeCancel:
@@ -135,6 +153,18 @@ func RunWithEvents(ctx context.Context, mode Mode, token string, description Des
 				callCtx, stop := context.WithDeadline(ctx, time.UnixMilli(e.Call.DeadlineUnixMS))
 				active[e.Call.ID] = stop
 				go dispatch(ctx, callCtx, *e.Call, handler, writes)
+			}
+		case request, ok := <-requests:
+			if !ok {
+				requests = nil
+				continue
+			}
+			if err := requestState.send(request, stream, encoder); err != nil {
+				return err
+			}
+		case <-tick.C:
+			if err := requestState.expire(stream, encoder); err != nil {
+				return err
 			}
 		case event, ok := <-events:
 			if !ok {

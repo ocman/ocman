@@ -34,6 +34,9 @@ func TestFixture(t *testing.T) {
 	t.Run("reusable-conversation-grants", func(t *testing.T) {
 		conformance.RunConversationGrants(t, path, "/conformance/project")
 	})
+	t.Run("reusable-session-grants", func(t *testing.T) {
+		conformance.RunSessionGrants(t, path, "/conformance/project")
+	})
 	t.Run("host-discovery-process-grants", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

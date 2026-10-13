@@ -23,7 +23,7 @@ func (f *conversationLifecyclePlatform) SessionLifecycle(context.Context, string
 }
 
 func TestConversationReceiptPreflight(t *testing.T) {
-	d, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := state.Open(filepath.Join(t.TempDir(), "state.db"), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func (f *conversationLifecyclePlatform) Session(context.Context, string, int, in
 }
 
 func TestConversationRecordedReplySkipsTranscript(t *testing.T) {
-	d, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := state.Open(filepath.Join(t.TempDir(), "state.db"), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

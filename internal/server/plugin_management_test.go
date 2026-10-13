@@ -30,7 +30,7 @@ func newPluginManagementTest(t *testing.T) *pluginManagementTest {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t))
+	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +43,8 @@ func newPluginManagementTest(t *testing.T) *pluginManagementTest {
 		RequestedGrants: []string{"context.owner"}, Settings: []plugins.Setting{
 			{Key: "mode", Label: "Mode", Type: "string", Default: json.RawMessage(`"good"`), Enum: []string{"good", "bad", "hang"}},
 			{Key: "token", Label: "Token", Type: "string", Secret: true, Required: true},
+			{Key: "hosts", Label: "Hosts", Type: "string", List: true},
+			{Key: "notes", Label: "Notes", Type: "string", Multiline: true},
 		}}
 	hello, _ := json.Marshal(plugins.Envelope{Type: plugins.TypeHello, Hello: &plugins.Hello{Mode: "$1", Token: "$OCMAN_PLUGIN_TOKEN", Description: &d}})
 	script := "#!/bin/sh\nif [ \"$1\" = serve ]; then\nIFS= read -r config <&3\nprintf '%s\\n' \"$config\" >&2\ncase \"$config\" in *'\"bad\"'*) exit 1;; *'\"hang\"'*) /bin/sleep 10; exit 1;; esac\nfi\nIFS= read -r hello <<EOF\n" + string(hello) + "\nEOF\nprintf '%s\\n' \"$hello\"\nif [ \"$1\" = serve ]; then\nread -r ack\necho started >> starts\nread -r shutdown\nfi\n"
@@ -255,7 +257,13 @@ func TestPluginManagementLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	f.call(t, "POST", base+"/configuration", `{"values":{"mode":"good"},"secrets":{"token":"next-secret"}}`, 200)
+	f.call(t, "POST", base+"/configuration", `{"values":{"mode":"good","hosts":["a","b"],"notes":"one\ntwo"},"secrets":{"token":"next-secret"}}`, 200)
+	if body := f.call(t, "GET", base+"/stderr", "", 200); !strings.Contains(body, `\"hosts\":[\"a\",\"b\"]`) || !strings.Contains(body, `\"notes\":\"one\\ntwo\"`) {
+		t.Fatalf("list or multiline not delivered on fd 3: %s", body)
+	}
+	if body := f.call(t, "GET", base+"/configuration", "", 200); !strings.Contains(body, `"hosts":["a","b"]`) || !strings.Contains(body, `"notes":"one\ntwo"`) {
+		t.Fatalf("list or multiline not read back: %s", body)
+	}
 	f.call(t, "POST", base+"/restart", `{}`, 200)
 	f.call(t, "POST", base+"/retry", `{}`, 200)
 	f.call(t, "POST", base+"/grants", `{"grants":[]}`, 200)
@@ -297,7 +305,7 @@ func TestPluginManagementValidation(t *testing.T) {
 	for _, input := range []string{
 		`{`, `{}`, `null`, `{} {}`, `{"unknown":true}`, `{"values":{"mode":null}}`, `{"values":{"mode":"no"}}`,
 		`{"values":{"undeclared":"value"}}`, `{"secrets":{"undeclared":"value"}}`, `{"secrets":{"mode":"wrong-channel"}}`,
-		`{"secrets":{"token":""}}`, `{"secrets":{"token":true}}`,
+		`{"secrets":{"token":""}}`, `{"secrets":{"token":true}}`, `{"values":{"hosts":"a"}}`, `{"values":{"hosts":[1]}}`,
 		`{"secrets":{"token":"` + strings.Repeat("x", plugins.MaxMessageBytes) + `"}}`,
 	} {
 		f.call(t, "POST", base+"/configuration/validate", input, 400)

@@ -179,6 +179,28 @@ func (d *DB) GetSubagentSessionIDs(ctx context.Context, parentID string) ([]stri
 	return ids, rows.Err()
 }
 
+// ProjectDirectory maps an OpenCode project ID to its root directory.
+// Sibling worktrees share one project ID, so session rows alone are
+// ambiguous; OpenCode's project table holds exactly one root per ID
+// (`worktree`, the main checkout), which makes the answer deterministic.
+// The session rows gate it: only a project with at least one session is
+// known. Unknown IDs, OpenCode's non-git "global" project (root "/"), and a
+// database without a project table all return "" so callers fail closed by
+// omission.
+func (d *DB) ProjectDirectory(ctx context.Context, projectID string) (string, error) {
+	if projectID == "" {
+		return "", nil
+	}
+	var directory string
+	err := d.db.QueryRowContext(ctx, `SELECT p.worktree FROM project p
+		WHERE p.id = ? AND p.worktree NOT IN ('', '/')
+		AND EXISTS (SELECT 1 FROM session s WHERE s.project_id = p.id)`, projectID).Scan(&directory)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return directory, err
+}
+
 // GetSessionParentIDs returns a map of child→top-level-ancestor for
 // every id in childIDs that has a non-NULL parent_id. The value is the
 // *outermost* ancestor (the top-level session with no parent_id), not

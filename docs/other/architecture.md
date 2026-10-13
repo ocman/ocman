@@ -278,8 +278,8 @@ flowchart TD
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
     Modules -->|"projectforge: PR/issue lists, checks, handle via owner Host"| Forge
     Modules -->|"previews: forge credentials only (Deps.Forges)"| Forge
-    State -.->|registration types| Plugins[internal/plugins<br/>protocol, supervision, action broker]
-    Modules -->|"pluginsmod: routes, supervision, conversation outbox"| Plugins
+    State -.->|registration types| Plugins[internal/plugins<br/>protocol, supervision, capability brokers]
+    Modules -->|"pluginsmod: routes, supervision, conversation + session outboxes"| Plugins
     Plugins -->|token-bound NDJSON + private configuration fd| PluginExec[External plugin process]
     Modules -->|owner-routed PluginOperation RPC| RP
     Modules -->|"remotesmod: /api/remotes CRUD, remote-access settings, inventory loop"| RP
@@ -1221,9 +1221,54 @@ sequenceDiagram
 - Confirmation and result rendering belong to ocman. Calls are not replayed after
   crashes, and durable receipts prevent uncertain side effects from being repeated
   after host restart. Downloads recheck the installation's current grants.
-- Only `action.v1` is shipped. Conversation-provider, platform-provider, iframe UI,
-  relay inbox capability, registry/updates, signatures, sandboxing, Slack, and
+- Shipped capabilities are `action.v1`, `pane.v1`, `conversation.v1`, and
+  `session.v1`. Platform-provider, iframe UI,
+  relay inbox capability, registry/updates, signatures, sandboxing, and
   Codex remain future work. Existing core Inbox and webhook services do not imply
   a plugin capability for either.
 
 See [Plugins](../features/plugins.md) for the operator and authoring guide.
+
+## 6. Plugin session requests and completion delivery
+
+```mermaid
+sequenceDiagram
+    participant U as Settings client
+    participant P as Owner-local plugin process
+    participant T as NDJSON supervisor
+    participant B as SessionBroker
+    participant S as Session service and queue
+    participant D as Owner state.db
+    participant O as Completion pump
+
+    U->>D: Permission-profile CRUD through core HTTP API
+    P->>T: Call session/run, caller request ID and operation ID
+    T->>B: Deadline-bound unary request
+    B->>D: Read enabled installation, grant and scalar project
+    B->>B: Reject traversal and resolved symlink escape
+    B->>D: Resolve exact named profile rules
+    B->>S: CreateConfigured with pinned rules
+    B->>D: Link session to plugin
+    B->>S: Enqueue prompt with exact agent/model
+    B-->>P: Result on caller request ID, sessionId or safe error
+    S->>D: Completed assistant turn, idempotent outbox append
+    O->>D: Claim due head per session
+    O->>P: Call session/completed, stable sess-out row ID
+    P-->>O: Empty object acknowledgement
+    O->>D: Mark done, or retain and schedule retry
+```
+
+- `internal/pluginsmod/session.go` handles admission and the immediate
+  result. The supervisor keeps separate request-ID sequences in each direction;
+  IDs can overlap without confusing a run reply with a completed-turn reply.
+- Named permission profiles live in owner state. CreateConfigured applies their
+  exact rules before the queue receives the plugin's prompt. Unknown or deleted
+  names return `not_found` to the caller without creating a session.
+- `internal/pluginsmod/session_outbox.go` records and pumps completions. The durable
+  mapping and AUTOINCREMENT outbox ID survive reopen. Pending deliveries replay
+  after a crash, including one after the consumer's effect but before host ack.
+  Consumers must durably deduplicate the stable operation ID.
+- Only an empty JSON object acknowledges completion. Revocation pauses delivery
+  without consuming attempts. Six failures retain a dead letter and block that
+  session. Session retry/discard controls are still missing, so operator recovery
+  does not yet match the conversation outbox's guarantees.

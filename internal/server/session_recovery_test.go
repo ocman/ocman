@@ -17,7 +17,7 @@ func TestRecoveryHooksResolveCurrentServerDependencies(t *testing.T) {
 	// server. Their service must resolve the database and adapter on invocation.
 	record, confirm := srv.recordOpencodeReplacement, srv.confirmOpencodeReplacement
 	original := srv.stateDB
-	store, err := state.Open(statetest.Path(t))
+	store, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

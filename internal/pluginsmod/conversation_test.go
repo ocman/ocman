@@ -70,10 +70,14 @@ func (s *stubSessions) Create(_ context.Context, platformID string, req platform
 	return &platforms.CreateSessionResponse{ID: "ses-chat"}, nil
 }
 
+func (s *stubSessions) CreateConfigured(ctx context.Context, platformID string, req platforms.CreateSessionRequest, _ []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+	return s.Create(ctx, platformID, req)
+}
+
 // The first message creates the session on this machine (never an inferred
 // owner) and queues, not sends, with the configured agent and model.
 func TestConversationConfiguredModelAndAgentAreQueued(t *testing.T) {
-	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +124,7 @@ func TestConversationConfiguredModelAndAgentAreQueued(t *testing.T) {
 func TestConversationPlatformValue(t *testing.T) {
 	for raw, want := range map[string]string{`"claudecode"`: "claudecode", `17`: "", `"unknown"`: ""} {
 		t.Run(raw, func(t *testing.T) {
-			store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			store, err := state.Open(filepath.Join(t.TempDir(), "state.db"), Schema)
 			if err != nil {
 				t.Fatal(err)
 			}

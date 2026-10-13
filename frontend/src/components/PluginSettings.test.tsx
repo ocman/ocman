@@ -33,6 +33,8 @@ beforeEach(() => {
         { key: 'active', type: 'boolean', label: 'Active' },
         { key: 'count', type: 'integer', label: 'Count' },
         { key: 'ratio', type: 'number', label: 'Ratio' },
+        { key: 'hosts', type: 'string', label: 'Hosts', list: true },
+        { key: 'notes', type: 'string', label: 'Notes', multiline: true },
       ] },
     configuration: { values: { mode: 'good' }, secrets: { token: true } },
     health: { status: 'disabled', restartCount: 0 },
@@ -240,6 +242,25 @@ it('does not offer the previous project catalog while a new project is pending',
   await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/other', '', expect.any(AbortSignal)));
   fireEvent.click(screen.getByRole('combobox', { name: 'Agent (optional)' }));
   expect(screen.queryByRole('option', { name: 'build' })).not.toBeInTheDocument();
+});
+
+it('renders multiline settings as a textarea and list settings as add/remove rows', async () => {
+  await open();
+  click('Configure');
+  const notes = screen.getByLabelText('Notes');
+  expect(notes.tagName).toBe('TEXTAREA');
+  fireEvent.change(notes, { target: { value: 'one\ntwo' } });
+  click('Add Hosts');
+  click('Add Hosts');
+  click('Add Hosts');
+  fireEvent.change(screen.getByLabelText('Hosts 1'), { target: { value: 'a' } });
+  fireEvent.change(screen.getByLabelText('Hosts 2'), { target: { value: 'drop' } });
+  fireEvent.change(screen.getByLabelText('Hosts 3'), { target: { value: 'b' } });
+  click('Remove Hosts 2');
+  click('Save configuration');
+  await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', plugin.description.id, 'configuration', {
+    values: { mode: 'good', hosts: ['a', 'b'], notes: 'one\ntwo' }, secrets: {},
+  }));
 });
 
 it('clears optional secrets explicitly and can undo clearing or editing', async () => {

@@ -186,6 +186,9 @@ func (d *DB) init(modules []ModuleSchema) error {
 	if err := ensureSchemaVersionTable(d.db); err != nil {
 		return err
 	}
+	if err := rewindLegacyPluginVersions(d.db); err != nil {
+		return err
+	}
 	before, err := currentSchemaVersion(d.db)
 	if err != nil {
 		return err

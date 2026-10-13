@@ -23,7 +23,7 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
 			path := filepath.Join(t.TempDir(), "stopping-state.db")
-			durable, err := state.Open(path)
+			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,7 +75,7 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			if err := srv.stateDB.Close(); err != nil {
 				t.Fatal(err)
 			}
-			srv.stateDB, err = state.Open(path)
+			srv.stateDB, err = state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)
 			}

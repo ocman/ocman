@@ -111,6 +111,11 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 		for key, value := range registration.Configuration.Values {
 			values[key] = value
 		}
+		if registration.Description.WantsCatalog {
+			if data := m.launchCatalog(ctx, values[plugins.CatalogProjectSetting]); data != nil {
+				values[plugins.CatalogLaunchKey] = data
+			}
+		}
 		var configuration json.RawMessage
 		if err := m.store.WithPluginSecrets(ctx, id, func(secrets map[string]string) error {
 			for _, setting := range registration.Description.Settings {
@@ -119,13 +124,18 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 				}
 			}
 			configuration, err = json.Marshal(values)
+			if err == nil && len(configuration) > plugins.MaxMessageBytes {
+				// The catalog is optional: drop it rather than fail startup.
+				delete(values, plugins.CatalogLaunchKey)
+				configuration, err = json.Marshal(values)
+			}
 			return err
 		}); err != nil {
 			return err
 		}
 		process, err := plugins.StartProcess(m.ctx, plugins.LaunchConfig{
 			Candidate:     plugins.Discovery{Path: registration.ExecutablePath, Checksum: registration.Checksum, Description: registration.Description},
-			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.PaneCapability},
+			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.SessionCapability, plugins.PaneCapability},
 			DataDir:       dir,
 			Configuration: configuration,
 			OnHealth: func(h plugins.Health) {
@@ -141,12 +151,46 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 			m.processes = make(map[string]*plugins.Process)
 		}
 		m.processes[id] = process
-		// Events must be drained or the supervisor fails the process. The
+		// Events and inbound requests must be drained or the supervisor fails. The
 		// context is captured here, under mu, because Stop clears m.ctx.
 		eventCtx := context.WithoutCancel(m.ctx)
 		go runWithRecover("plugin-events", func() { m.consumePluginEvents(eventCtx, id, process) })
 	}
 	return nil
+}
+
+// launchCatalog resolves the launch-time catalog snapshot a wantsCatalog serve
+// launch receives under the reserved fd-3 "catalog" member, from the local
+// instance of the plugin's configured project directory. The catalog is
+// optional launch configuration: an unresolved project, no live local instance
+// or an oversized payload all yield nil, so the member is simply omitted and
+// startup never fails on it.
+func (m *Module) launchCatalog(ctx context.Context, raw json.RawMessage) json.RawMessage {
+	var project string
+	if json.Unmarshal(raw, &project) != nil || project == "" || m.deps.LiveCatalog == nil {
+		return nil
+	}
+	catalogCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	catalog := m.deps.LiveCatalog(catalogCtx, project)
+	cancel()
+	if catalog == nil {
+		return nil
+	}
+	// Round-trip through the wire DTOs: the shared JSON tags are the
+	// contract, and this drops the catalog members a plugin never needs.
+	data, err := json.Marshal(catalog)
+	if err != nil {
+		return nil
+	}
+	var out plugins.LaunchCatalog
+	if json.Unmarshal(data, &out) != nil {
+		return nil
+	}
+	data, err = json.Marshal(&out)
+	if err != nil || len(data) > plugins.MaxMessageBytes/2 {
+		return nil
+	}
+	return data
 }
 
 func (m *Module) stopPluginProcessesLocked() {

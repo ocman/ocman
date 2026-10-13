@@ -28,6 +28,9 @@ import (
 // Sessions creates the session a conversation's first message runs in.
 type Sessions interface {
 	Create(ctx context.Context, platformID string, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
+	// CreateConfigured creates a session.v1 session with its permission
+	// profile's rules applied before the first prompt.
+	CreateConfigured(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error)
 }
 
 // Remotes forwards a plugin operation to a connected owner.
@@ -58,15 +61,23 @@ type Deps struct {
 	Remotes func() Remotes
 	// PublicURL makes a link a reader elsewhere can open.
 	PublicURL func(path string) string
-	Guards    module.Guards
+	// ProjectDirectory resolves an OpenCode project ID to its root on this
+	// machine for the context.project.path grant; nil without an OpenCode
+	// database.
+	ProjectDirectory func(ctx context.Context, projectID string) (string, error)
+	// LiveCatalog is the directory catalog of a running local instance, or
+	// nil when none answers live; nil disables launch-time catalogs.
+	LiveCatalog func(ctx context.Context, directory string) *platforms.DirectoryCatalog
+	Guards      module.Guards
 }
 
 // Module is the mounted plugin feature. mu is the lifecycle lock: it is
 // always taken before durable state, by discovery, management, admission and
 // delivery authorization alike.
 type Module struct {
-	deps  Deps
-	store *state.DB
+	deps    Deps
+	store   *state.DB
+	plugins *Store
 	// workers are the idle replies and outbox kicks, joined by Run.
 	workers module.Workers
 
@@ -89,6 +100,17 @@ type Module struct {
 	conversationDeliveries *worker.Worker[state.PluginConversationDelivery]
 	conversationMu         sync.Mutex
 	conversationInFlight   map[int64]bool
+
+	// session.v1: the broker, its inbound run worker and the completed-turn
+	// delivery worker. The session<->plugin mapping (plugin_session) and the
+	// completion outbox (plugin_session_outbox) live in state.db, so both
+	// survive a restart. sessionInFlight is not state; see session_outbox.go.
+	sessionOnce       sync.Once
+	sessionBroker     *plugins.SessionBroker
+	sessionJobs       *worker.Worker[sessionJob]
+	sessionDeliveries *worker.Worker[PluginSessionCompletion]
+	sessionMu         sync.Mutex
+	sessionInFlight   map[int64]bool
 }
 
 var (
@@ -98,7 +120,13 @@ var (
 	_ module.Subscriber = (*Module)(nil)
 )
 
-func NewModule(deps Deps) *Module { return &Module{deps: deps, store: deps.Store} }
+func NewModule(deps Deps) *Module {
+	m := &Module{deps: deps, store: deps.Store}
+	if deps.Store != nil {
+		m.plugins = NewStore(deps.Store)
+	}
+	return m
+}
 
 func (m *Module) Name() string { return "Plugins" }
 
@@ -115,6 +143,10 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("/api/plugins/actions/artifact", get(auth(m.handlePluginActionArtifact)))
 	r.Handle("/api/plugins/panes", get(auth(m.handlePluginPanes)))
 	r.Handle("/api/plugins/panes/read", get(auth(m.handlePluginPaneRead)))
+	// Profiles are Settings data (normal auth, like the other settings rows):
+	// they only take effect when an approved session.v1 plugin names one.
+	r.Handle("/api/permission-profiles", auth(m.handlePermissionProfiles))
+	r.Handle("/api/permission-profiles/", auth(m.handlePermissionProfiles))
 }
 
 // Bind sets the lifetime context plugin processes run under. Start calls
@@ -136,13 +168,16 @@ func (m *Module) Start(ctx context.Context) error {
 	return nil
 }
 
-// Run replays conversation replies left unacknowledged by a disconnect or a
-// crash, is the clock for their bounded retries, and reconciles completed
-// turns whose idle edge was missed.
+// Run replays conversation replies and session.v1 completions left
+// unacknowledged by a disconnect or a crash, is the clock for their bounded
+// retries, and reconciles completed turns whose idle edge was missed.
 func (m *Module) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	wg.Go(func() { m.runConversationDeliveryPump(ctx) })
 	wg.Go(func() { m.runConversationReplyReconciliation(ctx) })
+	// Same guarantees for session.v1 completed turns.
+	wg.Go(func() { m.runSessionDeliveryPump(ctx) })
+	wg.Go(func() { m.runSessionReplyReconciliation(ctx) })
 	wg.Wait()
 	m.workers.Close()
 }
@@ -164,6 +199,9 @@ func (m *Module) Subscribe(b *module.Bus) {
 			runWithRecover("plugin-conversation-reply", func() {
 				m.ReplyToConversation(ctx, e.Platform, e.SessionID)
 			})
+		})
+		go runWithRecover("plugin-session-completion", func() {
+			m.ReplyToSession(context.Background(), e.Platform, e.SessionID)
 		})
 	})
 }

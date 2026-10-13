@@ -19,9 +19,9 @@ import (
 // listing a/x then b/y. last is the session's newest message JSON; sent
 // records the model each delivered prompt carried.
 type cooldownRig struct {
-	srv  *Server
-	mu   sync.Mutex
-	busy bool
+	srv    *Server
+	mu     sync.Mutex
+	busy   bool
 	last   string
 	sent   []string
 	msgs   []string

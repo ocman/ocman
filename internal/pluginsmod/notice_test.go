@@ -50,7 +50,7 @@ func TestConversationNoticeRendering(t *testing.T) {
 // reaching the agent ran out of time, so a notice that inherited the caller's
 // exhausted context would be dropped in precisely the case it exists for.
 func TestConversationNoticeSurvivesTheFailureItReports(t *testing.T) {
-	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -166,7 +166,7 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 	t.Helper()
 	pluginDir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", pluginDir)
-	stateDB, err := state.Open(statetest.Path(t))
+	stateDB, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

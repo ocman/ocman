@@ -5,8 +5,10 @@ weight: 18
 
 Ocman runs native plugin executables on the machine where they are installed.
 The supported capabilities are `action.v1`, which adds commands to the command
-palette and returns results rendered by ocman, and `conversation.v1`, which lets
-a chat provider start an ocman session and receive its completed reply, and
+palette and returns results rendered by ocman, `conversation.v1`, which lets
+a chat provider start an ocman session and receive its completed reply,
+`session.v1`, which lets a plugin run a turn in a session it starts in its one
+approved project and receive that session's completed turns, and
 `pane.v1`, which adds a read-only project tree to the session sidebar. Manage
 installations in **Settings → Plugins**, selecting the plugin owner before making
 changes.
@@ -71,6 +73,14 @@ object followed by a newline on inherited file descriptor 3. Read and close it
 before emitting the serve hello. Configuration is absent from arguments and
 environment variables; describe has no configuration descriptor. No repository
 path, inherited ocman credentials, or secret-store path is supplied.
+
+A plugin that declares `wantsCatalog` together with its required non-secret
+`project` setting additionally receives a read-only
+`{agents, models, defaultAgent, defaultModel}` snapshot of that directory's
+composer catalog under the reserved `catalog` member, read from the local
+platform instance at launch. An unreachable instance omits the member; the
+catalog is launch configuration and never blocks startup. Go plugins read it
+with `plugin.ReadConfiguration`.
 
 Saving configuration for a ready, enabled plugin restarts it and waits for its
 handshake. Failure restores the last working public and secret snapshots and
@@ -152,6 +162,7 @@ by both the action's required grants and current user approvals:
 | --- | --- |
 | `context.owner` | Opaque owner ID |
 | `context.project` | Opaque project ID, never a directory |
+| `context.project.path` | Project directory, resolved host-side from the project ID at dispatch to the project root (sibling worktrees resolve to the main checkout); project placement only, omitted when unknown or ambiguous |
 | `context.session` | Opaque session ID |
 | `context.route` | Core route name without parameters or query strings |
 | `context.selection` | Up to 100 project/session references, never selected text |
@@ -175,8 +186,9 @@ Failures return a safe error category rather than diagnostic text.
 Keep the same operation ID across confirmation and retries. The owner deduplicates
 concurrent calls and commits a receipt before dispatch. Reusing an ID with changed
 input conflicts; after a host restart, a prior receipt also conflicts instead of
-repeating an uncertain side effect. Results and artifacts are memory-only, and
-their reads recheck grants. Never automatically retry a failed action with a new
+repeating an uncertain side effect. Results are memory-only; artifacts persist
+(0600) in the plugin's private data directory, so a download handle survives a host
+restart until permanent deletion. Both reads recheck grants. Never automatically retry a failed action with a new
 operation ID.
 
 ## Authoring conversation.v1
@@ -324,6 +336,77 @@ hostname, for example `OCMAN_PUBLIC_BASE_URL=https://ocman.example.ts.net`. A
 base URL with a subpath works too. Ocman does not publish anything at that
 address on your behalf — the value only shapes the links it writes.
 
+## Authoring session.v1
+
+Advertise capability `{"name":"session","version":{"major":1,"minor":0}}`. A
+session plugin must use execution scope `owner`, request the `session.run`
+grant, and declare a required, non-secret scalar string `project` setting
+conversation.v1 uses, so one approved configuration serves both.
+
+The plugin sends a unary `run` call with its own request and operation IDs.
+Ocman replies on the same request ID after `CreateConfigured` and `Enqueue`:
+
+```json
+{"type":"call","call":{"id":"1","operationId":"rename-1","capability":"session",
+ "version":{"major":1,"minor":0},"method":"run","deadlineUnixMs":1791500000000,"params":{
+ "prompt":"rename the module","agent":"plan","model":"anthropic/claude-sonnet-4",
+ "permissionProfile":"read-only","subpath":"packages/app"}}}
+```
+
+```json
+{"type":"result","result":{"id":"1","value":{"sessionId":"ses_01"}}}
+```
+
+Failures return a correlated `result.error` category, including `not_found` for
+a missing or deleted permission profile. The title includes the plugin ID and
+the caller's operation ID. Run requests are never automatically replayed.
+
+The parameters are closed: `prompt` plus `agent`, `model` and
+`permissionProfile` selections passed through to the session, and an optional
+`subpath`. There is no directory parameter. The directory is always the
+approved project joined with the subpath, which must be a contained, existing
+directory. Absolute paths, any `..` component, and symlinks escaping the
+resolved project are denied before session creation. `permissionProfile`
+names a permission profile created in ocman (`/api/permission-profiles`,
+which uses ocman's normal authentication like other settings); its
+rules are pinned verbatim onto the session at creation, and an unknown name
+fails the run. The session starts on the project's managed OpenCode instance
+and the prompt is queued like any follow-up, so an idle session answers now
+and a mid-turn message waits for the next idle edge.
+
+Outbound, ocman calls `completed` on the plugin with one completed assistant
+turn of the session it started:
+
+```json
+{"type":"call","call":{"operationId":"sess-out:4","capability":"session",
+ "version":{"major":1,"minor":0},"method":"completed","params":{
+ "sessionId":"ses_01","text":"renamed module.go"}}}
+```
+
+The plugin must acknowledge with exactly an empty JSON object. Arrays, `null`,
+scalars and objects containing fields are rejected and retried. Completions ride a durable
+outbox keyed by the session's newest assistant message, delivered on the
+`session.idle` edge (and reconciled periodically), in per-session arrival
+order with a stable `sess-out:<id>` operation id, so a retry is recognizable
+as a repeat. A completion that exhausts its retries becomes a dead letter
+that blocks only its own session. Ocman never sends reasoning parts, tool
+output or permission text — the newest assistant message's sanitized text only.
+Permission prompts stay in ocman.
+
+Completion delivery is at-least-once while pending. A crash after the consumer
+acts but before ocman acknowledges replays the same operation ID, including
+after reopening the state database. Consumers must durably deduplicate that ID
+with their effect, or use an idempotent provider operation. The SDK does not
+make consumer effects transactional.
+
+**Recovery limitation:** after six failed attempts a session completion becomes
+a retained dead letter. Unlike the conversation outbox, session completions
+currently have no Settings inspection or supported retry/discard action.
+Restarting or re-enabling a plugin does not recover a dead letter; later
+completions for that session remain blocked. This does not yet provide the
+conversation outbox's operator-recoverable delivery guarantee. Retry/discard
+controls are required for that parity; no owed completion is silently deleted.
+
 ## Slack
 
 See [Slack integration](../slack/) for the reusable app manifest, setup,
@@ -402,8 +485,9 @@ Use the optional [Go SDK](https://forgejo.nousefreak.be/dries/ocman/src/branch/m
 at `github.com/NoUseFreak/ocman/sdk/plugin`, or implement the NDJSON contract in
 another language. `plugin.Run` handles the lifecycle and `plugin.ActionHandler`
 validates action dispatch/results. `plugin.RunWithEvents` adds a plugin-initiated
-event source, and `plugin.ConversationHandler` plus `plugin.NewConversationMessage`
-cover both conversation directions. Plugins with settings read fd 3 before calling
+event source, `plugin.ConversationHandler` plus `plugin.NewConversationMessage`
+cover both conversation directions, and `plugin.SessionHandler` plus
+`plugin.NewSessionRun` cover both session directions. Plugins with settings read fd 3 before calling
 `Run` in serve mode. The deterministic
 [fixture](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-fixture/main.go)
 demonstrates both modes, actions, cancellation, and safe failures.
@@ -417,15 +501,16 @@ go test ./internal/pluginsmod ./internal/server ./internal/remote ./internal/sta
 
 External plugins can use `sdk/plugin/conformance.Run` for executable lifecycle
 checks, `RunActionGrants` for broker grant, minimization, deduplication, and
-revocation checks, and `RunConversationGrants` for the conversation declaration
-contract plus grant and project denials. Supply deterministic, side-effect-free
+revocation checks, `RunConversationGrants` for the conversation declaration
+contract plus grant and project denials, and `RunSessionGrants` for the session
+declaration contract plus grant, subpath and completion checks. Supply deterministic, side-effect-free
 test calls. Rebuild, rescan, review the new checksum, and enable again for a
 manual palette check.
 
 ## Future work
 
-The current release supports native processes, `action.v1`, and
-`conversation.v1`. The following are future work, not available plugin
+The current release supports native processes, `action.v1`,
+`conversation.v1`, `pane.v1`, and `session.v1`. The following are future work, not available plugin
 capabilities or integrations:
 
 - Platform-provider capability.

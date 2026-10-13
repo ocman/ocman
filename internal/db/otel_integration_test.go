@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -41,18 +39,10 @@ func TestSQLiteSpansParentUnderRequestSpan(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer opencodeDB.Close()
-	stateDB, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stateDB.Close()
 
 	ctx, requestSpan := otel.Tracer("test").Start(t.Context(), "GET /test", trace.WithSpanKind(trace.SpanKindServer))
 	var one int
 	if err := opencodeDB.db.QueryRowContext(ctx, `SELECT 1`).Scan(&one); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := stateDB.GetSetting(ctx, "missing"); err != nil {
 		t.Fatal(err)
 	}
 	requestSpan.End()
@@ -68,10 +58,8 @@ func TestSQLiteSpansParentUnderRequestSpan(t *testing.T) {
 			found[name] = true
 		}
 	}
-	for _, name := range []string{"opencode", "ocman"} {
-		if !found[name] {
-			t.Errorf("no %s DB span recorded", name)
-		}
+	if !found["opencode"] {
+		t.Error("no opencode DB span recorded")
 	}
 }
 

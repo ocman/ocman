@@ -45,7 +45,7 @@ case "$*" in
 esac
 `
 	testutil.WriteScript(t, bd, script)
-	db, err := state.Open(statetest.Path(t))
+	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

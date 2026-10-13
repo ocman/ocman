@@ -140,7 +140,12 @@ Keys and grant names match `[a-zA-Z][a-zA-Z0-9_.-]{0,127}`. Each setting require
 unique key, a label, and a type: `string`, `boolean`, `number`, or `integer`.
 `required` and `secret` default to false. `enum` optionally restricts string values
 to a unique nonempty set. Defaults must match the declared type and enum. Secrets
-must be strings and cannot declare defaults. These declarations request access;
+must be strings and cannot declare defaults. `list` (default false) makes a string
+setting hold a JSON array of strings, rendered as add/remove rows and delivered on
+fd 3 as an array; it cannot be combined with `secret` or `enum`. `multiline`
+(default false) renders a string setting as a textarea and cannot be `secret`.
+Other declarations of either flag are rejected at describe and at configuration
+save. These declarations request access;
 discovery itself does not grant access or start a serve process.
 
 ## Host persistence
@@ -202,6 +207,19 @@ the serve hello, and exit without a hello if initialization fails. Configuration
 never appears in arguments or environment variables. Plugins without settings may
 ignore fd 3. SDK users read it before calling `plugin.Run`; describe mode has no
 configuration descriptor.
+
+A description may set `wantsCatalog: true` to also receive a read-only
+launch-time catalog snapshot under the reserved `catalog` member, delivered
+exactly like secrets on fd 3. The opt-in is only meaningful together with the
+single required, non-secret `project` setting (the same key `conversation.v1`
+uses); `Description.Validate` rejects the pair otherwise, including a declared
+setting keyed `catalog`, and constrains nothing without the opt-in. At serve
+launch the host reads the directory catalog from the local platform instance
+for that directory and appends `{agents, models, defaultAgent, defaultModel}`.
+An unresolved project, an unavailable local adapter, an unreachable instance
+or an oversized snapshot omits the member entirely; the catalog never blocks
+startup. SDK users read settings and catalog together with
+`plugin.ReadConfiguration`, whose `Catalog` is nil when the member is omitted.
 
 `Process.Call` assigns monotonic request IDs and preserves the caller's operation
 ID. Calls beyond advertised concurrency fail with `ErrBusy`. Each call requires
@@ -304,6 +322,7 @@ user approval, even if the plugin holds other grants:
 | --- | --- | --- |
 | `context.owner` | `ownerId` | Opaque owner identity |
 | `context.project` | `projectId` | Opaque project identity, never its directory |
+| `context.project.path` | `directory` | Project directory, resolved host-side from `projectId` at dispatch on the executing owner to OpenCode's one project root (sibling worktrees share it); only for `project` placement, omitted when unresolvable |
 | `context.session` | `sessionId` | Opaque session identity |
 | `context.route` | `route` | Core route name, without parameters or query strings |
 | `context.selection` | `selection` | Up to 100 `{kind, id}` project/session references |
@@ -313,7 +332,8 @@ selected text, files, messages, or transcript content. Route names are `sessions
 `projects`, `project`, `session`, `settings`, `inbox`, `routines`, `factory`, and
 `analytics`. Context identities are caller-supplied references, not proof of core
 authorization. They confer no ability to resolve services, databases, credentials,
-transcripts, or filesystem paths. Native executables remain trusted code outside
+transcripts, or filesystem paths; the host, never the caller, resolves
+`directory` and only for an approved `context.project.path`. Native executables remain trusted code outside
 this broker; this protocol is not an OS sandbox.
 
 ### HTTP invocation
@@ -351,7 +371,9 @@ new ID to retry a possibly side-effecting action. Before dispatch, schema v92
 records a durable plugin/operation receipt without context or output. A duplicate
 after host restart returns `conflict` rather than repeating an uncertain effect.
 Receipts survive plugin disable, removal, and permanent deletion. Terminal results
-and artifacts remain in memory only. The bounded cache holds 4096 operation IDs
+remain in memory only; artifact bytes are also written (0600) under
+`<plugin-data>/artifacts/`, so a handle downloads after a host restart until the
+plugin's data is deleted. The bounded cache holds 4096 operation IDs
 and 32 MiB of output for the host lifetime; exhaustion returns `unavailable` without
 evicting IDs and replaying work. Results and downloads recheck grants, so revocation
 also denies cached results. Context already sent to a plugin cannot be recalled.
@@ -510,6 +532,64 @@ pending and unattempted, keeping its mapping and its text, and the next pump
 tick after re-enablement delivers exactly the work that was already owed.
 Session-starting work runs outside that section because it launches processes.
 Permission prompts remain in ocman and are never exposed to the provider.
+
+## session.v1
+
+The host negotiates `session` major 1, minor 0, independently of `action` and
+`conversation`. A session plugin requires `scope: "owner"`, the requested and
+approved `session.run` grant, and a required, non-secret scalar string `project`
+setting `conversation.v1` uses — one row, one critical section, one approved
+project the capability can ever reach.
+
+Inbound, the plugin sends a unary `run` call. Request IDs increase independently
+in each direction; a host `completed` call may use the same ID as a plugin
+`run` call without collision. The caller's operation ID is preserved in the
+session title. After CreateConfigured and Enqueue, ocman returns a correlated
+`{sessionId}` result or a safe error category. Runs are never automatically replayed.
+
+```json
+{"type":"call","call":{"id":"1","operationId":"rename-1","capability":"session",
+ "version":{"major":1,"minor":0},"method":"run","deadlineUnixMs":1791500000000,"params":{
+ "prompt":"rename the module","agent":"plan","model":"anthropic/claude-sonnet-4",
+ "permissionProfile":"read-only","subpath":"packages/app"}}}
+```
+
+Parameters are closed. `prompt` is required; `agent`, `model` and
+`permissionProfile` pass through to the session; `subpath` is a relative path
+inside the approved project. Absolute paths, any `..` component, and symlink
+escapes are denied before session creation; the resolved directory must exist. There is no directory
+parameter. `permissionProfile` resolves an ocman permission profile whose rules
+are pinned verbatim onto the session at creation; an unknown name fails the run
+with `not_found`. The prompt is queued like any follow-up.
+
+Outbound, ocman calls `completed` with one completed assistant turn of the
+session the plugin started, keyed by the session's newest assistant message.
+The operation id (`sess-out:<id>`) is the row's immutable sequence, stable
+across retries, so the plugin can recognize a repeat; the plugin must
+acknowledge with `{}`. Completions ride a durable outbox
+(`plugin_session_outbox`) claimed head-per-session so a thread never
+reorders around itself, delivered on the `session.idle` edge with periodic
+reconciliation, retried with bounded backoff, and settled by a durable receipt
+so a repeated edge appends nothing. A dead letter blocks only its own session.
+Successful completion values other than an empty JSON object are invalid.
+A process or host crash in the send/ack window replays the same operation ID;
+the consumer must durably deduplicate its effect. After six failures, the
+retained dead letter has no supported inspection/retry/discard controls yet.
+Unlike conversation replies, session completions therefore lack
+operator-recoverable delivery after retry exhaustion. Restart and re-enable
+only recover pending rows, not dead letters.
+
+Both directions are admitted by `SessionBroker` under the same critical
+section as revocation, reading enablement, grants, and the configured project
+from one row. A disabled plugin returns `unavailable`; a missing grant,
+undeclared capability, or unapproved project returns `permission_denied`. The
+delivery pump asks `SessionAllowed` before scheduling a row, so revocation
+stops delivery without spending the retry budget. Per-plugin row and byte caps
+pause *inbound* run admission before any work, so backlog pressure refuses new
+runs visibly instead of dropping owed completions. The `(platformId, sessionId)` → plugin mapping
+(`plugin_session`) is claimed by an atomic insert-if-absent before the first
+delivery. Permission prompts remain in ocman and are never exposed to the
+plugin.
 
 ## pane.v1
 

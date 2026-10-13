@@ -95,8 +95,22 @@ func (m *Module) runConversationJob(job conversationJob) {
 // stops. Draining is mandatory: the supervisor fails a process whose events go
 // unread. ctx is captured by the caller under mu.
 func (m *Module) consumePluginEvents(ctx context.Context, id string, p *plugins.Process) {
-	for event := range p.Events() {
-		m.conversationWorker().Enqueue(conversationJob{ctx: ctx, pluginID: id, event: event})
+	events, requests := p.Events(), p.Requests()
+	for events != nil || requests != nil {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			m.conversationWorker().Enqueue(conversationJob{ctx: ctx, pluginID: id, event: event})
+		case request, ok := <-requests:
+			if !ok {
+				requests = nil
+				continue
+			}
+			m.sessionWorker().Enqueue(sessionJob{pluginID: id, request: request})
+		}
 	}
 }
 

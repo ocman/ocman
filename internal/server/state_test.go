@@ -9,7 +9,7 @@ import (
 
 func openTestStateDB(t *testing.T) *state.DB {
 	t.Helper()
-	stateDB, err := state.Open(statetest.Path(t))
+	stateDB, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

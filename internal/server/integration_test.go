@@ -83,7 +83,7 @@ func testServer(t *testing.T) *Server {
 	t.Cleanup(func() { database.Close() })
 
 	// State database
-	stateDB, err := state.Open(statetest.At(t, tmpDir+"/state.db"))
+	stateDB, err := state.Open(statetest.At(t, tmpDir+"/state.db"), ModuleSchemas()...)
 	if err != nil {
 		t.Fatalf("opening state db: %v", err)
 	}
@@ -1453,7 +1453,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	stateDB, err := state.Open(statetest.At(t, tmpDir+"/state.db"))
+	stateDB, err := state.Open(statetest.At(t, tmpDir+"/state.db"), ModuleSchemas()...)
 	if err != nil {
 		setupDB.Close()
 		t.Fatalf("opening state db: %v", err)

@@ -722,10 +722,15 @@ are computed. Sessions retain their original directories and owners.
   can now be merged without a test import cycle.
 - `internal/pluginsmod/` — module: every `/api/plugins` route, discovery and
   process supervision, owner-local management, the remote `PluginOperation`
-  handler, palette actions, pane reads, and the conversation.v1 broker with its
-  reply outbox, pump, reconciliation and attention notices. The wire protocol,
+  handler, palette actions, pane reads, the conversation.v1 broker with its
+  reply outbox, pump, reconciliation and attention notices, the session.v1
+  broker with its completion outbox, launch-time catalogs, and the
+  `/api/permission-profiles` Settings routes. The wire protocol,
   supervisor and brokers stay in `internal/plugins` (the SDK aliases them);
-  tables stay in `internal/state`.
+  registration and conversation tables stay in `internal/state`, while
+  permission profiles and session.v1 tables are its `pluginsmod.Schema`
+  (`store.go`; `state.rewindLegacyPluginVersions` adopts dev databases that
+  stamped them as core v122-v124).
 - `internal/routines/` — module: validation, scheduling, fresh-session
   dispatch, session-settled run completion, `/api/routines` and the
   `routines` MCP tool. Definitions and immutable run snapshots are stored by

@@ -5,7 +5,7 @@ import type { PluginInput, PluginRegistration } from '../lib/plugins';
 import { plugins } from '../lib/plugins';
 import { SearchSelect } from './SearchSelect';
 import { SettingRow } from './SettingRow';
-import { Button, SelectField, TextField } from './Control';
+import { Button, SelectField, TextareaField, TextField } from './Control';
 import { SecretField } from './SecretField';
 import styles from './PluginConfiguration.module.css';
 
@@ -98,7 +98,11 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
         return next;
       })}>
         <option value="">Select a value</option>{s.enum.map((option) => <option key={option}>{option}</option>)}
-      </SelectField> : <TextField className={styles.control} aria-label={s.label} type={s.type === 'string' ? 'text' : 'number'} step={s.type === 'integer' ? 1 : 'any'} required={s.required}
+      </SelectField> : s.list ? <ListRows label={s.label} rows={Array.isArray(values[s.key]) ? values[s.key] as string[] : []}
+        onChange={(rows) => setValues((previous) => ({ ...previous, [s.key]: rows }))} />
+      : s.multiline ? <TextareaField className={styles.control} aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')}
+        onChange={(event) => setValues((previous) => ({ ...previous, [s.key]: event.target.value }))} />
+      : <TextField className={styles.control} aria-label={s.label} type={s.type === 'string' ? 'text' : 'number'} step={s.type === 'integer' ? 1 : 'any'} required={s.required}
         value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
           const next = { ...previous };
           if (s.type === 'string') next[s.key] = event.target.value;
@@ -110,4 +114,15 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
     {!settings.length && <p>No configuration settings.</p>}
     <Button type="submit" variant="accent" className={styles.save}>Save configuration</Button>
   </form>;
+}
+
+// List settings post a JSON array of strings; each row is one item.
+function ListRows({ label, rows, onChange }: { label: string; rows: string[]; onChange: (rows: string[]) => void }) {
+  return <div className={styles.control}>
+    {rows.map((row, index) => <div key={index}>
+      <TextField aria-label={`${label} ${index + 1}`} value={row} onChange={(event) => onChange(rows.map((item, i) => i === index ? event.target.value : item))} />
+      <Button type="button" size="small" variant="ghost" onClick={() => onChange(rows.filter((_, i) => i !== index))}>Remove {label} {index + 1}</Button>
+    </div>)}
+    <Button type="button" size="small" variant="ghost" onClick={() => onChange([...rows, ''])}>Add {label}</Button>
+  </div>;
 }

@@ -57,7 +57,7 @@ func TestConfirmationDrainsAllPagesWithoutCountCutoff(t *testing.T) {
 func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
 	path := filepath.Join(t.TempDir(), "membership-progress.db")
-	durable, err := state.Open(path)
+	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	if err := srv.stateDB.Close(); err != nil {
 		t.Fatal(err)
 	}
-	srv.stateDB, err = state.Open(path)
+	srv.stateDB, err = state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 		t.Run(map[bool]string{false: "cancellation", true: "deadline"}[deadline], func(t *testing.T) {
 			srv, reg := newInterruptionTestServer(t)
 			path := filepath.Join(t.TempDir(), "progress-state.db")
-			durable, err := state.Open(path)
+			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -171,7 +171,7 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 			if err := srv.stateDB.Close(); err != nil {
 				t.Fatal(err)
 			}
-			srv.stateDB, err = state.Open(path)
+			srv.stateDB, err = state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)
 			}

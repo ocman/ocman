@@ -51,7 +51,7 @@ type stateRow struct {
 // state.db. Tests register a fakePlatform via the returned registry.
 func newSessionsTestServer(t *testing.T) (*Server, *platforms.Registry) {
 	t.Helper()
-	stDB, err := state.Open(statetest.Path(t))
+	stDB, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatalf("state.Open: %v", err)
 	}

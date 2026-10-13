@@ -7,15 +7,19 @@ import (
 )
 
 // Setting is the host-rendered v1 schema. Secrets are string-only and may not
-// declare defaults. Enum is an optional set of allowed string values.
+// declare defaults. Enum is an optional set of allowed string values. List
+// makes a non-secret, non-enum string setting hold a JSON array of strings;
+// Multiline only asks the host to render a non-secret string as a textarea.
 type Setting struct {
-	Key      string          `json:"key"`
-	Type     string          `json:"type"`
-	Label    string          `json:"label"`
-	Required bool            `json:"required,omitempty"`
-	Secret   bool            `json:"secret,omitempty"`
-	Default  json.RawMessage `json:"default,omitempty"`
-	Enum     []string        `json:"enum,omitempty"`
+	Key       string          `json:"key"`
+	Type      string          `json:"type"`
+	Label     string          `json:"label"`
+	Required  bool            `json:"required,omitempty"`
+	Secret    bool            `json:"secret,omitempty"`
+	Default   json.RawMessage `json:"default,omitempty"`
+	Enum      []string        `json:"enum,omitempty"`
+	List      bool            `json:"list,omitempty"`
+	Multiline bool            `json:"multiline,omitempty"`
 }
 
 var settingKey = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.-]{0,127}$`)
@@ -31,7 +35,8 @@ func validateSettingsAndGrants(settings []Setting, grants []string) error {
 	clear(seen)
 	for _, s := range settings {
 		if !settingKey.MatchString(s.Key) || seen[s.Key] || !validText(s.Label) ||
-			(s.Secret && (s.Type != "string" || len(s.Default) != 0)) {
+			(s.Secret && (s.Type != "string" || len(s.Default) != 0)) ||
+			((s.List || s.Multiline) && (s.Type != "string" || s.Secret)) || (s.List && len(s.Enum) != 0) {
 			return ErrInvalidMessage
 		}
 		seen[s.Key] = true
@@ -59,6 +64,18 @@ func (s Setting) Accepts(raw json.RawMessage) bool {
 	var value any
 	if json.Unmarshal(raw, &value) != nil {
 		return false
+	}
+	if s.List {
+		items, ok := value.([]any)
+		if !ok || s.Type != "string" {
+			return false
+		}
+		for _, item := range items {
+			if _, ok := item.(string); !ok {
+				return false
+			}
+		}
+		return true
 	}
 	switch s.Type {
 	case "string":

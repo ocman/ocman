@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -65,6 +67,69 @@ func TestActionBroker(t *testing.T) {
 	}
 }
 
+func TestActionPluginProjectPathGrant(t *testing.T) {
+	d, r := actionFixture()
+	d.RequestedGrants = []string{"context.project", "context.project.path"}
+	d.Actions[0].Placement = "project"
+	d.Actions[0].RequiredGrants = []string{"context.project", "context.project.path"}
+	r.Placement, r.Context.ProjectID = "project", "project-1"
+	var mu sync.Mutex
+	grants := append([]string(nil), d.RequestedGrants...)
+	calls := 0
+	var sent ActionContext
+	b := NewActionBroker(func(ctx context.Context, id string, use func(Description, []string) error) error {
+		mu.Lock()
+		defer mu.Unlock()
+		return use(d, grants)
+	}, func(_ context.Context, _ string, c Call) (<-chan Reply, error) {
+		calls++
+		var invocation ActionInvocation
+		if err := json.Unmarshal(c.Params, &invocation); err != nil {
+			t.Fatal(err)
+		}
+		sent = invocation.Context
+		ch := make(chan Reply, 1)
+		ch <- Reply{Message: Envelope{Type: TypeResult, Result: &Result{Value: json.RawMessage(`{"results":[{"kind":"notice","text":"ok"}]}`)}}}
+		close(ch)
+		return ch, nil
+	})
+	b.ResolveDirectory = func(_ context.Context, projectID string) string {
+		if projectID == "project-1" {
+			return "/home/dev/project"
+		}
+		return ""
+	}
+	if got := b.Invoke(context.Background(), r); got.Error != nil || calls != 1 || sent.ProjectID != "project-1" || sent.Directory != "/home/dev/project" {
+		t.Fatalf("granted path: %+v calls=%d sent=%+v", got, calls, sent)
+	}
+	// The operation record keeps only the opaque ID; host paths never enter the
+	// replay hash or persisted artifact metadata.
+	if op := b.operations[r.PluginID+"/op"]; op.request.Context.Directory != "" {
+		t.Fatalf("persisted request carries path: %+v", op.request.Context)
+	}
+	r.OperationID = "op-2"
+	mu.Lock()
+	grants = []string{"context.project"}
+	mu.Unlock()
+	if got := b.Invoke(context.Background(), r); got.Error == nil || got.Error.Category != ErrorPermissionDenied || calls != 1 || sent.Directory != "/home/dev/project" {
+		t.Fatalf("unapproved path grant: %+v calls=%d", got, calls)
+	}
+	mu.Lock()
+	grants = append([]string(nil), d.RequestedGrants...)
+	mu.Unlock()
+	r.OperationID, r.Context.ProjectID = "op-3", "unknown-1"
+	if got := b.Invoke(context.Background(), r); got.Error != nil || calls != 2 || sent.ProjectID != "unknown-1" || sent.Directory != "" {
+		t.Fatalf("unknown project id: %+v calls=%d sent=%+v", got, calls, sent)
+	}
+	mu.Lock()
+	grants = nil
+	mu.Unlock()
+	r.OperationID, r.Context.ProjectID = "op", "project-1"
+	if got := b.Invoke(context.Background(), r); got.Error == nil || got.Error.Category != ErrorPermissionDenied || calls != 2 || sent.Directory != "" {
+		t.Fatalf("revoked after checksum change: %+v calls=%d sent=%+v", got, calls, sent)
+	}
+}
+
 func actionFixture() (Description, ActionRequest) {
 	d := *hello(ModeDescribe).Hello.Description
 	d.Actions = []ActionDescriptor{{ID: "test", Label: "Test", Placement: "global", Surfaces: []string{"command-palette"}}}
@@ -88,6 +153,10 @@ func TestActionDescriptorsAndContext(t *testing.T) {
 		"surface":          func(d *Description) { d.Actions[0].Surfaces = []string{"iframe"} },
 		"confirmation":     func(d *Description) { d.Actions[0].Confirmation = "<html>" },
 		"undeclared grant": func(d *Description) { d.Actions[0].RequiredGrants = []string{"context.owner"} },
+		"undeclared path grant": func(d *Description) {
+			d.RequestedGrants = []string{"context.project"}
+			d.Actions[0].RequiredGrants = []string{"context.project.path"}
+		},
 		"unknown grant": func(d *Description) {
 			d.RequestedGrants = []string{"filesystem"}
 			d.Actions[0].RequiredGrants = d.RequestedGrants
@@ -106,15 +175,16 @@ func TestActionDescriptorsAndContext(t *testing.T) {
 		})
 	}
 	for name, mutate := range map[string]func(*ActionRequest){
-		"owner":            func(r *ActionRequest) { r.OwnerID = "../other" },
-		"operation":        func(r *ActionRequest) { r.OperationID = "" },
-		"project required": func(r *ActionRequest) { r.Placement = "project" },
-		"session required": func(r *ActionRequest) { r.Placement = "session" },
-		"path":             func(r *ActionRequest) { r.Context.ProjectID = "/home/user/project" },
-		"route":            func(r *ActionRequest) { r.Context.Route = "/session/secret?token=x" },
-		"selection text":   func(r *ActionRequest) { r.Context.Selection = []ActionSelection{{Kind: "text", ID: "secret"}} },
-		"selection path":   func(r *ActionRequest) { r.Context.Selection = []ActionSelection{{Kind: "project", ID: "/tmp/project"}} },
-		"selection limit":  func(r *ActionRequest) { r.Context.Selection = make([]ActionSelection, 101) },
+		"owner":              func(r *ActionRequest) { r.OwnerID = "../other" },
+		"operation":          func(r *ActionRequest) { r.OperationID = "" },
+		"project required":   func(r *ActionRequest) { r.Placement = "project" },
+		"session required":   func(r *ActionRequest) { r.Placement = "session" },
+		"path":               func(r *ActionRequest) { r.Context.ProjectID = "/home/user/project" },
+		"injected host path": func(r *ActionRequest) { r.Context.Directory = "/home/user/project" },
+		"route":              func(r *ActionRequest) { r.Context.Route = "/session/secret?token=x" },
+		"selection text":     func(r *ActionRequest) { r.Context.Selection = []ActionSelection{{Kind: "text", ID: "secret"}} },
+		"selection path":     func(r *ActionRequest) { r.Context.Selection = []ActionSelection{{Kind: "project", ID: "/tmp/project"}} },
+		"selection limit":    func(r *ActionRequest) { r.Context.Selection = make([]ActionSelection, 101) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, r := actionFixture()
@@ -124,13 +194,16 @@ func TestActionDescriptorsAndContext(t *testing.T) {
 			}
 		})
 	}
-	c := ActionContext{OwnerID: "local", ProjectID: "project", SessionID: "session", Route: "session", Selection: []ActionSelection{{Kind: "project", ID: "project"}}}
-	grants := []string{"context.owner", "context.project", "context.session", "context.route", "context.selection"}
-	if got := (ActionDescriptor{RequiredGrants: grants}).Minimize(c); !reflect.DeepEqual(got, c) {
+	c := ActionContext{OwnerID: "local", ProjectID: "project", SessionID: "session", Route: "session", Selection: []ActionSelection{{Kind: "project", ID: "project"}}, Directory: "/home/dev/project"}
+	grants := []string{"context.owner", "context.project", "context.project.path", "context.session", "context.route", "context.selection"}
+	if got := (ActionDescriptor{Placement: "project", RequiredGrants: grants}).Minimize(c); !reflect.DeepEqual(got, c) {
 		t.Fatalf("granted fields: %+v", got)
 	}
 	if got := (ActionDescriptor{}).Minimize(c); !reflect.DeepEqual(got, ActionContext{}) {
 		t.Fatalf("ungranted fields: %+v", got)
+	}
+	if got := (ActionDescriptor{Placement: "global", RequiredGrants: grants}).Minimize(c); got.Directory != "" || got.ProjectID != "project" {
+		t.Fatalf("path outside project placement: %+v", got)
 	}
 }
 
@@ -275,6 +348,67 @@ func TestActionConfirmationBindingAndArtifact(t *testing.T) {
 	r.OperationID = "other"
 	if got := b.Invoke(t.Context(), r); got.Error == nil || got.Error.Category != ErrorConflict {
 		t.Fatalf("expired: %+v", got)
+	}
+}
+
+func TestActionArtifactRestartRecovery(t *testing.T) {
+	d, r := actionFixture()
+	dir := t.TempDir()
+	authorize := func(ctx context.Context, id string, use func(Description, []string) error) error { return use(d, nil) }
+	root := func(id string) (string, error) {
+		if id != d.ID {
+			t.Fatalf("root for %q", id)
+		}
+		return dir, nil
+	}
+	b := NewActionBroker(authorize, func(context.Context, string, Call) (<-chan Reply, error) {
+		ch := make(chan Reply, 1)
+		ch <- Reply{Message: Envelope{Type: TypeResult, Result: &Result{Value: json.RawMessage(`{"results":[{"kind":"artifact","label":"report.txt","data":"aGk="}]}`)}}}
+		return ch, nil
+	})
+	b.ArtifactRoot = root
+	got := b.Invoke(t.Context(), r)
+	if got.Error != nil || len(got.Results) != 1 {
+		t.Fatalf("invoke: %+v", got)
+	}
+	handle := got.Results[0].Handle
+	files, _ := filepath.Glob(filepath.Join(dir, "artifacts", "*"))
+	if len(files) != 2 {
+		t.Fatalf("persisted files: %v", files)
+	}
+	for _, f := range files {
+		if info, err := os.Stat(f); err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("%s mode: %v %v", f, info.Mode(), err)
+		}
+	}
+	restarted := NewActionBroker(authorize, func(context.Context, string, Call) (<-chan Reply, error) { t.Fatal("unexpected call"); return nil, nil })
+	restarted.ArtifactRoot = root
+	if name, data, err := restarted.Artifact(t.Context(), handle); err != nil || name != "report.txt" || string(data) != "hi" {
+		t.Fatalf("recovered artifact: %q %q %v", name, data, err)
+	}
+	d.Actions[0].Label = "Changed"
+	if _, _, err := restarted.Artifact(t.Context(), handle); err == nil {
+		t.Fatal("restart skipped authorization re-check")
+	}
+	d.Actions[0].Label = "Test"
+	for _, forged := range []string{"unknown", handle + "/x", "!." + "AAAA", handle[:strings.Index(handle, ".")] + ".bad-id"} {
+		if _, _, err := restarted.Artifact(t.Context(), forged); err == nil {
+			t.Fatalf("forged handle %q served", forged)
+		}
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := restarted.Artifact(t.Context(), handle); err == nil {
+		t.Fatal("artifact served after plugin data removal")
+	}
+	// The broker that produced the handle must not revive it from memory once
+	// permanent removal deleted the data root and the plugin was reapproved.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := b.Artifact(t.Context(), handle); err == nil {
+		t.Fatal("same broker served a deleted artifact")
 	}
 }
 

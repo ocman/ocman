@@ -40,6 +40,29 @@ func (m *Module) Actions() *plugins.ActionBroker {
 			}
 			return p.Call(ctx, call)
 		})
+		// The broker runs on the executing owner (the hub forwards only the opaque
+		// project ID), so this reads the owner's own OpenCode database. db.ProjectDirectory
+		// resolves the one project root (deterministic across sibling worktrees); an
+		// unknown or ambiguous ID, a missing database, or any error yields "" which omits the
+		// field and lets the call proceed.
+		m.actions.ResolveDirectory = func(ctx context.Context, projectID string) string {
+			if m.deps.ProjectDirectory == nil {
+				return ""
+			}
+			directory, err := m.deps.ProjectDirectory(ctx, projectID)
+			if err != nil {
+				return ""
+			}
+			return directory
+		}
+		m.actions.ArtifactRoot = func(id string) (string, error) {
+			if m.store == nil {
+				return "", plugins.ErrUnavailable
+			}
+			// The data root exists only while the plugin is registered, so
+			// DeletePluginPermanently removes every persisted artifact with it.
+			return m.store.PluginDataDir(context.Background(), id)
+		}
 	})
 	return m.actions
 }

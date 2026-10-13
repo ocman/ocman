@@ -30,6 +30,12 @@ Serve validates the host's negotiated versions before dispatching calls. It owns
 and closes the supplied pipes, including on cancellation. Pipe `Close` methods
 must unblock pending I/O. The helper does not supervise or restart processes.
 
+In serve mode, call `ReadConfiguration` before `Run` to read the fd-3 launch
+payload: `Values` holds every declared setting as raw JSON, and `Catalog` the
+host-injected agent and model snapshot for plugins that declared `WantsCatalog`
+alongside their required `project` setting. The catalog is nil when the host
+omitted it (no project configured, or no reachable local instance).
+
 Handlers receive the operation ID and absolute deadline through `Call`, plus a
 context cancelled on deadline, cancel frame, shutdown or connection termination.
 Handlers must honor that context. They may execute concurrently up to the declared
@@ -52,7 +58,14 @@ declarations, never approval; plugins receive only the minimized context.
 whose inbound direction is not a response to a host call. Events for a capability
 the host did not negotiate are dropped rather than failing the process; a closed
 channel is not an error. `ConversationHandler` serves `conversation.v1` reply
-calls and `NewConversationMessage` builds a validated inbound message event. See
+calls and `NewConversationMessage` builds a validated inbound message event;
+`SessionHandler` serves `session.v1` completed-turn calls. `NewSessionRun(operationID, params)`
+builds a validated inbound run call. Send it with `RunWithRequests` using a
+`Request{Call: call, Replies: make(chan Result, 1)}`. The channel receives the
+correlated immediate `{sessionId}` or error; completion arrives separately.
+Host and plugin request IDs use independent sequences. Completion consumers
+must durably deduplicate operation IDs across retries and process restarts.
+See
 [the Slack plugin](../../examples/ocman-plugin-slack/main.go) for both directions.
 
 ## Conformance tests for external plugins
@@ -91,6 +104,12 @@ actions are supported. No grant approval is sent over the wire.
 `RunConversationGrants` covers `conversation.v1`: the declaration contract, a
 denied and then granted reply dispatch through the real host broker, and denial
 of an inbound message naming a project other than the configured one. Pass the
+project directory the test configuration approves.
+
+`RunSessionGrants` covers `session.v1`: the declaration contract, a denied and
+then granted run dispatch through the real host broker, denial of traversal and
+absolute subpaths, closed-parameter enforcement, and the completed call
+reaching the plugin exactly once with its stable operation id. Pass the
 project directory the test configuration approves.
 
 The fixture's additional `fixture.v1` capability offers `stream`, `wait` and

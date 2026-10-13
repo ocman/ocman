@@ -56,6 +56,7 @@ func (s *Server) broadcastSessionChanged(sessionID string) {
 	// Runs on the caller's goroutine (joined event watchers), bounded by the
 	// server lifetime so shutdown cancels its reads.
 	s.replyToConversation(s.lifetime(), "opencode", sessionID)
+	s.replyToSession(s.lifetime(), "opencode", sessionID)
 }
 
 func (s *Server) broadcastSessionStatus(sessionID string, status db.SessionStatus) {

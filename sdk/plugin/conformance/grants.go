@@ -45,6 +45,7 @@ func RunActionGrants(t *testing.T, executable string, invocation plugin.ActionIn
 		}
 		if (!allowed["context.owner"] && sent.Context.OwnerID != "") ||
 			(!allowed["context.project"] && sent.Context.ProjectID != "") ||
+			(!allowed["context.project.path"] && sent.Context.Directory != "") ||
 			(!allowed["context.session"] && sent.Context.SessionID != "") ||
 			(!allowed["context.route"] && sent.Context.Route != "") ||
 			(!allowed["context.selection"] && len(sent.Context.Selection) != 0) {

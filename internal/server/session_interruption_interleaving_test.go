@@ -98,7 +98,7 @@ func TestStoppingCrashRecoversOriginalRuntimeAndAbortEvidence(t *testing.T) {
 	srv, raw := newInterruptionRawServer(t)
 	defer raw.Close()
 	path := filepath.Join(t.TempDir(), "crash-state.db")
-	durable, err := state.Open(path)
+	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestStoppingCrashRecoversOriginalRuntimeAndAbortEvidence(t *testing.T) {
 	if err := srv.stateDB.Close(); err != nil {
 		t.Fatal(err)
 	}
-	srv.stateDB, err = state.Open(path)
+	srv.stateDB, err = state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

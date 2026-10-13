@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -133,6 +134,13 @@ func (p *Process) serve(attempt int) error {
 		}
 	}
 	pending := make(map[uint64]*invocation)
+	requests := make(map[uint64]context.CancelFunc)
+	results := make(chan Result, MaxConcurrency)
+	defer func() {
+		for _, stop := range requests {
+			stop()
+		}
+	}()
 	defer func() {
 		for _, r := range pending {
 			err := invocationError(r, time.Now())
@@ -217,6 +225,12 @@ func (p *Process) serve(attempt int) error {
 			if err := send(Envelope{Type: TypeCall, Call: &r.call}); err != nil {
 				return err
 			}
+		case result := <-results:
+			requests[result.ID]()
+			delete(requests, result.ID)
+			if err := send(Envelope{Type: TypeResult, Result: &result}); err != nil {
+				return err
+			}
 		case frame := <-frames:
 			if frame.err != nil {
 				if errors.Is(frame.err, io.EOF) {
@@ -232,6 +246,34 @@ func (p *Process) serve(attempt int) error {
 				return err
 			}
 			switch e.Type {
+			case TypeCall:
+				callCtx, stop := context.WithDeadline(ctx, time.UnixMilli(e.Call.DeadlineUnixMS))
+				requests[e.Call.ID] = stop
+				var once sync.Once
+				request := Request{Call: *e.Call, Context: callCtx, respond: func(r Result) {
+					once.Do(func() {
+						if err := callCtx.Err(); err != nil {
+							r.Value, r.Error = nil, RequestError(err)
+						}
+						select {
+						case results <- r:
+						case <-ctx.Done():
+						}
+					})
+				}}
+				go func() {
+					<-callCtx.Done()
+					request.Respond(nil, callCtx.Err())
+				}()
+				select {
+				case p.requests <- request:
+				default:
+					return ErrOutputLimit
+				}
+			case TypeCancel:
+				if stop := requests[e.Cancel.ID]; stop != nil {
+					stop()
+				}
 			case TypeHello:
 				if !p.matchesOffer(e) {
 					return ErrIdentityChanged

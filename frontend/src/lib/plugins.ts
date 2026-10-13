@@ -6,8 +6,10 @@ export interface PluginSetting {
   type: 'string' | 'boolean' | 'number' | 'integer';
   secret?: boolean;
   required?: boolean;
-  default?: string | boolean | number;
+  default?: string | boolean | number | string[];
   enum?: string[];
+  list?: boolean;
+  multiline?: boolean;
 }
 
 export interface PluginRegistration {
@@ -27,7 +29,7 @@ export interface PluginRegistration {
   removed: boolean;
   grants: string[] | null;
   configuration: {
-    values: Record<string, string | boolean | number> | null;
+    values: Record<string, string | boolean | number | string[]> | null;
     secrets: Record<string, boolean> | null;
   };
   health: { status: string; restartCount: number; lastError?: string };
@@ -41,7 +43,7 @@ export function hasConversationCapability(plugin: PluginRegistration) {
 export interface PluginInput {
   approval?: string;
   grants?: string[];
-  values?: Record<string, string | boolean | number>;
+  values?: Record<string, string | boolean | number | string[]>;
   secrets?: Record<string, string>;
   deliveryId?: number;
 }

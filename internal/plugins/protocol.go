@@ -69,6 +69,11 @@ type Description struct {
 	Settings        []Setting          `json:"settings,omitempty"`
 	Actions         []ActionDescriptor `json:"actions,omitempty"`
 	Panes           []PaneDescriptor   `json:"panes,omitempty"`
+	// WantsCatalog opts the plugin into a launch-time catalog snapshot under
+	// the reserved "catalog" member of the fd-3 configuration object. It is
+	// only meaningful with the required non-secret project setting;
+	// Description.Validate enforces the pair.
+	WantsCatalog bool `json:"wantsCatalog,omitempty"`
 }
 
 type MessageType string
@@ -209,7 +214,13 @@ func (d Description) Validate() error {
 	if err := d.validatePanes(); err != nil {
 		return err
 	}
-	return d.validateConversation()
+	if err := d.validateCatalog(); err != nil {
+		return err
+	}
+	if err := d.validateConversation(); err != nil {
+		return err
+	}
+	return d.validateSession()
 }
 
 func (e Envelope) Validate() error {

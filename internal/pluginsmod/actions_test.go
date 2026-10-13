@@ -36,7 +36,7 @@ func TestPluginActionUnavailableAndErrors(t *testing.T) {
 			t.Fatalf("%s: %d", tc.category, w.Code)
 		}
 	}
-	db, err := state.Open(statetest.Path(t))
+	db, err := state.Open(statetest.Path(t), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

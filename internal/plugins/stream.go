@@ -16,24 +16,26 @@ const (
 // connection. The owner serializes Accept calls with writes and received frames.
 // It owns no goroutines, clocks, processes, or capability implementations.
 type Stream struct {
-	mode       Mode
-	token      string
-	protocol   Version
-	supported  []Capability
-	negotiated Negotiated
-	offered    bool
-	ready      bool
-	closed     bool
-	limit      int
-	lastID     uint64
-	active     map[uint64]uint64 // request ID -> last chunk sequence; bounded by limit
+	mode         Mode
+	token        string
+	protocol     Version
+	supported    []Capability
+	negotiated   Negotiated
+	offered      bool
+	ready        bool
+	closed       bool
+	limit        int
+	lastID       uint64
+	active       map[uint64]uint64 // request ID -> last chunk sequence; bounded by limit
+	pluginLastID uint64
+	pluginActive map[uint64]bool // independent ID space for plugin-initiated unary calls
 }
 
 func NewStream(mode Mode, token string, protocol Version, supported []Capability) (*Stream, error) {
 	if !validMode(mode) || !validToken(token) || !validVersion(protocol) || validateCapabilities(supported) != nil {
 		return nil, ErrInvalidMessage
 	}
-	return &Stream{mode: mode, token: token, protocol: protocol, supported: append([]Capability(nil), supported...), active: make(map[uint64]uint64)}, nil
+	return &Stream{mode: mode, token: token, protocol: protocol, supported: append([]Capability(nil), supported...), active: make(map[uint64]uint64), pluginActive: make(map[uint64]bool)}, nil
 }
 
 // Negotiation returns the selection after the plugin's hello, plus readiness.
@@ -58,6 +60,7 @@ func (s *Stream) Accept(direction Direction, e Envelope) error {
 		s.closed = true
 		s.token = ""
 		clear(s.active)
+		clear(s.pluginActive)
 	}
 	return err
 }
@@ -94,6 +97,14 @@ func (s *Stream) accept(direction Direction, e Envelope) error {
 	switch e.Type {
 	case TypeCall:
 		c := e.Call
+		if direction == FromPlugin {
+			if c.Capability != SessionCapability.Name || c.Method != SessionRunMethod || c.ID <= s.pluginLastID || len(s.pluginActive) >= s.limit || !s.hasCapabilityVersion(c.Capability, c.Version) {
+				return ErrStreamOrder
+			}
+			s.pluginLastID = c.ID
+			s.pluginActive[c.ID] = true
+			return nil
+		}
 		if direction != FromHost || c.ID <= s.lastID || len(s.active) >= s.limit || !s.hasCapabilityVersion(c.Capability, c.Version) {
 			return ErrStreamOrder
 		}
@@ -106,6 +117,13 @@ func (s *Stream) accept(direction Direction, e Envelope) error {
 		}
 		s.active[e.Chunk.ID] = e.Chunk.Sequence
 	case TypeResult:
+		if direction == FromHost {
+			if !s.pluginActive[e.Result.ID] {
+				return ErrStreamOrder
+			}
+			delete(s.pluginActive, e.Result.ID)
+			return nil
+		}
 		if _, ok := s.active[e.Result.ID]; direction != FromPlugin || !ok {
 			return ErrStreamOrder
 		}
@@ -115,6 +133,14 @@ func (s *Stream) accept(direction Direction, e Envelope) error {
 			return ErrStreamOrder
 		}
 	case TypeCancel:
+		if direction == FromPlugin {
+			// A deadline cancellation can cross the queued result. Old IDs
+			// are harmless: they cannot be reused or affect another request.
+			if e.Cancel.ID > s.pluginLastID {
+				return ErrStreamOrder
+			}
+			return nil
+		}
 		if _, ok := s.active[e.Cancel.ID]; direction != FromHost || !ok {
 			return ErrStreamOrder
 		}
@@ -124,6 +150,7 @@ func (s *Stream) accept(direction Direction, e Envelope) error {
 		}
 		s.closed = true
 		clear(s.active)
+		clear(s.pluginActive)
 	default:
 		return ErrStreamOrder
 	}

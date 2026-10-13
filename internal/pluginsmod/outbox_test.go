@@ -51,7 +51,7 @@ func TestConversationFailureReasonStaysOpaque(t *testing.T) {
 // be attempted again. Here the concurrent attempt is a recorded failure; a
 // resend would fail too (the plugin is not installed) and add an attempt.
 func TestConversationStaleClaimIsNotResent(t *testing.T) {
-	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

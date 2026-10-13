@@ -34,7 +34,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t))
+	db, err := state.Open(statetest.Path(t), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,10 +48,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	script = []byte(strings.ReplaceAll(string(script), `"mode":"describe"`, `"mode":"$1"`) + "\nif [ \"$1\" = serve ]; then\n  read -r ack\n  echo started >> starts\n  read -r shutdown\nfi\n")
-	if err := os.WriteFile(path, script, 0700); err != nil {
-		t.Fatal(err)
-	}
-	testutil.WarmExecutable(t, path)
+	testutil.WriteScript(t, path, string(script))
 	if _, err := s.RescanPlugins(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +166,7 @@ func TestRescanPlugins(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t))
+	db, err := state.Open(statetest.Path(t), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +322,7 @@ func bound(m *Module, ctx context.Context) *Module {
 
 func openStore(t *testing.T) *state.DB {
 	t.Helper()
-	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

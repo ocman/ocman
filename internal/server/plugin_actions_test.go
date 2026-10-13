@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
@@ -19,7 +21,7 @@ import (
 func TestPluginActionEndpoints(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t))
+	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,6 +160,17 @@ func TestPluginActionEndpoints(t *testing.T) {
 	if w := request("GET", artifact+"?handle="+handle, "", true, ""); w.Code != 200 || w.Body.String() != "hi" || w.Header().Get("Content-Disposition") != "attachment; filename=report.txt" || w.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("download: %d %s", w.Code, w.Body.String())
 	}
+	// A restarted broker serves the prior handle from the plugin's data root.
+	if name, data, err := (&Server{stateDB: db}).pluginsModule().Actions().Artifact(t.Context(), handle); err != nil || name != "report.txt" || string(data) != "hi" {
+		t.Fatalf("restart download: %q %q %v", name, data, err)
+	}
+	artifacts, _ := filepath.Glob(filepath.Join(dataDir, "artifacts", "*-report.txt"))
+	if len(artifacts) != 1 {
+		t.Fatalf("persisted artifact: %v", artifacts)
+	}
+	if info, err := os.Stat(artifacts[0]); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("artifact mode: %v %v", info, err)
+	}
 	if err := db.SetPluginGrants(t.Context(), d.ID, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -182,6 +195,15 @@ func TestPluginActionEndpoints(t *testing.T) {
 	if w := request("GET", artifact+"?handle=unknown", "", true, ""); w.Code != 404 {
 		t.Fatal(w.Body.String())
 	}
+	if err := db.DeletePluginPermanently(t.Context(), d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(artifacts[0]); !os.IsNotExist(err) {
+		t.Fatalf("artifact survived permanent deletion: %v", err)
+	}
+	if _, _, err := (&Server{stateDB: db}).pluginsModule().Actions().Artifact(t.Context(), handle); err == nil {
+		t.Fatal("deleted plugin artifact served")
+	}
 	r.Context.OwnerID = "remote"
 	if w, _ := call(); w.Code != 503 {
 		t.Fatal(w.Body.String())
@@ -190,5 +212,149 @@ func TestPluginActionEndpoints(t *testing.T) {
 		if w := request("POST", invoke, body, true, ""); w.Code != 400 {
 			t.Fatalf("invalid body: %d %s", w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestPluginActionProjectPathGrant(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("OCMAN_PLUGIN_DIR", dir)
+	sdb, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sdb.Close() })
+	// The project inventory the resolver reads: OpenCode's project table holds
+	// the one root per ID, and the sibling-worktree session (inserted first)
+	// shares prd_1 without changing which directory resolves.
+	odb := filepath.Join(dir, "opencode.db")
+	rw, err := sql.Open("sqlite", "file:"+odb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rw.Exec(`CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
+		CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, directory TEXT);
+		INSERT INTO project VALUES ('prd_1','/home/dev/project-a');
+		INSERT INTO session VALUES ('ses-0','prd_1','/home/dev/.worktrees/project-a/b'), ('ses-1','prd_1','/home/dev/project-a')`); err != nil {
+		t.Fatal(err)
+	}
+	_ = rw.Close()
+	ocdb, err := db.Open(odb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ocdb.Close() })
+	s := bindPlugins(&Server{stateDB: sdb, db: ocdb, auth: newTestAuth(t, "secret")}, t.Context())
+	t.Cleanup(s.stopPluginProcesses)
+	d := plugins.Description{ID: "org.example.path", Name: "Path", Version: "1", Protocol: plugins.Version{Major: 1}, Scope: plugins.ScopeOwner, MaxConcurrency: 1,
+		Capabilities: []plugins.Capability{plugins.ActionCapability}, RequestedGrants: []string{"context.project", "context.project.path"},
+		Actions: []plugins.ActionDescriptor{{ID: "open", Label: "Open", Placement: "project", Surfaces: []string{"command-palette"}, RequiredGrants: []string{"context.project", "context.project.path"}}}}
+	hello, _ := json.Marshal(plugins.Envelope{Type: plugins.TypeHello, Hello: &plugins.Hello{Mode: plugins.Mode("$1"), Token: "$OCMAN_PLUGIN_TOKEN", Description: &d}})
+	script := "#!/bin/sh\nIFS= read -r hello <<EOF\n" + string(hello) + "\nEOF\nprintf '%s\\n' \"$hello\"\nif [ \"$1\" = serve ]; then\nread -r ack\nwhile IFS= read -r line; do\nif printf '%s' \"$line\" | grep -q '\"type\":\"shutdown\"'; then break; fi\nid=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\"\\([0-9]*\\)\".*/\\1/p')\nprintf '%s\\n' \"$line\" >> calls\nprintf '%s\\n' \"{\\\"type\\\":\\\"result\\\",\\\"result\\\":{\\\"id\\\":\\\"$id\\\",\\\"value\\\":{\\\"results\\\":[{\\\"kind\\\":\\\"notice\\\",\\\"text\\\":\\\"Done\\\"}]}}}\"\ndone\nfi\n"
+	exe := filepath.Join(dir, "ocman-plugin-path")
+	if err := os.WriteFile(exe, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RescanPlugins(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := sdb.SetPluginEnabled(t.Context(), d.ID, true, d.RequestedGrants); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SyncPluginProcesses(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for s.pluginsModule().Process(d.ID).Health().Status != "ready" {
+		if time.Now().After(deadline) {
+			t.Fatal("plugin not ready")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mux, err := s.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookies := httptest.NewRecorder()
+	s.auth.issueCookie(cookies, httptest.NewRequest(http.MethodGet, "/", nil))
+	cookie := cookies.Result().Cookies()[0]
+	invoke := func(op, projectID string, path bool) (int, string) {
+		t.Helper()
+		body := `{"pluginId":"org.example.path","actionId":"open","operationId":"` + op + `","placement":"project","surface":"command-palette","context":{"projectId":"` + projectID + `"}}`
+		if path {
+			body = `{"pluginId":"org.example.path","actionId":"open","operationId":"` + op + `","placement":"project","surface":"command-palette","context":{"projectId":"` + projectID + `","directory":"/etc/secret"}}`
+		}
+		r := httptest.NewRequest(http.MethodPost, "http://localhost:8228/api/plugins/actions/invoke", strings.NewReader(body))
+		r.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	dataDir, err := sdb.PluginDataDir(t.Context(), d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := func() string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(dataDir, "calls"))
+		if err != nil {
+			return ""
+		}
+		return string(data)
+	}
+	if code, body := invoke("op-1", "prd_1", false); code != 200 {
+		t.Fatalf("granted invoke: %d %s", code, body)
+	}
+	if got := calls(); !strings.Contains(got, `"projectId":"prd_1"`) || !strings.Contains(got, `"directory":"/home/dev/project-a"`) {
+		t.Fatalf("granted call missing resolved directory: %s", got)
+	}
+	if code, body := invoke("op-2", "prd_missing", false); code != 200 {
+		t.Fatalf("unknown id invoke: %d %s", code, body)
+	}
+	lines := strings.Split(strings.TrimSuffix(calls(), "\n"), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[1], `"projectId":"prd_missing"`) || strings.Contains(lines[1], `"directory"`) {
+		t.Fatalf("unknown id must omit the field without failing: %q", lines)
+	}
+	if code, _ := invoke("op-3", "prd_1", true); code != 400 {
+		t.Fatalf("caller-injected path accepted: %d", code)
+	}
+	if err := sdb.SetPluginGrants(t.Context(), d.ID, []string{"context.project"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := invoke("op-4", "prd_1", false); code != 403 {
+		t.Fatalf("unapproved path grant: %d", code)
+	}
+	if got := calls(); strings.Count(got, "\n") != 2 {
+		t.Fatalf("unapproved grant dispatched a call: %s", got)
+	}
+	// Without an OpenCode database the owner cannot resolve anything: the call
+	// still proceeds, the field stays absent.
+	if err := sdb.SetPluginEnabled(t.Context(), d.ID, true, d.RequestedGrants); err != nil {
+		t.Fatal(err)
+	}
+	uninventoried := &Server{stateDB: sdb}
+	uninventoried.pluginsModule().AdoptProcesses(s.pluginsModule())
+	got := uninventoried.pluginsModule().Actions().Invoke(t.Context(), plugins.ActionRequest{PluginID: d.ID, ActionID: "open", OperationID: "op-5", Placement: "project", Surface: "command-palette", Context: plugins.ActionContext{OwnerID: "local", ProjectID: "prd_1"}})
+	if got.Error != nil || len(got.Results) != 1 {
+		t.Fatalf("missing inventory: %+v", got)
+	}
+	if lines := strings.Split(strings.TrimSuffix(calls(), "\n"), "\n"); len(lines) != 3 || !strings.Contains(lines[2], `"projectId":"prd_1"`) || strings.Contains(lines[2], `"directory"`) {
+		t.Fatalf("missing inventory leaked or omitted the call: %q", lines)
+	}
+	// A checksum change revokes the stored approval, so the directory is gone
+	// even though every grant was previously approved.
+	if err := os.WriteFile(exe, []byte(script+"# changed\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RescanPlugins(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := sdb.GetPlugin(t.Context(), d.ID); err != nil || p.Enabled || len(p.Grants) != 0 {
+		t.Fatalf("checksum change kept approval: %+v %v", p, err)
+	}
+	if code, _ := invoke("op-6", "prd_1", false); code == 200 {
+		t.Fatal("revoked approval still invoked the action")
+	}
+	if got := calls(); strings.Count(got, "\n") != 3 {
+		t.Fatalf("revoked approval dispatched a call: %s", got)
 	}
 }

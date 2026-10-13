@@ -70,17 +70,18 @@ var defaultProcessPolicy = processPolicy{ReadyTimeout, 3 * time.Second, 100 * ti
 // Process owns one plugin's lifecycle. Its owner must serialize enable/disable
 // and keep only one Process per plugin ID. Failures never replay calls.
 type Process struct {
-	config LaunchConfig
-	policy processPolicy
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan struct{}
-	calls  chan *invocation
-	events chan Event
-	mu     sync.Mutex
-	health Health
-	stderr []byte // Sensitive, bounded, memory-only; never exported or logged.
-	tokens []string
+	config   LaunchConfig
+	policy   processPolicy
+	ctx      context.Context
+	cancel   context.CancelFunc
+	done     chan struct{}
+	calls    chan *invocation
+	events   chan Event
+	requests chan Request
+	mu       sync.Mutex
+	health   Health
+	stderr   []byte // Sensitive, bounded, memory-only; never exported or logged.
+	tokens   []string
 }
 
 func StartProcess(ctx context.Context, config LaunchConfig) (*Process, error) {
@@ -109,7 +110,7 @@ func startProcess(ctx context.Context, config LaunchConfig, policy processPolicy
 	config.Configuration = append(json.RawMessage(nil), config.Configuration...)
 	ctx, cancel := context.WithCancel(ctx)
 	p := &Process{config: config, policy: policy, ctx: ctx, cancel: cancel,
-		done: make(chan struct{}), calls: make(chan *invocation), events: make(chan Event, maxBufferedFrames)}
+		done: make(chan struct{}), calls: make(chan *invocation), events: make(chan Event, maxBufferedFrames), requests: make(chan Request, maxBufferedFrames)}
 	go p.supervise()
 	return p, nil
 }
@@ -159,6 +160,8 @@ func (p *Process) setHealth(status string, restarts int, err error) {
 
 // Events is bounded like call output. An unconsumed event flood fails the process.
 func (p *Process) Events() <-chan Event { return p.events }
+
+func (p *Process) Requests() <-chan Request { return p.requests }
 
 // Call assigns the request ID. OperationID is preserved for caller-controlled
 // deduplication. Both the wire deadline and context are enforced, including while
@@ -211,6 +214,7 @@ func (p *Process) Stop() { p.cancel(); <-p.done }
 func (p *Process) supervise() {
 	defer close(p.done)
 	defer close(p.events)
+	defer close(p.requests)
 	delay := p.policy.backoff
 	for attempt := 0; ; attempt++ {
 		if p.ctx.Err() != nil {

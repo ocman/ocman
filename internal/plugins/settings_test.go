@@ -28,6 +28,15 @@ func TestDescriptionSettingsAndGrants(t *testing.T) {
 		{"invalid json", Setting{Type: "string", Default: json.RawMessage(`invalid`)}, false},
 		{"wrong boolean", Setting{Type: "boolean", Default: json.RawMessage(`"true"`)}, false},
 		{"wrong number", Setting{Type: "number", Default: json.RawMessage(`"1"`)}, false},
+		{"list", Setting{Type: "string", List: true, Default: json.RawMessage(`["a","b"]`)}, true},
+		{"multiline", Setting{Type: "string", Multiline: true, Default: json.RawMessage(`"a\nb"`)}, true},
+		{"list secret", Setting{Type: "string", List: true, Secret: true}, false},
+		{"list enum", Setting{Type: "string", List: true, Enum: []string{"one"}}, false},
+		{"list number", Setting{Type: "number", List: true}, false},
+		{"list scalar default", Setting{Type: "string", List: true, Default: json.RawMessage(`"a"`)}, false},
+		{"list mixed default", Setting{Type: "string", List: true, Default: json.RawMessage(`["a",1]`)}, false},
+		{"multiline secret", Setting{Type: "string", Multiline: true, Secret: true}, false},
+		{"multiline boolean", Setting{Type: "boolean", Multiline: true}, false},
 		{"fractional integer", Setting{Type: "integer", Default: json.RawMessage(`1.5`)}, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

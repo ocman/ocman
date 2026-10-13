@@ -98,7 +98,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve
@@ -394,8 +394,10 @@ func (s *Server) pluginsModule() *pluginsmod.Module {
 				}
 				return s.remotes
 			},
-			PublicURL: s.publicURL,
-			Guards:    module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+			PublicURL:        s.publicURL,
+			ProjectDirectory: s.projectDirectory(),
+			LiveCatalog:      s.liveCatalog,
+			Guards:           module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
 }
@@ -427,6 +429,11 @@ func (s *Server) routePluginOperation(ctx context.Context, owner string, req rem
 // through the bus.
 func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID string) {
 	s.pluginsModule().ReplyToConversation(ctx, platformID, sessionID)
+}
+
+// replyToSession is the same recovery for session.v1 completed turns.
+func (s *Server) replyToSession(ctx context.Context, platformID, sessionID string) {
+	s.pluginsModule().ReplyToSession(ctx, platformID, sessionID)
 }
 
 // conversationPromptNeedsUser is fired by the permission pipeline after it

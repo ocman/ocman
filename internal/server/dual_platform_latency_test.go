@@ -103,7 +103,7 @@ func seedOpenCodeSessions(t *testing.T, path string, n int) *db.DB {
 
 func latencyServer(t *testing.T, dir, name string, database *db.DB) *Server {
 	t.Helper()
-	stateDB, err := state.Open(statetest.At(t, filepath.Join(dir, name+"-state.db")))
+	stateDB, err := state.Open(statetest.At(t, filepath.Join(dir, name+"-state.db")), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

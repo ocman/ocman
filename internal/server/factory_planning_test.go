@@ -233,6 +233,9 @@ func TestFactoryPlanningLauncherRejectsUnsafeProjectPattern(t *testing.T) {
 }
 
 func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *testing.T) {
+	// Isolate HOME: the real machine's skill directories add rules and can
+	// exceed the 100-rule cap, making the outcome depend on the developer.
+	factorySkillRulesFixture(t)
 	endpoint := connectedPlanningMCP(t)
 	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
 	platform.createSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {

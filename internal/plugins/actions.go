@@ -25,12 +25,16 @@ type ActionDescriptor struct {
 
 // Context contains opaque identities, never application objects, paths, URLs,
 // transcript text, or arbitrary selected content. Route is a core route name.
+// Directory is the sole exception: the executing host resolves it from
+// ProjectID only after the context.project.path grant passes, so caller-supplied
+// contexts must never carry it (Validate rejects it).
 type ActionContext struct {
 	OwnerID   string            `json:"ownerId,omitempty"`
 	ProjectID string            `json:"projectId,omitempty"`
 	SessionID string            `json:"sessionId,omitempty"`
 	Route     string            `json:"route,omitempty"`
 	Selection []ActionSelection `json:"selection,omitempty"`
+	Directory string            `json:"directory,omitempty"`
 }
 
 type ActionSelection struct {
@@ -104,7 +108,7 @@ func (d Description) validateActions() error {
 		seen[a.ID] = true
 		grants := map[string]bool{}
 		for _, g := range a.RequiredGrants {
-			if !slices.Contains([]string{"context.owner", "context.project", "context.session", "context.route", "context.selection"}, g) ||
+			if !slices.Contains([]string{"context.owner", "context.project", "context.project.path", "context.session", "context.route", "context.selection"}, g) ||
 				!slices.Contains(d.RequestedGrants, g) || grants[g] {
 				return ErrInvalidMessage
 			}
@@ -119,6 +123,9 @@ func (c ActionContext) Validate() error {
 		if id != "" && !actionID.MatchString(id) {
 			return ErrInvalidMessage
 		}
+	}
+	if c.Directory != "" {
+		return ErrInvalidMessage
 	}
 	if (c.Route != "" && !coreRoute(c.Route)) || len(c.Selection) > 100 {
 		return ErrInvalidMessage
@@ -162,6 +169,10 @@ func (a ActionDescriptor) Minimize(c ActionContext) ActionContext {
 			out.OwnerID = c.OwnerID
 		case "context.project":
 			out.ProjectID = c.ProjectID
+		case "context.project.path":
+			if a.Placement == "project" {
+				out.Directory = c.Directory
+			}
 		case "context.session":
 			out.SessionID = c.SessionID
 		case "context.route":
