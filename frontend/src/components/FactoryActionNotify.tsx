@@ -28,6 +28,7 @@ export function FactoryActionNotify() {
       for (const item of actions) seen.add(key(item));
       if (!fresh.length) return;
       setToasts((previous) => [...previous, ...fresh]);
+      if (!document.hidden && document.hasFocus()) return;
       if (!useUiStore.getState().notificationsEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
       for (const item of fresh) {
           void showSystemNotification(item.title || 'Factory action required', {

@@ -45,6 +45,28 @@ it('still displays notifications if OS badging is rejected', async () => {
   expect(w.showNotification).toHaveBeenCalledOnce();
 });
 
+it('makes required push notifications silent and non-sticky while an app window is active', async () => {
+  const w = worker();
+  w.matchAll.mockResolvedValue([
+    { focused: false, visibilityState: 'visible' },
+    { focused: true, visibilityState: 'visible' },
+  ]);
+  await w.emit('push', { data: { json: () => ({ kind: 'prompt' }) } });
+  expect(w.matchAll).toHaveBeenCalledWith({ type: 'window', includeUncontrolled: true });
+  expect(w.showNotification).toHaveBeenCalledWith('Session update', expect.objectContaining({ silent: true, requireInteraction: false }));
+});
+
+it.each([
+  { focused: false, visibilityState: 'visible' },
+  { focused: true, visibilityState: 'hidden' },
+])('keeps push alerts normal for an inactive window: %j', async (client) => {
+  const w = worker();
+  w.matchAll.mockResolvedValue([client]);
+  await w.emit('push', { data: { json: () => ({ kind: 'prompt' }) } });
+  expect(w.showNotification.mock.calls[0][1]).toMatchObject({ requireInteraction: true });
+  expect(w.showNotification.mock.calls[0][1]).not.toHaveProperty('silent');
+});
+
 it('shows a safe generic alert for missing or malformed push data', async () => {
   const w = worker();
   await w.emit('push', { data: { json: () => { throw new Error('invalid JSON'); } } });

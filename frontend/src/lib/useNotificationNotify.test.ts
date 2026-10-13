@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
-  __evaluateForTests,
+  __evaluateForTests as evaluate,
   __notificationDetailsForTests,
   __resetForTests,
   type NotifyShape,
 } from './useNotificationNotify';
+
+function __evaluateForTests(input: Omit<Parameters<typeof evaluate>[0], 'focused'> & { focused?: boolean }) {
+  return evaluate({ focused: false, ...input });
+}
 
 // We exercise the pure controller (`__evaluateForTests`) rather than the
 // React hook or any DOM listeners, matching the pattern in
@@ -72,10 +76,11 @@ describe('useNotificationNotify controller', () => {
     expect(out[0]).toMatchObject({ kind: 'completed', sessionId: 'a' });
   });
 
-  it('does NOT fire a "completed" notification while the tab is visible', () => {
+  it('does NOT fire a "completed" notification while the tab is visible and focused', () => {
     const out = __evaluateForTests({
       sessions: [s('a', 'waiting')],
       hidden: false,
+      focused: true,
       permission: 'granted',
       enabled: true,
       baseline: new Map(),
@@ -83,7 +88,7 @@ describe('useNotificationNotify controller', () => {
     expect(out).toEqual([]);
   });
 
-  it('fires a "prompt" notification regardless of visibility (user-blocking)', () => {
+  it('fires a "prompt" notification when visible but unfocused or hidden', () => {
     const visible = __evaluateForTests({
       sessions: [s('a', 'idle', { pendingPermission: true })],
       hidden: false,
@@ -104,6 +109,27 @@ describe('useNotificationNotify controller', () => {
     });
     expect(hidden).toHaveLength(1);
     expect(hidden[0]).toMatchObject({ kind: 'prompt', sessionId: 'a' });
+  });
+
+  it('suppresses permission and question notifications while visible and focused', () => {
+    expect(__evaluateForTests({
+      sessions: [s('permission', 'waiting', { pendingPermission: true }), s('question', 'waiting', { pendingQuestion: true })],
+      hidden: false, focused: true, permission: 'granted', enabled: true, baseline: null,
+    })).toEqual([]);
+  });
+
+  it('notifies about completion while visible behind another app', () => {
+    expect(__evaluateForTests({
+      sessions: [s('a', 'waiting')],
+      hidden: false, focused: false, permission: 'granted', enabled: true, baseline: new Map(),
+    })).toEqual([{ kind: 'completed', sessionId: 'a' }]);
+  });
+
+  it('still notifies when hidden even if focus is reported', () => {
+    expect(__evaluateForTests({
+      sessions: [s('a', 'waiting')],
+      hidden: true, focused: true, permission: 'granted', enabled: true, baseline: new Map(),
+    })).toEqual([{ kind: 'completed', sessionId: 'a' }]);
   });
 
   it('does NOT re-fire for sessions whose state matches the baseline', () => {

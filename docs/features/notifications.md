@@ -77,3 +77,10 @@ modes and browser restrictions can delay or prevent delivery.
 Subscribed devices receive session alerts through push instead of also showing
 the page's polling notifications. Browsers without Web Push retain notifications
 while the page is running. Factory action notifications remain page-driven.
+
+While ocman is visible and focused, page-driven system alerts are suppressed;
+in-app alerts remain available. Web Push still displays a notification because
+browsers require one for every push, but requests no sound or vibration and
+does not keep input-request alerts sticky while you are using ocman. Browser
+and OS support for silent notifications varies. When ocman is hidden or
+unfocused, notifications use their normal behaviour.

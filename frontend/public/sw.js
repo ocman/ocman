@@ -46,11 +46,15 @@ self.addEventListener('push', (event) => {
         else await navigator.clearAppBadge();
       } catch { /* Badge restrictions must not prevent the notification. */ }
     }
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const active = windows.some((client) => client.focused && client.visibilityState === 'visible');
+    // Web Push requires a visible notification; keep foreground alerts quiet.
     await self.registration.showNotification(message?.title || 'Session update', {
       body: message?.body || 'Open the session for details.',
       tag: message?.tag || 'ocman:update',
       icon: '/apple-touch-icon.png', badge: '/favicon-32.png',
-      requireInteraction: message?.kind === 'prompt', data: { url, createdAt: Date.now() },
+      requireInteraction: !active && message?.kind === 'prompt', data: { url, createdAt: Date.now() },
+      ...(active ? { silent: true } : {}),
     });
   })());
 });

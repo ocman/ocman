@@ -49,6 +49,12 @@ failed checks against an unavailable owner leave the message intact.
 Permission toast and system-notification links open the permission-filtered
 Inbox. Question notifications still open the session.
 
+Page-driven system notifications for session completion, input requests, and
+Factory actions only appear when ocman is hidden or its window is unfocused.
+While you are using ocman, in-app alerts remain available. Background Web Push
+alerts are silent and non-sticky while an ocman window is visible and focused,
+because browsers require each push to display a notification.
+
 ## Other messages
 
 Factory actions needing your attention create a Factory Inbox message with a

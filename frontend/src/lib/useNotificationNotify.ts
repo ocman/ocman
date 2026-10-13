@@ -18,15 +18,14 @@ import { pushSubscribed, showSystemNotification } from './pushNotifications';
  *
  * Two trigger paths:
  *
- *   - **completed**: a session transitioned to `waiting` or `error` after
- *     the tab went hidden. Fires only when `document.hidden` is true so
- *     we don't pop a toast over the page the user is actively looking
- *     at — the favicon already covers the visible-tab case.
+ *   - **completed**: an unseen session transitioned to `waiting` or `error`.
  *
  *   - **prompt**: a session is blocked on a permission request or
- *     question. Fires regardless of visibility because the session
- *     literally cannot proceed without the user's input. Marked
- *     `requireInteraction: true` so the toast sticks until dismissed.
+ *     question. Marked `requireInteraction: true` so the toast sticks
+ *     until dismissed.
+ *
+ * Both paths fire only while the app is hidden or unfocused. In-app
+ * indicators cover the visible, focused case without a system banner.
  *
  * Click handling is split between this hook (focuses the current tab
  * and navigates) and the service worker's `notificationclick` listener
@@ -51,6 +50,7 @@ export type Decision = {
 type EvaluateInput = {
   sessions: NotifyShape[];
   hidden: boolean;
+  focused: boolean;
   permission: NotificationPermission | 'unsupported';
   enabled: boolean;
   /** Map of sessionId -> stateKey at the time the baseline was taken. */
@@ -78,6 +78,7 @@ let firedKeys = new Set<string>();
 export function __evaluateForTests(input: EvaluateInput): Decision[] {
   if (!input.enabled) return [];
   if (input.permission !== 'granted') return [];
+  if (!input.hidden && input.focused) return [];
 
   const out: Decision[] = [];
   for (const s of input.sessions) {
@@ -89,7 +90,7 @@ export function __evaluateForTests(input: EvaluateInput): Decision[] {
     // priority order.
     let kind: 'prompt' | 'completed' | null = null;
     if (isPrompt) kind = 'prompt';
-    else if (isCompleted && input.hidden) kind = 'completed';
+    else if (isCompleted) kind = 'completed';
     if (kind === null) continue;
 
     // Baseline filter: skip sessions whose state matches what we saw
@@ -202,6 +203,7 @@ export function useNotificationNotify() {
       const decisions = __evaluateForTests({
         sessions,
         hidden: document.hidden,
+        focused: document.hasFocus(),
         permission,
         enabled: enabledRef.current,
         baseline,

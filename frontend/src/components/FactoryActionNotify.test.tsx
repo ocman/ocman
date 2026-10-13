@@ -14,9 +14,11 @@ const item = (id: string, extra: Partial<InboxItem> = {}): InboxItem => ({ id: `
 const notifications = vi.fn();
 beforeEach(() => {
   useUiStore.setState({ notificationsEnabled: true });
+  vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+  vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
   vi.stubGlobal('Notification', Object.assign(function(...args: unknown[]) { notifications(...args); }, { permission: 'granted' }));
 });
-afterEach(() => { vi.unstubAllGlobals(); notifications.mockClear(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); notifications.mockClear(); });
 function Location() { const location = useLocation(); return <output aria-label="Route">{location.pathname}{location.search}</output>; }
 function setup(initial?: InboxItem[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -56,6 +58,20 @@ it('keeps in-app notifications when OS notifications are disabled and dismisses 
   expect(notifications).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
   expect(screen.queryByText('Factory action required')).not.toBeInTheDocument();
+});
+it('keeps in-app alerts but suppresses OS notifications while visible and focused', async () => {
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  const { update } = setup([]);
+  update([item('new')]);
+  expect(await screen.findByText('Factory action required')).toBeVisible();
+  expect(notifications).not.toHaveBeenCalled();
+});
+it('sends OS notifications while hidden even if focus is reported', () => {
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  const { update } = setup([]);
+  update([item('new')]);
+  expect(notifications).toHaveBeenCalledTimes(1);
 });
 it('routes remote actions to their Inbox and tolerates unavailable OS notifications', async () => {
   vi.stubGlobal('Notification', undefined);
