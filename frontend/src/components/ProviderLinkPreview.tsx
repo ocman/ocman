@@ -63,9 +63,9 @@ function PreviewCI({ preview, refreshChecks }: { preview: PreviewResult; refresh
   const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewChecks(url, sha, owner, signal, refresh), [url, sha, owner]);
   const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible && !!sha, loadChecks, refreshChecks);
   const label = checks.error ? 'Failed to load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
-  return <><span ref={ref} className="gh-preview__meta" aria-label={label} data-ci-state={checks.error ? 'unknown' : checks.state}>
+  return <span className="gh-preview__meta"><span ref={ref} className="gh-preview__meta" aria-label={label} data-ci-state={checks.error ? 'unknown' : checks.state}>
     <i className={`bi ${checks.error ? 'bi-exclamation-circle' : checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {label}
-  </span><PreviewPRStatus preview={preview} owner={owner} visible={visible} refresh={refreshChecks} /></>;
+  </span><PreviewPRStatus preview={preview} owner={owner} visible={visible} refresh={refreshChecks} /></span>;
 }
 
 function PreviewPRStatus({ preview, owner, visible, refresh }: { preview: PreviewResult; owner: string; visible: boolean; refresh?: boolean }) {
@@ -76,6 +76,7 @@ function PreviewPRStatus({ preview, owner, visible, refresh }: { preview: Previe
   const { mergeable, approved } = usePRMergeability({ host: new URL(url).host, repo: preview.id.split('#')[0], number: Number(preview.id.split('#')[1]), headSha: preview.headSha, updatedAt: preview.updatedAt ?? '', status }, '', owner, '', visible && supported, loadStatus, refresh);
   const mergeLabel = status === 'open' || status === 'draft' ? status === 'draft' || mergeable === false ? 'Not mergeable' : mergeable === true ? 'Mergeable' : undefined : undefined;
   return <span className="gh-preview__meta">
+    {(mergeLabel || approved === true) && <span aria-hidden="true">·</span>}
     {mergeLabel && <span>{mergeLabel}</span>}
     {mergeLabel && approved === true && ' · '}
     {approved === true && <span><i className="bi bi-check-lg" aria-hidden="true" /> Approved</span>}

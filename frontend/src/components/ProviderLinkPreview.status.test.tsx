@@ -22,6 +22,8 @@ it('shows sidebar mergeability and approval without another request', async () =
   render(<ProviderPreview preview={preview} providers={[]} />);
   expect(await screen.findByText('Not mergeable')).toBeInTheDocument();
   expect(screen.getByText('Approved')).toBeInTheDocument();
+  expect(screen.getByLabelText('All checks passed').parentElement).toBe(screen.getByText('Not mergeable').parentElement?.parentElement);
+  expect(screen.getByLabelText('All checks passed').parentElement).toHaveClass('gh-preview__meta');
   expect(fetch).not.toHaveBeenCalled();
 });
 
