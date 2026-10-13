@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // TestDescribeHelper runs in a separate process with the launcher's real env.
@@ -105,9 +107,9 @@ func helperExecutable(t *testing.T, dir, name, mode string) string {
 	path := filepath.Join(dir, name)
 	// Race-instrumented helpers otherwise spend one second sleeping on exit.
 	script := fmt.Sprintf("#!/bin/sh\nexport GORACE=atexit_sleep_ms=0\nexec %q -test.run=^TestDescribeHelper$ -- %q \"$@\" %q\n", exe, mode, path)
-	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	// The wrapper is a new executable too; WriteScript runs it once (exiting
+	// before the helper) so its first-exec assessment stays out of the deadline.
+	testutil.WriteScript(t, path, script)
 	return path
 }
 
