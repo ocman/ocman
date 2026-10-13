@@ -325,6 +325,7 @@ func (s *Server) startMCPListener() func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
+		_ = ln.Close() // Shutdown can run before Serve has registered the listener.
 	}
 }
 
