@@ -26,7 +26,7 @@ func TestCullClaudePreservesRunningTurnAndWakesOnSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	always := func(context.Context) (bool, error) { return true, nil }
-	stopped, err := p.CullIdleProject(t.Context(), e.repo, nil, always)
+	stopped, err := p.CullIdleProject(t.Context(), e.repo, always)
 	if err != nil || stopped {
 		t.Fatalf("culled running Claude: stopped=%v err=%v", stopped, err)
 	}
@@ -41,7 +41,7 @@ func TestCullClaudePreservesRunningTurnAndWakesOnSend(t *testing.T) {
 	if err != nil || len(roots) != 1 {
 		t.Fatalf("roots=%v err=%v", roots, err)
 	}
-	stopped, err = p.CullIdleProject(t.Context(), e.repo, nil, always)
+	stopped, err = p.CullIdleProject(t.Context(), e.repo, always)
 	if err != nil || !stopped {
 		t.Fatalf("idle Claude retained: stopped=%v err=%v", stopped, err)
 	}

@@ -121,7 +121,7 @@ func (m *Module) sweep(ctx context.Context, now time.Time) error {
 		}
 		for _, root := range roots {
 			key := state.Key{Platform: string(target.Platform.ID()), SessionID: root}
-			sessions, stamp, idle, err := m.eligible(ctx, target.Platform, root, false)
+			_, stamp, idle, err := m.eligible(ctx, target, root, false)
 			if err != nil {
 				log.WithError(err).WithField("project", root).Warn("idle projects: checking eligibility")
 				continue // An uncertain read resets the grace period.
@@ -137,12 +137,8 @@ func (m *Module) sweep(ctx context.Context, now time.Time) error {
 			if now.Sub(observed.since) < timeout {
 				continue
 			}
-			var directories []string
-			for _, session := range sessions {
-				directories = append(directories, session.Directory)
-			}
-			stopped, err := target.Runtime.CullIdleProject(ctx, root, directories, func(ctx context.Context) (bool, error) {
-				_, current, idle, err := m.eligible(ctx, target.Platform, root, true)
+			stopped, err := target.Runtime.CullIdleProject(ctx, root, func(ctx context.Context) (bool, error) {
+				_, current, idle, err := m.eligible(ctx, target, root, true)
 				return idle && current == stamp, err
 			})
 			if err != nil {
@@ -161,18 +157,44 @@ func active(status db.SessionStatus) bool {
 	return status == db.StatusBusy || status == db.StatusWaiting || status == db.StatusLimited
 }
 
-func (m *Module) eligible(ctx context.Context, platform platforms.Platform, root string, fresh bool) ([]db.Session, string, bool, error) {
+func (m *Module) eligible(ctx context.Context, target Target, root string, fresh bool) ([]db.Session, string, bool, error) {
+	platform := target.Platform
+	resolved := map[string]string{}
+	resolve := func(directory string) (string, error) {
+		if root, ok := resolved[directory]; ok {
+			return root, nil
+		}
+		root, err := target.Runtime.ProjectRoot(ctx, directory)
+		if err == nil {
+			resolved[directory] = root
+		}
+		return root, err
+	}
 	all, err := platform.Sessions(ctx, "", 0)
 	if err != nil {
 		return nil, "", false, err
 	}
 	var sessions []db.Session
 	for _, session := range all {
-		if state.ProjectRootForDirectory(session.Directory) != root {
+		owner, err := resolve(session.Directory)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if owner != root {
 			continue
 		}
-		if fresh {
-			detail, err := platform.Session(ctx, session.ID, 0, 0)
+		if reader, ok := platform.(platforms.LifecycleReader); fresh && ok {
+			lifecycle, err := reader.SessionLifecycle(ctx, session.ID)
+			if err != nil {
+				return nil, "", false, err
+			}
+			if lifecycle == nil {
+				return nil, "", false, nil
+			}
+			session.Status = lifecycle.Status
+			session.TimeUpdated = max(session.TimeUpdated, lifecycle.LatestMessageCreated)
+		} else if fresh {
+			detail, err := platform.Session(ctx, session.ID, 1, 0)
 			if err != nil {
 				return nil, "", false, err
 			}
@@ -205,7 +227,7 @@ func (m *Module) eligible(ctx context.Context, platform platforms.Platform, root
 	if err != nil {
 		return nil, "", false, err
 	}
-	if work, err := m.backgroundWork(ctx, root); err != nil || work {
+	if work, err := m.backgroundWork(ctx, root, resolve); err != nil || work {
 		return nil, "", false, err
 	}
 	var stamps []string
@@ -229,14 +251,20 @@ func (m *Module) eligible(ctx context.Context, platform platforms.Platform, root
 	return sessions, strings.Join(stamps, ";"), len(sessions) != 0, nil
 }
 
-func (m *Module) backgroundWork(ctx context.Context, root string) (bool, error) {
+func (m *Module) backgroundWork(ctx context.Context, root string, resolve func(string) (string, error)) (bool, error) {
 	runs, err := m.deps.Store.ListRunningRoutineRuns(ctx)
 	if err != nil {
 		return false, err
 	}
 	for _, run := range runs {
-		if state.NormalizeRemoteID(run.RemoteID) == state.LocalRemoteID && state.ProjectRootForDirectory(run.Directory) == root {
-			return true, nil
+		if state.NormalizeRemoteID(run.RemoteID) == state.LocalRemoteID {
+			owner, err := resolve(run.Directory)
+			if err != nil {
+				return false, err
+			}
+			if owner == root {
+				return true, nil
+			}
 		}
 	}
 	attempts, err := m.deps.Store.ListFactoryAttempts(ctx, "")
@@ -245,11 +273,15 @@ func (m *Module) backgroundWork(ctx context.Context, root string) (bool, error) 
 	}
 	for _, attempt := range attempts {
 		if attempt.Phase == "prepared" || attempt.Phase == "active" || attempt.Phase == "stopping" {
-			if state.ProjectRootForDirectory(attempt.FrozenPolicy.Repository) == root {
-				return true, nil
-			}
-			for _, directory := range attempt.FrozenPolicy.Projects {
-				if state.ProjectRootForDirectory(directory) == root {
+			for _, directory := range append([]string{attempt.FrozenPolicy.Repository}, attempt.FrozenPolicy.Projects...) {
+				if directory == "" {
+					continue
+				}
+				owner, err := resolve(directory)
+				if err != nil {
+					return false, err
+				}
+				if owner == root {
 					return true, nil
 				}
 			}

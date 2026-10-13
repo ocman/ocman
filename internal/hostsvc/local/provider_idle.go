@@ -2,11 +2,27 @@ package local
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"sync"
+	"time"
 
+	gitpkg "github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 )
+
+// ProviderRootForCleanup shares launch identity but never guesses after a
+// failed git probe. Launches outside repositories can still work without git.
+func ProviderRootForCleanup(ctx context.Context, directory string) (string, error) {
+	root, err := gitpkg.ResolveMainRepoRoot(ctx, directory)
+	if err == nil {
+		return root, nil
+	}
+	if !errors.Is(err, gitpkg.ErrNotARepo) {
+		return "", err
+	}
+	return ProviderRoot(ctx, directory)
+}
 
 func (m *ProviderManager) lockRoot(root string) func() {
 	m.mu.Lock()
@@ -37,13 +53,29 @@ func (m *ProviderManager) CullIdle(ctx context.Context, root string, check func(
 		return false, err
 	}
 	inst := &ocruntime.Instance{Endpoint: row.Endpoint, Kind: row.Kind, ID: row.RuntimeID, PID: row.PID, RepoRoot: root}
-	idle, err = m.Runtime.DrainIdle(ctx, inst)
-	if err != nil || !idle {
+	if err := m.Runtime.Probe(ctx, inst); err != nil {
 		return false, err
 	}
+	if !m.Runtime.Current(inst) {
+		return false, nil
+	}
+	token := rand.Text()
+	idle, err = m.Runtime.DrainIdle(ctx, inst, token)
+	if err != nil {
+		return false, errors.Join(err, m.resumeIdle(ctx, inst, token))
+	}
+	if !idle {
+		return false, nil
+	}
 	if err := m.Runtime.Stop(ctx, inst); err != nil {
-		return false, errors.Join(err, m.Runtime.Resume(ctx, inst))
+		return false, errors.Join(err, m.resumeIdle(ctx, inst, token))
 	}
 	detach()
 	return true, m.State.DeleteManagedProvider(ctx, m.Runtime.PlatformID, root)
+}
+
+func (m *ProviderManager) resumeIdle(ctx context.Context, inst *ocruntime.Instance, token string) error {
+	rollback, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return m.Runtime.Resume(rollback, inst, token)
 }

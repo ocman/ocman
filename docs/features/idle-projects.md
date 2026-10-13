@@ -19,12 +19,13 @@ held for the configured duration. New activity, reopening a normal session,
 and uncertain reads reset the timer. Timers also restart when ocman restarts.
 Sessions, transcripts, branches, and worktrees remain available.
 
-This applies to **managed OpenCode v1 project instances** and **Claude project
-supervisors**. OpenCode v2 uses one machine-wide server and is excluded.
+This applies to **Claude project supervisors**. OpenCode v1 is excluded because
+it cannot atomically reject new turns while draining an idle instance. OpenCode
+v2 uses one machine-wide server and is also excluded.
 Instances started outside ocman are not stopped. Configure each remote
 machine's timeout in that machine's own ocman Settings page.
 
 **Routines wake stopped projects automatically**, whether they create a fresh
 session, reuse their first session, or continue a selected existing session.
 A future scheduled run does not prevent culling; a claimed or active run does.
-Sending to a stopped project also wakes its managed instance.
+Sending to a stopped Claude project also wakes its managed supervisor.

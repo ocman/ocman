@@ -36,12 +36,20 @@ func (s *Supervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/hello":
 		hello := s.backend.Hello
+		s.mu.Lock()
+		hello.IdleDrainToken = s.idleDrainToken
+		s.mu.Unlock()
 		hello.Capabilities.Replay = true
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(hello)
 	case r.Method == http.MethodGet && r.URL.Path == "/events":
 		s.events(w, r)
 	case r.Method == http.MethodPost && (r.URL.Path == "/drain" || r.URL.Path == "/drain-idle"):
+		token := r.URL.Query().Get("token")
+		if r.URL.Path == "/drain-idle" && (token == "" || len(token) > 128) {
+			wireError(w, 400, fmt.Errorf("idle drain token is required and must be at most 128 bytes"))
+			return
+		}
 		s.mu.Lock()
 		idle := s.admitted == 0
 		for _, p := range s.sessions {
@@ -49,14 +57,21 @@ func (s *Supervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				idle = false
 			}
 		}
-		if idle || r.URL.Path == "/drain" {
+		if r.URL.Path == "/drain" {
 			s.draining = true
+			s.idleDrainToken = "" // Replacement supersedes any cleanup pause.
+		} else if s.draining {
+			idle = idle && s.idleDrainToken == token
+		} else if idle {
+			s.draining, s.idleDrainToken = true, token
 		}
 		s.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(providerprotocol.DrainState{Idle: idle})
 	case r.Method == http.MethodPost && r.URL.Path == "/resume":
 		s.mu.Lock()
-		s.draining = false
+		if token := r.URL.Query().Get("token"); token != "" && token == s.idleDrainToken {
+			s.draining, s.idleDrainToken = false, ""
+		}
 		s.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(providerprotocol.DrainState{})
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/snapshot"):

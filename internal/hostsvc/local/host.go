@@ -79,8 +79,7 @@ type Host struct {
 	runtime ocruntime.Runtime
 	store   ManagedStore
 	// sf collapses concurrent runtime operations for the same repo root.
-	sf           singleflight.Group
-	projectLocks sync.Map
+	sf singleflight.Group
 	// background tracks detached worktree naming so tests can wait for it.
 	background sync.WaitGroup
 	// instances retains cleanup handles; only successful probes authorize routing.

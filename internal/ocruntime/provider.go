@@ -148,13 +148,29 @@ func (r *BackendRuntime) Drain(ctx context.Context, inst *Instance) (bool, error
 
 // DrainIdle blocks new turns only if the supervisor is already idle.
 // Older supervisors reject this route rather than being drained while busy.
-func (r *BackendRuntime) DrainIdle(ctx context.Context, inst *Instance) (bool, error) {
-	return r.drain(ctx, inst, "/drain-idle")
+func (r *BackendRuntime) DrainIdle(ctx context.Context, inst *Instance, token string) (bool, error) {
+	return r.drain(ctx, inst, "/drain-idle?token="+url.QueryEscape(token))
 }
 
-func (r *BackendRuntime) Resume(ctx context.Context, inst *Instance) error {
+func (r *BackendRuntime) Resume(ctx context.Context, inst *Instance, token string) error {
 	var result providerprotocol.DrainState
-	return providerCall(ctx, inst, "POST", "/resume", &result)
+	return providerCall(ctx, inst, "POST", "/resume?token="+url.QueryEscape(token), &result)
+}
+
+// ResumeIdleDrain recovers only a cleanup-owned pause, never a replacement
+// drain. Called under the project lock before reusing a surviving supervisor.
+func (r *BackendRuntime) ResumeIdleDrain(ctx context.Context, inst *Instance) error {
+	var hello providerprotocol.Hello
+	if err := providerCall(ctx, inst, "GET", "/hello", &hello); err != nil {
+		return err
+	}
+	if hello.IdleDrainToken == "" || !r.Current(inst) || providerprotocol.CheckVersion(hello.ProtocolVersion) != nil {
+		return nil
+	}
+	if hello.PlatformID != r.PlatformID {
+		return ErrProbeUnreachable
+	}
+	return r.Resume(ctx, inst, hello.IdleDrainToken)
 }
 
 func (r *BackendRuntime) drain(ctx context.Context, inst *Instance, path string) (bool, error) {

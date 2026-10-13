@@ -3,7 +3,6 @@ package server
 import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/idleprojects"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 func (s *Server) idleProjectsModule() *idleprojects.Module {
@@ -20,11 +19,6 @@ func (s *Server) idleProjectTargets() []idleprojects.Target {
 		return nil
 	}
 	var targets []idleprojects.Target
-	if platform, ok := s.registry.Get(platforms.OpenCodeID); ok {
-		if runtime, ok := s.router().Local().(hostsvc.IdleProjectRuntime); ok {
-			targets = append(targets, idleprojects.Target{Platform: platform, Runtime: runtime})
-		}
-	}
 	for _, platform := range s.registry.Platforms() {
 		if runtime, ok := platform.(hostsvc.IdleProjectRuntime); ok {
 			targets = append(targets, idleprojects.Target{Platform: platform, Runtime: runtime})

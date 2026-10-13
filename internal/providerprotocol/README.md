@@ -52,8 +52,8 @@ prompts to the user.
 | GET /sessions/{id}/snapshot | `Snapshot`, current v1 upserts plus cursor and single-use lease |
 | POST /sessions/{id}/ack | `TurnAck`, exact completed `session.idle` sequence; 204 |
 | POST /drain | `DrainState`, stops new turns before reporting whether all sessions are idle |
-| POST /drain-idle | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
-| POST /resume | `DrainState`, restores admission if an idle-cull stop failed |
+| POST /drain-idle?token= | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
+| POST /resume?token= | `DrainState`, restores admission only for the matching cleanup pause |
 | GET /account | `Account` |
 | POST /hooks | `HookEvent`, status of a session started outside ocman; 204 |
 
@@ -67,9 +67,13 @@ not record yet is 503 with code `reply_unrecorded`
 Composer gates creation and sending; rename, native queue and account have
 additional protocol capability flags. Browsing and lifecycle reads are required.
 
-Idle culling uses the optional `/drain-idle` route rather than `/drain`, so a
-turn racing a cleanup is never interrupted or left draining. Older supervisors
-that reject the route stay running until they are replaced normally.
+Idle culling uses the optional `/drain-idle` route rather than `/drain`. A random
+token scopes each cleanup pause and its rollback; replacement `/drain` clears
+the token, so rollback cannot undo replacement. `/hello` exposes an optional
+`idleDrainToken` while paused, letting the owner recover interrupted cleanup on
+the next Ensure, including after a dashboard restart or lost response. Rollback
+uses a bounded context independent of the cancelled cleanup request. Older
+supervisors that reject idle draining stay running until replaced normally.
 
 SSE frames carry `id: <positive uint64>` and `data: <Event JSON>`. `after` is
 exclusive and defaults to 0. The sequence orders all sessions on this socket,

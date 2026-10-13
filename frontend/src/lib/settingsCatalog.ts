@@ -32,8 +32,8 @@ export const SETTINGS = {
   'idle-project-timeout': {
     group: 'idle-projects',
     title: 'Stop idle project instances after',
-    description: 'Minutes of inactivity after all normal sessions are archived. 0 means Never (the default). Running sessions, pending prompts, queued messages, and active routines or Factory work keep the instance alive. Routines wake stopped projects automatically. OpenCode v2 is excluded. Applies to this machine; configure remote instances on their own Settings page.',
-    example: '30 stops an idle OpenCode v1 instance or Claude supervisor after half an hour, keeping its sessions and worktrees.',
+    description: 'Minutes of inactivity after all normal sessions are archived. 0 means Never (the default). Running sessions, pending prompts, queued messages, and active routines or Factory work keep the instance alive. Routines wake stopped projects automatically. Applies to Claude supervisors on this machine; OpenCode is excluded. Configure remote instances on their own Settings page.',
+    example: '30 stops an idle Claude supervisor after half an hour, keeping its sessions and worktrees.',
     keywords: 'cull cleanup timeout tmux supervisor resources',
   },
   'reviewer-endpoint': {

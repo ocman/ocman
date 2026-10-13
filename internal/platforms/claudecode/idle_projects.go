@@ -1,6 +1,13 @@
 package claudecode
 
-import "context"
+import (
+	"context"
+	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
+)
+
+func (p *claudePlatform) ProjectRoot(ctx context.Context, directory string) (string, error) {
+	return local.ProviderRootForCleanup(ctx, directory)
+}
 
 func (p *claudePlatform) ManagedIdleProjects(ctx context.Context) ([]string, error) {
 	if p.projects.mgr.State == nil {
@@ -9,7 +16,7 @@ func (p *claudePlatform) ManagedIdleProjects(ctx context.Context) ([]string, err
 	return p.projects.mgr.State.ListManagedProviders(ctx, p.projects.mgr.Runtime.PlatformID)
 }
 
-func (p *claudePlatform) CullIdleProject(ctx context.Context, root string, _ []string, check func(context.Context) (bool, error)) (bool, error) {
+func (p *claudePlatform) CullIdleProject(ctx context.Context, root string, check func(context.Context) (bool, error)) (bool, error) {
 	return p.projects.mgr.CullIdle(ctx, root, check, func() {
 		c := p.projects
 		c.mu.Lock()

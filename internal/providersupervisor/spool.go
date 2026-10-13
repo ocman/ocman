@@ -37,15 +37,16 @@ type cursorLease struct {
 // Supervisor serializes snapshot reads with publishing. Provider state must be
 // updated only through Publish's apply callback, so snapshots cannot race deltas.
 type Supervisor struct {
-	mu       sync.Mutex
-	dir      string
-	seq      uint64
-	sessions map[string]*sessionSpool
-	leases   map[string]cursorLease
-	changed  chan struct{}
-	draining bool
-	admitted int
-	backend  Backend
+	mu             sync.Mutex
+	dir            string
+	seq            uint64
+	sessions       map[string]*sessionSpool
+	leases         map[string]cursorLease
+	changed        chan struct{}
+	draining       bool
+	idleDrainToken string
+	admitted       int
+	backend        Backend
 }
 
 func New(dir string, backend Backend) (*Supervisor, error) {

@@ -39,16 +39,23 @@ func (p *fakePlatform) Session(_ context.Context, id string, _, _ int) (*platfor
 }
 
 type fakeRuntime struct {
-	roots       []string
-	stops       int
-	err         error
-	before      func()
-	directories []string
+	roots        []string
+	stops        int
+	err          error
+	before       func()
+	membership   map[string]string
+	resolveError error
+}
+
+func (r *fakeRuntime) ProjectRoot(_ context.Context, directory string) (string, error) {
+	if root, ok := r.membership[directory]; ok {
+		return root, r.resolveError
+	}
+	return state.ProjectRootForDirectory(directory), r.resolveError
 }
 
 func (r *fakeRuntime) ManagedIdleProjects(context.Context) ([]string, error) { return r.roots, r.err }
-func (r *fakeRuntime) CullIdleProject(ctx context.Context, _ string, dirs []string, check func(context.Context) (bool, error)) (bool, error) {
-	r.directories = dirs
+func (r *fakeRuntime) CullIdleProject(ctx context.Context, _ string, check func(context.Context) (bool, error)) (bool, error) {
 	if r.before != nil {
 		r.before()
 	}
@@ -140,7 +147,7 @@ func TestEligibility(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m, p, _ := setup(t)
 			tc.change(t, m, p)
-			_, _, idle, err := m.eligible(t.Context(), p, "/repo", false)
+			_, _, idle, err := m.eligible(t.Context(), m.deps.Targets()[0], "/repo", false)
 			if err != nil || idle != tc.want {
 				t.Fatalf("idle=%v err=%v", idle, err)
 			}

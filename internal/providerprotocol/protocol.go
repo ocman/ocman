@@ -36,6 +36,8 @@ type Hello struct {
 	PlatformID   string       `json:"providerId"`
 	CLIVersion   string       `json:"cliVersion"`
 	Capabilities Capabilities `json:"capabilities"`
+	// IdleDrainToken lets a new owner recover an interrupted cleanup pause.
+	IdleDrainToken string `json:"idleDrainToken,omitempty"`
 }
 
 type Capabilities struct {

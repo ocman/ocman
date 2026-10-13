@@ -98,6 +98,9 @@ func (m *ProviderManager) ensureRoot(ctx context.Context, root string) (*hostsvc
 		inst := &ocruntime.Instance{Endpoint: row.Endpoint, Kind: row.Kind, ID: row.RuntimeID, PID: row.PID, RepoRoot: root}
 		err = r.Probe(ctx, inst)
 		if err == nil && r.Current(inst) {
+			if err := r.ResumeIdleDrain(ctx, inst); err != nil {
+				return nil, err
+			}
 			return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: root, Runtime: *inst}, nil
 		}
 		// An out-of-range protocol or an earlier launch configuration (another

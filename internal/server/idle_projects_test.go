@@ -11,14 +11,24 @@ import (
 
 type idleProvider struct{ platforms.Platform }
 
+type nonIdlePlatform struct{ platforms.Platform }
+
+func (nonIdlePlatform) ID() platforms.ID { return platforms.OpenCodeID }
+
+func (idleProvider) ProjectRoot(context.Context, string) (string, error) { return "/repo", nil }
+
 func (idleProvider) ID() platforms.ID                                      { return "idle-provider" }
 func (idleProvider) ManagedIdleProjects(context.Context) ([]string, error) { return nil, nil }
-func (idleProvider) CullIdleProject(context.Context, string, []string, func(context.Context) (bool, error)) (bool, error) {
+func (idleProvider) CullIdleProject(context.Context, string, func(context.Context) (bool, error)) (bool, error) {
 	return false, nil
 }
 
 func TestIdleProjectsWiringAndGuards(t *testing.T) {
 	srv, registry := newSessionsTestServer(t)
+	registry.Register(nonIdlePlatform{})
+	if targets := srv.idleProjectTargets(); len(targets) != 0 {
+		t.Fatal("OpenCode is eligible for unsafe idle culling")
+	}
 	registry.Register(idleProvider{})
 	targets := srv.idleProjectTargets()
 	if len(targets) != 1 || targets[0].Platform.ID() != "idle-provider" {
