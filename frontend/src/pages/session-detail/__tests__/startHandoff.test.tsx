@@ -12,7 +12,8 @@ describe('new-session handoff', () => {
   it('keeps a launched session writable while the first detail fetch is pending', async () => {
     useApiStore.getState().seedNewSession('child', '/repo', 'opencode');
     const cached = useApiStore.getState().sessionCache.get('child')!;
-    startHandoffs.set('child', { prompt: 'Fix login', steps: { opencode: 'done', session: 'done', prompt: 'done' } });
+    const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
+    startHandoffs.set('child', { prompt: 'Fix login', images, steps: { opencode: 'done', session: 'done', prompt: 'done' } });
     renderSessionPage({
       sessionId: 'child',
       realAssistantThread: true,
@@ -22,6 +23,7 @@ describe('new-session handoff', () => {
       storeOverrides: { getCachedSession: () => cached },
     });
     expect(await screen.findByText('Fix login')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Image' })).toHaveAttribute('src', images[0].url);
     await waitFor(() => expect(screen.getByRole('textbox')).not.toBeDisabled());
     expect(screen.queryByRole('button', { name: /launch/i })).not.toBeInTheDocument();
   });

@@ -292,6 +292,7 @@ vi.mock('../../../lib/useToastNotify', () => ({
 vi.mock('../../../components/AssistantThread', async () => {
   const real = await vi.importActual<typeof import('../../../components/AssistantThread')>('../../../components/AssistantThread');
   return {
+    ImageDisplay: real.ImageDisplay,
     AssistantThread: (props: React.ComponentProps<typeof real.AssistantThread>) => {
       if (mockState.realAssistantThread) return <real.AssistantThread {...props} />;
       const { composer, footer, hasMore, scrollToMessageId, scrollToMessageTick, scrollToToolCall } = props;

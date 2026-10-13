@@ -3,6 +3,8 @@
 // Steps that run in parallel (OpenCode and the worktree) spin together.
 
 import type { StartStep, StartStepState } from '../../lib/useGlobalEvents';
+import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
+import { ImageDisplay } from '../../components/AssistantThread';
 import '../../components/LaunchProgressCard.css';
 
 export type StartSteps = Partial<Record<StartStep, StartStepState>>;
@@ -21,12 +23,14 @@ function Icon({ state }: { state: StartStepState }) {
   return <span className="oc-launch-icon spinner" aria-hidden />;
 }
 
-export function StartProgress({ prompt, steps }: { prompt: string; steps: StartSteps }) {
+export function StartProgress({ prompt, images, steps }: { prompt: string; images?: AttachedImage[]; steps: StartSteps }) {
   const shown = ORDER.filter((id) => steps[id]);
   return (
     <>
       <div className="oc-msg oc-msg-user" data-testid="pending-prompt">
-        <div className="oc-msg-body oc-md">{prompt}</div>
+        <div className="oc-msg-body oc-md">{prompt}
+          {images?.map((image, index) => <ImageDisplay key={index} image={image.url} />)}
+        </div>
       </div>
       <ul className="oc-launch-steps oc-start-steps" role="status" aria-live="polite" data-testid="start-progress">
         {shown.length === 0 && (

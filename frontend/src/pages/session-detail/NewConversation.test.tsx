@@ -538,6 +538,23 @@ describe('NewConversation', () => {
     expect(screen.getByTestId('pending-prompt')).toHaveTextContent('second');
   });
 
+  it.each(['Fix login', ''])('shows screenshots with the temporary prompt %j and retains them on navigation', async (text) => {
+    let finish!: (value: unknown) => void;
+    mocks.start.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const view = mount();
+    await ready();
+    const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
+    let sent!: Promise<void>;
+    act(() => { sent = Promise.resolve(composer.onSend!(text, images)); });
+    expect(screen.getByRole('img', { name: 'Image' })).toHaveAttribute('src', images[0].url);
+    await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+    view.unmount();
+    mount();
+    expect(screen.getByRole('img', { name: 'Image' })).toHaveAttribute('src', images[0].url);
+    await act(async () => { finish({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/wt', firstMessageSent: true }); await sent; });
+    expect(startHandoffs.get('child')).toMatchObject({ prompt: text, images });
+  });
+
   it('shows the prompt as the first message with the server-reported steps until the session exists', async () => {
     let finish!: (value: unknown) => void;
     mocks.start.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));

@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import type { Message, Part } from '../../lib/api';
 import { isImageMime, parsePart } from '../../lib/convertMessages';
 import type { StartSteps } from './StartProgress';
+import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
 
-export interface StartHandoff { prompt: string; steps: StartSteps }
+export interface StartHandoff { prompt: string; images?: AttachedImage[]; steps: StartSteps }
 
 // A delivered first prompt, keyed by the new session id, so the session view
 // keeps showing it instead of an empty thread until the first message lands.

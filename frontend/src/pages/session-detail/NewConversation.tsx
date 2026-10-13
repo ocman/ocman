@@ -154,7 +154,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   // The submitted prompt, shown as the conversation's first message while
   // the session starts. Keyed by route so a machine switch mid-start hides it.
   const routeKey = routeKeyOf({ remoteId, directory, platform: params.platform, title });
-  const [pending, setPending] = useState<{ key: string; text: string; startId: string; steps: StartSteps }>();
+  const [pending, setPending] = useState<{ key: string; text: string; images?: AttachedImage[]; startId: string; steps: StartSteps }>();
   const inFlight = useRef<number | undefined>(undefined);
   const active = useRef(false);
   const generation = useRef(0);
@@ -246,7 +246,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   // Create the session at the target, then either the server has sent the
   // prompt or the client runs `execute` on the new session. Failures stay
   // retryable on that session, independently of the next composer draft.
-  const start = useCallback(async (text: string, build: (ready: Ready) => Submission) => {
+  const start = useCallback(async (text: string, build: (ready: Ready) => Submission, images?: AttachedImage[]) => {
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
     let revision: number | null = null;
@@ -256,7 +256,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     // The server reports each step (instance, worktree, session, prompt)
     // under the pending prompt; it all goes away with this page.
     const startId = randomId();
-    setPending({ key: routeKey, text, startId, steps: {} });
+    setPending({ key: routeKey, text, images, startId, steps: {} });
     let steps: StartSteps = {};
     // Subscribed before the request so the first step can't be missed.
     const unsubscribe = onSessionStartProgress((id, step, state) => {
@@ -297,7 +297,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
         await startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
       seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
-      if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, steps });
+      if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, images, steps });
       await completeConversationStart(draftId, { sessionId: res.sessionId, platform: res.platform, remoteId: res.remoteId, directory: res.directory }, submitted, text);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -324,7 +324,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       const { model, agent, reasoning } = pick(r);
       const send = { message: text, images, model, agent: agent || undefined, reasoning: reasoning || undefined };
       return files?.length ? { model, execute: sendFirstFiles(send, files) } : { model, send };
-    });
+    }, images);
   };
 
   const onCommand = (command: string, args: string) => {
@@ -369,8 +369,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     // to the bottom with the thread's padding.
     <div className="oc-thread" data-testid="new-conversation">
       <div className="oc-thread-viewport">
-        {pending?.key === routeKey && <StartProgress prompt={pending.text} steps={pending.steps} />}
-        {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress prompt={draftStart.text} steps={{}} />}
+        {pending?.key === routeKey && <StartProgress prompt={pending.text} images={pending.images} steps={pending.steps} />}
+        {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
       </div>
       <div className="oc-viewport-footer" data-testid="conversation-composer">
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
