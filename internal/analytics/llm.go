@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"context"
@@ -126,12 +126,12 @@ const llmMetricsScanInterval = 30 * time.Second
 // emits OTel metrics for each. The high-water mark starts at the
 // current max message time so only messages arriving after ocman
 // starts are counted (avoids a counter spike on restart).
-func (s *Server) runLLMMetricsLoop(ctx context.Context) {
-	if !telemetry.Enabled() || s.db == nil {
+func (m *Module) runLLMMetricsLoop(ctx context.Context) {
+	if !telemetry.Enabled() || m.deps.DB == nil {
 		return
 	}
 
-	m, err := newLLMMetrics(telemetry.Meter())
+	metrics, err := newLLMMetrics(telemetry.Meter())
 	if err != nil {
 		log.WithError(err).Warn("failed to create LLM metrics instruments")
 		return
@@ -139,7 +139,7 @@ func (s *Server) runLLMMetricsLoop(ctx context.Context) {
 
 	// Initialise high-water mark to the current max so we don't
 	// replay the entire history on startup.
-	hwm, err := s.db.GetMaxMessageTime(ctx)
+	hwm, err := m.deps.DB.GetMaxMessageTime(ctx)
 	if err != nil {
 		log.WithError(err).Warn("LLM metrics: failed to get initial high-water mark")
 		return
@@ -153,27 +153,27 @@ func (s *Server) runLLMMetricsLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			runWithRecover("llm-metrics", func() { s.runLLMMetricsTick(ctx, m, &hwm) })
+			runWithRecover("llm-metrics", func() { m.runLLMMetricsTick(ctx, metrics, &hwm) })
 		}
 	}
 }
 
-func (s *Server) runLLMMetricsTick(ctx context.Context, m *llmMetrics, hwm *int64) {
+func (m *Module) runLLMMetricsTick(ctx context.Context, metrics *llmMetrics, hwm *int64) {
 	// Telemetry must keep collecting when no ocman metrics page is visible;
 	// external dashboards do not hold browser activity leases.
-	getMessages := s.getNewAssistantMessages
+	getMessages := m.getNewAssistantMessages
 	if getMessages == nil {
-		getMessages = s.db.GetNewAssistantMessages
+		getMessages = m.deps.DB.GetNewAssistantMessages
 	}
 	rows, newHWM, err := getMessages(ctx, *hwm)
 	if err != nil {
 		log.WithError(err).Warn("LLM metrics: scan failed")
 		return
 	}
-	if m != nil {
+	if metrics != nil {
 		pt := pricing.Load()
 		for _, row := range rows {
-			m.record(ctx, row, pt)
+			metrics.record(ctx, row, pt)
 		}
 	}
 	*hwm = newHWM

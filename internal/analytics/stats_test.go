@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 
 // collectStatsMetrics registers the stats gauges on a test MeterProvider,
 // triggers a collection, and returns the collected metrics keyed by name.
-func collectStatsMetrics(t *testing.T, srv *Server) map[string]metricdata.Metrics {
+func collectStatsMetrics(t *testing.T, srv *Module) map[string]metricdata.Metrics {
 	t.Helper()
 
 	reader := metric.NewManualReader()
@@ -72,7 +72,7 @@ func gaugeValue(t *testing.T, metrics map[string]metricdata.Metrics, name string
 }
 
 func TestStatsMetrics_WithDB(t *testing.T) {
-	srv := testServer(t)
+	srv := newFixture(t).Module
 	srv.refreshStats(context.Background())
 	metrics := collectStatsMetrics(t, srv)
 
@@ -102,7 +102,7 @@ func TestStatsMetrics_WithDB(t *testing.T) {
 func TestStatsMetrics_NilDB(t *testing.T) {
 	// When the OpenCode DB is nil (e.g. only claude-code enabled),
 	// registration should succeed but the callback should be a no-op.
-	srv := &Server{}
+	srv := newTestModule(Deps{})
 
 	reader := metric.NewManualReader()
 	provider := metric.NewMeterProvider(metric.WithReader(reader))
@@ -122,7 +122,7 @@ func TestStatsMetrics_NilDB(t *testing.T) {
 // collections must still report the computed values, proving the export path
 // no longer runs GetStats (finding: 120 mirror syncs per hour came from here).
 func TestStatsMetricsCallbackDoesNotQueryDB(t *testing.T) {
-	srv := testServer(t)
+	srv := newFixture(t).Module
 	var calls atomic.Int64
 	srv.getStats = func(context.Context) (*db.Stats, error) {
 		calls.Add(1)
@@ -135,7 +135,7 @@ func TestStatsMetricsCallbackDoesNotQueryDB(t *testing.T) {
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("refresh calls = %d, want 1", got)
 	}
-	if err := srv.db.Close(); err != nil {
+	if err := srv.deps.DB.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,7 +168,7 @@ func TestStatsMetricsCallbackDoesNotQueryDB(t *testing.T) {
 // TestStatsMetricsObservesNothingBeforeFirstSuccess: until the first
 // successful computation the gauges report nothing.
 func TestStatsMetricsObservesNothingBeforeFirstSuccess(t *testing.T) {
-	srv := testServer(t)
+	srv := newFixture(t).Module
 	srv.getStats = func(context.Context) (*db.Stats, error) {
 		return nil, errors.New("stats source down")
 	}
@@ -192,7 +192,7 @@ func TestStatsMetricsObservesNothingBeforeFirstSuccess(t *testing.T) {
 // interval, keeps last good values across a failure, and returns when the
 // server context is cancelled (no goroutine left behind).
 func TestStatsMetricsRefreshCadence(t *testing.T) {
-	srv := testServer(t)
+	srv := newFixture(t).Module
 	var computed atomic.Int64
 	var failing atomic.Bool
 	failed := make(chan struct{}, 1)
@@ -276,7 +276,7 @@ func findGauge(rm metricdata.ResourceMetrics, name string) float64 {
 }
 
 func TestStatsMetricsDisabledAndUnregister(t *testing.T) {
-	srv := testServer(t)
+	srv := newFixture(t).Module
 	var calls atomic.Int64
 	srv.getStats = func(ctx context.Context) (*db.Stats, error) {
 		calls.Add(1)

@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 const (
@@ -99,13 +101,13 @@ func (c *subscriptionUsageCache) get(ctx context.Context, client subscriptionUsa
 	return usage, nil
 }
 
-func (s *Server) handleSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
-	usage, err := s.subscriptionUsageCache.get(r.Context(), s.subscriptionUsage)
+func (m *Module) handleSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
+	usage, err := m.subscriptionCache.get(r.Context(), m.subscription)
 	if err != nil {
-		serverError(w, "failed to read subscription usage", err)
+		httpx.ServerError(w, "failed to read subscription usage", err)
 		return
 	}
-	writeJSON(w, usage)
+	httpx.WriteJSON(w, usage)
 }
 
 func fetchSubscriptionUsage(ctx context.Context, client subscriptionUsageClient) (subscriptionUsageResponse, error) {

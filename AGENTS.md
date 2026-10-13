@@ -473,6 +473,19 @@ handlers don't bypass the `Host` seam). User-facing docs:
   disconnected remote fails closed via the server's `resolveOwner`);
   client listing and `switch` act on this machine's tmux, since a client
   is a local TTY. `scripts/check-host-helpers.sh` scans it too.
+- `internal/analytics/` — module: the Stats/Usage reads (`/api/stats`,
+  `/api/metrics*`, `/api/metric-logs`, `/api/analytics/*`, `/api/activity`,
+  `/api/models`, `/api/hourly*`, `/api/permission-stats`, `/api/cost/calc`),
+  `/api/ui-usage` recording, localhost-only `/api/subscription-usage` (reads
+  OpenCode's `auth.json` OAuth tokens, one-minute cache; tokens never reach
+  the response), and the workers its `Run` joins: hourly database-size samples,
+  the `ocman.stats.*` gauges (refreshed only once a collection asks) and the
+  `ocman.llm.*` scanner (only with telemetry on). Queries stay in
+  `internal/db`/`internal/state`. Core keeps the analytics mirror sync
+  (`main.go`), the session snapshot, client-activity demand leases,
+  `/api/system/stats` and its own HTTP/SSE/auto-archive/projects-index
+  instruments (`internal/server/metrics.go`). Database maintenance is
+  `internal/ocmaint`, not this module.
 - `internal/ocruntime/` — runtime-neutral managed-opencode lifecycle
   (#376). A `Runtime` interface (`Launch`/`Probe`/`Stop`) abstracts how a
   project's opencode instance is hosted; the native-tmux implementation

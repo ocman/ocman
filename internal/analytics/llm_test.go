@@ -1,8 +1,8 @@
-package server
+package analytics
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -110,64 +110,60 @@ func TestLLMMetricsLoopDisabled(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	srv := testServer(t)
-	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"metrics"}, TTLMS: 45_000}); err != nil {
-		t.Fatal(err)
-	}
+	m := newFixture(t).Module
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	srv.runLLMMetricsLoop(ctx)
+	m.runLLMMetricsLoop(ctx)
 	if ctx.Err() != nil {
 		t.Fatal("disabled telemetry kept the LLM scanner running until cancellation")
 	}
 }
 
-func TestLLMMetricsTickWithoutDemand(t *testing.T) {
-	for _, hiddenClient := range []bool{false, true} {
-		t.Run(fmt.Sprintf("hidden-client=%t", hiddenClient), func(t *testing.T) {
-			srv := New(nil, nil, "", nil, nil)
-			if hiddenClient {
-				if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: false, Scopes: []string{"metrics"}, TTLMS: 45_000}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			reader := metric.NewManualReader()
-			provider := metric.NewMeterProvider(metric.WithReader(reader))
-			t.Cleanup(func() { provider.Shutdown(context.Background()) })
-			m, err := newLLMMetrics(provider.Meter("test"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			calls := 0
-			srv.getNewAssistantMessages = func(_ context.Context, since int64) ([]db.LLMMessageRow, int64, error) {
-				calls++
-				if since == 2 {
-					return nil, since, nil
-				}
-				return []db.LLMMessageRow{{Model: "test", SessionID: "session", OutputTokens: 50}}, 2, nil
-			}
-			hwm := int64(1)
-			srv.runLLMMetricsTick(context.Background(), m, &hwm)
-			srv.runLLMMetricsTick(context.Background(), m, &hwm)
-			if calls != 2 || hwm != 2 {
-				t.Fatalf("tick without demand: calls=%d hwm=%d, want 2 and 2", calls, hwm)
-			}
-			var rm metricdata.ResourceMetrics
-			if err := reader.Collect(context.Background(), &rm); err != nil {
-				t.Fatal(err)
-			}
-			metrics := make(map[string]metricdata.Metrics)
-			for _, scope := range rm.ScopeMetrics {
-				for _, instrument := range scope.Metrics {
-					metrics[instrument.Name] = instrument
-				}
-			}
-			if _, ok := metrics["ocman.llm.requests"]; !ok {
-				t.Fatal("LLM requests not emitted without UI demand")
-			}
-			assertInt64Sum(t, metrics, "ocman.llm.requests", 1)
-			assertInt64Sum(t, metrics, "ocman.llm.tokens.output", 50)
-		})
+// The scanner feeds external dashboards, so it never waits for a visible
+// ocman page: the module has no access to browser demand at all.
+func TestLLMMetricsTick(t *testing.T) {
+	m := newTestModule(Deps{})
+	reader := metric.NewManualReader()
+	provider := metric.NewMeterProvider(metric.WithReader(reader))
+	t.Cleanup(func() { provider.Shutdown(context.Background()) })
+	metrics, err := newLLMMetrics(provider.Meter("test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	m.getNewAssistantMessages = func(_ context.Context, since int64) ([]db.LLMMessageRow, int64, error) {
+		calls++
+		if since == 2 {
+			return nil, since, nil
+		}
+		return []db.LLMMessageRow{{Model: "test", SessionID: "session", OutputTokens: 50}}, 2, nil
+	}
+	hwm := int64(1)
+	m.runLLMMetricsTick(context.Background(), metrics, &hwm)
+	m.runLLMMetricsTick(context.Background(), metrics, &hwm)
+	if calls != 2 || hwm != 2 {
+		t.Fatalf("calls=%d hwm=%d, want 2 and 2", calls, hwm)
+	}
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatal(err)
+	}
+	collected := make(map[string]metricdata.Metrics)
+	for _, scope := range rm.ScopeMetrics {
+		for _, instrument := range scope.Metrics {
+			collected[instrument.Name] = instrument
+		}
+	}
+	assertInt64Sum(t, collected, "ocman.llm.requests", 1)
+	assertInt64Sum(t, collected, "ocman.llm.tokens.output", 50)
+
+	// A failed scan keeps the high-water mark.
+	m.getNewAssistantMessages = func(context.Context, int64) ([]db.LLMMessageRow, int64, error) {
+		return nil, 99, errors.New("scan failed")
+	}
+	m.runLLMMetricsTick(context.Background(), metrics, &hwm)
+	if hwm != 2 {
+		t.Fatalf("hwm after a failed scan = %d, want 2", hwm)
 	}
 }
 

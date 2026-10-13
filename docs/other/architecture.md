@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -195,6 +195,7 @@ flowchart TD
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
+    Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
     Registry -->|session detail, summary, lifecycle + usage reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
     Router -->|streamed attachment writes on owner| RP
@@ -230,7 +231,12 @@ flowchart TD
   wake-up react to the typed, synchronous `module.Bus` `SessionIdle` event.
   Factory launches (`module.Launcher`) once the MCP listener is up, because
   its sessions verify their ocman MCP connection, and closes (`module.Closer`)
-  after the HTTP and MCP listeners stop.
+  after the HTTP and MCP listeners stop. Analytics (`internal/analytics`) owns
+  the Stats/Usage endpoints, UI-usage recording, subscription usage, and the
+  database-size sampler, stats gauges and LLM-turn scanner, all joined in its
+  `Run`. It reads OpenCode only through `internal/db`; the analytics mirror,
+  session snapshot, client-activity demand leases, `/api/system/stats` and the
+  server's own OTel instruments stay in core.
 - **Project forge** (`internal/projectforge`). The PRs & Issues pane:
   `/api/project/{upstreams,prs,issues,pr-checks,pr-mergeability,forge-user,
   handle}` and `/api/settings/prompt-templates`. Every `/api/project/*` route

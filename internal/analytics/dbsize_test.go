@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 )
 
 func TestCollectDatabaseSizes(t *testing.T) {
-	srv := testServer(t)
+	srv := newFixture(t)
 	sampledAt := time.Date(2026, time.September, 18, 10, 37, 0, 0, time.UTC)
 
 	if err := srv.collectDatabaseSizes(context.Background(), sampledAt); err != nil {
 		t.Fatal(err)
 	}
-	samples, err := srv.stateDB.DatabaseSizeSamples(context.Background(), 0)
+	samples, err := srv.deps.Store.DatabaseSizeSamples(context.Background(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,13 +32,13 @@ func TestCollectDatabaseSizes(t *testing.T) {
 }
 
 func TestCollectDatabaseSizesWithoutOpenCode(t *testing.T) {
-	srv := testServer(t)
-	srv.db = nil
+	srv := newFixture(t)
+	srv.deps.DB = nil
 
 	if err := srv.collectDatabaseSizes(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	samples, err := srv.stateDB.DatabaseSizeSamples(context.Background(), 0)
+	samples, err := srv.deps.Store.DatabaseSizeSamples(context.Background(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestCollectDatabaseSizesWithoutOpenCode(t *testing.T) {
 }
 
 func TestDatabaseSizeCollectionWithoutStateDB(t *testing.T) {
-	srv := &Server{}
+	srv := newTestModule(Deps{})
 	if err := srv.collectDatabaseSizes(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}

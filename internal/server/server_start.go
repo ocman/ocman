@@ -12,7 +12,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/term"
 )
 
@@ -73,24 +72,11 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 
 	workers.Go(func() { s.runAutoArchiveLoop(ctx) })
 	workers.Go(func() { s.runProjectsIndexLoop(ctx) })
-	workers.Go(func() { s.runLLMMetricsLoop(ctx) })
-	workers.Go(func() { s.runDatabaseSizeLoop(ctx) })
 	workers.Go(func() { s.runQueueSweep(ctx) })
 	workers.Go(func() { ocv2.WatchInstalledVersion(ctx) })
 	// OpenCode v2 runs one server per machine; keep it online.
 	if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
 		workers.Go(func() { sup.RunMachineSupervisor(ctx) })
-	}
-
-	// Register observable gauges for the top-line stats (session /
-	// message / project counts, lifetime tokens and cost). The
-	// callback only observes what runStatsRefreshLoop last computed
-	// (every statsRefreshInterval); it's a no-op when telemetry is
-	// disabled or the OpenCode DB is absent.
-	if reg, err := s.registerStatsMetrics(ctx, telemetry.Meter()); err != nil {
-		log.WithError(err).Warn("failed to register stats metrics")
-	} else if reg != nil {
-		defer reg.Unregister()
 	}
 
 	mux, err := s.routes()

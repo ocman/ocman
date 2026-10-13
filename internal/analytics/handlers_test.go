@@ -1,9 +1,8 @@
-package server
+package analytics
 
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -12,51 +11,33 @@ import (
 )
 
 func TestSessionConcurrencyRoute(t *testing.T) {
-	srv := testServer(t)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/session-concurrency?days=1&dir=/repo", nil))
+	f := newFixture(t)
+	rec := f.serve(http.MethodGet, "/api/analytics/session-concurrency?days=1&dir=/repo", "")
 	var got db.SessionConcurrency
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil || len(got.Series) < 24 || len(got.Series) > 25 {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
 	}
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/analytics/session-concurrency", nil))
-	if rec.Code != http.StatusMethodNotAllowed {
+	if rec := f.serve(http.MethodPost, "/api/analytics/session-concurrency", ""); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST = %d", rec.Code)
 	}
-	srv.db.Close()
-	rec = httptest.NewRecorder()
-	srv.handleSessionConcurrency(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/session-concurrency", nil))
-	if rec.Code != http.StatusInternalServerError {
+	f.deps.DB.Close()
+	if rec := f.serve(http.MethodGet, "/api/analytics/session-concurrency", ""); rec.Code != http.StatusInternalServerError {
 		t.Fatalf("closed database = %d", rec.Code)
 	}
-	srv.db = nil
-	rec = httptest.NewRecorder()
-	srv.handleSessionConcurrency(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/session-concurrency", nil))
-	if rec.Code == http.StatusOK {
+	if rec := serve(routes(newTestModule(Deps{})), http.MethodGet, "/api/analytics/session-concurrency", ""); rec.Code == http.StatusOK {
 		t.Fatal("expected missing database error")
 	}
 }
 
 func TestAnalyticsOverviewRoute(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.CreateRoutine(t.Context(), state.Routine{
+	f := newFixture(t)
+	if err := f.deps.Store.CreateRoutine(t.Context(), state.Routine{
 		ID: "routine", Name: "Routine", Directory: "/repo", RemoteID: "local",
 		ScheduleKind: "manual", ScheduleConfigJSON: "{}", CreatedAt: 1, UpdatedAt: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/overview", nil))
+	rec := f.serve(http.MethodGet, "/api/analytics/overview", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -86,30 +67,23 @@ func TestAnalyticsOverviewRoute(t *testing.T) {
 		}
 	}
 
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/analytics/overview", nil))
+	rec = f.serve(http.MethodPost, "/api/analytics/overview", "")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
 
 func TestDatabaseSizesRouteFiltersByDays(t *testing.T) {
-	srv := testServer(t)
+	f := newFixture(t)
 	now := time.Now()
-	if err := srv.stateDB.RecordDatabaseSizeSamples(t.Context(), []state.DatabaseSizeSample{
+	if err := f.deps.Store.RecordDatabaseSizeSamples(t.Context(), []state.DatabaseSizeSample{
 		{Database: "opencode", SampledAt: now.Add(-48 * time.Hour).UnixMilli(), SizeBytes: 100},
 		{Database: "opencode", SampledAt: now.UnixMilli(), SizeBytes: 200},
 		{Database: "ocman", SampledAt: now.UnixMilli(), SizeBytes: 50},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/database-sizes?days=1", nil))
+	rec := f.serve(http.MethodGet, "/api/analytics/database-sizes?days=1", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -121,16 +95,14 @@ func TestDatabaseSizesRouteFiltersByDays(t *testing.T) {
 		t.Fatalf("samples = %+v", got)
 	}
 
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/analytics/database-sizes", nil))
+	rec = f.serve(http.MethodPost, "/api/analytics/database-sizes", "")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
 
 func TestDatabaseSizesWithoutStateDB(t *testing.T) {
-	rec := httptest.NewRecorder()
-	(&Server{}).handleDatabaseSizes(rec, httptest.NewRequest(http.MethodGet, "/api/analytics/database-sizes", nil))
+	rec := serve(routes(newTestModule(Deps{})), http.MethodGet, "/api/analytics/database-sizes", "")
 	if rec.Code != http.StatusOK || rec.Body.String() != "[]\n" {
 		t.Fatalf("response = %d %q", rec.Code, rec.Body.String())
 	}

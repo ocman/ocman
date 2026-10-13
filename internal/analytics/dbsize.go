@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"context"
@@ -13,13 +13,13 @@ import (
 
 const databaseSizeSampleInterval = time.Hour
 
-func (s *Server) runDatabaseSizeLoop(ctx context.Context) {
-	if s.stateDB == nil {
+func (m *Module) runDatabaseSizeLoop(ctx context.Context) {
+	if m.deps.Store == nil {
 		return
 	}
 
 	tick := func() {
-		if err := s.collectDatabaseSizes(ctx, time.Now()); err != nil {
+		if err := m.collectDatabaseSizes(ctx, time.Now()); err != nil {
 			log.WithError(err).Warn("collecting database sizes")
 		}
 	}
@@ -37,30 +37,30 @@ func (s *Server) runDatabaseSizeLoop(ctx context.Context) {
 	}
 }
 
-func (s *Server) collectDatabaseSizes(ctx context.Context, now time.Time) error {
-	if s.stateDB == nil {
+func (m *Module) collectDatabaseSizes(ctx context.Context, now time.Time) error {
+	if m.deps.Store == nil {
 		return nil
 	}
 
 	bucket := now.Truncate(databaseSizeSampleInterval).UnixMilli()
 	samples := make([]state.DatabaseSizeSample, 0, 2)
 	var errs []error
-	if s.db != nil {
-		size, err := s.db.SizeBytes(ctx)
+	if m.deps.DB != nil {
+		size, err := m.deps.DB.SizeBytes(ctx)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("opencode: %w", err))
 		} else {
 			samples = append(samples, state.DatabaseSizeSample{Database: "opencode", SampledAt: bucket, SizeBytes: size})
 		}
 	}
-	size, err := s.stateDB.SizeBytes(ctx)
+	size, err := m.deps.Store.SizeBytes(ctx)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("ocman: %w", err))
 	} else {
 		samples = append(samples, state.DatabaseSizeSample{Database: "ocman", SampledAt: bucket, SizeBytes: size})
 	}
 	if len(samples) > 0 {
-		if err := s.stateDB.RecordDatabaseSizeSamples(ctx, samples); err != nil {
+		if err := m.deps.Store.RecordDatabaseSizeSamples(ctx, samples); err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 )
 
 func TestUIUsageAPI(t *testing.T) {
-	s := testServer(t)
+	s := newFixture(t)
 	now := time.Now().Add(-time.Second).UnixMilli()
 	body := fmt.Sprintf(`{"intervals":[{"start":%d,"end":%d}]}`, now-10_000, now)
 	for range 2 {
@@ -58,14 +58,14 @@ func TestUIUsageAPI(t *testing.T) {
 }
 
 func TestUIUsageEmptyAndUnavailable(t *testing.T) {
-	s := testServer(t)
+	s := newFixture(t)
 	w := httptest.NewRecorder()
 	s.handleUIUsageDays(w, httptest.NewRequest(http.MethodGet, "/api/analytics/ui-usage?days=0", nil))
 	if strings.TrimSpace(w.Body.String()) != "[]" {
 		t.Fatal(w.Body.String())
 	}
-	s.stateDB = nil
-	for _, handler := range []http.HandlerFunc{s.handleUIUsage, s.handleUIUsageDays} {
+	none := newTestModule(Deps{})
+	for _, handler := range []http.HandlerFunc{none.handleUIUsage, none.handleUIUsageDays} {
 		w := httptest.NewRecorder()
 		handler(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`)))
 		if w.Code != 503 {
@@ -75,7 +75,7 @@ func TestUIUsageEmptyAndUnavailable(t *testing.T) {
 }
 
 func TestAgentRunHoursAPI(t *testing.T) {
-	s := testServer(t)
+	s := newFixture(t)
 	w := httptest.NewRecorder()
 	s.handleAgentRunHours(w, httptest.NewRequest(http.MethodGet, "/api/analytics/agent-run-hours?days=7&dir=/repo", nil))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"minutes":0`) {

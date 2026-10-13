@@ -23,18 +23,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// s.get / s.post compose method + auth checks so the route table
 	// stays readable. Routes that are localhost-only (tmux, debug log,
 	// hooks) use the localhost guard, which also validates browser origin.
-	mux.HandleFunc("/api/stats", s.get(s.handleStats))
-	mux.HandleFunc("/api/analytics/overview", s.get(s.handleAnalyticsOverview))
-	mux.HandleFunc("/api/analytics/session-concurrency", s.get(s.handleSessionConcurrency))
-	mux.HandleFunc("/api/analytics/database-sizes", s.get(s.handleDatabaseSizes))
-	mux.HandleFunc("/api/analytics/ui-usage", s.get(s.handleUIUsageDays))
-	mux.HandleFunc("/api/analytics/agent-run-hours", s.get(s.handleAgentRunHours))
-	mux.HandleFunc("/api/ui-usage", s.post(s.handleUIUsage))
-	mux.HandleFunc("/api/subscription-usage", requireGET(s.requireLocalhost(s.handleSubscriptionUsage)))
-	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))
-	mux.HandleFunc("/api/metrics/performance", s.get(s.handleMetricsPerformance))
-	mux.HandleFunc("/api/metric-logs", s.get(s.handleMetricLogs))
-	mux.HandleFunc("/api/permission-stats", s.get(s.handlePermissionStats))
 	mux.HandleFunc("/api/projects", s.get(s.handleProjects))
 	mux.HandleFunc("/api/system/stats", s.get(s.handleSystemStats))
 	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
@@ -45,16 +33,11 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Public, UNAUTHENTICATED share endpoints. A valid share token is
 	// the only credential: anyone with the unguessable URL can view the
 	// conversation read-only, even when password auth is configured.
-	mux.HandleFunc("/api/activity", s.get(s.handleActivity))
-	mux.HandleFunc("/api/models", s.get(s.handleModels))
-	mux.HandleFunc("/api/hourly", s.get(s.handleHourly))
-	mux.HandleFunc("/api/hourly-tokens", s.get(s.handleHourlyTokens))
 	mux.HandleFunc("/api/capabilities", s.get(s.handleCapabilities))
 	mux.HandleFunc("/api/doctor", s.get(s.handleDoctor))
 	mux.HandleFunc("/api/favorites", s.requireAuth(s.handleFavoritesRoot)) // GET = list, POST = add, DELETE = remove
 	mux.HandleFunc("/api/whisper/status", s.get(s.handleWhisperStatus))
 	mux.HandleFunc("/api/transcribe", s.post(s.handleTranscribe))
-	mux.HandleFunc("/api/cost/calc", s.post(s.handleCalcCost))
 	mux.HandleFunc("/api/git/diff", s.get(s.handleGitDiff))
 	mux.HandleFunc("/api/git/info", s.get(s.handleGitInfo))
 	mux.HandleFunc("/api/git/branches", s.get(s.handleGitBranches))

@@ -15,7 +15,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/whisper"
@@ -36,104 +35,6 @@ func (s *Server) WithVersion(v string) *Server {
 
 // LogPath returns the resolved log file path, "" when logging to stderr only.
 func (s *Server) LogPath() string { return s.logPath }
-
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	stats, err := s.db.GetStats(r.Context())
-	if err != nil {
-		serverError(w, "fetching stats", err)
-		return
-	}
-	stats.Version = s.version
-	writeJSON(w, stats)
-}
-
-func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	opts := metricsOptions(r)
-	metrics, err := s.db.GetMetricsDashboard(r.Context(), opts)
-	if err != nil {
-		serverError(w, "fetching metrics", err)
-		return
-	}
-	writeJSON(w, metrics)
-}
-
-func (s *Server) handleMetricsPerformance(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	metrics, err := s.db.GetMetricsPerformance(r.Context(), metricsOptions(r))
-	if err != nil {
-		serverError(w, "fetching performance metrics", err)
-		return
-	}
-	writeJSON(w, metrics)
-}
-
-func (s *Server) handleMetricLogs(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	kind := db.MetricsLogKind(strings.TrimSpace(r.URL.Query().Get("kind")))
-	if kind != db.MetricsLogRequests && kind != db.MetricsLogSessions && kind != db.MetricsLogProjects {
-		http.Error(w, "kind must be request, session, or project", http.StatusBadRequest)
-		return
-	}
-	logs, err := s.db.GetMetricsLog(r.Context(), metricsOptions(r), kind)
-	if err != nil {
-		serverError(w, "fetching metric logs", err)
-		return
-	}
-	writeJSON(w, logs)
-}
-
-func metricsOptions(r *http.Request) db.MetricsDashboardOptions {
-	dayCount := parseIntParam(r, "days", 0)
-	var since int64
-	if dayCount > 0 {
-		since = time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
-	}
-	limit := parseIntParam(r, "limit", 20)
-	offset := parseIntParam(r, "offset", 0)
-	sessionLimit := parseIntParam(r, "sessionLimit", 20)
-	sessionOffset := parseIntParam(r, "sessionOffset", 0)
-	projectLimit := parseIntParam(r, "projectLimit", 20)
-	projectOffset := parseIntParam(r, "projectOffset", 0)
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-
-	return db.MetricsDashboardOptions{
-		AgentFilter:   strings.TrimSpace(r.URL.Query().Get("agent")),
-		ModelFilter:   strings.TrimSpace(r.URL.Query().Get("model")),
-		Since:         since,
-		Days:          dayCount,
-		RequestLimit:  limit,
-		RequestOffset: offset,
-		SessionLimit:  sessionLimit,
-		SessionOffset: sessionOffset,
-		ProjectLimit:  projectLimit,
-		ProjectOffset: projectOffset,
-		Pricing:       pricing.Load(),
-		Dir:           dir,
-	}
-}
-
-func (s *Server) handlePermissionStats(w http.ResponseWriter, r *http.Request) {
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	if dir != "" {
-		dir = projectRootForDirectory(dir)
-	}
-	stats, err := s.stateDB.PermissionApprovalStats(r.Context(), parseSinceParam(r), dir)
-	if err != nil {
-		serverError(w, "fetching permission approval stats", err)
-		return
-	}
-	writeJSON(w, stats)
-}
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	// Local hub projects flow through the host seam (AD-16). Without an
@@ -265,65 +166,6 @@ func projectArchiveKey(remoteID, directory string) state.ProjectKey {
 	}
 }
 
-func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	since := parseSinceParam(r)
-	model := strings.TrimSpace(r.URL.Query().Get("model"))
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	activity, err := s.db.GetDailyActivity(r.Context(), since, model, dir)
-	if err != nil {
-		serverError(w, "fetching activity", err)
-		return
-	}
-	writeJSON(w, activity)
-}
-
-func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	since := parseSinceParam(r)
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	models, err := s.db.GetModelUsage(r.Context(), since, dir)
-	if err != nil {
-		serverError(w, "fetching model usage", err)
-		return
-	}
-	writeJSON(w, models)
-}
-
-func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	since := parseSinceParam(r)
-	model := strings.TrimSpace(r.URL.Query().Get("model"))
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	dayCount := parseIntParam(r, "days", 0)
-	data, err := s.db.GetHourlyTokensByModel(r.Context(), dayCount, since, model, dir)
-	if err != nil {
-		serverError(w, "fetching hourly tokens by model", err)
-		return
-	}
-	writeJSON(w, data)
-}
-
-func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	since := parseSinceParam(r)
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	hourly, err := s.db.GetHourlyActivity(r.Context(), since, dir)
-	if err != nil {
-		serverError(w, "fetching hourly activity", err)
-		return
-	}
-	writeJSON(w, hourly)
-}
-
 func (s *Server) handleWhisperStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"available": whisper.Available(),
@@ -375,29 +217,6 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]interface{}{"text": text})
-}
-
-func (s *Server) handleCalcCost(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ModelID    string `json:"modelID"`
-		Input      int64  `json:"input"`
-		Output     int64  `json:"output"`
-		CacheRead  int64  `json:"cacheRead"`
-		CacheWrite int64  `json:"cacheWrite"`
-	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
-		return
-	}
-
-	table := pricing.Load()
-	cost := table.CalcCost(req.ModelID, req.Input, req.Output, req.CacheRead, req.CacheWrite)
-	price := table.Lookup(req.ModelID)
-	known := price.InputPerToken != 0 || price.OutputPerToken != 0
-
-	writeJSON(w, map[string]interface{}{
-		"cost":  cost,
-		"known": known,
-	})
 }
 
 func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {

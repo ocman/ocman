@@ -123,16 +123,6 @@ func platformHint(r *http.Request) string {
 	return strings.TrimSpace(r.URL.Query().Get("platform"))
 }
 
-// requireDB returns true if s.db is available, or writes a 501 error
-// and returns false.
-func (s *Server) requireDB(w http.ResponseWriter) bool {
-	if s.db == nil {
-		http.Error(w, "OpenCode platform is not enabled", http.StatusNotImplemented)
-		return false
-	}
-	return true
-}
-
 // --- Query param helpers ---
 
 // parseIntParam reads an integer query parameter by name. Returns
@@ -161,19 +151,6 @@ func parseInt64Param(r *http.Request, name string, fallback int64) int64 {
 		return fallback
 	}
 	return n
-}
-
-// parseSinceParam reads the ?days= query param and returns a Unix
-// millisecond cutoff. Returns 0 (no filter) when the param is absent
-// or zero.
-func parseSinceParam(r *http.Request) int64 {
-	if v := strings.TrimSpace(r.URL.Query().Get("days")); v != "" && v != "0" {
-		dayCount, err := strconv.ParseInt(v, 10, 64)
-		if err == nil && dayCount > 0 {
-			return time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
-		}
-	}
-	return 0
 }
 
 // sortAndLimitSessions sorts a combined multi-platform session slice by

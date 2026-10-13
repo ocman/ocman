@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestPermissionStatsRoute(t *testing.T) {
-	stateDB := openTestStateDB(t)
+	stateDB := newFixture(t).deps.Store
 	now := time.Now()
 	for _, lifecycle := range []state.PermissionLifecycle{
 		{Platform: "opencode", SessionID: "project", PermissionID: "p1", Directory: "/src/repo", RequestedAt: now.Add(-time.Hour).UnixMilli(), JudgeStartedAt: now.Add(-59 * time.Minute).UnixMilli(), JudgeCompletedAt: now.Add(-58 * time.Minute).UnixMilli(), ResolvedAt: now.Add(-57 * time.Minute).UnixMilli(), EvaluationMethod: state.PermissionEvaluationJudge, EvaluationResult: state.PermissionEvaluationSafe, Resolution: state.PermissionResolutionAutoApproved},
@@ -25,11 +25,7 @@ func TestPermissionStatsRoute(t *testing.T) {
 		}
 	}
 
-	srv := &Server{stateDB: stateDB} // No OpenCode read-only DB.
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := routes(newTestModule(Deps{Store: stateDB})) // No OpenCode read-only DB.
 
 	get := func(path string) (state.PermissionApprovalStats, map[string]json.RawMessage) {
 		t.Helper()
@@ -78,12 +74,8 @@ func TestPermissionStatsRoute(t *testing.T) {
 }
 
 func TestPermissionStatsRouteReturnsInternalServerErrorOnStateQueryFailure(t *testing.T) {
-	stateDB := openTestStateDB(t)
-	srv := &Server{stateDB: stateDB}
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	stateDB := newFixture(t).deps.Store
+	mux := routes(newTestModule(Deps{Store: stateDB}))
 	if err := stateDB.Close(); err != nil {
 		t.Fatal(err)
 	}

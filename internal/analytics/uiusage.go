@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"encoding/json"
@@ -8,12 +8,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
-func (s *Server) handleUIUsage(w http.ResponseWriter, r *http.Request) {
-	if s.stateDB == nil {
+func (m *Module) handleUIUsage(w http.ResponseWriter, r *http.Request) {
+	if m.deps.Store == nil {
 		http.Error(w, "state database unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -42,19 +43,19 @@ func (s *Server) handleUIUsage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	credited, err := s.stateDB.RecordUIUsage(r.Context(), body.Intervals, now)
+	credited, err := m.deps.Store.RecordUIUsage(r.Context(), body.Intervals, now)
 	if err != nil {
-		serverError(w, "recording UI usage", err)
+		httpx.ServerError(w, "recording UI usage", err)
 		return
 	}
 	telemetry.RecordUIUsage(r.Context(), credited)
-	writeJSON(w, struct {
+	httpx.WriteJSON(w, struct {
 		Now int64 `json:"now"`
 	}{now.UnixMilli()})
 }
 
-func (s *Server) handleUIUsageDays(w http.ResponseWriter, r *http.Request) {
-	if s.stateDB == nil {
+func (m *Module) handleUIUsageDays(w http.ResponseWriter, r *http.Request) {
+	if m.deps.Store == nil {
 		http.Error(w, "state database unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -73,14 +74,14 @@ func (s *Server) handleUIUsageDays(w http.ResponseWriter, r *http.Request) {
 	if days == 0 {
 		since = time.UnixMilli(0)
 	}
-	stored, err := s.stateDB.UIUsageDays(r.Context(), since)
+	stored, err := m.deps.Store.UIUsageDays(r.Context(), since)
 	if err != nil {
-		serverError(w, "reading UI usage", err)
+		httpx.ServerError(w, "reading UI usage", err)
 		return
 	}
 	if days == 0 {
 		if len(stored) == 0 {
-			writeJSON(w, stored)
+			httpx.WriteJSON(w, stored)
 			return
 		}
 		since, _ = time.Parse(time.DateOnly, stored[0].Date)
@@ -94,5 +95,5 @@ func (s *Server) handleUIUsageDays(w http.ResponseWriter, r *http.Request) {
 		key := date.Format(time.DateOnly)
 		result = append(result, state.UIUsageDay{Date: key, ActiveSeconds: values[key]})
 	}
-	writeJSON(w, result)
+	httpx.WriteJSON(w, result)
 }

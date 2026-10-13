@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"encoding/json"
@@ -10,7 +10,20 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/module"
 )
+
+// loopbackOnly stands in for the server's localhost guard.
+func loopbackOnly(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.RemoteAddr, "127.0.0.1:") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		h(w, r)
+	}
+}
 
 func TestSubscriptionUsageRoute(t *testing.T) {
 	openAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,17 +66,14 @@ func TestSubscriptionUsageRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := testServer(t)
-	srv.subscriptionUsage = subscriptionUsageClient{
+	srv := newTestModule(Deps{Guards: module.Guards{Localhost: loopbackOnly}})
+	srv.subscription = subscriptionUsageClient{
 		http:         http.DefaultClient,
 		authPath:     authPath,
 		openAIURL:    openAI.URL,
 		anthropicURL: anthropic.URL,
 	}
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := routes(srv)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/subscription-usage", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
@@ -141,12 +151,9 @@ func TestSubscriptionUsageRejectsMalformedAuthFile(t *testing.T) {
 		t.Fatal("expected malformed auth error")
 	}
 
-	srv := testServer(t)
-	srv.subscriptionUsage.authPath = authPath
-	mux, routeErr := srv.routes()
-	if routeErr != nil {
-		t.Fatal(routeErr)
-	}
+	srv := newTestModule(Deps{})
+	srv.subscription.authPath = authPath
+	mux := routes(srv)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/subscription-usage", nil)
 	req.RemoteAddr = "127.0.0.1:1234"

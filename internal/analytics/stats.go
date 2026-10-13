@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"context"
@@ -18,15 +18,15 @@ const statsRefreshInterval = 2 * time.Minute
 // value immediately, then on every tick, in this single goroutine — so
 // computations never overlap and the OTel export path does no database work.
 // It returns when ctx ends.
-func (s *Server) runStatsRefreshLoop(ctx context.Context) {
-	if s.db == nil || ctx.Err() != nil {
+func (m *Module) runStatsRefreshLoop(ctx context.Context) {
+	if m.deps.DB == nil || ctx.Err() != nil {
 		return
 	}
-	interval := s.statsRefreshEvery
+	interval := m.statsRefreshEvery
 	if interval <= 0 {
 		interval = statsRefreshInterval
 	}
-	tick := func() { s.refreshStats(ctx) }
+	tick := func() { m.refreshStats(ctx) }
 	runWithRecover("stats-metrics", tick)
 
 	ticker := time.NewTicker(interval)
@@ -47,10 +47,10 @@ func (s *Server) runStatsRefreshLoop(ctx context.Context) {
 
 // refreshStats computes the stats once and keeps the last good values on
 // failure (the gauges then keep observing the previous snapshot).
-func (s *Server) refreshStats(ctx context.Context) {
-	getStats := s.getStats
+func (m *Module) refreshStats(ctx context.Context) {
+	getStats := m.getStats
 	if getStats == nil {
-		getStats = s.db.GetStats
+		getStats = m.deps.DB.GetStats
 	}
 	stats, err := getStats(ctx)
 	if err != nil {
@@ -59,15 +59,15 @@ func (s *Server) refreshStats(ctx context.Context) {
 		}
 		return
 	}
-	s.statsMu.Lock()
-	s.statsSnapshot = stats
-	s.statsMu.Unlock()
+	m.statsMu.Lock()
+	m.statsSnapshot = stats
+	m.statsMu.Unlock()
 }
 
-func (s *Server) cachedStats() *db.Stats {
-	s.statsMu.Lock()
-	defer s.statsMu.Unlock()
-	return s.statsSnapshot
+func (m *Module) cachedStats() *db.Stats {
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	return m.statsSnapshot
 }
 
 // registerStatsMetrics creates observable gauges for the top-line stats
@@ -76,11 +76,11 @@ func (s *Server) cachedStats() *db.Stats {
 // by runStatsRefreshLoop — collecting metrics never touches the database.
 // Nothing is observed until the first successful computation.
 //
-// Returns nil registration (and nil error) when s.db is nil, which
+// Returns nil registration (and nil error) when the OpenCode DB is nil, which
 // happens when the OpenCode platform is not enabled. Callers should
 // treat a nil return as "nothing to clean up".
-func (s *Server) registerStatsMetrics(ctx context.Context, meter metric.Meter) (metric.Registration, error) {
-	if s.db == nil {
+func (m *Module) registerStatsMetrics(ctx context.Context, meter metric.Meter) (metric.Registration, error) {
+	if m.deps.DB == nil {
 		return nil, nil
 	}
 
@@ -139,7 +139,7 @@ func (s *Server) registerStatsMetrics(ctx context.Context, meter metric.Meter) (
 			case requested <- struct{}{}:
 			default:
 			}
-			stats := s.cachedStats()
+			stats := m.cachedStats()
 			if stats == nil {
 				return nil // first refresh still pending (or failing); observe nothing
 			}
@@ -164,7 +164,7 @@ func (s *Server) registerStatsMetrics(ctx context.Context, meter metric.Meter) (
 		case <-ctx.Done():
 			return
 		case <-requested:
-			s.runStatsRefreshLoop(ctx)
+			m.runStatsRefreshLoop(ctx)
 		}
 	}()
 	return &statsMetricsRegistration{Registration: reg, cancel: cancel, done: done}, nil

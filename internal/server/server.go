@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/analytics"
+
 	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -162,27 +164,14 @@ type Server struct {
 	openCodeAuth ocapi.Auth
 	// maint runs OpenCode database maintenance; nil without a DB path.
 	// Its gate refuses opencode launches while a job runs.
-	maint             *ocmaint.Runner
-	logPath           string // resolved log file; "" when stderr only
-	version           string // build version (main.version), reported by /api/stats
-	startupIssues     []StartupIssue
-	subscriptionUsage subscriptionUsageClient
-	// Guards the providers against a reopened panel or a repeatedly
-	// clicked Refresh; see subscriptionUsageTTL.
-	subscriptionUsageCache subscriptionUsageCache
-	factoryMod             *factorymod.Module
-	factoryModOnce         sync.Once
-
-	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
-
-	// Stats gauge refresher (see metrics_stats.go): statsSnapshot holds the
-	// last successful GetStats result for the OTel callback, guarded by
-	// statsMu. getStats / statsRefreshEvery are test seams overriding
-	// db.GetStats / statsRefreshInterval.
-	getStats          func(context.Context) (*db.Stats, error)
-	statsRefreshEvery time.Duration
-	statsMu           sync.Mutex
-	statsSnapshot     *db.Stats
+	maint            *ocmaint.Runner
+	logPath          string // resolved log file; "" when stderr only
+	version          string // build version (main.version), reported by /api/stats
+	startupIssues    []StartupIssue
+	factoryMod       *factorymod.Module
+	factoryModOnce   sync.Once
+	analyticsMod     *analytics.Module
+	analyticsModOnce sync.Once
 
 	projectForgeMod     *projectforge.Module
 	projectForgeModOnce sync.Once
@@ -224,16 +213,15 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		registry = platforms.NewRegistry()
 	}
 	s := &Server{
-		db:                database,
-		stateDB:           stateDB,
-		addr:              addr,
-		registry:          registry,
-		auth:              auth,
-		integrations:      newForgeClients(),
-		subscriptionUsage: newSubscriptionUsageClient(),
-		startTime:         time.Now(),
-		broadcastHub:      newBroadcastHub(),
-		activity:          newClientActivityPolicy(time.Now),
+		db:           database,
+		stateDB:      stateDB,
+		addr:         addr,
+		registry:     registry,
+		auth:         auth,
+		integrations: newForgeClients(),
+		startTime:    time.Now(),
+		broadcastHub: newBroadcastHub(),
+		activity:     newClientActivityPolicy(time.Now),
 
 		runtime: ocruntime.NewNativeRuntime(),
 	}

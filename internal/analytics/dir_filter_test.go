@@ -1,4 +1,4 @@
-package server
+package analytics
 
 import (
 	"encoding/json"
@@ -23,9 +23,10 @@ import (
 
 // dirFilterFixture seeds a fresh server with the four-session fixture
 // described in stats_dir_filter_test.go. Returns the server.
-func dirFilterFixture(t *testing.T) *Server {
+func dirFilterFixture(t *testing.T) *fixture {
 	t.Helper()
-	srv, rawDB := testServerWithRawDB(t)
+	srv := newFixture(t)
+	rawDB := srv.raw
 	now := time.Now().UnixMilli()
 
 	mkSession := func(id, title, dir string) {
@@ -82,7 +83,7 @@ func TestHandleMetrics_DirFilter(t *testing.T) {
 
 	// Unfiltered: 4 requests, 1500 input tokens.
 	rr := httptest.NewRecorder()
-	srv.handleMetrics(rr, httptest.NewRequest(http.MethodGet, "/api/metrics", nil))
+	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metrics", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unfiltered metrics: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -102,7 +103,7 @@ func TestHandleMetrics_DirFilter(t *testing.T) {
 	// Scoped to /repo/foo: 2 requests, 300 tokens. Sibling /repo/foobar
 	// must NOT contribute (AD-7).
 	rr = httptest.NewRecorder()
-	srv.handleMetrics(rr, scopedRequest("/api/metrics", "/repo/foo"))
+	srv.mux.ServeHTTP(rr, scopedRequest("/api/metrics", "/repo/foo"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("scoped metrics: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -127,7 +128,7 @@ func TestHandleMetricLogs_SelectsKindAndDir(t *testing.T) {
 	srv := dirFilterFixture(t)
 	q := url.Values{"kind": {"request"}, "dir": {"/repo/foo"}}
 	rr := httptest.NewRecorder()
-	srv.handleMetricLogs(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?"+q.Encode(), nil))
+	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?"+q.Encode(), nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("metric logs: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -145,7 +146,7 @@ func TestHandleMetricLogs_SelectsKindAndDir(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	srv.handleMetricLogs(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?kind=unknown", nil))
+	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?kind=unknown", nil))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("invalid kind returned HTTP %d, want 400", rr.Code)
 	}
@@ -154,7 +155,7 @@ func TestHandleMetricLogs_SelectsKindAndDir(t *testing.T) {
 func TestHandleMetricsPerformance_OmitsLogs(t *testing.T) {
 	srv := dirFilterFixture(t)
 	rr := httptest.NewRecorder()
-	srv.handleMetricsPerformance(rr, httptest.NewRequest(http.MethodGet, "/api/metrics/performance", nil))
+	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metrics/performance", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("performance metrics: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -176,7 +177,7 @@ func TestHandleActivity_DirFilter(t *testing.T) {
 	srv := dirFilterFixture(t)
 
 	rr := httptest.NewRecorder()
-	srv.handleActivity(rr, scopedRequest("/api/activity", "/repo/foo"))
+	srv.mux.ServeHTTP(rr, scopedRequest("/api/activity", "/repo/foo"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("scoped activity: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -201,7 +202,7 @@ func TestHandleModels_DirFilter(t *testing.T) {
 	srv := dirFilterFixture(t)
 
 	rr := httptest.NewRecorder()
-	srv.handleModels(rr, scopedRequest("/api/models", "/repo/foo"))
+	srv.mux.ServeHTTP(rr, scopedRequest("/api/models", "/repo/foo"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("scoped models: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -222,7 +223,7 @@ func TestHandleHourly_DirFilter(t *testing.T) {
 	srv := dirFilterFixture(t)
 
 	rr := httptest.NewRecorder()
-	srv.handleHourly(rr, scopedRequest("/api/hourly", "/repo/foo"))
+	srv.mux.ServeHTTP(rr, scopedRequest("/api/hourly", "/repo/foo"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("scoped hourly: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -246,7 +247,7 @@ func TestHandleHourlyTokens_DirFilter(t *testing.T) {
 	srv := dirFilterFixture(t)
 
 	rr := httptest.NewRecorder()
-	srv.handleHourlyTokens(rr, scopedRequest("/api/hourly-tokens", "/repo/foo"))
+	srv.mux.ServeHTTP(rr, scopedRequest("/api/hourly-tokens", "/repo/foo"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("scoped hourly-tokens: HTTP %d: %s", rr.Code, rr.Body.String())
 	}
@@ -263,23 +264,5 @@ func TestHandleHourlyTokens_DirFilter(t *testing.T) {
 	}
 	if total != 300 {
 		t.Errorf("scoped tokensIn total = %d, want 300", total)
-	}
-}
-
-func TestNormaliseDirParam(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"", ""},
-		{"   ", ""},
-		{"/repo/foo", "/repo/foo"},
-		{"  /repo/foo  ", "/repo/foo"},
-		{"/repo/foo/", "/repo/foo"},
-		{"/", "/"}, // leave bare root alone — defensive
-	}
-	for _, tc := range cases {
-		if got := normaliseDirParam(tc.in); got != tc.want {
-			t.Errorf("normaliseDirParam(%q) = %q, want %q", tc.in, got, tc.want)
-		}
 	}
 }

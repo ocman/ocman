@@ -555,3 +555,21 @@ func TestSystemStats_IncludesDBPoolWhenDBPresent(t *testing.T) {
 		t.Errorf("max_open_conns = %v, want 4 (matches db.maxOpenReadConns)", dbBlock["max_open_conns"])
 	}
 }
+
+func TestNormaliseDirParam(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"/repo/foo", "/repo/foo"},
+		{"  /repo/foo  ", "/repo/foo"},
+		{"/repo/foo/", "/repo/foo"},
+		{"/", "/"}, // leave bare root alone — defensive
+	}
+	for _, tc := range cases {
+		if got := normaliseDirParam(tc.in); got != tc.want {
+			t.Errorf("normaliseDirParam(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

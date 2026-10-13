@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -27,62 +26,6 @@ func getJSON[T any](t *testing.T, h http.HandlerFunc, target string) T {
 }
 
 // --- handlers_system.go ---
-
-func TestSystemHandlers_RequireDB(t *testing.T) {
-	srv := testServer(t)
-	srv.db = nil // simulate ocman running without the opencode platform
-
-	handlers := map[string]http.HandlerFunc{
-		"stats":         srv.handleStats,
-		"metrics":       srv.handleMetrics,
-		"activity":      srv.handleActivity,
-		"models":        srv.handleModels,
-		"hourly":        srv.handleHourly,
-		"hourly-tokens": srv.handleHourlyTokens,
-	}
-	for name, h := range handlers {
-		t.Run(name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/"+name, nil)
-			rr := httptest.NewRecorder()
-			h(rr, req)
-			if rr.Code != http.StatusNotImplemented {
-				t.Fatalf("got %d, want 501: %s", rr.Code, rr.Body.String())
-			}
-		})
-	}
-}
-
-// The usage views pass model/dir/day filters straight through; assert
-// they stay 200 with an empty database rather than pinning SQL shapes.
-func TestUsageHandlers_FilterParams(t *testing.T) {
-	srv := testServer(t)
-	handlers := map[string]http.HandlerFunc{
-		"activity":      srv.handleActivity,
-		"models":        srv.handleModels,
-		"hourly":        srv.handleHourly,
-		"hourly-tokens": srv.handleHourlyTokens,
-		"metrics":       srv.handleMetrics,
-	}
-	queries := []string{
-		"",
-		"?days=0",
-		"?days=7&model=anthropic/claude",
-		"?since=1700000000000&dir=" + url.QueryEscape("/tmp/project"),
-		"?limit=abc&offset=abc&sessionLimit=5&sessionOffset=1&projectLimit=5&projectOffset=1",
-	}
-	for name, h := range handlers {
-		for _, q := range queries {
-			t.Run(name+q, func(t *testing.T) {
-				req := httptest.NewRequest(http.MethodGet, "/api/"+name+q, nil)
-				rr := httptest.NewRecorder()
-				h(rr, req)
-				if rr.Code != http.StatusOK {
-					t.Fatalf("got %d, want 200: %s", rr.Code, rr.Body.String())
-				}
-			})
-		}
-	}
-}
 
 func TestHandleWhisperStatus(t *testing.T) {
 	srv := testServer(t)
@@ -121,48 +64,6 @@ func TestHandleTranscribe_NoAudio(t *testing.T) {
 			srv.handleTranscribe(rr, req)
 			if rr.Code != want {
 				t.Fatalf("got %d, want %d: %s", rr.Code, want, rr.Body.String())
-			}
-		})
-	}
-}
-
-func TestHandleCalcCost(t *testing.T) {
-	srv := testServer(t)
-	tests := []struct {
-		name     string
-		body     string
-		wantCode int
-	}{
-		{"malformed json", "{", http.StatusBadRequest},
-		{"empty body", "", http.StatusBadRequest},
-		{"wrong types", `{"input":"lots"}`, http.StatusBadRequest},
-		{"unknown model", `{"modelID":"nope/nope","input":10,"output":5}`, http.StatusOK},
-		{"zero usage", `{"modelID":"","input":0,"output":0}`, http.StatusOK},
-		{"with cache tokens", `{"modelID":"anthropic/claude-sonnet-4-20250514","input":100,"output":50,"cacheRead":10,"cacheWrite":20}`, http.StatusOK},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/calc-cost", strings.NewReader(tt.body))
-			rr := httptest.NewRecorder()
-			srv.handleCalcCost(rr, req)
-			if rr.Code != tt.wantCode {
-				t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
-			}
-			if tt.wantCode != http.StatusOK {
-				return
-			}
-			var payload struct {
-				Cost  float64 `json:"cost"`
-				Known bool    `json:"known"`
-			}
-			if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
-				t.Fatalf("invalid JSON: %v (%s)", err, rr.Body.String())
-			}
-			if payload.Cost < 0 {
-				t.Errorf("cost = %v, want >= 0", payload.Cost)
-			}
-			if strings.Contains(tt.name, "unknown") && payload.Known {
-				t.Error("known = true for an unknown model")
 			}
 		})
 	}

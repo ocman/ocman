@@ -102,10 +102,16 @@ func testServer(t *testing.T) *Server {
 // --- Handler integration tests ---
 
 func TestHandleStats_Empty(t *testing.T) {
+	// Through the route table: the version is set after New, so this also
+	// proves the analytics module reads it per request.
 	srv := testServer(t).WithVersion("v1.2.3-test")
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	rr := httptest.NewRecorder()
-	srv.handleStats(rr, req)
+	mux.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
@@ -119,24 +125,6 @@ func TestHandleStats_Empty(t *testing.T) {
 	}
 	if stats["version"] != "v1.2.3-test" {
 		t.Errorf("version = %v, want v1.2.3-test", stats["version"])
-	}
-}
-
-func TestHandleMetrics_Empty(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/metrics?days=30", nil)
-	rr := httptest.NewRecorder()
-	srv.handleMetrics(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("invalid JSON response: %v", err)
-	}
-	if _, ok := payload["summary"]; !ok {
-		t.Fatalf("expected summary in metrics payload")
 	}
 }
 
@@ -523,54 +511,6 @@ func TestHandleSession_InvalidID(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-func TestHandleActivity_ReturnsData(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/activity", nil)
-	rr := httptest.NewRecorder()
-	srv.handleActivity(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
-	var activity []interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &activity); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	// Should return 366 entries (365 days + today, no filter)
-	if len(activity) != 366 {
-		t.Errorf("expected 366 daily entries, got %d", len(activity))
-	}
-}
-
-func TestHandleHourly_Returns24Hours(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/hourly", nil)
-	rr := httptest.NewRecorder()
-	srv.handleHourly(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
-	var hourly []interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &hourly); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if len(hourly) != 24 {
-		t.Errorf("expected 24 hours, got %d", len(hourly))
-	}
-}
-
-func TestHandleModels_Empty(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
-	rr := httptest.NewRecorder()
-	srv.handleModels(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 }
 
