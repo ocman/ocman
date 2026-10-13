@@ -40,13 +40,18 @@ func TestProjectForgeReadsRefreshOnlyWithinBudget(t *testing.T) {
 			handler := map[string]http.HandlerFunc{"prs": projectForgeRoute(s), "issues": projectForgeRoute(s),
 				"pr-checks": projectForgeRoute(s), "pr-mergeability": projectForgeRoute(s), "forge-user": projectForgeRoute(s)}[endpoint]
 			request := func(refresh bool) {
+				wantStatus := http.StatusOK
+				if endpoint == "pr-mergeability" && calls >= 4 {
+					// Stale reviews must be retryable, never a fresh approval.
+					wantStatus = http.StatusTooManyRequests
+				}
 				url := "/api/project/" + endpoint + "?dir=" + dir + "&remoteId=local&remote=origin&sha=abc123&number=42"
 				if refresh {
 					url += "&refresh=1"
 				}
 				rr := httptest.NewRecorder()
 				handler(rr, httptest.NewRequest(http.MethodGet, url, nil))
-				if rr.Code != http.StatusOK {
+				if rr.Code != wantStatus {
 					t.Fatalf("%s: status=%d body=%s", endpoint, rr.Code, rr.Body.String())
 				}
 			}

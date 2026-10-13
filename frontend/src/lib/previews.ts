@@ -1,6 +1,7 @@
 import { createContext } from 'react';
 import { fetchJSON, postJSON } from './api';
 import type { PRChecks, PRMergeability } from './upstreamApi';
+import { UpstreamApiError } from './upstreamApi';
 
 /** Owner (`remoteId`) of the conversation whose links are previewed. */
 export const PreviewOwnerContext = createContext('local');
@@ -211,9 +212,13 @@ export async function fetchPreviewChecks(url: string, sha: string, remoteId: str
   return { ...preview.checks, checks: preview.checks.checks ?? [] };
 }
 
+const PR_STATUS_TERMINAL: Partial<Record<PreviewState, number>> = { connect: 401, expired: 401, denied: 403, not_found: 404 };
+
 export async function fetchPreviewPRStatus(url: string, remoteId: string, signal: AbortSignal, refresh = false): Promise<PRMergeability> {
   const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, prStatus: true, ...(refresh ? { refresh: true } : {}) }, { signal });
   const preview = previews[0];
+  const terminalStatus = preview && PR_STATUS_TERMINAL[preview.state];
+  if (terminalStatus) throw new UpstreamApiError(null, terminalStatus);
   if (preview?.state !== 'ok' || preview.stale || !preview.prStatus) throw new Error('PR status unavailable');
   return preview.prStatus;
 }

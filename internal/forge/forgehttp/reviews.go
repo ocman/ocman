@@ -29,6 +29,10 @@ func ReviewApproval(ctx context.Context, fetch func(context.Context, string) ([]
 		if err != nil {
 			return false, err
 		}
+		if rl.Stale {
+			rl.Limited = true
+			return false, &ResponseError{Status: http.StatusTooManyRequests, RateLimit: rl}
+		}
 		if status != http.StatusOK {
 			return false, &ResponseError{Status: status, RateLimit: rl}
 		}

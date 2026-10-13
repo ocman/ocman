@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 )
@@ -76,5 +77,27 @@ func TestReviewApprovalErrors(t *testing.T) {
 		if got, err := ReviewApproval(context.Background(), fetch, "/reviews", "limit"); got || err == nil {
 			t.Fatalf("got %v, %v", got, err)
 		}
+	}
+}
+
+func TestReviewApprovalRejectsAnyStalePage(t *testing.T) {
+	for _, stalePage := range []int{1, 2} {
+		t.Run(fmt.Sprint(stalePage), func(t *testing.T) {
+			calls := 0
+			reset := time.Now().Add(time.Minute)
+			fetch := func(context.Context, string) ([]byte, forge.RateLimit, int, error) {
+				calls++
+				body := `[{"id":1,"user":{"login":"a"},"state":"APPROVED"}]`
+				if calls == 1 && stalePage == 2 {
+					body = `[` + strings.Repeat(`{"state":"COMMENTED"},`, 29) + `{"state":"COMMENTED"}]`
+				}
+				return []byte(body), forge.RateLimit{Stale: calls == stalePage, ResetAt: reset}, http.StatusOK, nil
+			}
+			approved, err := ReviewApproval(context.Background(), fetch, "/reviews", "per_page")
+			var upstream *ResponseError
+			if approved || !errors.As(err, &upstream) || upstream.Status != http.StatusTooManyRequests || !upstream.RateLimit.Limited || !upstream.RateLimit.ResetAt.Equal(reset) {
+				t.Fatalf("stale review page accepted: approved=%v err=%v", approved, err)
+			}
+		})
 	}
 }
