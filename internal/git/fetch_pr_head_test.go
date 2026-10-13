@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 func TestFetchPRHeadRejectsIncompleteRequest(t *testing.T) {
@@ -59,7 +61,7 @@ func runFetchGit(t *testing.T, dir string, args ...string) string {
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
-	out, err := exec.Command("git", args...).CombinedOutput()
+	out, err := gitexec.Command(t.Context(), args...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)
 	}
@@ -76,5 +78,31 @@ func TestFetchPRHeadDoesNotExposeGitOutput(t *testing.T) {
 	_, err := FetchPRHead(context.Background(), "/repo", "origin", 7)
 	if err == nil || strings.Contains(err.Error(), "credential-secret") {
 		t.Fatalf("error = %v, want sanitized failure", err)
+	}
+}
+
+func TestFetchFixtureIdentityDoesNotModifyCallingRepository(t *testing.T) {
+	caller, fixture := t.TempDir(), t.TempDir()
+	for _, repo := range []string{caller, fixture} {
+		cmd := exec.Command("git", "init", repo)
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("init: %v %s", err, out)
+		}
+	}
+	config := filepath.Join(caller, ".git", "config")
+	before, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(caller, ".git"))
+	runFetchGit(t, fixture, "config", "user.name", "Test")
+	runFetchGit(t, fixture, "config", "user.email", "test@example.com")
+	after, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("fixture setup overwrote calling repository identity")
 	}
 }

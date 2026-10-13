@@ -2,17 +2,18 @@ package local
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 func factoryCheckRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
 	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"}, {"checkout", "-q", "-b", "factory/e1"}} {
-		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+		if out, err := gitexec.Command(t.Context(), append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}

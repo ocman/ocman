@@ -160,7 +160,7 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 			if namingAvailable {
 				want = "fix-login-" + suffix
 			}
-			out, err := exec.Command("git", "-C", first.WorktreePath, "branch", "--show-current").Output()
+			out, err := gitexec.Command(t.Context(), "-C", first.WorktreePath, "branch", "--show-current").Output()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -218,7 +218,7 @@ func TestProviderWorktreeNaming(t *testing.T) {
 			if answer != "" {
 				want = answer + "-" + strings.TrimPrefix(res.Branch, provisionalPrefix)
 			}
-			out, err := exec.Command("git", "-C", res.WorktreePath, "branch", "--show-current").Output()
+			out, err := gitexec.Command(t.Context(), "-C", res.WorktreePath, "branch", "--show-current").Output()
 			if err != nil || strings.TrimSpace(string(out)) != want {
 				t.Fatalf("branch = %q, want %q (%v)", out, want, err)
 			}

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -114,7 +114,7 @@ func claudeSessionDir(t *testing.T, adapter *provider.Adapter, id string) string
 
 func gitBranches(t *testing.T, repo string) string {
 	t.Helper()
-	out, err := exec.Command("git", "-C", repo, "branch", "--format=%(refname:short)").Output()
+	out, err := gitexec.Command(t.Context(), "-C", repo, "branch", "--format=%(refname:short)").Output()
 	if err != nil {
 		t.Fatal(err)
 	}

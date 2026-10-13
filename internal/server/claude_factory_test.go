@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -29,7 +29,7 @@ func (claudeFactoryLauncher) PrepareImplementationWorkspace(context.Context, str
 func TestClaudeFactoryEpicDispatchesToClaude(t *testing.T) {
 	srv, adapter, _ := newClaudeServer(t)
 	repo := claudeRepo(t)
-	if out, err := exec.Command("git", "-C", repo, "remote", "add", "origin", "https://github.com/acme/repo.git").CombinedOutput(); err != nil {
+	if out, err := gitexec.Command(t.Context(), "-C", repo, "remote", "add", "origin", "https://github.com/acme/repo.git").CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
 	if err := srv.stateDB.SetSetting(t.Context(), state.DefaultPlatformSetting, "opencode"); err != nil {

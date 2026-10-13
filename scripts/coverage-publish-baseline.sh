@@ -17,9 +17,6 @@ cd "$ROOT"
 [ -f coverage/go.json ] || { echo "publish-baseline: missing coverage/go.json"; exit 1; }
 [ -f coverage/frontend.json ] || { echo "publish-baseline: missing coverage/frontend.json"; exit 1; }
 
-git config user.name 'forgejo-actions[bot]'
-git config user.email 'forgejo-actions[bot]@noreply.local'
-
 remote="${SERVER_URL#https://}"
 push_url="https://x-access-token:${TOKEN}@${remote}/${REPOSITORY}.git"
 
@@ -46,6 +43,10 @@ cp coverage/go.json coverage/frontend.json "$tmp/coverage/"
 		echo "publish-baseline: baseline unchanged, nothing to commit"
 		exit 0
 	fi
+	export GIT_AUTHOR_NAME='forgejo-actions[bot]'
+	export GIT_AUTHOR_EMAIL='forgejo-actions[bot]@noreply.local'
+	export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+	export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
 	git commit -m "chore(coverage): update baseline for ${GITHUB_SHA:0:8}" >/dev/null
 	git push "$push_url" gh-pages
 	echo "publish-baseline: pushed baseline to gh-pages"

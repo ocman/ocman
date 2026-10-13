@@ -34,11 +34,12 @@ const maxConcurrentProcesses = 8
 var processSlots = make(chan struct{}, maxConcurrentProcesses)
 
 // contextVars lists environment variables that override git's
-// repository location. They are stripped from every subprocess so a
+// repository location or configuration file. They are stripped so a
 // caller running inside a git hook can't redirect our commands into the
 // wrong repository.
 var contextVars = map[string]bool{
 	"GIT_DIR":                          true,
+	"GIT_CONFIG":                       true,
 	"GIT_INDEX_FILE":                   true,
 	"GIT_WORK_TREE":                    true,
 	"GIT_OBJECT_DIRECTORY":             true,
