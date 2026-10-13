@@ -21,7 +21,7 @@ import (
 // after a dashboard restart. Replacement returns a new endpoint; the caller
 // must create a fresh provider adapter rather than carrying over its cursor.
 type ProviderManager struct {
-	Runtime *ocruntime.ProviderRuntime
+	Runtime *ocruntime.BackendRuntime
 	State   *state.DB
 	// OnDrain is called before a supervisor is drained for replacement,
 	// with whether it still speaks a supported protocol, so the dashboard
@@ -66,7 +66,7 @@ func (m *ProviderManager) Recover(ctx context.Context, root string) (*hostsvc.En
 	if m.Runtime == nil || m.State == nil {
 		return nil, false, fmt.Errorf("provider manager requires runtime and state")
 	}
-	row, exists, err := m.State.GetManagedProvider(ctx, m.Runtime.ProviderID, root)
+	row, exists, err := m.State.GetManagedProvider(ctx, m.Runtime.PlatformID, root)
 	if err != nil || !exists {
 		return nil, false, err
 	}
@@ -101,7 +101,7 @@ func (m *ProviderManager) ensureRoot(ctx context.Context, root string) (*hostsvc
 	lock.Lock()
 	defer lock.Unlock()
 	r := m.Runtime
-	row, exists, err := m.State.GetManagedProvider(ctx, r.ProviderID, root)
+	row, exists, err := m.State.GetManagedProvider(ctx, r.PlatformID, root)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (m *ProviderManager) ensureRoot(ctx context.Context, root string) (*hostsvc
 			}
 		}
 		// Only a confirmed dead handle or a completed drain permits replacement.
-		if err := m.State.DeleteManagedProvider(ctx, r.ProviderID, root); err != nil {
+		if err := m.State.DeleteManagedProvider(ctx, r.PlatformID, root); err != nil {
 			return nil, err
 		}
 	}
@@ -162,7 +162,7 @@ func (m *ProviderManager) ensureRoot(ctx context.Context, root string) (*hostsvc
 	}
 	// Persist before readiness so a timeout/restart still finds and probes the
 	// launched supervisor rather than silently creating another one.
-	if err := m.State.UpsertManagedProvider(ctx, r.ProviderID, root, state.ManagedInstance{Endpoint: inst.Endpoint, Kind: inst.Kind, RuntimeID: inst.ID, PID: inst.PID, LaunchedAt: time.Now()}); err != nil {
+	if err := m.State.UpsertManagedProvider(ctx, r.PlatformID, root, state.ManagedInstance{Endpoint: inst.Endpoint, Kind: inst.Kind, RuntimeID: inst.ID, PID: inst.PID, LaunchedAt: time.Now()}); err != nil {
 		_ = r.Stop(ctx, inst)
 		return nil, err
 	}

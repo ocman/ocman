@@ -37,7 +37,7 @@ func TestFakeTmuxAliveDistinguishesZombie(t *testing.T) {
 	installFakeTmux(t, bin, pids)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OCMAN_FAKE_PROVIDER_PID_DIR", pids)
-	runtime := ocruntime.NewProviderRuntime("claudecode", "", "")
+	runtime := ocruntime.NewBackendRuntime("claudecode", "", "")
 	inst := &ocruntime.Instance{Kind: ocruntime.KindProviderTmux, ID: "lifecycle"}
 	pidFile := filepath.Join(pids, inst.ID+".pid")
 	writePID := func(pid int) {

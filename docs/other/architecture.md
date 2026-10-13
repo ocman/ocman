@@ -219,7 +219,7 @@ flowchart TD
     Registry --> ClaudePlatform[platforms/claudecode<br/>browsing + project routing]
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
     Provider -->|providerprotocol: HTTP + SSE over unix socket, leased snapshot + replay| Supervisor[providersupervisor<br/>sequenced spool, ack, drain]
-    Local -.->|ocruntime.ProviderRuntime in tmux, one per project| Supervisor
+    Local -.->|ocruntime.BackendRuntime in tmux, one per project| Supervisor
     Supervisor --> Claude[claudeprovider<br/>index, converter, pooled claude children]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
@@ -348,10 +348,10 @@ flowchart TD
   socket contract. Each adapter owns its session, live-status and pending-prompt
   caches; `WatchEvents` replays sequenced v1 events and feeds the shared status and
   idle sinks even without a browser. Runtime management owns the watch context.
-- **providersupervisor / ocruntime.ProviderRuntime.** A supervisor wraps a
-  provider `Backend` and serves it on a private unix socket. Claude browsing
+- **providersupervisor / ocruntime.BackendRuntime.** A supervisor wraps a
+  platform backend and serves it on a private unix socket. Claude browsing
   runs inside the ocman process, one per machine. Sessions ocman launches run
-  in `ocman provider claudecode`, which `ocruntime.ProviderRuntime` hosts in
+  in `ocman provider claudecode`, which `ocruntime.BackendRuntime` hosts in
   tmux, one per repository root, persisted in `managed_provider` and re-probed
   with `/hello` on recovery, so turns and prompts survive an ocman restart.
   Out-of-range versions stop new turns through `/drain` and are replaced only

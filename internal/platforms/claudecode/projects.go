@@ -56,7 +56,7 @@ func (p *claudeProject) start(ctx context.Context) {
 
 // recover reattaches every persisted supervisor that is still running.
 func (c *claudeProjects) recover(ctx context.Context) {
-	roots, err := c.mgr.State.ListManagedProviders(ctx, c.mgr.Runtime.ProviderID)
+	roots, err := c.mgr.State.ListManagedProviders(ctx, c.mgr.Runtime.PlatformID)
 	if err != nil {
 		log.WithError(err).Warn("listing Claude project supervisors")
 		return

@@ -1,10 +1,19 @@
-# Internal provider protocol
+# Internal backend protocol
+
+A **platform** is the coding tool that owns a session, such as OpenCode or Claude
+Code. A **backend** implements that platform through this socket protocol. A
+**model provider** supplies the LLM, such as Anthropic or OpenAI.
+
+The Go handshake field is `Hello.PlatformID`. Its legacy JSON key `providerId`
+identifies the platform, not a model provider. The `providerprotocol`,
+`providersupervisor`, and `platforms/provider` package paths, `ocman provider`
+command, and persisted provider names are retained for compatibility.
 
 HTTP/1.1 with JSON bodies over an owner-local unix socket. Requests and responses
 use the exported DTOs in `protocol.go`; request field spelling follows those
 shared DTOs. No credentials are exchanged. The runtime owns socket permissions.
 Negotiate `/hello` before other calls. Only version 3 is accepted; an explicit
-`VersionError` signals runtime management to drain before replacing a provider.
+`VersionError` signals runtime management to drain before replacing a backend.
 Version 2 publishes exact (escaped) prompt patterns, see below, and answers a
 reply the agent received but could not record with 503 `reply_unrecorded`;
 version 3 marks replayed lifecycle events of acknowledged turns. A draining
@@ -49,8 +58,8 @@ prompts to the user.
 Optional Platform capabilities also support GET `/sessions/{id}/changes`, GET
 `/sessions/{id}/info`, and POST `/sessions/{id}/move` using the shared Platform
 DTOs. Mutations with no response return 204. Errors return JSON `Error`; 404 means
-not found, 409 busy, 501 unsupported. Other 4xx errors retain the provider's
-message. A prompt reply the agent received but whose event the provider could
+not found, 409 busy, 501 unsupported. Other 4xx errors retain the backend's
+message. A prompt reply the agent received but whose event the backend could
 not record yet is 503 with code `reply_unrecorded`
 (`platforms.ErrReplyUnrecorded`): the decision took effect, its event follows. Unsupported methods must be gated locally using `/hello` capabilities.
 Composer gates creation and sending; rename, native queue and account have
@@ -58,7 +67,7 @@ additional protocol capability flags. Browsing and lifecycle reads are required.
 
 SSE frames carry `id: <positive uint64>` and `data: <Event JSON>`. `after` is
 exclusive and defaults to 0. The sequence orders all sessions on this socket,
-so one cursor can replay all sessions. A provider must not reuse a sequence
+so one cursor can replay all sessions. A backend must not reuse a sequence
 within a supervisor lifetime. The runtime must create a fresh adapter when it
 replaces the supervisor. Comment heartbeats keep an idle stream alive.
 Frames are limited to 8 MiB. A replay must retain the initializing
@@ -72,7 +81,7 @@ by a replied event with a cancelled reason.
 
 A permission prompt's `patterns` and `always` use OpenCode's wildcard syntax
 plus one escape (`ExactPattern`, `PatternValue` in `pattern.go`): a backslash
-before `*`, `?` or `\` makes it literal. A provider publishes a call's
+before `*`, `?` or `\` makes it literal. A backend publishes a call's
 argument as an exact pattern, so "Allow always" grants that call only.
 
 A headless reconnect re-delivers still-pending prompts under new sequences;
@@ -91,14 +100,14 @@ sequence zero, covering changes between the REST snapshot and connection.
 Prompts already consumed by the headless watcher come from the current pending
 cache on connection rather than being replayed into the judge. Both update instance-local caches, with sequence
 deduplication for sink delivery. Pending lists are read from those caches;
-explicit refresh operations reconcile them with the provider. Session ownership
+explicit refresh operations reconcile them with the backend. Session ownership
 is learned from listing, details, creation and events without network calls from
 `Owns`. Session-scoped catalogs resolve the cached directory, fetching detail
 only when it is unknown.
 
-Providers advertising `capabilities.replay` implement explicit turn acknowledgment
+Backends advertising `capabilities.replay` implement explicit turn acknowledgment
 and snapshot leases. This is an additive extension supported on both internal
-versions 1 and 0; a provider without this capability retains the legacy stream
+versions 1 and 0; a backend without this capability retains the legacy stream
 behavior and must not truncate its spool. `/drain` is a version-independent
 runtime control, including on supervisors outside the negotiated version range.
 It remains available during draining, as do permission/question replies and abort.
@@ -112,7 +121,7 @@ including ones asked later in the draining turn, are pushed to the prompt
 pipeline (rules, judge, Inbox) and to the session's browser stream, never
 polled, so they stay answerable and the drain can finish; turns are not
 acknowledged. A supervisor launched with
-another launch configuration (CLI or Claude config, `ProviderRuntime.Identity`)
+another launch configuration (CLI or Claude config, `BackendRuntime.Identity`)
 is drained the same way with its regular adapter. Their shapes must not change
 between versions.
 
@@ -126,7 +135,7 @@ permissions and questions prevent truncation.
 For browsers, `ProxyEvents` takes a fresh snapshot containing v1 upserts for the
 session's current messages, parts and status, plus unresolved prompts. It writes
 those upserts before attaching to `/events?after=<cursor>&lease=<lease>`. The
-snapshot's cursor is captured under the same lock as publishing and the provider's
+snapshot's cursor is captured under the same lock as publishing and the backend's
 state update. The single-use lease pins intervening events for 60 seconds; expired
 leases return 409 and require a fresh snapshot. Each tab has its own lease. This
 repairs a stale REST snapshot even if an earlier turn was already acknowledged
@@ -143,5 +152,5 @@ Rules are decided by ocman, never evaluated in the supervisor. The rules endpoin
 is a transport for the authoritative ruleset, not permission evaluation. An
 adapter given an ocman-owned `Rules` store (`SetRules`, used for Claude) serves
 rulesets locally and answers rule-decided prompts itself before they reach its
-pending map, its event handler or a browser stream; such a provider may answer
+pending map, its event handler or a browser stream; such a backend may answer
 the rules endpoints with 501.

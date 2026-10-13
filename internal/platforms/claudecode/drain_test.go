@@ -100,7 +100,7 @@ func newDrainEnv(t *testing.T) *drainEnv {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	sup, err := providersupervisor.New(filepath.Join(e.data, "old-spool"), providersupervisor.Backend{
-		Hello:   providerprotocol.Hello{ProtocolVersion: 99, ProviderID: "claudecode", CLIVersion: "2.1.220"},
+		Hello:   providerprotocol.Hello{ProtocolVersion: 99, PlatformID: "claudecode", CLIVersion: "2.1.220"},
 		Handler: handler,
 	})
 	if err != nil {

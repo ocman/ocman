@@ -42,7 +42,7 @@ func providerManager(t *testing.T) (*ProviderManager, string, string) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	binary := providertest.Binary(t)
-	m := &ProviderManager{Runtime: ocruntime.NewProviderRuntime("fake", binary, dir), State: db}
+	m := &ProviderManager{Runtime: ocruntime.NewBackendRuntime("fake", binary, dir), State: db}
 	t.Cleanup(func() {
 		paths, _ := filepath.Glob(filepath.Join(dir, "*.pid"))
 		for _, path := range paths {

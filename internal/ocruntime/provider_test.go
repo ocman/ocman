@@ -17,7 +17,7 @@ import (
 
 func TestProviderLaunchAndStop(t *testing.T) {
 	dir := providertest.Directory(t)
-	r := NewProviderRuntime("fake", "/fake executable", dir)
+	r := NewBackendRuntime("fake", "/fake executable", dir)
 	addr := "127.0.0.1:1"
 	r.Args = func() []string { return []string{"--mcp-addr", addr} }
 	addr = "127.0.0.1:2" // read at launch, not when configured
@@ -80,7 +80,7 @@ func TestProviderProbeVersionsAndMalformedResponses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var response any = providerprotocol.Hello{ProviderID: "fake", CLIVersion: "test", ProtocolVersion: providerprotocol.CurrentVersion}
+	var response any = providerprotocol.Hello{PlatformID: "fake", CLIVersion: "test", ProtocolVersion: providerprotocol.CurrentVersion}
 	status := 200
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
@@ -88,10 +88,10 @@ func TestProviderProbeVersionsAndMalformedResponses(t *testing.T) {
 	})}
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
-	r := NewProviderRuntime("fake", "/binary", dir)
+	r := NewBackendRuntime("fake", "/binary", dir)
 	inst := &Instance{Endpoint: "unix://" + socket}
 	for _, version := range []int{providerprotocol.CurrentVersion, providerprotocol.PreviousVersion, 99} {
-		response = providerprotocol.Hello{ProviderID: "fake", CLIVersion: "test", ProtocolVersion: version}
+		response = providerprotocol.Hello{PlatformID: "fake", CLIVersion: "test", ProtocolVersion: version}
 		err := r.Probe(t.Context(), inst)
 		if version == 99 {
 			var skew *providerprotocol.VersionError
@@ -102,7 +102,7 @@ func TestProviderProbeVersionsAndMalformedResponses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, bad := range []any{map[string]any{"providerId": "fake"}, providerprotocol.Hello{ProviderID: "other", CLIVersion: "test"}, "bad"} {
+	for _, bad := range []any{map[string]any{"providerId": "fake"}, providerprotocol.Hello{PlatformID: "other", CLIVersion: "test"}, "bad"} {
 		response = bad
 		if err := r.Probe(t.Context(), inst); !errors.Is(err, ErrProbeUnreachable) {
 			t.Fatal(err)
@@ -139,7 +139,7 @@ func TestProviderIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	r := NewProviderRuntime("fake", "/fake", dir)
+	r := NewBackendRuntime("fake", "/fake", dir)
 	r.launch = func(context.Context, string, []string) error { return nil }
 	if !r.Current(&Instance{ID: "fake-old-name"}) {
 		t.Fatal("without an identity every instance is current")

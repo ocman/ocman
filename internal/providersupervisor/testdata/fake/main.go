@@ -31,7 +31,7 @@ func main() {
 	var s *providersupervisor.Supervisor
 	view := make(map[string]providerprotocol.Event)
 	backend := providersupervisor.Backend{
-		Hello: providerprotocol.Hello{ProviderID: "fake", ProtocolVersion: *version, CLIVersion: "fixture", Capabilities: providerprotocol.Capabilities{Capabilities: platforms.Capabilities{Events: true, RespondPermission: true}}},
+		Hello: providerprotocol.Hello{PlatformID: "fake", ProtocolVersion: *version, CLIVersion: "fixture", Capabilities: providerprotocol.Capabilities{Capabilities: platforms.Capabilities{Events: true, RespondPermission: true}}},
 		Snapshot: func(_ context.Context, id string) ([]providerprotocol.Event, error) {
 			var events []providerprotocol.Event
 			for _, event := range view {

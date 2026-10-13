@@ -25,13 +25,13 @@ const KindProviderTmux = "provider-tmux"
 
 var providerName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// ProviderRuntime launches the ocman executable, never a CLI agent in a TTY.
-// Provider children are owned by the supervisor and communicate through pipes.
-type ProviderRuntime struct {
-	ProviderID string
+// BackendRuntime launches the ocman executable, never a CLI agent in a TTY.
+// Backend children are owned by the supervisor and communicate through pipes.
+type BackendRuntime struct {
+	PlatformID string
 	Binary     string
 	Directory  string
-	// Args returns provider-specific flags appended at each launch, read
+	// Args returns backend-specific flags appended at each launch, read
 	// then so values bound after startup (the MCP listener) are current.
 	Args func() []string
 	// Identity names the launch configuration (e.g. CLI and account config)
@@ -43,16 +43,16 @@ type ProviderRuntime struct {
 	alive    func(context.Context, string) (bool, error)
 }
 
-func NewProviderRuntime(providerID, binary, directory string) *ProviderRuntime {
-	return &ProviderRuntime{ProviderID: providerID, Binary: binary, Directory: directory,
+func NewBackendRuntime(platformID, binary, directory string) *BackendRuntime {
+	return &BackendRuntime{PlatformID: platformID, Binary: binary, Directory: directory,
 		launch: func(ctx context.Context, _ string, args []string) error { return tmux.Run(ctx, args...) },
 		stop:   tmux.KillManagedSession,
 		alive:  tmux.HasManagedSession,
 	}
 }
 
-func (r *ProviderRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance, error) {
-	if !providerName.MatchString(r.ProviderID) || !filepath.IsAbs(spec.RepoRoot) || !filepath.IsAbs(r.Binary) || !filepath.IsAbs(r.Directory) {
+func (r *BackendRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance, error) {
+	if !providerName.MatchString(r.PlatformID) || !filepath.IsAbs(spec.RepoRoot) || !filepath.IsAbs(r.Binary) || !filepath.IsAbs(r.Directory) {
 		return nil, fmt.Errorf("provider runtime requires an id and absolute binary, root and state paths")
 	}
 	var nonce [6]byte
@@ -60,7 +60,7 @@ func (r *ProviderRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instanc
 		return nil, err
 	}
 	rootHash := sha256.Sum256([]byte(spec.RepoRoot))
-	name := r.ProviderID + "-" + hex.EncodeToString(rootHash[:6]) + "-" + r.identity() + "-" + hex.EncodeToString(nonce[:])
+	name := r.PlatformID + "-" + hex.EncodeToString(rootHash[:6]) + "-" + r.identity() + "-" + hex.EncodeToString(nonce[:])
 	dir := filepath.Join(r.Directory, name)
 	socket := filepath.Join(dir, "s")
 	if len(socket) > 103 {
@@ -72,7 +72,7 @@ func (r *ProviderRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instanc
 	// tmux accepts an executable plus argv; avoid a shell quoting layer entirely.
 	// Shares the managed server with OpenCode (tmux.ManagedServer).
 	args := tmux.ManagedArgs("new-session", "-d", "-s", name, "-n", "provider", "-c", spec.RepoRoot, "--",
-		r.Binary, "provider", r.ProviderID, "--socket", socket, "--spool", filepath.Join(dir, "spool"), "--repo", spec.RepoRoot)
+		r.Binary, "provider", r.PlatformID, "--socket", socket, "--spool", filepath.Join(dir, "spool"), "--repo", spec.RepoRoot)
 	if r.Args != nil {
 		args = append(args, r.Args()...)
 	}
@@ -120,7 +120,7 @@ func providerCall(ctx context.Context, inst *Instance, method, path string, resu
 	return nil
 }
 
-func (r *ProviderRuntime) Probe(ctx context.Context, inst *Instance) error {
+func (r *BackendRuntime) Probe(ctx context.Context, inst *Instance) error {
 	var hello struct {
 		providerprotocol.Hello
 		Version *int `json:"protocolVersion"`
@@ -128,13 +128,13 @@ func (r *ProviderRuntime) Probe(ctx context.Context, inst *Instance) error {
 	if err := providerCall(ctx, inst, "GET", "/hello", &hello); err != nil {
 		return err
 	}
-	if hello.Version == nil || hello.ProviderID != r.ProviderID || hello.CLIVersion == "" {
+	if hello.Version == nil || hello.PlatformID != r.PlatformID || hello.CLIVersion == "" {
 		return ErrProbeUnreachable
 	}
 	return providerprotocol.CheckVersion(*hello.Version)
 }
 
-func (r *ProviderRuntime) Stop(ctx context.Context, inst *Instance) error {
+func (r *BackendRuntime) Stop(ctx context.Context, inst *Instance) error {
 	if inst == nil || !providerName.MatchString(inst.ID) || inst.Kind != KindProviderTmux {
 		return fmt.Errorf("invalid provider instance")
 	}
@@ -142,7 +142,7 @@ func (r *ProviderRuntime) Stop(ctx context.Context, inst *Instance) error {
 }
 
 // Drain is version-independent: it blocks admission before reporting idle.
-func (r *ProviderRuntime) Drain(ctx context.Context, inst *Instance) (bool, error) {
+func (r *BackendRuntime) Drain(ctx context.Context, inst *Instance) (bool, error) {
 	var drain struct {
 		Idle *bool `json:"idle"`
 	}
@@ -155,10 +155,10 @@ func (r *ProviderRuntime) Drain(ctx context.Context, inst *Instance) (bool, erro
 	return *drain.Idle, nil
 }
 
-var _ Runtime = (*ProviderRuntime)(nil)
+var _ Runtime = (*BackendRuntime)(nil)
 
 // Alive distinguishes a dead tracked process from an uncertain API timeout.
-func (r *ProviderRuntime) Alive(ctx context.Context, inst *Instance) (bool, error) {
+func (r *BackendRuntime) Alive(ctx context.Context, inst *Instance) (bool, error) {
 	if inst == nil || inst.Kind != KindProviderTmux || !providerName.MatchString(inst.ID) {
 		return false, fmt.Errorf("invalid provider instance")
 	}
@@ -166,7 +166,7 @@ func (r *ProviderRuntime) Alive(ctx context.Context, inst *Instance) (bool, erro
 }
 
 // identity is a short hash of Identity(), "0" without one.
-func (r *ProviderRuntime) identity() string {
+func (r *BackendRuntime) identity() string {
 	if r.Identity == nil {
 		return "0"
 	}
@@ -176,6 +176,6 @@ func (r *ProviderRuntime) identity() string {
 
 // Current reports whether inst was launched with the current launch
 // configuration. One that was not keeps running until it is drained.
-func (r *ProviderRuntime) Current(inst *Instance) bool {
+func (r *BackendRuntime) Current(inst *Instance) bool {
 	return r.Identity == nil || (inst != nil && strings.Contains(inst.ID, "-"+r.identity()+"-"))
 }

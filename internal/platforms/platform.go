@@ -1,6 +1,6 @@
 // Package platforms defines the multi-platform adapter contract.
 //
-// Terminology. Ocman distinguishes two different "agent" concepts:
+// Terminology:
 //
 //   - Platform: the coding-agent tool that produces a session — OpenCode,
 //     Codex, Gemini, ... This package is about platforms.
@@ -10,6 +10,10 @@
 //     subagents, ...). That name is preserved in MessageData.Agent, the
 //     OpenCode composer-agent catalog, and the frontend AgentPicker — it
 //     describes a role within a single session, not the platform.
+//   - Backend: the implementation serving a platform through ocman's internal
+//     socket protocol. Legacy provider package and command names refer to this.
+//   - Model provider: the LLM service, such as Anthropic or OpenAI. ProviderID
+//     in model catalogs and messages identifies this service, not a platform.
 //
 // Every platform adapter implements Platform. HTTP handlers resolve an
 // adapter for each request (from ?platform= or a reverse lookup) and
@@ -26,7 +30,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 )
 
-// ID identifies a platform adapter, e.g. "opencode", "claude-code".
+// ID identifies a platform adapter, e.g. "opencode", "claudecode".
 type ID string
 
 // SessionDetail is the full response shape for fetching one session:

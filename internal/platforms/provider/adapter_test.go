@@ -59,7 +59,7 @@ func newFake(t *testing.T, caps providerprotocol.Capabilities) *fakeProvider {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	f := &fakeProvider{socket: filepath.Join(dir, "s"), hello: providerprotocol.Hello{
-		ProtocolVersion: providerprotocol.CurrentVersion, ProviderID: "fake", CLIVersion: "test-only", Capabilities: caps,
+		ProtocolVersion: providerprotocol.CurrentVersion, PlatformID: "fake", CLIVersion: "test-only", Capabilities: caps,
 	}, replies: make(map[string]fakeReply)}
 	listener, err := net.Listen("unix", f.socket)
 	if err != nil {
@@ -344,7 +344,7 @@ func TestVersionsAndHandshakeErrors(t *testing.T) {
 		})
 	}
 	f := newFake(t, allCapabilities())
-	f.hello.ProviderID = ""
+	f.hello.PlatformID = ""
 	if _, err := New(t.Context(), f.socket); err == nil {
 		t.Fatal("accepted missing provider id")
 	}

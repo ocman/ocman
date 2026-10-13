@@ -1,4 +1,4 @@
-// Package provider adapts an owner-local provider socket to platforms.Platform.
+// Package provider adapts an owner-local backend socket to platforms.Platform.
 package provider
 
 import (
@@ -100,7 +100,7 @@ func connect(ctx context.Context, socket string, draining bool) (*Adapter, error
 		transport.CloseIdleConnections()
 		return nil, err
 	}
-	if a.hello.ProviderID == "" {
+	if a.hello.PlatformID == "" {
 		transport.CloseIdleConnections()
 		return nil, fmt.Errorf("provider /hello omitted providerId")
 	}
@@ -114,8 +114,8 @@ func (a *Adapter) Close() {
 	}
 	a.client.CloseIdleConnections()
 }
-func (a *Adapter) ID() platforms.ID                     { return platforms.ID(a.hello.ProviderID) }
-func (a *Adapter) DisplayName() string                  { return a.hello.ProviderID }
+func (a *Adapter) ID() platforms.ID                     { return platforms.ID(a.hello.PlatformID) }
+func (a *Adapter) DisplayName() string                  { return a.hello.PlatformID }
 func (a *Adapter) Capabilities() platforms.Capabilities { return a.hello.Capabilities.Capabilities }
 func (a *Adapter) Hello() providerprotocol.Hello        { return a.hello }
 
@@ -127,7 +127,7 @@ func (a *Adapter) ReplyOutcomes(context.Context, string) bool {
 func (a *Adapter) Available(ctx context.Context) bool {
 	var hello providerprotocol.Hello
 	return a.call(ctx, true, "GET", "/hello", nil, &hello) == nil &&
-		hello.ProviderID == a.hello.ProviderID && providerprotocol.CheckVersion(hello.ProtocolVersion) == nil
+		hello.PlatformID == a.hello.PlatformID && providerprotocol.CheckVersion(hello.ProtocolVersion) == nil
 }
 
 func (a *Adapter) call(ctx context.Context, supported bool, method, path string, body, out any) error {

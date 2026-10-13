@@ -19,7 +19,7 @@ import (
 
 func supervisor(t *testing.T) *Supervisor {
 	t.Helper()
-	s, err := New(t.TempDir(), Backend{Hello: providerprotocol.Hello{ProviderID: "fake", ProtocolVersion: providerprotocol.CurrentVersion, CLIVersion: "test"}, Snapshot: func(context.Context, string) ([]providerprotocol.Event, error) {
+	s, err := New(t.TempDir(), Backend{Hello: providerprotocol.Hello{PlatformID: "fake", ProtocolVersion: providerprotocol.CurrentVersion, CLIVersion: "test"}, Snapshot: func(context.Context, string) ([]providerprotocol.Event, error) {
 		return []providerprotocol.Event{{Type: "message.part.updated", Properties: json.RawMessage(`{"part":{"sessionID":"s","id":"p","text":"snapshot"}}`)}}, nil
 	}})
 	if err != nil {

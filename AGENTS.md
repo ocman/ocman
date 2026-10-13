@@ -9,11 +9,11 @@ A web dashboard for viewing coding-agent session data. Ocman supports:
   API.
 - **Claude Code** (`-platforms claudecode`) — indexes the transcripts
   under `~/.claude/projects` and drives the sessions ocman starts through
-  the user's own `claude` binary, via the provider layer below. User
+  the user's own `claude` binary, via the backend layer below. User
   docs: `docs/features/claude-code.md`.
 
-**Provider layer.** Platforms other than OpenCode plug in through an
-ocman-owned, internal provider protocol (`internal/providerprotocol`,
+**Backend layer.** Platforms other than OpenCode plug in through an
+ocman-owned, internal backend protocol (`internal/providerprotocol`,
 spec AD-2): HTTP + SSE over an owner-local unix socket, `/hello`
 handshake with protocol version and capabilities, and events in the
 OpenCode v1 shapes the frontend already reduces (plus `limited` status
@@ -32,7 +32,7 @@ Claude browsing runs in an **in-process** supervisor, one per machine, on
 a private temp-dir socket (`startClaudeBrowser` in `internal/platforms/claudecode/platform.go`):
 it lists every transcript and launches nothing. Sessions ocman launches
 are driven by **one tmux-hosted supervisor per repository root**
-(`ocman provider claudecode`, hosted by `ocruntime.ProviderRuntime` +
+(`ocman provider claudecode`, hosted by `ocruntime.BackendRuntime` +
 `hostsvc/local.ProviderManager`, persisted in `managed_provider`),
 created by `EnsureRuntime`/create/send and reached through its own
 adapter (`internal/platforms/claudecode/projects.go`). Each `claude` child runs in its
@@ -46,7 +46,7 @@ read-only under any other. On restart ocman re-probes the persisted
 endpoints, reattaches live supervisors and replays their unacknowledged turns
 and pending prompts; a dead one is relaunched by the next send. One that is
 out of protocol range, or was launched with another `claude` or
-`CLAUDE_CONFIG_DIR` (`ProviderRuntime.Identity`, hashed into the tmux name),
+`CLAUDE_CONFIG_DIR` (`BackendRuntime.Identity`, hashed into the tmux name),
 drains and is replaced only once idle: meanwhile its prompts stay answerable
 (`provider.NewDraining` uses only the version-independent routes: its prompt
 events are pushed through the headless stream, prompt replies and abort)
@@ -581,7 +581,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   instance in `state.db`'s `managed_opencode` table (v35, probe-on-
   recovery). Launch capability is surfaced as the `HostCaps.OpencodeLaunch`
   (`opencodeLaunch`) flag, distinct from `Tmux`; the frontend gates
-  managed-launch UI on it. `ProviderRuntime` hosts `ocman provider <id>`
+  managed-launch UI on it. `BackendRuntime` hosts `ocman provider <id>`
   on the same `ocman-agents` tmux server on a unix socket, probed with
   `/hello` and persisted in `managed_provider`; it hosts Claude's
   per-project supervisors.
@@ -1157,8 +1157,12 @@ detail into the prose below each one.
   and eagerly imported. Backend plugins are a separate mechanism (plugin panes
   and palette actions).
 - **Terminology**: *platform* = the tool that produced the session
-  (OpenCode). *Agent* = a composer-level role within a session
-  (OpenCode's `build` / `plan` / user-defined subagent).
+  (OpenCode or Claude Code). *Backend* = the implementation serving a platform
+  through the internal socket protocol. *Model provider* = the LLM service
+  (Anthropic or OpenAI). *Agent* = a composer-level role within a session
+  (OpenCode's `build` / `plan` / user-defined subagent). Legacy provider package,
+  command, wire and database names remain for compatibility; `Hello.PlatformID`
+  and `BackendRuntime.PlatformID` identify the platform.
 - API routes use `requireGET` / `requirePOST` wrappers for method
   enforcement. Privileged host-control routes additionally use
   `requireLocalhost`, which checks both the loopback peer and browser origin.

@@ -26,12 +26,15 @@ func TestHelloWireCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hello.ProviderID != "test" || hello.CLIVersion != "1.2.3" || !hello.Capabilities.Composer || !hello.Capabilities.Events || !hello.Capabilities.NativeQueue || !hello.Capabilities.Rename || !hello.Capabilities.Account {
+	if hello.PlatformID != "test" || hello.CLIVersion != "1.2.3" || !hello.Capabilities.Composer || !hello.Capabilities.Events || !hello.Capabilities.NativeQueue || !hello.Capabilities.Rename || !hello.Capabilities.Account {
 		t.Fatal(hello)
 	}
 	data, err := json.Marshal(hello)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"providerId":"test"`) || strings.Contains(string(data), `"platformId"`) {
+		t.Fatalf("legacy handshake key changed: %s", data)
 	}
 	var copy Hello
 	if err := json.Unmarshal(data, &copy); err != nil {

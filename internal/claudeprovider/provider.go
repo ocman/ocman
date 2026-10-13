@@ -101,7 +101,7 @@ func newSupervisor(ctx context.Context, opts Options, spool string) (*providersu
 	sup, err := providersupervisor.New(spool, providersupervisor.Backend{
 		Hello: providerprotocol.Hello{
 			ProtocolVersion: providerprotocol.CurrentVersion,
-			ProviderID:      PlatformID,
+			PlatformID:      PlatformID,
 			CLIVersion:      version,
 			Capabilities: providerprotocol.Capabilities{Rename: true, Account: true, Hooks: true, Capabilities: platforms.Capabilities{
 				Composer: true, Abort: true, Compact: true, Fork: true, Events: true, SlashCommands: true, ModelCatalog: true, AgentCatalog: true,

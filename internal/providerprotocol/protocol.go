@@ -1,4 +1,4 @@
-// Package providerprotocol defines ocman's internal HTTP + SSE provider wire
+// Package providerprotocol defines ocman's internal HTTP + SSE backend wire
 // contract. Its only ocman dependencies are the shared session and platform DTOs.
 package providerprotocol
 
@@ -30,10 +30,12 @@ const (
 )
 
 type Hello struct {
-	ProtocolVersion int          `json:"protocolVersion"`
-	ProviderID      string       `json:"providerId"`
-	CLIVersion      string       `json:"cliVersion"`
-	Capabilities    Capabilities `json:"capabilities"`
+	ProtocolVersion int `json:"protocolVersion"`
+	// PlatformID identifies the coding tool, not its model provider.
+	// The legacy wire key stays providerId for surviving supervisors.
+	PlatformID   string       `json:"providerId"`
+	CLIVersion   string       `json:"cliVersion"`
+	Capabilities Capabilities `json:"capabilities"`
 }
 
 type Capabilities struct {
@@ -45,7 +47,7 @@ type Capabilities struct {
 	Hooks       bool `json:"hooks"`  // POST /hooks: status of sessions started outside ocman
 }
 
-// HookEvent is one CLI hook (e.g. Stop) reported for a session the provider
+// HookEvent is one CLI hook (e.g. Stop) reported for a session the backend
 // does not drive. It updates that session's status only.
 type HookEvent struct {
 	Event     string `json:"event"`
@@ -84,7 +86,7 @@ func CheckVersion(version int) error {
 }
 
 // Event is an OpenCode v1 event. SSE id, outside this JSON payload, is the
-// provider-wide monotonically increasing sequence used by /events?after=.
+// backend-wide monotonically increasing sequence used by /events?after=.
 type Event struct {
 	Type       string          `json:"type"`
 	Properties json.RawMessage `json:"properties"`
@@ -106,7 +108,7 @@ type RateLimit struct {
 	ResetsAt    int64   `json:"resetsAt"`    // Unix milliseconds
 }
 
-// CodeReplyUnrecorded marks a 503 prompt reply the provider delivered but
+// CodeReplyUnrecorded marks a 503 prompt reply the backend delivered but
 // could not record yet (platforms.ErrReplyUnrecorded).
 const CodeReplyUnrecorded = "reply_unrecorded"
 

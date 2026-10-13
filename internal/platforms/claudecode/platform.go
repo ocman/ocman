@@ -96,7 +96,7 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 		database.AddAnalyticsSource(claudeprovider.AnalyticsSource(opts.IndexPath))
 	}
 	p := &claudePlatform{Adapter: adapter, cli: opts.CLI, configDir: opts.ConfigDir, marketplace: marketplace, hooks: hook != "", launchPath: opts.LaunchPath, slots: opts.SlotDir}
-	runtime := ocruntime.NewProviderRuntime(claudeprovider.PlatformID, exe, filepath.Join(dataDir, "p"))
+	runtime := ocruntime.NewBackendRuntime(claudeprovider.PlatformID, exe, filepath.Join(dataDir, "p"))
 	runtime.Args = func() []string {
 		args := []string{"--data-dir", dataDir, "--plugin-dir", pluginDir, "--claude-cli", opts.CLI, "--claude-config-dir", configEnv}
 		if addr, _ := p.mcpAddr.Load().(string); addr != "" {
