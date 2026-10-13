@@ -438,6 +438,9 @@ button.session-sidebar-group-header.collapsed::before {
    status dots of parent and child stay vertically aligned and the
    nesting reads as a gutter rather than shifted content. The glyph's
    left margin scales with nesting depth via --depth. */
+.session-sidebar-item-child {
+  padding-left: 12px;
+}
 .session-child-branch {
   flex-shrink: 0;
   align-self: flex-start;
