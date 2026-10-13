@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
@@ -93,7 +93,7 @@ export function useSidebarSessions({
   navigate,
 }: UseSidebarSessionsOptions): UseSidebarSessionsResult {
   const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
+  useLayoutEffect(() => { enabledRef.current = enabled; }, [enabled]);
   useActivityScope(enabled ? 'sessions' : undefined);
   const getSessions = useApiStore((s) => s.getSessions);
   const getSession = useApiStore((s) => s.getSession);
@@ -134,11 +134,11 @@ export function useSidebarSessions({
   }, [id]);
 
   const recentRequest = useRef<{ key: string; signal?: AbortSignal; force: boolean; promise: Promise<void> } | null>(null);
-  const loadRecentSessions = useCallback((signal?: AbortSignal, force = false): Promise<void> => {
+  const loadRecentSessions = useCallback(function load(signal?: AbortSignal, force = false): Promise<void> {
     if (!force && (!enabledRef.current || document.hidden)) return Promise.resolve();
     const key = JSON.stringify([id, sidebarRecentHoursRef.current]);
     if (recentRequest.current?.key === key && !recentRequest.current.signal?.aborted) {
-      if (force && !recentRequest.current.force) return recentRequest.current.promise.catch(() => {}).then(() => loadRecentSessions(signal, true));
+      if (force && !recentRequest.current.force) return recentRequest.current.promise.catch(() => {}).then(() => load(signal, true));
       return recentRequest.current.promise;
     }
     const promise = withDeadline(15_000, async (signal) => {

@@ -74,10 +74,9 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   // Read a snapshot, not a subscription: cache writes must not restart the stream.
   const cached = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
   // Pin the owner even if hover prefetches evict this entry from the LRU.
-  const ownerRef = useRef<{ id: string | undefined; platform: string | undefined }>({ id: sessionId, platform: undefined });
-  if (ownerRef.current.id !== sessionId) ownerRef.current = { id: sessionId, platform: undefined };
-  if (cached?.session.platform) ownerRef.current.platform = cached.session.platform;
-  const cachedPlatform = ownerRef.current.platform;
+  const [owner, setOwner] = useState<{ id: string | undefined; platform: string | undefined }>({ id: sessionId, platform: undefined });
+  const cachedPlatform = cached?.session.platform || (owner.id === sessionId ? owner.platform : undefined);
+  if (owner.id !== sessionId || owner.platform !== cachedPlatform) setOwner({ id: sessionId, platform: cachedPlatform });
   const routedPlatform = cachedPlatform?.startsWith('r-') ? cachedPlatform : undefined;
   const initialView: SessionView = cached ? {
     ...initialSessionView(sessionId!),
@@ -96,8 +95,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const loadMoreInFlightRef = useRef(false);
   const viewRef = useRef(view);
-  viewRef.current = view;
-  useLayoutEffect(markSseCommit, [view]);
+  useLayoutEffect(() => { viewRef.current = view; markSseCommit(); }, [view]);
 
   const clearPrompt = useCallback((kind: 'permission' | 'question', id: string) => {
     dispatch({ type: 'clearPrompt', kind, id });

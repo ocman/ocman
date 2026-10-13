@@ -20,10 +20,15 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<PermissionMode | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const [prevSessionId, setPrevSessionId] = useState(sessionId);
+  if (prevSessionId !== sessionId) {
+    setPrevSessionId(sessionId);
     setRules(null);
     setError('');
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     api
       .getPermissionRules(sessionId)
       .then((resp) => {

@@ -44,7 +44,6 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    setError('');
     Promise.all([loadProjectSettings(directory, remoteId), api.prepareSession({ directory, remoteId }, controller.signal)])
       .then(([settings, catalog]) => {
         if (controller.signal.aborted) return;
@@ -75,7 +74,7 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
     <h2>Project defaults</h2>
     <p>Used for new conversations on this machine. Individual composer choices take precedence.</p>
     {error && <p role="alert">{error}</p>}
-    {!defaults ? <>{!error ? <p role="status">Loading…</p> : <Button type="button" onClick={() => setAttempt(attempt + 1)}>Retry</Button>}</> : <>
+    {!defaults ? <>{!error ? <p role="status">Loading…</p> : <Button type="button" onClick={() => { setError(''); setAttempt(attempt + 1); }}>Retry</Button>}</> : <>
       <fieldset disabled={saving}>
         <SettingRow block label="Default model">
           <SearchSelect value={defaults.model} options={options(models, defaults.model)} ariaLabel="Default model" placeholder="Use inherited default" searchLabel="Search models" disabled={saving} onChange={(model) => setDefaults({ ...defaults, model })} />

@@ -143,9 +143,11 @@ function TemplateEditor({ label, value, onSave, onReset, placeholdersNote, testI
   const [draft, setDraft] = useState(value);
   const { state, track } = useSaveStatus();
   // Sync when the parent's persisted value changes (e.g. after Reset).
-  useEffect(() => {
+  const [prevValue, setPrevValue] = useState(value);
+  if (prevValue !== value) {
+    setPrevValue(value);
     setDraft(value);
-  }, [value]);
+  }
 
   return (
     <div className="settings-prompt-template" data-testid={`prompt-template-${testId}`}>

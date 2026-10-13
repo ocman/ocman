@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Part, TaskSessionData } from '../../lib/api';
 import { api } from '../../lib/api';
@@ -146,7 +146,7 @@ export function useSubagentTracking(
   // Ref-mirror so the SSE effect reads the latest set without
   // re-running on every change.
   const subagentSessionIdsRef = useRef<Set<string>>(subagentSessionIds);
-  subagentSessionIdsRef.current = subagentSessionIds;
+  useLayoutEffect(() => { subagentSessionIdsRef.current = subagentSessionIds; }, [subagentSessionIds]);
 
   // Derive in-flight task ids — ones whose state.status === 'running'.
   const runningTaskIds = useMemo(() => {

@@ -75,9 +75,11 @@ export function useInfiniteRows<E extends HTMLElement = HTMLDivElement>({
   // different file). Without this, switching from a 5000-row file to
   // a 50-row one would leave visibleCount stuck at 5000 — harmless,
   // but it makes the hook's contract less obvious.
-  useEffect(() => {
+  const [prevSize, setPrevSize] = useState({ total, initial });
+  if (prevSize.total !== total || prevSize.initial !== initial) {
+    setPrevSize({ total, initial });
     setVisibleCount(Math.min(initial, total));
-  }, [total, initial]);
+  }
 
   useEffect(() => {
     if (visibleCount >= total) return;

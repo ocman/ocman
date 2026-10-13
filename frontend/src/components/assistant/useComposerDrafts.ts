@@ -16,7 +16,8 @@ export function useComposerDrafts(
   onSync?: (text: string) => void,
 ) {
   const onSyncRef = useRef(onSync);
-  onSyncRef.current = onSync;
+  // Latest callback, published at commit; it only runs from storage subscriptions.
+  useLayoutEffect(() => { onSyncRef.current = onSync; });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // What this hook last loaded or persisted for the current key. An unchanged
   // textarea must not overwrite storage someone else updated meanwhile (a

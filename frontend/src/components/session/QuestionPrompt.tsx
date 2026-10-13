@@ -174,6 +174,7 @@ export function QuestionPrompt({
     const q = question.questions[currentStep];
     const multi = q?.multiple ? multiSelected[currentStep] : undefined;
     const sel = selectedIndices[currentStep];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pre-paint layout effect paired with the DOM focus below; reads selection only on step change
     if (multi && multi.length > 0) setFocusedRow(multi[0]);
     else if (sel != null && sel >= 0) setFocusedRow(sel);
     else if (customTexts[currentStep]?.trim()) setFocusedRow(CUSTOM_ROW);

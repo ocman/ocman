@@ -94,7 +94,6 @@ describe('useInfiniteRows', () => {
     // No IO in globalThis: hook short-circuits, no observer is created.
     mod.useInfiniteRows({ total: 100, initial: 10 });
     // No observer setup means the observer-effect's cleanup is empty.
-    // Any cleanup recorded must be the reset effect's no-op (none).
     for (const c of reactMock.cleanups) c();
   });
 
@@ -136,7 +135,7 @@ describe('useInfiniteRows', () => {
     // load only if we re-use the same setter — but here a new render starts
     // with fresh state arrays. Instead, re-fire the observer effect manually
     // by reading the captured effect callback.
-    const observerEffect = reactMock.effects[1]; // 0 = reset, 1 = observer setup
+    const observerEffect = reactMock.effects[0]; // the only effect: observer setup
     observerEffect.cb();
 
     expect(captured).not.toBeNull();

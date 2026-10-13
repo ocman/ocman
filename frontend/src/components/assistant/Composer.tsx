@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useImperativeHandle } from 'react';
 import './Composer.css';
 import { useComposerDrafts } from './useComposerDrafts';
 import { clearDraft, getDraft, getDraftVersion, saveDraft, useDraftWriteError } from '../../lib/composerDraft';
@@ -256,7 +256,7 @@ export function Composer({
     setIsBashMode(text.startsWith('!') && !!shellExec);
     slash.syncToInput(text);
   };
-  syncInputRef.current = syncInput;
+  useLayoutEffect(() => { syncInputRef.current = syncInput; });
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     syncInput(el.value);

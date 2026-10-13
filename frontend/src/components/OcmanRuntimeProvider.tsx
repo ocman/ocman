@@ -90,6 +90,7 @@ export function OcmanRuntimeProvider({
   const [reasoningNow, setReasoningNow] = useState(Date.now);
   useEffect(() => {
     if (!hasActiveReasoning) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs with the wall clock when the timer starts; Date.now() is impure in render
     setReasoningNow(Date.now());
     const timer = window.setInterval(() => setReasoningNow(Date.now()), 1000);
     return () => window.clearInterval(timer);

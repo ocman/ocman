@@ -68,6 +68,7 @@ export function ArtifactsPane({ sessionId, platformId, directory }: ArtifactsPan
     }
     if (!visible) { paused.current = true; return; }
     const p: ArtifactListParams | null = JSON.parse(key);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clears a load aborted by the scope change; tied to the refs reset above
     if (!p) { setArtifacts([]); setCursor(''); setError(''); setLoading(false); return; }
     lastKey.current = key;
     const ctrl = new AbortController();

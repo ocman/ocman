@@ -80,6 +80,7 @@ export function useDebouncedSessionResource<T>(
   const resumeRef = useRef(false);
   if (triggerRef.current === null) {
     triggerRef.current = new DebouncedTrigger(
+      // eslint-disable-next-line react-hooks/refs -- the callback only runs from the trigger's timers, never during render
       () => fetchRef.current(),
       { debounceMs: REFETCH_DEBOUNCE_MS, maxWaitMs: REFETCH_MAX_WAIT_MS },
     );
@@ -92,6 +93,7 @@ export function useDebouncedSessionResource<T>(
       return;
     }
     if (!enabled || !sessionId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps `data` null so re-enabling fetches immediately instead of debouncing; deriving in render would leave stale data in state
       setData(enabled ? null : emptyValue);
       setLoading(false);
       setError(null);

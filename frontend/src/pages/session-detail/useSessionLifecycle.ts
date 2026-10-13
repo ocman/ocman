@@ -48,6 +48,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
 
   useEffect(() => {
     if (entryRef.current.id !== sessionId) entryRef.current = { id: sessionId, opened: false };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets view state on session switch in the same effect that owns the SSE connection; deriving it in render would need a full lifecycle rewrite
     if (!sessionId) { setStatus('loading'); return; }
     if (sessionId === 'new') {
       dispatch({ type: 'load', view: initialSessionView(sessionId) });

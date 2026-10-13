@@ -46,17 +46,16 @@ export function useStickyNavigate(stickyParams: string[] = DEFAULT_STICKY_PARAMS
   const navigate = useNavigate();
   const location = useLocation();
 
-  return useCallback(((to: string | number, options?: NavigateOptions) => {
+  // Key on content so callers may pass an inline array.
+  const stickyKey = stickyParams.join(',');
+  const sticky = useCallback((to: string | number, options?: NavigateOptions) => {
     if (typeof to !== 'string') {
       navigate(to);
       return;
     }
-    navigate(applyStickyParams(to, location.search, stickyParams), options);
-    // location.search is the only thing the closure depends on that
-    // can change between calls; the sticky list is captured by
-    // reference and the caller is expected to pass a stable array.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }) as StickyNavigate, [navigate, location.search, stickyParams.join(',')]);
+    navigate(applyStickyParams(to, location.search, stickyKey ? stickyKey.split(',') : []), options);
+  }, [navigate, location.search, stickyKey]);
+  return sticky as StickyNavigate;
 }
 
 /**

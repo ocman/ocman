@@ -71,7 +71,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const draftId = params.draftId || NEW_SESSION_ID;
   const draftStart = useNewConversationDrafts((state) => state.starts[draftId]);
   const saveError = useNewConversationDrafts((state) => state.saveErrors[draftId]);
-  const openedWhilePending = useRef(!!draftStart && !draftStart.error && !draftStart.sessionId).current;
+  const [openedWhilePending] = useState(() => !!draftStart && !draftStart.error && !draftStart.sessionId);
   const recovered = useRef(false);
   const [recoveryKey, setRecoveryKey] = useState(0);
   useEffect(() => {
@@ -81,7 +81,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       setRecoveryKey(1);
     }
   }, [openedWhilePending, draftStart?.error]);
-  const saved = useRef(useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId)).current;
+  const [saved] = useState(() => useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId));
   const remoteId = params.remoteId || 'local';
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
@@ -91,12 +91,14 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   const catalogKey = JSON.stringify([remoteId, directory, params.platform]);
   const cachedCatalog = useMemo(() => getNewSessionCatalog(catalogKey), [catalogKey]);
   const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: DraftCatalog }>();
-  const [catalogError, setCatalogError] = useState('');
+  // Keyed by request so a new request (route change, retry) clears it without an effect.
+  const [catalogFailure, setCatalogFailure] = useState<{ request: string; message: string }>();
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const settingsRevision = useSettingsRevision();
   const catalogRequest = JSON.stringify([catalogKey, catalogAttempt, settingsRevision]);
   const catalog: DraftCatalog | undefined = prepared?.key === catalogKey ? prepared.catalog : cachedCatalog;
   const catalogReady = prepared?.request === catalogRequest;
+  const catalogError = catalogFailure?.request === catalogRequest ? catalogFailure.message : '';
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
 
@@ -116,7 +118,6 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
   // never launches OpenCode, so picking a machine starts nothing there.
   useEffect(() => {
     const controller = new AbortController();
-    setCatalogError('');
     Promise.all([
       api.prepareSession({ directory, remoteId, platform: params.platform }, controller.signal),
       loadProjectSettings(directory, remoteId),
@@ -131,7 +132,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       setPrepared({ key: catalogKey, request: catalogRequest, catalog });
     }).catch((err) => {
       if (controller.signal.aborted) return;
-      setCatalogError(err instanceof Error ? err.message : String(err));
+      setCatalogFailure({ request: catalogRequest, message: err instanceof Error ? err.message : String(err) });
     });
     return () => controller.abort();
   }, [directory, remoteId, params.platform, catalogKey, catalogRequest]);

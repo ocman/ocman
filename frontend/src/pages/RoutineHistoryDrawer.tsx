@@ -68,7 +68,7 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose, inboxes = [
   const [localTab, setLocalTab] = useState('history');
   const tab = activeTab ?? localTab;
   const [settingsOpened, setSettingsOpened] = useState(tab === 'settings');
-  useEffect(() => { if (tab === 'settings') setSettingsOpened(true); }, [tab]);
+  if (tab === 'settings' && !settingsOpened) setSettingsOpened(true);
   const [busy, setBusy] = useState(false);
   const visible = useDocumentVisible();
   const [shown, setShown] = useState<Shown>({ runs: [], exhausted: false });

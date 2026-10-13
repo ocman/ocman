@@ -22,6 +22,7 @@ export function useShareLinks<T extends ShareLinkLike>(
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clears the previous load's error right before refetching
     setError(null);
     let cancelled = false;
     load().then(

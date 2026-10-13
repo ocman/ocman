@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useLayoutEffect } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PermissionModeLock } from './PermissionModeLock';
@@ -38,6 +39,21 @@ describe('PermissionModeLock', () => {
     getPermissionRules.mockResolvedValue({ rules: planRules });
     render(<PermissionModeLock sessionId="s1" />);
     expect(await screen.findByLabelText('Permission mode: Plan only')).toBeInTheDocument();
+  });
+
+  it("never commits the previous session's mode after switching sessions", async () => {
+    getPermissionRules.mockResolvedValueOnce({ rules: planRules }).mockReturnValue(new Promise(() => {}));
+    // Runs after commit, before passive effects: sees what the browser would paint.
+    const committed: string[] = [];
+    function Probe() {
+      useLayoutEffect(() => { committed.push(document.body.innerHTML); });
+      return null;
+    }
+    const { rerender } = render(<><PermissionModeLock sessionId="s1" /><Probe /></>);
+    await screen.findByLabelText('Permission mode: Plan only');
+    committed.length = 0;
+    rerender(<><PermissionModeLock sessionId="s2" /><Probe /></>);
+    expect(committed.some((html) => html.includes('Plan only'))).toBe(false);
   });
 
   it('shows Custom for unknown rulesets', async () => {

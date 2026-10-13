@@ -27,6 +27,7 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
     setError('');
     try { setDeliveries(await api.webhookInboxes.deliveries(inboxId)); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load deliveries.'); } finally { setLoading(false); }
   }, [inboxId]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount/inbox change; load() sets its loading flag before the request
   useEffect(() => { void load(); }, [load]);
   const redeliver = async (deliveryId: string) => {
     if (!window.confirm('Redeliver this webhook? Every matching routine runs again.')) return;

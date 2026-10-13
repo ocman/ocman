@@ -74,6 +74,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
   // Only list once the owner can serve it: a disconnected owner would 503,
   // and when capability polling reports it back the rows load by themselves.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch once the owner is reachable; load() sets its loading flag before the request
     if (allowed) void load();
   }, [allowed, load]);
 

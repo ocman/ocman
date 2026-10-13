@@ -35,6 +35,7 @@ export function PluginDeliveryBacklog({ plugin, owner }: { plugin: PluginRegistr
 
   useEffect(() => {
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load() only sets state after its awaited request
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);

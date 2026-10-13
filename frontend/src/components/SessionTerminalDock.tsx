@@ -92,6 +92,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
   useEffect(() => {
     // Without tmux the dock renders nothing, so there is nothing to list.
     if (!directory || !tmuxAvailable) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- drops tabs of a terminal source that went away; the dock renders nothing meanwhile
       setWindows([]);
       setActive(null);
       return;

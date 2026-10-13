@@ -39,6 +39,7 @@ export function Artifacts() {
 
   useEffect(() => {
     const ctrl = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag set right before the fetch this effect starts
     setLoading(true);
     artifactsApi.stats(ctrl.signal).then(setStats, () => undefined);
     artifactsApi.list({ directory, q }, ctrl.signal).then(
