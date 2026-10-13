@@ -32,12 +32,12 @@ func (h *testHost) RemoteID() string {
 	}
 	return "local"
 }
-func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	h.calls.Add(1)
 	if h.err != nil {
 		return nil, h.err
 	}
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "test"}}, nil
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "test"}}, nil
 }
 
 func (h *testHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*hostsvc.EnsureRuntimeResult, error) {

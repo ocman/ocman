@@ -94,7 +94,7 @@ func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculat
 func (a *Adapter) ID() platforms.ID { return PlatformID }
 
 // DisplayName returns the user-facing name.
-func (a *Adapter) DisplayName() string { return "OpenCode" }
+func (a *Adapter) DisplayName() string { return platforms.DisplayName(platforms.OpenCodeID) }
 
 // Available reports whether the underlying OpenCode database is usable.
 // Returns false when the adapter has no DB (OpenCode not installed).

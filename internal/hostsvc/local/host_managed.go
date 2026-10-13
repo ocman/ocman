@@ -19,7 +19,7 @@ import (
 )
 
 // EnsureProjectOpencode shares one managed instance across a project's worktrees.
-func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	if !h.opencodeEnabled() {
 		return nil, fmt.Errorf("OpenCode is disabled")
 	}
@@ -36,7 +36,7 @@ func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProj
 const sfLaunchTimeout = 2 * time.Minute
 
 // The shared launch outlives any one caller, bounded by sfLaunchTimeout.
-func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(context.Context, string) (*hostsvc.EnsureProjectOpencodeResult, error)) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error)) (*hostsvc.EnsureRuntimeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(contex
 		if r.err != nil {
 			return nil, r.err
 		}
-		return r.v.(*hostsvc.EnsureProjectOpencodeResult), nil
+		return r.v.(*hostsvc.EnsureRuntimeResult), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -77,7 +77,7 @@ func (h *Host) beforeReplace(ctx context.Context, root, reason string, inst *ocr
 	return nil
 }
 
-func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
 	if err := validateReplacementRoot(repoRoot); err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 		probeErr := h.runtime.Probe(ctx, inst)
 		if probeErr == nil {
 			h.authorizeInstance(repoRoot, inst)
-			return &hostsvc.EnsureProjectOpencodeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst}, nil
+			return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst}, nil
 		}
 		if errors.Is(probeErr, ocruntime.ErrProbeIdentityMismatch) {
 			// Retain the local cleanup handle, never authorize the rejected URL.
@@ -121,7 +121,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 			probeErr := h.runtime.Probe(ctx, inst)
 			if probeErr == nil {
 				h.authorizeInstance(repoRoot, inst)
-				return &hostsvc.EnsureProjectOpencodeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst}, nil
+				return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst}, nil
 			}
 			if ambiguousProbe(probeErr) {
 				h.setInstance(repoRoot, inst)
@@ -135,7 +135,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 	return h.launchAndTrack(ctx, repoRoot)
 }
 
-func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
 	if err := validateReplacementRoot(repoRoot); err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.Ens
 	return h.launchAndTrack(ctx, repoRoot)
 }
 
-func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
 	permJSON, err := buildExternalDirectoryPermission(worktreesRoot(repoRoot))
 	if err != nil {
 		return nil, fmt.Errorf("building OPENCODE_PERMISSION: %w", err)
@@ -211,7 +211,7 @@ func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.En
 			log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: persisting managed opencode row")
 		}
 	}
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst, Launched: true}, nil
+	return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst, Launched: true}, nil
 }
 
 func (h *Host) currentInstance(repoRoot string) *ocruntime.Instance {
@@ -319,7 +319,7 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 	return err
 }
 
-func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	if !h.opencodeEnabled() {
 		return nil, fmt.Errorf("OpenCode is disabled")
 	}

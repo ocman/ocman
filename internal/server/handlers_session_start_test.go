@@ -18,8 +18,8 @@ func startTestServer(t *testing.T, ensure *ensureHost) (*Server, *platforms.Regi
 	t.Helper()
 	srv, reg := newSessionsTestServer(t)
 	if ensure == nil {
-		ensure = &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-			return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
+		ensure = &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+			return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 		}}
 	}
 	srv.hostRouter = hostsvc.NewRouter(ensure)
@@ -31,9 +31,9 @@ func startTestServer(t *testing.T, ensure *ensureHost) (*Server, *platforms.Regi
 // with the first submission (/api/sessions/start).
 func TestPrepareSessionReturnsCatalogWithoutLaunching(t *testing.T) {
 	ensures := 0
-	srv, reg := startTestServer(t, &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv, reg := startTestServer(t, &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 		ensures++
-		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
+		return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 	}})
 	var asked platforms.DirectoryCatalogRequest
 	reg.Register(&fakePlatform{id: "opencode", directoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
@@ -212,9 +212,9 @@ func TestSessionLaunchRoutesRejectUntrustedClients(t *testing.T) {
 		for _, peer := range []string{"192.0.2.1:1234", "127.0.0.1:1234"} {
 			t.Run(path+peer, func(t *testing.T) {
 				calls := 0
-				srv, reg := startTestServer(t, &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+				srv, reg := startTestServer(t, &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 					calls++
-					return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
+					return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 				}})
 				reg.Register(&fakePlatform{id: "opencode"})
 				mux, err := srv.routes()

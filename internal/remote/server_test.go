@@ -230,8 +230,8 @@ func (localStubHost) RemoveWorktree(context.Context, hostsvc.RemoveWorktreeReque
 func (localStubHost) LaunchTmux(context.Context, hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
 	return &hostsvc.LaunchTmuxResult{Session: "sess"}, nil
 }
-func (localStubHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "sess"}}, nil
+func (localStubHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "sess"}}, nil
 }
 
 func (h localStubHost) EnsureRuntime(ctx context.Context, platform string, dir string) (*hostsvc.EnsureRuntimeResult, error) {
@@ -244,8 +244,8 @@ func (localStubHost) StopProjectOpencode(context.Context, hostsvc.EnsureProjectO
 	return nil
 }
 func (localStubHost) ReloadOpencode(context.Context) error { return nil }
-func (localStubHost) RestartProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5678", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "restarted"}, Launched: true}, nil
+func (localStubHost) RestartProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:5678", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "restarted"}, Launched: true}, nil
 }
 func (localStubHost) ManagedOpencodes(context.Context) ([]hostsvc.ManagedOpencode, error) {
 	return nil, nil

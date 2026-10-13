@@ -3,6 +3,7 @@ package claudecode
 
 import (
 	"context"
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,10 +153,12 @@ func (p *claudePlatform) WorktreeName(ctx context.Context, dir, prompt string) (
 	return claudeprovider.WorktreeName(ctx, p.slots, p.cli, dir, prompt)
 }
 
-// HelperSlot bounds one-shot claude calls made outside the provider (the
-// Claude judge) by the machine-wide helper budget.
-func (p *claudePlatform) HelperSlot(ctx context.Context) (func(), error) {
-	return claudeprovider.HelperSlot(ctx, p.slots)
+// PermissionJudge judges permissions when no OpenCode instance is reachable
+// (AD-8), bounded by the machine-wide helper budget.
+func (p *claudePlatform) PermissionJudge() autoapprove.Judge {
+	return autoapprove.ClaudeJudge{CLI: p.cli, Slot: func(ctx context.Context) (func(), error) {
+		return claudeprovider.HelperSlot(ctx, p.slots)
+	}}
 }
 
 func startClaudeBrowser(ctx context.Context, opts claudeprovider.Options) (*provider.Adapter, error) {
@@ -196,4 +199,6 @@ func (p *claudePlatform) SetMCPAddr(addr string) {
 	}
 }
 
-func (*claudePlatform) DisplayName() string { return "Claude Code" }
+func (*claudePlatform) DisplayName() string {
+	return platforms.DisplayName(claudeprovider.PlatformID)
+}

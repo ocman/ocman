@@ -107,8 +107,8 @@ func TestConversationPluginHelper(t *testing.T) {
 type conversationTestHost struct{ hostsvc.Host }
 
 func (*conversationTestHost) RemoteID() string { return "local" }
-func (*conversationTestHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: req.ProjectDir}, nil
+func (*conversationTestHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: req.ProjectDir}, nil
 }
 
 type conversationFixture struct {

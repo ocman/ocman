@@ -40,9 +40,9 @@ func (h *ownerSpy) CreateWorktreeSession(context.Context, hostsvc.WorktreeSessio
 	return &hostsvc.WorktreeSessionResult{}, nil
 }
 
-func (h *ownerSpy) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *ownerSpy) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	h.hit()
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234"}, nil
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234"}, nil
 }
 
 func (h *ownerSpy) TermWindows(context.Context, string) ([]hostsvc.TermWindow, error) {

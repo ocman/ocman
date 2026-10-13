@@ -69,7 +69,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if err := s.startModules(ctx, &workers); err != nil {
 		return err
 	}
-	s.watchProviderPrompts(ctx)
+	s.watchProviderPrompts(ctx, &workers)
 
 	workers.Go(func() { s.runAutoArchiveLoop(ctx) })
 	workers.Go(func() { s.runProjectsIndexLoop(ctx) })

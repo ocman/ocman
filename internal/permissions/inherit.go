@@ -62,16 +62,13 @@ var mcpKey = regexp.MustCompile(`^mcp__[a-z0-9_-]+$`)
 
 func supportedKey(key string) bool { return knownKeys[key] || mcpKey.MatchString(key) }
 
-// exactScopePlatforms record an approval's exact grant as its patterns
-// (providerprotocol.ExactPattern): Claude asks webfetch/websearch per URL or
-// query, so those keys are inherited per pattern there, never as a flat
-// allow-all. OpenCode's flat keys keep OpenCode's flat inheritance.
-var exactScopePlatforms = map[string]bool{"claudecode": true}
-
 // flatKey reports a key inherited as one pattern-less rule on platform
-// (a local id or a remote's compound r-<id>:<platform>).
+// (a local id or a remote's compound r-<id>:<platform>). Only OpenCode's
+// flat keys are flat: provider approvals record their exact grant as
+// patterns (providerprotocol.ExactPattern), e.g. a webfetch per URL, so
+// they are inherited per pattern, never as a flat allow-all.
 func flatKey(platform, key string) bool {
-	return flatActionKeys[key] && !exactScopePlatforms[platform[strings.LastIndex(platform, ":")+1:]]
+	return flatActionKeys[key] && platform[strings.LastIndex(platform, ":")+1:] == string(platforms.OpenCodeID)
 }
 
 // ApprovalLister is the slice of *state.DB the builder needs.

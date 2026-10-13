@@ -36,7 +36,7 @@ func TestWarmFailedStopPreservesRoutingOnInconclusiveRecovery(t *testing.T) {
 			rt.oldProbe = fmt.Errorf("%w: %w", ocruntime.ErrProbeUnreachable, cause)
 			h.deps.BeforeReplace = func(context.Context, string, string) error { t.Error("refreshed inconclusive stop"); return nil }
 			h.deps.AfterStop = func(context.Context, string) error { t.Error("confirmed inconclusive stop"); return nil }
-			for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
+			for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
 				if _, err := fn(t.Context(), req); !errors.Is(err, cause) || h.authorizedEndpoint(root) != original.Endpoint || rec.last() != "7777" || h.currentInstance(root) != &original || rt.oldStops != 1 || rt.launchCount() != 0 {
 					t.Fatalf("warm inconclusive recovery lost routing: err=%v port=%s authorized=%s stops=%d launches=%d", err, rec.last(), h.authorizedEndpoint(root), rt.oldStops, rt.launchCount())
 				}
@@ -75,7 +75,7 @@ func TestInconclusiveRecoveryCannotAuthorizeDifferentOrColdHandle(t *testing.T) 
 			rt := &stoppingRuntime{original: original, oldProbe: context.DeadlineExceeded}
 			h.runtime = rt
 			h.deps.ReplacementStopping = func(context.Context, string) (*ocruntime.Instance, error) { return &original, nil }
-			for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
+			for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
 				if _, err := fn(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); !errors.Is(err, context.DeadlineExceeded) || h.authorizedEndpoint(root) != "" || rec.last() != "" || rt.oldStops != 0 || rt.launchCount() != 0 {
 					t.Fatalf("unvalidated handle routed: err=%v port=%s authorized=%s", err, rec.last(), h.authorizedEndpoint(root))
 				}

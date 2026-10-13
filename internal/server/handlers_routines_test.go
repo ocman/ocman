@@ -22,8 +22,8 @@ import (
 type routineTestHost struct{ hostsvc.Host }
 
 func (*routineTestHost) RemoteID() string { return "local" }
-func (*routineTestHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "test"}}, nil
+func (*routineTestHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "test"}}, nil
 }
 
 func routineHTTPServer(t *testing.T) (*Server, http.Handler, *atomic.Int32) {

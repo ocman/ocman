@@ -1208,9 +1208,9 @@ func (h *restartTestHost) RemoteID() string {
 func (h *restartTestHost) ManagedOpencodes(context.Context) ([]hostsvc.ManagedOpencode, error) {
 	return h.managed, nil
 }
-func (h *restartTestHost) RestartProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *restartTestHost) RestartProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	h.restarted = append(h.restarted, req.ProjectDir)
-	return &hostsvc.EnsureProjectOpencodeResult{}, nil
+	return &hostsvc.EnsureRuntimeResult{}, nil
 }
 
 func TestSameProject_IncludesOcmanWorktrees(t *testing.T) {

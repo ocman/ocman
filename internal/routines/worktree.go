@@ -13,7 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensured *hostsvc.EnsureProjectOpencodeResult, platformID string, run state.RoutineRun, rulesJSON string, link func(string) error) (string, error) {
+func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensured *hostsvc.EnsureRuntimeResult, platformID string, run state.RoutineRun, rulesJSON string, link func(string) error) (string, error) {
 	var rules []platforms.PermissionRule
 	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil || rules == nil {
 		rules = []platforms.PermissionRule{}

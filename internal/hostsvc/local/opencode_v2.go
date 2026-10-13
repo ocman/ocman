@@ -53,12 +53,12 @@ func machineRoot() string {
 // projectDir. RepoRoot stays the project's root so callers that create
 // sessions or name worktrees keep working per project.
 func (h *Host) ensureMachine(ctx context.Context, projectDir string,
-	fn func(context.Context, string) (*hostsvc.EnsureProjectOpencodeResult, error)) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error)) (*hostsvc.EnsureRuntimeResult, error) {
 	root := machineRoot()
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("creating OpenCode v2 working directory: %w", err)
 	}
-	res, err := h.sfDoDetached(ctx, root, func(flightCtx context.Context, root string) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	res, err := h.sfDoDetached(ctx, root, func(flightCtx context.Context, root string) (*hostsvc.EnsureRuntimeResult, error) {
 		res, err := fn(flightCtx, root)
 		if err != nil {
 			// An inconclusive probe preserves only previously validated routing.

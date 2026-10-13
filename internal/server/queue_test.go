@@ -612,10 +612,10 @@ func TestSessionQueueDelete_BestEffortOnMissing(t *testing.T) {
 // interface (tests here never call it).
 type ensureStubHost struct {
 	hostsvc.Host
-	ensure func(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error)
+	ensure func(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error)
 }
 
-func (h *ensureStubHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *ensureStubHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	return h.ensure(ctx, req)
 }
 
@@ -646,11 +646,11 @@ func TestSessionMessage_UnreachableRelaunchesOpencodeAndRetries(t *testing.T) {
 	})
 	var ensuredDirs []string
 	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
-		ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 			mu.Lock()
 			ensuredDirs = append(ensuredDirs, req.ProjectDir)
 			mu.Unlock()
-			return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir, Launched: true}, nil
+			return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir, Launched: true}, nil
 		},
 	})
 
@@ -696,11 +696,11 @@ func TestSessionMessage_RelaunchFoldsWorktreeToProjectRoot(t *testing.T) {
 	})
 	var ensuredDirs []string
 	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
-		ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 			mu.Lock()
 			ensuredDirs = append(ensuredDirs, req.ProjectDir)
 			mu.Unlock()
-			return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir}, nil
+			return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir}, nil
 		},
 	})
 
@@ -735,7 +735,7 @@ func TestSessionMessage_RelaunchFails_DirectSendSurfacesError(t *testing.T) {
 		},
 	})
 	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
-		ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 			return nil, errors.New("tmux not available")
 		},
 	})
@@ -774,7 +774,7 @@ func TestSessionMessage_RelaunchFails_MessageStaysQueued(t *testing.T) {
 		},
 	})
 	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
-		ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 			return nil, errors.New("tmux not available")
 		},
 	})

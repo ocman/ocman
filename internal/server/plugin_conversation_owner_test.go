@@ -23,9 +23,9 @@ type otherOwnerHost struct {
 
 func (*otherOwnerHost) RemoteID() string { return "machine" }
 
-func (h *otherOwnerHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *otherOwnerHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	h.touched.Store(true)
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:9999", RepoRoot: req.ProjectDir}, nil
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:9999", RepoRoot: req.ProjectDir}, nil
 }
 
 // conversationEnable approves the current declaration and enables the plugin,

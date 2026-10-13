@@ -49,7 +49,7 @@ func TestEnsureProjectOpencode_WinnerCancelDoesNotFailWaiters(t *testing.T) {
 
 	// Waiter: coalesces into A's in-flight launch with a live context.
 	bDone := make(chan error, 1)
-	var bRes *hostsvc.EnsureProjectOpencodeResult
+	var bRes *hostsvc.EnsureRuntimeResult
 	go func() {
 		res, err := h.EnsureProjectOpencode(context.Background(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
 		bRes = res

@@ -63,8 +63,8 @@ func newControlFixture(t *testing.T) *controlFixture {
 		issues: []factory.Issue{{ID: "issue-1", EpicID: "epic-1", Kind: "implementation", Title: "Transport", Status: "closed", Outcome: "failed", OutcomeReason: "merged branch", Recovery: &factory.RecoveryGate{IssueID: "gate-1"}}},
 	}
 	useFactory(f.srv, f.svc)
-	f.srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
+	f.srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+		return &hostsvc.EnsureRuntimeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
 	}})
 	mux, err := f.srv.routes()
 	if err != nil {

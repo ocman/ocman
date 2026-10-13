@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -102,17 +101,14 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		deps.Store = s.stateDB
 		deps.CommitStore = s.stateDB
 	}
-	// Without a reachable OpenCode instance, the Claude CLI judges (AD-8).
+	// Without a reachable OpenCode instance, a platform's own judge decides (AD-8).
 	if s.registry != nil {
 		deps.OpenCodeDisabled = !s.openCodeEnabled()
-		if p, ok := s.registry.Get(claudeprovider.PlatformID); ok {
-			judge := autoapprove.ClaudeJudge{CLI: "claude"}
-			if h, ok := p.(interface {
-				HelperSlot(context.Context) (func(), error)
-			}); ok {
-				judge.Slot = h.HelperSlot
+		for _, p := range s.registry.Platforms() {
+			if j, ok := p.(interface{ PermissionJudge() autoapprove.Judge }); ok {
+				deps.FallbackJudge = j.PermissionJudge()
+				break
 			}
-			deps.FallbackJudge = judge
 		}
 	}
 	return deps

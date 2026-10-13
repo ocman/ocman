@@ -146,7 +146,7 @@ func ExternalDirectoryRules() []platforms.PermissionRule {
 	return rules
 }
 
-func (l PlanningLauncher) ensureMCP(ctx context.Context, ensured *hostsvc.EnsureProjectOpencodeResult) error {
+func (l PlanningLauncher) ensureMCP(ctx context.Context, ensured *hostsvc.EnsureRuntimeResult) error {
 	client := &http.Client{Timeout: 5 * time.Second, Transport: l.m.deps.OpenCodeAuth().Transport(http.DefaultTransport)}
 	loadedURL, err := planningMCPURL(ctx, client, ensured.Endpoint)
 	if err != nil {

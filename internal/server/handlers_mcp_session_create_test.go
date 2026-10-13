@@ -41,9 +41,9 @@ func (h *mcpCreateHost) CreateWorktreeSession(_ context.Context, req hostsvc.Wor
 func TestMCPCreateSession(t *testing.T) {
 	srv := testServer(t)
 	var ensured string
-	host := &mcpCreateHost{ensureHost: &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	host := &mcpCreateHost{ensureHost: &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 		ensured = req.ProjectDir
-		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6620", RepoRoot: req.ProjectDir}, nil
+		return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:6620", RepoRoot: req.ProjectDir}, nil
 	}}}
 	srv.hostRouter = hostsvc.NewRouter(host)
 	var created platforms.CreateSessionRequest

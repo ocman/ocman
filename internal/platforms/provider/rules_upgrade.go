@@ -29,7 +29,7 @@ func (r *Rules) escapeLegacyLocked() {
 }
 
 // legacyFlatKeys were inherited as one pattern-less allow before Claude
-// approvals were exact (permissions.exactScopePlatforms).
+// approvals were exact (permissions.flatKey).
 var legacyFlatKeys = map[string]bool{"webfetch": true, "websearch": true}
 
 // EscapeInheritedApprovals converts, once, the approvals a session's

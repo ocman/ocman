@@ -9,7 +9,7 @@ import (
 type ensureHost struct {
 	hostsvc.Host
 	owner  string
-	ensure func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error)
+	ensure func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error)
 }
 
 func (h *ensureHost) RemoteID() string {
@@ -19,6 +19,6 @@ func (h *ensureHost) RemoteID() string {
 	return "local"
 }
 
-func (h *ensureHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *ensureHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	return h.ensure(ctx, req)
 }

@@ -170,7 +170,7 @@ type EnsureProjectOpencodeRequest struct {
 	ProjectDir string `json:"projectDir"`
 }
 
-// EnsureProjectOpencodeResult reports a reachable OpenCode instance for a
+// EnsureRuntimeResult reports a reachable runtime instance for a
 // project: the full Endpoint URL, the resolved repo root, the opaque
 // runtime Instance (its ID is the tmux session name for the native
 // runtime, kept for observability), and whether this call launched it.
@@ -182,9 +182,6 @@ type EnsureRuntimeResult struct {
 	Runtime  ocruntime.Instance `json:"runtime"`
 	Launched bool               `json:"launched"`
 }
-
-// EnsureProjectOpencodeResult is retained for OpenCode-specific runtime controls.
-type EnsureProjectOpencodeResult = EnsureRuntimeResult
 
 // RuntimeEnsurer is implemented by adapters that host a non-OpenCode runtime.
 type RuntimeEnsurer interface {
@@ -322,7 +319,7 @@ type Host interface {
 	// the relaunch proceeds). Returns the fresh result with Launched=true.
 	// Owner-routed via Router.ForDir exactly like EnsureProjectOpencode, so
 	// it works for local and remote native instances (AD-7).
-	RestartProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
+	RestartProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureRuntimeResult, error)
 	// ReloadOpencode refreshes the existing v2 machine server without restarting it.
 	// Running turns continue; pending permissions and questions are cancelled.
 	ReloadOpencode(ctx context.Context) error

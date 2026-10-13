@@ -65,9 +65,9 @@ func (h *ownerHost) CreateWorktreeSession(_ context.Context, req hostsvc.Worktre
 	return &hostsvc.WorktreeSessionResult{SessionID: "ses_" + h.id, WorktreePath: "/.worktrees/repo/x", Branch: req.Branch}, nil
 }
 
-func (h *ownerHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *ownerHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	h.record("ensure:" + req.ProjectDir)
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir}, nil
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir}, nil
 }
 
 // ownerRouter wires local + remotes A and B, all sharing /repo. The

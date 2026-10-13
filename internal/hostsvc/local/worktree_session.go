@@ -73,7 +73,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 
 	// The instance probe and the checkout are independent; overlap them.
 	type ensureResult struct {
-		res *hostsvc.EnsureProjectOpencodeResult
+		res *hostsvc.EnsureRuntimeResult
 		err error
 	}
 	ensuredCh := make(chan ensureResult, 1)

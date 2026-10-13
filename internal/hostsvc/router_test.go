@@ -50,14 +50,14 @@ func (h stubHost) RemoveWorktree(context.Context, RemoveWorktreeRequest) error {
 func (h stubHost) LaunchTmux(context.Context, LaunchTmuxRequest) (*LaunchTmuxResult, error) {
 	return nil, nil
 }
-func (h stubHost) EnsureProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error) {
+func (h stubHost) EnsureProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureRuntimeResult, error) {
 	return nil, nil
 }
 func (h stubHost) StopProjectOpencode(context.Context, EnsureProjectOpencodeRequest) error {
 	return nil
 }
 func (h stubHost) ReloadOpencode(context.Context) error { return nil }
-func (h stubHost) RestartProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error) {
+func (h stubHost) RestartProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureRuntimeResult, error) {
 	return nil, nil
 }
 func (h stubHost) ManagedOpencodes(context.Context) ([]ManagedOpencode, error)   { return nil, nil }

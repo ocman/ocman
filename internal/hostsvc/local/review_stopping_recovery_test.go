@@ -241,7 +241,7 @@ func TestUnacknowledgedStopInconclusiveBlocksReplacement(t *testing.T) {
 			h.deps.CancelReplacementStop = func(context.Context, string) error { t.Error("cancelled inconclusive stop"); return nil }
 			h.deps.BeforeReplace = func(context.Context, string, string) error { t.Error("refreshed inconclusive evidence"); return nil }
 			h.deps.AfterStop = func(context.Context, string) error { t.Error("confirmed inconclusive stop"); return nil }
-			for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
+			for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
 				if _, err := fn(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); !errors.Is(err, cause) || rt.oldStops != 0 || rt.launchCount() != 0 {
 					t.Fatalf("inconclusive stop replaced: err=%v stops=%d launches=%d", err, rt.oldStops, rt.launchCount())
 				}
@@ -254,7 +254,7 @@ func TestUnacknowledgedStopMissingHandleFailsClosed(t *testing.T) {
 	h, rt, _, _, _ := v2Host(t)
 	legacyErr := errors.New("unresolved stop has no persisted runtime handle")
 	h.deps.ReplacementStopping = func(context.Context, string) (*ocruntime.Instance, error) { return nil, legacyErr }
-	for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
+	for _, fn := range []func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error){h.EnsureProjectOpencode, h.RestartProjectOpencode} {
 		if _, err := fn(t.Context(), hostsvc.EnsureProjectOpencodeRequest{}); !errors.Is(err, legacyErr) || rt.stopCount() != 0 || rt.launchCount() != 0 {
 			t.Fatalf("legacy stop bypassed: %v", err)
 		}

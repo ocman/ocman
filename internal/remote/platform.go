@@ -54,13 +54,7 @@ func (p *remotePlatform) ID() platforms.ID {
 func (p *remotePlatform) DisplayName() string {
 	// Display name is the platform's, not the host's; the host badge is
 	// rendered separately from RemoteName.
-	if p.base == "opencode" {
-		return "OpenCode"
-	}
-	if p.base == "claudecode" {
-		return "Claude Code"
-	}
-	return p.base
+	return platforms.DisplayName(platforms.ID(p.base))
 }
 
 func (p *remotePlatform) Available(_ context.Context) bool {

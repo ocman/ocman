@@ -80,7 +80,7 @@ func TestFactoryPlanningMCPUsesOpenCodeAuth(t *testing.T) {
 	}))
 	t.Cleanup(endpoint.Close)
 	launcher := NewModule(Deps{Service: struct{ Service }{}, MCPURL: localMCPURL, OpenCodeAuth: func() ocapi.Auth { return ocapi.New("secret") }}).PlanningLauncher()
-	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint.URL}); err != nil {
+	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureRuntimeResult{Endpoint: endpoint.URL}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -106,7 +106,7 @@ func TestFactoryPlanningMCPConnectsAndReportsUpstreamFailures(t *testing.T) {
 	}))
 	t.Cleanup(endpoint.Close)
 	launcher := NewModule(Deps{Service: struct{ Service }{}, MCPURL: localMCPURL, OpenCodeAuth: func() ocapi.Auth { return ocapi.Auth{} }}).PlanningLauncher()
-	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint.URL}); err != nil || !connected {
+	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureRuntimeResult{Endpoint: endpoint.URL}); err != nil || !connected {
 		t.Fatalf("ensureMCP = %v, connected = %v", err, connected)
 	}
 
@@ -114,7 +114,7 @@ func TestFactoryPlanningMCPConnectsAndReportsUpstreamFailures(t *testing.T) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(broken.Close)
-	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureProjectOpencodeResult{Endpoint: broken.URL}); err == nil || !strings.Contains(err.Error(), "check planning MCP config") {
+	if err := launcher.ensureMCP(t.Context(), &hostsvc.EnsureRuntimeResult{Endpoint: broken.URL}); err == nil || !strings.Contains(err.Error(), "check planning MCP config") {
 		t.Fatalf("ensureMCP error = %v", err)
 	}
 }

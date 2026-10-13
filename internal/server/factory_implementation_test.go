@@ -229,8 +229,8 @@ func (h *factoryImplementationHost) RemoteID() string {
 	return "local"
 }
 
-func (h *factoryImplementationHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: h.endpoint}, nil
+func (h *factoryImplementationHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+	return &hostsvc.EnsureRuntimeResult{Endpoint: h.endpoint}, nil
 }
 
 func (h *factoryImplementationHost) CreateWorktreeSession(_ context.Context, request hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {

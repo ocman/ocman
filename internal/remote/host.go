@@ -168,7 +168,7 @@ func (h *remoteHost) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxReque
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
-func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	client := h.conn.Client()
 	if client == nil {
 		return nil, ErrRemoteOffline
@@ -181,7 +181,7 @@ func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.Ensu
 	if err != nil {
 		return nil, err
 	}
-	var out hostsvc.EnsureProjectOpencodeResult
+	var out hostsvc.EnsureRuntimeResult
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
@@ -218,7 +218,7 @@ func (h *remoteHost) StopProjectOpencode(ctx context.Context, req hostsvc.Ensure
 	return err
 }
 
-func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	client := h.conn.Client()
 	if client == nil {
 		return nil, ErrRemoteOffline
@@ -231,7 +231,7 @@ func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.Ens
 	if err != nil {
 		return nil, err
 	}
-	var out hostsvc.EnsureProjectOpencodeResult
+	var out hostsvc.EnsureRuntimeResult
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 

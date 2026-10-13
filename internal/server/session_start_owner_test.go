@@ -19,9 +19,9 @@ type draftOwnerHost struct {
 }
 
 func (h *draftOwnerHost) RemoteID() string { return h.id }
-func (h *draftOwnerHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *draftOwnerHost) EnsureProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	h.ensures++
-	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
+	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 }
 
 func TestDraftLaunchExplicitOwner(t *testing.T) {

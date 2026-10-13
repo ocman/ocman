@@ -20,15 +20,15 @@ import (
 
 type factoryPlanningHost struct {
 	hostsvc.Host
-	ensured, restarted *hostsvc.EnsureProjectOpencodeResult
+	ensured, restarted *hostsvc.EnsureRuntimeResult
 	restartCalls       int
 }
 
-func (h *factoryPlanningHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *factoryPlanningHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	return h.ensured, nil
 }
 
-func (h *factoryPlanningHost) RestartProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+func (h *factoryPlanningHost) RestartProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	h.restartCalls++
 	return h.restarted, nil
 }
@@ -167,9 +167,9 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	registry := platforms.NewRegistry()
 	registry.Register(platform)
 	srv := New(nil, nil, "", registry, nil)
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 		ensured = req.ProjectDir
-		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
+		return &hostsvc.EnsureRuntimeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
 	}})
 
 	req := factory.PlanningSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "fa_1", AgentToken: "fat_secret", Repository: "/repo", Projects: []string{"/repo", "/other"}, Title: "Plan: Ship"}
@@ -243,8 +243,8 @@ func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *test
 	registry := platforms.NewRegistry()
 	registry.Register(platform)
 	srv := New(nil, nil, "", registry, nil)
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+		return &hostsvc.EnsureRuntimeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
 	}})
 
 	got, err := (srv.factoryModule().PlanningLauncher()).LaunchPlanningSession(context.Background(), factory.PlanningSessionRequest{Repository: "/repo", Title: "Plan: Ship"})
@@ -263,7 +263,7 @@ func TestFactoryPlanningLauncherRejectsStaleMCPConfigWithoutRestart(t *testing.T
 	}))
 	t.Cleanup(stale.Close)
 	host := &factoryPlanningHost{
-		ensured: &hostsvc.EnsureProjectOpencodeResult{Endpoint: stale.URL, RepoRoot: "/repo"},
+		ensured: &hostsvc.EnsureRuntimeResult{Endpoint: stale.URL, RepoRoot: "/repo"},
 	}
 	var created platforms.CreateSessionRequest
 	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}

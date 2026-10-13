@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,7 +79,7 @@ func newClaudeServer(t *testing.T) (*Server, *provider.Adapter, string) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(claudeTestPlatform{adapter, bin})
 	srv.hostRouter = hostsvc.NewRouter(srv.newLocalHost())
-	srv.watchProviderPrompts(t.Context())
+	srv.watchProviderPrompts(t.Context(), new(sync.WaitGroup))
 	return srv, adapter, bin
 }
 

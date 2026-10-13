@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"sync"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
@@ -37,7 +39,7 @@ func TestWatchProviderPrompts(t *testing.T) {
 	s := &Server{registry: reg}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	s.watchProviderPrompts(ctx)
+	s.watchProviderPrompts(ctx, new(sync.WaitGroup))
 	<-src.watched
 	if src.handler == nil {
 		t.Fatal("handler not installed before the stream started")
@@ -53,12 +55,20 @@ func TestWatchProviderPrompts(t *testing.T) {
 	}
 }
 
-// The Claude judge is the fallback only when Claude Code is enabled.
-func TestClaudeFallbackJudgeWiring(t *testing.T) {
+type judgePlatform struct{ *fakePlatform }
+
+func (judgePlatform) PermissionJudge() autoapprove.Judge { return autoapprove.ClaudeJudge{CLI: "x"} }
+
+// A platform's own judge is the fallback only when such a platform is enabled.
+func TestPlatformFallbackJudgeWiring(t *testing.T) {
 	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "claudecode"})
-	s := &Server{registry: reg}
-	if s.aaSvc() == nil {
-		t.Fatal("no service")
+	reg.Register(&fakePlatform{id: "opencode"})
+	if deps := (&Server{registry: reg}).autoapproveEngineDeps(); deps.FallbackJudge != nil || deps.OpenCodeDisabled {
+		t.Fatalf("OpenCode only: %+v", deps.FallbackJudge)
+	}
+	reg = platforms.NewRegistry()
+	reg.Register(judgePlatform{&fakePlatform{id: "claudecode"}})
+	if deps := (&Server{registry: reg}).autoapproveEngineDeps(); deps.FallbackJudge == nil || !deps.OpenCodeDisabled {
+		t.Fatal("platform judge not wired")
 	}
 }
