@@ -83,6 +83,25 @@ func TestNoManager(t *testing.T) {
 	}
 }
 
+// The remote CRUD routes sit behind the localhost guard: registering a
+// remote makes the hub dial an operator-supplied address, so a peer
+// that merely reaches the port must not be able to add or edit one.
+func TestRemoteCRUDIsLocalhostGuarded(t *testing.T) {
+	deny := func(http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) }
+	}
+	h := mux(Deps{Manager: managerOf(realManager(t, openStore(t))), Guards: module.Guards{Auth: pass, Localhost: deny}})
+	for _, c := range []struct{ method, path, body string }{
+		{http.MethodGet, "/api/remotes", ""},
+		{http.MethodPost, "/api/remotes", `{"address":"a:1","token":"t"}`},
+		{http.MethodPut, "/api/remotes/1", `{}`},
+	} {
+		if rr := do(h, c.method, c.path, c.body); rr.Code != http.StatusForbidden {
+			t.Errorf("%s %s answered %d, want 403 when the localhost guard denies", c.method, c.path, rr.Code)
+		}
+	}
+}
+
 func TestMethodAndValidationErrors(t *testing.T) {
 	h := mux(Deps{Manager: managerOf(realManager(t, openStore(t)))})
 	cases := []struct {

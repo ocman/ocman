@@ -42,7 +42,10 @@ path into `.git` is refused, even when the link's own name is listed.
 - `GET /api/git/files?dir=<abs>&remoteId=<id>` lists the files.
 - `GET /api/git/file?dir=<abs>&path=<rel>&remoteId=<id>` reads one.
 
-Add `&ignored=1` to either to include ignored files.
+Add `&ignored=1` to either to include ignored files. These routes are dashboard-auth
+guarded, not localhost-only: on an instance bound to a non-loopback address without a
+password configured, anyone who can reach it can read listed files, `.env` included with
+`&ignored=1`. Configure a password when exposing ocman beyond localhost.
 
 Image responses set `mimeType` and return base64 bytes in `content`.
 Oversized images set `truncated` and leave `content` empty.

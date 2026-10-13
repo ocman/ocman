@@ -19,7 +19,9 @@ func TestAutoApproveModuleRoutesThroughServer(t *testing.T) {
 	reg.RememberSessions("opencode", fp.sessions)
 	get := func(path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		serveRoutes(t, srv, rec, httptest.NewRequest(http.MethodGet, path, nil))
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:1234" // the settings routes are localhost-gated
+		serveRoutes(t, srv, rec, req)
 		return rec
 	}
 

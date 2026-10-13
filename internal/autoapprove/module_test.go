@@ -75,8 +75,11 @@ func TestModuleRoutesAreAuthGuarded(t *testing.T) {
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s answered %d without auth", pattern, rec.Code)
 		}
-		if strings.HasPrefix(path, "/api/settings/") && path != "/api/settings/judge-model/options" && kind != "setting" {
+		if strings.HasPrefix(path, "/api/settings/") && path != "/api/settings/judge-model/options" && kind != "setting" && kind != "localSetting" {
 			t.Errorf("%s mounted as %s, want setting", pattern, kind)
+		}
+		if path == "/api/settings/judge-endpoint" && kind != "localSetting" {
+			t.Errorf("%s mounted as %s, want localSetting: the judge endpoint is an outbound-URL credential switch and must stay localhost-gated", pattern, kind)
 		}
 	}
 	if len(r.kind) != 8 {

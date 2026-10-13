@@ -65,7 +65,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Setting("/api/settings/prompt-sections", auth(m.handlePromptSections))
 	r.Setting("/api/settings/judge-delay", auth(m.handleJudgeDelay))
 	r.Setting("/api/settings/judge-model", auth(m.handleJudgeModel))
-	r.Setting("/api/settings/judge-endpoint", auth(m.handleJudgeEndpoint))
+	r.LocalSetting("/api/settings/judge-endpoint", auth(m.handleJudgeEndpoint))
 	r.Handle("GET /api/settings/judge-model/options", auth(m.handleJudgeModelOptions))
 }
 

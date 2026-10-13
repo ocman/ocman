@@ -71,8 +71,8 @@ func (m *Module) Routes(r module.Router) {
 	auth, local := m.d.Guards.Auth, m.d.Guards.Localhost
 	r.Handle("/api/settings/remote-access", method(http.MethodGet, auth(m.handleAccess)))
 	r.Handle("/api/settings/remote-access/reveal-token", method(http.MethodPost, auth(local(m.handleRevealToken))))
-	r.Handle("/api/remotes", auth(m.handleRemotes))
-	r.Handle("/api/remotes/", auth(m.handleRemoteByID))
+	r.Handle("/api/remotes", auth(local(m.handleRemotes)))
+	r.Handle("/api/remotes/", auth(local(m.handleRemoteByID)))
 }
 
 // Run refreshes inventories among the server's joined workers, so the loop

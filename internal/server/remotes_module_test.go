@@ -57,10 +57,10 @@ func TestRemotesModuleReadsServerStateAtCallTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rr := serveMux(t, mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"t"}`, ""); rr.Code != http.StatusServiceUnavailable {
+	if rr := serveMux(t, mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"t"}`, "127.0.0.1:1234"); rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("no manager = %d, want 503", rr.Code)
 	}
-	if rr := serveMux(t, mux, http.MethodGet, "/api/remotes", "", ""); rr.Code != 200 || rr.Body.String() != "[]\n" {
+	if rr := serveMux(t, mux, http.MethodGet, "/api/remotes", "", "127.0.0.1:1234"); rr.Code != 200 || rr.Body.String() != "[]\n" {
 		t.Fatalf("no manager list = %d %q", rr.Code, rr.Body)
 	}
 
@@ -80,11 +80,11 @@ func TestRemotesModuleReadsServerStateAtCallTime(t *testing.T) {
 		t.Fatal("remote-access status leaked the token")
 	}
 
-	rr = serveMux(t, mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"hub-secret","displayName":"Box"}`, "")
+	rr = serveMux(t, mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"hub-secret","displayName":"Box"}`, "127.0.0.1:1234")
 	if rr.Code != 200 || bytes.Contains(rr.Body.Bytes(), []byte("hub-secret")) {
 		t.Fatalf("add = %d %s", rr.Code, rr.Body)
 	}
-	rr = serveMux(t, mux, http.MethodGet, "/api/remotes", "", "")
+	rr = serveMux(t, mux, http.MethodGet, "/api/remotes", "", "127.0.0.1:1234")
 	if !bytes.Contains(rr.Body.Bytes(), []byte(`"displayName":"Box"`)) || bytes.Contains(rr.Body.Bytes(), []byte("hub-secret")) {
 		t.Fatalf("list %s", rr.Body)
 	}
