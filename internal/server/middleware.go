@@ -238,15 +238,6 @@ func isLoopbackHostname(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func browserOriginMatchesHost(r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	u, _, ok := parseBrowserOrigin(origin)
-	return ok && strings.EqualFold(u.Host, r.Host)
-}
-
 // allowedHost reports whether the request's Host header names an
 // origin ocman is willing to serve. csrfSafe compares the Origin
 // header against the request's *own* Host, so a DNS-rebound page

@@ -89,6 +89,7 @@ EXCLUDES=(
 	"--glob" "!internal/server/*_test.go"
 	"--glob" "!internal/mcp/*_test.go"
 	"--glob" "!internal/tmuxmod/*_test.go"
+	"--glob" "!internal/termmod/*_test.go"
 	"--glob" "!internal/server/tmux.go"
 	"--glob" "!internal/server/term.go"
 	"--glob" "!internal/server/host.go"
@@ -101,6 +102,7 @@ for pattern in "${PATTERNS[@]}"; do
 			--glob 'internal/server/*.go' \
 			--glob 'internal/mcp/*.go' \
 			--glob 'internal/tmuxmod/*.go' \
+			--glob 'internal/termmod/*.go' \
 			"${EXCLUDES[@]}" \
 			"$pattern" "$ROOT" || true
 	)

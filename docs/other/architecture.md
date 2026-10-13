@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics, termmod]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -187,7 +187,7 @@ flowchart TD
     Factory -->|Project Delivery validation + merge observation| Forge
     Routines --> Registry
     Routines --> Router
-    Modules -->|"tmuxmod: tmux sessions + launch via Host"| Router
+    Modules -->|"tmuxmod + termmod: tmux, launch, terminals via Host"| Router
     Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
     Modules -->|module tools| MCP
@@ -212,7 +212,7 @@ flowchart TD
 ```
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
-  handler files, plus tmux launcher wiring, terminal and whisper. Its session paths (SSE tee,
+  handler files, plus tmux launcher and terminal host wiring, and whisper. Its session paths (SSE tee,
   notify, permission replies) still drive the auto-approve pipeline. It is the
   composition root for feature modules.
 - **Feature modules** (`internal/module`). Auto-approve (`internal/autoapprove`:
@@ -220,7 +220,9 @@ flowchart TD
   seed and the headless watcher), Factory (`internal/factorymod`),
   plugins (`internal/pluginsmod`), the `/api/tmux` controls (`internal/tmuxmod`:
   sessions and launches through the owner's `hostsvc.Host`, client list and
-  switch on this machine's tmux), routines, webhooks, artifacts, the Inbox,
+  switch on this machine's tmux), the browser terminals (`internal/termmod`:
+  window controls and the WebSocket bridge, attached through the owner's
+  `hostsvc.Host`), routines, webhooks, artifacts, the Inbox,
   conversation sharing and read-only file browsing (`internal/filesystem`:
   directory picker, signed `/api/file/` embeds, owner-routed repository file
   reads) each own

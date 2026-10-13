@@ -102,27 +102,27 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 		{
 			name: "terminal websocket attach",
 			invoke: func(s *Server, w http.ResponseWriter) {
-				s.handleTermWS(w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId=gone", nil))
+				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId=gone", nil))
 			},
 		},
 		{
 			name: "terminal windows list",
 			invoke: func(s *Server, w http.ResponseWriter) {
-				s.handleTermWindows(w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId=gone", nil))
+				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId=gone", nil))
 			},
 		},
 		{
 			name: "terminal window create",
 			invoke: func(s *Server, w http.ResponseWriter) {
 				body := `{"dir":"` + dir + `","remoteId":"gone"}`
-				s.handleTermWindows(w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
+				serveTerm(s, w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{
 			name: "terminal window delete",
 			invoke: func(s *Server, w http.ResponseWriter) {
 				body := `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"gone"}`
-				s.handleTermWindows(w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
+				serveTerm(s, w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{
@@ -183,7 +183,7 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 //
 // The universal assertion is "not rejected as an unconnected owner".
 // Handlers that deterministically reach the host additionally assert the
-// local host actually ran; handleTermWS can't (it needs a real WebSocket
+// local host actually ran; the terminal WebSocket can't (it needs a real
 // upgrade) and handleCreateSession's local path never carries a remote
 // ID at all, so both only assert the absence of a rejection.
 func TestHandlersAcceptLocalOwner(t *testing.T) {
@@ -220,14 +220,14 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 		{
 			name: "terminal websocket attach",
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
-				s.handleTermWS(w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId="+rid, nil))
+				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId="+rid, nil))
 			},
 		},
 		{
 			name:         "terminal windows list",
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
-				s.handleTermWindows(w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId="+rid, nil))
+				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId="+rid, nil))
 			},
 		},
 		{
@@ -235,7 +235,7 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				body := `{"dir":"` + dir + `","remoteId":"` + rid + `"}`
-				s.handleTermWindows(w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
+				serveTerm(s, w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{
@@ -243,7 +243,7 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				body := `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"` + rid + `"}`
-				s.handleTermWindows(w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
+				serveTerm(s, w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{

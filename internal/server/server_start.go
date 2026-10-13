@@ -12,7 +12,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	"github.com/NoUseFreak/ocman/internal/term"
 )
 
 // Start starts the HTTP server. It blocks until the context is cancelled,
@@ -110,12 +109,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	}
 	defer closeModules()
 	defer stopMCP()
-
-	// Sweep orphaned ephemeral terminal-viewer sessions left by an
-	// earlier process (e.g. after an air rebuild / crash). They can
-	// never belong to a live connection at boot, so this self-heals the
-	// old per-viewer session leak. Cheap and safe when tmux is absent.
-	term.SweepLegacySessions(ctx)
 
 	// Start the server in a goroutine so we can wait for the context.
 	errCh := make(chan error, 1)

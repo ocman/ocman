@@ -118,7 +118,7 @@ func TestHandleTermWindowsRoutesToRemoteHost(t *testing.T) {
 	// GET (list) routes to the remote via ?remoteId.
 	listReq := httptest.NewRequest(http.MethodGet, "/api/term/windows?dir=/remote/repo&remoteId=abc", nil)
 	listRec := httptest.NewRecorder()
-	srv.handleTermWindows(listRec, listReq)
+	serveTerm(srv, listRec, listReq)
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("list status = %d: %s", listRec.Code, listRec.Body.String())
 	}
@@ -130,7 +130,7 @@ func TestHandleTermWindowsRoutesToRemoteHost(t *testing.T) {
 	createReq := httptest.NewRequest(http.MethodPost, "/api/term/windows",
 		bytes.NewBufferString(`{"dir":"/remote/repo","remoteId":"abc"}`))
 	createRec := httptest.NewRecorder()
-	srv.handleTermWindows(createRec, createReq)
+	serveTerm(srv, createRec, createReq)
 	if createRec.Code != http.StatusOK {
 		t.Fatalf("create status = %d: %s", createRec.Code, createRec.Body.String())
 	}
@@ -144,7 +144,7 @@ func TestHandleTermWindowsRoutesToRemoteHost(t *testing.T) {
 	killReq := httptest.NewRequest(http.MethodDelete, "/api/term/windows",
 		bytes.NewBufferString(`{"dir":"/remote/repo","window":"`+win+`","remoteId":"abc"}`))
 	killRec := httptest.NewRecorder()
-	srv.handleTermWindows(killRec, killReq)
+	serveTerm(srv, killRec, killReq)
 	if killRec.Code != http.StatusNoContent {
 		t.Fatalf("kill status = %d: %s", killRec.Code, killRec.Body.String())
 	}

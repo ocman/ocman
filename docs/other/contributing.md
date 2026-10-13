@@ -57,6 +57,7 @@ internal/server/                           HTTP server, API handlers, static fil
 internal/webui/static/                     Vite build output (embedded into Go binary)
 internal/tmux/                             tmux process control + opencode launchers
 internal/term/                             in-app browser terminals (tmux windows + PTY bridge)
+internal/termmod/                          /api/term routes + WebSocket bridge (feature module)
 internal/whisper/                          voice transcription via local whisper-cpp
 internal/autoapprove/                      LLM-judged permission auto-approve pipeline
 spec/                                      Requirements + architecture notes per feature

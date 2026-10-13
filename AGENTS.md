@@ -500,7 +500,16 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/term/` — in-app browser terminals: window naming/hashing,
   window management in the dedicated `ocman-term` tmux session on its own
   named server (`tmux -L ocman-term`), and
-  the PTY bridge. WebSocket/REST layer stays in `internal/server`.
+  the PTY bridge. It runs on the owning machine behind `hostsvc.Host`; its
+  HTTP routes are the `internal/termmod` module.
+- `internal/termmod/` — module: the localhost-only `/api/term/windows`
+  controls and the `/api/term/ws` WebSocket bridge. It resolves the owner
+  (an explicit disconnected remote fails closed *before* the upgrade),
+  accepts only windows named for `dir`, uses the server's privileged-request
+  check as the WebSocket `CheckOrigin`, and attaches through
+  `Host.TermAttach`. Its `Start` sweeps the old implementation's orphaned
+  `ocman-view-*` sessions. Kept out of `internal/term` so the owner-side
+  terminal never imports HTTP.
 - `internal/whisper/` — self-contained voice transcription via a local
   whisper-cpp binary (+ ffmpeg conversion).
 - `internal/autoapprove/` — module + the LLM-judged permission auto-approve

@@ -42,16 +42,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/git/info", s.get(s.handleGitInfo))
 	mux.HandleFunc("/api/git/branches", s.get(s.handleGitBranches))
 	mux.HandleFunc("/api/git/checkout", requirePOST(s.requireLocalhost(s.handleGitCheckout)))
-	// Live terminal: WebSocket bridge that attaches an in-app xterm.js
-	// terminal to an existing tmux target via a PTY. localhost-only —
-	// this is a live shell. The WS upgrade is a GET that hijacks the
-	// connection, so it is NOT wrapped in requireGET (that wrapper can
-	// interfere with the upgrade).
-	mux.HandleFunc("/api/term/ws", s.requireLocalhost(s.handleTermWS))
-	// Terminal-window management (list / create / kill the dedicated
-	// `ocman-term-*` windows backing the in-app terminal tabs). Method
-	// is dispatched inside the handler (GET/POST/DELETE). localhost-only.
-	mux.HandleFunc("/api/term/windows", s.requireLocalhost(s.handleTermWindows))
 
 	// Worktree endpoints. List + default-base-ref are read-only and
 	// safe to expose to authenticated clients; create-and-launch

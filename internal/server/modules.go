@@ -21,6 +21,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/term"
+	"github.com/NoUseFreak/ocman/internal/termmod"
 	"github.com/NoUseFreak/ocman/internal/tmuxmod"
 	"github.com/NoUseFreak/ocman/internal/webhook"
 )
@@ -46,7 +48,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.analyticsModule())
+	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.analyticsModule(), s.termModule())
 }
 
 // tmuxModule is stateless, so it is rebuilt on each call.
@@ -55,6 +57,15 @@ func (s *Server) tmuxModule() *tmuxmod.Module {
 		Local:        func() hostsvc.Host { return s.router().Local() },
 		ResolveOwner: s.resolveOwner,
 		Guards:       module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+	})
+}
+
+// termModule is stateless, so it is rebuilt on each call.
+func (s *Server) termModule() *termmod.Module {
+	return termmod.NewModule(termmod.Deps{
+		ResolveOwner: s.resolveOwner,
+		Privileged:   s.isPrivilegedRequest,
+		SweepLegacy:  term.SweepLegacySessions,
 	})
 }
 
