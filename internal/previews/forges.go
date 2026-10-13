@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"net/url"
@@ -30,7 +30,7 @@ type previewEntry struct {
 // apps and the provider IDs that have a saved grant or token. Forge and
 // GitLab hosts are exact: tea logins, app hosts, saved-token hosts and
 // gitlab.com; no other host is ever contacted.
-func (s *Server) previewSetup(apps []configuredPreviewApp, grants map[string]bool) ([]previewauth.Provider, []linkpreview.Resolver, []previewEntry) {
+func (m *Module) previewSetup(apps []configuredPreviewApp, grants map[string]bool) ([]previewauth.Provider, []linkpreview.Resolver, []previewEntry) {
 	app := map[string]previewApp{}
 	var hosted = map[string][]string{"forgejo": nil, "gitlab": {"gitlab.com"}}
 	seenHost := map[string]bool{"gitlab:gitlab.com": true}
@@ -48,17 +48,15 @@ func (s *Server) previewSetup(apps []configuredPreviewApp, grants map[string]boo
 	}
 	teaTokens := map[string]string{}
 	teaAPI := map[string]string{}
-	if s.integrations != nil && s.integrations.Forgejo != nil {
-		for _, h := range s.integrations.Forgejo.Hosts() {
-			c := s.integrations.Forgejo.ForHost(h)
-			u, err := url.Parse(c.BaseURL())
-			if err != nil || u.Scheme != "https" || u.Host == "" {
-				continue // ponytail: plain-http hosts get no preview; tokens stay off the wire
-			}
-			host := strings.ToLower(u.Host)
-			teaTokens[host], teaAPI[host] = c.Token(), strings.TrimRight(c.BaseURL(), "/")+"/api/v1"
-			addHost("forgejo", host)
+	forges := m.forges()
+	for _, c := range forges.Forgejo {
+		u, err := url.Parse(c.BaseURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			continue // ponytail: plain-http hosts get no preview; tokens stay off the wire
 		}
+		host := strings.ToLower(u.Host)
+		teaTokens[host], teaAPI[host] = c.Token, strings.TrimRight(c.BaseURL, "/")+"/api/v1"
+		addHost("forgejo", host)
 	}
 	for id := range grants {
 		if kind, host, ok := strings.Cut(id, ":"); ok && (kind == "forgejo" || kind == "gitlab") {
@@ -82,8 +80,8 @@ func (s *Server) previewSetup(apps []configuredPreviewApp, grants map[string]boo
 	a := app["github"]
 	gh := linkpreview.Forge{ID: "github", Host: "github.com", APIBase: "https://api.github.com", Connectable: true}
 	ghSource := "public"
-	if s.integrations != nil && s.integrations.GitHub != nil && s.integrations.GitHub.Token() != "" {
-		gh.OwnerToken, ghSource = s.integrations.GitHub.Token(), "cli"
+	if forges.GitHubToken != "" {
+		gh.OwnerToken, ghSource = forges.GitHubToken, "cli"
 	}
 	add(linkpreview.GitHubOAuth(a.ClientID, a.ClientSecret, ""), previewEntry{Hosts: []string{"github.com"}, Configured: true, Source: ghSource}, gh)
 

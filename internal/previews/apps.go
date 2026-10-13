@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -111,8 +112,8 @@ func envPreviewApps(getenv func(string) string) []previewApp {
 	return apps
 }
 
-func (s *Server) storedPreviewApps(ctx context.Context) ([]previewApp, error) {
-	v, ok, err := s.stateDB.GetSecretSetting(ctx, previewAppsKey)
+func (m *Module) storedPreviewApps(ctx context.Context) ([]previewApp, error) {
+	v, ok, err := m.Store.GetSecretSetting(ctx, previewAppsKey)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -128,7 +129,7 @@ type configuredPreviewApp struct {
 
 // previewApps is every valid app, saved ones first. The first app for a
 // provider ID wins, so Settings overrides the environment.
-func (s *Server) previewApps(ctx context.Context) []configuredPreviewApp {
+func (m *Module) previewApps(ctx context.Context) []configuredPreviewApp {
 	var out []configuredPreviewApp
 	index := map[string]int{}
 	add := func(a previewApp, fromEnv bool) {
@@ -143,7 +144,7 @@ func (s *Server) previewApps(ctx context.Context) []configuredPreviewApp {
 		index[a.id()] = len(out)
 		out = append(out, configuredPreviewApp{a, fromEnv, fromEnv})
 	}
-	stored, err := s.storedPreviewApps(ctx)
+	stored, err := m.storedPreviewApps(ctx)
 	if err != nil {
 		log.WithError(err).Warn("preview auth: reading saved apps failed")
 	}
@@ -167,9 +168,9 @@ type previewAppView struct {
 	InEnv bool `json:"inEnv"`
 }
 
-func (s *Server) writePreviewApps(w http.ResponseWriter, r *http.Request) {
+func (m *Module) writePreviewApps(w http.ResponseWriter, r *http.Request) {
 	apps := []previewAppView{}
-	for _, a := range s.previewApps(r.Context()) {
+	for _, a := range m.previewApps(r.Context()) {
 		src := "settings"
 		if a.FromEnv {
 			src = "env"
@@ -177,29 +178,29 @@ func (s *Server) writePreviewApps(w http.ResponseWriter, r *http.Request) {
 		apps = append(apps, previewAppView{ID: a.id(), Kind: a.Kind, Host: a.Host, ClientID: a.ClientID, HasSecret: a.ClientSecret != "", Source: src, InEnv: a.InEnv})
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"kinds": previewAppKinds, "apps": apps, "callbackUrl": s.publicURL(previewCallback)})
+	httpx.WriteJSON(w, map[string]any{"kinds": previewAppKinds, "apps": apps, "callbackUrl": m.PublicURL(previewCallback)})
 }
 
-func (s *Server) handlePreviewApps(w http.ResponseWriter, r *http.Request) {
-	if !s.previewAccessAllowed(r) {
+func (m *Module) handlePreviewApps(w http.ResponseWriter, r *http.Request) {
+	if !m.previewAccessAllowed(r) {
 		http.Error(w, errPreviewForbidden.Error(), http.StatusForbidden)
 		return
 	}
-	s.writePreviewApps(w, r)
+	m.writePreviewApps(w, r)
 }
 
 // editPreviewApps applies change to the saved apps, then rebuilds the
 // providers.
-func (s *Server) editPreviewApps(w http.ResponseWriter, r *http.Request, change func([]previewApp) ([]previewApp, error)) {
-	if !s.previewAccessAllowed(r) {
+func (m *Module) editPreviewApps(w http.ResponseWriter, r *http.Request, change func([]previewApp) ([]previewApp, error)) {
+	if !m.previewAccessAllowed(r) {
 		http.Error(w, errPreviewForbidden.Error(), http.StatusForbidden)
 		return
 	}
-	s.previewAuth.appsMu.Lock()
-	defer s.previewAuth.appsMu.Unlock()
-	apps, err := s.storedPreviewApps(r.Context())
+	m.built.appsMu.Lock()
+	defer m.built.appsMu.Unlock()
+	apps, err := m.storedPreviewApps(r.Context())
 	if err != nil {
-		serverError(w, "reading preview apps", err)
+		httpx.ServerError(w, "reading preview apps", err)
 		return
 	}
 	if apps, err = change(apps); err != nil {
@@ -207,26 +208,26 @@ func (s *Server) editPreviewApps(w http.ResponseWriter, r *http.Request, change 
 		return
 	}
 	value, _ := json.Marshal(apps)
-	if err := s.stateDB.SetSecretSetting(r.Context(), previewAppsKey, string(value)); err != nil {
-		serverError(w, "saving preview apps", err)
+	if err := m.Store.SetSecretSetting(r.Context(), previewAppsKey, string(value)); err != nil {
+		httpx.ServerError(w, "saving preview apps", err)
 		return
 	}
-	s.resetPreviews()
-	s.writePreviewApps(w, r)
+	m.resetPreviews()
+	m.writePreviewApps(w, r)
 }
 
 // handleSavePreviewApp adds or replaces one saved app. An empty secret keeps
 // the saved one, so the client ID can change without re-entering it; an
 // environment secret is never copied into state.db.
-func (s *Server) handleSavePreviewApp(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleSavePreviewApp(w http.ResponseWriter, r *http.Request) {
 	var req previewApp
-	if !readAndUnmarshal(w, r, maxPreviewAuthBody, &req) {
+	if !httpx.ReadJSON(w, r, maxPreviewAuthBody, &req) {
 		return
 	}
 	req.Host = strings.ToLower(strings.TrimSpace(req.Host))
 	req.ClientID = strings.TrimSpace(req.ClientID)
 	req.ClientSecret = strings.TrimSpace(req.ClientSecret)
-	s.editPreviewApps(w, r, func(apps []previewApp) ([]previewApp, error) {
+	m.editPreviewApps(w, r, func(apps []previewApp) ([]previewApp, error) {
 		kept := apps[:0]
 		for _, a := range apps {
 			if a.id() != req.id() {
@@ -242,16 +243,16 @@ func (s *Server) handleSavePreviewApp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleRemovePreviewApp(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleRemovePreviewApp(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID string `json:"id"`
 	}
-	if !readAndUnmarshal(w, r, maxPreviewAuthBody, &req) {
+	if !httpx.ReadJSON(w, r, maxPreviewAuthBody, &req) {
 		return
 	}
 	// ponytail: the app's viewer grants stay in state.db and return if the
 	// same app is added again; purge them here if that ever surprises anyone.
-	s.editPreviewApps(w, r, func(apps []previewApp) ([]previewApp, error) {
+	m.editPreviewApps(w, r, func(apps []previewApp) ([]previewApp, error) {
 		kept := apps[:0]
 		for _, a := range apps {
 			if a.id() != req.ID {

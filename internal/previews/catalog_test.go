@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge/github"
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 )
 
@@ -20,7 +19,7 @@ type catalogResp struct {
 	HostKinds []previewHostKind
 }
 
-func catalogFull(t *testing.T, s *Server) (catalogResp, string) {
+func catalogFull(t *testing.T, s *harness) (catalogResp, string) {
 	t.Helper()
 	body := statusOf(t, newBrowser(), s)
 	var resp catalogResp
@@ -30,12 +29,12 @@ func catalogFull(t *testing.T, s *Server) (catalogResp, string) {
 	return resp, body
 }
 
-func catalogOf(t *testing.T, s *Server) []previewProviderView {
+func catalogOf(t *testing.T, s *harness) []previewProviderView {
 	resp, _ := catalogFull(t, s)
 	return resp.Providers
 }
 
-func entryOf(t *testing.T, s *Server, id string) previewProviderView {
+func entryOf(t *testing.T, s *harness, id string) previewProviderView {
 	t.Helper()
 	for _, e := range catalogOf(t, s) {
 		if e.ID == id {
@@ -49,8 +48,8 @@ func entryOf(t *testing.T, s *Server, id string) previewProviderView {
 // The browser learns what is supported and configured, and the link hosts
 // to look for, never a credential.
 func TestPreviewProviders_Catalog(t *testing.T) {
-	s := testServer(t)
-	s.integrations.GitHub = github.NewForTest("https://api.github.com", "tok-cli", nil)
+	s := newHarness(t)
+	s.forges.GitHubToken = "tok-cli"
 	registerForgejoClient(s, "tea.example.com", "https://tea.example.com")
 	b := newBrowser()
 	rules := `{"rules":[{"pattern":"ENG-\\d+","replacement":"https://linear.app/x/issue/$&","provider":"linear"}]}`
@@ -111,7 +110,8 @@ func TestPreviewToken_SaveAndDisconnect(t *testing.T) {
 			return []previewauth.Grant{{WorkspaceID: "w1", WorkspaceName: "Acme", AccountName: "dries"}}, nil
 		},
 	}
-	s := testServer(t).WithPreviewProviders(nil, tokenProvider, previewauth.Provider{ID: "oauth-only", Name: "OAuth only"})
+	s := newHarness(t)
+	s.Providers = []previewauth.Provider{tokenProvider, {ID: "oauth-only", Name: "OAuth only"}}
 	b := newBrowser()
 	for body, want := range map[string]int{
 		`{"provider":"mock","token":"bad"}`:           http.StatusBadRequest,
@@ -156,8 +156,8 @@ func TestPreviewToken_AddsForgejoHost(t *testing.T) {
 	}))
 	defer api.Close()
 	host := strings.TrimPrefix(api.URL, "https://")
-	s := testServer(t)
-	s.previewAuth.client = api.Client()
+	s := newHarness(t)
+	s.Client = api.Client()
 	b := newBrowser()
 	id := "forgejo:" + host
 	if rr := b.do(t, s, http.MethodPost, "/api/previews/token", `{"provider":"`+id+`","token":"pat-1"}`); rr.Code != http.StatusNoContent {

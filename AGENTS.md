@@ -590,6 +590,17 @@ handlers don't bypass the `Host` seam). User-facing docs:
   inheritance (`InheritPermissions`: built alongside creation, applied before
   the first send) and `SendNow` are injected from the server's shared
   session paths, which `/api/sessions/start` also uses.
+- `internal/previews/` — module: link previews' `/api/previews/*` routes
+  (catalog, tokens, OAuth connect/callback/disconnect, sign-in apps, resolve),
+  `/api/settings/link-preview-rules` and `/api/integrations/status`, plus the
+  lazily built `previewauth.Manager` + `linkpreview.Service` (reset when a
+  token, grant or app changes). Credentials are the hub machine's; the server
+  supplies app access (`Deps.Access`: cookie or direct un-proxied loopback),
+  connected remotes and the hub forge clients' CLI/env credentials
+  (`Deps.Forges`) at call time — never the clients, which stay server-owned
+  for projectforge and factory. Fetch bounds, caches, rate-limit backoff and
+  PR status freshness stay in `internal/linkpreview`; grant storage in
+  `internal/previewauth`.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost

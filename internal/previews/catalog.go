@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/linkpreview"
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 )
@@ -34,13 +35,13 @@ var previewHostKinds = []previewHostKind{
 // and their link hosts, and the custom-rule patterns that route to a
 // configured provider, so the browser only asks to resolve text that can
 // produce a preview. Tokens never leave the server.
-func (s *Server) handlePreviewProviders(w http.ResponseWriter, r *http.Request) {
-	home, ok := s.previewContext(w, r)
+func (m *Module) handlePreviewProviders(w http.ResponseWriter, r *http.Request) {
+	home, ok := m.previewContext(w, r)
 	if !ok {
 		return
 	}
-	m, _, catalog := s.previewBuilt()
-	status, err := m.Status(r.Context(), machineViewer, home)
+	mgr, _, catalog := m.previewBuilt()
+	status, err := mgr.Status(r.Context(), machineViewer, home)
 	if err != nil {
 		http.Error(w, "status unavailable", http.StatusInternalServerError)
 		return
@@ -64,19 +65,19 @@ func (s *Server) handlePreviewProviders(w http.ResponseWriter, r *http.Request) 
 		views = append(views, previewProviderView{previewEntry: e, Notice: st.Notice, TokenHelp: st.TokenHelp, Accounts: accounts})
 	}
 	rules := []string{}
-	for _, rule := range s.previewIdentifierRules(r.Context()) {
+	for _, rule := range m.previewIdentifierRules(r.Context()) {
 		if configured[rule.Provider] {
 			rules = append(rules, rule.Pattern)
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"providers": views, "rules": rules, "hostKinds": previewHostKinds})
+	httpx.WriteJSON(w, map[string]any{"providers": views, "rules": rules, "hostKinds": previewHostKinds})
 }
 
 // tokenProvider returns the provider a token is saved for: a known one, or
 // a new Forgejo/GitLab host ("forgejo:<host>").
-func (s *Server) tokenProvider(id string) (previewauth.Provider, bool) {
-	if p, ok := s.previewManager().Provider(id); ok {
+func (m *Module) tokenProvider(id string) (previewauth.Provider, bool) {
+	if p, ok := m.previewManager().Provider(id); ok {
 		return p, true
 	}
 	kind, host, _ := strings.Cut(id, ":")
@@ -94,24 +95,24 @@ func (s *Server) tokenProvider(id string) (previewauth.Provider, bool) {
 
 // handlePreviewToken checks a pasted personal token with the provider and
 // saves it for this machine. The token is sealed at rest and never returned.
-func (s *Server) handlePreviewToken(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePreviewToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Provider string `json:"provider"`
 		Token    string `json:"token"`
 	}
-	if !readAndUnmarshal(w, r, maxPreviewAuthBody, &req) {
+	if !httpx.ReadJSON(w, r, maxPreviewAuthBody, &req) {
 		return
 	}
-	home, ok := s.previewContext(w, r)
+	home, ok := m.previewContext(w, r)
 	if !ok {
 		return
 	}
-	p, ok := s.tokenProvider(strings.ToLower(strings.TrimSpace(req.Provider)))
+	p, ok := m.tokenProvider(strings.ToLower(strings.TrimSpace(req.Provider)))
 	if !ok {
 		http.Error(w, "unknown provider", http.StatusNotFound)
 		return
 	}
-	err := s.previewManager().ConnectToken(r.Context(), machineViewer, home, p, req.Token)
+	err := m.previewManager().ConnectToken(r.Context(), machineViewer, home, p, req.Token)
 	switch {
 	case errors.Is(err, previewauth.ErrNoTokenLogin):
 		http.Error(w, "this provider does not accept personal tokens", http.StatusBadRequest)
@@ -120,7 +121,7 @@ func (s *Server) handlePreviewToken(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		http.Error(w, "saving the token failed", http.StatusInternalServerError)
 	default:
-		s.resetPreviews()
+		m.resetPreviews()
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

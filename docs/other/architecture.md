@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics, termmod, ocmaint, gitmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -204,6 +204,7 @@ flowchart TD
     Inbox -.->|remote RPC| Router
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
     Modules -->|"projectforge: PR/issue lists, checks, handle via owner Host"| Forge
+    Modules -->|"previews: forge credentials only (Deps.Forges)"| Forge
     State -.->|registration types| Plugins[internal/plugins<br/>protocol, supervision, action broker]
     Modules -->|"pluginsmod: routes, supervision, conversation outbox"| Plugins
     Plugins -->|token-bound NDJSON + private configuration fd| PluginExec[External plugin process]
@@ -228,7 +229,10 @@ flowchart TD
   holds the worker join until a running job finishes), routines, webhooks,
   artifacts, the Inbox, conversation sharing and read-only file browsing
   (`internal/filesystem`: directory picker, signed `/api/file/` embeds,
-  owner-routed repository file reads), git and worktrees
+  owner-routed repository file reads), link previews (`internal/previews`:
+  `/api/previews/*`, link rules, sign-in apps, `/api/integrations/status`; it
+  sees the hub forge clients only as credentials through `Deps.Forges`, and
+  app access through `Deps.Access`), git and worktrees
   (`internal/gitmod`: status, branches, checkout, diffs and worktree
   list/base ref/remove/create-and-launch through the owner's `hostsvc.Host`;
   permission inheritance and the first send are injected server paths) each own
@@ -513,7 +517,7 @@ flowchart TD
   a configured host or a routed-rule match, so unconfigured links never cost
   a request. Cards carry no connect flow; Settings → Link previews manages
   tokens and sign-ins, and `ocman:preview-auth-changed` reloads previews.
-- **Forge previews** (`linkpreview.Forge`, `internal/server/preview_forges.go`).
+- **Forge previews** (`linkpreview.Forge`, `internal/previews/forges.go`).
   GitHub, every https Forgejo host (tea logins, saved-token hosts and app
   hosts) and GitLab hosts (`gitlab.com`, saved-token and app hosts) resolve
   PR/issue/commit links. A saved token or sign-in wins; without one the

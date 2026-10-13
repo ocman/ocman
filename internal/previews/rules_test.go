@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestLinkPreviewRules(t *testing.T) {
-	s := &Server{stateDB: openTestStateDB(t)}
+	s := newHarness(t)
 	request := func(method, body string) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRecorder()

@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"context"
@@ -119,12 +119,9 @@ func (m *mockOAuth) authorize(t *testing.T, authorizeURL, code string) string {
 
 type browser struct{ cookies map[string]string }
 
-func (b *browser) do(t *testing.T, s *Server, method, target, body string) *httptest.ResponseRecorder {
+func (b *browser) do(t *testing.T, s *harness, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	mux, err := s.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := s.mux()
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:5555"
 	req.Host = "localhost:8228"
@@ -145,7 +142,7 @@ func (b *browser) do(t *testing.T, s *Server, method, target, body string) *http
 
 func newBrowser() *browser { return &browser{cookies: map[string]string{}} }
 
-func (b *browser) connect(t *testing.T, s *Server, m *mockOAuth, code, returnTo string) string {
+func (b *browser) connect(t *testing.T, s *harness, m *mockOAuth, code, returnTo string) string {
 	t.Helper()
 	rr := b.do(t, s, http.MethodPost, "/api/previews/connect", `{"provider":"mock","returnTo":"`+returnTo+`"}`)
 	if rr.Code != http.StatusOK {
@@ -156,21 +153,22 @@ func (b *browser) connect(t *testing.T, s *Server, m *mockOAuth, code, returnTo 
 	return m.authorize(t, resp.AuthorizeURL, code)
 }
 
-func previewServer(t *testing.T, m *mockOAuth, statePath string) *Server {
+func previewServer(t *testing.T, m *mockOAuth, statePath string) *harness {
 	t.Helper()
-	s := testServer(t)
+	s := newHarness(t)
 	if statePath != "" {
 		db, err := state.Open(statePath)
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { db.Close() })
-		s.stateDB = db
+		s = harnessOn(db)
 	}
-	return s.WithPreviewProviders(nil, m.provider())
+	s.Providers = []previewauth.Provider{m.provider()}
+	return s
 }
 
-func statusOf(t *testing.T, b *browser, s *Server) string {
+func statusOf(t *testing.T, b *browser, s *harness) string {
 	rr := b.do(t, s, http.MethodGet, "/api/previews/providers", "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d %s", rr.Code, rr.Body.String())
@@ -179,7 +177,7 @@ func statusOf(t *testing.T, b *browser, s *Server) string {
 }
 
 // OAuth grants belong to the machine: any browser with app access sees
-// and uses them, and signing out does not forget them.
+// and uses them.
 func TestPreviewAuth_ConnectIsMachineWide(t *testing.T) {
 	m := newMockOAuth(t)
 	path := filepath.Join(t.TempDir(), "state.db")
@@ -227,14 +225,6 @@ func TestPreviewAuth_ConnectIsMachineWide(t *testing.T) {
 	if len(m.revoked) != 1 {
 		t.Fatalf("revoked = %v", m.revoked)
 	}
-
-	// Signing out is about the browser session, not the machine's grants.
-	if rr := laptop.do(t, s, http.MethodPost, "/api/auth/logout", ""); rr.Code != http.StatusNoContent {
-		t.Fatalf("logout = %d", rr.Code)
-	}
-	if body := statusOf(t, phone, s); !strings.Contains(body, "Beta") {
-		t.Fatalf("grant lost on sign-out: %s", body)
-	}
 }
 
 func openRaw(t *testing.T, path string) *sql.DB {
@@ -279,7 +269,7 @@ func TestPreviewAuth_SurvivesRestart(t *testing.T) {
 	b := newBrowser()
 	s1 := previewServer(t, m, path)
 	cb := b.connect(t, s1, m, "code-s", "/")
-	s1.stateDB.Close()
+	s1.Store.Close()
 
 	s2 := previewServer(t, m, path)
 	if rr := b.do(t, s2, http.MethodGet, cb, ""); rr.Code != http.StatusSeeOther {
@@ -301,40 +291,13 @@ func TestPreviewAuth_OwnerAndAccessFailClosed(t *testing.T) {
 		t.Fatalf("local owner = %d", rr.Code)
 	}
 
-	// Auth off: only direct loopback clients reach private preview routes.
-	mux, _ := s.routes()
-	for _, mutate := range []func(*http.Request){
-		func(r *http.Request) { r.RemoteAddr = "192.0.2.4:1234" },
-		func(r *http.Request) { r.Header.Set("X-Forwarded-For", "192.0.2.4") },
-		func(r *http.Request) { r.Host = "ocman.example.com" },
-	} {
-		req := httptest.NewRequest(http.MethodGet, "/api/previews/providers", nil)
-		req.RemoteAddr, req.Host = "127.0.0.1:1", "localhost:8228"
-		mutate(req)
-		rr := httptest.NewRecorder()
-		mux.ServeHTTP(rr, req)
-		if rr.Code != http.StatusForbidden {
-			t.Fatalf("remote unauthenticated = %d", rr.Code)
-		}
-	}
-
-	// Auth on: a remote client needs the app cookie.
-	s.auth = newTestAuth(t, "pw")
+	// Without app access (Deps.Access) no credential route answers.
 	req := httptest.NewRequest(http.MethodGet, "/api/previews/providers", nil)
-	req.RemoteAddr = "192.0.2.4:1234"
+	req.Header.Set("X-Forwarded-For", "192.0.2.4")
 	rr := httptest.NewRecorder()
-	mux, _ = s.routes()
-	mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("auth on, no cookie = %d", rr.Code)
-	}
-	req = httptest.NewRequest(http.MethodGet, "/api/previews/providers", nil)
-	req.RemoteAddr = "192.0.2.4:1234"
-	req.AddCookie(&http.Cookie{Name: authCookieName, Value: s.auth.signToken(time.Now().Add(time.Hour))})
-	rr = httptest.NewRecorder()
-	mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("auth on, cookie = %d", rr.Code)
+	s.mux().ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("no access = %d", rr.Code)
 	}
 }
 
@@ -351,7 +314,7 @@ func TestPreviewAuth_AppsFromEnv(t *testing.T) {
 			for _, k := range env {
 				t.Setenv(k, "v")
 			}
-			s := testServer(t)
+			s := newHarness(t)
 			if p, ok := s.previewManager().Provider(id); !ok || !p.OAuth() {
 				t.Fatalf("%s provider = %+v %v", id, p, ok)
 			}
@@ -362,7 +325,7 @@ func TestPreviewAuth_AppsFromEnv(t *testing.T) {
 			}
 		})
 	}
-	s := testServer(t)
+	s := newHarness(t)
 	for _, id := range []string{"slack", "jira"} {
 		if _, ok := s.previewManager().Provider(id); ok {
 			t.Fatalf("%s registered without an app", id)

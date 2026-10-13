@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"encoding/json"
@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
 )
 
 type appsResp struct {
@@ -29,7 +28,7 @@ func appsOf(t *testing.T, rr *httptest.ResponseRecorder) map[string]previewAppVi
 func TestPreviewApps_SavedFromSettingsOverrideEnv(t *testing.T) {
 	t.Setenv("OCMAN_GITHUB_PREVIEW_CLIENT_ID", "env-id")
 	t.Setenv("OCMAN_GITHUB_PREVIEW_CLIENT_SECRET", "env-secret")
-	s := testServer(t)
+	s := newHarness(t)
 	b := newBrowser()
 
 	if p, _ := s.previewManager().Provider("github"); p.ClientID != "env-id" {
@@ -62,14 +61,14 @@ func TestPreviewApps_SavedFromSettingsOverrideEnv(t *testing.T) {
 	if p, _ := s.previewManager().Provider("github"); p.ClientID != "env-id" {
 		t.Fatalf("fallback = %q", p.ClientID)
 	}
-	raw, _, _ := s.stateDB.GetSetting(t.Context(), previewAppsKey)
+	raw, _, _ := s.Store.GetSetting(t.Context(), previewAppsKey)
 	if strings.Contains(raw, "ui-secret") {
 		t.Fatal("apps stored in plaintext")
 	}
 }
 
 func TestPreviewApps_HostedAndValidation(t *testing.T) {
-	s := testServer(t)
+	s := newHarness(t)
 	b := newBrowser()
 	for _, body := range []string{
 		`{"kind":"nope","clientId":"x","clientSecret":"y"}`,
@@ -102,8 +101,8 @@ func TestPreviewApps_HostedAndValidation(t *testing.T) {
 }
 
 func TestPreviewApps_Forbidden(t *testing.T) {
-	s := testServer(t)
-	mux, _ := s.routes()
+	s := newHarness(t)
+	mux := s.mux()
 	for _, target := range []string{"/api/previews/apps", "/api/previews/apps/save", "/api/previews/apps/remove"} {
 		method := http.MethodPost
 		if target == "/api/previews/apps" {
@@ -122,4 +121,3 @@ func TestPreviewApps_Forbidden(t *testing.T) {
 		t.Fatal("proxied save applied")
 	}
 }
-

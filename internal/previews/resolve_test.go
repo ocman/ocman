@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"context"
@@ -39,7 +39,7 @@ func (r trackerResolver) Fetch(ctx context.Context, api *linkpreview.API, ref li
 	return linkpreview.Preview{Title: body.Title}, err
 }
 
-func resolvePreviews(t *testing.T, b *browser, s *Server, text string) []linkpreview.Preview {
+func resolvePreviews(t *testing.T, b *browser, s *harness, text string) []linkpreview.Preview {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"text": text})
 	rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", string(body))
@@ -59,8 +59,8 @@ func TestPreviewResolve_MachineGrantsWithRuleFallback(t *testing.T) {
 	}))
 	defer api.Close()
 	m := newMockOAuth(t)
-	s := previewServer(t, m, "").WithPreviewResolvers(trackerResolver{api: api.URL})
-	s.previewAuth.client = api.Client()
+	s := previewServer(t, m, "").withResolvers(trackerResolver{api: api.URL})
+	s.Client = api.Client()
 	laptop, phone := newBrowser(), newBrowser()
 
 	rules := `{"rules":[{"pattern":"\\b([A-Z]+-\\d+)\\b","replacement":"https://tracker.example.com/browse/$1","provider":"mock"}]}`
@@ -114,8 +114,8 @@ func TestPreviewResolveChecksTarget(t *testing.T) {
 		}
 	}))
 	defer api.Close()
-	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
-	s.previewAuth.client = api.Client()
+	s := previewServer(t, newMockOAuth(t), "").withResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
+	s.Client = api.Client()
 	b := newBrowser()
 	for _, text := range []string{"https://github.com/o/r/issues/1", "https://evil.example/o/r/pull/1", "https://github.com/o/r/pull/1 https://github.com/o/r/pull/2"} {
 		body, _ := json.Marshal(map[string]string{"text": text, "checksSha": "abc123"})
@@ -142,8 +142,8 @@ func TestPreviewChecksRefreshBypassesSettledServerCache(t *testing.T) {
 		}
 	}))
 	defer api.Close()
-	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
-	s.previewAuth.client = api.Client()
+	s := previewServer(t, newMockOAuth(t), "").withResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
+	s.Client = api.Client()
 	b := newBrowser()
 	request := `{"text":"https://github.com/o/r/pull/1","checksSha":"abc123"}`
 	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", request); !strings.Contains(rr.Body.String(), `"state":"success"`) {
@@ -165,8 +165,8 @@ func TestPreviewRefreshFollowsChangedHead(t *testing.T) {
 		fmt.Fprintf(w, `{"title":"PR","head":{"sha":%q}}`, sha)
 	}))
 	defer api.Close()
-	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
-	s.previewAuth.client = api.Client()
+	s := previewServer(t, newMockOAuth(t), "").withResolvers(linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL})
+	s.Client = api.Client()
 	b := newBrowser()
 	request := `{"text":"https://github.com/o/r/pull/1"}`
 	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve", request); !strings.Contains(rr.Body.String(), "abc123") {
@@ -188,7 +188,7 @@ func TestLinkPreviewRules_RejectsInvalidProvider(t *testing.T) {
 	}
 }
 
-func resolveAt(t *testing.T, b *browser, s *Server, remote, text string) []linkpreview.Preview {
+func resolveAt(t *testing.T, b *browser, s *harness, remote, text string) []linkpreview.Preview {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"text": text})
 	rr := b.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId="+remote, string(body))
@@ -210,9 +210,9 @@ func TestPreviewResolve_RemoteSessionsUseHubCredentials(t *testing.T) {
 	}))
 	defer api.Close()
 	m := newMockOAuth(t)
-	s := previewServer(t, m, "").WithPreviewResolvers(trackerResolver{api: api.URL})
-	s.previewAuth.client = api.Client()
-	s.router().RegisterRemote("r1", s.router().Local())
+	s := previewServer(t, m, "").withResolvers(trackerResolver{api: api.URL})
+	s.Client = api.Client()
+	s.remotes["r1"] = true
 	b := newBrowser()
 	const text = "https://tracker.example.com/browse/ABC-1"
 	b.do(t, s, http.MethodGet, b.connect(t, s, m, "code-a", "/"), "")
@@ -222,7 +222,7 @@ func TestPreviewResolve_RemoteSessionsUseHubCredentials(t *testing.T) {
 			t.Fatalf("%s: %+v", remote, got)
 		}
 	}
-	s.router().UnregisterRemote("r1")
+	delete(s.remotes, "r1")
 	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId=r1", `{"text":"`+text+`"}`); rr.Code != http.StatusServiceUnavailable || strings.Contains(rr.Body.String(), "Private") {
 		t.Fatalf("disconnected owner = %d %s", rr.Code, rr.Body.String())
 	}
@@ -248,10 +248,10 @@ func TestPreviewResolve_ForgeOwnerFallback(t *testing.T) {
 		}
 	}))
 	defer api.Close()
-	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(
+	s := previewServer(t, newMockOAuth(t), "").withResolvers(
 		linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL, OwnerToken: "tok-owner"})
-	s.previewAuth.client = api.Client()
-	s.router().RegisterRemote("r1", s.router().Local())
+	s.Client = api.Client()
+	s.remotes["r1"] = true
 	const text = `{"text":"https://github.com/acme/pub/pull/1 https://github.com/acme/priv/pull/2"}`
 	titles := func(rr *httptest.ResponseRecorder) string {
 		t.Helper()
@@ -268,7 +268,7 @@ func TestPreviewResolve_ForgeOwnerFallback(t *testing.T) {
 	if got := titles(b.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId=r1", text)); got != "Public PR|Private PR" {
 		t.Fatalf("remote owner = %q", got)
 	}
-	mux, _ := s.routes()
+	mux := s.mux()
 	req := httptest.NewRequest(http.MethodPost, "/api/previews/resolve", strings.NewReader(text))
 	req.RemoteAddr, req.Host = "127.0.0.1:1", "localhost:8228"
 	req.Header.Set("X-Forwarded-For", "192.0.2.4")
@@ -283,7 +283,7 @@ func TestPreviewForges_FromEnv(t *testing.T) {
 	t.Setenv("OCMAN_GITHUB_PREVIEW_CLIENT_ID", "gid")
 	t.Setenv("OCMAN_GITHUB_PREVIEW_CLIENT_SECRET", "gsecret")
 	t.Setenv("OCMAN_FORGEJO_PREVIEW_APPS", "Code.Example.com=fid:fsec:ret, bad host=x:y,nocreds.example.com=,")
-	s := testServer(t)
+	s := newHarness(t)
 	registerForgejoClient(s, "tea.example.com", "https://tea.example.com")
 	m := s.previewManager()
 	for _, id := range []string{"github", "forgejo:code.example.com"} {
@@ -311,7 +311,7 @@ func TestPreviewForges_FromEnv(t *testing.T) {
 
 func TestPreviewGitLab_FromEnv(t *testing.T) {
 	t.Setenv("OCMAN_GITLAB_PREVIEW_APPS", "GitLab.com=gid:gsec, code.corp:8443=cid,bad host=x,noid.example=,code.corp:8443=dup")
-	s := testServer(t)
+	s := newHarness(t)
 	m := s.previewManager()
 	if p, ok := m.Provider("gitlab:gitlab.com"); !ok || p.ClientSecret != "gsec" || !p.PKCE || p.Scopes[0] != "read_api" {
 		t.Fatalf("gitlab.com provider = %+v %v", p, ok)

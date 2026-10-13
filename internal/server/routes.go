@@ -71,24 +71,9 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/auth/login", requirePOST(s.csrfGuard(s.handleAuthLogin)))
 	mux.HandleFunc("/api/auth/logout", requirePOST(s.csrfGuard(s.handleAuthLogout)))
 
-	// Integration endpoints. These proxy requests to third-party APIs
-	// using server-side credentials discovered at startup.
-	mux.HandleFunc("/api/integrations/status", s.get(s.handleIntegrationsStatus))
-	// Viewer-scoped provider consent for private previews (preview_auth.go).
-	mux.HandleFunc("/api/previews/providers", s.get(s.handlePreviewProviders))
-	mux.HandleFunc("/api/previews/connect", s.post(s.handlePreviewConnect))
-	mux.HandleFunc("/api/previews/disconnect", s.post(s.handlePreviewDisconnect))
-	mux.HandleFunc("/api/previews/resolve", s.post(s.handlePreviewResolve))
-	mux.HandleFunc("/api/previews/token", s.post(s.handlePreviewToken))
-	mux.HandleFunc("/api/previews/apps", s.get(s.handlePreviewApps))
-	mux.HandleFunc("/api/previews/apps/save", s.post(s.handleSavePreviewApp))
-	mux.HandleFunc("/api/previews/apps/remove", s.post(s.handleRemovePreviewApp))
-	mux.HandleFunc(previewCallback, s.get(s.handlePreviewCallback))
-
 	// Settings endpoints — user preferences that must be shared with the
 	// backend. The judge settings belong to the auto-approve module.
 	mux.HandleFunc("/api/settings/default-agent", s.settingsHandler(s.requireAuth(s.handleDefaultAgent)))
-	mux.HandleFunc("/api/settings/link-preview-rules", s.settingsHandler(s.requireAuth(s.handleLinkPreviewRules)))
 	// Master toggle for public session sharing (on by default).
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).

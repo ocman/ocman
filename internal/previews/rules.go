@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 const linkPreviewRulesKey = "link_preview_rules"
@@ -25,29 +27,29 @@ type linkPreviewRules struct {
 	Rules []linkPreviewRule `json:"rules"`
 }
 
-func (s *Server) handleLinkPreviewRules(w http.ResponseWriter, r *http.Request) {
-	if s.stateDB == nil {
+func (m *Module) handleLinkPreviewRules(w http.ResponseWriter, r *http.Request) {
+	if m.Store == nil {
 		http.Error(w, "state database not available", http.StatusServiceUnavailable)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		result := linkPreviewRules{Rules: []linkPreviewRule{}}
-		value, ok, err := s.stateDB.GetSetting(r.Context(), linkPreviewRulesKey)
+		value, ok, err := m.Store.GetSetting(r.Context(), linkPreviewRulesKey)
 		if err != nil {
-			serverError(w, "reading link preview rules", err)
+			httpx.ServerError(w, "reading link preview rules", err)
 			return
 		}
 		if ok {
 			if err := json.Unmarshal([]byte(value), &result); err != nil {
-				serverError(w, "decoding link preview rules", err)
+				httpx.ServerError(w, "decoding link preview rules", err)
 				return
 			}
 		}
-		writeJSON(w, result)
+		httpx.WriteJSON(w, result)
 	case http.MethodPost:
 		var result linkPreviewRules
-		if !readAndUnmarshal(w, r, maxRequestBody, &result) {
+		if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &result) {
 			return
 		}
 		if err := validateLinkPreviewRules(result); err != nil {
@@ -56,14 +58,14 @@ func (s *Server) handleLinkPreviewRules(w http.ResponseWriter, r *http.Request) 
 		}
 		value, err := json.Marshal(result)
 		if err != nil {
-			serverError(w, "encoding link preview rules", err)
+			httpx.ServerError(w, "encoding link preview rules", err)
 			return
 		}
-		if err := s.stateDB.SetSetting(r.Context(), linkPreviewRulesKey, string(value)); err != nil {
-			serverError(w, "saving link preview rules", err)
+		if err := m.Store.SetSetting(r.Context(), linkPreviewRulesKey, string(value)); err != nil {
+			httpx.ServerError(w, "saving link preview rules", err)
 			return
 		}
-		writeJSON(w, result)
+		httpx.WriteJSON(w, result)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

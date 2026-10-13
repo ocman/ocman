@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/analytics"
+	"github.com/NoUseFreak/ocman/internal/previews"
 
 	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
@@ -52,7 +53,6 @@ type Server struct {
 	fallNotices        sync.Map // fallKey → fallNotice
 	auth               *Auth
 	integrations       *forgeClients
-	previewAuth        previewAuthState
 	startTime          time.Time
 	projects           projectsIndexState
 	autoApproveDefault bool
@@ -175,6 +175,8 @@ type Server struct {
 
 	projectForgeMod     *projectforge.Module
 	projectForgeModOnce sync.Once
+	previewsMod         *previews.Module
+	previewsModOnce     sync.Once
 }
 
 type factoryProjectResolver struct{ server *Server }

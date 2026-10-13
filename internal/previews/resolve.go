@@ -1,4 +1,4 @@
-package server
+package previews
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/linkpreview"
 )
 
@@ -15,21 +16,14 @@ const maxPreviewResolveBody = 1 << 20
 
 var previewChecksSHA = regexp.MustCompile(`^[0-9a-fA-F]{5,40}$`)
 
-// WithPreviewResolvers registers the providers that turn discovered links
-// into previews. Must be called before Start.
-func (s *Server) WithPreviewResolvers(resolvers ...linkpreview.Resolver) *Server {
-	s.previewAuth.resolvers = resolvers
-	return s
-}
-
-func (s *Server) linkPreviews() *linkpreview.Service {
-	_, svc, _ := s.previewBuilt()
+func (m *Module) linkPreviews() *linkpreview.Service {
+	_, svc, _ := m.previewBuilt()
 	return svc
 }
 
 // previewIdentifierRules are the custom link rules routed to a provider.
-func (s *Server) previewIdentifierRules(ctx context.Context) []linkpreview.IdentifierRule {
-	value, ok, err := s.stateDB.GetSetting(ctx, linkPreviewRulesKey)
+func (m *Module) previewIdentifierRules(ctx context.Context) []linkpreview.IdentifierRule {
+	value, ok, err := m.Store.GetSetting(ctx, linkPreviewRulesKey)
 	var saved linkPreviewRules
 	if err != nil || !ok || json.Unmarshal([]byte(value), &saved) != nil {
 		return nil
@@ -45,7 +39,7 @@ func (s *Server) previewIdentifierRules(ctx context.Context) []linkpreview.Ident
 
 // handlePreviewResolve discovers previewable resources in the posted text
 // and resolves them with this machine's credentials.
-func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Text          string `json:"text"`
 		ChecksSHA     string `json:"checksSha"`
@@ -53,10 +47,10 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		Refresh       bool   `json:"refresh"`
 		PRStatus      bool   `json:"prStatus"`
 	}
-	if !readAndUnmarshal(w, r, maxPreviewResolveBody, &req) {
+	if !httpx.ReadJSON(w, r, maxPreviewResolveBody, &req) {
 		return
 	}
-	home, ok := s.previewHome(r)
+	home, ok := m.previewHome(r)
 	if !ok {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
@@ -65,11 +59,11 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	// Without app access there is no machine viewer: only public forge
 	// links resolve.
 	ctx, viewerID := r.Context(), ""
-	if s.previewAccessAllowed(r) {
+	if m.previewAccessAllowed(r) {
 		ctx, viewerID = linkpreview.WithOwnerAccess(ctx), machineViewer
 	}
-	svc := s.linkPreviews()
-	refs := svc.Discover(req.Text, s.previewIdentifierRules(r.Context()))
+	svc := m.linkPreviews()
+	refs := svc.Discover(req.Text, m.previewIdentifierRules(r.Context()))
 	if req.PRStatus {
 		if req.ChecksSHA != "" || len(refs) != 1 || refs[0].Kind != "pr" ||
 			(refs[0].Provider != "github" && !strings.HasPrefix(refs[0].Provider, "forgejo:")) {
@@ -99,5 +93,5 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		previews = []linkpreview.Preview{}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"previews": previews})
+	httpx.WriteJSON(w, map[string]any{"previews": previews})
 }
