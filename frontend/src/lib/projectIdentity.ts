@@ -1,7 +1,7 @@
 import type { Project } from './api';
 import { projectRootForDirectory } from './worktrees';
 
-type Checkout = Pick<Project, 'directory' | 'remoteId' | 'remoteName' | 'platform' | 'projectKey'>;
+type Checkout = Pick<Project, 'directory' | 'remoteId' | 'remoteName' | 'platform' | 'projectKey' | 'mergedIntoDirectory' | 'mergedIntoRemoteId'>;
 export type ProjectIdentity = Checkout & { key: string };
 
 export const checkoutKey = (directory: string, remoteId?: string) =>
@@ -21,6 +21,15 @@ export function projectIdentityIndex(projects: Checkout[]) {
       representatives.set(key, { directory, remoteId: project.remoteId,
         remoteName: project.remoteName, platform: project.platform, projectKey: project.projectKey, key });
     }
+  }
+  for (const project of projects) {
+    if (!project.mergedIntoDirectory) continue;
+    const key = byCheckout.get(checkoutKey(projectRootForDirectory(project.directory), project.remoteId))!;
+    const target = projects.find(p => p.directory === project.mergedIntoDirectory
+      && (p.remoteId || 'local') === (project.mergedIntoRemoteId || 'local'));
+    representatives.set(key, { directory: project.mergedIntoDirectory,
+      remoteId: project.mergedIntoRemoteId, remoteName: target?.remoteName,
+      platform: target?.platform, projectKey: key, key });
   }
   return (directory: string, remoteId?: string): ProjectIdentity => {
     const root = projectRootForDirectory(directory);

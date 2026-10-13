@@ -287,6 +287,9 @@ type ModelCostPoint struct {
 
 // ProjectStats holds per-directory aggregated data.
 type ProjectStats struct {
+	MergedIntoDirectory string `json:"mergedIntoDirectory,omitempty"`
+	MergedIntoRemoteID  string `json:"mergedIntoRemoteId,omitempty"`
+
 	ProjectKey     string   `json:"projectKey,omitempty"`
 	UpstreamKeys   []string `json:"upstreamKeys,omitempty"`
 	UpstreamOrigin string   `json:"upstreamOrigin,omitempty"`

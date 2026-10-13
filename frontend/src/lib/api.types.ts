@@ -1000,6 +1000,8 @@ export interface ModelCostPoint {
 }
 
 export interface Project {
+  mergedIntoDirectory?: string;
+  mergedIntoRemoteId?: string;
   projectKey?: string;
   upstreamKeys?: string[];
   directory: string;

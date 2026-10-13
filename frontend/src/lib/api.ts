@@ -66,6 +66,8 @@ export const api = {
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
+  mergeProjects: (source: Pick<Project, 'directory' | 'remoteId'>, target: Pick<Project, 'directory' | 'remoteId'>) =>
+    postJSON<{ ok: boolean }, { source: typeof source; target: typeof target }>('/api/project/merge', { source, target }),
   factoryEpics: (signal?: AbortSignal) => fetchJSON<FactoryEpic[]>('/api/factory/epics', signal),
   inbox: (signal?: AbortSignal, archived = false) => fetchJSON<InboxResponse>(`/api/inbox${archived ? '?archived=true' : ''}`, signal),
   markInboxItemRead: (id: string, remoteId: string) =>

@@ -12,6 +12,9 @@ import { DashboardToolbar } from './DashboardToolbar';
 import { DataTable } from '../../components/DataTable';
 import { LoadingState } from '../../components/LoadingState';
 import { InlineAlert } from '../../components/InlineAlert';
+import { IconButton } from '../../components/IconButton';
+import type { Project } from '../../lib/api';
+import { MergeProjectModal } from './MergeProjectModal';
 
 // ---------------------------------------------------------------------------
 // Projects tab
@@ -25,18 +28,20 @@ export function ProjectsTab() {
   const navigate = useNavigate();
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
   const [search, setSearch] = useState('');
+  const [mergeSource, setMergeSource] = useState<Project | null>(null);
+  const groupedProjects = groupProjects(projects);
 
   // The picker is sourced from the full project list (so the user can
   // navigate up/down the tree); the table itself is filtered to the
   // active scope. matchesScope mirrors the SQL predicate used by the
   // backend (see spec/stats-project-filter/architecture.md, AD-7).
   const q = search.trim();
-  const visibleProjects = groupProjects(projects
+  const visibleProjects = groupedProjects
     // Remote projects carry no session aggregates (inventory-only), so
     // don't drop them on the sessionCount>0 gate that hides empty locals.
     .filter((p) => p.remoteId || p.sessionCount > 0)
     .filter((p) => matchesScope(p.directory, dirScope))
-    .filter((p) => !q || fuzzyMatch(q, p.directory)));
+    .filter((p) => !q || fuzzyMatch(q, p.directory));
 
   if (projectsLoading && projects.length === 0) {
     return <LoadingState>Loading projects...</LoadingState>;
@@ -80,12 +85,13 @@ export function ProjectsTab() {
           <th>Messages</th>
           <th>Tokens (in/out)</th>
           <th>Last Active</th>
+          <th aria-label="Actions" />
         </tr>
       </thead>
       <tbody>
         {visibleProjects.length === 0 ? (
           <tr>
-            <td colSpan={5} style={{ padding: 24 }}>
+            <td colSpan={6} style={{ padding: 24 }}>
               {projects.length === 0 ? (
                 <GettingStartedEmpty />
               ) : (
@@ -99,9 +105,8 @@ export function ProjectsTab() {
           <tr
             key={`${p.remoteId ?? 'local'}:${p.directory}`}
             onClick={() =>
-              p.remoteId ? undefined : navigate(`/project/${encodeURIComponent(p.directory)}`)
+              navigate(`/project/${encodeURIComponent(p.directory)}${p.remoteId ? `?remoteId=${encodeURIComponent(p.remoteId)}` : ''}`)
             }
-            style={p.remoteId ? { cursor: 'default' } : undefined}
           >
             <td>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -115,10 +120,14 @@ export function ProjectsTab() {
             <td>{p.messageCount}</td>
             <td className="mono">{formatNumber(p.totalTokensIn)} / {formatNumber(p.totalTokensOut)}</td>
             <td>{relativeTime(p.lastUsed)}</td>
+            <td><IconButton icon="bi-sign-merge-left" label={`Merge ${p.directory}`} variant="ghost"
+              onClick={event => { event.stopPropagation(); setMergeSource(p); }} /></td>
           </tr>
         ))}
       </tbody>
     </DataTable>
+    {mergeSource && <MergeProjectModal source={mergeSource} projects={groupedProjects}
+      onClose={() => setMergeSource(null)} onMerged={() => { void refetchProjects(); }} />}
     </div>
   );
 }

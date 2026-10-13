@@ -49,7 +49,7 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] -->|core APIs, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>REST + SSE] -->|core APIs, project merges, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
@@ -169,6 +169,13 @@ flowchart LR
   matching host. Actions still target a specific owner and directory. Repositories
   without network remotes fall back to owner-scoped directories, with the existing
   worktree folding. Local filesystem remotes never identify cross-host projects.
+  The dashboard's merge action saves a source-group to target-group mapping in
+  the hub's `state.db` setting `projects.merges`. `/api/projects` applies it after
+  upstream grouping and includes the selected target checkout for display.
+  Dashboard totals, sidebar groups and project session lists share this identity.
+  Merge chains follow the final target, and a transaction rejects cycles.
+  Session directories, owners and transcripts stay intact. Successful merges
+  publish `ocman.projects.changed` so other browsers refresh their project list.
 - **Encrypted webhooks.** Providers submit plaintext to the relay's ingestion
   URL, where ocman encrypts a versioned age X25519 envelope. The relay
   persists ciphertext plus visible size/timing metadata; the owning local or

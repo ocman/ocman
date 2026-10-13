@@ -4,6 +4,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ProjectDetail } from './ProjectDetail';
 
+const merging = vi.hoisted(() => ({ enabled: false }));
+
 const history = vi.hoisted(() => ({ sessions: [
   { id: 'a', title: 'Fix header', directory: '/repos/ocman' },
   { id: 'b', title: 'Add search', directory: '/repos/ocman' },
@@ -15,6 +17,7 @@ vi.mock('../lib/queries', () => ({
   useProjects: () => ({ isLoading: false, data: [
     { directory: '/repos/ocman', projectKey: 'git:shared' },
     { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' },
+    ...(merging.enabled ? [{ directory: '/elsewhere', projectKey: 'git:shared', mergedIntoDirectory: '/repos/ocman' }] : []),
   ] }),
   useSessions: (params?: { limit?: number }) => ({
     isLoading: false,
@@ -22,7 +25,10 @@ vi.mock('../lib/queries', () => ({
   }),
 }));
 
-beforeEach(() => { history.sessions = history.sessions.filter(s => !s.id.startsWith('unrelated-')); });
+beforeEach(() => {
+  merging.enabled = false;
+  history.sessions = history.sessions.filter(s => !s.id.startsWith('unrelated-'));
+});
 vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => true }));
 vi.mock('../components/SessionTable', () => ({
   SessionTable: ({ sessions }: { sessions: { id: string; title: string }[] }) => (
@@ -51,6 +57,15 @@ it('restores search from the URL', () => {
   expect(screen.getByRole('searchbox', { name: 'Search sessions' })).toHaveValue('search');
   expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Add search']);
   expect(screen.getByRole('button', { name: 'Exclude archived' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+it('includes manually merged sessions under the target while preserving their directories', () => {
+  merging.enabled = true;
+  render(<MemoryRouter initialEntries={['/project/%2Frepos%2Focman']}>
+    <Routes><Route path="/project/:dir" element={<ProjectDetail />} /></Routes>
+  </MemoryRouter>);
+  expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(['Fix header', 'Add search', 'Remote change', 'Unrelated']);
+  expect(history.sessions.find(s => s.id === 'd')?.directory).toBe('/elsewhere');
 });
 
 it('keeps project sessions beyond 500 newer unrelated sessions in both time-range and All views', () => {

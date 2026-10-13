@@ -37,12 +37,20 @@ func (s *Server) WithVersion(v string) *Server {
 func (s *Server) LogPath() string { return s.logPath }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
-	// Local hub projects flow through the host seam (AD-16): OpenCode's
-	// database plus every other local platform's session directories.
-	projects, err := s.router().Local().Projects(r.Context())
+	projects, err := s.listProjects(r.Context())
 	if err != nil {
 		serverError(w, "fetching projects", err)
 		return
+	}
+	writeJSON(w, projects)
+}
+
+func (s *Server) listProjects(ctx context.Context) ([]db.ProjectStats, error) {
+	// Local hub projects flow through the host seam (AD-16): OpenCode's
+	// database plus every other local platform's session directories.
+	projects, err := s.router().Local().Projects(ctx)
+	if err != nil {
+		return nil, err
 	}
 	// Append remote projects from the inventory cache, tagged with their
 	// owning remote so the frontend can label them and target the right
@@ -56,21 +64,23 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	// honour the archived_project markers too (they otherwise re-appear on
 	// every refresh). Newer activity still auto-unarchives — most recent
 	// timestamp wins.
-	if err := s.applyProjectArchiveState(r.Context(), projects); err != nil {
-		serverError(w, "applying project archive state", err)
-		return
+	if err := s.applyProjectArchiveState(ctx, projects); err != nil {
+		return nil, err
 	}
 	// Fold worktree directories into their repo root and merge duplicate
 	// rows so each project appears once, then sort by last activity.
 	projects = foldWorktreeProjects(projects)
 	remote.AssignProjectKeys(projects)
+	if err := s.applyProjectMerges(ctx, projects); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(projects, func(i, j int) bool {
 		return projects[i].LastUsed > projects[j].LastUsed
 	})
 	if projects == nil {
 		projects = []db.ProjectStats{} // [] not null for the frontend
 	}
-	writeJSON(w, projects)
+	return projects, nil
 }
 
 // foldWorktreeProjects collapses <repo>/.worktrees/<repo>/<slug> directories

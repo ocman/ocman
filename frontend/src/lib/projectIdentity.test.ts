@@ -3,6 +3,17 @@ import { groupProjects, projectIdentityIndex } from './projectIdentity';
 import type { Project } from './api';
 
 describe('projectIdentityIndex', () => {
+  it('uses the selected merge target for dashboard and session grouping', () => {
+    const projects = [
+      { directory: '/source', projectKey: 'target', mergedIntoDirectory: '/target', mergedIntoRemoteId: 'box', sessionCount: 2, messageCount: 3, totalTokensIn: 4, totalTokensOut: 5, lastUsed: 6 },
+      { directory: '/target', remoteId: 'box', remoteName: 'Remote', projectKey: 'target', sessionCount: 10, messageCount: 20, totalTokensIn: 30, totalTokensOut: 40, lastUsed: 50 },
+    ];
+    const identity = projectIdentityIndex(projects);
+    expect(identity('/source')).toMatchObject({ key: 'target', directory: '/target', remoteId: 'box', remoteName: 'Remote' });
+    expect(identity('/target', 'box').key).toBe(identity('/source').key);
+    expect(groupProjects(projects)).toEqual([expect.objectContaining({ directory: '/target', remoteId: 'box', sessionCount: 12, messageCount: 23 })]);
+    expect(projects[0].directory).toBe('/source');
+  });
   it('groups checkouts and worktrees across owners using the server project key', () => {
     const index = projectIdentityIndex([
       { directory: '/local/repo', projectKey: 'git:shared' },

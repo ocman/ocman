@@ -48,6 +48,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Project archive state (own state.db; no launch), same auth posture
 	// as the per-session archive endpoint.
 	mux.HandleFunc("/api/project/archive", s.post(s.handleProjectArchive))
+	mux.HandleFunc("/api/project/merge", s.post(s.handleProjectMerge))
 	// Per-project model list (own state.db setting row), same posture.
 	mux.HandleFunc("/api/project/settings", s.settingsHandler(s.requireAuth(s.handleProjectSettings)))
 	s.mountModules(mux)
