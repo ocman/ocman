@@ -55,11 +55,14 @@ func (d *DB) ArchiveSession(ctx context.Context, platform, sessionID string, ses
 
 // AutoArchiveSession inserts an archive without replacing a concurrent manual
 // archive or snooze. Manual ArchiveSession intentionally cancels snooze instead.
-func (d *DB) AutoArchiveSession(ctx context.Context, platform, sessionID string, sessionTimeUpdated int64) (bool, error) {
+// The scan cutoff also protects conversations opened or awakened during the scan.
+func (d *DB) AutoArchiveSession(ctx context.Context, platform, sessionID string, sessionTimeUpdated, cutoff int64) (bool, error) {
 	result, err := d.db.ExecContext(ctx, `INSERT INTO archived_session
-		(platform, session_id, session_time_updated, archived_at) VALUES (?, ?, ?, ?)
+		(platform, session_id, session_time_updated, archived_at) SELECT ?, ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM unarchived_entity
+			WHERE kind = 'session' AND remote_id = 'local' AND entity_key = ? AND unarchived_at >= ?)
 		ON CONFLICT(platform, session_id) DO NOTHING`,
-		platform, sessionID, sessionTimeUpdated, time.Now().UnixMilli())
+		platform, sessionID, sessionTimeUpdated, time.Now().UnixMilli(), sessionKey(platform, sessionID), cutoff)
 	if err != nil {
 		return false, fmt.Errorf("auto-archiving session: %w", err)
 	}

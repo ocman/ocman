@@ -41,7 +41,8 @@ describe('SnoozeButton', () => {
     for (const label of SNOOZE_OPTIONS) expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: 'In 30 mins' }));
     await waitFor(() => expect(api.snoozeSession).toHaveBeenCalledWith(session.platform, 's1', expect.any(Number)));
-    expect(useApiStore.getState().recentSessions.find((row) => row.platform === session.platform)?.archived).toBe(true);
+    // State is delivered by SSE, not overwritten by the unordered HTTP response.
+    expect(useApiStore.getState().recentSessions.find((row) => row.platform === session.platform)?.archived).toBe(false);
     expect(useApiStore.getState().recentSessions.find((row) => row.platform === localSession.platform)?.archived).toBe(false);
     expect(click).not.toHaveBeenCalled();
   });
@@ -82,5 +83,30 @@ describe('SnoozeButton', () => {
     await user.click(screen.getByRole('button', { name: 'Switch conversation' }));
     await act(async () => { resolve({ ok: true }); });
     expect(screen.getByRole('status')).toHaveTextContent(destination);
+  });
+
+  it('preserves a cancellation received before the snooze response', async () => {
+    let resolve!: (value: { ok: boolean }) => void;
+    vi.mocked(api.snoozeSession).mockReturnValue(new Promise((done) => { resolve = done; }));
+    const { user } = setup();
+    await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
+    await user.click(screen.getByRole('menuitem', { name: 'In 30 mins' }));
+    act(() => {
+      useApiStore.getState().patchRecentSession(session.id, { archived: true }, session.platform);
+      useApiStore.getState().patchRecentSession(session.id, { archived: false }, session.platform);
+    });
+    await act(async () => { resolve({ ok: true }); });
+    expect(useApiStore.getState().recentSessions.every((row) => !row.archived)).toBe(true);
+  });
+
+  it('dismisses the custom dialog with Escape without activating its row', async () => {
+    const { user, click } = setup();
+    await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Custom...' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(click).not.toHaveBeenCalled();
+    expect(api.snoozeSession).not.toHaveBeenCalled();
   });
 });

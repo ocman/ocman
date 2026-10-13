@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, type Session } from '../lib/api';
-import { useApiStore } from '../lib/apiStore';
 import { snoozeDeadline, SNOOZE_OPTIONS } from '../lib/snooze';
 import { Button, TextField } from './Control';
 import { IconButton } from './IconButton';
@@ -22,9 +21,8 @@ export function SnoozeButton({ session, disabled = false }: { session: Session; 
     setError('');
     try {
       await api.snoozeSession(session.platform, session.id, deadline);
-      useApiStore.getState().patchRecentSession(session.id, { archived: true }, session.platform);
       setCustom(false);
-      // The archive SSE event closes the active conversation through useSessionSeen.
+      // Owner-qualified SSE updates own archive state and active-session navigation.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not snooze conversation');
       setCustom(true);
@@ -32,7 +30,7 @@ export function SnoozeButton({ session, disabled = false }: { session: Session; 
       setBusy(false);
     }
   }
-  return <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+  return <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key !== 'Escape') event.stopPropagation(); }}>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <IconButton icon="bi-clock" label="Snooze conversation" variant="ghost" disabled={disabled || busy} />

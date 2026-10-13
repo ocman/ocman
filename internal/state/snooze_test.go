@@ -88,11 +88,11 @@ func TestSnoozeRejectsPastDeadline(t *testing.T) {
 func TestAutoArchiveSessionPreservesExistingArchives(t *testing.T) {
 	d := openTestStateDB(t)
 	ctx := t.Context()
-	inserted, err := d.AutoArchiveSession(ctx, "opencode", "plain", 42)
+	inserted, err := d.AutoArchiveSession(ctx, "opencode", "plain", 42, 0)
 	if err != nil || !inserted {
 		t.Fatalf("insert: %v %v", inserted, err)
 	}
-	inserted, err = d.AutoArchiveSession(ctx, "opencode", "plain", 99)
+	inserted, err = d.AutoArchiveSession(ctx, "opencode", "plain", 99, 0)
 	if err != nil || inserted {
 		t.Fatalf("overwrite: %v %v", inserted, err)
 	}
@@ -104,7 +104,7 @@ func TestAutoArchiveSessionPreservesExistingArchives(t *testing.T) {
 	if err := d.SnoozeSession(ctx, "opencode", "s1", until); err != nil {
 		t.Fatal(err)
 	}
-	inserted, err = d.AutoArchiveSession(ctx, "opencode", "s1", 1)
+	inserted, err = d.AutoArchiveSession(ctx, "opencode", "s1", 1, 0)
 	if err != nil || inserted {
 		t.Fatalf("overwrote snooze: %v %v", inserted, err)
 	}
@@ -112,10 +112,18 @@ func TestAutoArchiveSessionPreservesExistingArchives(t *testing.T) {
 	if err != nil || len(keys) != 1 {
 		t.Fatalf("lost snooze: %v %v", keys, err)
 	}
+	inserted, err = d.AutoArchiveSession(ctx, "opencode", "s1", 1, until)
+	if err != nil || inserted {
+		t.Fatalf("re-archived awake session: %v %v", inserted, err)
+	}
+	inserted, err = d.AutoArchiveSession(ctx, "opencode", "s1", 1, until+1)
+	if err != nil || !inserted {
+		t.Fatalf("expired protection blocked archive: %v %v", inserted, err)
+	}
 	if err := d.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.AutoArchiveSession(ctx, "opencode", "error", 1); err == nil {
+	if _, err := d.AutoArchiveSession(ctx, "opencode", "error", 1, 0); err == nil {
 		t.Fatal("ignored store error")
 	}
 }
