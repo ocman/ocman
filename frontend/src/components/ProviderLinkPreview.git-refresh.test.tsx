@@ -11,6 +11,7 @@ vi.mock('../lib/previews', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/previews')>(),
   loadPreviewConfig: vi.fn().mockResolvedValue(null),
   resolvePreviews: vi.fn(),
+  fetchPreviewPRStatus: vi.fn().mockResolvedValue({ mergeable: true, approved: false }),
   fetchPreviewChecks: vi.fn().mockImplementation((_url: string, sha: string) => Promise.resolve({
     state: sha === 'B' ? 'failure' : 'success', checks: [{ name: 'build', state: sha === 'B' ? 'failure' : 'success' }],
   })),

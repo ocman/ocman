@@ -9,7 +9,7 @@ import { clearPRChecksCache } from './prChecksCache';
 const pr = { number: 42, status: 'open', headSha: 'abc', updatedAt: 'today', host: 'github.com', repo: 'a/repo' } as PR;
 
 describe('usePRMergeability', () => {
-  beforeEach(() => { vi.spyOn(api, 'fetchPRMergeability'); });
+  beforeEach(() => { clearPRChecksCache(); vi.spyOn(api, 'fetchPRMergeability'); });
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('fetches the owner-scoped endpoint with the cancellation signal', async () => {

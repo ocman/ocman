@@ -38,6 +38,14 @@ The sidebar's refresh button clears this shared cache and refreshes
 visible conversation cards too. Refresh reloads PR metadata first, so checks
 follow the current head commit after a new push.
 
+PR cards also show mergeability and review approval. Drafts show as not
+mergeable; closed and merged PRs make no mergeability claim. Approval uses the
+sidebar's rules: at least one current approval and no outstanding change request.
+Both views share owner-scoped status results and in-flight requests, so opening
+a card reuses data already loaded by the sidebar, and vice versa. Missing status
+is fetched only while visible, with polling paused in hidden tabs. Refresh
+rechecks mergeability and approval even when the head commit has not changed.
+
 GitHub tokens and Apps need read-only Checks access to fetch check runs.
 Cards distinguish unavailable checks from a commit with no CI status.
 

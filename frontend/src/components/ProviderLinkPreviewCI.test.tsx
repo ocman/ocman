@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 // @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
 import { readFileSync } from 'node:fs';
 import { ProviderPreview } from './ProviderLinkPreview';
 import { CI_POLL_MS, cachePRChecks, clearPRChecksCache, getCachedPRChecks, prChecksCacheKey } from '../lib/prChecksCache';
 import { PreviewOwnerContext } from '../lib/previews';
+import * as previews from '../lib/previews';
 
-afterEach(() => { clearPRChecksCache(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+beforeEach(() => { vi.spyOn(previews, 'fetchPreviewPRStatus').mockResolvedValue({ mergeable: true, approved: false }); });
+afterEach(() => { clearPRChecksCache(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it('uses the sidebar SHA cache for a conversation PR without fetching checks', async () => {
   const fetch = vi.fn();

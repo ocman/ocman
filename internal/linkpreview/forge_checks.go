@@ -32,18 +32,7 @@ func (f Forge) fetchChecks(ctx context.Context, api *API, repo, sha string) (Pre
 		status, limit, err = github.NewWithCredentials(f.APIBase, api.token, &client).Checks(ctx, repo, sha)
 	}
 	if err != nil {
-		var upstream *forgehttp.ResponseError
-		if errors.As(err, &upstream) && (upstream.Status == http.StatusUnauthorized || upstream.Status == http.StatusForbidden) {
-			he := &HTTPError{Status: upstream.Status}
-			if upstream.RateLimit.Limited {
-				he.Status = http.StatusTooManyRequests
-				if !upstream.RateLimit.ResetAt.IsZero() {
-					he.RetryAfter = time.Until(upstream.RateLimit.ResetAt)
-				}
-			}
-			return Preview{}, he
-		}
-		return Preview{}, err
+		return Preview{}, forgePreviewError(err)
 	}
 	if limit.Limited {
 		var retryAfter time.Duration
@@ -56,4 +45,19 @@ func (f Forge) fetchChecks(ctx context.Context, api *API, repo, sha string) (Pre
 		status.Checks = []forge.Check{}
 	}
 	return Preview{Checks: &status, Stale: limit.Stale}, nil
+}
+
+func forgePreviewError(err error) error {
+	var upstream *forgehttp.ResponseError
+	if errors.As(err, &upstream) {
+		he := &HTTPError{Status: upstream.Status}
+		if upstream.RateLimit.Limited {
+			he.Status = http.StatusTooManyRequests
+			if !upstream.RateLimit.ResetAt.IsZero() {
+				he.RetryAfter = time.Until(upstream.RateLimit.ResetAt)
+			}
+		}
+		return he
+	}
+	return err
 }

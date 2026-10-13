@@ -78,12 +78,14 @@ func (f Forge) ParseURL(u *url.URL) (Ref, bool) {
 func (f Forge) ParseIdentifier(string) (Ref, bool) { return Ref{}, false }
 
 type forgeItem struct {
-	Title    string `json:"title"`
-	State    string `json:"state"`
-	Merged   bool   `json:"merged"`
-	MergedAt string `json:"merged_at"`
-	Updated  string `json:"updated_at"`
-	User     struct {
+	Title     string `json:"title"`
+	State     string `json:"state"`
+	Merged    bool   `json:"merged"`
+	MergedAt  string `json:"merged_at"`
+	Mergeable *bool  `json:"mergeable"`
+	Draft     bool   `json:"draft"`
+	Updated   string `json:"updated_at"`
+	User      struct {
 		Login string `json:"login"`
 	} `json:"user"`
 	Head struct {
@@ -128,6 +130,9 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 		return Preview{}, ErrUnsafeRequest
 	}
 	owner, repo, id := m[1], m[2], m[4]
+	if ref.Kind == "pr-status" && (m[3] != "#" || !forgeNumber.MatchString(id)) {
+		return Preview{}, ErrUnsafeRequest
+	}
 	if ref.Kind == "checks" && (m[3] != "@" || !forgeSHA.MatchString(id)) {
 		return Preview{}, ErrUnsafeRequest
 	}
@@ -154,9 +159,10 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 		return f.fetchChecks(ctx, api, owner+"/"+repo, id)
 	}
 	path := map[string][]string{
-		"pr":     {"repos", owner, repo, "pulls", id},
-		"issue":  {"repos", owner, repo, "issues", id},
-		"commit": {"repos", owner, repo, "commits", id},
+		"pr-status": {"repos", owner, repo, "pulls", id},
+		"pr":        {"repos", owner, repo, "pulls", id},
+		"issue":     {"repos", owner, repo, "issues", id},
+		"commit":    {"repos", owner, repo, "commits", id},
 	}[ref.Kind]
 	if ref.Kind == "commit" && f.Gitea {
 		path = []string{"repos", owner, repo, "git", "commits", id}
@@ -167,6 +173,13 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 	var it forgeItem
 	if err := api.JSON(ctx, http.MethodGet, f.APIBase, path, nil, nil, &it); err != nil {
 		return Preview{}, err
+	}
+	if ref.Kind == "pr-status" {
+		approved, err := f.fetchApproval(ctx, api, owner+"/"+repo, id)
+		if err != nil {
+			return Preview{}, err
+		}
+		return Preview{PRStatus: &PRStatus{Mergeable: it.Mergeable, Approved: approved}, Stale: api.stale}, nil
 	}
 	p := Preview{Ref: Ref{URL: ref.URL}, Title: it.Title, Meta: []string{it.User.Login}, Stale: api.stale}
 	if ref.Kind == "pr" && forgeSHA.MatchString(it.Head.SHA) {
@@ -185,6 +198,8 @@ func (f Forge) Fetch(ctx context.Context, api *API, ref Ref) (Preview, error) {
 		p.Status, p.Icon = "Closed", "bi-x-circle"
 	case it.State == "closed":
 		p.Status, p.Icon = "Closed", "bi-check-circle"
+	case ref.Kind == "pr" && it.Draft:
+		p.Status, p.Icon = "Draft", "bi-circle"
 	default:
 		p.Status, p.Icon = "Open", "bi-circle"
 	}

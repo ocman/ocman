@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 import { fetchJSON, postJSON } from './api';
-import type { PRChecks } from './upstreamApi';
+import type { PRChecks, PRMergeability } from './upstreamApi';
 
 /** Owner (`remoteId`) of the conversation whose links are previewed. */
 export const PreviewOwnerContext = createContext('local');
@@ -23,6 +23,7 @@ export interface PreviewRef {
 export interface PreviewResult extends PreviewRef {
   headSha?: string;
   checks?: PRChecks;
+  prStatus?: PRMergeability;
   title?: string;
   status?: string;
   /** Bootstrap icon class, e.g. `bi-kanban`. */
@@ -208,4 +209,11 @@ export async function fetchPreviewChecks(url: string, sha: string, remoteId: str
   const preview = previews[0];
   if (preview?.state !== 'ok' || preview.stale || !preview.checks) throw new Error('Checks unavailable');
   return { ...preview.checks, checks: preview.checks.checks ?? [] };
+}
+
+export async function fetchPreviewPRStatus(url: string, remoteId: string, signal: AbortSignal, refresh = false): Promise<PRMergeability> {
+  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, prStatus: true, ...(refresh ? { refresh: true } : {}) }, { signal });
+  const preview = previews[0];
+  if (preview?.state !== 'ok' || preview.stale || !preview.prStatus) throw new Error('PR status unavailable');
+  return preview.prStatus;
 }

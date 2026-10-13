@@ -341,6 +341,7 @@ func sanitize(p Preview, ref Ref) Preview {
 		out.HeadSHA = p.HeadSHA
 	}
 	out.Checks = p.Checks
+	out.PRStatus = p.PRStatus
 	for _, c := range p.Choices {
 		if u := safeURL(c.URL); u != "" && len(out.Choices) < maxChoices {
 			out.Choices = append(out.Choices, Choice{Title: short(c.Title, 120), URL: u})

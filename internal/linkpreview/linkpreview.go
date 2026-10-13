@@ -62,9 +62,15 @@ type Preview struct {
 	Stale     bool            `json:"stale,omitempty"` // cached data served while rate limited
 	HeadSHA   string          `json:"headSha,omitempty"`
 	Checks    *forge.CIStatus `json:"checks,omitempty"`
+	PRStatus  *PRStatus       `json:"prStatus,omitempty"`
 	// Choices are the candidates for an ambiguous ticket identifier; a
 	// resolver returning them makes the preview StateAmbiguous.
 	Choices []Choice `json:"choices,omitempty"`
+}
+
+type PRStatus struct {
+	Mergeable *bool `json:"mergeable"`
+	Approved  bool  `json:"approved"`
 }
 
 // Choice is one provider-returned candidate resource.

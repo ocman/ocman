@@ -51,6 +51,7 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		ChecksSHA     string `json:"checksSha"`
 		RefreshChecks bool   `json:"refreshChecks"`
 		Refresh       bool   `json:"refresh"`
+		PRStatus      bool   `json:"prStatus"`
 	}
 	if !readAndUnmarshal(w, r, maxPreviewResolveBody, &req) {
 		return
@@ -69,6 +70,14 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	}
 	svc := s.linkPreviews()
 	refs := svc.Discover(req.Text, s.previewIdentifierRules(r.Context()))
+	if req.PRStatus {
+		if req.ChecksSHA != "" || len(refs) != 1 || refs[0].Kind != "pr" ||
+			(refs[0].Provider != "github" && !strings.HasPrefix(refs[0].Provider, "forgejo:")) {
+			http.Error(w, "invalid PR status target", http.StatusBadRequest)
+			return
+		}
+		refs[0].Kind = "pr-status"
+	}
 	if req.ChecksSHA != "" {
 		if !previewChecksSHA.MatchString(req.ChecksSHA) || len(refs) != 1 || refs[0].Kind != "pr" ||
 			(refs[0].Provider != "github" && !strings.HasPrefix(refs[0].Provider, "forgejo:")) {
