@@ -3,7 +3,8 @@
 // forge identity, the "handle this" launch, and the prompt templates that
 // launch renders.
 //
-// Every route takes an explicit owner (remoteId, "local" for the hub). The
+// Every /api/project/* route takes an explicit owner (remoteId, "local" for
+// the hub); the prompt templates are hub-wide settings. The
 // owner's host detects the repository and fetches cross-fork heads; the hub
 // classifies remotes and talks to the forge with its own clients. The module
 // never runs git itself.

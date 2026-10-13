@@ -233,14 +233,15 @@ flowchart TD
   after the HTTP and MCP listeners stop.
 - **Project forge** (`internal/projectforge`). The PRs & Issues pane:
   `/api/project/{upstreams,prs,issues,pr-checks,pr-mergeability,forge-user,
-  handle}` and `/api/settings/prompt-templates`. Every route takes an explicit
-  owner, resolved by the server's `resolveOwner` (503 `remote_not_connected`
+  handle}` and `/api/settings/prompt-templates`. Every `/api/project/*` route
+  takes an explicit owner, resolved by the server's `resolveOwner` (503 `remote_not_connected`
   for a disconnected remote); the owner's `hostsvc.Host` detects upstreams and
   fetches cross-fork heads, while the hub classifies remotes and calls the
   forge with its own clients (`ResolveForge`, `KnowsForgejo`, read at call
   time). The module keeps the bounded, collapsed upstream-detection cache and
   launches through the shared session path on the owner's compound platform.
-  Project archive, quick settings and session start stay in the server.
+  Prompt templates stay hub-wide settings, not owner-scoped. Project archive,
+  quick settings and session start stay in the server.
 - **Session summary reads.** Pinned sessions outside the recent window use
   `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound
