@@ -916,7 +916,20 @@ are joined. Rules:
   subscriber only signals dispatch without blocking; the plugins module's spawns
   the reply read under its own recovery, since the bus cannot catch a panic
   in a goroutine).
-- Existing tables stay in `state.db`'s single migration sequence.
+- Persistence is owned by where the queries live. Existing tables keep their
+  repositories in `internal/state` and stay in its append-only core sequence
+  (`schema_version`); never renumber or edit a shipped migration. A module
+  that adds tables queried from its own package declares a
+  `state.ModuleSchema` (stable `Module` key, `Tables`, append-only
+  `Migrations`; version n is `Migrations[n-1]`). It reads them through
+  `state.DB.SQL()` and appends the schema to `server.ModuleSchemas()`.
+  `state.Open` runs the core sequence first, then every module schema in list
+  order, as one transaction recorded in `module_schema_version`. An existing
+  database is backed up first unless the core batch already backed it up. Open
+  fails closed on a duplicate module or table, a nil migration, a declared
+  table that never gets created, or a foreign key into another module's table.
+  A module ahead of this build is logged and skipped, like a newer core.
+  Module tests open `state.Open(statetest.Path(t), <pkg>.Schema)`.
 
 ## Architecture doc
 

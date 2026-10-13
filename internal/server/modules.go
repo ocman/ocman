@@ -57,6 +57,14 @@ func (s *Server) tmuxModule() *tmuxmod.Module {
 	})
 }
 
+// ModuleSchemas lists the state.db schemas feature modules own; main passes
+// them to state.Open, which migrates them in this order. A module that adds
+// a table declares a state.ModuleSchema in its package and appends it here.
+// Empty until the first module-owned migration.
+func ModuleSchemas() []state.ModuleSchema {
+	return nil
+}
+
 // bus delivers server events to every module that subscribes; built on
 // first use, after which the module set is fixed.
 func (s *Server) bus() *module.Bus {

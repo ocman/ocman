@@ -14,6 +14,11 @@ import (
 // in one transaction. VACUUM INTO includes committed WAL data without copying
 // live SQLite files. In-memory databases have no persistent state to protect.
 func backupBeforeMigration(db *sql.DB, version int) error {
+	return snapshotBeforeMigration(db, fmt.Sprintf("v%d-to-v%d", version, latestSchemaVersion))
+}
+
+// snapshotBeforeMigration saves the backup as <db>.backup-<label>-*.db.
+func snapshotBeforeMigration(db *sql.DB, label string) error {
 	var path string
 	if err := db.QueryRow(`SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&path); err != nil {
 		return fmt.Errorf("finding database path: %w", err)
@@ -21,7 +26,7 @@ func backupBeforeMigration(db *sql.DB, version int) error {
 	if path == "" {
 		return nil
 	}
-	pattern := fmt.Sprintf("%s.backup-v%d-to-v%d-*.tmp", filepath.Base(path), version, latestSchemaVersion)
+	pattern := fmt.Sprintf("%s.backup-%s-*.tmp", filepath.Base(path), label)
 	file, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
 		return fmt.Errorf("creating backup file: %w", err)
@@ -52,7 +57,7 @@ func backupBeforeMigration(db *sql.DB, version int) error {
 		return fmt.Errorf("syncing backup directory: %w", err)
 	}
 	log.WithFields(log.Fields{
-		"path": backupPath, "from_version": version, "to_version": latestSchemaVersion,
+		"path": backupPath, "migration": label,
 	}).Info("state: saved pre-migration backup")
 	return nil
 }

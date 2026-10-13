@@ -257,7 +257,7 @@ func main() {
 	}
 
 	stateDBPath := state.DefaultDBPath()
-	stateDB, err := state.Open(stateDBPath)
+	stateDB, err := state.Open(stateDBPath, server.ModuleSchemas()...)
 	if err != nil {
 		fatal("Failed to open state database: %v", err)
 	}

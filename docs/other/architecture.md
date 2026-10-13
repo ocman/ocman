@@ -436,7 +436,13 @@ flowchart TD
   Retirement unlinks only the exact verified symlink and preserves extracted data.
 - **internal/state.** Ocman's writable SQLite store: migrations, settings,
   routines and their immutable run snapshots, legacy inert Workflow rows,
-  and the independent native Factory Issue graph.
+  and the independent native Factory Issue graph. `Open` runs two batches.
+  The core sequence (`schema_version`, append-only, v1 onwards) covers every
+  table whose queries live in this package, including the tables of today's
+  feature modules. Each module's own tables use a `state.ModuleSchema` and the
+  `module_schema_version (module, version)` ledger. The server lists these
+  schemas in `ModuleSchemas()`. Each batch takes a backup before it runs, is
+  transactional and fails closed.
 - **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
   HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.

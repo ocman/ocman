@@ -91,7 +91,7 @@ func TestSchemaIdempotent(t *testing.T) {
 	defer db.Close()
 
 	// Calling init again should not fail
-	if err := db.init(); err != nil {
+	if err := db.init(nil); err != nil {
 		t.Fatalf("second init() failed: %v", err)
 	}
 }

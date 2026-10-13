@@ -50,8 +50,9 @@ func DefaultDataDir() string {
 }
 
 // Open opens the ocman state database and ensures the schema exists.
-// Runs any pending migrations exactly once; safe to call on every boot.
-func Open(path string) (*DB, error) {
+// Runs any pending migrations exactly once, the core sequence first and
+// then each module schema in order; safe to call on every boot.
+func Open(path string, modules ...ModuleSchema) (*DB, error) {
 	if err := secureStatePaths(path); err != nil {
 		return nil, err
 	}
@@ -76,7 +77,7 @@ func Open(path string) (*DB, error) {
 	db.SetMaxOpenConns(1)
 
 	stateDB := &DB{db: db, dataDir: filepath.Dir(path)}
-	if err := stateDB.init(); err != nil {
+	if err := stateDB.init(modules); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -142,18 +143,31 @@ func secureStatePaths(path string) error {
 // migrations. Intended for tests that open an in-memory database
 // directly rather than via Open (which also handles directory creation
 // and OTel instrumentation).
-func OpenFromSQL(sqlDB *sql.DB) (*DB, error) {
+func OpenFromSQL(sqlDB *sql.DB, modules ...ModuleSchema) (*DB, error) {
 	d := &DB{db: sqlDB}
-	if err := d.init(); err != nil {
+	if err := d.init(modules); err != nil {
 		return nil, err
 	}
 	return d, nil
 }
 
-// init bootstraps the schema to latestSchemaVersion. See migrate.go
-// for the migration plan.
-func (d *DB) init() error {
+// init bootstraps the schema to latestSchemaVersion, then every module
+// schema to its latest version. See migrate.go and module_schema.go.
+func (d *DB) init(modules []ModuleSchema) error {
+	if err := validateModuleSchemas(modules); err != nil {
+		return err
+	}
+	if err := ensureSchemaVersionTable(d.db); err != nil {
+		return err
+	}
+	before, err := currentSchemaVersion(d.db)
+	if err != nil {
+		return err
+	}
 	if err := migrate(d.db); err != nil {
+		return err
+	}
+	if err := migrateModules(d.db, modules, before); err != nil {
 		return err
 	}
 	enableForeignKeysIfClean(d.db)
