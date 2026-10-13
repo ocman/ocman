@@ -534,6 +534,10 @@ are computed. Sessions retain their original directories and owners.
   confirmed-stop reconciliation. State queries stay in `internal/state`;
   runtime hooks and history reads reach it through thin server adapters.
   Claude supervisor recovery remains in `platforms/claudecode`.
+- `internal/snooze/` — module: conversation snoozing via
+  `POST /api/session/snooze` and its joined wake-up worker. It checks deadlines
+  at startup and every minute, independently of auto-archive. Archive persistence
+  stays in `internal/state`; core injects session validation and SSE broadcasting.
 - `internal/queuesvc/` — follow-up message queue (#58). Queueing is an
   **explicit user gesture**: plain **Enter** in the composer sends
   immediately (mid-turn included — OpenCode interleaves the prompt into

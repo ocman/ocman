@@ -44,7 +44,8 @@ func (d *DB) ArchiveSession(ctx context.Context, platform, sessionID string, ses
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(platform, session_id) DO UPDATE SET
 			session_time_updated = excluded.session_time_updated,
-			archived_at = excluded.archived_at
+			archived_at = excluded.archived_at,
+			snoozed_until = 0
 	`, platform, sessionID, sessionTimeUpdated, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("archiving session: %w", err)

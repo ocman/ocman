@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { remoteLog } from '../../lib/remoteLog';
 import { ArchiveButton } from '../../components/ArchiveButton';
+import { SnoozeButton } from '../../components/SnoozeButton';
 import { useHoverPrefetch } from './sessionPrefetch';
 import { SidebarRow } from './SidebarRow';
 
@@ -173,6 +174,7 @@ export function SidebarSessionRow({
           </button>
           <ArchiveButton className="session-sidebar-archive-btn" label="Archive session"
             onClick={(e) => onArchiveSession(e, sib)} disabled={archiving} />
+          <SnoozeButton session={sib} active={active} disabled={archiving} />
         </span>
       </span>
     </SidebarRow>

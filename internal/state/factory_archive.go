@@ -35,7 +35,7 @@ func archiveFactorySessionsTx(ctx context.Context, tx *sql.Tx, now int64, where 
 	selected := `SELECT session_platform, session_id FROM factory_attempt WHERE session_id <> '' AND (` + where + `)`
 	if _, err := tx.ExecContext(ctx, `INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)
 		SELECT session_platform, session_id, 9223372036854775807, ? FROM (`+selected+`) WHERE true
-		ON CONFLICT(platform, session_id) DO UPDATE SET session_time_updated = excluded.session_time_updated, archived_at = excluded.archived_at`,
+		ON CONFLICT(platform, session_id) DO UPDATE SET session_time_updated = excluded.session_time_updated, archived_at = excluded.archived_at, snoozed_until = 0`,
 		append([]any{now}, args...)...); err != nil {
 		return fmt.Errorf("archiving Factory sessions: %w", err)
 	}

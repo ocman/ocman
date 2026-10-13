@@ -16,6 +16,13 @@ new activity restores an archived session to the sidebar: **Session halts**
 is the default and waits for done, waiting, error, or interrupted status;
 **Any activity** restores it even while it is running.
 
+The clock button beside a conversation's archive button snoozes it for 30 minutes,
+one hour, three hours, until tomorrow at 9:00 AM, or until next Monday at 9:00 AM.
+**Custom...** opens a date-and-time picker. Calendar times use your browser's local
+timezone. Snoozed conversations return automatically within a minute of their
+wake-up time, including after an ocman restart. Activity does not wake them early.
+Opening the conversation or archiving it again cancels its snooze.
+
 Use **Filter sessions → Project** to select a project or return to **All projects**.
 Search the picker for a directory prefix such as `github.com/nousefreak`, then
 select its parent entry to include all projects beneath it. A project that also

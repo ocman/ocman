@@ -108,11 +108,11 @@ describe('SessionSidebar', () => {
       debugMode: false, gitInfo: gitInfo('feature-branch'),
       onNavigateToSession: vi.fn(), onArchiveSession: vi.fn(), onPinSession: vi.fn(),
     };
-    const { rerender } = render(<SidebarSessionRow {...props} depth={0} />);
+    const { rerender } = render(<MemoryRouter><SidebarSessionRow {...props} depth={0} /></MemoryRouter>);
     expect(screen.getByText('repo')).toBeInTheDocument();
     expect(screen.getByText('feature-branch')).toBeInTheDocument();
     for (const depth of [1, 2]) {
-      rerender(<SidebarSessionRow {...props} depth={depth} />);
+      rerender(<MemoryRouter><SidebarSessionRow {...props} depth={depth} /></MemoryRouter>);
       expect(screen.queryByText('repo')).not.toBeInTheDocument();
       expect(screen.queryByText('feature-branch')).not.toBeInTheDocument();
       expect(screen.getByText('Fix thing')).toBeInTheDocument();

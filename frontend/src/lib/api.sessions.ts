@@ -35,6 +35,8 @@ export const sessionApi = {
     fetchJSON<{ tasks: Record<string, TaskSessionData> }>(`/api/session/${encodeURIComponent(sessionId)}/tasks?ids=${taskIds.map(encodeURIComponent).join(',')}`, signal),
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived = true) =>
     postJSON<{ ok: boolean }>('/api/session/archive', { platform, sessionId, timeUpdated, archived }),
+  snoozeSession: (platform: string, sessionId: string, until: number) =>
+    postJSON<{ ok: boolean }>('/api/session/snooze', { platform, sessionId, until }),
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number, interrupted?: boolean) =>
     postJSON<{ ok: boolean }>('/api/session/seen', { platform, sessionId, timeUpdated, ...(interrupted ? { interrupted } : {}) }),
   pinSession: (platform: string, sessionId: string, pinned: boolean) =>

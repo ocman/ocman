@@ -215,7 +215,7 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir + runtime seam]
     Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, notifications, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Lifecycle -->|creation, streamed attachments, restart + reload| Router
@@ -238,6 +238,7 @@ flowchart TD
     Modules -->|module tools| MCP
     Modules --> Inbox[internal/inbox<br/>state + owner routing]
     Modules -->|notifications: subscriptions + durable delivery receipts| State
+    Modules -->|snooze: archive deadlines + atomic wake-up| State
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> ClaudePlatform[platforms/claudecode<br/>browsing + project routing]
@@ -329,6 +330,11 @@ flowchart TD
   recovery preserve replacement drains if cleanup is cancelled.
   Routine dispatch already ensures its runtime before creating or reusing a
   session, so future schedules do not keep idle projects running.
+- **Snooze** (`internal/snooze`). Owns `POST /api/session/snooze` and a joined
+  minute-interval worker that wakes expired conversations immediately on startup
+  and during operation. Validation and SSE broadcasting are injected from core.
+  Archive rows, snooze deadlines and auto-archive protection remain in
+  `internal/state`, shared with manual archive and unarchive operations.
 - **Project forge** (`internal/projectforge`). The PRs & Issues pane:
   `/api/project/{upstreams,prs,issues,pr-checks,pr-mergeability,forge-user,
   handle}` and `/api/settings/prompt-templates`. Every `/api/project/*` route

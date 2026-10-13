@@ -65,6 +65,11 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 	}
 
 	archivedCount := 0
+	archived, err := s.stateDB.ArchivedSessions(ctx)
+	if err != nil {
+		log.WithError(err).Error("listing archived sessions")
+		return
+	}
 
 	// Sessions the user deliberately brought back more recently than the
 	// inactivity cutoff. Without this the loop — which runs at boot and
@@ -91,7 +96,8 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 			continue
 		}
 		for _, session := range sessions {
-			if keep[state.Key{Platform: string(adapter.ID()), SessionID: session.ID}] {
+			key := state.Key{Platform: string(adapter.ID()), SessionID: session.ID}
+			if _, ok := archived[key]; ok || keep[key] {
 				continue
 			}
 			if err := s.stateDB.ArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
