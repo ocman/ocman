@@ -26,8 +26,9 @@ import (
 // modules lists the feature modules this server mounts. Routes, startup,
 // background work and MCP tools iterate it; append a module here to mount it.
 func (s *Server) modules() []module.Module {
-	// Plugins first: their discovery ran before every other startup step.
-	mods := []module.Module{s.pluginsModule(), s.factoryModule()}
+	// Auto-approve first: it seeds the judge delay, which ran before every
+	// other startup step. Plugins next: their discovery came after it.
+	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule()}
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
 	}
@@ -124,10 +125,12 @@ func (s *Server) inboxModule() *inbox.Module {
 
 func (s *Server) newInboxModule(remotes func() inbox.Remotes) *inbox.Module {
 	return inbox.NewModule(inbox.Deps{
-		Store:         s.stateDB,
-		Remotes:       remotes,
-		Platform:      func(id platforms.ID) (platforms.Platform, bool) { return s.registry.Get(id) },
-		EnsurePending: s.ensurePendingPermissions,
+		Store:    s.stateDB,
+		Remotes:  remotes,
+		Platform: func(id platforms.ID) (platforms.Platform, bool) { return s.registry.Get(id) },
+		EnsurePending: func(adapter platforms.Platform, sessionID string, prompts []platforms.LivePrompt) {
+			s.autoapproveModule().EnsurePending(adapter, sessionID, prompts)
+		},
 		SessionTitle: func(ctx context.Context, id string) string {
 			if s.db == nil {
 				return ""

@@ -147,13 +147,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc(previewCallback, s.get(s.handlePreviewCallback))
 
 	// Settings endpoints — user preferences that must be shared with the
-	// backend (e.g. judge prompt sections used by headless auto-approve).
+	// backend. The judge settings belong to the auto-approve module.
 	mux.HandleFunc("/api/settings/default-agent", s.settingsHandler(s.requireAuth(s.handleDefaultAgent)))
-	mux.HandleFunc("/api/settings/prompt-sections", s.settingsHandler(s.requireAuth(s.handlePromptSections)))
-	mux.HandleFunc("/api/settings/judge-delay", s.settingsHandler(s.requireAuth(s.handleJudgeDelay)))
-	mux.HandleFunc("/api/settings/judge-model", s.settingsHandler(s.requireAuth(s.handleJudgeModel)))
-	mux.HandleFunc("/api/settings/judge-endpoint", s.settingsHandler(s.requireAuth(s.handleJudgeEndpoint)))
-	mux.HandleFunc("/api/settings/judge-model/options", s.requireAuth(s.get(s.handleJudgeModelOptions)))
 	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
 	// action. Stored in state.db's generic `setting` table (schema v12).
 	mux.HandleFunc("/api/settings/prompt-templates", s.settingsHandler(s.requireAuth(s.handlePromptTemplates)))

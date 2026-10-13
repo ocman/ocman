@@ -483,10 +483,16 @@ handlers don't bypass the `Host` seam). User-facing docs:
   the PTY bridge. WebSocket/REST layer stays in `internal/server`.
 - `internal/whisper/` — self-contained voice transcription via a local
   whisper-cpp binary (+ ffmpeg conversion).
-- `internal/autoapprove/` — the LLM-judged permission auto-approve
+- `internal/autoapprove/` — module + the LLM-judged permission auto-approve
   pipeline (judge, per-permission state machine, safe-command cache,
-  SSE tee/sinks, headless watcher). Wired into the server through an
-   `autoapprove.Deps` seam by `internal/server/autoapprove_engine.go`.
+  SSE tee/sinks, headless watcher). The module owns the per-session
+  `/auto-approve` and `/approved-permissions` routes, the judge settings
+  (`prompt-sections`, `judge-delay`, `judge-model[/options]`,
+  `judge-endpoint`), pending-prompt resumption, the judge-delay seed
+  (`Start`) and the headless watcher (`Run`). The server builds it in
+  `internal/server/autoapprove_engine.go` with the pipeline's `Deps`
+  (broadcasts, Inbox, `PromptNeedsUser`, session idle) and keeps driving
+  `Service` from its session paths (SSE tee, notify, permission replies).
 - `internal/hostsvc/` — the directory/host-scoped adapter seam (`Host`,
   `Router`), the directory analogue of `platforms.Platform`.
   `internal/hostsvc/local/` is the only package that reaches for
@@ -875,7 +881,9 @@ background loops (`Runner`, joined on shutdown), close (`Closer`, reverse
 order after the HTTP and MCP listeners stop, before workers are joined), MCP
 tools (`ToolProvider`) and `Bus` subscriptions (`Subscriber`) all iterate it.
 Factory is the only Launcher/Closer: dispatch starts at launch and verifies
-each session's MCP connection. Plugins (`internal/pluginsmod`) are listed first
+each session's MCP connection. Auto-approve is listed first: its `Start` seeds
+the judge delay, which ran before plugin discovery, and its `Run` is the headless
+watcher. Plugins (`internal/pluginsmod`) come next
 because their discovery historically ran before every other startup step: `Start`
 binds the lifetime context and rescans, `Run` drives the reply pump and
 reconciliation, and the server keeps its `defer s.stopPluginProcesses()` so

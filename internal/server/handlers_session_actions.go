@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -470,7 +471,7 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 				if prompts, err := adapter.ListPermissions(r.Context(), sessionID); err == nil {
 					for _, prompt := range prompts {
 						if id, _ := prompt["id"].(string); id == permissionID {
-							gate, handled, err := s.factoryModule().Service().EscalatePermission(r.Context(), sessionID, permissionID, stringValue(prompt["permission"]), strings.Join(extractPermissionPatterns(prompt), ","))
+							gate, handled, err := s.factoryModule().Service().EscalatePermission(r.Context(), sessionID, permissionID, stringValue(prompt["permission"]), strings.Join(autoapprove.PromptPatterns(prompt), ","))
 							if err != nil {
 								factorymod.WriteError(w, err)
 								return

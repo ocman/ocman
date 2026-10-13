@@ -46,8 +46,6 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodGet, "{id}/questions", (*Server).handleSessionQuestions},
 	{http.MethodGet, "{id}/events", (*Server).handleSessionEvents},
 	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},
-	{http.MethodGet, "{id}/auto-approve", (*Server).handleSessionAutoApproveGet},
-	{http.MethodGet, "{id}/approved-permissions", (*Server).handleSessionApprovedPermissions},
 	{http.MethodGet, "{id}/queue", (*Server).handleSessionQueueList},
 
 	// Session-scoped POSTs (specific patterns first).
@@ -56,7 +54,6 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodPost, "{id}/questions/{qid}/reject", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/questions/{qid}", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/permissions/{pid}", (*Server).handleSessionPermission},
-	{http.MethodPost, "{id}/auto-approve", (*Server).handleSessionAutoApproveSet},
 	{http.MethodPost, "{id}/attachment", (*Server).handleSessionAttachment},
 	{http.MethodPost, "{id}/message", (*Server).handleSessionMessage},
 	{http.MethodPost, "{id}/restart-opencode", (*Server).handleSessionRestartOpencode},

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/pluginsmod"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -64,11 +65,15 @@ type listedPluginAction struct {
 	Action  plugins.ActionDescriptor `json:"action"`
 }
 
-// Plugin discovery ran before every other startup step, so the plugins
-// module starts first; it exists without a state DB so its routes answer 503.
-func TestPluginsModuleIsRegisteredFirst(t *testing.T) {
+// The judge delay was seeded before plugin discovery, and plugin discovery
+// before every other startup step, so auto-approve starts first and plugins
+// second. Both exist without a state DB.
+func TestModuleStartOrder(t *testing.T) {
 	mods := (&Server{}).modules()
-	if _, ok := mods[0].(*pluginsmod.Module); !ok {
+	if _, ok := mods[0].(*autoapprove.Module); !ok {
 		t.Fatalf("first module is %s", mods[0].Name())
+	}
+	if _, ok := mods[1].(*pluginsmod.Module); !ok {
+		t.Fatalf("second module is %s", mods[1].Name())
 	}
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/term"
 )
@@ -66,18 +65,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			opencode.StartSessionsRefresher(ctx, s.db, s.HasDemand)
 		}
 	}
-	// Seed the cached judge delay so the first permission event has it
-	// available without a DB round-trip.
-	if s.stateDB != nil {
-		if d, err := s.stateDB.GetJudgeDelayMs(ctx); err == nil {
-			s.aaSvc().SetJudgeDelayMs(d)
-		} else {
-			s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
-		}
-	} else {
-		s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
-	}
-
+	// The auto-approve module seeds the judge delay before the other
+	// modules start and runs the headless watcher among their workers.
 	if err := s.startModules(ctx, &workers); err != nil {
 		return err
 	}
@@ -92,13 +81,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
 		workers.Go(func() { sup.RunMachineSupervisor(ctx) })
 	}
-	// Headless auto-approve: subscribe directly to each OpenCode
-	// instance's /event SSE stream so permission.asked events drive
-	// the judge even when no browser tab is open. Without this, the
-	// auto-approve pipeline only fires when a frontend SSE connection
-	// happens to be active for some session in the same OpenCode
-	// process.
-	workers.Go(func() { s.aaSvc().RunWatcher(ctx) })
 
 	// Register observable gauges for the top-line stats (session /
 	// message / project counts, lifetime tokens and cost). The

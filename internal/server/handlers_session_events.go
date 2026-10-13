@@ -158,9 +158,9 @@ func (s *Server) proxyOwnerSessionEvents(ctx context.Context, sessionID string, 
 		log.WithError(err).WithField("sessionID", sessionID).Debug("SSE proxy: listing pending permissions for replay")
 	} else {
 		for _, entry := range entries {
-			registerSink(promptSessionID(entry, sessionID))
+			registerSink(autoapprove.PromptSessionID(entry, sessionID))
 		}
-		s.ensurePendingPermissions(adapter, sessionID, entries)
+		s.autoapproveModule().EnsurePending(adapter, sessionID, entries)
 	}
 
 	tee := &autoapprove.Tee{

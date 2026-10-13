@@ -88,69 +88,10 @@ func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request
 		// ensureAutoApprove deduplicates against the SSE tee so we
 		// don't double-judge a permission that arrives via both paths.
 		if !isRemotePlatformID(string(adapter.ID())) {
-			s.ensurePendingPermissions(adapter, sessionID, entries)
+			s.autoapproveModule().EnsurePending(adapter, sessionID, entries)
 		}
 		writeJSON(w, entries)
 	})
-}
-
-func (s *Server) ensurePendingPermissions(adapter platforms.Platform, sessionID string, entries []platforms.LivePrompt) {
-	for _, entry := range entries {
-		permissionID, _ := entry["id"].(string)
-		permission, _ := entry["permission"].(string)
-		if permissionID == "" || permission == "" {
-			continue
-		}
-		patterns := extractPermissionPatterns(entry)
-		metadata := extractPermissionMetadata(entry)
-		s.aaSvc().ObservePermissionPrompt(adapter.ID(), sessionID, entry)
-		s.aaSvc().Ensure(adapter.ID(), adapter, promptSessionID(entry, sessionID), permissionID, permission, patterns, metadata)
-	}
-}
-
-func promptSessionID(entry platforms.LivePrompt, fallback string) string {
-	if sessionID, _ := entry["sessionID"].(string); sessionID != "" {
-		return sessionID
-	}
-	return fallback
-}
-
-// extractPermissionPatterns reads the "patterns" array from a
-// LivePrompt map, tolerating both []string (rare) and []interface{}
-// (the default after json.Unmarshal into a generic map).
-func extractPermissionPatterns(entry platforms.LivePrompt) []string {
-	raw, ok := entry["patterns"]
-	if !ok {
-		return nil
-	}
-	switch v := raw.(type) {
-	case []string:
-		return v
-	case []interface{}:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
-// extractPermissionMetadata reads the "metadata" object from a
-// LivePrompt map. Returns nil when absent or not an object — the
-// judge prompt formatter handles nil cleanly (no metadata block
-// appears in the prompt).
-func extractPermissionMetadata(entry platforms.LivePrompt) map[string]any {
-	raw, ok := entry["metadata"]
-	if !ok {
-		return nil
-	}
-	if m, ok := raw.(map[string]any); ok {
-		return m
-	}
-	return nil
 }
 
 func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) {

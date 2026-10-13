@@ -5,9 +5,11 @@
 // a headless watcher that subscribes to every running OpenCode
 // instance's /global/event stream.
 //
-// The HTTP layer lives in internal/server; it talks to this package
-// through Service, whose external dependencies are injected via Deps
-// (using the same lazy service pattern as other server services).
+// Module (module.go) is the feature module: it owns the auto-approve and
+// judge-settings routes, seeds the judge delay at startup and runs the
+// headless watcher. The server's session paths (SSE tee, notify, permission
+// replies) drive the pipeline through Service, whose external dependencies
+// are injected via Deps.
 package autoapprove
 
 import (

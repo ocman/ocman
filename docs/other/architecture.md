@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -209,9 +209,12 @@ flowchart TD
 ```
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
-  handler files, plus tmux, terminal, whisper and auto-approve. It is the
+  handler files, plus tmux, terminal and whisper. Its session paths (SSE tee,
+  notify, permission replies) still drive the auto-approve pipeline. It is the
   composition root for feature modules.
-- **Feature modules** (`internal/module`). Factory (`internal/factorymod`),
+- **Feature modules** (`internal/module`). Auto-approve (`internal/autoapprove`:
+  per-session toggle, approved-permission notices, judge settings, judge-delay
+  seed and the headless watcher), Factory (`internal/factorymod`),
   plugins (`internal/pluginsmod`), routines, webhooks, artifacts, the Inbox and conversation sharing each own
   their routes, background loops, MCP tools and event subscriptions. The
   server lists them once in `modules()` and hands each narrow `Deps` (store,
@@ -252,8 +255,8 @@ flowchart TD
   Idle-edge flushes still trust the edge regardless of the status read.
 - **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
   handshake and stream-order validation, executable discovery, and description
-  validation. `internal/pluginsmod` mounts it: its `Start` scans once (first of all
-  modules); `RescanPlugins` repeats the scan and records identities, checksums,
+  validation. `internal/pluginsmod` mounts it: its `Start` scans once (right
+  after auto-approve seeds the judge delay, before the other modules); `RescanPlugins` repeats the scan and records identities, checksums,
   and conflicts in state. Its `Run` drives the conversation reply pump and
   reconciliation; the server stops its processes after the listeners and
   launched modules close, before workers are joined. The module supervises

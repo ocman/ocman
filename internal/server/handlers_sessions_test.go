@@ -932,16 +932,6 @@ func TestHandleSession_FactoryTagLookupFailure(t *testing.T) {
 
 // --- POST /api/session/{id}/auto-approve ---
 
-func TestPromptSessionIDPrefersIssuingChild(t *testing.T) {
-	entry := platforms.LivePrompt{"sessionID": "ses-child"}
-	if got := promptSessionID(entry, "ses-parent"); got != "ses-child" {
-		t.Fatalf("prompt session = %q, want child", got)
-	}
-	if got := promptSessionID(platforms.LivePrompt{}, "ses-parent"); got != "ses-parent" {
-		t.Fatalf("fallback prompt session = %q, want parent", got)
-	}
-}
-
 // TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending is the
 // regression for the "enabling auto-approve shows 'starting…' forever"
 // bug: when a permission prompt is already on screen and the user
@@ -967,15 +957,13 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 	// The handler owns the settings write. This worker fixture has no Store,
 	// so its detached audit writes cannot outlive the handler's temporary DB.
 	done := make(chan struct{})
-	srv.aaOnce.Do(func() {
-		srv.aaSvcCached = autoapprove.NewService(autoapprove.Deps{
-			DefaultEnabled: true,
-			PromptNeedsUser: func(platform, session, kind, request string) {
-				if platform == "opencode" && session == sessionID && kind == "permission" && request == permissionID {
-					close(done)
-				}
-			},
-		})
+	srv.autoapproveMod = srv.newAutoapproveModule(autoapprove.Deps{
+		DefaultEnabled: true,
+		PromptNeedsUser: func(platform, session, kind, request string) {
+			if platform == "opencode" && session == sessionID && kind == "permission" && request == permissionID {
+				close(done)
+			}
+		},
 	})
 	t.Cleanup(func() {
 		select {
@@ -1016,7 +1004,7 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 	body := strings.NewReader(`{"enabled":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/session/"+sessionID+"/auto-approve", body)
 	rr := httptest.NewRecorder()
-	srv.handleSessionAutoApproveSet(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != 204 {
 		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
@@ -1063,7 +1051,7 @@ func TestHandleSessionAutoApproveSet_DisablingDoesNotResume(t *testing.T) {
 	body := strings.NewReader(`{"enabled":false}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/session/"+sessionID+"/auto-approve", body)
 	rr := httptest.NewRecorder()
-	srv.handleSessionAutoApproveSet(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != 204 {
 		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
@@ -1172,7 +1160,7 @@ func TestHandleSessionApprovedPermissionsExcludesUserOnce(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/ses-1/approved-permissions", nil)
 	rr := httptest.NewRecorder()
-	srv.handleSessionApprovedPermissions(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
@@ -1556,11 +1544,10 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 			srv, reg := newSessionsTestServer(t)
 			srv.WithAutoApproveDefault(tc.autoApprove)
 			if tc.aiReviewing || tc.aiDeclined {
-				srv.aaSvcCached = autoapprove.NewService(autoapprove.Deps{
+				srv.autoapproveMod = srv.newAutoapproveModule(autoapprove.Deps{
 					DefaultEnabled: true,
 					SessionDir:     func(string) (string, error) { return "/repo", nil },
 				})
-				srv.aaOnce.Do(func() {})
 			}
 			pending := mkSession("fake", "pending", "pending", 10_000)
 			pending.Directory = "/repo"

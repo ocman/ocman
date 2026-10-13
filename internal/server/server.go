@@ -92,11 +92,10 @@ type Server struct {
 	fileKeyErr  error
 	fileKeyOnce sync.Once
 
-	// aaSvcCached is the auto-approve domain service
-	// (internal/autoapprove), built lazily on first use via aaSvc() so
-	// the dependency fields are wired by then. See autoapprove_engine.go.
-	aaSvcCached *autoapprove.Service
-	aaOnce      sync.Once
+	// autoapproveMod owns the auto-approve pipeline, its routes and its
+	// watcher; built lazily on first use. See autoapprove_engine.go.
+	autoapproveMod     *autoapprove.Module
+	autoapproveModOnce sync.Once
 
 	// broadcastHub fans out events to every connected /api/events
 	// client regardless of which session (if any) they're viewing.
@@ -258,7 +257,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.aaSvc().HandleDirectPermissionReply(ctx, req.SessionID, req.PermissionID, req.Reply)
 			s.resolvePermissionInbox(ctx, string(platform), req.SessionID, req.PermissionID)
 		},
-		PermissionRulesChanged: s.applyRulesToPending,
+		PermissionRulesChanged: func(ctx context.Context, adapter platforms.Platform, sessionID string) {
+			s.autoapproveModule().ApplyRulesToPending(ctx, adapter, sessionID)
+		},
 		SessionCreated: func(info sessionsvc.CreatedSession) {
 			s.broadcastSessionCreated(info)
 			s.refreshProjectsIndexAsync()
