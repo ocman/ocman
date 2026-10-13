@@ -55,6 +55,14 @@ function renderTab(ctx: Partial<DashboardCtx>) {
 }
 
 describe('ProjectsTab', () => {
+  it('disables target selection when no other projects are available', () => {
+    renderTab({ projects: [makeProject({ directory: '/source' })] });
+    fireEvent.click(screen.getByRole('button', { name: 'Merge /source' }));
+    expect(screen.getByRole('combobox', { name: 'Target project' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeDisabled();
+    expect(screen.getByText('No other projects available.')).toBeVisible();
+  });
+
   it.each(['/source', '/target'])('only totals checkout rows within the %s directory scope', (dirScope) => {
     const projects = [
       makeProject({ directory: '/source', projectKey: 'merged', mergedIntoDirectory: '/target', sessionCount: 2 }),
@@ -73,8 +81,12 @@ describe('ProjectsTab', () => {
     expect(screen.getByRole('dialog', { name: 'Merge project' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '/source' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Merge' })).toBeDisabled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Target project' }), { target: { value: JSON.stringify(['box', '/target']) } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Target project' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search projects' }), { target: { value: 'Remote' } });
+    expect(screen.queryByRole('option', { name: '/source' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: '/target · Remote' }));
     fireEvent.click(screen.getByRole('button', { name: 'Merge' }));
+    expect(screen.getByRole('combobox', { name: 'Target project' })).toBeDisabled();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(merge).toHaveBeenCalledWith({ directory: '/source', remoteId: undefined }, { directory: '/target', remoteId: 'box' });
     expect(refetchProjects).toHaveBeenCalled();
@@ -85,10 +97,12 @@ describe('ProjectsTab', () => {
     const merge = vi.spyOn(api, 'mergeProjects').mockRejectedValue(new Error('Merge failed'));
     renderTab({ projects: [makeProject({ directory: '/source' }), makeProject({ directory: '/target' })] });
     fireEvent.click(screen.getByRole('button', { name: 'Merge /source' }));
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: JSON.stringify(['local', '/target']) } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Target project' }));
+    fireEvent.click(screen.getByRole('option', { name: '/target' }));
     fireEvent.click(screen.getByRole('button', { name: 'Merge' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Merge failed'));
     expect(screen.getByRole('button', { name: 'Merge' })).toBeEnabled();
+    expect(screen.getByRole('combobox', { name: 'Target project' })).toHaveTextContent('/target');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     merge.mockRestore();

@@ -5,7 +5,9 @@ import { checkoutKey } from '../../lib/projectIdentity';
 import { Modal } from '../../components/Modal';
 import { ModalHeader } from '../../components/ModalHeader';
 import { ModalFooter } from '../../components/ModalFooter';
-import { Button, SelectField } from '../../components/Control';
+import { Button } from '../../components/Control';
+import { SearchSelect } from '../../components/SearchSelect';
+import { FilterField } from '../../components/FilterField';
 import { InlineAlert } from '../../components/InlineAlert';
 
 export function MergeProjectModal({ source, projects, onClose, onMerged }: {
@@ -39,14 +41,14 @@ export function MergeProjectModal({ source, projects, onClose, onMerged }: {
     <Modal label="Merge project" onClose={onClose} canClose={!busy}>
       <ModalHeader title="Merge project" closeLabel="Close merge dialog" onClose={onClose} canClose={!busy}
         description={<>Move sessions from {source.directory} into the selected project. Sessions keep their working directories.</>} />
-      <label htmlFor="merge-project-target">Target project</label>
-      <SelectField id="merge-project-target" value={selected} disabled={busy}
-        onChange={event => setSelected(event.target.value)}>
-        <option value="">Select a project</option>
-        {targets.map(p => <option key={checkoutKey(p.directory, p.remoteId)} value={checkoutKey(p.directory, p.remoteId)}>
-          {p.directory}{p.remoteName ? ` (${p.remoteName})` : ''}
-        </option>)}
-      </SelectField>
+      <FilterField label="Target project">
+        <SearchSelect value={selected} disabled={busy || targets.length === 0}
+          ariaLabel="Target project" placeholder="Select a project" searchLabel="Search projects"
+          onChange={setSelected} options={targets.map(p => ({
+            value: checkoutKey(p.directory, p.remoteId),
+            label: `${p.directory}${p.remoteName ? ` · ${p.remoteName}` : ''}`,
+          }))} />
+      </FilterField>
       {targets.length === 0 && <p>No other projects available.</p>}
       {error && <InlineAlert>{error}</InlineAlert>}
       <ModalFooter label="Merge project actions">
