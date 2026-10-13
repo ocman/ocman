@@ -510,6 +510,16 @@ handlers don't bypass the `Host` seam). User-facing docs:
   `Host.TermAttach`. Its `Start` sweeps the old implementation's orphaned
   `ocman-view-*` sessions. Kept out of `internal/term` so the owner-side
   terminal never imports HTTP.
+- `internal/remotesmod/` — module: hub remote management over HTTP
+  (`/api/remotes` CRUD + reconnect, auth-gated) and this instance's
+  remote-access settings (`/api/settings/remote-access` status without the
+  token, localhost-only `reveal-token` of its own token only). Its `Run`
+  owns the 5-minute inventory refresh among the server's joined workers. It
+  drives `remote.Manager` through a narrow `Manager` interface read at call
+  time (untyped nil on single-host). Core keeps `remote.Manager` construction,
+  `Start`/`Stop` (main.go; `Stop` after `Server.Start` returns, before
+  state.db closes), the gRPC listener, the registry, `hostsvc.Router`,
+  `resolveOwner` and the machine picker.
 - `internal/whisper/` — self-contained voice transcription via a local
   whisper-cpp binary (+ ffmpeg conversion).
 - `internal/autoapprove/` — module + the LLM-judged permission auto-approve

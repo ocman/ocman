@@ -1,0 +1,102 @@
+// Package remotesmod owns multi-remote management over HTTP: the hub's
+// /api/remotes CRUD + reconnect, this instance's remote-access settings and
+// token reveal, and the inventory refresh loop. The connection manager, its
+// gRPC transport, the platform registry and the host router stay core; the
+// module only drives them through Manager.
+package remotesmod
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/state"
+)
+
+// InventoryInterval is how often connected remotes' project inventories are
+// refreshed so directory ownership matches fresh data (AD-8).
+const InventoryInterval = 5 * time.Minute
+
+// Manager is the hub's remote connection manager (*remote.Manager).
+type Manager interface {
+	List(ctx context.Context) ([]remote.RemoteStatus, error)
+	Add(ctx context.Context, address, token, displayName string) (int64, error)
+	Update(ctx context.Context, localID int64, displayName, address string, enabled bool, token *string) error
+	Reconnect(ctx context.Context, localID int64) error
+	Remove(ctx context.Context, localID int64) error
+	RunInventoryLoop(ctx context.Context, interval time.Duration)
+}
+
+// Identity reads this instance's own persisted identity and token.
+type Identity interface {
+	InstanceIdentity(ctx context.Context) (state.InstanceIdentity, error)
+}
+
+// Access is this instance's remote-access listener as configured at startup.
+type Access struct {
+	InstanceID string
+	ListenAddr string
+	Listening  bool
+	TLS        bool
+}
+
+// Deps are read at call time: the manager and access are set after New.
+type Deps struct {
+	// Manager returns nil on a single-host install. Return an untyped nil,
+	// never a nil *remote.Manager.
+	Manager func() Manager
+	// Identity is nil without a state DB.
+	Identity Identity
+	Access   func() Access
+	Guards   module.Guards
+	// Interval overrides InventoryInterval (tests).
+	Interval time.Duration
+}
+
+type Module struct{ d Deps }
+
+func NewModule(d Deps) *Module {
+	if d.Interval <= 0 {
+		d.Interval = InventoryInterval
+	}
+	return &Module{d: d}
+}
+
+func (m *Module) Name() string { return "remotes" }
+
+// Routes keeps the pre-extraction guards: method, then auth, then localhost.
+func (m *Module) Routes(r module.Router) {
+	auth, local := m.d.Guards.Auth, m.d.Guards.Localhost
+	r.Handle("/api/settings/remote-access", method(http.MethodGet, auth(m.handleAccess)))
+	r.Handle("/api/settings/remote-access/reveal-token", method(http.MethodPost, auth(local(m.handleRevealToken))))
+	r.Handle("/api/remotes", auth(m.handleRemotes))
+	r.Handle("/api/remotes/", auth(m.handleRemoteByID))
+}
+
+// Run refreshes inventories among the server's joined workers, so the loop
+// never outlives shutdown. Manager's own Start/Stop stay with the caller
+// that built it.
+func (m *Module) Run(ctx context.Context) {
+	if mgr := m.manager(); mgr != nil {
+		mgr.RunInventoryLoop(ctx, m.d.Interval)
+	}
+}
+
+func (m *Module) manager() Manager {
+	if m.d.Manager == nil {
+		return nil
+	}
+	return m.d.Manager()
+}
+
+func method(want string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != want {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h(w, r)
+	}
+}

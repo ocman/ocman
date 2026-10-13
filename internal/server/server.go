@@ -27,6 +27,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/sharing"
@@ -111,7 +112,7 @@ type Server struct {
 	// (instance ID, whether the gRPC server is listening, its address,
 	// and whether TLS is on). Surfaced via GET /api/settings/remote-access
 	// for the multi-remote-support feature. Zero value = not listening.
-	remoteAccess remoteAccessInfo
+	remoteAccess remotesmod.Access
 
 	// hostRouter resolves the owning hostsvc.Host for a directory or an
 	// explicit remote owner (AD-16). git/worktree/tmux/projects handlers
@@ -121,8 +122,8 @@ type Server struct {
 	hostRouterOnce sync.Once
 
 	// remotes is the hub-side manager of attached remote connections
-	// (multi-remote support). Nil for single-host installs. The /api/
-	// remotes handlers and machine picker use it.
+	// (multi-remote support). Nil for single-host installs. The remotes
+	// module and the machine picker use it.
 	remotes *remote.Manager
 
 	// remoteProjectsFn sources remote projects for handleProjects. Nil
@@ -191,18 +192,6 @@ func (r factoryProjectResolver) ResolveLocalProject(ctx context.Context, path st
 		return "", err
 	}
 	return project.RepoRoot, nil
-}
-
-// remoteAccessInfo holds this instance's own remote-access surface for
-// display on its Settings page. It is populated from the instance
-// identity (state.db) plus the -remote-listen / TLS flags. The token
-// itself is never stored here; it is fetched on demand from state.db
-// for the explicit reveal action.
-type remoteAccessInfo struct {
-	instanceID string
-	listening  bool
-	listenAddr string
-	tls        bool
 }
 
 // New creates a new server. The registry may be nil, in which case a
@@ -369,12 +358,7 @@ func (s *Server) WithRelay(relayURL, source string) *Server {
 // from state.db; listening/listenAddr/tls reflect the -remote-listen and
 // TLS flags. Must be called before Start.
 func (s *Server) WithRemoteAccess(instanceID, listenAddr string, listening, tls bool) *Server {
-	s.remoteAccess = remoteAccessInfo{
-		instanceID: instanceID,
-		listening:  listening,
-		listenAddr: listenAddr,
-		tls:        tls,
-	}
+	s.remoteAccess = remotesmod.Access{InstanceID: instanceID, ListenAddr: listenAddr, Listening: listening, TLS: tls}
 	return s
 }
 

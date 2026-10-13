@@ -365,10 +365,9 @@ func main() {
 		mgr := remote.NewManager(srv.Registry(), srv.HostRouter(), stateDB, string(opencodeplatform.PlatformID))
 		mgr.Start(ctx)
 		srv.SetRemoteManager(mgr)
+		// Stop after Start returns: the remotes module's inventory loop
+		// has been joined by then, and state.db closes after this.
 		defer mgr.Stop()
-		// Periodically refresh per-remote project inventories so the
-		// machine picker matches against fresh data (AD-8).
-		go mgr.RunInventoryLoop(ctx, 5*time.Minute)
 
 		if err := srv.Start(ctx); err != nil {
 			fatal("Server error: %v", err)

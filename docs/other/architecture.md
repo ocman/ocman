@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -209,6 +209,7 @@ flowchart TD
     Modules -->|"pluginsmod: routes, supervision, conversation outbox"| Plugins
     Plugins -->|token-bound NDJSON + private configuration fd| PluginExec[External plugin process]
     Modules -->|owner-routed PluginOperation RPC| RP
+    Modules -->|"remotesmod: /api/remotes CRUD, remote-access settings, inventory loop"| RP
     PluginSDK[sdk/plugin<br/>optional public Go SDK] -->|canonical DTO aliases + validators| Plugins
 ```
 
@@ -226,7 +227,12 @@ flowchart TD
   `hostsvc.Host`), OpenCode database maintenance
   (`internal/ocmaint`: `/api/maintenance/opencode-db` routes and the job
   runner; the server's launch gate asks it `LaunchBlocked`, and its `Run`
-  holds the worker join until a running job finishes), routines, webhooks,
+  holds the worker join until a running job finishes), remote management
+  (`internal/remotesmod`: `/api/remotes` CRUD + reconnect, this instance's
+  `/api/settings/remote-access` status and token reveal, and the inventory
+  refresh loop among the joined workers; the `remote.Manager`, its gRPC
+  transport and `Start`/`Stop`, the registry, the host router and owner
+  resolution stay core), routines, webhooks,
   artifacts, the Inbox, conversation sharing and read-only file browsing
   (`internal/filesystem`: directory picker, signed `/api/file/` embeds,
   owner-routed repository file reads), link previews (`internal/previews`:

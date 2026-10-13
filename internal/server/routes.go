@@ -82,13 +82,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/settings/archive-resurface", s.settingsHandler(s.requireAuth(s.handleArchiveResurface)))
 	mux.HandleFunc("/api/settings/model-fallthrough", s.settingsHandler(s.requireAuth(s.handleModelFallthroughSettings)))
 	// Global list of active share links, for inspect/revoke in Settings.
-	// Remote-access surface for multi-remote support: this instance's
-	// own instance ID + gRPC-listen status, and an explicit token reveal.
-	mux.HandleFunc("/api/settings/remote-access", s.get(s.handleRemoteAccess))
-	mux.HandleFunc("/api/settings/remote-access/reveal-token", s.post(s.requireLocalhost(s.handleRevealRemoteToken)))
-	// Hub-side remote management (multi-remote support). CRUD + reconnect.
-	mux.HandleFunc("/api/remotes", s.requireAuth(s.handleRemotes))
-	mux.HandleFunc("/api/remotes/", s.requireAuth(s.handleRemoteByID))
 	// New-session machine picker resolver (multi-remote support).
 	mux.HandleFunc("/api/sessions/resolve-targets", s.post(s.handleResolveTargets))
 	mux.HandleFunc("/api/sessions/prepare", s.post(s.requireLocalhost(s.handlePrepareSession)))

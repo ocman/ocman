@@ -18,6 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/pluginsmod"
 	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -48,7 +49,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule())
+	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule(), s.remotesModule())
 }
 
 // tmuxModule is stateless, so it is rebuilt on each call.
@@ -67,6 +68,25 @@ func (s *Server) termModule() *termmod.Module {
 		Privileged:   s.isPrivilegedRequest,
 		SweepLegacy:  term.SweepLegacySessions,
 	})
+}
+
+// remotesModule reads the manager and access at call time, so
+// SetRemoteManager and WithRemoteAccess after New still take effect.
+func (s *Server) remotesModule() *remotesmod.Module {
+	d := remotesmod.Deps{
+		Manager: func() remotesmod.Manager {
+			if s.remotes == nil {
+				return nil // untyped: a nil *remote.Manager would pass the module's nil check
+			}
+			return s.remotes
+		},
+		Access: func() remotesmod.Access { return s.remoteAccess },
+		Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+	}
+	if s.stateDB != nil {
+		d.Identity = s.stateDB // untyped nil otherwise
+	}
+	return remotesmod.NewModule(d)
 }
 
 // ModuleSchemas lists the state.db schemas feature modules own; main passes
