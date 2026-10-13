@@ -40,7 +40,7 @@ func TestSessionLifecycleReadsOneMetadataQuery(t *testing.T) {
 		queries++
 		var statement string
 		for _, attr := range span.Attributes {
-			if string(attr.Key) == "db.statement" {
+			if string(attr.Key) == "db.query.text" {
 				statement = attr.Value.AsString()
 			}
 		}

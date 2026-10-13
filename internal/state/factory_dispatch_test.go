@@ -100,7 +100,7 @@ func TestFactoryWorkflowSkipsExistingDependencies(t *testing.T) {
 		inserts := 0
 		for _, span := range exporter.GetSpans() {
 			for _, attr := range span.Attributes {
-				if attr.Key == "db.statement" && strings.Contains(attr.Value.AsString(), "INSERT OR IGNORE INTO factory_issue_dependency") {
+				if attr.Key == "db.query.text" && strings.Contains(attr.Value.AsString(), "INSERT OR IGNORE INTO factory_issue_dependency") {
 					inserts++
 				}
 			}

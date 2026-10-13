@@ -349,7 +349,7 @@ The dashboard's Database section shows query rate and p95 latency by SQL fingerp
 All SQLite handles are instrumented: OpenCode, ocman state, the analytics cache, and
 maintenance. Direct and prepared executions are counted, including queries inside
 transactions. Preparation, row iteration, and commit/rollback are excluded from query rates.
-The rate uses the count of `db_sql_latency_milliseconds`; no separate counter is needed.
+The rate uses the count of `db_client_operation_duration_seconds`; no separate counter is needed.
 Latency measures the driver's execution call, not the subsequent row scan.
 
 `db_query_fingerprint` identifies a normalized query shape; `db_query_summary` gives

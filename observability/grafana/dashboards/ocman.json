@@ -517,8 +517,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (db_name, method) (rate(db_sql_latency_milliseconds_count{service_name=\"$service\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m]))",
-          "legendFormat": "{{db_name}} / {{method}}"
+          "expr": "sum by (db_name, db_operation_name) (rate(db_client_operation_duration_seconds_count{service_name=\"$service\",db_operation_name=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m]))",
+          "legendFormat": "{{db_name}} / {{db_operation_name}}"
         }
       ],
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
@@ -532,11 +532,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, db_name) (rate(db_sql_latency_milliseconds_bucket{service_name=\"$service\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, db_name) (rate(db_client_operation_duration_seconds_bucket{service_name=\"$service\",db_operation_name=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m])))",
           "legendFormat": "{{db_name}}"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
       "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } }
     },
     {
@@ -583,7 +583,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by (db_name, db_query_fingerprint, db_query_summary) (rate(db_sql_latency_milliseconds_count{service_name=\"$service\",db_query_fingerprint!=\"\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m])))",
+          "expr": "topk(20, sum by (db_name, db_query_fingerprint, db_query_summary) (rate(db_client_operation_duration_seconds_count{service_name=\"$service\",db_query_fingerprint!=\"\",db_operation_name=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m])))",
           "legendFormat": "{{db_name}} / {{db_query_fingerprint}} / {{db_query_summary}}"
         }
       ],
@@ -599,11 +599,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, histogram_quantile(0.95, sum by (le, db_name, db_query_fingerprint, db_query_summary) (rate(db_sql_latency_milliseconds_bucket{service_name=\"$service\",db_query_fingerprint!=\"\",method=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m]))))",
+          "expr": "topk(20, histogram_quantile(0.95, sum by (le, db_name, db_query_fingerprint, db_query_summary) (rate(db_client_operation_duration_seconds_bucket{service_name=\"$service\",db_query_fingerprint!=\"\",db_operation_name=~\"sql[.](conn|stmt)[.](query|exec)\"}[5m]))))",
           "legendFormat": "{{db_name}} / {{db_query_fingerprint}} / {{db_query_summary}}"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
       "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } }
     },
 

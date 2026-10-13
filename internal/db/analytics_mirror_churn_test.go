@@ -46,12 +46,12 @@ func TestAnalyticsMirrorUnchangedSyncDoesNotRewriteRows(t *testing.T) {
 		var count uint64
 		for _, scope := range data.ScopeMetrics {
 			for _, metric := range scope.Metrics {
-				if metric.Name != "db.sql.latency" {
+				if metric.Name != "db.client.operation.duration" {
 					continue
 				}
 				for _, point := range metric.Data.(metricdata.Histogram[float64]).DataPoints {
 					database, _ := point.Attributes.Value("db.name")
-					method, _ := point.Attributes.Value("method")
+					method, _ := point.Attributes.Value("db.operation.name")
 					if database.AsString() == "analytics-cache" && method.AsString() == "sql.stmt.exec" {
 						count += point.Count
 					}

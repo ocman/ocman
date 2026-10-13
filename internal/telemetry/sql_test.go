@@ -131,7 +131,7 @@ func TestSQLMetricsAndSpans(t *testing.T) {
 	if _, err := db.ExecContext(t.Context(), "INSERT INTO missing VALUES (?)", 3); err == nil {
 		t.Fatal("expected SQL error")
 	}
-	histogram := collectMetrics(t, reader)["db.sql.latency"].Data.(metricdata.Histogram[float64])
+	histogram := collectMetrics(t, reader)["db.client.operation.duration"].Data.(metricdata.Histogram[float64])
 	wanted := map[string]string{
 		"sql.conn.exec":  "insert into probe values ( ? )",
 		"sql.stmt.exec":  "insert into probe values ( ? )",
@@ -141,7 +141,7 @@ func TestSQLMetricsAndSpans(t *testing.T) {
 	found := map[string]bool{}
 	failed := false
 	for _, dp := range histogram.DataPoints {
-		method, _ := dp.Attributes.Value("method")
+		method, _ := dp.Attributes.Value("db.operation.name")
 		summary, _ := dp.Attributes.Value("db.query.summary")
 		fingerprint, _ := dp.Attributes.Value("db.query.fingerprint")
 		if expected, ok := wanted[method.AsString()]; ok && summary.AsString() == expected {
@@ -150,8 +150,7 @@ func TestSQLMetricsAndSpans(t *testing.T) {
 			}
 			found[method.AsString()] = true
 		}
-		status, _ := dp.Attributes.Value("status")
-		if summary.AsString() == "insert into missing values ( ? )" && status.AsString() == "error" {
+		if _, isErr := dp.Attributes.Value("error.type"); isErr && summary.AsString() == "insert into missing values ( ? )" {
 			failed = true
 		}
 	}
