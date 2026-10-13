@@ -18,6 +18,10 @@ import (
 // MaxRequestBody is the default bound for a buffered JSON request body (1 MB).
 const MaxRequestBody = 1 << 20
 
+// MaxSendMessageBody bounds a body that carries a message with inline images
+// (20 MB).
+const MaxSendMessageBody = 20 << 20
+
 // BodyReadTimeout bounds how long a handler waits for a bounded,
 // fully-buffered request body. Applied per handler rather than as
 // http.Server.ReadTimeout, which would also cut off SSE streams,

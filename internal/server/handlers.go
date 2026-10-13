@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/gitmod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -23,7 +24,7 @@ const maxRequestBody = httpx.MaxRequestBody
 
 // maxSendMessageBody is the maximum allowed body for send-message
 // (20 MB to support inline images).
-const maxSendMessageBody = 20 << 20
+const maxSendMessageBody = httpx.MaxSendMessageBody
 
 // maxAudioUpload is the maximum allowed audio upload size (25 MB).
 const maxAudioUpload = 25 << 20
@@ -285,7 +286,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"platforms":        out,
 		"hosts":            hosts,
-		"worktreeSessions": worktreeSessionsAvailable(s.registry),
+		"worktreeSessions": gitmod.SessionsAvailable(s.registry),
 		"mcpServer": map[string]interface{}{
 			"enabled": true,
 			"url":     s.mcpServerURL(),

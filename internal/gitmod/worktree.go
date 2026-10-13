@@ -1,4 +1,4 @@
-package server
+package gitmod
 
 import (
 	"errors"
@@ -10,11 +10,12 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
-// worktreeSessionsAvailable reports whether all preconditions for the
+// SessionsAvailable reports whether all preconditions for the
 // /wt feature are met:
 //   - tmux on PATH (existing tmux integration)
 //   - git on PATH
@@ -24,7 +25,7 @@ import (
 //
 // Surfaced via /api/capabilities as a top-level boolean. The frontend
 // uses it to gate UI affordances without branching on platform identity.
-func worktreeSessionsAvailable(reg *platforms.Registry) bool {
+func SessionsAvailable(reg *platforms.Registry) bool {
 	if !tmux.IsAvailable() {
 		return false
 	}
@@ -59,13 +60,13 @@ func worktreeSessionsAvailable(reg *platforms.Registry) bool {
 //	400 — `dir` missing or relative
 //	404 — `dir` is not inside a git repo
 //	502 — git invocation failed
-func (s *Server) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
-	dir, ok := parseAbsDir(w, r)
+func (m *Module) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
+	dir, ok := httpx.AbsDir(w, r)
 	if !ok {
 		return
 	}
 
-	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	host, ok := m.Owner(w, dir, r.URL.Query().Get("remoteId"))
 	if !ok {
 		return
 	}
@@ -80,19 +81,19 @@ func (s *Server) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]interface{}{"worktrees": entries})
+	httpx.WriteJSON(w, map[string]interface{}{"worktrees": entries})
 }
 
 // handleWorktreeDefaultBaseRef returns the resolver's best guess for
 // the default base ref (AD-5). Used by the frontend to pre-fill the
 // "base ref" field in the worktree-creation form.
-func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Request) {
-	dir, ok := parseAbsDir(w, r)
+func (m *Module) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Request) {
+	dir, ok := httpx.AbsDir(w, r)
 	if !ok {
 		return
 	}
 
-	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	host, ok := m.Owner(w, dir, r.URL.Query().Get("remoteId"))
 	if !ok {
 		return
 	}
@@ -106,7 +107,7 @@ func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Req
 		http.Error(w, "failed to resolve repo root", http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, map[string]string{"baseRef": baseRef})
+	httpx.WriteJSON(w, map[string]string{"baseRef": baseRef})
 }
 
 // handleWorktreeRemove removes a worktree via `git worktree remove`.
@@ -124,14 +125,14 @@ func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Req
 //	404 — projectDir is not a git repository
 //	409 — target is the main worktree, or dirty (retry with force)
 //	502 — git invocation failed
-func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ProjectDir string `json:"projectDir"`
 		Path       string `json:"path"`
 		Force      bool   `json:"force"`
 		RemoteID   string `json:"remoteId"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	if req.ProjectDir == "" || req.Path == "" {
@@ -146,7 +147,7 @@ func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 	// Fail closed on an explicit owner: a stale/disconnected remote ID
 	// must not degrade to the hub, which would `git worktree remove
 	// --force` the hub's identically-pathed worktree and destroy real work.
-	host, ok := s.resolveOwner(w, req.ProjectDir, req.RemoteID)
+	host, ok := m.Owner(w, req.ProjectDir, req.RemoteID)
 	if !ok {
 		return
 	}
@@ -176,7 +177,7 @@ func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, map[string]bool{"removed": true})
+	httpx.WriteJSON(w, map[string]bool{"removed": true})
 }
 
 // handleWorktreeCreateAndLaunch creates a worktree (or reuses an
@@ -187,7 +188,7 @@ func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 //
 // Localhost-only — same security posture as the existing tmux launch
 // endpoint, since this spawns processes on the host.
-func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ProjectDir string `json:"projectDir"`
 		Branch     string `json:"branch"`
@@ -217,7 +218,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		} `json:"send"`
 	}
 	// The first message may carry image attachments.
-	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxSendMessageBody, &req) {
 		return
 	}
 
@@ -266,13 +267,13 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	// Resolve the owning host: the explicit owner when the caller named
 	// one (preferred, AD-16b), else ForDir inference for
 	// backward-compatible local behaviour.
-	host, ok := s.resolveOwner(w, req.ProjectDir, req.RemoteID)
+	host, ok := m.Owner(w, req.ProjectDir, req.RemoteID)
 	if !ok {
 		return
 	}
 	// Parent permission reads don't depend on the worktree; overlap them.
-	inherited := make(chan inheritedRules, 1)
-	go func() { inherited <- s.buildInheritedPermissions(r, platformHint(r), req.ParentSessionID) }()
+	inherited := make(chan func(string) (int, string), 1)
+	go func() { inherited <- m.InheritPermissions(r, req.ParentSessionID) }()
 	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: req.ProjectDir,
 		Branch:     req.Branch,
@@ -282,7 +283,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		Prompt:     req.Prompt,
 	})
 	if err != nil {
-		writeWorktreeCreateError(w, err)
+		WriteCreateError(w, err)
 		return
 	}
 
@@ -290,18 +291,18 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	// always-allow permissions (issue #101). Soft-fail: never turn a
 	// successful worktree launch into an error; surface any problem via
 	// the response fields instead.
-	inheritedCount, inheritErr := s.applyInheritedPermissions(r, <-inherited, res.SessionID)
+	inheritedCount, inheritErr := (<-inherited)(res.SessionID)
 
 	// Permissions first, then the prompt, so the first turn already runs
 	// under the inherited posture.
-	platform := opencodePlatformForHost(host)
+	platform := m.PlatformFor(host)
 	sent, sendErr := false, ""
 	if req.Send != nil {
 		images := make([]platforms.ImageAttachment, 0, len(req.Send.Images))
 		for _, img := range req.Send.Images {
 			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
 		}
-		if err := s.sendNow(r.Context(), platform, platforms.SendMessageRequest{
+		if err := m.SendNow(r.Context(), platform, platforms.SendMessageRequest{
 			SessionID: res.SessionID, Message: req.Send.Message, Images: images,
 			Model: req.Send.Model, Agent: req.Send.Agent, Reasoning: req.Send.Reasoning,
 		}); err != nil {
@@ -312,7 +313,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	writeJSON(w, map[string]interface{}{
+	httpx.WriteJSON(w, map[string]interface{}{
 		"sessionId":                 res.SessionID,
 		"platform":                  platform,
 		"firstMessageSent":          sent,
@@ -326,4 +327,18 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		"permissionsInheritedCount": inheritedCount,
 		"permissionsInheritError":   inheritErr,
 	})
+}
+
+// WriteCreateError maps CreateWorktreeSession failures to HTTP; the
+// conversation start path shares it.
+func WriteCreateError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, git.ErrNotARepo):
+		http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
+	case errors.Is(err, git.ErrBranchCheckedOutElsewhere), errors.Is(err, git.ErrPathConflict):
+		http.Error(w, err.Error(), http.StatusConflict)
+	default:
+		log.WithError(err).Warn("worktree: create and launch")
+		http.Error(w, "worktree create/launch failed: "+err.Error(), http.StatusBadGateway)
+	}
 }

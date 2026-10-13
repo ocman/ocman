@@ -581,6 +581,15 @@ handlers don't bypass the `Host` seam). User-facing docs:
   fetches run on the owner's `hostsvc.Host`; forge clients stay in
   `internal/forge` behind the server's `resolveForge`. Project archive, quick
   settings and session start remain server code.
+- `internal/gitmod/` — module: `/api/git/{info,branches,checkout,diff}` and
+  `/api/worktree/{list,default-base-ref,remove,create-and-launch}`, the
+  worktree capability check (`SessionsAvailable`) and the shared
+  `WriteCreateError` mapping. Every operation runs on the owner's
+  `hostsvc.Host`; named owners fail closed through the server's
+  `resolveOwner`, while diff and checkout keep `ForDir` inference. Permission
+  inheritance (`InheritPermissions`: built alongside creation, applied before
+  the first send) and `SendNow` are injected from the server's shared
+  session paths, which `/api/sessions/start` also uses.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost

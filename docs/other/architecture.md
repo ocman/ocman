@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics, termmod, ocmaint]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics, termmod, ocmaint, gitmod]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -187,7 +187,7 @@ flowchart TD
     Factory -->|Project Delivery validation + merge observation| Forge
     Routines --> Registry
     Routines --> Router
-    Modules -->|"tmuxmod + termmod: tmux, launch, terminals via Host"| Router
+    Modules -->|"tmuxmod, termmod, gitmod: tmux, terminals, git + worktrees via Host"| Router
     Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
     Modules -->|module tools| MCP
@@ -228,7 +228,10 @@ flowchart TD
   holds the worker join until a running job finishes), routines, webhooks,
   artifacts, the Inbox, conversation sharing and read-only file browsing
   (`internal/filesystem`: directory picker, signed `/api/file/` embeds,
-  owner-routed repository file reads) each own
+  owner-routed repository file reads), git and worktrees
+  (`internal/gitmod`: status, branches, checkout, diffs and worktree
+  list/base ref/remove/create-and-launch through the owner's `hostsvc.Host`;
+  permission inheritance and the first send are injected server paths) each own
   their routes, background loops, MCP tools and event subscriptions. The
   server lists them once in `modules()` and hands each narrow `Deps` (store,
   guards, lookups); modules never import the server or each other. Webhooks

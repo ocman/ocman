@@ -37,19 +37,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/favorites", s.requireAuth(s.handleFavoritesRoot)) // GET = list, POST = add, DELETE = remove
 	mux.HandleFunc("/api/whisper/status", s.get(s.handleWhisperStatus))
 	mux.HandleFunc("/api/transcribe", s.post(s.handleTranscribe))
-	mux.HandleFunc("/api/git/diff", s.get(s.handleGitDiff))
-	mux.HandleFunc("/api/git/info", s.get(s.handleGitInfo))
-	mux.HandleFunc("/api/git/branches", s.get(s.handleGitBranches))
-	mux.HandleFunc("/api/git/checkout", requirePOST(s.requireLocalhost(s.handleGitCheckout)))
-
-	// Worktree endpoints. List + default-base-ref are read-only and
-	// safe to expose to authenticated clients; create-and-launch
-	// runs `git worktree add` and spawns tmux/opencode, so it's
-	// localhost-only like the other launch endpoints.
-	mux.HandleFunc("/api/worktree/list", s.get(s.handleWorktreeList))
-	mux.HandleFunc("/api/worktree/default-base-ref", s.get(s.handleWorktreeDefaultBaseRef))
-	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(s.requireLocalhost(s.handleWorktreeCreateAndLaunch)))
-	mux.HandleFunc("/api/worktree/remove", requirePOST(s.requireLocalhost(s.handleWorktreeRemove)))
+	// Git and worktree endpoints belong to the git module.
 
 	// PR/Issue sidebar endpoints (upstreams, lists, checks, handle) and the
 	// prompt templates belong to the project forge module.

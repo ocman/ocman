@@ -14,6 +14,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	log "github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"google.golang.org/grpc/codes"
@@ -107,9 +108,7 @@ func TestRunningLocalGitDiffCancellation(t *testing.T) {
 			// Block inside the subprocess, not a Host stub. Other commands
 			// still use real git so the complete local diff path runs.
 			script := fmt.Sprintf("#!/bin/sh\nif [ \"$3\" = %q ]; then\n  touch %q\n  exec sleep 30\nfi\nexec %q \"$@\"\n", command, started, realGit)
-			if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
-				t.Fatal(err)
-			}
+			testutil.WriteScript(t, filepath.Join(bin, "git"), script)
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()

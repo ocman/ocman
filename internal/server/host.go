@@ -47,8 +47,8 @@ func (s *Server) router() *hostsvc.Router {
 //
 // Status choice — 503, deliberately *not* 409. Two of the routes that
 // call this already use 409 for a genuine domain conflict:
-// handleWorktreeRemove (ErrMainWorktree / ErrWorktreeDirty) and
-// handleWorktreeCreateAndLaunch (ErrBranchCheckedOutElsewhere /
+// gitmod's worktree remove (ErrMainWorktree / ErrWorktreeDirty) and
+// create-and-launch (ErrBranchCheckedOutElsewhere /
 // ErrPathConflict), and the frontend distinguishes the dirty-worktree
 // case by matching the response *prose* so it can offer "Force delete".
 // Overloading 409 would make the status two-valued, separated only by

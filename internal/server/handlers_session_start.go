@@ -2,14 +2,13 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os/exec"
 	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/gitmod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -273,7 +272,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			hostsvc.FinishStep(ctx, hostsvc.StepWorktree, err)
 		}
 		if err != nil {
-			writeWorktreeCreateError(w, err)
+			gitmod.WriteCreateError(w, err)
 			return
 		}
 		platform, sessionID, directory, worktreePath, branch = opencodePlatformForHost(host), res.SessionID, res.WorktreePath, res.WorktreePath, res.Branch
@@ -348,17 +347,4 @@ func remoteIDForPlatform(platform string) string {
 		return remoteID
 	}
 	return "local"
-}
-
-// writeWorktreeCreateError maps CreateWorktreeSession failures to HTTP.
-func writeWorktreeCreateError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, git.ErrNotARepo):
-		http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
-	case errors.Is(err, git.ErrBranchCheckedOutElsewhere), errors.Is(err, git.ErrPathConflict):
-		http.Error(w, err.Error(), http.StatusConflict)
-	default:
-		log.WithError(err).Warn("worktree: create and launch")
-		http.Error(w, "worktree create/launch failed: "+err.Error(), http.StatusBadGateway)
-	}
 }

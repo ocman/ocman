@@ -12,10 +12,9 @@ import (
 // The JSON and error helpers live in httpx so feature modules answer
 // exactly like the server.
 var (
-	writeJSON         = httpx.WriteJSON
-	writeJSONStatus   = httpx.WriteJSONStatus
-	writeCancellation = httpx.WriteCancellation
-	serverError       = httpx.ServerError
+	writeJSON       = httpx.WriteJSON
+	writeJSONStatus = httpx.WriteJSONStatus
+	serverError     = httpx.ServerError
 )
 
 // writeSessionSvcError maps a sessionsvc error to an HTTP response.

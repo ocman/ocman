@@ -1,4 +1,4 @@
-package server
+package gitmod
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // handleGitInfo returns per-directory git status (branch, ahead,
@@ -42,7 +43,7 @@ import (
 //
 //	200 OK         — payload above
 //	400 Bad Req    — `dirs` empty, or a path is relative
-func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("dirs")
 	literal := r.URL.Query().Get("dir")
 	if literal != "" {
@@ -75,11 +76,11 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	remoteID, ok := httpx.RemoteID(w, r.URL.Query().Get("remoteId"))
 	if !ok {
 		return
 	}
-	host, ok := s.resolveOwner(w, dirs[0], remoteID)
+	host, ok := m.Owner(w, dirs[0], remoteID)
 	if !ok {
 		return
 	}
@@ -89,7 +90,7 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "git info failed", http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, infos)
+	httpx.WriteJSON(w, infos)
 }
 
 // handleGitBranches returns the local branch names for the repository
@@ -106,12 +107,12 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 //	400 Bad Req    — `dir` missing or relative
 //	502 Bad Gateway — git invocation failed
 //	503 Service Unavailable — explicit owner is disconnected
-func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
-	dir, ok := parseAbsDir(w, r)
+func (m *Module) handleGitBranches(w http.ResponseWriter, r *http.Request) {
+	dir, ok := httpx.AbsDir(w, r)
 	if !ok {
 		return
 	}
-	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	host, ok := m.Owner(w, dir, r.URL.Query().Get("remoteId"))
 	if !ok {
 		return
 	}
@@ -124,7 +125,7 @@ func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
 	if branches == nil {
 		branches = []string{}
 	}
-	writeJSON(w, map[string][]string{"branches": branches})
+	httpx.WriteJSON(w, map[string][]string{"branches": branches})
 }
 
 // handleGitCheckout switches the working tree in `dir` to `branch`. It
@@ -140,12 +141,12 @@ func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
 //	400 Bad Req    — dir/branch missing or dir relative
 //	409 Conflict   — checkout would overwrite local changes
 //	502 Bad Gateway — git invocation failed
-func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Dir    string `json:"dir"`
 		Branch string `json:"branch"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &body) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &body) {
 		return
 	}
 	if body.Dir == "" || body.Branch == "" {
@@ -156,7 +157,7 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
 		return
 	}
-	err := s.router().ForDir(body.Dir).GitCheckout(r.Context(), body.Dir, body.Branch)
+	err := m.ForDir(body.Dir).GitCheckout(r.Context(), body.Dir, body.Branch)
 	if err != nil {
 		// ErrDirtyCheckout doesn't survive gRPC as a typed sentinel, so
 		// also match on the message a remote host relays back.
@@ -170,7 +171,7 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "git checkout failed", http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, map[string]string{"branch": body.Branch})
+	httpx.WriteJSON(w, map[string]string{"branch": body.Branch})
 }
 
 // handleGitDiff returns the working-tree diff for a directory. The
@@ -195,18 +196,18 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 //	400 Bad Req    — `dir` missing or relative
 //	404 Not Found  — `dir` is not a git worktree
 //	502 Bad Gateway — git invocation failed (timeout, fork error)
-func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
-	dir, ok := parseAbsDir(w, r)
+func (m *Module) handleGitDiff(w http.ResponseWriter, r *http.Request) {
+	dir, ok := httpx.AbsDir(w, r)
 	if !ok {
 		return
 	}
 	fresh := r.URL.Query().Get("fresh") == "1"
 
-	d, err := s.router().ForDir(dir).GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
+	d, err := m.ForDir(dir).GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
 	if err != nil {
 		// Git can replace cancellation with ErrNotRepo or a killed-process
 		// exit error, so check the request before interpreting its result.
-		if writeCancellation(w, "git diff canceled", r.Context().Err()) || writeCancellation(w, "git diff canceled", err) {
+		if httpx.WriteCancellation(w, "git diff canceled", r.Context().Err()) || httpx.WriteCancellation(w, "git diff canceled", err) {
 			return
 		}
 		if errors.Is(err, git.ErrNotRepo) {
@@ -221,5 +222,5 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "git diff failed", http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, d)
+	httpx.WriteJSON(w, d)
 }
