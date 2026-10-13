@@ -162,9 +162,9 @@ type Server struct {
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
 	runtime      ocruntime.Runtime
 	openCodeAuth ocapi.Auth
-	// maint runs OpenCode database maintenance; nil without a DB path.
+	// maintMod runs OpenCode database maintenance; nil without a DB path.
 	// Its gate refuses opencode launches while a job runs.
-	maint            *ocmaint.Runner
+	maintMod         *ocmaint.Module
 	logPath          string // resolved log file; "" when stderr only
 	version          string // build version (main.version), reported by /api/stats
 	startupIssues    []StartupIssue

@@ -27,6 +27,9 @@ const CutoffAge = 30 * 24 * time.Hour
 // ErrBusy is returned when a job is already running.
 var ErrBusy = errors.New("maintenance already running")
 
+// ErrShutdown refuses a job once ocman is shutting down.
+var ErrShutdown = errors.New("ocman is shutting down")
+
 // Deps are the host operations a job needs. All are required except
 // OnChanged.
 type Deps struct {
@@ -71,6 +74,8 @@ type Runner struct {
 
 	mu     sync.Mutex
 	status Status
+	closed bool           // Shutdown was called: no new jobs
+	jobs   sync.WaitGroup // the running job, joined by Shutdown
 }
 
 func New(deps Deps) *Runner {
@@ -131,6 +136,9 @@ func (r *Runner) start(job string, names []string, body func(context.Context, *j
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return ErrShutdown
+	}
 	if r.status.Running {
 		return ErrBusy
 	}
@@ -140,8 +148,22 @@ func (r *Runner) start(job string, names []string, body func(context.Context, *j
 	}
 	r.status = Status{Job: job, Running: true, Steps: steps, StartedAt: time.Now()}
 	r.Gate.close("OpenCode database maintenance is running")
-	go r.run(body)
+	r.jobs.Go(func() { r.run(body) })
 	return nil
+}
+
+// Shutdown refuses new jobs and waits for the running one, which is never
+// cancelled midway: it always reopens the gate and relaunches what it
+// stopped before returning.
+func (r *Runner) Shutdown() {
+	r.mu.Lock()
+	r.closed = true
+	running := r.status.Running
+	r.mu.Unlock()
+	if running {
+		log.Info("ocmaint: waiting for the running maintenance job to finish")
+	}
+	r.jobs.Wait()
 }
 
 func (r *Runner) run(body func(context.Context, *jobRun) error) {

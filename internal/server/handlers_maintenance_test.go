@@ -6,70 +6,88 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 )
 
-func maintenanceStatusOf(t *testing.T, srv *Server) maintenanceStatus {
-	t.Helper()
-	rec := httptest.NewRecorder()
-	srv.handleMaintenanceStatus(rec, httptest.NewRequest(http.MethodGet, "/api/maintenance/opencode-db", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: %d %s", rec.Code, rec.Body.String())
-	}
-	var st maintenanceStatus
-	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
-		t.Fatal(err)
-	}
-	return st
-}
-
-func TestMaintenanceStatus(t *testing.T) {
-	if st := maintenanceStatusOf(t, &Server{}); st.Available || st.CutoffDays != 30 {
-		t.Errorf("without a DB path: %+v, want unavailable with the cutoff", st)
-	}
-
-	path := filepath.Join(t.TempDir(), "opencode.db")
-	if err := os.WriteFile(path, []byte("12345"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path+"-wal", []byte("67"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	st := maintenanceStatusOf(t, (&Server{}).WithOpenCodeDBPath(path))
-	if !st.Available || st.DBPath != path || st.DBBytes != 7 {
-		t.Errorf("status = %+v, want available with db + wal bytes", st)
-	}
-	if st.Job.Steps == nil {
-		t.Error("job.steps must be [] before any job ran; the UI reads its length")
-	}
-	if st.DumpPath != path+".ocman-diffs" || st.DumpBytes != 0 {
-		t.Errorf("dump = %q (%d bytes), want the sibling path and no dump yet", st.DumpPath, st.DumpBytes)
-	}
-}
-
-func TestMaintenanceActionErrors(t *testing.T) {
-	post := func(srv *Server, action func(*ocmaint.Runner) error) int {
+// The server mounts the maintenance module behind its own guards, and
+// WithOpenCodeDBPath points the runner at the database and its dump.
+func TestMaintenanceModuleWiring(t *testing.T) {
+	get := func(srv *Server, method, path string) *httptest.ResponseRecorder {
+		mux := http.NewServeMux()
+		srv.mountModules(mux)
+		req := httptest.NewRequest(method, path, nil)
+		req.RemoteAddr = "127.0.0.1:1234"
 		rec := httptest.NewRecorder()
-		srv.maintenanceAction(action)(rec, httptest.NewRequest(http.MethodPost, "/", nil))
-		return rec.Code
+		mux.ServeHTTP(rec, req)
+		return rec
 	}
-	if code := post(&Server{}, (*ocmaint.Runner).Cleanup); code != http.StatusNotFound {
-		t.Errorf("without maintenance: %d, want 404", code)
+	if rec := get(&Server{}, http.MethodPost, "/api/maintenance/opencode-db/cleanup"); rec.Code != http.StatusNotFound {
+		t.Errorf("without a DB path: %d, want 404", rec.Code)
 	}
-	srv := (&Server{}).WithOpenCodeDBPath(filepath.Join(t.TempDir(), "opencode.db"))
-	if code := post(srv, (*ocmaint.Runner).Restore); code != http.StatusConflict {
-		t.Errorf("restore without a dump: %d, want 409", code)
+	path := filepath.Join(t.TempDir(), "opencode.db")
+	srv := (&Server{}).WithOpenCodeDBPath(path)
+	rec := get(srv, http.MethodGet, "/api/maintenance/opencode-db")
+	var st struct {
+		Available bool   `json:"available"`
+		DumpPath  string `json:"dumpPath"`
 	}
-	if code := post(srv, (*ocmaint.Runner).DeleteDump); code != http.StatusOK {
-		t.Errorf("deleting a missing dump: %d, want 200", code)
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil || !st.Available || st.DumpPath != path+".ocman-diffs" {
+		t.Errorf("status = %d %s, want available with the sibling dump", rec.Code, rec.Body.String())
 	}
-	if code := post(srv, func(*ocmaint.Runner) error { return errors.New("boom") }); code != http.StatusInternalServerError {
-		t.Errorf("unexpected error: %d, want 500", code)
+	if srv.launchBlocked() != nil {
+		t.Error("an idle maintenance runner must not block launches")
+	}
+	if (&Server{}).WithOpenCodeDBPath("").maintMod != nil {
+		t.Error("an empty DB path must leave maintenance unavailable")
+	}
+}
+
+func TestMaintenanceModuleAuthAndOrigin(t *testing.T) {
+	srv := &Server{auth: newTestAuth(t, "maintenance-test")}
+	mux := http.NewServeMux()
+	srv.mountModules(mux)
+	for _, path := range []string{
+		"/api/maintenance/opencode-db",
+		"/api/maintenance/opencode-db/cleanup",
+		"/api/maintenance/opencode-db/restore",
+		"/api/maintenance/opencode-db/delete-dump",
+	} {
+		method, allowed := http.MethodPost, http.StatusNotFound
+		if path == "/api/maintenance/opencode-db" {
+			method, allowed = http.MethodGet, http.StatusOK
+		}
+		for _, tc := range []struct {
+			name, peer, origin string
+			cookie             bool
+			want               int
+		}{
+			{"unauthenticated", "127.0.0.1:1234", "", false, http.StatusUnauthorized},
+			{"local", "127.0.0.1:1234", "http://localhost:8228", true, allowed},
+			{"remote", "192.0.2.1:1234", "", true, http.StatusForbidden},
+			{"foreign origin", "127.0.0.1:1234", "https://evil.example", true, http.StatusForbidden},
+		} {
+			t.Run(path+"/"+tc.name, func(t *testing.T) {
+				req := httptest.NewRequest(method, "http://localhost:8228"+path, nil)
+				req.RemoteAddr = tc.peer
+				req.Header.Set("Origin", tc.origin)
+				if tc.cookie {
+					req.AddCookie(&http.Cookie{Name: authCookieName, Value: srv.auth.signToken(time.Now().Add(time.Hour))})
+				}
+				want := tc.want
+				if method == http.MethodGet && tc.cookie {
+					want = http.StatusOK // status requires auth, not localhost
+				}
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, req)
+				if rec.Code != want {
+					t.Errorf("got %d %s, want %d", rec.Code, rec.Body.String(), want)
+				}
+			})
+		}
 	}
 }
 

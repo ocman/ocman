@@ -176,7 +176,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics, termmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, tmuxmod, filesystem, projectforge, analytics, termmod, ocmaint]
     Modules --> Routines[internal/routines<br/>saved prompts + schedules]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
@@ -222,10 +222,13 @@ flowchart TD
   sessions and launches through the owner's `hostsvc.Host`, client list and
   switch on this machine's tmux), the browser terminals (`internal/termmod`:
   window controls and the WebSocket bridge, attached through the owner's
-  `hostsvc.Host`), routines, webhooks, artifacts, the Inbox,
-  conversation sharing and read-only file browsing (`internal/filesystem`:
-  directory picker, signed `/api/file/` embeds, owner-routed repository file
-  reads) each own
+  `hostsvc.Host`), OpenCode database maintenance
+  (`internal/ocmaint`: `/api/maintenance/opencode-db` routes and the job
+  runner; the server's launch gate asks it `LaunchBlocked`, and its `Run`
+  holds the worker join until a running job finishes), routines, webhooks,
+  artifacts, the Inbox, conversation sharing and read-only file browsing
+  (`internal/filesystem`: directory picker, signed `/api/file/` embeds,
+  owner-routed repository file reads) each own
   their routes, background loops, MCP tools and event subscriptions. The
   server lists them once in `modules()` and hands each narrow `Deps` (store,
   guards, lookups); modules never import the server or each other. Webhooks

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/webui"
 )
 
@@ -109,12 +108,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/settings/auto-archive", s.settingsHandler(s.requireAuth(s.handleAutoArchiveSettings)))
 	mux.HandleFunc("/api/settings/archive-resurface", s.settingsHandler(s.requireAuth(s.handleArchiveResurface)))
 	mux.HandleFunc("/api/settings/model-fallthrough", s.settingsHandler(s.requireAuth(s.handleModelFallthroughSettings)))
-	// OpenCode database maintenance: stops opencode and rewrites its
-	// database, so every action is localhost-only.
-	mux.HandleFunc("/api/maintenance/opencode-db", s.get(s.handleMaintenanceStatus))
-	mux.HandleFunc("/api/maintenance/opencode-db/cleanup", s.post(s.requireLocalhost(s.maintenanceAction((*ocmaint.Runner).Cleanup))))
-	mux.HandleFunc("/api/maintenance/opencode-db/restore", s.post(s.requireLocalhost(s.maintenanceAction((*ocmaint.Runner).Restore))))
-	mux.HandleFunc("/api/maintenance/opencode-db/delete-dump", s.post(s.requireLocalhost(s.maintenanceAction((*ocmaint.Runner).DeleteDump))))
 	// Global list of active share links, for inspect/revoke in Settings.
 	// Remote-access surface for multi-remote support: this instance's
 	// own instance ID + gRPC-listen status, and an explicit token reveal.

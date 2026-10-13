@@ -771,6 +771,12 @@ minimal and match the surrounding code.
   user-started job that stops the managed instances, blocks launches, refuses
   while any other process holds the file, and moves `summary.diffs` from
   sessions older than 30 days into `<db>.ocman-diffs` so they can be restored.
+  `internal/ocmaint` is also the feature module for its
+  `/api/maintenance/opencode-db` routes (status GET; localhost-only
+  cleanup/restore/delete-dump POSTs). The server keeps launch gating
+  (`gatedRuntime`, `gateLaunchTmux` via `Module.LaunchBlocked`); the
+  module's `Run` refuses new jobs at shutdown and waits for a running one,
+  so it never outlives state.db or leaves launches blocked.
   Ocman's own state DB is writable (`~/.local/share/ocman/state.db`),
   auto-creates its schema, and runs a versioned migration on startup.
   A third, disposable file, `analytics-cache.db` beside state.db, is a slim
