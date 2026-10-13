@@ -465,7 +465,13 @@ handlers don't bypass the `Host` seam). User-facing docs:
   helpers shared by the server and modules, so both answer identically.
 - `internal/tmux/` — tmux process control: session/window listing,
   name derivation/validation, opencode launchers (runner seams for
-  tests). HTTP handlers stay in `internal/server`.
+  tests). Its HTTP routes are the `internal/tmuxmod` module.
+- `internal/tmuxmod/` — module: the localhost-only `/api/tmux` routes.
+  Session listing and `launch-opencode` go through the hub's or the
+  resolved owner's `hostsvc.Host` (`EnsureProjectOpencode`; an explicit
+  disconnected remote fails closed via the server's `resolveOwner`);
+  client listing and `switch` act on this machine's tmux, since a client
+  is a local TTY. `scripts/check-host-helpers.sh` scans it too.
 - `internal/ocruntime/` — runtime-neutral managed-opencode lifecycle
   (#376). A `Runtime` interface (`Launch`/`Probe`/`Stop`) abstracts how a
   project's opencode instance is hosted; the native-tmux implementation
