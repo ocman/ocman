@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { DndContext } from '@dnd-kit/core';
 import { useUiStore } from '../../lib/uiStore';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
+import { SidebarSessionRow } from './SidebarSessionRow';
 import type { GitInfo, Session } from '../../lib/api';
 import { useWorkEpics } from '../../lib/queries';
 import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
@@ -100,6 +101,26 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it.each([false, true])('omits project and branch context on nested rows with flat=%s', (flat) => {
+    const props = {
+      session: session(), inGroup: false, flat, active: false, activeId: 'other',
+      activeDisplayStatus: 'done' as const, archiving: false, draft: false,
+      debugMode: false, gitInfo: gitInfo('feature-branch'),
+      onNavigateToSession: vi.fn(), onArchiveSession: vi.fn(), onPinSession: vi.fn(),
+    };
+    const { rerender } = render(<SidebarSessionRow {...props} depth={0} />);
+    expect(screen.getByText('repo')).toBeInTheDocument();
+    expect(screen.getByText('feature-branch')).toBeInTheDocument();
+    for (const depth of [1, 2]) {
+      rerender(<SidebarSessionRow {...props} depth={depth} />);
+      expect(screen.queryByText('repo')).not.toBeInTheDocument();
+      expect(screen.queryByText('feature-branch')).not.toBeInTheDocument();
+      expect(screen.getByText('Fix thing')).toBeInTheDocument();
+      expect(screen.getByTitle(new Date(1).toLocaleString())).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Archive session' })).toBeInTheDocument();
+    }
+  });
+
   beforeEach(() => {
     localStorage.clear();
     useNewConversationDrafts.setState({ drafts: [] });

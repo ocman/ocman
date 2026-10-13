@@ -35,7 +35,7 @@ export interface SidebarSessionRowProps {
 export function SidebarSessionRow({
   session: sib,
   inGroup,
-  flat = false,
+  flat: requestedFlat = false,
   depth = 0,
   active,
   activeId,
@@ -48,6 +48,7 @@ export function SidebarSessionRow({
   onArchiveSession,
   onPinSession,
 }: SidebarSessionRowProps) {
+  const flat = requestedFlat && depth === 0;
   // For the currently-viewed session we trust the SSE-derived status
   // over the last poll (OpenCode's DB can lag SSE by several seconds;
   // using the poll value here would leave the sidebar pulse running
@@ -138,7 +139,7 @@ export function SidebarSessionRow({
         <span className="session-sidebar-title">
           {cleanTitle(sib.title) || 'Untitled'}
         </span>
-        {!inGroup && !flat && (
+        {!inGroup && !flat && depth === 0 && (
           <>
             <span className="session-sidebar-project">
               <span className="session-sidebar-project-path">
