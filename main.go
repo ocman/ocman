@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -434,14 +435,21 @@ func validateListenExposure(addr, publicBaseURL string, authConfigured, allowIns
 }
 
 // baseURLIsLoopback reports whether a public base URL names a loopback
-// host. An unparseable or host-less value is treated as non-loopback:
+// host. The parsed hostname is classified on its own: the listener
+// helper's last-colon port split would corrupt bracketed IPv6 literals.
+// An unparseable or host-less value is treated as non-loopback:
 // exposure checks fail closed.
 func baseURLIsLoopback(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return false
 	}
-	return isLoopbackAddr(u.Host)
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay bool) error {

@@ -267,6 +267,13 @@ func TestValidateListenExposure(t *testing.T) {
 		{"loopback with host-only base url refuses", "127.0.0.1:8228", "ocman.example.com", false, false, true},
 		{"loopback with public base url and auth starts", "127.0.0.1:8228", "https://ocman.example.ts.net", true, false, false},
 		{"loopback with public base url and opt-out starts", "127.0.0.1:8228", "https://ocman.example.ts.net", false, true, false},
+		{"loopback with bracketed ipv6 loopback base url starts", "127.0.0.1:8228", "http://[::1]:8443", false, false, false},
+		{"loopback with bare ipv6 loopback base url starts", "127.0.0.1:8228", "http://[::1]", false, false, false},
+		{"loopback with ipv6 loopback range base url starts", "127.0.0.1:8228", "http://127.0.0.2:8228", false, false, false},
+		{"loopback with localhost-suffixed base url starts", "127.0.0.1:8228", "https://ocman.localhost:8443", false, false, false},
+		{"loopback with public ipv6 base url refuses", "127.0.0.1:8228", "https://[2001:db8::1]", false, false, true},
+		{"loopback with ipv6-looking base url refuses", "127.0.0.1:8228", "https://[::1:123]", false, false, true},
+		{"loopback with malformed base url refuses", "127.0.0.1:8228", "http://%zz", false, false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
