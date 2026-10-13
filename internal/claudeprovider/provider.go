@@ -253,10 +253,9 @@ func (h *handler) list(r *http.Request) ([]db.Session, error) {
 		if s.ParentID != "" && s.Status != db.StatusBusy {
 			continue
 		}
-		h.live.overlay(&s)
 		sessions = append(sessions, s)
 	}
-	return append(sessions, h.live.pending(indexed, r.URL.Query().Get("directory"))...), nil
+	return h.live.overlayAndPending(sessions, indexed, r.URL.Query().Get("directory")), nil
 }
 
 func (h *handler) entry(ctx context.Context, id string) (*entry, error) {

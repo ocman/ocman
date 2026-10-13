@@ -239,6 +239,10 @@ func (l *live) overlay(s *db.Session) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.syncOwnedLocked()
+	l.overlayLocked(s)
+}
+
+func (l *live) overlayLocked(s *db.Session) {
 	// The process settled the turn, so its status is authoritative, done
 	// included: an aborted turn's unfinished transcript is not interrupted.
 	if st, ok := l.status[s.ID]; ok && st.Status != "" {
@@ -259,20 +263,25 @@ func (l *live) overlay(s *db.Session) {
 // pending lists owned sessions with no transcript yet: a new session is
 // visible before claude writes its first line.
 func (l *live) pending(indexed map[string]bool, dir string) []db.Session {
+	return l.overlayAndPending(nil, indexed, dir)
+}
+
+func (l *live) overlayAndPending(sessions []db.Session, indexed map[string]bool, dir string) []db.Session {
 	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.syncOwnedLocked()
-	var out []db.Session
+	for i := range sessions {
+		l.overlayLocked(&sessions[i])
+	}
 	for id, o := range l.owned {
 		// Another configuration's sessions have their history there.
 		if !indexed[id] && !l.foreign(o) && (dir == "" || dir == o.Directory) {
-			out = append(out, db.Session{ID: id, Title: o.Title, Directory: o.Directory, TimeCreated: o.Created, TimeUpdated: o.Created, Status: db.StatusDone})
+			s := db.Session{ID: id, Title: o.Title, Directory: o.Directory, TimeCreated: o.Created, TimeUpdated: o.Created, Status: db.StatusDone}
+			l.overlayLocked(&s)
+			sessions = append(sessions, s)
 		}
 	}
-	l.mu.Unlock()
-	for i := range out {
-		l.overlay(&out[i])
-	}
-	return out
+	return sessions
 }
 
 func (l *live) ownedSession(id string) (owned, bool) {
