@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestPluginActionEndpoints(t *testing.T) {
@@ -32,9 +33,7 @@ func TestPluginActionEndpoints(t *testing.T) {
 	// The fixture records exactly what the host sends, then returns every result kind.
 	result := `{"type":"result","result":{"id":"1","value":{"results":[{"kind":"notice","text":"Done"},{"kind":"link","label":"Website","url":"https://example.com"},{"kind":"artifact","label":"report.txt","data":"aGk="},{"kind":"navigation","target":"settings"},{"kind":"refresh","target":"actions"}]}}}`
 	script := "#!/bin/sh\nIFS= read -r hello <<EOF\n" + string(hello) + "\nEOF\nprintf '%s\\n' \"$hello\"\nif [ \"$1\" = serve ]; then\nread -r ack\nread -r call\nprintf '%s\\n' \"$call\" >> calls\nprintf '%s\\n' '" + result + "'\nread -r shutdown\nfi\n"
-	if err := os.WriteFile(filepath.Join(dir, "ocman-plugin-actions"), []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, filepath.Join(dir, "ocman-plugin-actions"), script)
 	if _, err := s.RescanPlugins(t.Context()); err != nil {
 		t.Fatal(err)
 	}

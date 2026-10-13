@@ -2,9 +2,9 @@ package claudeprovider
 
 import (
 	"bytes"
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -41,11 +41,6 @@ type liveHarness struct {
 	dir     string
 }
 
-var fakeBinary struct {
-	once sync.Once
-	path string
-}
-
 // startLive serves the provider with the fake claude replaying fixture and
 // starts the adapter's headless event stream.
 func startLive(t *testing.T, fixturePath string, tweak func(*Options)) *liveHarness {
@@ -58,10 +53,7 @@ func startLive(t *testing.T, fixturePath string, tweak func(*Options)) *liveHarn
 // serveLive is startLive without the headless stream.
 func serveLive(t *testing.T, fixturePath string, tweak func(*Options)) *liveHarness {
 	t.Helper()
-	fakeBinary.once.Do(func() { fakeBinary.path = claudetest.Binary(t) })
-	if _, err := os.Stat(fakeBinary.path); err != nil {
-		fakeBinary.path = claudetest.Binary(t) // the first test's TempDir is gone
-	}
+	binary := claudetest.Binary(t)
 	dir, err := os.MkdirTemp("", "cl-") // short: unix socket path limit
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +62,7 @@ func serveLive(t *testing.T, fixturePath string, tweak func(*Options)) *liveHarn
 	h := &liveHarness{args: filepath.Join(dir, "args.json"), dir: dir}
 	t.Setenv("FAKE_CLAUDE_FIXTURE", fixturePath)
 	t.Setenv("FAKE_CLAUDE_ARGS", h.args)
-	opts := Options{IndexPath: filepath.Join(dir, "claude-index.db"), ConfigDir: fixture(t), CLI: fakeBinary.path,
+	opts := Options{IndexPath: filepath.Join(dir, "claude-index.db"), ConfigDir: fixture(t), CLI: binary,
 		Sweep: time.Hour, StatePath: filepath.Join(dir, "owned.json"), MCPConfig: `{"mcpServers":{}}`, PluginDir: dir}
 	if tweak != nil {
 		tweak(&opts)

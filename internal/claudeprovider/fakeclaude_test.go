@@ -15,10 +15,7 @@ import (
 // The fake CLI rejects stdin the real CLI cannot use, so a protocol bug in
 // ocman fails the replay instead of passing silently (NFR-6).
 func TestFakeCLIRejectsMalformedInput(t *testing.T) {
-	fakeBinary.once.Do(func() { fakeBinary.path = claudetest.Binary(t) })
-	if _, err := os.Stat(fakeBinary.path); err != nil {
-		fakeBinary.path = claudetest.Binary(t)
-	}
+	binary := claudetest.Binary(t)
 	control := filepath.Join(t.TempDir(), "control.jsonl")
 	if err := os.WriteFile(control, []byte(`{"direction":"stdin","message":{"type":"control_request"}}`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -45,7 +42,7 @@ func TestFakeCLIRejectsMalformedInput(t *testing.T) {
 		"well formed user ok":    {user, `{"type":"user","message":{"role":"user","content":"hi"},"uuid":"u"}` + "\n", ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			cmd := claudetest.Command(fakeBinary.path, tc.fixture, "-p")
+			cmd := claudetest.Command(binary, tc.fixture, "-p")
 			cmd.Stdin = strings.NewReader(tc.stdin)
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr

@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // TestServeHelper is a real child process; its script only selects a test mode.
@@ -172,9 +174,7 @@ func processFixture(t *testing.T, mode string) LaunchConfig {
 	}
 	path := filepath.Join(t.TempDir(), "ocman-plugin-test")
 	script := fmt.Sprintf("#!/bin/sh\nexport GORACE=atexit_sleep_ms=0\nexec %q -test.run=^TestServeHelper$ -- %q \"$@\" %q\n", exe, mode, dir)
-	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, path, script)
 	info, _ := os.Stat(path)
 	checksum, err := executableChecksum(path, info)
 	if err != nil {

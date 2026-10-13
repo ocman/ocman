@@ -196,16 +196,7 @@ func TestAcceptedUnwrittenSendKeepsTurnOpen(t *testing.T) {
 // the idle edge; the reset publishes none.
 func TestSendRacingLimitResetKeepsTurnOpen(t *testing.T) {
 	gate := filepath.Join(t.TempDir(), "gate")
-	resets := time.Now().Add(time.Second).Unix()
-	h := startLive(t, writeFixture(t, fmt.Sprintf(`{"direction":"stdin","message":{"type":"user"}}
-{"direction":"stdout","message":{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":%d,"rateLimitType":"five_hour"}}}
-{"direction":"stdout","message":{"type":"result","is_error":true,"subtype":"success","result":"Claude usage limit reached"}}
-{"direction":"stdin","message":{"type":"user"}}
-{"direction":"stdout","message":{"type":"user","isReplay":true,"uuid":"$input:2","message":{"role":"user","content":"second"}}}
-{"direction":"wait","message":%q}
-{"direction":"stdout","message":{"type":"assistant","message":{"id":"msg_2","model":"haiku","content":[{"type":"text","text":"SECOND"}]}}}
-{"direction":"stdout","message":{"type":"result","subtype":"success","is_error":false,"result":"SECOND"}}
-`, resets, gate)), nil)
+	h := startLive(t, "", nil)
 	id := h.create(t)
 	var once sync.Once
 	setHook(t, func(point, sid string) {
@@ -213,6 +204,17 @@ func TestSendRacingLimitResetKeepsTurnOpen(t *testing.T) {
 			once.Do(func() { h.send(t, id, "second") })
 		}
 	})
+	// Leave at least one whole second after setup despite Unix truncation.
+	resets := time.Now().Unix() + 2
+	t.Setenv("FAKE_CLAUDE_FIXTURE", writeFixture(t, fmt.Sprintf(`{"direction":"stdin","message":{"type":"user"}}
+{"direction":"stdout","message":{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":%d,"rateLimitType":"five_hour"}}}
+{"direction":"stdout","message":{"type":"result","is_error":true,"subtype":"success","result":"Claude usage limit reached"}}
+{"direction":"stdin","message":{"type":"user"}}
+{"direction":"stdout","message":{"type":"user","isReplay":true,"uuid":"$input:2","message":{"role":"user","content":"second"}}}
+{"direction":"wait","message":%q}
+{"direction":"stdout","message":{"type":"assistant","message":{"id":"msg_2","model":"haiku","content":[{"type":"text","text":"SECOND"}]}}}
+{"direction":"stdout","message":{"type":"result","subtype":"success","is_error":false,"result":"SECOND"}}
+`, resets, gate)))
 	h.send(t, id, "first")
 	waitFor(t, "limited", func() bool { s, _, _ := h.events.get(id); return s == db.StatusLimited })
 	waitFor(t, "reset reached", func() bool { return h.gen(id) == 2 })

@@ -230,7 +230,7 @@ func TestClaudeJudgeDecidesWithoutOpenCode(t *testing.T) {
 	})
 	svc = autoapprove.NewService(autoapprove.Deps{DefaultEnabled: true,
 		SessionDir:    func(string) (string, error) { return h.dir, nil },
-		FallbackJudge: autoapprove.ClaudeJudge{CLI: fakeBinary.path}})
+		FallbackJudge: autoapprove.ClaudeJudge{CLI: h.live.opts.CLI}})
 	id := h.create(t)
 	// Claude records the user's message before asking; the fake does not
 	// write transcripts, so place the line it would have written.

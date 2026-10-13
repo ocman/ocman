@@ -162,9 +162,7 @@ func TestPluginEnableRequiresReviewedRegistration(t *testing.T) {
 
 func TestPluginRejectedDiscoveryDiagnostics(t *testing.T) {
 	f := newPluginManagementTest(t)
-	if err := os.WriteFile(filepath.Join(f.dir, "ocman-plugin-broken"), []byte("#!/bin/sh\necho malformed-private-output\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, filepath.Join(f.dir, "ocman-plugin-broken"), "#!/bin/sh\necho malformed-private-output\n")
 	f.call(t, "POST", "/rescan", `{}`, 200)
 	body := f.call(t, "GET", "/discovery", "", 200)
 	if !strings.Contains(body, "ocman-plugin-broken") || !strings.Contains(body, plugins.ErrInvalidMessage.Error()) || strings.Contains(body, "private-output") {

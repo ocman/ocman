@@ -37,14 +37,11 @@ const teamAccount = `{"subtype":"success","request_id":"ocman-initialize","respo
 // fixture; every stdin line it receives is logged to the returned path.
 func fakeAccount(t *testing.T, response string) (*account, string) {
 	t.Helper()
-	fakeBinary.once.Do(func() { fakeBinary.path = claudetest.Binary(t) })
-	if _, err := os.Stat(fakeBinary.path); err != nil {
-		fakeBinary.path = claudetest.Binary(t)
-	}
+	binary := claudetest.Binary(t)
 	stdin := filepath.Join(t.TempDir(), "stdin.log")
 	t.Setenv("FAKE_CLAUDE_FIXTURE", initFixture(t, response))
 	t.Setenv("FAKE_CLAUDE_STDIN", stdin)
-	return newAccount(Options{CLI: fakeBinary.path, UsagePath: filepath.Join(t.TempDir(), "claude-usage.json")}), stdin
+	return newAccount(Options{CLI: binary, UsagePath: filepath.Join(t.TempDir(), "claude-usage.json")}), stdin
 }
 
 // Ocman never reads, stores or proxies Claude credentials (requirements

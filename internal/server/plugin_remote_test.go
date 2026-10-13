@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -177,9 +176,7 @@ func installRoutedAction(t *testing.T, s *Server, scope plugins.Scope, label str
 	script := "#!/bin/sh\n/bin/cat <<EOF\n" + string(hello) + "\nEOF\nif [ \"$1\" = serve ]; then\nread -r ack\nn=0\nwhile IFS= read -r call; do\nn=$((n + 1))\nprintf '%s\\n' \"$call\" >> calls\n/bin/cat <<EOF\n" + result + "\nEOF\ndone\nfi\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ocman-plugin-test")
-	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, path, script)
 	catalog, err := plugins.Scan(t.Context(), dir, nil)
 	if err != nil || len(catalog) != 1 || catalog[0].Err != nil {
 		t.Fatalf("scan: %+v %v", catalog, err)

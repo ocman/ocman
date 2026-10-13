@@ -48,18 +48,20 @@ func InstallFakeTmux(t testing.TB, bin, pids string) {
 	})
 }
 
-// Binary builds the fake into a temp directory as "claude", so it can be
-// put first on PATH, and returns its path.
+// Binary builds a caller-owned fake as "claude", so it can be moved onto PATH.
+// Warm it before returning: macOS first-exec latency must not consume the
+// production version-probe or readiness deadline.
 func Binary(t testing.TB) string {
 	t.Helper()
-	dir := t.TempDir()
-	binary := filepath.Join(dir, "claude")
+	binary := filepath.Join(t.TempDir(), "claude")
 	cmd := exec.Command("go", "build", "-o", binary, filepath.Join(root(), "internal", "claudeprovider", "testdata", "fakeclaude"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build fake claude: %v\n%s", err, out)
 	}
-	// Complete macOS's first-exec binary scan before timed provider probes.
-	if out, err := exec.Command(binary, "--version").CombinedOutput(); err != nil {
+	// Do not write a caller's FAKE_CLAUDE_ARGS or use its version override.
+	warm := exec.CommandContext(t.Context(), binary, "--version")
+	warm.Env = []string{}
+	if out, err := warm.CombinedOutput(); err != nil {
 		t.Fatalf("warm fake claude: %v\n%s", err, out)
 	}
 	return binary

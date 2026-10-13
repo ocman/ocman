@@ -195,12 +195,14 @@ func drainIdle(t *testing.T, h *liveHarness) bool {
 // drain until the reset time, across an ocman restart. At the reset the turn
 // settles as failed and the idle edge is delivered.
 func TestUsageLimitHoldsUntilReset(t *testing.T) {
-	resets := time.Now().Add(time.Hour).Unix()
-	h := startLive(t, writeFixture(t, fmt.Sprintf(`{"direction":"stdin","message":{"type":"user"}}
+	h := startLive(t, "", nil)
+	id := h.create(t)
+	// Start the reset clock after CLI setup, not while building/probing it.
+	resets := time.Now().Unix() + 2
+	t.Setenv("FAKE_CLAUDE_FIXTURE", writeFixture(t, fmt.Sprintf(`{"direction":"stdin","message":{"type":"user"}}
 {"direction":"stdout","message":{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":%d,"rateLimitType":"five_hour"}}}
 {"direction":"stdout","message":{"type":"result","is_error":true,"subtype":"success","result":"Claude usage limit reached"}}
-`, resets)), nil)
-	id := h.create(t)
+`, resets)))
 	h.send(t, id, "hi")
 	waitFor(t, "limited", func() bool { s, at, _ := h.events.get(id); return s == db.StatusLimited && at == resets*1000 })
 	waitFor(t, "result handled", func() bool { return h.visible(id, "usage limit reached") })
@@ -230,20 +232,14 @@ func TestUsageLimitHoldsUntilReset(t *testing.T) {
 	if drainIdle(t, h) {
 		t.Fatal("a limited session let the supervisor drain")
 	}
-	// Expire only after restart assertions, independent of runner speed.
-	waitFor(t, "reset timer", func() bool {
-		h.live.mu.Lock()
-		defer h.live.mu.Unlock()
-		return h.live.resets[id] != nil
-	})
-	h.live.mu.Lock()
-	h.live.resets[id].Reset(0)
-	h.live.mu.Unlock()
 
 	select {
 	case <-idled:
 	case <-time.After(10 * time.Second):
 		t.Fatal("no idle edge after the reset time")
+	}
+	if time.Now().Unix() < resets {
+		t.Fatal("idle edge before the reset time")
 	}
 	settledAs(t, restarted, id, db.StatusError)
 	if !drainIdle(t, h) {
