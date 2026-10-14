@@ -55,6 +55,10 @@ function makeSession(overrides: Partial<SessionWithDefaults> = {}): SessionWithD
 }
 
 describe('formatModelRef', () => {
+  it('ignores synthetic error model placeholders', () => {
+    expect(formatModelRef('anthropic', '<synthetic>')).toBe('');
+    expect(formatModelRef(undefined, 'anthropic/<synthetic>')).toBe('');
+  });
   it('returns provider/model when both are present', () => {
     expect(formatModelRef('anthropic', 'claude-opus-4')).toBe('anthropic/claude-opus-4');
   });

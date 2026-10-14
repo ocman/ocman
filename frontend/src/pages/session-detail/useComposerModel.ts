@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { AgentInfo, Message, Part } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
-import { agentModelRef, deriveActiveModelAndAgent } from '../../lib/sessionStatus';
+import { agentModelRef, deriveActiveModelAndAgent, formatModelRef } from '../../lib/sessionStatus';
 import { computeTurnStats, latestTurnModel, messageModelRef } from '../../lib/turnStats';
 import { startModels } from './startHandoffs';
 import { modelRefForSession } from '../../lib/modelRef';
@@ -66,14 +66,14 @@ export function useComposerModel({
       const latestUser = messages.findLast((message) => message.data?.role === 'user');
       // New-conversation and project picks may name their platform; this
       // session takes only its own platform's (prefix stripped).
-      const own = (ref: string | undefined) => modelRefForSession(ref || '', session?.platform);
+      const own = (ref: string | undefined) => formatModelRef(undefined, modelRefForSession(ref || '', session?.platform));
+      const projectModel = own(session?.projectDefaultModel) || own(getProjectModel(session?.directory || ''));
       return own(session?.id === id && id ? startModels.get(id) : '') ||
         (latestUser ? messageModelRef(latestUser) : '') ||
         latestTurnModel(messages, turnStatsMap) ||
-        (messages.length === 0
-          ? own(session?.projectDefaultModel) || own(getProjectModel(session?.directory || ''))
-          : '') ||
-        session?.defaultModel ||
+        (messages.length === 0 ? projectModel : '') ||
+        own(session?.defaultModel) ||
+        projectModel ||
         '';
     },
     [id, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel, session?.platform],
@@ -94,7 +94,7 @@ export function useComposerModel({
   }, [activeModel, id, session?.id, setSelectedModel]);
 
   const composerModels = useMemo(
-    () => Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model))),
+    () => Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].map((model) => formatModelRef(undefined, model)).filter(Boolean))),
     [activeModel, session?.defaultModel, modelOptions],
   );
 

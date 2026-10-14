@@ -56,7 +56,7 @@ export type SessionWithDefaults = Session & {
  * model is set.
  */
 export function formatModelRef(providerId?: string, modelId?: string): string {
-  if (!modelId) return '';
+  if (!modelId || modelId.split('/').at(-1) === '<synthetic>') return '';
   return providerId ? `${providerId}/${modelId}` : modelId;
 }
 
@@ -259,7 +259,7 @@ export function deriveActiveModelAndAgent(
     if (activeModel && activeAgent) break;
   }
 
-  if (!activeModel) activeModel = session?.defaultModel || '';
+  if (!activeModel) activeModel = formatModelRef(undefined, session?.defaultModel);
   if (!activeAgent) activeAgent = session?.defaultAgent || '';
   return { activeModel, activeAgent };
 }

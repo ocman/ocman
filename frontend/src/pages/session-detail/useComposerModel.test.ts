@@ -56,6 +56,29 @@ describe('useComposerModel', () => {
     expect(o.setSelectedModel).not.toHaveBeenCalled();
   });
 
+  it('reopens an errored turn using the last real model', () => {
+    const o = opts({
+      session: { ...session, platform: 'claudecode', defaultModel: '<synthetic>' },
+      messages: [...turnOn('anthropic/haiku'), ...turnOn('anthropic/<synthetic>').map((message) => ({ ...message, id: `${message.id}-error` }))],
+    });
+    const { result } = renderHook(() => useComposerModel(o));
+    expect(result.current.activeModel).toBe('anthropic/haiku');
+    expect(o.setSelectedModel).toHaveBeenCalledWith('anthropic/haiku');
+    expect(result.current.composerModels).not.toContain('<synthetic>');
+    expect(result.current.composerModels).not.toContain('anthropic/<synthetic>');
+  });
+
+  it('keeps the remembered selection when the first response is synthetic', () => {
+    saveProjectModel('/repo', 'claudecode:anthropic/haiku');
+    const o = opts({
+      session: { ...session, platform: 'claudecode', defaultModel: '<synthetic>' },
+      messages: turnOn('anthropic/<synthetic>'),
+    });
+    const { result } = renderHook(() => useComposerModel(o));
+    expect(result.current.activeModel).toBe('anthropic/haiku');
+    expect(o.setSelectedModel).toHaveBeenCalledWith('anthropic/haiku');
+  });
+
   it('prefers the remembered project model for an empty conversation', () => {
     saveProjectModel('/repo', 'prov/remembered');
     const { result } = renderHook(() => useComposerModel(opts()));
