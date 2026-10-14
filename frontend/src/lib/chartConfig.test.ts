@@ -13,10 +13,15 @@ import {
   BAR_OPTIONS_HOURLY_TOKENS,
   LINE_OPTIONS_COST,
   LINE_OPTIONS_CACHE,
+  LINE_OPTIONS_DATABASE_SIZE,
   DOUGHNUT_OPTIONS,
 } from './chartConfig';
 
 describe('chartConfig', () => {
+  it.each([LINE_OPTIONS_COST, LINE_OPTIONS_CACHE, LINE_OPTIONS_DATABASE_SIZE])('inspects line charts by horizontal position without hitting a point', (options) => {
+    expect(options).toHaveProperty('interaction', { mode: 'nearest', axis: 'x', intersect: false });
+  });
+
   it('exposes a populated colour palette and stop-reason palette', () => {
     expect(CHART_COLORS.length).toBeGreaterThan(0);
     expect(STOP_REASON_COLORS.length).toBeGreaterThan(0);

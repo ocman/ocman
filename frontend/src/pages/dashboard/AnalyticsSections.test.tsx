@@ -155,6 +155,7 @@ describe('analytics sections', () => {
     expect(options.scales.x.type).toBe('linear');
     expect(options.scales.y.beginAtZero).toBe(true);
     expect(options.scales.y.ticks.precision).toBe(0);
+    expect(options.interaction).toEqual({ mode: 'nearest', axis: 'x', intersect: false });
     const callbacks = lineOptions.mock.lastCall?.[0];
     expect(callbacks.scales.x.ticks.callback(1000)).toBe(new Date(1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' }));
     expect(callbacks.plugins.tooltip.callbacks.title([{ parsed: { x: 1000 } }])).toBe(new Date(1000).toLocaleString());

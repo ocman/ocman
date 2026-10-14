@@ -3,7 +3,7 @@ import './ActivityTab.css';
 import { InlineAlert } from '../../components/InlineAlert';
 import { Bar, Line } from 'react-chartjs-2';
 import type { ActivityDay, SessionConcurrency } from '../../lib/api';
-import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS, CHART_COLORS } from '../../lib/chartConfig';
+import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS, CHART_COLORS, LINE_INTERACTION } from '../../lib/chartConfig';
 import { useActivity, useHourly, useSessionConcurrency } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
@@ -54,6 +54,7 @@ function ParallelSessionsChart({ data }: { data?: SessionConcurrency }) {
         datasets: [{ label: 'Peak simultaneous sessions', data: data?.series.map((point) => ({ x: point.timestamp, y: point.sessions })) ?? [], borderColor: CHART_COLORS[0], pointRadius: data?.series.length === 1 ? 3 : 0, stepped: true }],
       }} options={{
         ...BAR_OPTIONS_HOURLY,
+        interaction: LINE_INTERACTION,
         scales: {
           x: { type: 'linear', grid: { display: false }, ticks: { maxTicksLimit: 10, callback: (value) => new Date(Number(value)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' }) } },
           y: { beginAtZero: true, ticks: { precision: 0 } },

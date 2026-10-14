@@ -25,6 +25,7 @@ export const STOP_REASON_COLORS = [
 
 const baseLegendLabels = { color: '#bac2de', boxWidth: 12, padding: 12 } as const;
 const stackedInteraction = { mode: 'index' as const, intersect: false } as const;
+export const LINE_INTERACTION = { mode: 'nearest', axis: 'x', intersect: false } as const;
 type TooltipTotalItem = { parsed: { x?: number | null; y?: number | null } };
 const tooltipTotal = (items: TooltipTotalItem[]) => `Total: ${formatCompactNumber(items.reduce((sum, item) => sum + Number(item.parsed.y ?? item.parsed.x ?? 0), 0))}`;
 const tooltipCostTotal = (items: TooltipTotalItem[]) => `Total: ${formatCurrency(items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0), 2)}`;
@@ -96,6 +97,7 @@ export const BAR_OPTIONS_STACKED = {
 
 /** Cumulative cost line chart with currency formatting. */
 export const LINE_OPTIONS_COST = {
+  interaction: LINE_INTERACTION,
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
@@ -137,6 +139,7 @@ export const BAR_OPTIONS_COST_BY_MODEL = {
 
 /** Cache-efficiency line chart capped at 100 % with `%` suffix. */
 export const LINE_OPTIONS_CACHE = {
+  interaction: LINE_INTERACTION,
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
@@ -152,6 +155,7 @@ export const LINE_OPTIONS_CACHE = {
 } as const;
 
 export const LINE_OPTIONS_DATABASE_SIZE = {
+  interaction: LINE_INTERACTION,
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
