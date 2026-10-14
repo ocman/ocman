@@ -45,12 +45,12 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
   } else if (routeSessionId && sessionInfo.sessionTitle) {
     breadcrumb = (
       <>
+        {sessionInfo.sessionTitle}
         {sessionInfo.sessionPlatform && (
           <>
-            <PlatformBadge platform={sessionInfo.sessionPlatform} />{' '}
+            <PlatformBadge platform={sessionInfo.sessionPlatform} variant="icon" />
           </>
         )}
-        {sessionInfo.sessionTitle}
       </>
     );
   }
@@ -68,7 +68,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
           <img src="/favicon.svg" alt="" width={20} height={20} />
         </button>
         <span id="header-mobile-title-slot" className="header-mobile-title-slot" />
-        <span className="header-breadcrumb">{breadcrumb}</span>
+        <span className="header-breadcrumb" data-testid="header-breadcrumb">{breadcrumb}</span>
       </h1>
       <div className="header-right">
         {projectDir && <ProjectMachinePill remoteId={projectOwner} />}

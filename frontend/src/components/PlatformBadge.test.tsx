@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useMultiPlatform } from '../lib/useCapabilities';
 import { PlatformBadge } from './PlatformBadge';
@@ -22,7 +22,29 @@ it('renders known, remote, and unknown platform labels', () => {
 	expect(screen.getByLabelText('OpenCode')).toHaveTextContent('OC');
 	expect(screen.getByLabelText('OpenCode')).toHaveClass('platform-opencode', 'compact');
 
+	rerender(<PlatformBadge platform="claudecode" />);
+	expect(screen.getByLabelText('Claude Code')).toHaveTextContent('Claude Code');
+
 	rerender(<PlatformBadge platform="custom" variant="plain" />);
 	expect(screen.getByLabelText('custom')).toHaveTextContent('CU');
 	expect(screen.getByLabelText('custom')).toHaveClass('platform-custom', 'plain');
+});
+
+it('shows accessible icon-only indicators with a platform explanation', async () => {
+	const { rerender } = render(<PlatformBadge platform="opencode" />);
+	expect(screen.getByLabelText('OpenCode').querySelector('img')).toBeNull();
+	for (const [platform, label] of [['r-owner:opencode', 'OpenCode'], ['claudecode', 'Claude Code']]) {
+		rerender(<PlatformBadge platform={platform} variant="icon" />);
+		const icon = screen.getByLabelText(label).querySelector('img');
+		expect(icon).toHaveAttribute('src', `/platform-${platform.split(':').pop()}.svg`);
+		expect(icon).toHaveAttribute('alt', '');
+		expect(icon).toHaveAttribute('width', '16');
+		expect(icon).toHaveAttribute('height', '16');
+		expect(screen.getByLabelText(label)).toHaveAttribute('tabindex', '0');
+		fireEvent.focus(screen.getByLabelText(label));
+		expect(await screen.findByRole('tooltip')).toHaveTextContent(`This session runs on ${label}.`);
+		fireEvent.blur(screen.getByLabelText(label));
+	}
+	rerender(<PlatformBadge platform="custom" variant="icon" />);
+	expect(screen.getByLabelText('custom').querySelector('img')).toBeNull();
 });

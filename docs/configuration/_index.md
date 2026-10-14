@@ -137,7 +137,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `-log-file` | _(platform default)_ | Also write the log to this file (plain text, dir `0700`, file `0600`). Default `~/Library/Logs/ocman/ocman.log` on macOS, otherwise `$XDG_STATE_HOME/ocman/ocman.log` (`~/.local/state/ocman/ocman.log`). A file over 10 MB at startup moves to `ocman.log.1`. `-` or `off` logs to stderr only. Check this file when the desktop app fails to start. |
 | `-gui-boot-timeout` | `10s` | With `-gui`, how long to wait for the backend to answer before showing an error dialog instead of opening the window. In `-gui` mode every startup failure shows a native alert (macOS `osascript`, Linux `zenity` when installed) naming the log file. |
 | `-mcp-addr` | `127.0.0.1:8227` | Loopback listen address for the MCP endpoint. Local clients reach it without auth, so non-loopback addresses are refused. Empty disables it. |
-| `-platforms` | `opencode,claudecode` | Comma-separated list of platforms to enable (`opencode`, `claudecode`). Without `opencode`, the OpenCode binary and database are not needed. See [Claude Code](../features/claude-code.md). |
+| `-platforms` | Saved selection, otherwise `opencode,claudecode` | Override Settings → Platforms for this launch with a comma-separated list (`opencode`, `claudecode`). Without `opencode`, the OpenCode binary and database are not needed. See [Claude Code](../features/claude-code.md). |
 | `-public-base-url` | _(unset)_ | Externally reachable base URL, e.g. `https://ocman.example.ts.net`. Used for the links ocman hands to readers elsewhere (share links, plugin attention notices) and for cookie/origin decisions. Falls back to the listen address, which only works locally. Also `OCMAN_PUBLIC_BASE_URL`. |
 | `-auth-password` | _(unset)_ | Password to require. Prefer `OCMAN_AUTH_PASSWORD` or `-auth-password-file`. |
 | `-auth-password-file` | _(unset)_ | Read auth password from file (trailing whitespace trimmed). |
@@ -290,7 +290,17 @@ than an unreachable instance.
 
 ## Claude Code
 
-`-platforms claudecode` enables Claude Code sessions. Setup, permissions, the opt-in
+Settings → Platforms selects the coding platforms enabled on this machine,
+including in the desktop app. Saving reloads the backend in the same process,
+keeping the desktop window and managed agent processes running. Active local
+turns, permission/question prompts and queued messages finish before reload.
+New turns are paused during that drain; prompt replies and abort remain available.
+The browser's event streams reconnect to the same address after reload.
+Keep at least one platform enabled. Remote instances use their own settings.
+An explicit `-platforms` flag overrides the saved selection for that launch.
+Both platforms are enabled when no selection has been saved.
+
+`-platforms claudecode` enables only Claude Code sessions. Setup, permissions, the opt-in
 terminal-session hooks, subscription usage and limits are described in
 [Claude Code](../features/claude-code.md).
 

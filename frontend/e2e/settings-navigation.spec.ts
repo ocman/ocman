@@ -1,6 +1,31 @@
 import { test, expect } from './fixtures';
 
 for (const width of [1280, 390]) {
+  test(`platform selection is available in Settings at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    let enabled = ['opencode', 'claudecode'];
+    await page.route('/api/settings/platforms', (route) => {
+      if (route.request().method() === 'POST') enabled = route.request().postDataJSON().enabled;
+      return route.fulfill({ json: { enabled } });
+    });
+    const openPlatforms = async () => {
+      await page.goto('/settings');
+      if (width === 390) await page.getByRole('combobox', { name: 'Settings group', exact: true }).selectOption('platforms');
+      else await page.getByRole('button', { name: 'Platforms', exact: true }).click();
+    };
+    await openPlatforms();
+    const openCode = page.getByRole('checkbox', { name: 'OpenCode', exact: true });
+    const claude = page.getByRole('checkbox', { name: 'Claude Code', exact: true });
+    await expect(openCode).toBeChecked();
+    await expect(claude).toBeChecked();
+    await openCode.uncheck();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Platform changes applied');
+    expect(enabled).toEqual(['claudecode']);
+    await openPlatforms();
+    await expect(openCode).not.toBeChecked();
+    await expect(claude).toBeChecked();
+  });
   test(`Remotes table scrolls inside Settings at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/settings');

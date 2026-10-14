@@ -8,6 +8,8 @@ import type { CapabilitiesResponse } from './api';
 // *and* after the cache warmed.
 
 const capabilities = vi.fn<() => Promise<CapabilitiesResponse>>();
+const connections = vi.hoisted(() => new Set<() => void>());
+vi.mock('./useGlobalEvents', () => ({ onSseConnect: (cb: () => void) => { connections.add(cb); return () => connections.delete(cb); } }));
 vi.mock('./api', () => ({ api: { capabilities: () => capabilities() } }));
 
 const hostCaps = { gitDiff: true, worktrees: true, tmux: true, projects: true, whisper: true, opencodeLaunch: true };
@@ -27,6 +29,7 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
     vi.resetModules();
     vi.useFakeTimers();
     capabilities.mockReset();
+    connections.clear();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -76,5 +79,18 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(view.result.current).toBe(true);
     expect(capabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the catalog for mounted consumers when the backend reconnects', async () => {
+    capabilities.mockResolvedValueOnce(resp()).mockResolvedValue(resp('new-owner'));
+    const mod = await import('./useCapabilities');
+    const view = renderHook(() => mod.useCapabilities());
+    await flush();
+    expect(view.result.current?.hosts).toHaveLength(1);
+    act(() => { for (const cb of connections) cb(); });
+    await flush();
+    expect(view.result.current?.hosts).toHaveLength(2);
+    view.unmount();
+    expect(connections.size).toBe(0);
   });
 });

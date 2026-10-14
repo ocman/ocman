@@ -29,6 +29,7 @@ type Registry interface {
 // judge cancellation, projects-index refresh) fire no matter which
 // transport initiated the mutation.
 type Hooks struct {
+	BeginTurn func(context.Context, platforms.ID) (func(), error)
 	// PermissionReplied fires after the owning adapter is resolved and
 	// before a permission reply is forwarded to it. The server wires
 	// this to cancelAutoApprove: the user has decided, so the AI
@@ -141,10 +142,11 @@ func (s *Service) ExecuteCommand(ctx context.Context, platformID string, req pla
 	if req.Command == "" {
 		return validation("command is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {
 		return err
 	}
@@ -156,10 +158,11 @@ func (s *Service) RunShell(ctx context.Context, platformID string, req platforms
 	if strings.TrimSpace(req.Command) == "" {
 		return validation("command is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	return p.RunShell(ctx, req)
 }
 
@@ -239,10 +242,11 @@ func (s *Service) Compact(ctx context.Context, platformID string, req platforms.
 	if req.ProviderID == "" || req.ModelID == "" {
 		return validation("providerID and modelID are required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	return p.Compact(ctx, req)
 }
 
@@ -252,10 +256,11 @@ func (s *Service) Fork(ctx context.Context, platformID string, req platforms.For
 	if req.SessionID == "" {
 		return nil, validation("session ID is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return nil, err
 	}
+	defer finish()
 	resp, err := p.ForkSession(ctx, req)
 	if err != nil {
 		return nil, err

@@ -1,4 +1,41 @@
-import { test, expect } from './fixtures';
+import { test, expect, MOCK_SESSION } from './fixtures';
+
+for (const [platform, label] of [['opencode', 'OpenCode'], ['claudecode', 'Claude Code']]) {
+  test(`${label} header icon is muted until hover and explains the platform`, async ({ mockedPage: page }) => {
+    await page.route('/api/capabilities', route => route.fulfill({ json: {
+      platforms: ['opencode', 'claudecode'].map(id => ({ id, displayName: id, available: true, capabilities: {} })),
+      hosts: [], worktreeSessions: false,
+    } }));
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
+      session: { ...MOCK_SESSION, platform }, sessionTree: [], messages: [], parts: [], totalMessages: 0,
+    } }));
+    await page.goto(`/session/${MOCK_SESSION.id}`);
+    const heading = page.getByRole('banner').getByRole('heading');
+    const icon = heading.getByLabel(label, { exact: true });
+    const image = icon.locator('img');
+    await expect(page.getByTestId('header-breadcrumb')).toHaveText(`${MOCK_SESSION.title} ·`);
+    await expect(image).toHaveAttribute('src', `/platform-${platform}.svg`);
+    await expect(image).toHaveCSS('width', '16px');
+    await expect(image).toHaveCSS('top', '-2px');
+    await expect(image).toHaveCSS('filter', 'grayscale(1)');
+    await expect(image).toHaveCSS('opacity', '0.55');
+    await icon.hover();
+    await expect(image).toHaveCSS('filter', 'none');
+    await expect(image).toHaveCSS('opacity', '1');
+    await expect(page.getByRole('tooltip')).toHaveText(`This session runs on ${label}.`);
+  });
+}
+
+test('desktop session title aligns with other page titles', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/sessions');
+  const title = page.getByTestId('header-breadcrumb');
+  await expect(title).toHaveText('Sessions');
+  const pageTitleX = (await title.boundingBox())!.x;
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  await expect(title).toContainText(MOCK_SESSION.title);
+  expect((await title.boundingBox())!.x).toBeCloseTo(pageTitleX, 1);
+});
 
 test('shell keeps desktop, mobile and native navigation geometry', async ({ mockedPage: page }, testInfo) => {
   await page.goto('/sessions');

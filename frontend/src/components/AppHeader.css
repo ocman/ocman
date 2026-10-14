@@ -3,6 +3,8 @@
 .app-header h1 > a { color: var(--text); font-weight: 600; }
 .app-header h1 span { color: inherit; font-weight: 400; }
 .header-breadcrumb { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.header-navigation-slot,
+.header-mobile-title-slot { display: none; }
 .header-navigation-slot:empty,
 .header-mobile-title-slot:empty { display: none; }
 .header-mobile-title-slot { color: var(--text); }
@@ -50,6 +52,8 @@
 @media (max-width: 768px) {
   .app-header { padding: 0 12px; }
   .app-header h1 { flex: 1; overflow: hidden; }
+  .header-navigation-slot,
+  .header-mobile-title-slot { display: inline-flex; }
   .header-navigation-slot { flex-shrink: 0; }
   .header-right { max-width: none; flex-shrink: 0; }
   .header-project { max-width: 28vw; }

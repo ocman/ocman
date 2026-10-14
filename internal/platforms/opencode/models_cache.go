@@ -622,6 +622,11 @@ func waitSessionsRefresh() {
 }
 
 func ResetCachesForTests() {
+	ResetCaches()
+}
+
+// ResetCaches joins refreshers before a backend reload closes its database.
+func ResetCaches() {
 	// Wait out any background refresh first, or it would repopulate the
 	// snapshot we are about to clear.
 	waitSessionsRefresh()

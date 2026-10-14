@@ -76,10 +76,11 @@ type sessionKey struct {
 
 // Service manages the follow-up queue.
 type Service struct {
-	store  Store
-	sender Sender
-	status StatusInferer
-	notify func(context.Context, string, string) // optional; broadcast queue.updated
+	store          Store
+	sender         Sender
+	status         StatusInferer
+	notify         func(context.Context, string, string) // optional; broadcast queue.updated
+	beginAdmission func(context.Context, string) (func(), error)
 
 	// One lock per session serializes flush drains so an enqueue-driven
 	// flush and an idle-driven flush cannot pop the same head twice.
@@ -184,6 +185,13 @@ var ErrEmptyMessage = errors.New("message or images required")
 // queue intact even if the status poll blips to idle. A genuine
 // session.idle (via Flush) drains a backlog.
 func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue bool, req platforms.SendMessageRequest) error {
+	if s.beginAdmission != nil {
+		finish, err := s.beginAdmission(ctx, platformID)
+		if err != nil {
+			return err
+		}
+		defer finish()
+	}
 	if req.Message == "" && len(req.Images) == 0 {
 		return ErrEmptyMessage
 	}

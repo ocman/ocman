@@ -915,7 +915,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
         </PerfProfiler>
         <div className="session-main" data-testid="session-main">
           {session && mobilePanel !== 'sidebar' && <HeaderPortal>
-            {session.status === 'limited' && <StatusBadge status={session.status} resetsAt={session.resetsAt} />}
             <SessionActionsMenu
               sessionId={session.id}
               tmuxAvailable={tmux.available}
@@ -995,6 +994,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   composer={(
                     <>
                     <div className="oc-composer-notices" data-testid="composer-notices" tabIndex={0} role="region" aria-label="Conversation status">
+                      {session.status === 'limited' && <StatusBadge status={session.status} resetsAt={session.resetsAt} />}
                       <SessionSyncIndicator
                         refreshing={view.refreshing}
                         refreshError={view.refreshError}

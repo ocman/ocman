@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { onSseConnect } from './useGlobalEvents';
 
 // How often a mounted consumer waiting on an absent host re-asks the
 // backend, so a remote that connects later appears without a reload.
@@ -102,6 +103,7 @@ export function useCapabilities(): CapabilitiesResponse | null {
       if (!cancelled) setState(c);
     };
     subscribers.add(handler);
+    const unsubscribeConnect = onSseConnect(invalidateAndReload);
     if (!cached) loadCapabilities().catch(() => {
       // Network errors leave state at null. Components defaulting
       // through usePlatformCapabilities will treat that as "no
@@ -110,6 +112,7 @@ export function useCapabilities(): CapabilitiesResponse | null {
     return () => {
       cancelled = true;
       subscribers.delete(handler);
+      unsubscribeConnect();
     };
   }, []);
 

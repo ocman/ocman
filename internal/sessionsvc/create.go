@@ -108,6 +108,11 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if err != nil {
 		return nil, err
 	}
+	finish, err := s.admit(ctx, adapter)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
 	var disposer platforms.SessionDisposer
 	if rules != nil {
 		var ok bool

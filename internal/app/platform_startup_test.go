@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,12 +50,29 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 		flag.CommandLine = flag.NewFlagSet("ocman", flag.ExitOnError)
 		addr := os.Getenv("OCMAN_TEST_STARTUP_ADDR")
 		os.Args = []string{"ocman", "-platforms=test-provider", "-addr=" + addr, "-mcp-addr=", "-log-file=off"}
+		if os.Getenv("OCMAN_TEST_NO_OPENCODE") == "saved" {
+			store, err := state.Open(state.DefaultDBPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.SetSetting(t.Context(), "platforms.enabled", "claudecode"); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			knownPlatforms["claudecode"] = knownPlatforms["test-provider"]
+			os.Args = append(os.Args[:1], os.Args[2:]...)
+		}
 		go func() {
+			client := &http.Client{Timeout: 100 * time.Millisecond}
 			for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-				if conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond); err == nil {
-					_ = conn.Close()
-					_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-					return
+				if resp, err := client.Get("http://" + addr + "/api/auth/me"); err == nil {
+					_ = resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+						return
+					}
 				}
 			}
 			_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
@@ -62,34 +80,38 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 		Run("dev", skillCatalog)
 		return
 	}
-	dir := t.TempDir()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := listener.Addr().String()
-	_ = listener.Close()
-	bin := filepath.Join(dir, "bin")
-	if err := os.Mkdir(bin, 0700); err != nil {
-		t.Fatal(err)
-	}
-	marker := filepath.Join(dir, "opencode-called")
-	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte("#!/bin/sh\n: > \"$OCMAN_TEST_EXEC_MARKER\"\nexit 1\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestStartupWithoutOpenCode$")
-	cmd.Env = append(os.Environ(), "OCMAN_TEST_NO_OPENCODE=1", "OCMAN_TEST_EXEC_MARKER="+marker, "OCMAN_TEST_STARTUP_ADDR="+addr,
-		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir,
-		"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
-		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("startup: %v\n%s", err, out)
-	}
-	if !strings.Contains(string(out), "server stopped gracefully") {
-		t.Fatalf("startup did not complete: %s", out)
-	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("disabled startup executed opencode: %v\n%s", err, out)
+	for _, mode := range []string{"explicit", "saved"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			addr := listener.Addr().String()
+			_ = listener.Close()
+			bin := filepath.Join(dir, "bin")
+			if err := os.Mkdir(bin, 0700); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(dir, "opencode-called")
+			if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte("#!/bin/sh\n: > \"$OCMAN_TEST_EXEC_MARKER\"\nexit 1\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestStartupWithoutOpenCode$")
+			cmd.Env = append(os.Environ(), "OCMAN_TEST_NO_OPENCODE="+mode, "OCMAN_TEST_EXEC_MARKER="+marker, "OCMAN_TEST_STARTUP_ADDR="+addr,
+				"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir,
+				"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
+				"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("startup: %v\n%s", err, out)
+			}
+			if !strings.Contains(string(out), "server stopped gracefully") {
+				t.Fatalf("startup did not complete: %s", out)
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatalf("disabled startup executed opencode: %v\n%s", err, out)
+			}
+		})
 	}
 }

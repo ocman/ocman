@@ -130,6 +130,11 @@ func (a *App) shutdown(context.Context) {
 // a Wails window that loads it.  srv must already be fully constructed
 // (New + registered adapters + auth) but not yet started.
 func RunGUI(ctx context.Context, srv *server.Server, listenAddr, stateDBPath string, bootTimeout time.Duration) error {
+	return RunGUIWithStarter(ctx, srv.StartOnListener, listenAddr, stateDBPath, bootTimeout)
+}
+
+// RunGUIWithStarter keeps the window alive while its backend reloads in place.
+func RunGUIWithStarter(ctx context.Context, start func(context.Context, net.Listener) error, listenAddr, stateDBPath string, bootTimeout time.Duration) error {
 	// Pick an ephemeral port for the backend so the GUI can point at it.
 	// We override the address to 127.0.0.1:0 via a net.Listener, then
 	// read back the actual port before starting Wails.
@@ -152,7 +157,7 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr, stateDBPath str
 	app.start = func() {
 		go func() {
 			defer close(app.done)
-			err := srv.StartOnListener(serverCtx, ln)
+			err := start(serverCtx, ln)
 			if err != nil && serverCtx.Err() == nil {
 				Fatalf("gui: backend server error: %v", err)
 			}

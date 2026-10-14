@@ -8,6 +8,7 @@ import { AppHeader } from './AppHeader';
 
 const inventory = vi.hoisted(() => ({ projects: [] as { directory: string; remoteId?: string; remoteName?: string }[] }));
 vi.mock('../lib/queries', () => ({ useProjects: () => ({ data: inventory.projects }) }));
+vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: () => true, useMultiHost: () => false }));
 beforeEach(() => { inventory.projects = []; });
 
 it('uses the configured owner name rather than its ID or an identical-path local project', () => {
@@ -60,6 +61,10 @@ it.each([false, true])('shows matching session metadata, with optional platform 
     </MemoryRouter>,
   );
   expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Working session');
+  if (withDetails) {
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Working session ·$/);
+    expect(screen.getByLabelText('OpenCode').querySelector('img')).toHaveAttribute('src', '/platform-opencode.svg');
+  }
   expect(screen.getByText('my-project')).toHaveAttribute('title', withDetails ? '/repos/my-project' : 'my-project');
   // Portal consumers depend on these IDs surviving the component extraction.
   expect(container.querySelector('#header-navigation-slot')).toBeInTheDocument();

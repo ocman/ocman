@@ -7,7 +7,7 @@
  */
 
 export type SettingsGroupId =
-  | 'notifications' | 'sessions' | 'remotes' | 'plugins' | 'auto-approve' | 'sharing'
+  | 'notifications' | 'sessions' | 'remotes' | 'plugins' | 'auto-approve' | 'sharing' | 'platforms'
   | 'webhooks' | 'templates' | 'link-previews' | 'maintenance' | 'provider-accounts' | 'behaviour' | 'app' | 'account' | 'idle-projects'
   /** Per-project settings page; not part of the global Settings search. */
   | 'project';
@@ -29,6 +29,12 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'enabled-platforms': {
+    group: 'platforms', title: 'Enabled platforms',
+    description: 'Choose the coding platforms enabled on this machine. Changes reload the backend after active turns, prompts and queued messages finish, without restarting the app. An explicit -platforms CLI flag overrides these choices. Configure remotes on their own Settings page.',
+    example: 'Enable Claude Code in the desktop app without changing launch arguments. Keep at least one platform enabled.',
+    keywords: 'opencode claude code desktop backend',
+  },
   'local-voice-input': {
     group: 'sessions',
     title: 'Local voice input',

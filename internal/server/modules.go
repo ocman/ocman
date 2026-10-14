@@ -53,7 +53,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	mods = append(mods, s.notificationsModule(), s.snoozeModule())
+	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule())
 	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule(), s.remotesModule(), s.sessionLifecycleModule(), s.queueModule())
 }
 

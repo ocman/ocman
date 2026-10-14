@@ -220,7 +220,7 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir + runtime seam]
     Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod, platformsettings]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Modules -->|"queuemod: bounded preparation, then admitted delivery"| Sessions
@@ -328,6 +328,14 @@ flowchart TD
   `Run`. It reads OpenCode only through `internal/db`; the analytics mirror,
   session snapshot, client-activity demand leases, `/api/system/stats` and the
   server's own OTel instruments stay in core.
+- **Platform settings** (`internal/platformsettings`). Settings → Platforms saves
+  the local startup selection in state.db. Application startup reads it before
+  opening the OpenCode database or registering adapters; an explicit
+  `-platforms` flag takes precedence. Saving fences new local turns while active
+  turns, pending prompts and existing queues drain. `internal/app.reloadBackend`
+  then rebuilds the backend on the same address and process, including databases,
+  analytics and prompt watchers. The desktop window stays open; browser SSE
+  reconnection refreshes capabilities and session data.
 - **Idle projects** (`internal/idleprojects`). An owner-local module holds the
   configurable idle timeout and minute sweep. It checks archive state, live
   sessions, queued messages, and active background work before calling

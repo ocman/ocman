@@ -8,6 +8,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platformsettings"
 	"github.com/NoUseFreak/ocman/internal/queuemod"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 )
@@ -21,14 +22,19 @@ func (s *Server) queueModule() *queuemod.Module {
 				}
 				return s.sessions
 			},
-			Adapter: s.adapterForSession, SendNow: s.sendNow, PrepareSend: s.prepareSendNow,
-			Broadcast: s.broadcastGlobalEvent, SessionChanged: s.broadcastSessionChanged,
+			Adapter: s.adapterForSession,
+			SendNow: func(ctx context.Context, id string, req platforms.SendMessageRequest) error {
+				return s.sendNow(platformsettings.DrainContext(ctx), id, req)
+			},
+			PrepareSend: s.prepareQueuedSend,
+			Broadcast:   s.broadcastGlobalEvent, SessionChanged: s.broadcastSessionChanged,
 			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		}
 		if s.stateDB != nil {
 			d.Store = s.stateDB
 		}
 		s.queueMod = queuemod.NewModule(d)
+		s.queueMod.Service().WithAdmission(func(ctx context.Context, id string) (func(), error) { return s.beginConfigTurn(ctx, platforms.ID(id)) })
 	})
 	return s.queueMod
 }

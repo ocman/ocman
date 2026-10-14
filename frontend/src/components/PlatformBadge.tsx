@@ -1,5 +1,6 @@
 import './PlatformBadge.css';
 import { useMultiPlatform } from '../lib/useCapabilities';
+import { Tooltip } from './Tooltip';
 
 /**
  * Human-facing labels + short aliases for known platforms. A platform
@@ -7,8 +8,9 @@ import { useMultiPlatform } from '../lib/useCapabilities';
  * itself — new adapters just need to register in the backend, and the
  * frontend renders something sensible automatically.
  */
-const META: Record<string, { label: string; short: string }> = {
-  opencode: { label: 'OpenCode', short: 'OC' },
+const META: Record<string, { label: string; short: string; icon: string }> = {
+  opencode: { label: 'OpenCode', short: 'OC', icon: '/platform-opencode.svg' },
+  claudecode: { label: 'Claude Code', short: 'CC', icon: '/platform-claudecode.svg' },
 };
 
 /**
@@ -37,7 +39,7 @@ interface PlatformBadgeProps {
    *     the surrounding text colour. Designed to sit inline in the
    *     same monospace secondary row as a session id or project path.
    */
-  variant?: 'compact' | 'plain';
+  variant?: 'compact' | 'plain' | 'icon';
 }
 
 /**
@@ -58,6 +60,14 @@ export function PlatformBadge({ platform, variant }: PlatformBadgeProps) {
   const label = meta?.label ?? base;
   const short = meta?.short ?? base.slice(0, 2).toUpperCase();
   const classes = ['platform-badge', `platform-${base}`];
+  if (variant === 'icon') return (
+    <Tooltip content={`This session runs on ${label}.`}>
+      <span className="platform-icon" tabIndex={0} aria-label={label}>
+        <span className="platform-icon-separator" aria-hidden="true"> · </span>
+        {meta ? <img src={meta.icon} width={16} height={16} alt="" /> : short}
+      </span>
+    </Tooltip>
+  );
   if (variant) classes.push(variant);
   return (
     <span className={classes.join(' ')} title={label} aria-label={label}>

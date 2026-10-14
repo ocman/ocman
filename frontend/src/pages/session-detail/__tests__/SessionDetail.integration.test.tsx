@@ -1507,7 +1507,7 @@ describe('SessionDetail — status badge follows the backend', () => {
     expect(handle.result.container.querySelector('[data-state="error"]')).not.toBeInTheDocument();
   });
 
-  it('renders limited with its reset time in the session header', async () => {
+  it('renders limited with its reset time in the composer notification area', async () => {
     const slot = document.createElement('div');
     slot.id = 'header-actions-slot';
     document.body.append(slot);
@@ -1517,12 +1517,14 @@ describe('SessionDetail — status badge follows the backend', () => {
       const handle = renderSessionPage({ detail: makeSessionDetail(session) });
       await flushPromises();
       await waitFor(() => expect(handle.result.getByLabelText('Session actions')).toBeInTheDocument());
+      const notices = handle.result.getByRole('region', { name: 'Conversation status' });
       act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: session.id, platform: 'other', patch: { status: 'limited', resetsAt } })));
       expect(slot).not.toHaveTextContent('Limited');
       act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: session.id, platform: session.platform, patch: { status: 'limited', resetsAt } })));
-      await waitFor(() => expect(slot).toHaveTextContent(`Limited until ${new Date(resetsAt).toLocaleString()}`));
+      await waitFor(() => expect(notices).toHaveTextContent(`Limited until ${new Date(resetsAt).toLocaleString()}`));
+      expect(slot).not.toHaveTextContent('Limited');
       act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: session.id, platform: session.platform, patch: { status: 'busy', resetsAt: 0 } })));
-      await waitFor(() => expect(slot).not.toHaveTextContent('Limited'));
+      await waitFor(() => expect(notices).not.toHaveTextContent('Limited'));
       handle.result.unmount();
     } finally {
       slot.remove();

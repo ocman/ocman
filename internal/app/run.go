@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"flag"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/claudecode"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platformsettings"
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -80,7 +82,7 @@ func run() {
 	}
 	sort.Strings(platformNames)
 	knownPlatformNames := strings.Join(platformNames, ", ")
-	platformsFlag := flag.String("platforms", "opencode,claudecode", "comma-separated list of platforms to enable ("+knownPlatformNames+")")
+	platformsFlag := flag.String("platforms", platformsettings.Default, "override saved platforms with a comma-separated list ("+knownPlatformNames+")")
 	authPassword := flag.String("auth-password", "", "password required to access ocman (prefer "+authPasswordEnv+" env or -auth-password-file)")
 	authPasswordFile := flag.String("auth-password-file", "", "read auth password from file (trimmed of trailing whitespace)")
 	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
@@ -148,54 +150,14 @@ func run() {
 			Info("share relay configured")
 	}
 
-	// Parse and validate the -platforms flag.
-	enabledPlatforms := map[string]bool{}
-	for _, name := range strings.Split(*platformsFlag, ",") {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		if knownPlatforms[name] == nil {
-			fatal("Unknown platform: %q (known: %s)", name, knownPlatformNames)
-		}
-		enabledPlatforms[name] = true
-	}
-	if len(enabledPlatforms) == 0 {
-		fatal("No platforms enabled. Use -platforms with at least one of: %s", knownPlatformNames)
-	}
-	// OpenCode's skill directory is touched only when OpenCode is enabled (FR-1).
-	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
-		if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
-			log.WithError(err).Warn("removing retired ocman session-splitting skill")
-		}
-		if err := opencodeskills.Remove("ocman-workflows"); err != nil {
-			log.WithError(err).Warn("removing retired ocman workflows skill")
-		}
-		if err := opencodeskills.Install(embeddedSkills()); err != nil {
-			log.WithError(err).Warn("installing embedded ocman skills")
-		}
-	}
-
-	// Create a context that is cancelled on SIGINT or SIGTERM. Built
-	// up-front so telemetry init and DB open can use it for cancellation.
+	// Initialise telemetry before opening either database.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	// Initialise OpenTelemetry as early as possible so DB / HTTP client
-	// instrumentation registered later picks up the global providers.
-	// When --otel is empty (and OTEL_EXPORTER_OTLP_ENDPOINT is unset)
-	// this returns a no-op shutdown and leaves the SDK no-op providers
-	// in place — every otel call site stays cheap.
-	//
-	// The shutdown is deferred *here* (before the DB defers below) so
-	// LIFO ordering flushes spans/metrics first, then closes DBs.
 	shutdownTel, err := telemetry.Init(ctx, *otelEndpoint, version)
 	if err != nil {
 		fatal("Failed to initialise telemetry: %v", err)
 	}
 	defer func() {
-		// Use a fresh context with timeout: the main ctx is
-		// already cancelled by the time defers run.
 		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := shutdownTel(sctx); err != nil {
@@ -203,122 +165,154 @@ func run() {
 		}
 	}()
 
-	// Open the OpenCode database only when the opencode platform is enabled.
-	var database *db.DB
-	openCodeDBPath := "" // maintenance is offered only for an opened database
-	var startupIssues []server.StartupIssue
-	dbExplicit := false
-	flag.Visit(func(f *flag.Flag) { dbExplicit = dbExplicit || f.Name == "db" })
-	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
-		*dbPath = pinOpenCodeDB(*dbPath, dbExplicit)
-		var issue *server.StartupIssue
-		database, issue, err = openOpenCodeDB(*dbPath)
+	serve := func(ctx context.Context, listener net.Listener, reload func()) error {
+		ctx, cancel := context.WithCancel(ctx)
+		stateDBPath := state.DefaultDBPath()
+		stateDB, err := state.Open(stateDBPath, server.ModuleSchemas()...)
 		if err != nil {
-			fatal("%v", err)
+			fatal("Failed to open state database: %v", err)
 		}
-		if issue != nil {
-			// Run as if opencode were omitted from -platforms.
-			log.Warnf("%s; starting without the OpenCode platform. %s", issue.Message, issue.Hint)
-			startupIssues = append(startupIssues, *issue)
-			delete(enabledPlatforms, string(opencodeplatform.PlatformID))
+		defer stateDB.Close()
+		platformsExplicit := false
+		flag.Visit(func(f *flag.Flag) { platformsExplicit = platformsExplicit || f.Name == "platforms" })
+		if *platformsFlag, err = platformsettings.Resolve(ctx, stateDB, *platformsFlag, platformsExplicit); err != nil {
+			fatal("Failed to load platform settings: %v", err)
 		}
-	}
-	if database != nil {
-		defer database.Close()
-		openCodeDBPath = *dbPath
-	}
-
-	stateDBPath := state.DefaultDBPath()
-	stateDB, err := state.Open(stateDBPath, server.ModuleSchemas()...)
-	if err != nil {
-		fatal("Failed to open state database: %v", err)
-	}
-	defer stateDB.Close()
-	// Before anything inherits from it: Claude approvals recorded before
-	// exact patterns would otherwise inherit as globs.
-	if err := stateDB.EscapeLegacyApprovalPatterns(context.Background(), providerprotocol.ExactPattern); err != nil {
-		fatal("Failed to upgrade Claude approval patterns: %v", err)
-	}
-
-	// Disposable copy of the analytics columns next to state.db; see
-	// internal/db/analytics_mirror.go. With OpenCode a failure only costs
-	// speed; without it the file is the analytics database other platforms
-	// fill (AD-12).
-	analyticsDB := database
-	mirrorPath := filepath.Join(filepath.Dir(stateDBPath), "analytics-cache.db")
-	if database != nil {
-		source, _ := filepath.Abs(*dbPath)
-		if err := database.EnableAnalyticsMirror(mirrorPath, source); err != nil {
-			log.WithError(err).Warn("analytics mirror disabled; analytics read OpenCode directly")
-		}
-	} else if len(enabledPlatforms) > 0 {
-		if analyticsDB, err = db.OpenAnalyticsStore(mirrorPath); err != nil {
-			log.WithError(err).Warn("analytics unavailable")
-			analyticsDB = nil
-		} else {
-			defer analyticsDB.Close()
-		}
-	}
-
-	opencodePassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
-	if err != nil {
-		fatal("Failed to configure OpenCode server auth: %v", err)
-	}
-	if enabledPlatforms[string(opencodeplatform.PlatformID)] && opencodePassword == "" && ocv2.InstalledV2() {
-		if opencodePassword, err = v2ServerPassword(ctx, stateDB); err != nil {
-			fatal("Failed to configure OpenCode v2 server auth: %v", err)
-		}
-	}
-	opencodeAuth := ocapi.New(opencodePassword)
-
-	// Ensure this instance has a stable random identity + remote-access
-	// token (multi-remote support). Generated and persisted on first
-	// startup; reused thereafter. No networking is started here — the
-	// gRPC remote-listen server is opt-in via -remote-listen.
-	ident, err := stateDB.InstanceIdentity(ctx)
-	if err != nil {
-		fatal("Failed to ensure instance identity: %v", err)
-	}
-
-	// Pre-warm the pricing table in the background so the first metrics request
-	// doesn't block on a remote fetch.
-	go pricing.Load()
-
-	// Register only the platform adapters requested via -platforms.
-	// The OpenCode adapter takes the pricing table so SessionInfo can
-	// estimate cost for sessions whose upstream `cost` field is zero
-	// (subscription-plan accounts). pricing.Load() is async-safe — it
-	// returns the same Table even if the background fetch is still
-	// running; calls into it just see an empty table until then.
-	registry := platforms.NewRegistry()
-	for id, enabled := range enabledPlatforms {
-		if enabled {
-			// analyticsDB is OpenCode's database whenever OpenCode is
-			// enabled; other platforms only add analytics sources to it.
-			registry.Register(knownPlatforms[id](ctx, analyticsDB, stateDB, opencodeAuth))
-		}
-	}
-	if analyticsDB != nil {
-		// After registration: platforms add their analytics sources first,
-		// so this first sync already includes their history.
-		go func() {
-			if err := analyticsDB.SyncAnalyticsMirror(ctx); err != nil {
-				log.WithError(err).Warn("syncing analytics mirror")
+		// Parse and validate the selected platforms.
+		enabledPlatforms := map[string]bool{}
+		for _, name := range strings.Split(*platformsFlag, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
 			}
-		}()
-	}
-	auth, err := buildAuth(ctx, stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
-	if err != nil {
-		fatal("Failed to configure auth: %v", err)
-	}
+			if knownPlatforms[name] == nil {
+				fatal("Unknown platform: %q (known: %s)", name, knownPlatformNames)
+			}
+			enabledPlatforms[name] = true
+		}
+		if len(enabledPlatforms) == 0 {
+			fatal("No platforms enabled. Use -platforms with at least one of: %s", knownPlatformNames)
+		}
+		// OpenCode's skill directory is touched only when OpenCode is enabled (FR-1).
+		if enabledPlatforms[string(opencodeplatform.PlatformID)] {
+			if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
+				log.WithError(err).Warn("removing retired ocman session-splitting skill")
+			}
+			if err := opencodeskills.Remove("ocman-workflows"); err != nil {
+				log.WithError(err).Warn("removing retired ocman workflows skill")
+			}
+			if err := opencodeskills.Install(embeddedSkills()); err != nil {
+				log.WithError(err).Warn("installing embedded ocman skills")
+			}
+		}
 
-	// In GUI mode the server listens on an ephemeral loopback port that
-	// is only reachable from the Wails WebView proxy.  In headless mode
-	// it listens on *addr as before.
-	if *guiMode {
-		// gui-addr defaults to 127.0.0.1:0 (ephemeral). Callers can
-		// pin a port with --gui-addr=127.0.0.1:8229 if needed.
-		srv := server.New(database, stateDB, httpListenAddr, registry, auth).
+		// Open the OpenCode database only when the opencode platform is enabled.
+		var database *db.DB
+		openCodeDBPath := "" // maintenance is offered only for an opened database
+		var startupIssues []server.StartupIssue
+		dbExplicit := false
+		flag.Visit(func(f *flag.Flag) { dbExplicit = dbExplicit || f.Name == "db" })
+		if enabledPlatforms[string(opencodeplatform.PlatformID)] {
+			*dbPath = pinOpenCodeDB(*dbPath, dbExplicit)
+			var issue *server.StartupIssue
+			database, issue, err = openOpenCodeDB(*dbPath)
+			if err != nil {
+				fatal("%v", err)
+			}
+			if issue != nil {
+				// Run as if opencode were omitted from -platforms.
+				log.Warnf("%s; starting without the OpenCode platform. %s", issue.Message, issue.Hint)
+				startupIssues = append(startupIssues, *issue)
+				delete(enabledPlatforms, string(opencodeplatform.PlatformID))
+			}
+		}
+		if database != nil {
+			defer database.Close()
+			openCodeDBPath = *dbPath
+		}
+
+		// Before anything inherits from it: Claude approvals recorded before
+		// exact patterns would otherwise inherit as globs.
+		if err := stateDB.EscapeLegacyApprovalPatterns(context.Background(), providerprotocol.ExactPattern); err != nil {
+			fatal("Failed to upgrade Claude approval patterns: %v", err)
+		}
+
+		// Disposable copy of the analytics columns next to state.db; see
+		// internal/db/analytics_mirror.go. With OpenCode a failure only costs
+		// speed; without it the file is the analytics database other platforms
+		// fill (AD-12).
+		analyticsDB := database
+		mirrorPath := filepath.Join(filepath.Dir(stateDBPath), "analytics-cache.db")
+		if database != nil {
+			source, _ := filepath.Abs(*dbPath)
+			if err := database.EnableAnalyticsMirror(mirrorPath, source); err != nil {
+				log.WithError(err).Warn("analytics mirror disabled; analytics read OpenCode directly")
+			}
+		} else if len(enabledPlatforms) > 0 {
+			if analyticsDB, err = db.OpenAnalyticsStore(mirrorPath); err != nil {
+				log.WithError(err).Warn("analytics unavailable")
+				analyticsDB = nil
+			} else {
+				defer analyticsDB.Close()
+			}
+		}
+
+		opencodePassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
+		if err != nil {
+			fatal("Failed to configure OpenCode server auth: %v", err)
+		}
+		if enabledPlatforms[string(opencodeplatform.PlatformID)] && opencodePassword == "" && ocv2.InstalledV2() {
+			if opencodePassword, err = v2ServerPassword(ctx, stateDB); err != nil {
+				fatal("Failed to configure OpenCode v2 server auth: %v", err)
+			}
+		}
+		opencodeAuth := ocapi.New(opencodePassword)
+
+		// Ensure this instance has a stable random identity + remote-access
+		// token (multi-remote support). Generated and persisted on first
+		// startup; reused thereafter. No networking is started here — the
+		// gRPC remote-listen server is opt-in via -remote-listen.
+		ident, err := stateDB.InstanceIdentity(ctx)
+		if err != nil {
+			fatal("Failed to ensure instance identity: %v", err)
+		}
+
+		// Pre-warm the pricing table in the background so the first metrics request
+		// doesn't block on a remote fetch.
+		go pricing.Load()
+
+		// Register only the platform adapters requested via -platforms.
+		// The OpenCode adapter takes the pricing table so SessionInfo can
+		// estimate cost for sessions whose upstream `cost` field is zero
+		// (subscription-plan accounts). pricing.Load() is async-safe — it
+		// returns the same Table even if the background fetch is still
+		// running; calls into it just see an empty table until then.
+		registry := platforms.NewRegistry()
+		for id, enabled := range enabledPlatforms {
+			if enabled {
+				// analyticsDB is OpenCode's database whenever OpenCode is
+				// enabled; other platforms only add analytics sources to it.
+				registry.Register(knownPlatforms[id](ctx, analyticsDB, stateDB, opencodeAuth))
+			}
+		}
+		if analyticsDB != nil {
+			// After registration: platforms add their analytics sources first,
+			// so this first sync already includes their history.
+			go func() {
+				if err := analyticsDB.SyncAnalyticsMirror(ctx); err != nil {
+					log.WithError(err).Warn("syncing analytics mirror")
+				}
+			}()
+		}
+		auth, err := buildAuth(ctx, stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
+		if err != nil {
+			fatal("Failed to configure auth: %v", err)
+		}
+
+		// In GUI mode the server listens on an ephemeral loopback port that
+		// is only reachable from the Wails WebView proxy.  In headless mode
+		// it listens on *addr as before.
+		srv := server.New(database, stateDB, listener.Addr().String(), registry, auth).
 			WithAnalytics(analyticsDB).
 			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
@@ -330,44 +324,43 @@ func run() {
 			WithVersion(version).
 			WithStartupIssues(startupIssues...).
 			WithToolPathError(toolPathErr).
-			WithRemoteAccess(ident.InstanceID, "", false, false)
-		if err := gui.RunGUI(ctx, srv, httpListenAddr, stateDBPath, *guiBootTimeout); err != nil {
-			fatal("GUI error: %v", err)
+			WithConfigReload(reload, *platformsFlag, platformsExplicit)
+		if *guiMode {
+			srv.WithRemoteAccess(ident.InstanceID, "", false, false)
+		} else {
+			// Start the remote-access gRPC server when -remote-listen is set
+			// (multi-remote support). Off by default so single-host installs
+			// are byte-for-byte unchanged (NFR-6).
+			listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, stateDB, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay)
+			srv.WithRemoteAccess(ident.InstanceID, listenAddr, listening, tlsOn)
+
+			// Start the hub-side remote manager: it loads any saved remotes
+			// from state.db and dials them in the background, registering
+			// remote platform/host adapters as they connect. With zero saved
+			// remotes this is a no-op (NFR-6).
+			mgr := remote.NewManager(srv.Registry(), srv.HostRouter(), stateDB, string(opencodeplatform.PlatformID))
+			mgr.Start(ctx)
+			srv.SetRemoteManager(mgr)
+			// Stop after Start returns: the remotes module's inventory loop
+			// has been joined by then, and state.db closes after this.
+			defer mgr.Stop()
 		}
+		defer cancel()
+		defer opencodeplatform.ResetCaches()
+		return srv.StartOnListener(ctx, listener)
+	}
+	start := func(ctx context.Context, listener net.Listener) error { return reloadBackend(ctx, listener, serve) }
+	if *guiMode {
+		err = gui.RunGUIWithStarter(ctx, start, httpListenAddr, state.DefaultDBPath(), *guiBootTimeout)
 	} else {
-		srv := server.New(database, stateDB, *addr, registry, auth).
-			WithAnalytics(analyticsDB).
-			WithOpenCodeAuth(opencodeAuth).
-			WithAutoApproveDefault(*autoApprove).
-			WithPublicBaseURL(resolvedBaseURL).
-			WithRelay(resolvedRelayURL, relaySource).
-			WithMCPAddr(*mcpAddr).
-			WithOpenCodeDBPath(openCodeDBPath).
-			WithLogPath(logPath).
-			WithVersion(version).
-			WithStartupIssues(startupIssues...).
-			WithToolPathError(toolPathErr)
-
-		// Start the remote-access gRPC server when -remote-listen is set
-		// (multi-remote support). Off by default so single-host installs
-		// are byte-for-byte unchanged (NFR-6).
-		listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, stateDB, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay)
-		srv.WithRemoteAccess(ident.InstanceID, listenAddr, listening, tlsOn)
-
-		// Start the hub-side remote manager: it loads any saved remotes
-		// from state.db and dials them in the background, registering
-		// remote platform/host adapters as they connect. With zero saved
-		// remotes this is a no-op (NFR-6).
-		mgr := remote.NewManager(srv.Registry(), srv.HostRouter(), stateDB, string(opencodeplatform.PlatformID))
-		mgr.Start(ctx)
-		srv.SetRemoteManager(mgr)
-		// Stop after Start returns: the remotes module's inventory loop
-		// has been joined by then, and state.db closes after this.
-		defer mgr.Stop()
-
-		if err := srv.Start(ctx); err != nil {
-			fatal("Server error: %v", err)
+		var listener net.Listener
+		listener, err = net.Listen("tcp", *addr)
+		if err == nil {
+			err = start(ctx, listener)
 		}
+	}
+	if err != nil {
+		fatal("Server error: %v", err)
 	}
 
 	log.Info("server stopped gracefully")
