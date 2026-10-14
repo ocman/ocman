@@ -93,6 +93,8 @@ func TestSpoolRequiresCompletedAckAndRetainsSnapshotGap(t *testing.T) {
 	if count != 2 {
 		t.Fatal(count, scanner.Err())
 	}
+	// Closing the client body does not join server-side lease cleanup.
+	server.Close()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.prune(); err != nil {

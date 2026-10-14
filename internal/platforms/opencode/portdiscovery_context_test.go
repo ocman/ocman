@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -162,6 +163,9 @@ func TestDiscoveryCanceledLeaderDoesNotDisconnectWaiter(t *testing.T) {
 func TestCanceledDiscoveryDoesNotPoisonCache(t *testing.T) {
 	resetPortCacheForTests()
 	t.Cleanup(resetPortCacheForTests)
+	portCache.mu.Lock()
+	flightKey := "discoverOpenCodePorts:" + strconv.FormatUint(portCache.generation, 10)
+	portCache.mu.Unlock()
 	fn := func(ctx context.Context) map[string]string { <-ctx.Done(); return nil }
 	previous := discoverPortsImpl.Swap(&fn)
 	defer discoverPortsImpl.Store(previous)
@@ -171,7 +175,7 @@ func TestCanceledDiscoveryDoesNotPoisonCache(t *testing.T) {
 		t.Fatal(ports)
 	}
 	// Join the canceled flight before inspecting its cache result.
-	<-portFlight.DoChan("discoverOpenCodePorts", func() (any, error) { return nil, nil })
+	<-portFlight.DoChan(flightKey, func() (any, error) { return nil, nil })
 	if _, cached := readCachedPorts(); cached {
 		t.Fatal("canceled discovery cached an empty result")
 	}
