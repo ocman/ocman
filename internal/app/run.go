@@ -293,7 +293,13 @@ func run() {
 			if enabled {
 				// analyticsDB is OpenCode's database whenever OpenCode is
 				// enabled; other platforms only add analytics sources to it.
-				registry.Register(knownPlatforms[id](ctx, analyticsDB, stateDB, opencodeAuth))
+				platform := knownPlatforms[id](ctx, analyticsDB, stateDB, opencodeAuth)
+				registry.Register(platform)
+				if closer, ok := platform.(interface{ Close() }); ok {
+					// Runs after cancel (deferred later): joins the platform's
+					// goroutines before state.db closes.
+					defer closer.Close()
+				}
 			}
 		}
 		if analyticsDB != nil {

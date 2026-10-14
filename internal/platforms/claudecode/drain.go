@@ -23,27 +23,10 @@ import (
 // dashboard pipeline (rules, judge, inbox) like an attached supervisor's
 // and are fanned out to the browser streams of its sessions.
 type drained struct {
-	adapter *provider.Adapter
-	stop    context.CancelFunc // nil until its event stream runs
-	done    chan struct{}      // closed when the drain ends
-	mu      sync.Mutex
-	subs    map[chan providerprotocol.Event]string // browser streams, by session
-}
-
-func (d *drained) start(ctx context.Context) {
-	if d.stop != nil {
-		return
-	}
-	ctx, d.stop = context.WithCancel(ctx)
-	go func() { _ = d.adapter.WatchEvents(ctx) }()
-}
-
-func (d *drained) close() {
-	if d.stop != nil {
-		d.stop()
-	}
-	d.adapter.Close()
-	close(d.done)
+	watched
+	done chan struct{} // closed when the drain ends
+	mu   sync.Mutex
+	subs map[chan providerprotocol.Event]string // browser streams, by session
 }
 
 func (d *drained) broadcast(e providerprotocol.Event) {
@@ -89,7 +72,7 @@ func (c *claudeProjects) onDrain(root, endpoint string, compatible bool) {
 	} else if a, err := provider.NewDraining(c.ctx, strings.TrimPrefix(endpoint, "unix://")); err != nil {
 		log.WithError(err).WithField("root", root).Warn("connecting to a draining Claude supervisor")
 	} else {
-		d = &drained{adapter: a, done: make(chan struct{}), subs: map[chan providerprotocol.Event]string{}}
+		d = &drained{watched: watched{adapter: a}, done: make(chan struct{}), subs: map[chan providerprotocol.Event]string{}}
 		a.SetRules(c.rules) // Allow-always persists and inherits as for an attached supervisor
 		a.SetEventHandler(func(e providerprotocol.Event) {
 			c.mu.Lock()
@@ -103,12 +86,18 @@ func (c *claudeProjects) onDrain(root, endpoint string, compatible bool) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closed {
+		if d != nil {
+			d.adapter.Close()
+		}
+		return
+	}
 	c.endDrainLocked(root)
 	c.draining[root] = d
 	if d != nil {
 		d.adapter.SetSessionEventSink(c.sink)
 		if c.watch != nil {
-			d.start(c.watch)
+			d.start(c.watch, &c.wg)
 		}
 		// A browser that connected before recovery found this supervisor
 		// switches to its prompts (ProxyEvents).
@@ -122,7 +111,8 @@ var claudeTestHook = func(point, key string) {}
 
 func (c *claudeProjects) endDrainLocked(root string) {
 	if d := c.draining[root]; d != nil {
-		d.close()
+		d.retire(&c.wg)
+		close(d.done)
 	}
 	delete(c.draining, root)
 }

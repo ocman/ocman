@@ -21,6 +21,18 @@ import (
 // sseBrowser streams one event for session then holds the stream open.
 func sseBrowser(t *testing.T, session string) *provider.Adapter {
 	t.Helper()
+	a, err := provider.New(t.Context(), sseSocket(t, session, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.Close)
+	return a
+}
+
+// sseSocket serves /hello and an /events stream that stays open; each
+// stream is reported on opened.
+func sseSocket(t *testing.T, session string, opened chan<- struct{}) string {
+	t.Helper()
 	socket := filepath.Join(providertest.Directory(t), "s")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
@@ -39,16 +51,14 @@ func sseBrowser(t *testing.T, session string) *provider.Adapter {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintf(w, "id: 1\ndata: {\"type\":\"message.updated\",\"properties\":{\"sessionID\":%q,\"browse\":true}}\n\n", session)
 		w.(http.Flusher).Flush()
+		if opened != nil {
+			opened <- struct{}{}
+		}
 		<-r.Context().Done()
 	})}
 	go func() { _ = srv.Serve(listener) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	a, err := provider.New(t.Context(), socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(a.Close)
-	return a
+	return socket
 }
 
 func drainingAdapter(t *testing.T) *provider.Adapter {
@@ -85,7 +95,7 @@ func (b *blockingWriter) Write(p []byte) (int, error) {
 func TestProxyDrainingJoinsBrowsingStream(t *testing.T) {
 	const session = "s1"
 	p := &claudePlatform{Adapter: sseBrowser(t, session)}
-	d := &drained{adapter: drainingAdapter(t), done: make(chan struct{}), subs: map[chan providerprotocol.Event]string{}}
+	d := &drained{watched: watched{adapter: drainingAdapter(t)}, done: make(chan struct{}), subs: map[chan providerprotocol.Event]string{}}
 	w := &blockingWriter{entered: make(chan struct{}), release: make(chan struct{})}
 	result := make(chan int32, 1)
 	go func() {
@@ -104,7 +114,7 @@ func TestProxyDrainingReturnsPromptListError(t *testing.T) {
 	const session = "s1"
 	p := &claudePlatform{Adapter: sseBrowser(t, session)}
 	plain, _ := reloadTestAdapter(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
-	d := &drained{adapter: plain, done: make(chan struct{}), subs: map[chan providerprotocol.Event]string{}}
+	d := &drained{watched: watched{adapter: plain}, done: make(chan struct{}), subs: map[chan providerprotocol.Event]string{}}
 	close(d.done)
 	if err := p.proxyDraining(t.Context(), session, d, &strings.Builder{}, nil); err == nil {
 		t.Fatal("an unreadable prompt list was ignored")
@@ -131,5 +141,26 @@ func TestDrainedOverflowClosesSubscriber(t *testing.T) {
 		}
 	default:
 		t.Fatal("an overflowing subscriber silently dropped an event")
+	}
+}
+
+// Closing the projects joins every event stream, and nothing attaches after.
+func TestClaudeProjectsCloseJoinsEventStreams(t *testing.T) {
+	opened := make(chan struct{}, 4)
+	socket := sseSocket(t, "s1", opened)
+	c := &claudeProjects{roots: map[string]*claudeProject{}, draining: map[string]*drained{}, attached: make(chan struct{}), watch: t.Context()}
+	if _, err := c.attach(t.Context(), "/repo", "unix://"+socket); err != nil {
+		t.Fatal(err)
+	}
+	<-opened
+	p := c.roots["/repo"]
+	c.close()
+	select {
+	case <-p.watching:
+	default:
+		t.Fatal("close returned while an event stream still ran")
+	}
+	if _, err := c.attach(t.Context(), "/other", "unix://"+socket); err == nil {
+		t.Fatal("attached after close")
 	}
 }

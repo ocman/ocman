@@ -63,12 +63,16 @@ func (p *claudePlatform) WatchEvents(ctx context.Context) error {
 	c := p.projects
 	c.mu.Lock()
 	c.watch = ctx
+	if c.closed {
+		c.mu.Unlock()
+		return context.Canceled
+	}
 	for _, pr := range c.roots {
-		pr.start(ctx)
+		pr.start(ctx, &c.wg)
 	}
 	for _, d := range c.draining {
 		if d != nil {
-			d.start(ctx)
+			d.start(ctx, &c.wg)
 		}
 	}
 	c.mu.Unlock()

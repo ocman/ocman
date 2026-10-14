@@ -24,6 +24,8 @@ import (
 // transcript stays with the in-process supervisor and launches nothing.
 type claudeProjects struct {
 	ctx       context.Context // the platform's lifetime
+	stop      context.CancelFunc
+	wg        sync.WaitGroup // recovery and event streams, joined by close
 	mgr       *local.ProviderManager
 	rules     *provider.Rules
 	statePath string // claude-sessions.json: which sessions ocman launched
@@ -38,20 +40,64 @@ type claudeProjects struct {
 	// replacement: an out-of-range one reached through its version-
 	// independent routes, nil when the attached adapter still serves it.
 	draining map[string]*drained
+	closed   bool
 }
 
 type claudeProject struct {
+	watched
 	endpoint string
-	adapter  *provider.Adapter
-	stop     context.CancelFunc // nil until its event stream runs
 }
 
-func (p *claudeProject) start(ctx context.Context) {
-	if p.stop != nil {
+// watched is an adapter whose headless event stream may run.
+type watched struct {
+	adapter  *provider.Adapter
+	stop     context.CancelFunc // nil until its event stream runs
+	watching chan struct{}      // closed when that stream returns
+}
+
+func (w *watched) start(ctx context.Context, wg *sync.WaitGroup) {
+	if w.stop != nil {
 		return
 	}
-	ctx, p.stop = context.WithCancel(ctx)
-	go func() { _ = p.adapter.WatchEvents(ctx) }()
+	ctx, w.stop = context.WithCancel(ctx)
+	w.watching = make(chan struct{})
+	wg.Go(func() {
+		defer close(w.watching)
+		_ = w.adapter.WatchEvents(ctx)
+	})
+}
+
+// retire stops the stream and closes the adapter once it has returned,
+// without waiting: callers hold c.mu, which the stream's handler takes.
+func (w *watched) retire(wg *sync.WaitGroup) {
+	if w.stop == nil {
+		w.adapter.Close()
+		return
+	}
+	w.stop()
+	wg.Go(func() {
+		<-w.watching
+		w.adapter.Close()
+	})
+}
+
+// close stops recovery and every event stream and waits for them, so none
+// outlives the composition (or the state.db it writes through).
+func (c *claudeProjects) close() {
+	if c.stop != nil {
+		c.stop()
+	}
+	c.mu.Lock()
+	c.closed = true
+	for root, p := range c.roots {
+		p.retire(&c.wg)
+		delete(c.roots, root)
+	}
+	for root := range c.draining {
+		c.endDrainLocked(root)
+	}
+	c.mu.Unlock()
+	c.wg.Wait()
 }
 
 // recover reattaches every persisted supervisor that is still running.
@@ -62,7 +108,7 @@ func (c *claudeProjects) recover(ctx context.Context) {
 		return
 	}
 	for _, root := range roots {
-		go func() {
+		c.wg.Go(func() {
 			res, ok, err := c.mgr.Recover(ctx, root)
 			if err == nil && ok {
 				_, err = c.attach(ctx, res.RepoRoot, res.Endpoint)
@@ -73,7 +119,7 @@ func (c *claudeProjects) recover(ctx context.Context) {
 				c.mu.Unlock()
 				log.WithError(err).WithField("root", root).Warn("recovering Claude project supervisor")
 			}
-		}()
+		})
 	}
 }
 
@@ -93,21 +139,22 @@ func (c *claudeProjects) attach(ctx context.Context, root, endpoint string) (*pr
 	a.SetRules(c.rules)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closed {
+		a.Close()
+		return nil, fmt.Errorf("claude platform closed")
+	}
 	if p := c.roots[root]; p != nil {
 		if p.endpoint == endpoint { // a concurrent attach won
 			a.Close()
 			return p.adapter, nil
 		}
-		if p.stop != nil {
-			p.stop()
-		}
-		p.adapter.Close()
+		p.retire(&c.wg)
 	}
 	a.SetSessionEventSink(c.sink)
 	a.SetEventHandler(c.handler)
-	p := &claudeProject{endpoint: endpoint, adapter: a}
+	p := &claudeProject{watched: watched{adapter: a}, endpoint: endpoint}
 	if c.watch != nil {
-		p.start(c.watch)
+		p.start(c.watch, &c.wg)
 	}
 	c.roots[root] = p
 	c.endDrainLocked(root)

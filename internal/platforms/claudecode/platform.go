@@ -110,13 +110,21 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 	runtime.Identity = func() string {
 		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00sdk-py/" + claudecli.SDKVersion
 	}
-	p.projects = &claudeProjects{ctx: ctx, mgr: &local.ProviderManager{Runtime: runtime, State: stateDB}, rules: rules,
+	projectsCtx, stop := context.WithCancel(ctx)
+	p.projects = &claudeProjects{ctx: projectsCtx, stop: stop, mgr: &local.ProviderManager{Runtime: runtime, State: stateDB}, rules: rules,
 		statePath: opts.StatePath, roots: map[string]*claudeProject{}, draining: map[string]*drained{}, attached: make(chan struct{})}
 	p.projects.mgr.OnDrain = p.projects.onDrain
 	if stateDB != nil {
-		p.projects.recover(ctx)
+		p.projects.recover(projectsCtx)
 	}
 	return p
+}
+
+// Close stops recovery and the project supervisors' event streams and waits
+// for them; the supervisors themselves keep running (AD-4).
+func (p *claudePlatform) Close() {
+	p.projects.close()
+	p.Adapter.Close()
 }
 
 // claudePlatform is the browsing adapter plus the project supervisors that

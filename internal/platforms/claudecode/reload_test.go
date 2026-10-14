@@ -47,7 +47,7 @@ func TestReloadIdleDoesNotTrustBestEffortBrowsing(t *testing.T) {
 		_ = json.NewEncoder(w).Encode([]db.Session{{ID: "old", Status: db.StatusDone}})
 	})
 	project, _ := reloadTestAdapter(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) })
-	p := &claudePlatform{Adapter: browse, projects: &claudeProjects{roots: map[string]*claudeProject{"/repo": {adapter: project}}}}
+	p := &claudePlatform{Adapter: browse, projects: &claudeProjects{roots: map[string]*claudeProject{"/repo": {watched: watched{adapter: project}}}}}
 	rows, err := p.Sessions(t.Context(), "", 0)
 	if err != nil || len(rows) != 1 || rows[0].Status != db.StatusDone {
 		t.Fatalf("browsing: %v %v", rows, err)
@@ -84,7 +84,7 @@ func TestReloadIdleInspectsUnindexedAndRecoveringProjects(t *testing.T) {
 		if err != nil || idle == platforms.ReloadSessionActive(session) {
 			t.Fatalf("recovering supervisor: %v %v", idle, err)
 		}
-		p.projects.roots["/repo"] = &claudeProject{adapter: project}
+		p.projects.roots["/repo"] = &claudeProject{watched: watched{adapter: project}}
 		p.projects.draining = map[string]*drained{"/repo": nil}
 		if idle, err := p.ReloadIdle(t.Context()); idle || err == nil {
 			t.Fatalf("recovery drain ignored: %v %v", idle, err)
