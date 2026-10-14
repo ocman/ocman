@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/claudecli"
 )
 
 // ClaudeJudge is the judge backend used when no OpenCode instance is
@@ -38,6 +40,7 @@ func (j ClaudeJudge) JudgeWithCallback(ctx context.Context, directory, permissio
 	if info, err := os.Stat(directory); err == nil && info.IsDir() {
 		cmd.Dir = directory
 	}
+	cmd.Env = claudecli.Environment(nil, cmd.Dir)
 	cmd.Stdin = strings.NewReader(judgePrompt(permission, patterns, metadata, customSections))
 	out, err := cmd.Output()
 	if err != nil {

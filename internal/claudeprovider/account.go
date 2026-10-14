@@ -35,7 +35,7 @@ var usageWindows = map[string]string{"five_hour": "five_hour", "seven_day": "wee
 
 type account struct {
 	cli       string
-	env       []string
+	env       func() []string
 	usagePath string
 	config    string     // the active Claude config directory: windows are scoped to it
 	slots     string     // Options.SlotDir: the probe takes a helper slot
@@ -53,7 +53,7 @@ type usageScope struct {
 }
 
 func newAccount(opts Options) *account {
-	return &account{cli: opts.CLI, env: opts.childEnv(), usagePath: opts.UsagePath, config: opts.ConfigDir, slots: opts.SlotDir}
+	return &account{cli: opts.CLI, env: opts.childEnv, usagePath: opts.UsagePath, config: opts.ConfigDir, slots: opts.SlotDir}
 }
 
 // get returns the subscription type and every unexpired observed window.
@@ -91,7 +91,7 @@ func (a *account) subscription(ctx context.Context) (string, error) {
 	if !a.at.IsZero() && time.Since(a.at) < accountTTL {
 		return a.plan, nil
 	}
-	res, err := initialize(ctx, a.slots, a.cli, os.TempDir(), a.env) // no project settings or hooks
+	res, err := initialize(ctx, a.slots, a.cli, os.TempDir(), a.env()) // no project settings or hooks
 	if err != nil {
 		return "", err
 	}
@@ -129,7 +129,7 @@ func initialize(ctx context.Context, slots, cli, dir string, env []string, args 
 	defer release()
 	cmd := exec.CommandContext(ctx, cli, append([]string{"-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json"}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = env
+	cmd.Env = append(env, "PWD="+dir)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return initResponse{}, err
@@ -143,7 +143,7 @@ func initialize(ctx context.Context, slots, cli, dir string, env []string, args 
 	}
 	defer func() { _ = stdin.Close(); _ = cmd.Wait() }()
 	req, _ := json.Marshal(map[string]any{"type": "control_request", "request_id": initRequestID,
-		"request": map[string]any{"subtype": "initialize", "hooks": map[string]any{}, "sdkMcpServers": []string{}, "sdkCapabilities": map[string]any{}}})
+		"request": sdkInitializeRequest()})
 	if _, err := stdin.Write(append(req, '\n')); err != nil {
 		return initResponse{}, err
 	}

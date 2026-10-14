@@ -37,7 +37,7 @@ func (c *initCommand) UnmarshalJSON(b []byte) error {
 // Skills are the names a session's system/init listed under `skills`.
 type commands struct {
 	cli, plugin, config string
-	env                 []string
+	env                 func() []string
 	slots               string     // Options.SlotDir: a probe takes a helper slot
 	probe               sync.Mutex // held across a CLI call: one at a time
 	mu                  sync.Mutex
@@ -62,7 +62,7 @@ type initModel struct {
 }
 
 func newCommands(opts Options) *commands {
-	return &commands{cli: opts.CLI, plugin: opts.PluginDir, config: opts.ConfigDir, slots: opts.SlotDir, env: opts.childEnv(), dirs: map[string]cachedCommands{}, skills: map[string]map[string]bool{}}
+	return &commands{cli: opts.CLI, plugin: opts.PluginDir, config: opts.ConfigDir, slots: opts.SlotDir, env: opts.childEnv, dirs: map[string]cachedCommands{}, skills: map[string]map[string]bool{}}
 }
 
 func (c *commands) list(ctx context.Context, dir string) (cachedCommands, error) {
@@ -78,7 +78,7 @@ func (c *commands) list(ctx context.Context, dir string) (cachedCommands, error)
 	if c.plugin != "" {
 		args = append(args, "--plugin-dir", c.plugin)
 	}
-	res, err := initialize(ctx, c.slots, c.cli, dir, c.env, args...)
+	res, err := initialize(ctx, c.slots, c.cli, dir, c.env(), args...)
 	if err != nil {
 		return cachedCommands{}, err
 	}

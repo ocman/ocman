@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/NoUseFreak/ocman/internal/claudecli"
 )
 
 // SessionTitle runs a tool-free Haiku helper without saving a transcript or
@@ -29,6 +31,7 @@ func SessionTitle(ctx context.Context, slots, cli, dir, prompt string) (string, 
 	cmd := exec.CommandContext(ctx, cli, args...)
 	cmd.WaitDelay = 100 * time.Millisecond
 	cmd.Dir = dir
+	cmd.Env = claudecli.Environment(nil, dir)
 	// JSON quoting prevents prompt content from closing the data wrapper.
 	content, _ := json.Marshal(string(runes))
 	cmd.Stdin = strings.NewReader("<session>\n" + string(content) + "\n</session>\nWrite the title in the predominant language of the session; keep technical terms and code identifiers in their original form.")

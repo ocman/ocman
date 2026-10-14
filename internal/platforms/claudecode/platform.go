@@ -12,6 +12,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/claudecli"
 	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
@@ -104,9 +105,11 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 		}
 		return args
 	}
-	// A supervisor launched with another CLI or account config is drained
-	// and replaced; the MCP address is not part of it (WriteLaunchConfig).
-	runtime.Identity = func() string { return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir }
+	// Include SDK compatibility so pre-SDK supervisors drain before replacement.
+	// The MCP address is not part of this identity (WriteLaunchConfig).
+	runtime.Identity = func() string {
+		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00sdk-py/" + claudecli.SDKVersion
+	}
 	p.projects = &claudeProjects{ctx: ctx, mgr: &local.ProviderManager{Runtime: runtime, State: stateDB}, rules: rules,
 		statePath: opts.StatePath, roots: map[string]*claudeProject{}, draining: map[string]*drained{}, attached: make(chan struct{})}
 	p.projects.mgr.OnDrain = p.projects.onDrain

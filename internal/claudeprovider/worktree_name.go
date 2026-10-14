@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/claudecli"
 	"github.com/NoUseFreak/ocman/internal/git"
 )
 
@@ -32,6 +33,7 @@ func WorktreeName(ctx context.Context, slots, cli, dir, prompt string) (string, 
 	}
 	cmd := exec.CommandContext(ctx, cli, worktreeNameArgs...)
 	cmd.Dir = dir
+	cmd.Env = claudecli.Environment(nil, dir)
 	cmd.Stdin = strings.NewReader("Reply with only a short title (3 to 6 words) for this task, nothing else.\n\nTask:\n" + string(runes))
 	out, err := cmd.Output()
 	if err != nil {

@@ -144,6 +144,10 @@ func main() {
 			fail(2, "fakeclaude: fixture row: %v", err)
 		}
 		switch row.Direction {
+		case "raw":
+			var text string
+			_ = json.Unmarshal(row.Message, &text)
+			fmt.Println(text)
 		case "wait":
 			var path string
 			_ = json.Unmarshal(row.Message, &path)
@@ -168,12 +172,10 @@ func main() {
 			}
 			fmt.Printf("%s\n", row.Message)
 		case "stdin":
-			got, err := stdin.ReadBytes('\n')
-			logStdin(got)
+			got, err := readInput(stdin, subtypeOf(row.Message))
 			if err != nil {
 				fail(3, "fakeclaude: stdin closed, expected %s", typeOf(row.Message))
 			}
-			checkInput(got)
 			if want, have := typeOf(row.Message), typeOf(got); want != have {
 				fail(3, "fakeclaude: stdin message type %q, expected %q", have, want)
 			}
@@ -197,12 +199,10 @@ func main() {
 	}
 	// Like the real CLI, stay alive until stdin closes.
 	for {
-		got, err := stdin.ReadBytes('\n')
-		logStdin(got)
+		_, err := readInput(stdin, "")
 		if err != nil {
 			return
 		}
-		checkInput(got)
 	}
 }
 
@@ -242,7 +242,7 @@ func checkInput(got []byte) {
 			if json.Unmarshal(m.Request.SDKMcpServers, &servers) != nil {
 				fail(3, "initialize: sdkMcpServers and webSearchIsolationExemptMcpServers must be arrays of strings")
 			}
-		case "interrupt":
+		case "interrupt", "set_model":
 		default:
 			reply, _ := json.Marshal(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "error",
 				"request_id": m.RequestID, "error": "Unsupported control request subtype: " + m.Request.Subtype}})

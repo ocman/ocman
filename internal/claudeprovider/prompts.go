@@ -42,11 +42,17 @@ func (l *live) ask(p *proc, raw []byte) {
 	var m struct {
 		RequestID string `json:"request_id"`
 		Request   struct {
-			Subtype   string         `json:"subtype"`
-			ToolName  string         `json:"tool_name"`
-			Input     map[string]any `json:"input"`
-			ToolUseID string         `json:"tool_use_id"`
-			AgentID   string         `json:"agent_id"`
+			Subtype        string         `json:"subtype"`
+			ToolName       string         `json:"tool_name"`
+			Input          map[string]any `json:"input"`
+			ToolUseID      string         `json:"tool_use_id"`
+			AgentID        string         `json:"agent_id"`
+			Suggestions    []any          `json:"permission_suggestions"`
+			BlockedPath    string         `json:"blocked_path"`
+			DecisionReason string         `json:"decision_reason"`
+			Title          string         `json:"title"`
+			DisplayName    string         `json:"display_name"`
+			Description    string         `json:"description"`
 		} `json:"request"`
 	}
 	if json.Unmarshal(raw, &m) != nil {
@@ -74,6 +80,15 @@ func (l *live) ask(p *proc, raw []byte) {
 			metadata[k] = v
 		}
 		metadata["tool"] = req.ToolName
+		for key, value := range map[string]string{"blocked_path": req.BlockedPath, "decision_reason": req.DecisionReason,
+			"title": req.Title, "display_name": req.DisplayName, "description": req.Description} {
+			if value != "" {
+				metadata[key] = value
+			}
+		}
+		if len(req.Suggestions) > 0 {
+			metadata["permission_suggestions"] = req.Suggestions
+		}
 		if req.AgentID != "" {
 			metadata["agentID"] = req.AgentID
 		}

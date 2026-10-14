@@ -118,6 +118,7 @@ func (l *live) publish(id string, info map[string]any, parts []map[string]any) {
 // spawning call (its transcript is subagents/agent-<task_id>.jsonl, the
 // index's child id) and init reports the session's skills.
 func (l *live) system(p *proc, raw []byte) {
+	l.sdkSystem(p, raw)
 	var s struct {
 		Subtype   string   `json:"subtype"`
 		TaskID    string   `json:"task_id"`
@@ -160,6 +161,9 @@ func (l *live) system(p *proc, raw []byte) {
 // success, and the next launch records it before resuming (spawnLocked).
 func (l *live) started(p *proc, input string) {
 	l.mu.Lock()
+	if p.pending[input] {
+		p.aborted, p.deferredResult = false, nil
+	}
 	delete(p.pending, input)
 	err := l.markStartedLocked(p.id)
 	if err != nil {

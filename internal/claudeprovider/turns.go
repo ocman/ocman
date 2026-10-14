@@ -20,6 +20,10 @@ import (
 // is_error/subtype (an API or execution failure is an error), an interrupt
 // (aborted: settled, not failed). Usage limits do not override the outcome.
 func (l *live) result(p *proc, raw []byte) {
+	l.resultFor(p, raw, nil)
+}
+
+func (l *live) resultFor(p *proc, raw []byte, expected *uint64) {
 	var r struct {
 		IsError        bool     `json:"is_error"`
 		Subtype        string   `json:"subtype"`
@@ -29,6 +33,10 @@ func (l *live) result(p *proc, raw []byte) {
 	}
 	_ = json.Unmarshal(raw, &r)
 	l.mu.Lock()
+	if expected != nil && l.accepted[p.id] != *expected {
+		l.mu.Unlock()
+		return
+	}
 	startErr := l.markStartedLocked(p.id)
 	if p.startErr != nil { // latched at the echo: recovery since does not undo it
 		startErr = p.startErr
@@ -45,8 +53,19 @@ func (l *live) result(p *proc, raw []byte) {
 	// A successful turn whose only output is the result text (a local
 	// command such as /cost) renders it, once (spike §4).
 	resultOnly := !failed && !aborted && r.Result != "" && !p.replied
+	if len(p.pending) == 0 && (len(p.tasks) > 0 || (p.state != "" && p.state != "idle")) {
+		p.deferredResult = slices.Clone(raw)
+		p.deferredGen = l.accepted[p.id]
+		l.armRunCeilingLocked(p)
+		l.mu.Unlock()
+		return
+	}
 	p.replied = false
 	if len(p.pending) > 0 {
+		if aborted {
+			p.deferredResult = slices.Clone(raw) // interrupt acknowledgment decides which inputs survived
+			p.deferredGen = l.accepted[p.id]
+		}
 		l.mu.Unlock()
 		if failed {
 			l.errorMessage(p.id, reason)
@@ -55,6 +74,8 @@ func (l *live) result(p *proc, raw []byte) {
 		}
 		return
 	}
+	p.deferredResult = nil
+	l.stopRunCeilingLocked(p)
 	p.busy, p.aborted = false, false
 	p.idle = time.AfterFunc(l.opts.IdleTimeout, func() {
 		l.mu.Lock()
@@ -233,7 +254,7 @@ func testHook(point, id string) {
 
 // abort interrupts the running turn through the control protocol (spike §5)
 // and cancels turns still waiting for a slot.
-func (l *live) abort(id string) error {
+func (l *live) abort(ctx context.Context, id string) error {
 	l.mu.Lock()
 	for w := range l.waits[id] {
 		w.cancelled = true
@@ -244,11 +265,36 @@ func (l *live) abort(id string) error {
 		l.mu.Unlock()
 		return nil
 	}
-	// ponytail: queued inputs are dropped with the turn; the interrupt's
-	// still_queued reply is not read (unmeasured beyond an empty list).
 	p.aborted = true
-	clear(p.pending)
 	l.mu.Unlock()
-	return l.write(p, map[string]any{"type": "control_request", "request_id": "abort-" + uuid.NewString(),
-		"request": map[string]any{"subtype": "interrupt"}})
+	data, err := l.control(ctx, p, "", map[string]any{"subtype": "interrupt"})
+	var response struct {
+		Queued []json.RawMessage `json:"still_queued"`
+	}
+	if err == nil && len(data) > 0 {
+		err = json.Unmarshal(data, &response)
+	}
+	l.mu.Lock()
+	if err != nil {
+		p.aborted = false
+	} else {
+		remaining := map[string]bool{}
+		for _, raw := range response.Queued {
+			var id string
+			if json.Unmarshal(raw, &id) != nil {
+				var input struct {
+					UUID string `json:"uuid"`
+				}
+				_ = json.Unmarshal(raw, &input)
+				id = input.UUID
+			}
+			if p.pending[id] {
+				remaining[id] = true
+			}
+		}
+		p.pending = remaining
+	}
+	l.mu.Unlock()
+	l.finishDeferredResult(p)
+	return err
 }

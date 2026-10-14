@@ -8,9 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/claudecli"
 )
 
 // The ocman plugin lives in a local marketplace of the same name (AD-11);
@@ -163,12 +164,5 @@ func (o Options) mcpConfig() string {
 // childEnv is a claude child's environment: this process's, with the
 // dashboard's CLAUDE_CONFIG_DIR when one was carried (nil inherits).
 func (o Options) childEnv() []string {
-	if o.ConfigEnv == nil {
-		return nil
-	}
-	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "CLAUDE_CONFIG_DIR=") })
-	if *o.ConfigEnv != "" {
-		env = append(env, "CLAUDE_CONFIG_DIR="+*o.ConfigEnv)
-	}
-	return env
+	return claudecli.Environment(o.ConfigEnv, "")
 }

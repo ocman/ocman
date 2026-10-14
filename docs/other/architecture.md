@@ -252,7 +252,7 @@ flowchart TD
     Provider -->|providerprotocol: HTTP + SSE over unix socket, leased snapshot + replay| Supervisor[providersupervisor<br/>sequenced spool, ack, drain]
     Local -.->|ocruntime.BackendRuntime in tmux, one per project| Supervisor
     Modules -->|idleprojects: idle timeout through hostsvc.IdleProjectRuntime| ClaudePlatform
-    Supervisor --> Claude[claudeprovider<br/>index, converter, pooled claude children]
+    Supervisor --> Claude[claudeprovider + claudecli<br/>index, converter, SDK-compatible claude children]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
     Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
@@ -479,7 +479,11 @@ flowchart TD
   started with `--permission-prompt-tool stdio`: each `can_use_tool` becomes a v1
   `permission.asked`/`question.asked`, decided first by the adapter's ocman-side
   `provider.Rules` store, then by the autoapprove pipeline and the user. Their
-  status comes from the process; terminal sessions use hook events when the
+  children initialize before the first prompt and acknowledge model/interrupt
+  controls. `internal/claudecli` supplies the shared Agent SDK environment to
+  sessions and helpers. Their status follows Claude's session-state and delegated
+  task events, so a result cannot end a run with background agent work outstanding;
+  terminal sessions use hook events when the
   plugin is installed, else the transcript tail settled by
   `db.SettleSessionStatus`.
 - **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,

@@ -87,7 +87,7 @@ func (l *live) serve(w http.ResponseWriter, r *http.Request) {
 	case "compact":
 		err = l.turn(r.Context(), id, "/compact", nil, "", "")
 	case "abort":
-		err = l.abort(id)
+		err = l.abort(r.Context(), id)
 	case "rename":
 		var req platforms.RenameSessionRequest
 		if err = decode(r, &req); err == nil {
@@ -316,7 +316,20 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 		testHook("acquire", id)
 		p, err := l.acquire(id, model, effort, input, w)
 		if err == nil {
-			if err = l.write(p, msg); err != nil {
+			err = l.initializeProc(p)
+			if err == nil {
+				err = l.changeModel(p, model)
+			}
+			l.mu.Lock()
+			cancelled := w.cancelled
+			l.mu.Unlock()
+			if err == nil && cancelled {
+				err = errAborted
+			}
+			if err == nil {
+				err = l.write(p, msg)
+			}
+			if err != nil {
 				l.mu.Lock()
 				p.busy = false
 				l.stopLocked(p)

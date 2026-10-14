@@ -57,6 +57,34 @@ history lives there: under another configuration it is read-only and sending
 to it reports that it is unavailable, and switching back makes it drivable
 again.
 
+## Agent SDK compatibility
+
+Ocman's Go integration mirrors Anthropic's Python Agent SDK transport revision
+**0.2.166**, using your installed CLI rather than a bundled SDK executable.
+Claude children, catalog/account probes, judges and naming helpers receive
+`CLAUDE_CODE_ENTRYPOINT=sdk-py` and `CLAUDE_AGENT_SDK_VERSION=0.2.166`.
+The CLI therefore generates the Agent SDK client identification and API headers
+itself. Ocman removes the inherited `CLAUDECODE` nesting marker and sets `PWD`
+to the child's working directory, while preserving the active Claude configuration
+and authentication environment.
+Existing supervisors from before this transport revision drain and are replaced
+once idle, preserving active turns and pending prompts during the upgrade.
+
+Each live child completes an `initialize` control handshake before receiving
+its first prompt. Model changes and interrupts wait for the CLI's acknowledgment;
+an interrupt preserves inputs Claude reports as still queued. Subagent text is
+enabled through initialization. Ocman keeps Claude Code's native system prompt
+and user/project settings, corresponding to the SDK's Claude Code preset rather
+than its empty system-prompt default.
+
+A result ends one turn, but background agents can owe another turn. Ocman reads
+Claude's session-state events and delegated-task lifecycle before publishing idle.
+Older CLIs that emit no session-state events use the task ledger and result frame.
+The SDK's `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` bounds the wait between turns to
+10 minutes by default; `0` disables that ceiling. A running delegated task or a
+permission wait is never cut short by it. Corrupt or oversized stream messages
+fail visibly, and process shutdown allows stdin EOF, then SIGTERM, then SIGKILL.
+
 ## What you get
 
 - **Automatic session titles.** After the first accepted prompt, ocman runs a
@@ -96,7 +124,8 @@ again.
   turn keep that turn's model and effort.
 - **Turn outcome.** A turn ends when every message you sent during it has
   finished: a message sent mid-turn keeps the session busy until Claude has run
-  it. A failed result, a crashed `claude` or a failed launch ends the turn as
+  it, and delegated background agents keep it busy until their continuation
+  finishes. A failed result, a crashed `claude` or a failed launch ends the turn as
   `error` (a routine run records a failure); an abort ends it without an error,
   including a turn still waiting for one of the 4 process slots, which then
   never starts.

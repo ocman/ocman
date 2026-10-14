@@ -1,7 +1,6 @@
 package claudeprovider
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +9,10 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/claudecli"
 )
 
 // proc is one live claude child, driven over stream-json pipes (AD-6).
@@ -34,11 +36,22 @@ type proc struct {
 	conv     *Converter  // touched only by the reader goroutine
 	// children maps a spawning Task/Agent call id to its subagent's
 	// converter (reader goroutine only).
-	children map[string]*Converter
-	dir      string // working directory
-	stderr   *tail
-	done     chan struct{} // closed once the child has been reaped
-	release  func()        // frees the machine slot once the child is reaped; under l.mu
+	children       map[string]*Converter
+	dir            string // working directory
+	stderr         *tail
+	done           chan struct{} // closed once the child has been reaped
+	release        func()        // frees the machine slot once the child is reaped; under l.mu
+	writeMu        sync.Mutex
+	controlMu      sync.Mutex
+	controls       map[string]chan controlResult
+	initializeOnce sync.Once
+	initializeErr  error
+	initialized    bool            // under controlMu
+	state          string          // Claude's session_state_changed; empty on older CLIs
+	tasks          map[string]bool // delegated agents/workflows that can owe another turn
+	deferredResult []byte
+	deferredGen    uint64
+	runCeiling     *time.Timer
 }
 
 func (p *proc) freeSlotLocked() {
@@ -70,11 +83,11 @@ func (t *tail) String() string {
 	return strings.TrimSpace(string(t.buf))
 }
 
-// launchArgs is the AD-6 command. --verbose is required by stream-json
-// output and --forward-subagent-text streams child transcripts (spike).
+// launchArgs is the AD-6 command. --verbose is required by stream-json output;
+// subagent forwarding is requested in the SDK initialization handshake.
 func (l *live) launchArgs(id string, o owned, model, effort, mcp string) []string {
 	args := []string{"-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json",
-		"--include-partial-messages", "--replay-user-messages", "--forward-subagent-text",
+		"--include-partial-messages", "--replay-user-messages",
 		// Every tool call the CLI does not settle from the user's own Claude
 		// settings is asked of ocman over the control protocol (AD-7).
 		"--permission-mode", "default", "--permission-prompt-tool", "stdio"}
@@ -119,9 +132,9 @@ func (l *live) acquire(id, model, effort, input string, w *waitTicket) (*proc, e
 			return nil, errAborted
 		}
 		if p := l.procs[id]; p != nil {
-			// ponytail: model/effort switches restart an idle child; a busy one keeps its settings.
-			// So does a rebound MCP listener: a running turn is never interrupted.
-			if p.busy || ((model == "" || model == p.model) && effort == p.effort && p.mcp == l.opts.mcpConfig()) {
+			// Model changes use set_model. Effort is launch-only, and a rebound
+			// MCP listener also restarts only an idle child.
+			if p.busy || (effort == p.effort && p.mcp == l.opts.mcpConfig()) {
 				if p.busy {
 					p.pending[input] = true
 				}
@@ -180,9 +193,9 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 	mcp := l.opts.mcpConfig()
 	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, mcp)...)
 	cmd.Dir = o.Directory
-	cmd.Env = l.opts.childEnv()
+	cmd.Env = claudecli.Environment(l.opts.ConfigEnv, o.Directory)
 	p := &proc{id: id, model: model, effort: effort, mcp: mcp, cmd: cmd, busy: true, pending: map[string]bool{}, conv: &Converter{SessionID: id},
-		children: map[string]*Converter{}, dir: o.Directory, stderr: &tail{}, done: make(chan struct{})}
+		children: map[string]*Converter{}, tasks: map[string]bool{}, controls: map[string]chan controlResult{}, dir: o.Directory, stderr: &tail{}, done: make(chan struct{})}
 	cmd.Stderr = p.stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -213,12 +226,20 @@ func (l *live) stopLocked(p *proc) {
 	if p.idle != nil {
 		p.idle.Stop()
 	}
+	l.stopRunCeilingLocked(p)
 	_ = p.stdin.Close()
 	time.AfterFunc(5*time.Second, func() {
 		select {
 		case <-p.done:
 		default:
-			_ = p.cmd.Process.Kill()
+			_ = p.cmd.Process.Signal(syscall.SIGTERM)
+			time.AfterFunc(5*time.Second, func() {
+				select {
+				case <-p.done:
+				default:
+					_ = p.cmd.Process.Kill()
+				}
+			})
 		}
 	})
 }
@@ -232,6 +253,8 @@ func (l *live) stopAll() {
 }
 
 func (l *live) write(p *proc, msg any) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -240,42 +263,21 @@ func (l *live) write(p *proc, msg any) error {
 	return err
 }
 
-func (l *live) read(p *proc, stdout io.Reader) {
-	lines := bufio.NewScanner(stdout)
-	lines.Buffer(nil, 32<<20)
-	for lines.Scan() {
-		l.handle(p, lines.Bytes())
-	}
-	_ = p.cmd.Wait()
-	close(p.done)
-	l.cancel(p, "")
-	l.mu.Lock()
-	wasBusy := p.busy
-	p.busy = false
-	clear(p.pending)
-	if l.procs[p.id] == p {
-		delete(l.procs, p.id)
-	}
-	p.freeSlotLocked()
-	l.children--
-	gen := l.accepted[p.id]
-	l.slots.Broadcast()
-	l.mu.Unlock()
-	if wasBusy {
-		l.fail(p.id, fmt.Errorf("claude exited during the turn: %s", or(p.stderr.String(), p.cmd.ProcessState.String())), gen)
-	}
-}
-
 // handle converts one stream-json line into v1 events.
-func (l *live) handle(p *proc, raw []byte) {
+func (l *live) handle(p *proc, raw []byte) error {
 	var m struct {
 		Type   string `json:"type"`
 		Parent string `json:"parent_tool_use_id"`
 	}
-	if json.Unmarshal(raw, &m) != nil {
-		return
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return fmt.Errorf("invalid Claude stream JSON: %w", err)
+	}
+	if m.Type == "" {
+		return errors.New("claude stream message has no type")
 	}
 	switch m.Type {
+	case "control_response":
+		l.receiveControl(p, raw)
 	case "control_request":
 		l.ask(p, raw)
 	case "control_cancel_request":
@@ -287,6 +289,9 @@ func (l *live) handle(p *proc, raw []byte) {
 	case "system":
 		l.system(p, raw)
 	case "assistant", "user", "stream_event":
+		if m.Parent == "" && (m.Type == "assistant" || m.Type == "stream_event") {
+			l.resumeRun(p)
+		}
 		// Forwarded subagent output names the spawning call; it renders in
 		// the child session linked to that call, never in the parent (FR-3).
 		conv := p.conv
@@ -297,7 +302,7 @@ func (l *live) handle(p *proc, raw []byte) {
 		}
 		if m.Parent != "" {
 			if conv = p.children[m.Parent]; conv == nil {
-				return // ponytail: no task_started link yet; the child's transcript renders it
+				return nil // ponytail: no task_started link yet; the child's transcript renders it
 			}
 		}
 		var echo struct {
@@ -328,8 +333,11 @@ func (l *live) handle(p *proc, raw []byte) {
 			l.account.observe(e.Info)
 		}
 	case "result":
-		l.result(p, raw)
+		if !l.initializationFailure(p, raw) {
+			l.result(p, raw)
+		}
 	}
+	return nil
 }
 
 // exitingLocked reports a stopped child that has not been reaped yet. While

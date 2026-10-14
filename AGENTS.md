@@ -514,6 +514,11 @@ are computed. Sessions retain their original directories and owners.
   drives are ignored. Install/uninstall run `claude plugin …`. Tests
   never run `claude`; `claudetest.Binary` builds a fake that replays
   `internal/claudeprovider/testdata/<version>/` fixtures.
+- `internal/claudecli/` — shared Agent SDK-compatible child environment for
+  Claude sessions, probes, judges and naming helpers. The Go transport mirrors
+  Python Agent SDK 0.2.166, initializes live children before prompts, acknowledges
+  controls and settles from session-state/delegated-task events. It uses the
+  installed CLI with Claude Code's native prompt/settings preset.
 - `internal/ocv2/` — OpenCode v2 compatibility: version detection, the
   v1-on-v2 RoundTripper (`compat.go`, `routes_*.go`), the event translator
   (`events*.go`) and the v2→v1 converters (`message.go`, `tools.go`,
