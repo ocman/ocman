@@ -112,7 +112,9 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	var gotContexts []context.Context
+	inventoryChanges := 0
 	h := New(Deps{
+		RuntimeInventoryChanged: func() { inventoryChanges++ },
 		LaunchTmux: func(got context.Context, dir string) (string, error) {
 			gotContexts = append(gotContexts, got)
 			launchedDir = dir
@@ -149,6 +151,9 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 	res, err := h.LaunchTmux(ctx, hostsvc.LaunchTmuxRequest{Directory: "/d"})
 	if err != nil || res.Session != "sess-name" || launchedDir != "/d" {
 		t.Fatalf("LaunchTmux: res=%+v dir=%q err=%v", res, launchedDir, err)
+	}
+	if inventoryChanges != 1 {
+		t.Fatalf("LaunchTmux inventory changes = %d, want 1", inventoryChanges)
 	}
 
 	sessions, err := h.TmuxSessions(ctx)

@@ -199,6 +199,7 @@ func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*
 		return nil, err
 	}
 	log.WithFields(log.Fields{"directory": req.Directory, "tmuxSession": name}).Info("host: launched opencode in tmux")
+	h.runtimeInventoryChanged()
 	return &hostsvc.LaunchTmuxResult{Session: name}, nil
 }
 func (h *Host) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {

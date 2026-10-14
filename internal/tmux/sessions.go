@@ -10,8 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 // Client represents a connected tmux client.
@@ -474,9 +472,6 @@ func LaunchOpencodeCmdEnvWith(ctx context.Context, r Runner, directory, command 
 // explicitly want a fresh window every time.
 func LaunchOpencode(ctx context.Context, directory string) (string, error) {
 	name, _, err := LaunchOpencodeWith(ctx, DefaultRunner, directory, false)
-	if err == nil {
-		opencode.InvalidateOpenCodePortCache()
-	}
 	return name, err
 }
 
@@ -499,11 +494,7 @@ func LaunchOpencodeWith(ctx context.Context, r Runner, directory string, idempot
 // the one-opencode-per-project host primitive: when a session for the
 // directory already exists it returns launched=false and touches nothing.
 func LaunchOpencodeEnv(ctx context.Context, directory string, env map[string]string) (string, bool, error) {
-	name, launched, err := LaunchOpencodeEnvWith(ctx, DefaultRunner, directory, true, env)
-	if err == nil && launched {
-		opencode.InvalidateOpenCodePortCache()
-	}
-	return name, launched, err
+	return LaunchOpencodeEnvWith(ctx, DefaultRunner, directory, true, env)
 }
 
 // LaunchOpencodeEnvWith is the env-aware analogue of LaunchOpencodeWith.
@@ -517,11 +508,7 @@ func LaunchOpencodeEnvWith(ctx context.Context, r Runner, directory string, idem
 }
 
 func RestartOpencode(ctx context.Context, directory string) (string, error) {
-	target, err := RestartOpencodeWith(ctx, DefaultRunner, directory)
-	if err == nil {
-		opencode.InvalidateOpenCodePortCache()
-	}
-	return target, err
+	return RestartOpencodeWith(ctx, DefaultRunner, directory)
 }
 
 func RestartOpencodeWith(ctx context.Context, r Runner, directory string) (string, error) {
