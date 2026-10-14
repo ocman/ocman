@@ -341,3 +341,83 @@ func TestHandleGlobalEventsStreamsBroadcast(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream", ct)
 	}
 }
+
+// deliver must use the key broadcast computed once per event, not re-parse
+// the payload per subscriber.
+func TestBroadcastSubDeliverUsesPrecomputedKey(t *testing.T) {
+	h := newBroadcastHub()
+	sub, unsub := h.subscribe()
+	defer unsub()
+	for len(sub.ch) < cap(sub.ch) {
+		h.broadcast("filler", []byte(`{}`))
+	}
+	sub.deliver(broadcastEvent{event: "ocman.queue.updated", data: []byte(`{"sessionID":"s1"}`), key: "precomputed"})
+	if _, ok := sub.pending["precomputed"]; !ok || len(sub.pending) != 1 {
+		t.Fatalf("pending keys = %v, want [precomputed]", sub.pending)
+	}
+}
+
+// Merged changes are shared by every subscriber's park: merging for one
+// must not leak into another's pending payload.
+func TestBroadcastHubMergeDoesNotShareStateAcrossSubscribers(t *testing.T) {
+	h := newBroadcastHub()
+	a, unsubA := h.subscribe()
+	defer unsubA()
+	b, unsubB := h.subscribe()
+	defer unsubB()
+	for len(a.ch) < cap(a.ch) {
+		h.broadcast("filler", []byte(`{}`))
+	}
+	<-b.ch // b keeps one free slot, so its first change is buffered
+	h.broadcast("ocman.session.changed", []byte(`{"sessionID":"s1","patch":{"title":"T"}}`))
+	h.broadcast("ocman.session.changed", []byte(`{"sessionID":"s1","patch":{"status":"busy"}}`))
+	if got := a.drainPending(); len(got) != 1 || string(got[0].data) != `{"patch":{"status":"busy","title":"T"},"sessionID":"s1"}` {
+		t.Fatalf("a pending = %+v", got)
+	}
+	if got := b.drainPending(); len(got) != 1 || string(got[0].data) != `{"sessionID":"s1","patch":{"status":"busy"}}` {
+		t.Fatalf("b pending = %+v", got)
+	}
+}
+
+// A client that stops reading is disconnected by the write deadline and
+// unsubscribed, instead of pinning the writer until TCP gives up.
+func TestHandleGlobalEventsDropsStalledClient(t *testing.T) {
+	old := sseWriteTimeout
+	sseWriteTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { sseWriteTimeout = old })
+
+	srv := &Server{broadcastHub: newBroadcastHub()}
+	ts := httptest.NewServer(http.HandlerFunc(srv.handleGlobalEvents))
+	defer ts.Close()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() // never read: the client is stalled
+
+	big := []byte(`"` + strings.Repeat("x", 1<<20) + `"`)
+	deadline := time.Now().Add(10 * time.Second)
+	for srv.broadcastHub.subscriberCount() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("stalled client was never unsubscribed")
+		}
+		srv.broadcastGlobalEvent("big", big)
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func BenchmarkBroadcastSessionChangedFanOut(b *testing.B) {
+	h := newBroadcastHub()
+	for range 50 {
+		_, unsub := h.subscribe()
+		b.Cleanup(unsub)
+	}
+	data := []byte(`{"sessionID":"s1","platform":"opencode","patch":{"status":"busy"}}`)
+	for b.Loop() {
+		h.broadcast("ocman.session.changed", data)
+	}
+}

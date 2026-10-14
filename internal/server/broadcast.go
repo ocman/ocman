@@ -3,14 +3,14 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
@@ -33,6 +33,12 @@ import (
 type broadcastEvent struct {
 	event string
 	data  []byte
+	key   string // coalesceKey, computed once per broadcast
+	// change is the decoded ocman.session.changed payload (decoded once per
+	// broadcast and shared read-only), so merging parked changes under the
+	// subscriber lock is map work only. A merge clears data; batch
+	// re-encodes it after the lock is released.
+	change *sessionChange
 }
 
 // coalescingEvents are last-write-wins per coalesceKey: a newer payload
@@ -135,11 +141,25 @@ func (h *broadcastHub) subscribe() (*broadcastSub, func()) {
 // notify poll is the backstop); coalescing events are instead parked as
 // the latest-wins pending state for the subscriber and the writer is
 // woken to flush them, so the freshest full-state snapshot is never lost.
+//
+// The event is parsed once, and the hub lock covers only the snapshot of
+// subscribers: deliver tolerates a subscriber that unsubscribes meanwhile.
 func (h *broadcastHub) broadcast(event string, data []byte) {
+	ev := broadcastEvent{event: event, data: data}
+	if coalescingEvents[event] {
+		ev.key = coalesceKey(event, data)
+		if event == "ocman.session.changed" {
+			ev.change = decodeSessionChange(data)
+		}
+	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	subs := make([]*broadcastSub, 0, len(h.subs))
 	for sub := range h.subs {
-		sub.deliver(broadcastEvent{event: event, data: data})
+		subs = append(subs, sub)
+	}
+	h.mu.Unlock()
+	for _, sub := range subs {
+		sub.deliver(ev)
 	}
 }
 
@@ -149,13 +169,10 @@ func (h *broadcastHub) broadcast(event string, data []byte) {
 // the buffer could overtake the older parked payload. The whole decision
 // runs under s.mu, and the writer takes buffer and parked events as one
 // batch under the same lock (takeBatch), so each key's events reach the
-// client in publish order.
+// client in publish order. ev.key must already be set for coalescing events.
 func (s *broadcastSub) deliver(ev broadcastEvent) {
 	coalescing := coalescingEvents[ev.event]
-	key := ""
-	if coalescing {
-		key = coalesceKey(ev.event, ev.data)
-	}
+	key := ev.key
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -178,7 +195,7 @@ func (s *broadcastSub) deliver(ev broadcastEvent) {
 		return
 	}
 	if old, ok := s.pending[key]; ok && ev.event == "ocman.session.changed" {
-		ev.data = mergeSessionPatches(old.data, ev.data)
+		ev = mergeSessionChanges(old, ev)
 	}
 	s.pending[key] = ev
 	s.mu.Unlock()
@@ -188,46 +205,12 @@ func (s *broadcastSub) deliver(ev broadcastEvent) {
 	}
 }
 
-// mergeSessionPatches folds an older pending session change into a newer
-// one for a slow subscriber, so nothing the older one asked for is lost:
-// two patches merge field by field (a status patch keeps a pending title),
-// and if either side is identity-only the result stays identity-only, since
-// that asks the consumer to refetch and a refetch subsumes any patch.
-func mergeSessionPatches(older, newer []byte) []byte {
-	var o, n map[string]json.RawMessage
-	if json.Unmarshal(older, &o) != nil || json.Unmarshal(newer, &n) != nil {
-		return newer
-	}
-	if o["patch"] == nil || n["patch"] == nil {
-		delete(n, "patch")
-	} else {
-		var op, np map[string]json.RawMessage
-		if json.Unmarshal(o["patch"], &op) != nil || json.Unmarshal(n["patch"], &np) != nil {
-			return newer
-		}
-		for k, v := range np {
-			op[k] = v
-		}
-		merged, err := json.Marshal(op)
-		if err != nil {
-			return newer
-		}
-		n["patch"] = merged
-	}
-	out, err := json.Marshal(n)
-	if err != nil {
-		return newer
-	}
-	return out
-}
-
 // takeBatch atomically removes everything buffered, then everything
 // parked, in that order. Buffered events for a key are always older than
 // its parked one, and no producer can interleave while the batch is taken.
 // The caller writes the batch outside the lock.
 func (s *broadcastSub) takeBatch() []broadcastEvent {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	var batch []broadcastEvent
 	for n := len(s.ch); n > 0; n-- {
 		batch = append(batch, <-s.ch)
@@ -236,23 +219,21 @@ func (s *broadcastSub) takeBatch() []broadcastEvent {
 		batch = append(batch, ev)
 		delete(s.pending, k)
 	}
-	return batch
+	s.mu.Unlock()
+	return encodeAll(batch)
 }
 
 // drainPending returns and clears the subscriber's pending coalesced
 // events. Called by the SSE writer when woken.
 func (s *broadcastSub) drainPending() []broadcastEvent {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.pending) == 0 {
-		return nil
-	}
 	out := make([]broadcastEvent, 0, len(s.pending))
 	for k, ev := range s.pending {
 		out = append(out, ev)
 		delete(s.pending, k)
 	}
-	return out
+	s.mu.Unlock()
+	return encodeAll(out)
 }
 
 // subscriberCount reports how many clients are currently connected.
@@ -316,6 +297,27 @@ func (s *Server) broadcastQuestionResolved(sessionID, requestID, reason string) 
 // half-open stream (frontend KEEPALIVE_TIMEOUT_MS). A var for tests.
 var sseKeepaliveInterval = 15 * time.Second
 
+// sseWriteTimeout bounds each write to a browser stream, so a client that
+// stopped reading is dropped (and unsubscribed) instead of pinning its
+// goroutine until TCP gives up. A var for tests.
+var sseWriteTimeout = 30 * time.Second
+
+// writeSSE writes one chunk under a fresh write deadline and flushes it.
+// Writers without deadline support (test recorders) write without one.
+func writeSSE(w http.ResponseWriter, rc *http.ResponseController, chunk []byte) error {
+	if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	if _, err := w.Write(chunk); err != nil {
+		return err
+	}
+	return rc.Flush()
+}
+
+func sseEventChunk(ev broadcastEvent) []byte {
+	return fmt.Appendf(nil, "event: %s\ndata: %s\n\n", ev.event, ev.data)
+}
+
 // handleGlobalEvents serves GET /api/events: an app-wide SSE stream
 // that fans out broadcast events to every connected client regardless
 // of which page they're on. Used by the frontend to clear cross-page
@@ -332,11 +334,11 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	if _, ok := w.(http.Flusher); !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	rc := http.NewResponseController(w)
 
 	sub, unsub := s.broadcastHub.subscribe()
 	defer unsub()
@@ -344,7 +346,9 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 	// Initial flush so the client's EventSource transitions to the
 	// open state immediately rather than waiting for the first event.
 	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
+	if writeSSE(w, rc, nil) != nil {
+		return
+	}
 
 	keepalive := time.NewTicker(sseKeepaliveInterval)
 	defer keepalive.Stop()
@@ -355,23 +359,23 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			if _, err := io.WriteString(w, httpx.SSEKeepalive); err != nil {
+			if writeSSE(w, rc, []byte(httpx.SSEKeepalive)) != nil {
 				return
 			}
-			flusher.Flush()
 		case <-sub.wake:
 			// Coalesced last-write-wins events that didn't fit the buffer —
 			// flush the freshest snapshot per key so state (e.g. the queue
 			// list) is never lost under load. Buffered events are older than
 			// any parked one for the same key, so write them first.
 			for _, ev := range sub.takeBatch() {
-				autoapprove.WriteSSEEvent(w, flusher.Flush, ev.event, ev.data)
+				if writeSSE(w, rc, sseEventChunk(ev)) != nil {
+					return
+				}
 			}
 		case ev, open := <-sub.ch:
-			if !open {
+			if !open || writeSSE(w, rc, sseEventChunk(ev)) != nil {
 				return
 			}
-			autoapprove.WriteSSEEvent(w, flusher.Flush, ev.event, ev.data)
 		}
 	}
 }
