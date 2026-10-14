@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { api } from './api';
 import { getSidebarSessions, patchSessionLists, seedSessionLists } from './sessionsCache';
 import type {
-  CapabilitiesResponse,
   DirectoryBrowseResponse,
   DirectorySearchResponse,
   ModelUsage,
@@ -18,11 +17,6 @@ import type {
   TmuxSession,
   WorkingTreeDiff,
 } from './api';
-
-type RequestStatus = {
-  loading: boolean;
-  error: string | null;
-};
 
 /**
  * A session that was just archived ("closed") and can be reopened via the
@@ -59,7 +53,6 @@ export function resetWhisperStatusCache() {
 }
 
 type ApiStore = {
-  requests: Record<string, RequestStatus>;
   pendingInterruptionReads: Record<string, { timeUpdated: number; confirmed?: boolean }>;
   /**
    * Per-row status write counters for the sidebar list (see
@@ -91,7 +84,6 @@ type ApiStore = {
    * this stub as soon as the fetch resolves.
    */
   seedNewSession: (id: string, directory: string, platform: string, title?: string, remoteId?: string) => void;
-  runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
   getProjects: (signal?: AbortSignal) => Promise<Project[]>;
   browseDirectories: (directory?: string, signal?: AbortSignal) => Promise<DirectoryBrowseResponse>;
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => Promise<DirectorySearchResponse>;
@@ -107,7 +99,6 @@ type ApiStore = {
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number, interrupted?: boolean) => Promise<{ ok: boolean }>;
   pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
-  getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string, platform?: string, queue?: boolean) => Promise<void>;
   listPermissions: (sessionId: string) => Promise<PermissionRequest[]>;
   refreshPermissions: (sessionId: string, platform: string) => Promise<PermissionRequest[]>;
@@ -137,7 +128,6 @@ type ApiStore = {
 };
 
 export const useApiStore = create<ApiStore>((set, get) => ({
-  requests: {},
   pendingInterruptionReads: {},
   recentStatusRevisions: {},
   closedSessionStack: [],
@@ -240,67 +230,24 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     // instead of waiting for a poll tick.
     seedSessionLists(stub.session);
   },
-  runRequest: async <T,>(key: string, task: () => Promise<T>) => {
-    set((state) => ({
-      requests: {
-        ...state.requests,
-        [key]: { loading: true, error: null },
-      },
-    }));
-
-    try {
-      const result = await task();
-      set((state) => ({
-        requests: {
-          ...state.requests,
-          [key]: { loading: false, error: null },
-        },
-      }));
-      return result;
-    } catch (error) {
-      // Aborted requests are not real failures — don't write an error
-      // state for them so the UI doesn't flash error messages during
-      // rapid navigation or filter changes (P4 fix).
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : 'Request failed';
-      set((state) => ({
-        requests: {
-          ...state.requests,
-          [key]: { loading: false, error: message },
-        },
-      }));
-      throw error;
-    }
-  },
-  getProjects: (signal) => get().runRequest('projects:get', () => api.projects(signal)),
-  browseDirectories: (directory, signal) => get().runRequest(`filesystem:directories:${directory ?? '~'}`, () => api.browseDirectories(directory, signal)),
-  searchDirectories: (root, query, limit, signal) => get().runRequest(`filesystem:directory-search:${root ?? '~'}:${query}:${limit ?? ''}`, () => api.searchDirectories(root, query, limit, signal)),
-  getSessions: (params, signal) => {
-    // Stable key so useApiRequest('sessions:get') sees status transitions.
-    // Per-params variance (since, limit) doesn't need its own loading row —
-    // the dashboard only cares about the latest request's status.
-    const key = params?.dir ? `sessions:get:dir:${params.dir}` : 'sessions:get';
-    return get().runRequest(key, () => api.sessions(params, signal));
-  },
-  getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
-  peekSession: (id, signal, platform) => get().runRequest(`session:peek:${platform ?? ''}:${id}`, () => api.session(id, 1, 0, signal, platform, true)),
-  getSessionChanges: (id, signal) => get().runRequest(`session:changes:${id}`, () => api.sessionChanges(id, signal)),
-  getSessionInfo: (id, signal, platform) => get().runRequest(
-    `session:info:${platform ?? 'local'}:${id}`,
-    () => api.sessionInfo(id, signal, platform),
-  ),
-  getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
-  archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
-  archiveProject: (directory, archived = true, remoteId) => get().runRequest(`project:archive:${remoteId ?? 'local'}:${directory}`, () => api.archiveProject(directory, archived, remoteId)),
+  getProjects: (signal) => api.projects(signal),
+  browseDirectories: (directory, signal) => api.browseDirectories(directory, signal),
+  searchDirectories: (root, query, limit, signal) => api.searchDirectories(root, query, limit, signal),
+  getSessions: (params, signal) => api.sessions(params, signal),
+  getSession: (id, limit = 50, offset = 0, signal) => api.session(id, limit, offset, signal),
+  peekSession: (id, signal, platform) => api.session(id, 1, 0, signal, platform, true),
+  getSessionChanges: (id, signal) => api.sessionChanges(id, signal),
+  getSessionInfo: (id, signal, platform) => api.sessionInfo(id, signal, platform),
+  getGitDiff: (dir, opts, signal) => api.gitDiff(dir, opts, signal),
+  archiveSession: (platform, sessionId, timeUpdated, archived = true) => api.archiveSession(platform, sessionId, timeUpdated, archived),
+  archiveProject: (directory, archived = true, remoteId) => api.archiveProject(directory, archived, remoteId),
   markSessionSeen: async (platform, sessionId, timeUpdated, interrupted) => {
     const key = `${platform}:${sessionId}`;
     const pending = { timeUpdated };
     let succeeded = false;
     if (interrupted) set(state => ({ pendingInterruptionReads: { ...state.pendingInterruptionReads, [key]: pending } }));
     try {
-      const result = await get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated, interrupted));
+      const result = await api.markSessionSeen(platform, sessionId, timeUpdated, interrupted);
       succeeded = true;
       const row = getSidebarSessions().find(s => s.platform === platform && s.id === sessionId);
       if (interrupted && row?.status === 'interrupted' && row.timeUpdated <= timeUpdated) {
@@ -319,16 +266,13 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       });
     }
   },
-  pinSession: (platform, sessionId, pinned) => get().runRequest(`session:pin:${sessionId}`, () => api.pinSession(platform, sessionId, pinned)),
-  getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
-  getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
+  pinSession: (platform, sessionId, pinned) => api.pinSession(platform, sessionId, pinned),
+  getModels: (signal) => api.models(undefined, signal),
   sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => {
     const previous = getSidebarSessions().find((s) => s.id === sessionId)?.timeUpdated;
     const now = Math.max(Date.now(), previous ?? 0);
     if (!queue) patchSessionLists(sessionId, { timeUpdated: now });
-    return get().runRequest(`message:send:${sessionId}`, () =>
-      api.sendMessage(sessionId, message, images, model, agent, reasoning, platform, queue),
-    ).catch((error) => {
+    return api.sendMessage(sessionId, message, images, model, agent, reasoning, platform, queue).catch((error) => {
       // Don't undo activity that arrived through SSE while the request ran.
       if (!queue && previous !== undefined &&
           getSidebarSessions().find((s) => s.id === sessionId)?.timeUpdated === now) {
@@ -337,39 +281,34 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       throw error;
     });
   },
-  listPermissions: (sessionId) => get().runRequest(`permissions:list:${sessionId}`, () => api.listPermissions(sessionId)),
-  refreshPermissions: (sessionId, platform) => get().runRequest(`permissions:refresh:${platform}:${sessionId}`, () => api.refreshPermissions(sessionId, platform)),
-  respondPermission: (sessionId, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, permissionId, reply)),
-  listQuestions: (sessionId) => get().runRequest(`questions:list:${sessionId}`, () => api.listQuestions(sessionId)),
-  respondQuestion: (sessionId, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, requestId, answers)),
-  rejectQuestion: (sessionId, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, requestId)),
-  getAutoApprove: (sessionId) => get().runRequest(`auto-approve:get:${sessionId}`, () => api.getAutoApprove(sessionId)),
-  setAutoApprove: (sessionId, enabled) => get().runRequest(`auto-approve:set:${sessionId}`, () => api.setAutoApprove(sessionId, enabled)),
-  getPromptSections: () => get().runRequest('prompt-sections:get', () => api.getPromptSections()),
-  setPromptSectionsApi: (sections) => get().runRequest('prompt-sections:set', () => api.setPromptSections(sections)),
-  getJudgeDelay: () => get().runRequest('judge-delay:get', () => api.getJudgeDelay()),
-  setJudgeDelayApi: (delayMs) => get().runRequest('judge-delay:set', () => api.setJudgeDelay(delayMs)),
-  getJudgeModel: () => get().runRequest('judge-model:get', () => api.getJudgeModel()),
-  setJudgeModelApi: (model) => get().runRequest('judge-model:set', () => api.setJudgeModel(model)),
-  getJudgeModelOptions: (signal) => get().runRequest('judge-model-options:get', () => api.getJudgeModelOptions(signal)),
-  abortSession: (sessionId) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId)),
-  getTmuxClients: (signal) => get().runRequest('tmux-clients:get', () => api.tmuxClients(signal)),
-  getTmuxSessions: (signal) => get().runRequest('tmux-sessions:get', () => api.tmuxSessions(signal)),
-  switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),
-  launchOpencodeInTmux: (directory, remoteId) => get().runRequest(`tmux:launch-opencode:${remoteId || 'local'}:${directory}`, () => api.tmuxLaunchOpencode(directory, remoteId)),
+  listPermissions: (sessionId) => api.listPermissions(sessionId),
+  refreshPermissions: (sessionId, platform) => api.refreshPermissions(sessionId, platform),
+  respondPermission: (sessionId, permissionId, reply) => api.respondPermission(sessionId, permissionId, reply),
+  listQuestions: (sessionId) => api.listQuestions(sessionId),
+  respondQuestion: (sessionId, requestId, answers) => api.respondQuestion(sessionId, requestId, answers),
+  rejectQuestion: (sessionId, requestId) => api.rejectQuestion(sessionId, requestId),
+  getAutoApprove: (sessionId) => api.getAutoApprove(sessionId),
+  setAutoApprove: (sessionId, enabled) => api.setAutoApprove(sessionId, enabled),
+  getPromptSections: () => api.getPromptSections(),
+  setPromptSectionsApi: (sections) => api.setPromptSections(sections),
+  getJudgeDelay: () => api.getJudgeDelay(),
+  setJudgeDelayApi: (delayMs) => api.setJudgeDelay(delayMs),
+  getJudgeModel: () => api.getJudgeModel(),
+  setJudgeModelApi: (model) => api.setJudgeModel(model),
+  getJudgeModelOptions: (signal) => api.getJudgeModelOptions(signal),
+  abortSession: (sessionId) => api.abortSession(sessionId),
+  getTmuxClients: (signal) => api.tmuxClients(signal),
+  getTmuxSessions: (signal) => api.tmuxSessions(signal),
+  switchTmuxSession: (session, client) => api.tmuxSwitch(session, client),
+  launchOpencodeInTmux: (directory, remoteId) => api.tmuxLaunchOpencode(directory, remoteId),
   getWhisperStatus: (signal) => {
     // Whisper availability is machine state, so one successful read per
     // app load serves every session switch. A failure is not cached.
-    whisperStatus ??= get().runRequest('whisper-status:get', () => api.whisperStatus(signal))
+    whisperStatus ??= api.whisperStatus(signal)
       .catch((err) => { whisperStatus = null; throw err; });
     return whisperStatus;
   },
-  transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
-  getSystemStats: (signal) => get().runRequest('system-stats:get', () => api.systemStats(signal)),
+  transcribe: (audio) => api.transcribe(audio),
+  getSystemStats: (signal) => api.systemStats(signal),
 }));
 
-const DEFAULT_REQUEST_STATUS: RequestStatus = { loading: true, error: null };
-
-export function useApiRequest(key: string): RequestStatus {
-  return useApiStore((state) => state.requests[key] ?? DEFAULT_REQUEST_STATUS);
-}
