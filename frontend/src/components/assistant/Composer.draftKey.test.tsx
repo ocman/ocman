@@ -85,6 +85,35 @@ it('does not keep a submitted prompt as the old session draft when re-pointed mi
   expect(input).toHaveValue('other draft');
 });
 
+it('does not clear a different shared prompt when submitting before autosave', async () => {
+  saveDraft('competing-clear', 'First prompt');
+  await transact(['texts'], 'readonly', (tx) => tx.get('texts', 'competing-clear'));
+  let resolve!: () => void;
+  const onSend = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const view = render(<Composer isRunning={false} newConversation draftKey="competing-clear" onSend={onSend} />);
+  fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Other prompt' } });
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  expect(onSend).toHaveBeenCalled();
+  expect(getDraft('competing-clear')).toBe('First prompt');
+  view.unmount();
+  await act(async () => { resolve(); });
+  expect(await transact(['texts'], 'readonly', (tx) => tx.get('texts', 'competing-clear'))).toEqual({ text: 'First prompt', revision: 0 });
+});
+
+it('keeps a peer edit when a send succeeds on the same mounted draft', async () => {
+  saveDraft('peer-during-send', 'First prompt');
+  let resolve!: () => void;
+  const onSend = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const view = render(<Composer isRunning={false} newConversation draftKey="peer-during-send" onSend={onSend} />);
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  act(() => saveDraft('peer-during-send', 'Other prompt'));
+  await act(async () => { resolve(); });
+  expect(screen.getByRole('textbox')).toHaveValue('Other prompt');
+  view.unmount();
+  expect(getDraft('peer-during-send')).toBe('Other prompt');
+  expect(await transact(['texts'], 'readonly', (tx) => tx.get('texts', 'peer-during-send'))).toEqual({ text: 'Other prompt', revision: 0 });
+});
+
 it('restores the draft when a send fails after unmount', async () => {
   let reject!: (e: Error) => void;
   const onSend = vi.fn(() => new Promise<void>((_, r) => { reject = r; }));
