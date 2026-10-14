@@ -10,11 +10,11 @@ const sources: { key: keyof BadgeSettings; label: string; desc: string }[] = [
   { key: 'routines', label: 'Routines Inbox unread', desc: 'Unread Routines messages. Off by default.' },
 ];
 
-function BadgeSource({ source, settings, disabled, onSave }: { source: typeof sources[number]; settings: BadgeSettings; disabled: boolean; onSave: (settings: BadgeSettings) => Promise<unknown> }) {
+function BadgeSource({ source, settings, disabled, onSave }: { source: typeof sources[number]; settings: BadgeSettings; disabled: boolean; onSave: (settings: Partial<BadgeSettings>) => Promise<unknown> }) {
   const save = useSettingSave();
   return <SettingRow label={source.label} desc={source.desc}>
     <SettingToggle ariaLabel={source.label} checked={settings[source.key]} disabled={disabled} save={save}
-      onSave={(next) => onSave({ ...settings, [source.key]: next })} />
+      onSave={(next) => onSave({ [source.key]: next })} />
   </SettingRow>;
 }
 

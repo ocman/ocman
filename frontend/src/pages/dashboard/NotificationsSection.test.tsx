@@ -97,7 +97,7 @@ it('offers four badge sources and saves the combined session and input setting',
   expect(screen.getByLabelText('Factory Inbox unread')).toBeChecked();
   expect(screen.getByLabelText('Routines Inbox unread')).not.toBeChecked();
   fireEvent.click(screen.getByLabelText('Unread sessions and input requests'));
-  await waitFor(() => expect(useSaveBadgeSettings().mutateAsync).toHaveBeenCalledWith({ sessions: false, primary: true, factory: true, routines: false }));
+  await waitFor(() => expect(useSaveBadgeSettings().mutateAsync).toHaveBeenCalledWith({ sessions: false }));
 });
 
 it('shows retry instead of controls when badge settings fail to load', () => {

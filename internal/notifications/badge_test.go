@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -87,5 +88,34 @@ func TestBadgeSettingsRejectsInvalidRequestsAndStorageErrors(t *testing.T) {
 	}
 	if _, err := m.BadgeSettings(t.Context()); err == nil {
 		t.Fatal("closed store silently defaulted")
+	}
+}
+
+func TestBadgeSettingsPreservesConcurrentDeviceUpdates(t *testing.T) {
+	m := fixture(t)
+	for range 50 {
+		if err := m.d.Store.SetSetting(t.Context(), "notifications.badge", `{"sessions":true,"primary":true,"factory":true,"routines":false}`); err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for _, body := range []string{`{"sessions":false}`, `{"routines":true}`} {
+			wg.Go(func() {
+				<-start
+				r := httptest.NewRequest(http.MethodPost, "http://ocman.test/api/settings/notification-badge", strings.NewReader(body))
+				r.Header.Set("Origin", "http://ocman.test")
+				w := httptest.NewRecorder()
+				m.badgeSettings(w, r)
+				if w.Code != 200 {
+					t.Errorf("update failed: %d %s", w.Code, w.Body.String())
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+		settings, err := m.BadgeSettings(t.Context())
+		if err != nil || settings != (BadgeSettings{Primary: true, Factory: true, Routines: true}) {
+			t.Fatalf("concurrent updates lost a choice: %+v, %v", settings, err)
+		}
 	}
 }

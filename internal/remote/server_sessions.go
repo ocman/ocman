@@ -3,8 +3,10 @@ package remote
 import (
 	"context"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/state"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,7 +17,22 @@ func (s *Server) Sessions(ctx context.Context, req *pb.SessionsReq) (*pb.JsonRes
 	if err != nil {
 		return nil, err
 	}
-	return jsonResp(p.Sessions(ctx, req.Dir, req.Since))
+	rows, err := p.Sessions(ctx, req.Dir, req.Since)
+	if err != nil || s.inboxStore == nil {
+		return jsonResp(rows, err)
+	}
+	if err := s.sessions.WaitForRoutineCreation(ctx); err != nil {
+		return nil, err
+	}
+	routines, err := s.inboxStore.RoutineSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows = append([]db.Session(nil), rows...)
+	for i := range rows {
+		rows[i].RoutineID = routines[state.Key{Platform: req.Platform, SessionID: rows[i].ID}]
+	}
+	return jsonResp(rows, nil)
 }
 func (s *Server) Session(ctx context.Context, req *pb.SessionReq) (*pb.JsonResp, error) {
 	p, err := s.platformFor(req.Platform)

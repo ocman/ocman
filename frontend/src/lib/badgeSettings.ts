@@ -18,7 +18,7 @@ export function useBadgeSettings() {
 export function useSaveBadgeSettings() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (settings: BadgeSettings) => postJSON<BadgeSettings>(path, settings),
+    mutationFn: (settings: Partial<BadgeSettings>) => postJSON<BadgeSettings>(path, settings),
     onMutate: () => client.cancelQueries({ queryKey: key }),
     onSuccess: (settings) => client.setQueryData(key, settings),
   });

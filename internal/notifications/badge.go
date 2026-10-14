@@ -32,6 +32,10 @@ func (m *Module) badgeSettings(w http.ResponseWriter, r *http.Request) {
 	if !m.available(w, r) {
 		return
 	}
+	if r.Method == http.MethodPost {
+		m.store.mu.Lock()
+		defer m.store.mu.Unlock()
+	}
 	settings, err := m.BadgeSettings(r.Context())
 	if err != nil {
 		httpx.ServerError(w, "reading app badge settings", err)

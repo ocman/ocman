@@ -245,7 +245,9 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 			sessions[i].Pinned = true
 			sessions[i].PinnedAt = pinnedAt
 		}
-		sessions[i].RoutineID = routineSessions[key]
+		if !isRemotePlatformID(sessions[i].Platform) || routineSessions[key] != "" {
+			sessions[i].RoutineID = routineSessions[key]
+		}
 		sessions[i].FactoryAttemptID = factorySessions[key]
 		if sessions[i].FactoryAttemptID == "" && sessions[i].ParentID != "" {
 			// A subagent of an attempt session belongs to the attempt too, even

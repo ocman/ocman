@@ -24,6 +24,8 @@ preferences are shared by every device connected to this ocman instance and appl
 to foreground counts and background push. Routine sessions are excluded from
 the count and session alerts. Explicit Inbox messages from routines can still
 count when you enable Routines Inbox.
+Remote owners attach their own routine associations to session listings, so
+routine sessions are excluded even when scheduled independently on a remote.
 
 A session needing both permission and question input counts once; same-id
 sessions on different owners count separately. Inbox permission requests never

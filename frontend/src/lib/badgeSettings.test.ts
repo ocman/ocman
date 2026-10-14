@@ -19,8 +19,9 @@ it('loads shared settings and updates every consumer after saving', async () => 
   const hook = renderHook(() => ({ settings: useBadgeSettings(), save: useSaveBadgeSettings() }), { wrapper });
   await waitFor(() => expect(hook.result.current.settings.data).toEqual(initial));
   expect(fetchJSON).toHaveBeenCalledWith('/api/settings/notification-badge', expect.any(AbortSignal));
-  await act(async () => { await hook.result.current.save.mutateAsync(next); });
-  expect(postJSON).toHaveBeenCalledWith('/api/settings/notification-badge', next);
+  // Another device disabled sessions after this device loaded its snapshot.
+  await act(async () => { await hook.result.current.save.mutateAsync({ routines: true }); });
+  expect(postJSON).toHaveBeenCalledWith('/api/settings/notification-badge', { routines: true });
   await waitFor(() => expect(hook.result.current.settings.data).toEqual(next));
   vi.mocked(postJSON).mockRejectedValueOnce(new Error('Save failed'));
   await act(async () => { await expect(hook.result.current.save.mutateAsync(initial)).rejects.toThrow('Save failed'); });
