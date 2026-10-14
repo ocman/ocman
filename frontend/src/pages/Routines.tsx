@@ -21,7 +21,7 @@ export function Routines() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === 'inboxes' ? 'inboxes' : 'routines';
   // Both lists poll while the page is visible (react-query pauses hidden tabs).
-  const { routines, inboxes, loading, loadError, refreshKey, reload: load } = useRoutineLists();
+  const { routines, inboxes, loading, ready, loadError, refreshKey, reload: load } = useRoutineLists();
   const historyId = searchParams.get('routine') ?? undefined;
   const view = searchParams.get('view');
   const detailTab = view === 'settings' || view === 'stats' ? view : 'history';
@@ -62,8 +62,8 @@ export function Routines() {
     <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'inboxes' ? { tab: value } : {}, { replace: true })} className={styles.tabs}>
       <TabsList aria-label="Routine views"><TabsTrigger value="routines">Routines</TabsTrigger><TabsTrigger value="inboxes">Webhook inboxes</TabsTrigger></TabsList>
       {error && !showForm && <p role="alert" className={styles.error}>{error}</p>}
-      {showForm && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
-      {historyRoutine && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} inboxes={inboxes} activeTab={detailTab} onTabChange={(view) => selectRoutine(historyRoutine.id, view)} refreshKey={refreshKey} onRefresh={refreshAfterSave} onSaved={saved} onClose={() => selectRoutine()} />}
+      {showForm && ready && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
+      {historyRoutine && ready && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} inboxes={inboxes} activeTab={detailTab} onTabChange={(view) => selectRoutine(historyRoutine.id, view)} refreshKey={refreshKey} onRefresh={refreshAfterSave} onSaved={saved} onClose={() => selectRoutine()} />}
       {historyId && !historyRoutine && !loading && !error && <p role="alert">This routine is unavailable.</p>}
       {inboxDrawer !== undefined && <WebhookInboxDrawer key={inboxDrawer} inbox={inboxes.find((inbox) => inbox.id === inboxDrawer) ?? null} routines={routines} onClose={() => setInboxDrawer(undefined)} onChange={() => void load().catch((err: Error) => setError(err.message))} onEditRoutine={openSettings} />}
 

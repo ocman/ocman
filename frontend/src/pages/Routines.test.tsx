@@ -64,6 +64,24 @@ describe('Routines', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(`routine=${nextID}&view=settings`);
     expect(screen.getByRole('alert')).toHaveTextContent('Background refresh unavailable');
   });
+  it('keeps a subscription when a direct settings link loads before its inboxes', async () => {
+    let releaseInboxes!: (inboxes: WebhookInbox[]) => void;
+    vi.mocked(api.webhookInboxes.list).mockReturnValueOnce(new Promise((resolve) => { releaseInboxes = resolve; }));
+    vi.mocked(api.routines.update).mockResolvedValue(routine);
+    const user = userEvent.setup();
+    renderWithQuery(<MemoryRouter initialEntries={['/routines?routine=routine-1&view=settings']}><Routines /></MemoryRouter>);
+    await waitFor(() => expect(api.routines.list).toHaveBeenCalled());
+    // The routine is known but its trigger is not: no editor yet.
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    await act(async () => releaseInboxes([inbox]));
+    await user.clear(await screen.findByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'Renamed check');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ name: 'Renamed check' })));
+    expect(api.webhookInboxes.unsubscribe).not.toHaveBeenCalled();
+    expect(api.webhookInboxes.subscribe).toHaveBeenCalledWith('inbox-1', expect.objectContaining({ routineId: 'routine-1' }));
+  });
+
   it('opens direct routine links and tracks tabs, close and browser back in the URL', async () => {
     const user = userEvent.setup();
     renderWithQuery(<MemoryRouter initialEntries={['/routines?routine=routine-1&view=settings']}><LocationProbe /><Routines /></MemoryRouter>);

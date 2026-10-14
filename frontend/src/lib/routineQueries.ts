@@ -44,6 +44,9 @@ export function useRoutineLists() {
     routines: routinesQ.data ?? EMPTY_ROUTINES,
     inboxes: inboxesQ.data ?? EMPTY_INBOXES,
     loading: routinesQ.isPending || inboxesQ.isPending,
+    // Both lists loaded. Editors read a routine's trigger from the inboxes
+    // once, so mounting one before they arrive would save an empty trigger.
+    ready: routinesQ.data !== undefined && inboxesQ.data !== undefined,
     loadError: errorText(routinesQ.error ?? inboxesQ.error, 'Could not load routines.'),
     // Bumps on every successful read so an open history drawer refreshes too.
     refreshKey: routinesQ.dataUpdatedAt,
