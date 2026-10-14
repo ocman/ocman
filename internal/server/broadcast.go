@@ -79,8 +79,12 @@ type broadcastSub struct {
 
 // broadcastHub fans out events to all connected /api/events clients.
 type broadcastHub struct {
-	mu   sync.Mutex
-	subs map[*broadcastSub]struct{}
+	// publishMu serializes whole publications, so every subscriber sees
+	// events in the same order (full-state snapshots are applied as-is).
+	// mu guards only membership.
+	publishMu sync.Mutex
+	mu        sync.Mutex
+	subs      map[*broadcastSub]struct{}
 }
 
 func newBroadcastHub() *broadcastHub {
@@ -142,8 +146,9 @@ func (h *broadcastHub) subscribe() (*broadcastSub, func()) {
 // the latest-wins pending state for the subscriber and the writer is
 // woken to flush them, so the freshest full-state snapshot is never lost.
 //
-// The event is parsed once, and the hub lock covers only the snapshot of
-// subscribers: deliver tolerates a subscriber that unsubscribes meanwhile.
+// The event is parsed once, before taking any lock. The membership lock
+// covers only the snapshot: deliver tolerates a subscriber that
+// unsubscribes meanwhile, and subscribing never waits on a fan-out.
 func (h *broadcastHub) broadcast(event string, data []byte) {
 	ev := broadcastEvent{event: event, data: data}
 	if coalescingEvents[event] {
@@ -152,6 +157,8 @@ func (h *broadcastHub) broadcast(event string, data []byte) {
 			ev.change = decodeSessionChange(data)
 		}
 	}
+	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
 	h.mu.Lock()
 	subs := make([]*broadcastSub, 0, len(h.subs))
 	for sub := range h.subs {

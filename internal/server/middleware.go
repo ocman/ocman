@@ -91,10 +91,18 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // handler's `w.(http.Flusher)` check fails with "streaming unsupported",
 // so no client ever subscribes and no broadcast is delivered.
 func (r *statusRecorder) Flush() {
-	if fl, ok := r.ResponseWriter.(http.Flusher); ok {
-		fl.Flush()
-	}
+	_ = r.FlushError()
 }
+
+// FlushError reports the underlying flush error, so a stream can end on a
+// dead client instead of writing into it.
+func (r *statusRecorder) FlushError() error {
+	return http.NewResponseController(r.ResponseWriter).Flush()
+}
+
+// Unwrap lets http.ResponseController reach the connection, e.g. for the
+// per-write deadlines on /api/events.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // flushTiming writes the Server-Timing header from the collector, if
 // any entries were recorded. Safe to call multiple times — the

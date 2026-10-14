@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -387,7 +390,9 @@ func TestHandleGlobalEventsDropsStalledClient(t *testing.T) {
 	t.Cleanup(func() { sseWriteTimeout = old })
 
 	srv := &Server{broadcastHub: newBroadcastHub()}
-	ts := httptest.NewServer(http.HandlerFunc(srv.handleGlobalEvents))
+	// The production middleware chain, so its writer wrappers must pass
+	// deadlines and flush errors through.
+	ts := httptest.NewServer(withSecurityHeaders(withRequestTiming(withOTel(http.HandlerFunc(srv.handleGlobalEvents)))))
 	defer ts.Close()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL, nil)
 	if err != nil {
@@ -419,5 +424,35 @@ func BenchmarkBroadcastSessionChangedFanOut(b *testing.B) {
 	data := []byte(`{"sessionID":"s1","platform":"opencode","patch":{"status":"busy"}}`)
 	for b.Loop() {
 		h.broadcast("ocman.session.changed", data)
+	}
+}
+
+// Concurrent publications reach every subscriber in the same order, both
+// through the buffer and when parked: clients apply full snapshots as-is.
+func TestBroadcastHubConcurrentPublicationsKeepOneOrder(t *testing.T) {
+	for range 200 {
+		h := newBroadcastHub()
+		a, unsubA := h.subscribe()
+		b, unsubB := h.subscribe()
+		var wg sync.WaitGroup
+		for i := range 24 { // more than the buffer, so the tail parks
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				h.broadcast("ocman.queue.updated", fmt.Appendf(nil, `{"sessionID":"s1","n":%d}`, i))
+			}()
+		}
+		wg.Wait()
+		order := func(sub *broadcastSub) (out []string) {
+			for _, ev := range sub.takeBatch() {
+				out = append(out, string(ev.data))
+			}
+			return out
+		}
+		if ga, gb := order(a), order(b); !slices.Equal(ga, gb) {
+			t.Fatalf("subscribers saw different orders:\n%v\n%v", ga, gb)
+		}
+		unsubA()
+		unsubB()
 	}
 }
