@@ -10,7 +10,8 @@ test('composer model uses available width and truncates only when crowded', asyn
     },
   }));
   await page.route('**/api/session/*/models*', (route) => route.fulfill({ json: [model] }));
-  await page.setViewportSize({ width: 1440, height: 900 });
+  // Leave room for the platform icon as well as the long model name and both sidebars.
+  await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const button = page.getByRole('button', { name, exact: true });
   await expect(button).toBeVisible();
