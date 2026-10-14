@@ -877,3 +877,34 @@ func TestHandleSessionChangedDedup(t *testing.T) {
 		t.Error("ses-2 not recorded")
 	}
 }
+
+// Shutdown waits for every per-port subscription to return.
+func TestAutoApproveWatcherShutdownJoinsSubscriptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(wrappedPermissionAskedEvent("/repo", "ses", "perm")))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	entered := make(chan struct{})
+	var finished atomic.Bool
+	w := newAutoApproveWatcher(nil)
+	w.discoverPorts = func() map[string]string { return map[string]string{"/repo": port} }
+	w.onPermission = func(platforms.ID, platforms.Platform, string, string, string, []string, map[string]any) {
+		close(entered)
+		time.Sleep(200 * time.Millisecond)
+		finished.Store(true)
+	}
+	w.rescanInterval, w.reconnectDelay = time.Hour, time.Hour
+	ctx, cancel := context.WithCancel(t.Context())
+	ran := make(chan struct{})
+	go func() { w.run(ctx); close(ran) }()
+	<-entered
+	cancel()
+	<-ran
+	if !finished.Load() {
+		t.Fatal("run returned while a subscription still ran")
+	}
+}

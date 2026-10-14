@@ -108,6 +108,8 @@ type autoApproveWatcher struct {
 	// and removed (cancel called) when the port disappears or the
 	// parent context is cancelled.
 	subs map[string]context.CancelFunc
+	// subscriptions tracks the per-port goroutines; shutdown joins them.
+	subscriptions sync.WaitGroup
 
 	// seenMu guards seenSessions.
 	seenMu sync.Mutex
@@ -237,7 +239,7 @@ func (w *autoApproveWatcher) tick(parentCtx context.Context) {
 		}
 		subCtx, cancel := context.WithCancel(parentCtx)
 		w.subs[port] = cancel
-		go w.subscribe(subCtx, port)
+		w.subscriptions.Go(func() { w.subscribe(subCtx, port) })
 	}
 }
 
@@ -255,17 +257,16 @@ func livePortSet(byDir map[string]string) map[string]struct{} {
 	return out
 }
 
-// shutdown cancels every per-port subscription. Called from run when
-// the parent context fires. Holding mu for the iteration is fine —
-// the cancel funcs themselves are O(1) and the subs goroutines exit
-// asynchronously after the lock is released.
+// shutdown cancels every per-port subscription and waits for them, so
+// none outlives the watcher. Called from run when the parent context fires.
 func (w *autoApproveWatcher) shutdown() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	for port, cancel := range w.subs {
 		cancel()
 		delete(w.subs, port)
 	}
+	w.mu.Unlock()
+	w.subscriptions.Wait()
 }
 
 // subscribe holds a single long-lived /global/event SSE connection to the
