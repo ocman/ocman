@@ -6,11 +6,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
@@ -27,6 +31,7 @@ type sessionSpool struct {
 	active  bool
 	limited bool
 	pending map[string]record
+	pruning bool // a rewrite of this spool is in flight
 }
 
 type cursorLease struct {
@@ -228,14 +233,37 @@ func (s *Supervisor) newLease(cursor uint64, expires time.Time) (string, error) 
 			defer s.mu.Unlock()
 			if lease, ok := s.leases[id]; ok && !lease.expires.IsZero() {
 				delete(s.leases, id)
-				_ = s.prune()
+				s.logPrune()
 			}
 		})
 	}
 	return id, nil
 }
 
+// prune truncates acknowledged turns, session by session: one session's
+// failure is reported (joined) and leaves only that spool for the next prune.
+// Called with s.mu held; it releases s.mu while a spool file is rewritten.
 func (s *Supervisor) prune() error {
+	sessions := make(map[string]*sessionSpool, len(s.sessions))
+	maps.Copy(sessions, s.sessions) // s.sessions may grow while s.mu is released
+	var errs []error
+	for id, p := range sessions {
+		if err := s.pruneSession(id, p); err != nil {
+			errs = append(errs, fmt.Errorf("pruning spool of %s: %w", id, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// logPrune prunes where no caller can report a failure.
+func (s *Supervisor) logPrune() {
+	if err := s.prune(); err != nil {
+		log.WithError(err).Warn("provider supervisor: spool pruning failed; retrying on the next acknowledgment")
+	}
+}
+
+// floor is the lowest sequence a consumer may still need.
+func (s *Supervisor) floor() uint64 {
 	minimum := s.seq
 	for id, lease := range s.leases {
 		if !lease.expires.IsZero() && time.Now().After(lease.expires) {
@@ -246,46 +274,109 @@ func (s *Supervisor) prune() error {
 			minimum = lease.cursor
 		}
 	}
-	for id, p := range s.sessions {
-		// Retain whole turns (including part initialization), never a suffix.
-		if p.ack == 0 || p.ack > minimum || len(p.pending) != 0 {
-			continue
-		}
-		// A prompt resolved after its turn was acknowledged keeps its ask:
-		// a consumer replaying the resolution needs the asked metadata.
-		late := map[string]bool{}
-		for _, rec := range p.records {
-			if rec.Sequence > p.ack {
-				if id := resolvedID(rec.Event); id != "" {
-					late[id] = true
-				}
-			}
-		}
-		cut := 0
-		for cut < len(p.records) && p.records[cut].Sequence <= p.ack && !late[askedID(p.records[cut].Event)] {
-			cut++
-		}
-		if cut == 0 {
-			continue
-		}
-		var data []byte
-		for _, rec := range p.records[cut:] {
-			encoded, err := json.Marshal(rec)
-			if err != nil {
-				return err
-			}
-			data = append(data, append(encoded, '\n')...)
-		}
-		path := s.path(id)
-		if err := os.WriteFile(path+".tmp", data, 0600); err != nil {
-			return err
-		}
-		if err := os.Rename(path+".tmp", path); err != nil {
-			return err
-		}
-		p.records = append([]record(nil), p.records[cut:]...)
+	return minimum
+}
+
+// pruneCut is how many leading records of p are prunable.
+func pruneCut(p *sessionSpool, minimum uint64) int {
+	// Retain whole turns (including part initialization), never a suffix.
+	if p.ack == 0 || p.ack > minimum || len(p.pending) != 0 || p.pruning {
+		return 0
 	}
+	// A prompt resolved after its turn was acknowledged keeps its ask:
+	// a consumer replaying the resolution needs the asked metadata.
+	late := map[string]bool{}
+	for _, rec := range p.records {
+		if rec.Sequence > p.ack {
+			if id := resolvedID(rec.Event); id != "" {
+				late[id] = true
+			}
+		}
+	}
+	cut := 0
+	for cut < len(p.records) && p.records[cut].Sequence <= p.ack && !late[askedID(p.records[cut].Event)] {
+		cut++
+	}
+	return cut
+}
+
+// pruneTestHook runs while a spool is rewritten without s.mu.
+var pruneTestHook = func() {}
+
+func (s *Supervisor) pruneSession(id string, p *sessionSpool) error {
+	cut := pruneCut(p, s.floor())
+	if cut == 0 {
+		return nil
+	}
+	dropped := p.records[cut-1].Sequence
+	keep := append([]record(nil), p.records[cut:]...)
+	seen := len(p.records)
+	p.pruning = true // only this call truncates p until it returns
+	defer func() { p.pruning = false }()
+	path := s.path(id)
+	tmp := path + ".tmp"
+
+	// The bulk rewrite runs unlocked: publishing goes on meanwhile.
+	s.mu.Unlock()
+	f, err := writeRecords(tmp, keep)
+	pruneTestHook()
+	s.mu.Lock()
+	if err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	// A consumer that attached meanwhile may still need what was cut.
+	if s.floor() < dropped {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return nil
+	}
+	// Records published meanwhile follow, under the lock like any append.
+	extra := p.records[seen:]
+	if err := appendRecords(f, extra); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	p.records = append(keep, extra...)
 	return nil
+}
+
+// writeRecords creates path with recs, synced; the caller closes the file.
+func writeRecords(path string, recs []record) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := appendRecords(f, recs); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// appendRecords writes recs to f and syncs it, like append does per event.
+func appendRecords(f *os.File, recs []record) error {
+	var data []byte
+	for _, rec := range recs {
+		encoded, err := json.Marshal(rec)
+		if err != nil {
+			return err
+		}
+		data = append(data, append(encoded, '\n')...)
+	}
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 func askedID(e providerprotocol.Event) string {

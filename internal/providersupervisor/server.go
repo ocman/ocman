@@ -235,7 +235,7 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.mu.Unlock()
-	defer func() { s.mu.Lock(); delete(s.leases, lease); _ = s.prune(); s.mu.Unlock() }()
+	defer func() { s.mu.Lock(); delete(s.leases, lease); s.logPrune(); s.mu.Unlock() }()
 	if err != nil {
 		wireError(w, 500, err)
 		return
