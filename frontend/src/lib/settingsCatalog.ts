@@ -29,6 +29,13 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'local-voice-input': {
+    group: 'sessions',
+    title: 'Local voice input',
+    description: 'Whisper transcribes microphone recordings on this machine when browser dictation is unavailable.',
+    example: 'Install whisper-cpp and a ggml model to enable local transcription. Browser dictation works independently.',
+    keywords: 'whisper microphone voice speech dictation',
+  },
   'idle-project-timeout': {
     group: 'idle-projects',
     title: 'Stop idle project instances after',

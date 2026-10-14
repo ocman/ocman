@@ -1,10 +1,31 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { SpeechSettings } from './SpeechSettings';
 import { useUiStore } from '../lib/uiStore';
+import { api } from '../lib/api';
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+beforeEach(() => { vi.spyOn(api, 'whisperStatus').mockResolvedValue({ available: false }); });
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it('shows missing Whisper in speech settings', async () => {
+  render(<SpeechSettings />);
+  expect(await screen.findByText(/Whisper is unavailable/)).toBeInTheDocument();
+  expect(screen.getByText(/Install whisper-cpp and a model/)).toBeInTheDocument();
+});
+
+it('reports available Whisper', async () => {
+  vi.mocked(api.whisperStatus).mockResolvedValue({ available: true });
+  render(<SpeechSettings />);
+  expect(await screen.findByText('Whisper is available.')).toBeInTheDocument();
+});
+
+it('reports a failed Whisper availability check', async () => {
+  vi.mocked(api.whisperStatus).mockRejectedValue(new Error('offline'));
+  render(<SpeechSettings />);
+  expect(await screen.findByText('Could not check Whisper availability.')).toBeInTheDocument();
+});
 it('disables automatic reading when speech is unavailable', () => {
   vi.stubGlobal('speechSynthesis', undefined);
   render(<SpeechSettings />);

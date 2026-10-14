@@ -32,6 +32,10 @@ Optional:
 | tmux | launching managed OpenCode or Claude sessions, /wt worktree sessions and browser terminals | `brew install tmux` |
 | whisper-cpp + ffmpeg | voice input in the composer | `brew install whisper-cpp`, `brew install ffmpeg` (without ffmpeg only wav/mp3/ogg/flac work) |
 
+Whisper availability appears in Settings → Sessions → Local voice input.
+Without Whisper, local transcription is disabled; browser dictation can still
+work. Missing voice tools do not produce a setup banner.
+
 Apps launched from Finder get a minimal PATH. Ocman merges in your login
 shell's PATH at startup; when that fails (the shell exits with an error or
 takes longer than 10 seconds) the setup banner shows the reason. Fix the

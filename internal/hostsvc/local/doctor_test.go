@@ -8,15 +8,14 @@ import (
 )
 
 func TestDoctorReportsMixedResults(t *testing.T) {
-	origLook, origWhisper := lookPath, whisperStatus
-	t.Cleanup(func() { lookPath, whisperStatus = origLook, origWhisper })
+	origLook := lookPath
+	t.Cleanup(func() { lookPath = origLook })
 	lookPath = func(bin string) (string, error) {
 		if bin == "tmux" {
 			return "", errors.New("not found")
 		}
 		return "/bin/" + bin, nil
 	}
-	whisperStatus = func() (string, string, string) { return "/bin/whisper", "", "" }
 
 	dir := t.TempDir()
 	checks := (&Host{deps: Deps{StateDir: dir}}).Doctor(context.Background())
@@ -27,7 +26,7 @@ func TestDoctorReportsMixedResults(t *testing.T) {
 			t.Errorf("%s failed without hint", c.ID)
 		}
 	}
-	for id, ok := range map[string]bool{"opencode": true, "tmux": false, "git": true, "whisper": false, "state-dir": true} {
+	for id, ok := range map[string]bool{"opencode": true, "tmux": false, "git": true, "state-dir": true} {
 		if got, seen := byID[id]; !seen || got != ok {
 			t.Errorf("%s ok=%v seen=%v, want %v", id, got, seen, ok)
 		}
@@ -36,16 +35,12 @@ func TestDoctorReportsMixedResults(t *testing.T) {
 	if c := stateDirCheck(filepath.Join(dir, "missing")); c.OK {
 		t.Errorf("missing state dir reported ok: %+v", c)
 	}
-	whisperStatus = func() (string, string, string) { return "", "", "" }
-	if c := whisperCheck(); c.OK || c.Required {
-		t.Errorf("whisper = %+v", c)
-	}
-	whisperStatus = func() (string, string, string) { return "/w", "/m", "" }
-	if c := whisperCheck(); !c.OK || c.Hint == "" {
-		t.Errorf("whisper without ffmpeg = %+v", c)
-	}
-	whisperStatus = func() (string, string, string) { return "/w", "/m", "/f" }
-	if c := whisperCheck(); !c.OK {
-		t.Errorf("whisper = %+v", c)
+}
+
+func TestDoctorDoesNotAdvertiseOptionalFeatureTools(t *testing.T) {
+	for _, check := range New(Deps{}).Doctor(t.Context()) {
+		if check.ID == "lsof" || check.ID == "whisper" {
+			t.Fatalf("feature-specific tool appears in global setup: %+v", check)
+		}
 	}
 }

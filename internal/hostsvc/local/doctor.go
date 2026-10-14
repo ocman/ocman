@@ -7,14 +7,9 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
-// lookPath and whisperStatus are seams for tests.
-var (
-	lookPath      = exec.LookPath
-	whisperStatus = whisper.Status
-)
+var lookPath = exec.LookPath
 
 // Doctor reports this machine's prerequisite checks, in display order.
 func (h *Host) Doctor(context.Context) []hostsvc.DoctorCheck {
@@ -25,7 +20,6 @@ func (h *Host) Doctor(context.Context) []hostsvc.DoctorCheck {
 	if h.deps.PlatformEnabled == nil || h.deps.PlatformEnabled(string(platforms.OpenCodeID)) {
 		checks = append([]hostsvc.DoctorCheck{binCheck(string(platforms.OpenCodeID), "OpenCode", true, "Install OpenCode: https://opencode.ai")}, checks...)
 	}
-	checks = append(checks, whisperCheck())
 	if h.deps.StateDir != "" {
 		checks = append(checks, stateDirCheck(h.deps.StateDir))
 	}
@@ -38,22 +32,6 @@ func binCheck(bin, label string, required bool, hint string) hostsvc.DoctorCheck
 		c.OK, c.Detail = true, path
 	} else {
 		c.Detail, c.Hint = bin+" not found on PATH", hint
-	}
-	return c
-}
-
-func whisperCheck() hostsvc.DoctorCheck {
-	c := hostsvc.DoctorCheck{ID: "whisper", Label: "Voice transcription (whisper)"}
-	binary, model, ffmpeg := whisperStatus()
-	switch {
-	case binary == "":
-		c.Detail, c.Hint = "whisper-cpp not found on PATH", "brew install whisper-cpp"
-	case model == "":
-		c.Detail, c.Hint = "whisper model not found", "Download a ggml model (e.g. ggml-base.en.bin) next to whisper-cpp's models directory"
-	case ffmpeg == "":
-		c.OK, c.Detail, c.Hint = true, binary+" (ffmpeg missing: only wav/mp3/ogg/flac)", "brew install ffmpeg"
-	default:
-		c.OK, c.Detail = true, binary
 	}
 	return c
 }

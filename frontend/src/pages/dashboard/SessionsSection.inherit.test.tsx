@@ -23,6 +23,7 @@ vi.mock('../../lib/api', () => ({
   fetchJSON: vi.fn().mockResolvedValue({ defaultAgent: 'build' }),
   postJSON: vi.fn(),
   api: {
+    whisperStatus: vi.fn().mockResolvedValue({ available: false }),
     getWorktreeInheritPermissions: vi.fn(),
     setWorktreeInheritPermissions: vi.fn(),
     getAutoArchiveSettings: vi.fn(),
