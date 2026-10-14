@@ -13,9 +13,13 @@ import (
 type blockedLifecycle struct {
 	lifecyclePlatform
 	entered, release, cancelled chan struct{}
+	t                           *testing.T
 }
 
 func (p blockedLifecycle) SessionLifecycle(ctx context.Context, _ string) (*platforms.SessionLifecycle, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		p.t.Error("lifecycle read has no deadline")
+	}
 	close(p.entered)
 	select {
 	case <-ctx.Done():
@@ -34,7 +38,7 @@ func TestShutdownCancelsPreSendLifecycleRead(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = store.Close() })
-			p := blockedLifecycle{entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{})}
+			p := blockedLifecycle{entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}), t: t}
 			sent := make(chan struct{}, 1)
 			m := NewModule(Deps{
 				Store: store, Sessions: func() Sessions { return nil },

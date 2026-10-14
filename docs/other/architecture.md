@@ -419,6 +419,9 @@ flowchart TD
   Owner-side cooldown reads run outside the admission mutex with a lifetime-bound
   deadline. Shutdown joins admitted idle handlers before closing the dispatcher;
   a cancelled read leaves its queued payload held for recovery.
+  Sweep iteration and pre-send lifecycle/model reads stay cancellable and bounded.
+  Only actual admitted delivery and durable dequeue/failure receipts detach
+  cancellation, so a stalled owner read cannot hold shutdown open indefinitely.
   Project model settings and provider cooldown persistence retain their existing
   state tables; the combined project-defaults route invalidates the module cache.
 - **platforms.SessionEventSink.** The registry installs status and idle callbacks

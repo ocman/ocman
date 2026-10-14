@@ -553,6 +553,8 @@ are computed. Sessions retain their original directories and owners.
   Admission bookkeeping releases its mutex before owner-side cooldown reads.
   Those reads have a lifetime-bound deadline; shutdown joins admitted idle
   handlers before closing the dispatcher. A cancelled read leaves its payload held.
+  Sweep iteration, lifecycle reads and model selection stay cancellable; only
+  admitted delivery and durable dequeue/failure receipts detach cancellation.
   `Server.onSessionIdle` records cooldown and admits the flush through the module
   before publishing the synchronous typed bus event. Direct send and owner-routed
   runtime recovery remain the shared server seam in `session_send.go`.

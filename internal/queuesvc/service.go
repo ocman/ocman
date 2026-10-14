@@ -244,6 +244,9 @@ func (s *Service) Sweep(ctx context.Context) {
 		return
 	}
 	for _, q := range sessions {
+		if ctx.Err() != nil {
+			return
+		}
 		// Honor the same status-blip guard as the enqueue fast-path: once a
 		// message has drained, don't chain another into the same turn just
 		// because the status poll blips to idle. A newer completed assistant

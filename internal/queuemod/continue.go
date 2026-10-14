@@ -42,6 +42,9 @@ func (s *Module) continueSession(ctx context.Context, platformID, sessionID, pro
 		return false
 	}
 	model, recovers, ok := s.d.Sessions().Fallthrough(ctx, platformID, sessionID)
+	if ctx.Err() != nil {
+		return true // No new delivery after a cancelled model-selection read.
+	}
 	if !ok {
 		return false
 	}
@@ -49,7 +52,7 @@ func (s *Module) continueSession(ctx context.Context, platformID, sessionID, pro
 		s.setExhaustedNotice(platformID, sessionID, recovers)
 		return true
 	}
-	if err := s.d.SendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: continuationPrompt, Model: model}); err != nil {
+	if err := s.d.SendNow(context.WithoutCancel(ctx), platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: continuationPrompt, Model: model}); err != nil {
 		log.WithError(err).WithField("sessionID", sessionID).Warn("continuing session on next model")
 		return false
 	}

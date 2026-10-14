@@ -43,6 +43,21 @@ type cooldownSessions struct {
 	durations []time.Duration
 }
 
+type cancelledSelection struct{ Sessions }
+
+func (cancelledSelection) Fallthrough(context.Context, string, string) (string, time.Time, bool) {
+	return "", time.Time{}, false
+}
+
+func TestCancelledModelSelectionKeepsIdleEdgeHeld(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	m := NewModule(Deps{Sessions: func() Sessions { return cancelledSelection{} }})
+	if !m.continueSession(ctx, "opencode", "s1", "provider") {
+		t.Fatal("cancelled model selection fell through to a queue drain")
+	}
+}
+
 func (s *cooldownSessions) RecordCooldown(_ context.Context, _ string, d time.Duration) {
 	s.durations = append(s.durations, d)
 }

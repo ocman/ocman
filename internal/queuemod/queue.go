@@ -15,7 +15,7 @@ import (
 // missed, including rows left by a crash. Idle events enqueue a flush now.
 const queueSweepInterval = time.Minute
 
-const cooldownReadTimeout = 10 * time.Second
+const ownerReadTimeout = 10 * time.Second
 
 type queueFlush struct {
 	ctx        context.Context
@@ -39,8 +39,7 @@ func (s *Module) runQueueSweep(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// Like idle flushes, an admitted sweep must finish its send receipt.
-		runWithRecover("queue-sweep", func() { s.queue.Sweep(context.WithoutCancel(ctx)) })
+		runWithRecover("queue-sweep", func() { s.queue.Sweep(ctx) })
 	}
 	sweep()
 	for {
@@ -57,10 +56,12 @@ func (s *Module) queueFlushWorker() *worker.Worker[queueFlush] {
 	s.workerOnce.Do(func() {
 		s.worker = worker.NewKeyed(func(item queueFlush) {
 			runWithRecover("queue-flush", func() {
-				if s.continueSession(item.ctx, item.platformID, item.sessionID, item.cooled) {
+				ctx, cancel := context.WithTimeout(item.ctx, ownerReadTimeout)
+				defer cancel()
+				if s.continueSession(ctx, item.platformID, item.sessionID, item.cooled) {
 					return
 				}
-				s.queue.Flush(item.ctx, item.platformID, item.sessionID)
+				s.queue.Flush(ctx, item.platformID, item.sessionID)
 			})
 		}, func(item queueFlush) string { return item.platformID + "\x00" + item.sessionID })
 	})
@@ -71,6 +72,8 @@ func (s *Module) queueFlushWorker() *worker.Worker[queueFlush] {
 // latest message. It uses the bounded LifecycleReader so the cost does not
 // grow with the transcript; Session(id, 1, 0) limits only the returned page.
 func (i *Module) lifecycle(ctx context.Context, platform, sessionID string) (*platforms.SessionLifecycle, bool) {
+	ctx, cancel := context.WithTimeout(ctx, ownerReadTimeout)
+	defer cancel()
 	p, found := i.d.Adapter(ctx, platform, sessionID)
 	if !found {
 		return nil, false
@@ -145,7 +148,7 @@ func (s *Module) OnSessionIdle(platformID, sessionID string) {
 	s.mu.Unlock()
 	defer s.idleHandlers.Done()
 
-	ctx, cancel := context.WithTimeout(lifetime, cooldownReadTimeout)
+	ctx, cancel := context.WithTimeout(lifetime, ownerReadTimeout)
 	defer cancel()
 	// Synchronously, before the flush is enqueued: a held message must
 	// see the dead provider's cooldown when it drains.
@@ -161,9 +164,9 @@ func (s *Module) OnSessionIdle(platformID, sessionID string) {
 	if s.stopped || lifetime.Err() != nil {
 		return
 	}
-	// An admitted send must finish its durable receipt even during shutdown.
-	// Run joins it before the database closes; cancellation stops admission.
-	s.queueFlushWorker().Enqueue(queueFlush{ctx: context.WithoutCancel(lifetime), platformID: platformID, sessionID: sessionID, cooled: cooled})
+	// Pre-send reads remain cancellable; the queue service detaches only
+	// admitted delivery and receipt work, which Run joins before DB teardown.
+	s.queueFlushWorker().Enqueue(queueFlush{ctx: lifetime, platformID: platformID, sessionID: sessionID, cooled: cooled})
 }
 
 // broadcastQueueUpdated broadcasts that a session's follow-up queue
