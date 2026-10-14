@@ -42,7 +42,13 @@ export function ActiveSessions({ count, enabled }: { count: number; enabled: boo
     <Button ref={trigger} variant="ghost" size="compact" className="backend-stats-active"
       title="Currently running sessions, including archived sessions and subagents"
       aria-label={`Total active sessions: ${count}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-      disabled={!enabled} onMouseEnter={enter} onMouseLeave={leave} onFocus={show}
+      disabled={!enabled} onMouseEnter={enter} onMouseLeave={leave} onFocus={() => { if (!open) show(); }}
+      onKeyDown={event => {
+        if (event.key === 'Tab' && !event.shiftKey && open) {
+          event.preventDefault();
+          document.getElementById(id)?.focus();
+        }
+      }}
       onBlur={event => { if (!document.getElementById(id)?.contains(event.relatedTarget)) close(); }}
       onClick={() => { if (!open) show(); }}>
       <span className="backend-stats-label">tas</span>: {count}

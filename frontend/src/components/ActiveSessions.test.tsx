@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ActiveSessions } from './ActiveSessions';
+import { BackendStats } from './BackendStats';
+import { useUiStore } from '../lib/uiStore';
 import { TOOLTIP_DELAY_MS } from './Tooltip';
 
 const { useSessions, useProjects, refetch } = vi.hoisted(() => ({ useSessions: vi.fn(), useProjects: vi.fn(), refetch: vi.fn() }));
-vi.mock('../lib/queries', () => ({ useSessions, useProjects }));
+vi.mock('../lib/queries', () => ({ useSessions, useProjects, useRunningSessionCount: () => ({ data: { count: 3 } }) }));
 
 function Location() {
   const location = useLocation();
@@ -44,6 +47,7 @@ it('delays hover, groups every busy session by project, and closes on navigation
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   advance(1);
   const panel = screen.getByRole('dialog', { name: 'Active sessions' });
+  expect(panel).not.toHaveFocus();
   expect(useSessions).toHaveBeenLastCalledWith({ limit: 0 }, { enabled: true, refetchInterval: 5000 });
   expect(within(panel).getAllByRole('heading')).toHaveLength(2);
   const alpha = within(panel).getByRole('heading', { name: 'repo/alpha' }).closest('section')!;
@@ -129,5 +133,23 @@ it('uses the session id when its title is empty and closes on outside click', ()
   fireEvent.click(screen.getByRole('button', { name: 'Total active sessions: 3' }));
   expect(screen.getByRole('link', { name: 'untitled' })).toBeInTheDocument();
   fireEvent.mouseDown(document.body);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('tabs from the real footer counter into the popover before the adjacent stats button', async () => {
+  vi.useRealTimers();
+  useUiStore.setState({ sidebarStatsExpanded: false });
+  const user = userEvent.setup();
+  render(<MemoryRouter><BackendStats /></MemoryRouter>);
+  await user.tab();
+  expect(screen.getByRole('button', { name: 'Total active sessions: 3' })).toHaveFocus();
+  await user.tab();
+  expect(screen.getByRole('dialog', { name: 'Active sessions' })).toHaveFocus();
+  await user.tab();
+  expect(screen.getByRole('link', { name: 'Local task' })).toHaveFocus();
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Total active sessions: 3' })).toHaveFocus();
+  await user.tab({ shift: true });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });

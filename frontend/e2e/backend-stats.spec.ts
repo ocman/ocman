@@ -1,9 +1,9 @@
-import { test, expect, MOCK_SESSION } from './fixtures';
+import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
 
 test('bottom stats start collapsed, align expanded items and remember the choice', async ({ mockedPage: page }, testInfo) => {
   await page.route(/\/api\/sessions\?view=running-count$/, (route) => route.fulfill({ json: { count: 5 } }));
   await page.goto(`/session/${MOCK_SESSION.id}`);
-  await expect(page.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveText('active sessions: 5');
+  await expect(page.getByRole('button', { name: 'Total active sessions: 5' })).toHaveText('tas: 5');
   const show = page.getByRole('button', { name: 'Show system stats' });
   await expect(show).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByTitle('Backend memory usage')).toHaveCount(0);
@@ -26,4 +26,28 @@ test('bottom stats start collapsed, align expanded items and remember the choice
   await page.getByRole('button', { name: 'Hide system stats' }).click();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Show system stats' })).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('active session popover groups projects, accepts keyboard entry and closes on selection', async ({ mockedPage: page }) => {
+  await page.route(/\/api\/sessions\?view=running-count$/, route => route.fulfill({ json: { count: 3 } }));
+  await page.route(/\/api\/sessions\?limit=0$/, route => route.fulfill({ json: [
+    { ...MOCK_SESSION, status: 'busy' },
+    { ...MOCK_SESSION_2, status: 'busy', archived: true, parentId: MOCK_SESSION.id },
+    { ...MOCK_SESSION, id: 'other', title: 'Other project task', directory: '/projects/other', status: 'busy' },
+  ] }));
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  const trigger = page.getByRole('button', { name: 'Total active sessions: 3' });
+  await trigger.hover();
+  const panel = page.getByRole('dialog', { name: 'Active sessions' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('heading')).toHaveCount(2);
+  await expect(panel.getByRole('link')).toHaveCount(3);
+  await trigger.focus();
+  await page.keyboard.press('Tab');
+  await expect(panel).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(panel.getByRole('link', { name: MOCK_SESSION.title })).toBeFocused();
+  await panel.getByRole('link', { name: MOCK_SESSION_2.title }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION_2.id}\\?platform=opencode$`));
 });
