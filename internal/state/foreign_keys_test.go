@@ -129,3 +129,31 @@ func TestForeignKeyCheckOnRealisticDatabase(t *testing.T) {
 		t.Fatalf("declared foreign keys are violated by normal writes:%s", detail)
 	}
 }
+
+// Enforcement must not depend on the one connection the pragma ran on: a
+// connection the pool opens later must enforce too.
+func TestForeignKeysEnabledOnFreshConnection(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	db.db.SetMaxOpenConns(2)
+	held, err := db.db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	fresh, err := db.db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.Close()
+	var on int
+	if err := fresh.QueryRowContext(t.Context(), `PRAGMA foreign_keys`).Scan(&on); err != nil {
+		t.Fatal(err)
+	}
+	if on != 1 {
+		t.Fatalf("foreign_keys on a fresh connection = %d, want 1", on)
+	}
+}

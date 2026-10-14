@@ -25,6 +25,8 @@ import (
 type DB struct {
 	db      *sql.DB
 	dataDir string
+	// foreignKeys reports that the database was clean and enforcement on.
+	foreignKeys bool
 	// ponytail: serialize plugin file changes per DB; shard by plugin if contention matters.
 	pluginMu sync.Mutex
 	// previewKeyMu serializes first-use generation of the preview credential key.
@@ -61,6 +63,44 @@ func Open(path string, modules ...ModuleSchema) (*DB, error) {
 	}
 
 	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL", path)
+	db, err := openStateSQL(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	stateDB := &DB{db: db, dataDir: filepath.Dir(path)}
+	if err := stateDB.init(modules); err != nil {
+		db.Close()
+		return nil, err
+	}
+	// Migrations ran without enforcement. A clean database is reopened with
+	// foreign_keys in the DSN, so every connection the pool ever opens
+	// enforces it, not only the one the pragma was executed on.
+	if stateDB.foreignKeys {
+		enforced, err := openStateSQL(dsn + "&_pragma=foreign_keys(1)")
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
+		db.Close()
+		db, stateDB.db = enforced, enforced
+	}
+	if err := secureStatePaths(path); err != nil {
+		db.Close()
+		return nil, err
+	}
+	_, _ = otelsql.RegisterDBStatsMetrics(db,
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "ocman"),
+		),
+	)
+
+	return stateDB, nil
+}
+
+// openStateSQL opens and pings one state handle.
+func openStateSQL(dsn string) (*sql.DB, error) {
 	// See internal/db.Open for the otelsql rationale; same trade-off
 	// applies. db.name="ocman" distinguishes ocman's own state from
 	// the upstream OpenCode database in trace and metric attributes.
@@ -78,24 +118,7 @@ func Open(path string, modules ...ModuleSchema) (*DB, error) {
 	// multi-connection pool that races into SQLITE_BUSY despite WAL +
 	// busy_timeout. One connection is plenty for a single-user dashboard.
 	db.SetMaxOpenConns(1)
-
-	stateDB := &DB{db: db, dataDir: filepath.Dir(path)}
-	if err := stateDB.init(modules); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := secureStatePaths(path); err != nil {
-		db.Close()
-		return nil, err
-	}
-	_, _ = otelsql.RegisterDBStatsMetrics(db,
-		otelsql.WithAttributes(
-			semconv.DBSystemSqlite,
-			attribute.String("db.name", "ocman"),
-		),
-	)
-
-	return stateDB, nil
+	return db, nil
 }
 
 func secureStatePaths(path string) error {
@@ -173,7 +196,7 @@ func (d *DB) init(modules []ModuleSchema) error {
 	if err := migrateModules(d.db, modules, before); err != nil {
 		return err
 	}
-	enableForeignKeysIfClean(d.db)
+	d.foreignKeys = enableForeignKeysIfClean(d.db)
 	return nil
 }
 
@@ -192,25 +215,25 @@ func (d *DB) init(modules []ModuleSchema) error {
 // (hundreds of rows in practice); gate it on a recorded schema version
 // only if someone's database grows enough for it to show up at startup.
 //
-// The pragma is per-connection. The state handle is pinned to a single
-// connection with no idle timeout, so it holds for the process. If the
-// driver ever did recycle it, the pragma would revert to OFF — today's
-// behaviour, so the failure mode is losing enforcement, not breaking
-// writes. Move it into the DSN if that ever needs to be guaranteed.
-func enableForeignKeysIfClean(db *sql.DB) {
+// The pragma is per-connection, so it reports whether the database is
+// clean and Open reopens the handle with foreign_keys in the DSN. Handles
+// wrapped by OpenFromSQL keep only the executed pragma.
+func enableForeignKeysIfClean(db *sql.DB) bool {
 	violations, err := foreignKeyViolations(db)
 	if err != nil {
 		log.WithError(err).Warn("state: checking foreign keys; leaving enforcement off")
-		return
+		return false
 	}
 	if len(violations) > 0 {
 		log.WithField("violations", violations).
 			Warn("state: existing rows violate declared foreign keys; leaving enforcement off")
-		return
+		return false
 	}
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		log.WithError(err).Warn("state: enabling foreign keys")
+		return false
 	}
+	return true
 }
 
 // foreignKeyViolations returns "child -> parent" descriptions for every
