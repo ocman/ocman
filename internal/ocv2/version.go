@@ -119,6 +119,10 @@ type hostEntry struct {
 
 var hosts sync.Map // "host:port" -> hostEntry
 
+// ResetHostCache forgets every server's dialect, so a backend reload
+// re-probes instead of trusting a previous backend's answers.
+func ResetHostCache() { hosts.Clear() }
+
 // probeRT is the authenticated transport used by IsV2; Wrap records it.
 var probeRT atomic.Pointer[http.RoundTripper]
 

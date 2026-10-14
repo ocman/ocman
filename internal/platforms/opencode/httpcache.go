@@ -36,6 +36,9 @@ type httpCache struct {
 	mu          sync.RWMutex
 	entries     map[httpCacheKey]httpCacheEntry
 	generations map[string]uint64
+	// epoch fences in-flight fetches across reset, including ports that
+	// have no generation entry yet.
+	epoch uint64
 
 	flight singleflight.Group
 
@@ -119,12 +122,12 @@ func (c *httpCache) put(port, path string, body []byte) {
 func (c *httpCache) generation(port string) uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.generations[port]
+	return c.epoch<<32 | c.generations[port]
 }
 
 func (c *httpCache) putForGeneration(port, path string, body []byte, generation uint64) {
 	c.mu.Lock()
-	if c.generations[port] != generation {
+	if c.epoch<<32|c.generations[port] != generation {
 		c.mu.Unlock()
 		return
 	}
@@ -179,6 +182,17 @@ func (c *httpCache) invalidatePort(port string) {
 			dropped++
 		}
 	}
+	c.mu.Unlock()
+	c.metrics.RecordEvictions(context.Background(), dropped)
+}
+
+// reset drops every entry and fences fetches already in flight, so a
+// backend reload never serves a previous backend's responses.
+func (c *httpCache) reset() {
+	c.mu.Lock()
+	c.epoch++
+	dropped := int64(len(c.entries))
+	c.entries = make(map[httpCacheKey]httpCacheEntry)
 	c.mu.Unlock()
 	c.metrics.RecordEvictions(context.Background(), dropped)
 }

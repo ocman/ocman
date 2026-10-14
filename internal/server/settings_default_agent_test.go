@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 func TestKnownAgentOptions(t *testing.T) {
@@ -29,11 +31,11 @@ func TestKnownAgentOptions(t *testing.T) {
 			return nil
 		}
 	}
-	if got := knownAgentOptions(context.Background(), nil); !reflect.DeepEqual(got, []string{"build", "custom", "plan", "review"}) {
+	if got := knownAgentOptions(context.Background(), nil, nil); !reflect.DeepEqual(got, []string{"build", "custom", "plan", "review"}) {
 		t.Fatal(got)
 	}
 	defaultAgentPorts = func(context.Context) map[string]string { return nil }
-	if got := knownAgentOptions(context.Background(), nil); !reflect.DeepEqual(got, []string{"build", "plan"}) {
+	if got := knownAgentOptions(context.Background(), nil, nil); !reflect.DeepEqual(got, []string{"build", "plan"}) {
 		t.Fatal(got)
 	}
 }
@@ -45,10 +47,10 @@ func TestKnownAgentOptionsKeepsDiscoverySnapshot(t *testing.T) {
 	defaultAgentPorts = func(context.Context) map[string]string { return snapshot }
 	defaultAgentPort = func(context.Context, string) string { return "1001" }
 	defaultAgentCatalog = func(context.Context, string, string) []string { return nil }
-	knownAgentOptions(context.Background(), []string{"/beta"})
+	knownAgentOptions(context.Background(), nil, []string{"/beta"})
 	var wg sync.WaitGroup
 	for i := range 25 {
-		wg.Go(func() { knownAgentOptions(context.Background(), []string{fmt.Sprintf("/project-%d", i)}) })
+		wg.Go(func() { knownAgentOptions(context.Background(), nil, []string{fmt.Sprintf("/project-%d", i)}) })
 	}
 	wg.Wait()
 	if len(snapshot) != 1 {
@@ -69,7 +71,7 @@ func TestKnownAgentOptionsFallsBackAfterCanceledPortDiscovery(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if got := knownAgentOptions(ctx, []string{"/repo"}); !reflect.DeepEqual(got, []string{"build", "plan"}) {
+	if got := knownAgentOptions(ctx, nil, []string{"/repo"}); !reflect.DeepEqual(got, []string{"build", "plan"}) {
 		t.Fatal(got)
 	}
 }
@@ -90,7 +92,7 @@ func TestKnownAgentOptionsScopesDirectoriesSharingPort(t *testing.T) {
 		}
 		return []string{strings.TrimPrefix(directory, "/") + "-agent"}
 	}
-	if got := knownAgentOptions(context.Background(), []string{"/alpha", "/beta", "/offline"}); !reflect.DeepEqual(got, []string{"alpha-agent", "beta-agent", "build", "plan"}) {
+	if got := knownAgentOptions(context.Background(), nil, []string{"/alpha", "/beta", "/offline"}); !reflect.DeepEqual(got, []string{"alpha-agent", "beta-agent", "build", "plan"}) {
 		t.Fatal(got)
 	}
 }
@@ -113,7 +115,7 @@ func TestKnownAgentOptionsStopsAfterStalledCatalog(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if got := knownAgentOptions(ctx, nil); !reflect.DeepEqual(got, []string{"build", "plan"}) || calls.Load() > 8 {
+	if got := knownAgentOptions(ctx, nil, nil); !reflect.DeepEqual(got, []string{"build", "plan"}) || calls.Load() > 8 {
 		t.Fatalf("fallback = %v, catalog calls = %d, want at most eight calls", got, calls.Load())
 	}
 }
@@ -143,7 +145,7 @@ func TestKnownAgentOptionsIncludesHealthyCatalogBesideStalledTarget(t *testing.T
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if got := knownAgentOptions(ctx, nil); !reflect.DeepEqual(got, []string{"build", "healthy-agent", "plan"}) {
+	if got := knownAgentOptions(ctx, nil, nil); !reflect.DeepEqual(got, []string{"build", "healthy-agent", "plan"}) {
 		t.Fatalf("stalled target hid a healthy catalog: %v", got)
 	}
 }
@@ -167,7 +169,7 @@ func TestKnownAgentOptionsReadsHealthyTargetBeyondStalledBatch(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	got := knownAgentOptions(ctx, nil)
+	got := knownAgentOptions(ctx, nil, nil)
 	if ctx.Err() != nil || !reflect.DeepEqual(got, []string{"build", "healthy-agent", "plan"}) {
 		t.Fatalf("stalled batch exhausted the healthy target's budget: agents=%v error=%v", got, ctx.Err())
 	}
@@ -183,7 +185,7 @@ func TestKnownAgentOptionsSetsOverallDeadline(t *testing.T) {
 		bounded = ok && time.Until(deadline) <= 5*time.Second
 		return []string{"custom"}
 	}
-	knownAgentOptions(context.Background(), nil)
+	knownAgentOptions(context.Background(), nil, nil)
 	if !bounded {
 		t.Fatal("agent discovery has no overall deadline")
 	}
@@ -206,7 +208,7 @@ func TestDefaultAgentOptionsIncludeLocalDatabaseDirectories(t *testing.T) {
 	}
 	previous := defaultAgentOptions
 	t.Cleanup(func() { defaultAgentOptions = previous })
-	defaultAgentOptions = func(_ context.Context, directories []string) []string {
+	defaultAgentOptions = func(_ context.Context, _ *opencode.Discovery, directories []string) []string {
 		if len(directories) != 2 || !strings.Contains(strings.Join(directories, ","), "/alpha") || !strings.Contains(strings.Join(directories, ","), "/beta") {
 			t.Fatal(directories)
 		}
@@ -218,7 +220,7 @@ func TestDefaultAgentOptionsIncludeLocalDatabaseDirectories(t *testing.T) {
 		t.Fatal(rec.Body)
 	}
 	srv.db.Close()
-	defaultAgentOptions = func(_ context.Context, directories []string) []string {
+	defaultAgentOptions = func(_ context.Context, _ *opencode.Discovery, directories []string) []string {
 		if len(directories) != 0 {
 			t.Fatal(directories)
 		}
@@ -234,7 +236,9 @@ func TestDefaultAgentOptionsIncludeLocalDatabaseDirectories(t *testing.T) {
 func TestDefaultAgentSetting(t *testing.T) {
 	previous := defaultAgentOptions
 	t.Cleanup(func() { defaultAgentOptions = previous })
-	defaultAgentOptions = func(context.Context, []string) []string { return []string{"build", "plan", "custom-agent"} }
+	defaultAgentOptions = func(context.Context, *opencode.Discovery, []string) []string {
+		return []string{"build", "plan", "custom-agent"}
+	}
 	srv := &Server{stateDB: openTestStateDB(t)}
 	for _, tc := range []struct {
 		method, body, want string

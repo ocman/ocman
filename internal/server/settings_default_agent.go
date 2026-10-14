@@ -17,15 +17,25 @@ import (
 const defaultAgentKey = "session.default_agent"
 
 var defaultAgentOptions = knownAgentOptions
-var defaultAgentPorts = opencode.DiscoverOpenCodePortsContext
 var defaultAgentCatalog = opencode.AgentNames
-var defaultAgentPort = opencode.DiscoverOpenCodePortContext
 
-func knownAgentOptions(ctx context.Context, directories []string) []string {
+// defaultAgentPorts and defaultAgentPort are test seams; nil reads the
+// server's OpenCode discovery.
+var defaultAgentPorts func(context.Context) map[string]string
+var defaultAgentPort func(context.Context, string) string
+
+func knownAgentOptions(ctx context.Context, disc *opencode.Discovery, directories []string) []string {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	portsFn, portFn := defaultAgentPorts, defaultAgentPort
+	if portsFn == nil {
+		portsFn = disc.DiscoverOpenCodePortsContext
+	}
+	if portFn == nil {
+		portFn = disc.DiscoverOpenCodePortContext
+	}
 	known := map[string]bool{"build": true, "plan": true}
-	targets := maps.Clone(defaultAgentPorts(ctx))
+	targets := maps.Clone(portsFn(ctx))
 	if targets == nil {
 		targets = make(map[string]string)
 	}
@@ -33,7 +43,7 @@ func knownAgentOptions(ctx context.Context, directories []string) []string {
 		if ctx.Err() != nil {
 			break
 		}
-		if port := defaultAgentPort(ctx, directory); port != "" {
+		if port := portFn(ctx, directory); port != "" {
 			targets[directory] = port
 		}
 	}
@@ -110,7 +120,7 @@ func (s *Server) handleDefaultAgent(w http.ResponseWriter, r *http.Request) {
 				log.WithError(err).Warn("reading local directories for default-agent options")
 			}
 		}
-		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context(), directories)})
+		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context(), s.openCodeDiscovery(), directories)})
 	case http.MethodPost:
 		var body struct {
 			DefaultAgent string `json:"defaultAgent"`

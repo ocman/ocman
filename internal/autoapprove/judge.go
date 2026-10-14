@@ -10,7 +10,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
-	opencode "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 type judgeVerdict string
@@ -76,7 +75,6 @@ func (j *PermissionJudge) setModel(provider, modelID string) {
 
 func newPermissionJudge(auth ocapi.Auth) *PermissionJudge {
 	return &PermissionJudge{
-		openCodePort:  opencode.DiscoverOpenCodePort,
 		httpClient:    &http.Client{Timeout: judgeTimeout, Transport: auth.Transport(http.DefaultTransport)},
 		modelProvider: judgeModelProvider,
 		modelID:       judgeModelID,

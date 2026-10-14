@@ -40,7 +40,7 @@ func TestSessionMetadataNeverReadsHistory(t *testing.T) {
 	if _, err := a.SessionMetadata(t.Context(), "missing"); err == nil {
 		t.Fatal("missing session succeeded")
 	}
-	if _, err := (&Adapter{}).SessionMetadata(t.Context(), "child"); !errors.Is(err, platforms.ErrNotFound) {
+	if _, err := (&Adapter{rt: td}).SessionMetadata(t.Context(), "child"); !errors.Is(err, platforms.ErrNotFound) {
 		t.Fatalf("nil database error=%v", err)
 	}
 }

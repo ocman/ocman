@@ -138,7 +138,7 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 	}
 	w := &autoApproveWatcher{
 		svc:                     svc,
-		discoverPorts:           opencode.DiscoverOpenCodePorts,
+		discoverPorts:           svc.discoverOpenCodePorts,
 		httpClient:              &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
 		rescanInterval:          autoApproveRescanInterval,
 		reconnectDelay:          autoApproveReconnectDelay,

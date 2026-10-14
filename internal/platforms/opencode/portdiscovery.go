@@ -16,50 +16,68 @@ import (
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
-// portCache holds cached port discovery results with a single mutex
-// for simplicity; port discovery is infrequent enough that read/write
-// contention is not a concern.
-var portCache struct {
-	mu               sync.Mutex
-	ports            map[string]string
-	lastSuccessful   map[string]string
-	lastSuccessfulAt time.Time
-	updated          time.Time
-	generation       uint64
+// Discovery is one adapter's view of the OpenCode instances its Host
+// runs: the cached directory -> port map, the session -> port affinity,
+// the v2 machine server and the managed inventory it reads. Each Adapter
+// owns one, so a backend reload (a new adapter) starts from nothing and
+// two servers in one process never share routing state.
+type Discovery struct {
+	// portCache holds cached port discovery results with a single mutex
+	// for simplicity; port discovery is infrequent enough that read/write
+	// contention is not a concern.
+	portCache struct {
+		mu               sync.Mutex
+		ports            map[string]string
+		lastSuccessful   map[string]string
+		lastSuccessfulAt time.Time
+		updated          time.Time
+		generation       uint64
+	}
+	serverCache struct {
+		mu      sync.Mutex
+		servers []openCodeServer
+		updated time.Time
+	}
+	sessionPortAffinity sync.Map // sessionID -> port
+
+	// portFlight coalesces concurrent cold-cache callers into a single
+	// underlying managed-inventory read.
+	portFlight singleflight.Group
+	// serverFlight coalesces concurrent cold-cache callers that need the
+	// full server list rather than the directory -> port map.
+	serverFlight singleflight.Group
+
+	// machineServer is the port of the OpenCode v2 server that serves
+	// every directory on this machine ("" on v1 machines).
+	machineServer     atomic.Value // string
+	managedPortSource atomic.Pointer[func(context.Context) map[string]string]
 }
 
-var serverCache struct {
-	mu      sync.Mutex
-	servers []openCodeServer
-	updated time.Time
-}
-
-var sessionPortAffinity sync.Map // sessionID -> port
-
-// portFlight coalesces concurrent cold-cache callers into a single
-// underlying managed-inventory read.
-var portFlight singleflight.Group
-
-// serverFlight coalesces concurrent cold-cache callers that need the
-// full server list rather than the directory -> port map.
-var serverFlight singleflight.Group
+// NewDiscovery returns an empty discovery with no inventory source.
+func NewDiscovery() *Discovery { return &Discovery{} }
 
 // portCacheTTL bounds how long a discovered port map is reused
 // before the next request refreshes the managed inventory.
 const portCacheTTL = 10 * time.Second
 
-// discoverPortsImpl is the seam used so tests can swap out the expensive
-// inventory read. Stored as an atomic pointer so reads and writes are
-// race-free without a mutex.
-var discoverPortsImpl atomic.Pointer[func(context.Context) map[string]string]
-var discoverServersImpl atomic.Pointer[func() []openCodeServer]
+// discoverPortsOverride and discoverServersOverride are test seams that
+// replace every Discovery's inventory read. They hold no state; nil in
+// production.
+var discoverPortsOverride atomic.Pointer[func(context.Context) map[string]string]
+var discoverServersOverride atomic.Pointer[func() []openCodeServer]
 
-func init() {
-	serverFn := func() []openCodeServer { return discoverOpenCodeServersUncached() }
-	discoverServersImpl.Store(&serverFn)
+func (d *Discovery) discoverPortsImpl(ctx context.Context) map[string]string {
+	if fn := discoverPortsOverride.Load(); fn != nil {
+		return (*fn)(ctx)
+	}
+	return d.discoverOpenCodePortsUncachedContext(ctx)
+}
 
-	fn := discoverOpenCodePortsUncachedContext
-	discoverPortsImpl.Store(&fn)
+func (d *Discovery) discoverServersImpl() []openCodeServer {
+	if fn := discoverServersOverride.Load(); fn != nil {
+		return (*fn)()
+	}
+	return d.discoverOpenCodeServersUncached()
 }
 
 // setDiscoverPortsImplForTests installs fn as the seam and returns a
@@ -72,49 +90,49 @@ func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
 		}
 		return ports
 	}
-	prev := discoverPortsImpl.Swap(&wrapper)
-	return func() { discoverPortsImpl.Store(prev) }
+	prev := discoverPortsOverride.Swap(&wrapper)
+	return func() { discoverPortsOverride.Store(prev) }
 }
 
 func setDiscoverServersImplForTests(fn func() []openCodeServer) func() {
-	prev := discoverServersImpl.Swap(&fn)
-	return func() { discoverServersImpl.Store(prev) }
+	prev := discoverServersOverride.Swap(&fn)
+	return func() { discoverServersOverride.Store(prev) }
 }
 
 // resetPortCache clears the shared port-discovery caches.
-func resetPortCache() {
-	portCache.mu.Lock()
-	portCache.ports = nil
-	portCache.generation++
-	portCache.updated = time.Time{}
-	portCache.mu.Unlock()
+func (d *Discovery) resetPortCache() {
+	d.portCache.mu.Lock()
+	d.portCache.ports = nil
+	d.portCache.generation++
+	d.portCache.updated = time.Time{}
+	d.portCache.mu.Unlock()
 
-	serverCache.mu.Lock()
-	serverCache.servers = nil
-	serverCache.updated = time.Time{}
-	serverCache.mu.Unlock()
+	d.serverCache.mu.Lock()
+	d.serverCache.servers = nil
+	d.serverCache.updated = time.Time{}
+	d.serverCache.mu.Unlock()
 }
 
 // InvalidateOpenCodePortCache clears cached OpenCode port-discovery data.
 // Callers that have just launched or restarted an OpenCode process should
 // invalidate so the next lookup reads the managed inventory instead of reusing
 // a recently cached "not running yet" result.
-func InvalidateOpenCodePortCache() {
-	resetPortCache()
+func (d *Discovery) InvalidateOpenCodePortCache() {
+	d.resetPortCache()
 }
 
-func rememberSessionPort(sessionID, port string) {
+func (d *Discovery) rememberSessionPort(sessionID, port string) {
 	if sessionID == "" || port == "" {
 		return
 	}
-	sessionPortAffinity.Store(sessionID, port)
+	d.sessionPortAffinity.Store(sessionID, port)
 }
 
-func preferredSessionPort(sessionID string) string {
+func (d *Discovery) preferredSessionPort(sessionID string) string {
 	if sessionID == "" {
 		return ""
 	}
-	if port, ok := sessionPortAffinity.Load(sessionID); ok {
+	if port, ok := d.sessionPortAffinity.Load(sessionID); ok {
 		if s, ok := port.(string); ok {
 			return s
 		}
@@ -122,26 +140,26 @@ func preferredSessionPort(sessionID string) string {
 	return ""
 }
 
-func forgetSessionPort(sessionID, port string) {
+func (d *Discovery) forgetSessionPort(sessionID, port string) {
 	if sessionID == "" {
 		return
 	}
 	if port == "" {
-		sessionPortAffinity.Delete(sessionID)
+		d.sessionPortAffinity.Delete(sessionID)
 		return
 	}
-	if current, ok := sessionPortAffinity.Load(sessionID); ok && current == port {
-		sessionPortAffinity.Delete(sessionID)
+	if current, ok := d.sessionPortAffinity.Load(sessionID); ok && current == port {
+		d.sessionPortAffinity.Delete(sessionID)
 	}
 }
 
-func forgetSessionsForPort(port string) {
+func (d *Discovery) forgetSessionsForPort(port string) {
 	if port == "" {
 		return
 	}
-	sessionPortAffinity.Range(func(key, value interface{}) bool {
+	d.sessionPortAffinity.Range(func(key, value interface{}) bool {
 		if value == port {
-			sessionPortAffinity.CompareAndDelete(key, value)
+			d.sessionPortAffinity.CompareAndDelete(key, value)
 		}
 		return true
 	})
@@ -150,41 +168,41 @@ func forgetSessionsForPort(port string) {
 // DiscoverOpenCodePortsContext lets each caller cancel its own wait. Shared
 // scans have an independent ten-second deadline; timed-out scans are not cached.
 // A nil map signals failure; a non-nil empty map signals successful emptiness.
-func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
-	if ctx.Err() != nil {
+func (d *Discovery) DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
+	if d == nil || ctx.Err() != nil {
 		return nil
 	}
-	if cached, ok := readCachedPorts(); ok {
+	if cached, ok := d.readCachedPorts(); ok {
 		return cached
 	}
 
-	portCache.mu.Lock()
-	generation := portCache.generation
-	portCache.mu.Unlock()
+	d.portCache.mu.Lock()
+	generation := d.portCache.generation
+	d.portCache.mu.Unlock()
 	flightKey := "discoverOpenCodePorts:" + strconv.FormatUint(generation, 10)
-	result := portFlight.DoChan(flightKey, func() (interface{}, error) {
+	result := d.portFlight.DoChan(flightKey, func() (interface{}, error) {
 		scanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if cached, ok := readCachedPorts(); ok {
+		if cached, ok := d.readCachedPorts(); ok {
 			return cached, nil
 		}
-		result := (*discoverPortsImpl.Load())(scanCtx)
+		result := d.discoverPortsImpl(scanCtx)
 		if err := scanCtx.Err(); err != nil {
 			return nil, err
 		}
 		if result == nil {
 			return nil, errors.New("OpenCode port discovery failed")
 		}
-		portCache.mu.Lock()
-		if portCache.generation != generation {
-			portCache.mu.Unlock()
+		d.portCache.mu.Lock()
+		if d.portCache.generation != generation {
+			d.portCache.mu.Unlock()
 			return copyMap(result), nil
 		}
-		portCache.ports = result
-		portCache.lastSuccessful = copyMap(result)
-		portCache.updated = time.Now()
-		portCache.lastSuccessfulAt = portCache.updated
-		portCache.mu.Unlock()
+		d.portCache.ports = result
+		d.portCache.lastSuccessful = copyMap(result)
+		d.portCache.updated = time.Now()
+		d.portCache.lastSuccessfulAt = d.portCache.updated
+		d.portCache.mu.Unlock()
 		return copyMap(result), nil
 	})
 	select {
@@ -201,11 +219,11 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 	return map[string]string{}
 }
 
-func readCachedPorts() (map[string]string, bool) {
-	portCache.mu.Lock()
-	defer portCache.mu.Unlock()
-	if time.Since(portCache.updated) < portCacheTTL && portCache.ports != nil {
-		return copyMap(portCache.ports), true
+func (d *Discovery) readCachedPorts() (map[string]string, bool) {
+	d.portCache.mu.Lock()
+	defer d.portCache.mu.Unlock()
+	if time.Since(d.portCache.updated) < portCacheTTL && d.portCache.ports != nil {
+		return copyMap(d.portCache.ports), true
 	}
 	return nil, false
 }
@@ -218,13 +236,13 @@ func copyMap(m map[string]string) map[string]string {
 	return cp
 }
 
-func writeCachedPorts(ports map[string]string) {
-	portCache.mu.Lock()
-	portCache.ports = ports
-	portCache.lastSuccessful = copyMap(ports)
-	portCache.updated = time.Now()
-	portCache.lastSuccessfulAt = portCache.updated
-	portCache.mu.Unlock()
+func (d *Discovery) writeCachedPorts(ports map[string]string) {
+	d.portCache.mu.Lock()
+	d.portCache.ports = ports
+	d.portCache.lastSuccessful = copyMap(ports)
+	d.portCache.updated = time.Now()
+	d.portCache.lastSuccessfulAt = d.portCache.updated
+	d.portCache.mu.Unlock()
 }
 
 func normalizePortDirectory(directory string) string {
@@ -292,8 +310,8 @@ func duplicateOpenCodeServerPortsForDirectory(directory string, servers []openCo
 	return ports
 }
 
-func discoverDuplicateOpenCodeServerPorts(directory string) []string {
-	return duplicateOpenCodeServerPortsForDirectory(directory, discoverOpenCodeServers())
+func (d *Discovery) discoverDuplicateOpenCodeServerPorts(directory string) []string {
+	return duplicateOpenCodeServerPortsForDirectory(directory, d.discoverOpenCodeServers())
 }
 
 // discoverOpenCodePort finds the HTTP port of a running OpenCode instance
@@ -304,14 +322,14 @@ func discoverDuplicateOpenCodeServerPorts(directory string) []string {
 // Without the fold, the live per-session SSE stream and the permission-prompt
 // fetch resolve to "" and fall back to a fragile by-session HTTP probe,
 // dropping permission/question prompts for worktree sessions.
-func discoverOpenCodePort(directory string) string {
-	return lookupPortWithWorktreeFold(discoverOpenCodePorts(), directory)
+func (d *Discovery) discoverOpenCodePort(directory string) string {
+	return d.lookupPortWithWorktreeFold(d.discoverOpenCodePorts(), directory)
 }
 
 // lookupPortWithWorktreeFold looks up a directory in the port map, folding a
 // worktree directory to its project root on an exact-match miss. Mirrors
 // directoryHasLivePort's fold so port resolution and liveness agree.
-func lookupPortWithWorktreeFold(ports map[string]string, directory string) string {
+func (d *Discovery) lookupPortWithWorktreeFold(ports map[string]string, directory string) string {
 	if port := ports[normalizePortDirectory(directory)]; port != "" {
 		return port
 	}
@@ -320,7 +338,7 @@ func lookupPortWithWorktreeFold(ports map[string]string, directory string) strin
 			return port
 		}
 	}
-	return MachineServerPort()
+	return d.MachineServerPort()
 }
 
 // discoverOpenCodePortFresh performs an uncached scan for a single
@@ -329,11 +347,11 @@ func lookupPortWithWorktreeFold(ports map[string]string, directory string) strin
 // bound its port yet and caching that transient miss would hide the
 // process for portCacheTTL. Hits refresh the shared cache so subsequent
 // read-heavy callers can reuse the fresh snapshot.
-func discoverOpenCodePortFresh(directory string) string {
-	ports := (*discoverPortsImpl.Load())(context.Background())
-	port := lookupPortWithWorktreeFold(ports, directory)
+func (d *Discovery) discoverOpenCodePortFresh(directory string) string {
+	ports := d.discoverPortsImpl(context.Background())
+	port := d.lookupPortWithWorktreeFold(ports, directory)
 	if port != "" {
-		writeCachedPorts(ports)
+		d.writeCachedPorts(ports)
 	}
 	return port
 }
@@ -341,8 +359,8 @@ func discoverOpenCodePortFresh(directory string) string {
 // discoveredOpenCodeDirs returns "dir=port" for every currently running
 // opencode instance, for diagnostic logging when a directory lookup
 // misses. Uses the same seam as the fresh scan so the snapshot matches.
-func discoveredOpenCodeDirs() []string {
-	ports := (*discoverPortsImpl.Load())(context.Background())
+func (d *Discovery) discoveredOpenCodeDirs() []string {
+	ports := d.discoverPortsImpl(context.Background())
 	out := make([]string, 0, len(ports))
 	for dir, port := range ports {
 		out = append(out, dir+"="+port)
@@ -355,23 +373,26 @@ func discoveredOpenCodeDirs() []string {
 // provided so packages outside the opencode package (e.g. server) can
 // resolve the port for a directory without creating an import cycle
 // through the Platform adapter interface.
-func DiscoverOpenCodePort(directory string) string {
-	return discoverOpenCodePort(directory)
+func (d *Discovery) DiscoverOpenCodePort(directory string) string {
+	return d.discoverOpenCodePort(directory)
 }
 
-func DiscoverOpenCodePortContext(ctx context.Context, directory string) string {
-	ports := DiscoverOpenCodePortsContext(ctx)
+func (d *Discovery) DiscoverOpenCodePortContext(ctx context.Context, directory string) string {
+	if d == nil {
+		return ""
+	}
+	ports := d.DiscoverOpenCodePortsContext(ctx)
 	if ctx.Err() != nil {
 		return ""
 	}
-	return lookupPortWithWorktreeFold(ports, directory)
+	return d.lookupPortWithWorktreeFold(ports, directory)
 }
 
 // DiscoverOpenCodePortFresh is the exported equivalent of
 // discoverOpenCodePortFresh for launch/wait flows that must not cache a
 // transient miss while a just-started OpenCode process is still binding.
-func DiscoverOpenCodePortFresh(directory string) string {
-	return discoverOpenCodePortFresh(directory)
+func (d *Discovery) DiscoverOpenCodePortFresh(directory string) string {
+	return d.discoverOpenCodePortFresh(directory)
 }
 
 // DiscoverOpenCodePorts returns a fresh snapshot of every running
@@ -382,29 +403,29 @@ func DiscoverOpenCodePortFresh(directory string) string {
 // enumerate OpenCode processes it should subscribe to. Goes through the
 // same cached path as DiscoverOpenCodePort so back-to-back calls do not
 // refresh the managed inventory again within portCacheTTL.
-func DiscoverOpenCodePorts() map[string]string {
-	return discoverOpenCodePorts()
+func (d *Discovery) DiscoverOpenCodePorts() map[string]string {
+	return d.discoverOpenCodePorts()
 }
 
 // discoverOpenCodePortCtx is discoverOpenCodePort with Server-Timing instrumentation.
-func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
-	if cached, ok := readCachedPorts(); ok {
+func (d *Discovery) discoverOpenCodePortCtx(ctx context.Context, directory string) string {
+	if cached, ok := d.readCachedPorts(); ok {
 		hit := srvtiming.Begin(ctx, "runtime_ports_hit")
-		port := lookupPortWithWorktreeFold(cached, directory)
+		port := d.lookupPortWithWorktreeFold(cached, directory)
 		hit.End()
 		return port
 	}
 	miss := srvtiming.Begin(ctx, "runtime_ports_miss")
-	port := discoverOpenCodePort(directory)
+	port := d.discoverOpenCodePort(directory)
 	miss.EndWithDesc("read managed runtime inventory")
 	return port
 }
 
-func resolveOpenCodePortForSessionCtx(ctx context.Context, sessionID, directory string) string {
-	if port := preferredSessionPort(sessionID); port != "" {
+func (d *Discovery) resolveOpenCodePortForSessionCtx(ctx context.Context, sessionID, directory string) string {
+	if port := d.preferredSessionPort(sessionID); port != "" {
 		return port
 	}
-	port := discoverOpenCodePortCtx(ctx, directory)
-	rememberSessionPort(sessionID, port)
+	port := d.discoverOpenCodePortCtx(ctx, directory)
+	d.rememberSessionPort(sessionID, port)
 	return port
 }

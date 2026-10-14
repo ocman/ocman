@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 // Only process launch is faked. Readiness probes, runtime inventory, session
@@ -81,7 +80,7 @@ func TestStartSessionWaitsForSlowOpenCodeAndSucceedsFirstTime(t *testing.T) {
 	srv.router()
 	// Browser/background reads have already cached that this new project has
 	// no running instance. The same first submission must still succeed.
-	if ports := opencode.DiscoverOpenCodePortsContext(t.Context()); len(ports) != 0 {
+	if ports := srv.openCodeDiscovery().DiscoverOpenCodePortsContext(t.Context()); len(ports) != 0 {
 		t.Fatal(ports)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -126,7 +125,7 @@ func TestStartSessionWaitsForSlowOpenCodeAndSucceedsFirstTime(t *testing.T) {
 	if runtime.launches.Load() != 1 || creates.Load() != 1 || prompts.Load() != 1 {
 		t.Fatalf("submission duplicated work: launches=%d sessions=%d prompts=%d", runtime.launches.Load(), creates.Load(), prompts.Load())
 	}
-	if port := opencode.DiscoverOpenCodePortContext(t.Context(), dir); port == "" {
+	if port := srv.openCodeDiscovery().DiscoverOpenCodePortContext(t.Context(), dir); port == "" {
 		t.Fatal("successful first submission left the project invisible to discovery")
 	}
 }

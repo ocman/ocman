@@ -31,7 +31,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// from the global event watcher, so session listing never fans out to
 	// every instance's /permission and /question endpoints.
 	portsPhase := srvtiming.Begin(ctx, "runtime_ports")
-	ports := discoverOpenCodePorts()
+	ports := a.rt.discoverOpenCodePorts()
 	portsPhase.End()
 
 	// Settle every status against the live turn signal before anything
@@ -41,7 +41,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 		directory := sessions[i].Directory
 		port, ok := resolvedPorts[directory]
 		if !ok {
-			port = portForDirectory(ports, directory)
+			port = a.rt.portForDirectory(ports, directory)
 			resolvedPorts[directory] = port
 		}
 		sessions[i].Status = a.settleStatusOnPort(sessions[i].ID, port, sessions[i].Status)

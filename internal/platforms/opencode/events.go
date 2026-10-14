@@ -46,19 +46,19 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 	sseClient := &http.Client{Transport: a.auth.Transport(http.DefaultTransport)}
 	resp, err := sseClient.Do(httpReq)
 	if err != nil {
-		forgetSessionPort(sessionID, port)
+		a.rt.forgetSessionPort(sessionID, port)
 		return fmt.Errorf("opencode events connect: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		forgetSessionPort(sessionID, port)
+		a.rt.forgetSessionPort(sessionID, port)
 		return fmt.Errorf("opencode events connect: upstream HTTP %d", resp.StatusCode)
 	}
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
-		forgetSessionPort(sessionID, port)
+		a.rt.forgetSessionPort(sessionID, port)
 		return fmt.Errorf("opencode events connect: unexpected content-type %q", ct)
 	}
-	rememberSessionPort(sessionID, port)
+	a.rt.rememberSessionPort(sessionID, port)
 
 	// On idle timeout the body is closed, Read returns an error, and the
 	// SSE handler's context-aware reconnect logic re-establishes.

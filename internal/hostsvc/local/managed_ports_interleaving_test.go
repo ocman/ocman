@@ -144,15 +144,13 @@ func TestExpiredDiscoveryInsideReplacementDoesNotReenterMutationFlight(t *testin
 	}}
 	h := New(Deps{Runtime: rt})
 	h.authorizeInstance(root, &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", RepoRoot: root, ID: "old"})
-	opencode.SetManagedPortSource(h.ManagedOpenCodePorts)
-	t.Cleanup(func() {
-		opencode.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{} })
-	})
+	disc := opencode.NewDiscovery()
+	disc.SetManagedPortSource(h.ManagedOpenCodePorts)
 	h.deps.BeforeReplace = func(ctx context.Context, _, _ string) error {
 		readCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
-		opencode.InvalidateOpenCodePortCache()
-		_ = opencode.DiscoverOpenCodePortsContext(readCtx)
+		disc.InvalidateOpenCodePortCache()
+		_ = disc.DiscoverOpenCodePortsContext(readCtx)
 		return readCtx.Err()
 	}
 	if _, err := h.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {

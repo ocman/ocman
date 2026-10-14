@@ -12,7 +12,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -22,8 +21,6 @@ func TestProductionPublicationRetiresRuntimeBeforeColdRecovery(t *testing.T) {
 			t.Cleanup(ocv2.SetInstalledV2(true))
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv("OPENCODE_DB", "")
-			opencode.SetMachineServer("")
-			t.Cleanup(func() { opencode.SetMachineServer("") })
 			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
 			path := filepath.Join(t.TempDir(), "retirement-state.db")
@@ -108,7 +105,7 @@ func TestProductionPublicationRetiresRuntimeBeforeColdRecovery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			opencode.SetMachineServer("")
+			srv.setOpenCodeMachineServer("")
 			oldProbes := 0
 			rt.probe = func(inst *ocruntime.Instance) error {
 				if inst.Endpoint == original.Endpoint {
@@ -134,8 +131,6 @@ func TestProductionRestartDrainsHistoricalSessionsInFirstRequest(t *testing.T) {
 			t.Cleanup(ocv2.SetInstalledV2(true))
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv("OPENCODE_DB", "")
-			opencode.SetMachineServer("")
-			t.Cleanup(func() { opencode.SetMachineServer("") })
 			srv, reg := newSessionsTestServer(t)
 			sessions := make([]db.Session, count)
 			for i := range sessions {

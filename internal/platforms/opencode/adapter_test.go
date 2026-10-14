@@ -175,16 +175,16 @@ func TestDirectoryHasLivePort(t *testing.T) {
 	worktree := root + "/.worktrees/ocman/feat-x"
 	ports := map[string]string{normalizePortDirectory(repo): "4096"}
 
-	if !directoryHasLivePort(ports, repo) {
+	if !td.directoryHasLivePort(ports, repo) {
 		t.Error("exact project-root match should be live")
 	}
-	if !directoryHasLivePort(ports, worktree) {
+	if !td.directoryHasLivePort(ports, worktree) {
 		t.Error("worktree dir should fold to project root and be live")
 	}
-	if directoryHasLivePort(ports, root+"/other") {
+	if td.directoryHasLivePort(ports, root+"/other") {
 		t.Error("unrelated directory must not be live")
 	}
-	if directoryHasLivePort(map[string]string{}, worktree) {
+	if td.directoryHasLivePort(map[string]string{}, worktree) {
 		t.Error("no running instances -> not live")
 	}
 }
@@ -200,16 +200,16 @@ func TestLookupPortWithWorktreeFold(t *testing.T) {
 	worktree := root + "/.worktrees/ocman/feat-x"
 	ports := map[string]string{normalizePortDirectory(repo): "4096"}
 
-	if got := lookupPortWithWorktreeFold(ports, repo); got != "4096" {
+	if got := td.lookupPortWithWorktreeFold(ports, repo); got != "4096" {
 		t.Errorf("exact project-root match = %q, want 4096", got)
 	}
-	if got := lookupPortWithWorktreeFold(ports, worktree); got != "4096" {
+	if got := td.lookupPortWithWorktreeFold(ports, worktree); got != "4096" {
 		t.Errorf("worktree dir should fold to project root, got %q, want 4096", got)
 	}
-	if got := lookupPortWithWorktreeFold(ports, root+"/other"); got != "" {
+	if got := td.lookupPortWithWorktreeFold(ports, root+"/other"); got != "" {
 		t.Errorf("unrelated directory = %q, want empty", got)
 	}
-	if got := lookupPortWithWorktreeFold(map[string]string{}, worktree); got != "" {
+	if got := td.lookupPortWithWorktreeFold(map[string]string{}, worktree); got != "" {
 		t.Errorf("no running instances = %q, want empty", got)
 	}
 }

@@ -1,28 +1,26 @@
 package opencode
 
-import (
-	"os"
-	"sync/atomic"
-)
+import "os"
 
-// machineServer is the port of the OpenCode v2 server that serves every
-// directory on this machine ("" on v1 machines). v2 runs one server for
-// all projects, so per-project runtime lookup does not apply:
-// the host that launched it publishes the port here.
-var machineServer atomic.Value // string
+// v2 runs one server for all projects, so per-project runtime lookup does
+// not apply: the host that launched it publishes its port to the
+// Discovery (see Discovery.machineServer).
 
 // SetMachineServer publishes (or, with "", clears) the v2 machine server.
-func SetMachineServer(port string) {
-	if prev, _ := machineServer.Load().(string); prev == port {
+func (d *Discovery) SetMachineServer(port string) {
+	if prev, _ := d.machineServer.Load().(string); prev == port {
 		return
 	}
-	machineServer.Store(port)
-	resetPortCache()
+	d.machineServer.Store(port)
+	d.resetPortCache()
 }
 
 // MachineServerPort returns the v2 machine server's port, or "".
-func MachineServerPort() string {
-	p, _ := machineServer.Load().(string)
+func (d *Discovery) MachineServerPort() string {
+	if d == nil {
+		return ""
+	}
+	p, _ := d.machineServer.Load().(string)
 	return p
 }
 
@@ -30,8 +28,8 @@ func MachineServerPort() string {
 // server. Every directory resolves to it through the lookup fallback;
 // it is listed once (under the home directory) so per-port consumers
 // such as the auto-approve watcher subscribe to its event stream.
-func machineServers() []openCodeServer {
-	port := MachineServerPort()
+func (d *Discovery) machineServers() []openCodeServer {
+	port := d.MachineServerPort()
 	if port == "" {
 		return nil
 	}

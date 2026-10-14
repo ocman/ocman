@@ -13,24 +13,24 @@ import (
 // withMachineServer publishes port as the v2 machine server for one test.
 func withMachineServer(t *testing.T, port string) {
 	t.Helper()
-	SetMachineServer(port)
-	t.Cleanup(func() { SetMachineServer("") })
+	td.SetMachineServer(port)
+	t.Cleanup(func() { td.SetMachineServer("") })
 }
 
 func TestMachineServerPort_SetAndClear(t *testing.T) {
-	if got := MachineServerPort(); got != "" {
+	if got := td.MachineServerPort(); got != "" {
 		t.Fatalf("initial machine port = %q, want empty", got)
 	}
 	withMachineServer(t, "9001")
-	if got := MachineServerPort(); got != "9001" {
+	if got := td.MachineServerPort(); got != "9001" {
 		t.Fatalf("MachineServerPort = %q, want 9001", got)
 	}
-	SetMachineServer("9001") // idempotent
-	if got := MachineServerPort(); got != "9001" {
+	td.SetMachineServer("9001") // idempotent
+	if got := td.MachineServerPort(); got != "9001" {
 		t.Fatalf("MachineServerPort after re-set = %q, want 9001", got)
 	}
-	SetMachineServer("")
-	if got := MachineServerPort(); got != "" {
+	td.SetMachineServer("")
+	if got := td.MachineServerPort(); got != "" {
 		t.Fatalf("MachineServerPort after clear = %q, want empty", got)
 	}
 }
@@ -44,18 +44,18 @@ func TestSetMachineServer_ResetsPortCache(t *testing.T) {
 	t.Cleanup(func() { restore(); resetPortCacheForTests() })
 	resetPortCacheForTests()
 
-	discoverOpenCodePorts()
-	discoverOpenCodePorts() // cached
+	td.discoverOpenCodePorts()
+	td.discoverOpenCodePorts() // cached
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("discovery calls = %d, want 1", got)
 	}
 	withMachineServer(t, "9002")
-	discoverOpenCodePorts()
+	td.discoverOpenCodePorts()
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Fatalf("discovery calls after SetMachineServer = %d, want 2 (cache reset)", got)
 	}
-	SetMachineServer("9002") // unchanged: must not reset
-	discoverOpenCodePorts()
+	td.SetMachineServer("9002") // unchanged: must not reset
+	td.discoverOpenCodePorts()
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Fatalf("discovery calls after unchanged SetMachineServer = %d, want 2", got)
 	}
@@ -69,8 +69,8 @@ func TestPortLookups_FallBackToMachineServer(t *testing.T) {
 	strayWorktree := root + "/.worktrees/unknown/feat-y"
 
 	lookups := map[string]func(map[string]string, string) string{
-		"lookupPortWithWorktreeFold": lookupPortWithWorktreeFold,
-		"portForDirectory":           portForDirectory,
+		"lookupPortWithWorktreeFold": td.lookupPortWithWorktreeFold,
+		"portForDirectory":           td.portForDirectory,
 	}
 	for name, lookup := range lookups {
 		t.Run(name, func(t *testing.T) {
@@ -93,7 +93,7 @@ func TestPortLookups_FallBackToMachineServer(t *testing.T) {
 			if got := lookup(map[string]string{}, worktree); got != "7777" {
 				t.Errorf("no instances = %q, want machine port", got)
 			}
-			SetMachineServer("")
+			td.SetMachineServer("")
 			if got := lookup(ports, other); got != "" {
 				t.Errorf("after clear = %q, want empty", got)
 			}
@@ -104,12 +104,12 @@ func TestPortLookups_FallBackToMachineServer(t *testing.T) {
 func TestMachineServers(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if got := machineServers(); got != nil {
+	if got := td.machineServers(); got != nil {
 		t.Fatalf("machineServers without a port = %v, want nil", got)
 	}
 	withMachineServer(t, "7778")
 	want := []openCodeServer{{directory: normalizePortDirectory(home), port: "7778"}}
-	if got := machineServers(); !reflect.DeepEqual(got, want) {
+	if got := td.machineServers(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("machineServers = %+v, want %+v", got, want)
 	}
 }
@@ -118,12 +118,12 @@ func TestDiscoverServersUncached_V2UsesMachineServer(t *testing.T) {
 	defer ocv2.SetInstalledV2(true)()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if got := discoverOpenCodeServersUncached(); len(got) != 0 {
+	if got := td.discoverOpenCodeServersUncached(); len(got) != 0 {
 		t.Fatalf("v2 discovery without machine server = %v, want none", got)
 	}
 	withMachineServer(t, "7779")
 	want := []openCodeServer{{directory: normalizePortDirectory(home), port: "7779"}}
-	if got := discoverOpenCodeServersUncached(); !reflect.DeepEqual(got, want) {
+	if got := td.discoverOpenCodeServersUncached(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("v2 discovery = %+v, want %+v", got, want)
 	}
 }

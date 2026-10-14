@@ -36,7 +36,7 @@ func TestDiscoverOpenCodePorts_SingleflightsConcurrentMisses(t *testing.T) {
 	for i := 0; i < concurrency; i++ {
 		go func() {
 			defer wg.Done()
-			ports := discoverOpenCodePorts()
+			ports := td.discoverOpenCodePorts()
 			if ports["/repo/a"] != "1234" {
 				t.Errorf("missing port: got %v", ports)
 			}
@@ -61,9 +61,9 @@ func TestDiscoverOpenCodePorts_CacheHitDoesNotRunLsof(t *testing.T) {
 	defer restore()
 	resetPortCacheForTests()
 
-	_ = discoverOpenCodePorts()
-	_ = discoverOpenCodePorts()
-	_ = discoverOpenCodePorts()
+	_ = td.discoverOpenCodePorts()
+	_ = td.discoverOpenCodePorts()
+	_ = td.discoverOpenCodePorts()
 
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Errorf("lsof invoked %d times within TTL, want 1", got)
@@ -82,19 +82,19 @@ func TestInvalidateOpenCodePortCache_ForcesFreshScan(t *testing.T) {
 	defer restore()
 	resetPortCacheForTests()
 
-	if got := discoverOpenCodePort("/repo/new"); got != "" {
+	if got := td.discoverOpenCodePort("/repo/new"); got != "" {
 		t.Fatalf("first lookup got port %q, want empty", got)
 	}
-	if got := discoverOpenCodePort("/repo/new"); got != "" {
+	if got := td.discoverOpenCodePort("/repo/new"); got != "" {
 		t.Fatalf("cached lookup got port %q, want empty", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("lsof invoked %d times before invalidation, want 1", got)
 	}
 
-	InvalidateOpenCodePortCache()
+	td.InvalidateOpenCodePortCache()
 
-	if got := discoverOpenCodePort("/repo/new"); got != "7777" {
+	if got := td.discoverOpenCodePort("/repo/new"); got != "7777" {
 		t.Fatalf("post-invalidation lookup got port %q, want 7777", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
@@ -114,21 +114,21 @@ func TestDiscoverOpenCodePortFresh_DoesNotCacheMissButCachesHit(t *testing.T) {
 	defer restore()
 	resetPortCacheForTests()
 
-	if got := discoverOpenCodePortFresh("/repo/new"); got != "" {
+	if got := td.discoverOpenCodePortFresh("/repo/new"); got != "" {
 		t.Fatalf("first fresh lookup got port %q, want empty", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("lsof invoked %d times after first lookup, want 1", got)
 	}
 
-	if got := discoverOpenCodePortFresh("/repo/new"); got != "7777" {
+	if got := td.discoverOpenCodePortFresh("/repo/new"); got != "7777" {
 		t.Fatalf("second fresh lookup got port %q, want 7777", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Fatalf("lsof invoked %d times after second lookup, want 2", got)
 	}
 
-	if got := discoverOpenCodePort("/repo/new"); got != "7777" {
+	if got := td.discoverOpenCodePort("/repo/new"); got != "7777" {
 		t.Fatalf("cached lookup after fresh hit got port %q, want 7777", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
@@ -153,13 +153,13 @@ func TestDiscoverOpenCodePortFresh_NormalizesSymlinkDirectory(t *testing.T) {
 	defer restore()
 	resetPortCacheForTests()
 
-	if got := discoverOpenCodePortFresh(linkDir); got != "7777" {
+	if got := td.discoverOpenCodePortFresh(linkDir); got != "7777" {
 		t.Fatalf("fresh lookup through symlink got port %q, want 7777", got)
 	}
-	if got := discoverOpenCodePort(linkDir); got != "7777" {
+	if got := td.discoverOpenCodePort(linkDir); got != "7777" {
 		t.Fatalf("cached lookup through symlink got port %q, want 7777", got)
 	}
-	if got := discoverOpenCodePortCtx(context.Background(), linkDir); got != "7777" {
+	if got := td.discoverOpenCodePortCtx(context.Background(), linkDir); got != "7777" {
 		t.Fatalf("ctx lookup through symlink got port %q, want 7777", got)
 	}
 }
@@ -223,19 +223,19 @@ func TestDiscoverDuplicateOpenCodeServerPorts_CachesServerDiscovery(t *testing.T
 	resetPortCacheForTests()
 	defer resetPortCacheForTests()
 
-	if got := discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
+	if got := td.discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
 		t.Fatalf("first duplicate ports = %v, want [1111 2222]", got)
 	}
-	if got := discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
+	if got := td.discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
 		t.Fatalf("cached duplicate ports = %v, want [1111 2222]", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("server discovery calls before invalidation = %d, want 1", got)
 	}
 
-	InvalidateOpenCodePortCache()
+	td.InvalidateOpenCodePortCache()
 
-	if got := discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"3333", "4444"}) {
+	if got := td.discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"3333", "4444"}) {
 		t.Fatalf("post-invalidation duplicate ports = %v, want [3333 4444]", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
@@ -257,19 +257,19 @@ func TestResolveOpenCodePortForSessionCtx_PinsSessionPort(t *testing.T) {
 	resetSessionPortAffinityForTests()
 	defer resetSessionPortAffinityForTests()
 
-	if got := resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
+	if got := td.resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
 		t.Fatalf("first lookup got port %q, want 1111", got)
 	}
 
-	InvalidateOpenCodePortCache()
-	if got := resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
+	td.InvalidateOpenCodePortCache()
+	if got := td.resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
 		t.Fatalf("same-session lookup after cache invalidation got port %q, want pinned 1111", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("same-session affinity invoked lsof %d times, want 1", got)
 	}
 
-	if got := resolveOpenCodePortForSessionCtx(context.Background(), "sess-2", "/repo/a"); got != "2222" {
+	if got := td.resolveOpenCodePortForSessionCtx(context.Background(), "sess-2", "/repo/a"); got != "2222" {
 		t.Fatalf("different session lookup got port %q, want fresh 2222", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
@@ -288,14 +288,14 @@ func TestDiscoverOpenCodePorts_CallersGetIsolatedCopies(t *testing.T) {
 	defer restore()
 	resetPortCacheForTests()
 
-	a := discoverOpenCodePorts()
-	b := discoverOpenCodePorts()
+	a := td.discoverOpenCodePorts()
+	b := td.discoverOpenCodePorts()
 
 	a["/repo"] = "MUTATED"
 	if b["/repo"] != "5555" {
 		t.Errorf("mutation in caller A leaked into caller B: %v", b)
 	}
-	c := discoverOpenCodePorts()
+	c := td.discoverOpenCodePorts()
 	if c["/repo"] != "5555" {
 		t.Errorf("mutation in caller A leaked into the cache: %v", c)
 	}
@@ -320,7 +320,7 @@ func TestDiscoverOpenCodePort_UnknownDirDoesNotInvalidateCache(t *testing.T) {
 	resetPortCacheForTests()
 
 	// First call warms the cache; lsof runs once.
-	if got := discoverOpenCodePort("/repo/unknown"); got != "" {
+	if got := td.discoverOpenCodePort("/repo/unknown"); got != "" {
 		t.Errorf("unknown dir: got port %q, want empty", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
@@ -331,7 +331,7 @@ func TestDiscoverOpenCodePort_UnknownDirDoesNotInvalidateCache(t *testing.T) {
 	// warm cache, not invalidate it. With the bug, this would
 	// trigger a second lsof.
 	for i := 0; i < 5; i++ {
-		if got := discoverOpenCodePort("/repo/still-unknown"); got != "" {
+		if got := td.discoverOpenCodePort("/repo/still-unknown"); got != "" {
 			t.Errorf("iteration %d: got %q, want empty", i, got)
 		}
 	}
@@ -341,7 +341,7 @@ func TestDiscoverOpenCodePort_UnknownDirDoesNotInvalidateCache(t *testing.T) {
 	}
 
 	// Sanity: a known directory still resolves from the warm cache.
-	if got := discoverOpenCodePort("/repo/known"); got != "1234" {
+	if got := td.discoverOpenCodePort("/repo/known"); got != "1234" {
 		t.Errorf("known dir: got %q, want 1234", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
@@ -365,13 +365,13 @@ func TestDiscoverOpenCodePorts_Exported(t *testing.T) {
 	defer restore()
 	resetPortCacheForTests()
 
-	got := DiscoverOpenCodePorts()
+	got := td.DiscoverOpenCodePorts()
 	if got["/repo/a"] != "1111" || got["/repo/b"] != "2222" {
 		t.Errorf("DiscoverOpenCodePorts: got %v, want a=1111 b=2222", got)
 	}
 
 	got["/repo/a"] = "MUTATED"
-	again := DiscoverOpenCodePorts()
+	again := td.DiscoverOpenCodePorts()
 	if again["/repo/a"] != "1111" {
 		t.Errorf("caller mutation leaked into cache: %v", again)
 	}

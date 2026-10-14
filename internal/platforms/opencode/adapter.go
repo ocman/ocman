@@ -54,7 +54,9 @@ type Adapter struct {
 	// turns is the live view of which sessions are running a turn, fed
 	// from each instance's /session/status snapshot and session.status
 	// events. See live_status.go.
-	turns    *liveStatusRegistry
+	turns *liveStatusRegistry
+	// rt is this adapter's own port discovery (see portdiscovery.go).
+	rt       *Discovery
 	sendLock [64]sync.Mutex // serializes V2 selection check + prompt; collisions only reduce concurrency
 }
 
@@ -87,8 +89,19 @@ func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculat
 	configureHTTPAuth(auth)
 	prompts := newLivePromptRegistry()
 	prompts.haltStore, _ = favorites.(*state.DB)
-	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, prompts: prompts, turns: newLiveStatusRegistry()}
+	rt := newAdapterDiscovery()
+	turns := newLiveStatusRegistry()
+	turns.disc = rt
+	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, prompts: prompts, turns: turns, rt: rt}
 }
+
+// newAdapterDiscovery builds each adapter's discovery. A seam so this
+// package's tests can share one discovery between adapters and helpers.
+var newAdapterDiscovery = NewDiscovery
+
+// Discovery returns the adapter's port discovery. The local Host publishes
+// its managed inventory and v2 machine server to it.
+func (a *Adapter) Discovery() *Discovery { return a.rt }
 
 // ID returns the OpenCode platform identifier.
 func (a *Adapter) ID() platforms.ID { return PlatformID }
@@ -139,8 +152,8 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 // checkout), so their own directory is never a key in the port map.
 // Without the fold, worktree sessions report LiveConnection=false,
 // which disables the composer and the question-prompt UI for them.
-func directoryHasLivePort(ports map[string]string, directory string) bool {
-	return portForDirectory(ports, directory) != ""
+func (d *Discovery) directoryHasLivePort(ports map[string]string, directory string) bool {
+	return d.portForDirectory(ports, directory) != ""
 }
 
 // bubbleUpPromptsToParent adds the parent session ID for every prompted
@@ -236,8 +249,8 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	applySessionDetailMetadataFromMessages(session, messages)
 	// The live path can miss while the instance is up (e.g. a conversation
 	// over maxUpstreamConversationBytes); liveness is the port, as in Sessions.
-	ports := discoverOpenCodePorts()
-	session.LiveConnection = directoryHasLivePort(ports, session.Directory)
+	ports := a.rt.discoverOpenCodePorts()
+	session.LiveConnection = a.rt.directoryHasLivePort(ports, session.Directory)
 	session.Status = a.settleStatus(id, session.Directory, session.Status, ports)
 	parts, err := a.db.GetSessionParts(ctx, id)
 	if err != nil {
@@ -264,7 +277,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		ContextTokenCount: contextTokens,
 		DefaultAgent:      defaults.Agent, // composer-agent (OpenCode role), unchanged name
 		DefaultModel:      defaults.Model,
-		Warnings:          sessionWarningsForDirectory(session.Directory),
+		Warnings:          a.rt.sessionWarningsForDirectory(session.Directory),
 	}
 	if err := a.attachSessionTree(ctx, id, detail); err != nil {
 		return nil, err

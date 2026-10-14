@@ -83,7 +83,7 @@ func TestSessionLifecycleSettlesLatestMessage(t *testing.T) {
 	if _, err := a.SessionLifecycle(t.Context(), "missing"); !errors.Is(err, platforms.ErrNotFound) {
 		t.Fatalf("missing err = %v, want ErrNotFound", err)
 	}
-	if _, err := (&Adapter{}).SessionLifecycle(t.Context(), "s"); !errors.Is(err, platforms.ErrNotFound) {
+	if _, err := (&Adapter{rt: td}).SessionLifecycle(t.Context(), "s"); !errors.Is(err, platforms.ErrNotFound) {
 		t.Fatalf("no db err = %v, want ErrNotFound", err)
 	}
 }

@@ -4,8 +4,8 @@ import "github.com/NoUseFreak/ocman/internal/platforms"
 
 const duplicateOpenCodeServersWarningKind = "duplicate_opencode_servers"
 
-func sessionWarningsForDirectory(directory string) []platforms.SessionWarning {
-	ports := discoverDuplicateOpenCodeServerPorts(directory)
+func (d *Discovery) sessionWarningsForDirectory(directory string) []platforms.SessionWarning {
+	ports := d.discoverDuplicateOpenCodeServerPorts(directory)
 	if len(ports) < 2 {
 		return nil
 	}

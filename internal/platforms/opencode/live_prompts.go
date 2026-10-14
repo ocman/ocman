@@ -153,7 +153,7 @@ func (a *Adapter) ClearPromptsForPort(port string) {
 	if a == nil || a.prompts == nil || port == "" {
 		return
 	}
-	forgetSessionsForPort(port)
+	a.rt.forgetSessionsForPort(port)
 	catalogCache.invalidatePort(port)
 	sessionCache.invalidatePort(port)
 	a.prompts.mu.Lock()

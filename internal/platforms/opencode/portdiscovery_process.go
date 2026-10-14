@@ -2,7 +2,6 @@ package opencode
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
@@ -13,12 +12,10 @@ type openCodeServer struct {
 	port      string
 }
 
-var managedPortSource atomic.Pointer[func(context.Context) map[string]string]
-
 // SetManagedPortSource wires the owner's verified managed runtime inventory.
-func SetManagedPortSource(source func(context.Context) map[string]string) {
-	managedPortSource.Store(&source)
-	resetPortCache()
+func (d *Discovery) SetManagedPortSource(source func(context.Context) map[string]string) {
+	d.managedPortSource.Store(&source)
+	d.resetPortCache()
 }
 
 func copyOpenCodeServers(servers []openCodeServer) []openCodeServer {
@@ -27,31 +24,31 @@ func copyOpenCodeServers(servers []openCodeServer) []openCodeServer {
 
 const stalePortGrace = time.Minute
 
-func discoverOpenCodePorts() map[string]string {
-	if ports := DiscoverOpenCodePortsContext(context.Background()); ports != nil {
+func (d *Discovery) discoverOpenCodePorts() map[string]string {
+	if ports := d.DiscoverOpenCodePortsContext(context.Background()); ports != nil {
 		return ports
 	}
-	portCache.mu.Lock()
-	defer portCache.mu.Unlock()
-	if time.Since(portCache.lastSuccessfulAt) > stalePortGrace {
+	d.portCache.mu.Lock()
+	defer d.portCache.mu.Unlock()
+	if time.Since(d.portCache.lastSuccessfulAt) > stalePortGrace {
 		return map[string]string{}
 	}
-	return copyMap(portCache.lastSuccessful)
+	return copyMap(d.portCache.lastSuccessful)
 }
 
-func discoverOpenCodeServersUncached() []openCodeServer {
-	return discoverOpenCodeServersUncachedContext(context.Background())
+func (d *Discovery) discoverOpenCodeServersUncached() []openCodeServer {
+	return d.discoverOpenCodeServersUncachedContext(context.Background())
 }
 
-func discoverOpenCodeServersUncachedContext(ctx context.Context) []openCodeServer {
+func (d *Discovery) discoverOpenCodeServersUncachedContext(ctx context.Context) []openCodeServer {
 	if ctx.Err() != nil {
 		return nil
 	}
 	if ocv2.InstalledV2() {
-		return append([]openCodeServer{}, machineServers()...)
+		return append([]openCodeServer{}, d.machineServers()...)
 	}
 	servers := []openCodeServer{}
-	if source := managedPortSource.Load(); source != nil {
+	if source := d.managedPortSource.Load(); source != nil {
 		ports := (*source)(ctx)
 		if ports == nil {
 			return nil
@@ -63,20 +60,20 @@ func discoverOpenCodeServersUncachedContext(ctx context.Context) []openCodeServe
 	return servers
 }
 
-func discoverOpenCodeServers() []openCodeServer {
-	if cached, ok := readCachedServers(); ok {
+func (d *Discovery) discoverOpenCodeServers() []openCodeServer {
+	if cached, ok := d.readCachedServers(); ok {
 		return cached
 	}
 	const flightKey = "discoverOpenCodeServers"
-	v, _, _ := serverFlight.Do(flightKey, func() (interface{}, error) {
-		if cached, ok := readCachedServers(); ok {
+	v, _, _ := d.serverFlight.Do(flightKey, func() (interface{}, error) {
+		if cached, ok := d.readCachedServers(); ok {
 			return cached, nil
 		}
-		result := (*discoverServersImpl.Load())()
-		serverCache.mu.Lock()
-		serverCache.servers = copyOpenCodeServers(result)
-		serverCache.updated = time.Now()
-		serverCache.mu.Unlock()
+		result := d.discoverServersImpl()
+		d.serverCache.mu.Lock()
+		d.serverCache.servers = copyOpenCodeServers(result)
+		d.serverCache.updated = time.Now()
+		d.serverCache.mu.Unlock()
 		return copyOpenCodeServers(result), nil
 	})
 	if servers, ok := v.([]openCodeServer); ok {
@@ -85,17 +82,17 @@ func discoverOpenCodeServers() []openCodeServer {
 	return nil
 }
 
-func readCachedServers() ([]openCodeServer, bool) {
-	serverCache.mu.Lock()
-	defer serverCache.mu.Unlock()
-	if time.Since(serverCache.updated) < portCacheTTL && serverCache.servers != nil {
-		return copyOpenCodeServers(serverCache.servers), true
+func (d *Discovery) readCachedServers() ([]openCodeServer, bool) {
+	d.serverCache.mu.Lock()
+	defer d.serverCache.mu.Unlock()
+	if time.Since(d.serverCache.updated) < portCacheTTL && d.serverCache.servers != nil {
+		return copyOpenCodeServers(d.serverCache.servers), true
 	}
 	return nil, false
 }
 
-func discoverOpenCodePortsUncachedContext(ctx context.Context) map[string]string {
-	servers := discoverOpenCodeServersUncachedContext(ctx)
+func (d *Discovery) discoverOpenCodePortsUncachedContext(ctx context.Context) map[string]string {
+	servers := d.discoverOpenCodeServersUncachedContext(ctx)
 	if servers == nil {
 		return nil
 	}

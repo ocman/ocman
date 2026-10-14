@@ -62,8 +62,8 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 	detail.Session.LastUserPromptAt = byID[id].LastUserPromptAt
 	detail.Session.LastHaltAt = byID[id].LastHaltAt
 
-	ports := discoverOpenCodePorts()
-	detail.Session.Notice = a.sessionNoticeOnPort(id, portForDirectory(ports, detail.Session.Directory))
+	ports := a.rt.discoverOpenCodePorts()
+	detail.Session.Notice = a.sessionNoticeOnPort(id, a.rt.portForDirectory(ports, detail.Session.Directory))
 	detail.SessionTree = make([]db.Session, 0, len(byID))
 	for _, session := range byID {
 		if a.pricing != nil {
@@ -75,8 +75,8 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 		}
 		session.Platform = string(PlatformID)
 		session.Status = a.settleStatus(session.ID, session.Directory, session.Status, ports)
-		session.Notice = a.sessionNoticeOnPort(session.ID, portForDirectory(ports, session.Directory))
-		session.LiveConnection = directoryHasLivePort(ports, session.Directory)
+		session.Notice = a.sessionNoticeOnPort(session.ID, a.rt.portForDirectory(ports, session.Directory))
+		session.LiveConnection = a.rt.directoryHasLivePort(ports, session.Directory)
 		detail.SessionTree = append(detail.SessionTree, session)
 	}
 	return nil

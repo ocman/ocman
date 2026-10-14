@@ -236,7 +236,7 @@ func TestSendMessageQueueDelivery_V1Unsupported(t *testing.T) {
 			if !errors.Is(err, platforms.ErrUnsupported) {
 				t.Fatalf("SendMessage err = %v, want ErrUnsupported", err)
 			}
-			if got := preferredSessionPort(sid); got != f.Port() {
+			if got := td.preferredSessionPort(sid); got != f.Port() {
 				t.Fatalf("session port after ErrUnsupported = %q, want %q (must not be forgotten)", got, f.Port())
 			}
 			f.mu.Lock()
@@ -271,7 +271,7 @@ func TestSendMessageQueueDelivery_V2(t *testing.T) {
 	if hit.body["delivery"] != "queue" || hit.body["text"] != "hold me" {
 		t.Fatalf("prompt body = %#v, want delivery queue + text", hit.body)
 	}
-	if got := preferredSessionPort(sid); got != f.Port() {
+	if got := td.preferredSessionPort(sid); got != f.Port() {
 		t.Fatalf("session port = %q, want %q", got, f.Port())
 	}
 }

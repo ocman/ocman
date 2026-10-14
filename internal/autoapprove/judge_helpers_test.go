@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 func TestCreateJudgeSessionHiddenAtCreation(t *testing.T) {
@@ -73,8 +75,29 @@ func TestNewPermissionJudgeDefaults(t *testing.T) {
 	if j.httpClient == nil {
 		t.Error("httpClient must be non-nil")
 	}
-	if j.openCodePort == nil {
+	if svc := NewService(Deps{OpenCodeAuth: ocapi.New("")}); svc.judge.openCodePort == nil {
 		t.Error("openCodePort discovery func must be non-nil")
+	}
+	if svc := NewService(Deps{OpenCodeAuth: ocapi.New(""), OpenCodeDisabled: true}); svc.judge.openCodePort != nil {
+		t.Error("disabled OpenCode must not resolve ports")
+	}
+}
+
+// Ports come from the registered adapter's own discovery, never a
+// process-wide one.
+func TestServiceDiscoversThroughOpenCodeAdapter(t *testing.T) {
+	none := NewService(Deps{OpenCodeAuth: ocapi.New("")})
+	if none.openCodePort("/repo") != "" || len(none.discoverOpenCodePorts()) != 0 {
+		t.Fatal("no adapter must mean no ports")
+	}
+	adapter := opencode.New(nil, nil)
+	adapter.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "4500"} })
+	svc := NewService(Deps{OpenCodeAuth: ocapi.New(""), OpencodePlatform: func() platforms.Platform { return adapter }})
+	if got := svc.openCodePort("/repo"); got != "4500" {
+		t.Fatalf("openCodePort = %q, want 4500", got)
+	}
+	if got := svc.discoverOpenCodePorts()["/repo"]; got != "4500" {
+		t.Fatalf("discoverOpenCodePorts = %q, want 4500", got)
 	}
 }
 

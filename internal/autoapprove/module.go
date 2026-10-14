@@ -47,10 +47,11 @@ var (
 )
 
 func NewModule(deps ModuleDeps) *Module {
+	svc := NewService(deps.Engine)
 	if deps.ModelOptions == nil {
-		deps.ModelOptions = runningModelOptions
+		deps.ModelOptions = svc.runningModelOptions
 	}
-	return &Module{ModuleDeps: deps, svc: NewService(deps.Engine)}
+	return &Module{ModuleDeps: deps, svc: svc}
 }
 
 func (m *Module) Name() string { return "autoapprove" }
@@ -103,8 +104,8 @@ func (m *Module) openCode() bool { return m.OpenCode == nil || m.OpenCode() }
 // asking whichever running instance answers first. Any instance will do:
 // the provider catalog is a property of the user's OpenCode config, not of
 // the directory the instance serves.
-func runningModelOptions(ctx context.Context) []string {
-	for _, port := range opencode.DiscoverOpenCodePorts() {
+func (s *Service) runningModelOptions(ctx context.Context) []string {
+	for _, port := range s.discoverOpenCodePorts() {
 		_, models, err := opencode.ProjectCatalog(ctx, "http://127.0.0.1:"+port, "")
 		if err == nil && len(models) > 0 {
 			return models

@@ -160,19 +160,17 @@ func TestHealthScanPublishesOnlyV2MachineServer(t *testing.T) {
 }
 
 func TestLaunchImmediatelyVisibleToCachedDiscovery(t *testing.T) {
-	h := New(Deps{Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:1002"}, RuntimeInventoryChanged: opencode.InvalidateOpenCodePortCache})
-	opencode.SetManagedPortSource(h.ManagedOpenCodePorts)
-	t.Cleanup(func() {
-		opencode.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{} })
-	})
-	if ports := opencode.DiscoverOpenCodePortsContext(t.Context()); len(ports) != 0 {
+	disc := opencode.NewDiscovery()
+	h := New(Deps{Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:1002"}, RuntimeInventoryChanged: disc.InvalidateOpenCodePortCache})
+	disc.SetManagedPortSource(h.ManagedOpenCodePorts)
+	if ports := disc.DiscoverOpenCodePortsContext(t.Context()); len(ports) != 0 {
 		t.Fatal(ports)
 	}
 	result, err := h.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: initRepo(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if port := opencode.DiscoverOpenCodePortContext(t.Context(), result.RepoRoot); port != "1002" {
+	if port := disc.DiscoverOpenCodePortContext(t.Context(), result.RepoRoot); port != "1002" {
 		t.Fatalf("launched server missing from cached discovery: %q", port)
 	}
 }

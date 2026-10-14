@@ -14,7 +14,9 @@ import (
 )
 
 func newTestAdapter() *Adapter {
-	return &Adapter{prompts: newLivePromptRegistry(), turns: newLiveStatusRegistry()}
+	turns := newLiveStatusRegistry()
+	turns.disc = td
+	return &Adapter{prompts: newLivePromptRegistry(), turns: turns, rt: td}
 }
 
 func TestTurnRunning(t *testing.T) {
@@ -128,10 +130,10 @@ func TestStatusPortGeneration_RejectsStaleSeed(t *testing.T) {
 func TestPortForDirectory_FoldsWorktreeToProjectRoot(t *testing.T) {
 	ports := map[string]string{"/src/repo": "7777"}
 	worktree := "/src/.worktrees/repo/feature"
-	if got := portForDirectory(ports, worktree); got != "7777" {
+	if got := td.portForDirectory(ports, worktree); got != "7777" {
 		t.Errorf("portForDirectory(%q) = %q, want 7777", worktree, got)
 	}
-	if got := portForDirectory(ports, "/elsewhere"); got != "" {
+	if got := td.portForDirectory(ports, "/elsewhere"); got != "" {
 		t.Errorf("portForDirectory for unserved directory = %q, want empty", got)
 	}
 }
@@ -141,7 +143,7 @@ func TestSettleStatus_NilRegistryLeavesInferenceAlone(t *testing.T) {
 	if got := a.settleStatus("s1", "/work", db.StatusBusy, nil); got != db.StatusBusy {
 		t.Errorf("nil adapter settleStatus = %v, want the inference back", got)
 	}
-	bare := &Adapter{}
+	bare := &Adapter{rt: td}
 	if got := bare.settleStatus("s1", "/work", db.StatusBusy, nil); got != db.StatusBusy {
 		t.Errorf("nil registry settleStatus = %v, want the inference back", got)
 	}

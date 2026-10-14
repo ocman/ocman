@@ -11,7 +11,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -21,8 +20,6 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			t.Cleanup(ocv2.SetInstalledV2(true))
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv("OPENCODE_DB", "")
-			opencode.SetMachineServer("")
-			t.Cleanup(func() { opencode.SetMachineServer("") })
 			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
 			path := filepath.Join(t.TempDir(), "stopping-state.db")
@@ -82,7 +79,7 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			opencode.SetMachineServer("")
+			srv.setOpenCodeMachineServer("")
 			rt.endpoint = "http://127.0.0.1:5600"
 			rt.probe = func(inst *ocruntime.Instance) error {
 				if inst.Endpoint == original.Endpoint {

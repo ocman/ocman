@@ -189,7 +189,7 @@ func TestAdapterForkMove_UnknownSession(t *testing.T) {
 		resetSessionPortAffinityForTests()
 	})
 
-	a := &Adapter{}
+	a := &Adapter{rt: td}
 	if _, err := a.ForkSession(context.Background(), platforms.ForkSessionRequest{SessionID: "nope"}); err == nil {
 		t.Error("ForkSession: expected error for unknown session")
 	}

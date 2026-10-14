@@ -24,7 +24,7 @@ func (a *Adapter) SessionLifecycle(ctx context.Context, sessionID string) (*plat
 		return nil, err
 	}
 	return &platforms.SessionLifecycle{
-		Status:               a.settleStatus(sessionID, l.Directory, l.Status, discoverOpenCodePorts()),
+		Status:               a.settleStatus(sessionID, l.Directory, l.Status, a.rt.discoverOpenCodePorts()),
 		LatestMessageID:      l.LatestMessageID,
 		LatestMessageCreated: l.LatestMessageCreated,
 		LatestMessageRole:    l.LatestMessageRole,

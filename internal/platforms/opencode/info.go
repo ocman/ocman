@@ -65,7 +65,7 @@ func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms
 	defaults, _ := getSessionDefaultsCached(ctx, a.db, sessionID, dbSession.Directory)
 	modelRef := defaults.Model
 
-	port := resolveOpenCodePortForSessionCtx(ctx, sessionID, dbSession.Directory)
+	port := a.rt.resolveOpenCodePortForSessionCtx(ctx, sessionID, dbSession.Directory)
 	if port == "" {
 		// No live channel — compute the always-on tier from the
 		// read-only DB and return Supported=false so the frontend

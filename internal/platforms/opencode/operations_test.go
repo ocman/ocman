@@ -390,7 +390,7 @@ func TestProxyEventsPinsPortAffinityForSendMessage(t *testing.T) {
 	}
 
 	atomic.StoreInt32(&useSecond, 1)
-	InvalidateOpenCodePortCache()
+	td.InvalidateOpenCodePortCache()
 	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
 		SessionID: sid,
 		Message:   "hello",
@@ -434,7 +434,7 @@ func TestProxyEventsRejectsNonSSEWithoutPinningPort(t *testing.T) {
 	if err := a.ProxyEvents(context.Background(), sid, &buf, nil); err == nil {
 		t.Fatal("ProxyEvents returned nil for non-SSE upstream response")
 	}
-	if got := preferredSessionPort(sid); got != "" {
+	if got := td.preferredSessionPort(sid); got != "" {
 		t.Fatalf("preferredSessionPort after rejected SSE = %q, want empty", got)
 	}
 }
@@ -485,7 +485,7 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 	if got := atomic.LoadInt32(&promptHits); got != 1 {
 		t.Fatalf("prompt hits on rediscovered port = %d, want 1", got)
 	}
-	if got := preferredSessionPort(sid); got != livePort {
+	if got := td.preferredSessionPort(sid); got != livePort {
 		t.Fatalf("preferredSessionPort after retry = %q, want %q", got, livePort)
 	}
 }
@@ -521,7 +521,7 @@ func TestCreateSessionPinsReturnedSessionPort(t *testing.T) {
 	if resp.ID != sid {
 		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
 	}
-	if got := preferredSessionPort(sid); got != port {
+	if got := td.preferredSessionPort(sid); got != port {
 		t.Fatalf("preferredSessionPort = %q, want %q", got, port)
 	}
 }
@@ -539,14 +539,14 @@ func TestDisposeSessionDeletesItFromOpenCode(t *testing.T) {
 	}))
 	defer srv.Close()
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	rememberSessionPort(sid, port)
+	td.rememberSessionPort(sid, port)
 	defer resetSessionPortAffinityForTests()
 
 	if err := New(nil, nil).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: sid, Port: port}); err != nil {
 		t.Fatal(err)
 	}
-	if !deleted || preferredSessionPort(sid) != "" {
-		t.Fatalf("deleted = %v, pinned port = %q", deleted, preferredSessionPort(sid))
+	if !deleted || td.preferredSessionPort(sid) != "" {
+		t.Fatalf("deleted = %v, pinned port = %q", deleted, td.preferredSessionPort(sid))
 	}
 }
 
@@ -554,13 +554,13 @@ func TestDisposeSessionTreatsNotFoundAsSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	defer srv.Close()
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	rememberSessionPort("gone", port)
+	td.rememberSessionPort("gone", port)
 	defer resetSessionPortAffinityForTests()
 
 	if err := New(nil, nil).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: "gone", Port: port}); err != nil {
 		t.Fatalf("DisposeSession missing session: %v", err)
 	}
-	if preferredSessionPort("gone") != "" {
+	if td.preferredSessionPort("gone") != "" {
 		t.Fatal("missing session retained its pinned port")
 	}
 }
@@ -601,7 +601,7 @@ func TestCreateSession_CachedPortSkipsFreshScan(t *testing.T) {
 	defer resetSessionPortAffinityForTests()
 
 	// Warm the cache so the cached lookup hits.
-	discoverOpenCodePorts()
+	td.discoverOpenCodePorts()
 	if scans != 1 {
 		t.Fatalf("warm-up scans = %d, want 1", scans)
 	}
@@ -795,7 +795,7 @@ func TestCreateSession_ProvidedPortSkipsScan(t *testing.T) {
 	if gotDir != url.PathEscape(dir) {
 		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, url.PathEscape(dir))
 	}
-	if got := preferredSessionPort(sid); got != port {
+	if got := td.preferredSessionPort(sid); got != port {
 		t.Fatalf("preferredSessionPort = %q, want %q", got, port)
 	}
 }
@@ -872,7 +872,7 @@ func TestParseOpenCodeModelRef(t *testing.T) {
 // (which the HTTP layer maps to 503 and the frontend uses to trigger
 // the auto-launch flow).
 func TestCreateSession_NoRunningInstanceReturnsUnreachable(t *testing.T) {
-	a := &Adapter{}
+	a := &Adapter{rt: td}
 	// A uniquely-named directory that no opencode process will have
 	// bound to. lsof will simply not report it, so discovery returns
 	// an empty port string.
@@ -1037,7 +1037,7 @@ func TestCreateSession_TitleIsSetAfterCreation(t *testing.T) {
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
 
-	a := &Adapter{}
+	a := &Adapter{rt: td}
 	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
 		Directory: dir,
 		Title:     wantTitle,
@@ -1074,7 +1074,7 @@ func TestCreateSession_TitlePatchFailure_SessionStillReturned(t *testing.T) {
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
 
-	a := &Adapter{}
+	a := &Adapter{rt: td}
 	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
 		Directory: dir,
 		Title:     "whatever",
@@ -1111,7 +1111,7 @@ func TestCreateSession_NoTitleSkipsPatch(t *testing.T) {
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
 
-	a := &Adapter{}
+	a := &Adapter{rt: td}
 	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
 		Directory: dir,
 		// Title deliberately omitted
@@ -1228,7 +1228,7 @@ func TestCreateSession_TitleInCreateBodySkipsPatch(t *testing.T) {
 	defer srv.Close()
 	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
 
-	if _, err := (&Adapter{}).CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir, Title: "wt"}); err != nil {
+	if _, err := (&Adapter{rt: td}).CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir, Title: "wt"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := atomic.LoadInt32(&patches); got != 0 {

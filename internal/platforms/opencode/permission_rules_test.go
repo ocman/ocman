@@ -170,7 +170,7 @@ func TestAdapterPermissionRules_UnknownSession(t *testing.T) {
 		resetSessionPortAffinityForTests()
 	})
 
-	a := &Adapter{}
+	a := &Adapter{rt: td}
 	if _, err := a.PermissionRules(context.Background(), "nope"); err == nil {
 		t.Error("PermissionRules: expected error for unknown session")
 	}

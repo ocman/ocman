@@ -287,3 +287,11 @@ func TestIsV2(t *testing.T) {
 		}
 	})
 }
+
+func TestResetHostCacheForgetsDialects(t *testing.T) {
+	hosts.Store("127.0.0.1:9", hostEntry{v2: true, at: time.Now()})
+	ResetHostCache()
+	if _, ok := hosts.Load("127.0.0.1:9"); ok {
+		t.Fatal("dialect survived ResetHostCache")
+	}
+}

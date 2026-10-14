@@ -51,11 +51,11 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		ReplacementStopping:   s.opencodeReplacementStopping,
 		CancelReplacementStop: s.cancelOpencodeReplacementStop,
 		// OpenCode v2: one server per machine, published to discovery.
-		SetMachineServer:        opencode.SetMachineServer,
+		SetMachineServer:        s.setOpenCodeMachineServer,
 		ManagedStore:            managedStoreOrNil(s.stateDB),
 		OpenCodeAuth:            func() ocapi.Auth { return s.openCodeAuth },
 		OpenCodeReloaded:        opencode.InvalidateCatalogsForPort,
-		RuntimeInventoryChanged: opencode.InvalidateOpenCodePortCache,
+		RuntimeInventoryChanged: s.openCodeInventoryChanged,
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/gRPC).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
@@ -76,8 +76,36 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		TermAttach:       term.AttachLocalPTY,
 		StateDir:         stateDirOrEmpty(s.stateDB),
 	})
-	opencode.SetManagedPortSource(host.ManagedOpenCodePorts)
+	if d := s.openCodeDiscovery(); d != nil {
+		d.SetManagedPortSource(host.ManagedOpenCodePorts)
+	}
 	return host
+}
+
+// openCodeDiscovery is the registered OpenCode adapter's port discovery,
+// nil when OpenCode is not enabled. Each adapter owns its own, so a
+// backend reload's new server never inherits the previous routing.
+func (s *Server) openCodeDiscovery() *opencode.Discovery {
+	if s.registry == nil {
+		return nil
+	}
+	p, _ := s.registry.Get(opencode.PlatformID)
+	if a, ok := p.(*opencode.Adapter); ok && a != nil {
+		return a.Discovery()
+	}
+	return nil
+}
+
+func (s *Server) setOpenCodeMachineServer(port string) {
+	if d := s.openCodeDiscovery(); d != nil {
+		d.SetMachineServer(port)
+	}
+}
+
+func (s *Server) openCodeInventoryChanged() {
+	if d := s.openCodeDiscovery(); d != nil {
+		d.InvalidateOpenCodePortCache()
+	}
 }
 
 // Runtime rows can be absent after a failed confirmation. The owner's durable

@@ -54,9 +54,9 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 	if err != nil {
 		return "", nil, platforms.ErrNotFound
 	}
-	port = resolveOpenCodePortForSessionCtx(ctx, sessionID, s.Directory)
+	port = a.rt.resolveOpenCodePortForSessionCtx(ctx, sessionID, s.Directory)
 	if port == "" {
-		port, err = resolveOpenCodePortBySession(ctx, sessionID)
+		port, err = a.rt.resolveOpenCodePortBySession(ctx, sessionID)
 		if err != nil {
 			return "", s, err
 		}
@@ -64,13 +64,13 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 	if port == "" {
 		return "", s, fmt.Errorf("no running OpenCode instance for session %s: %w", sessionID, platforms.ErrPlatformUnreachable)
 	}
-	rememberSessionPort(sessionID, port)
+	a.rt.rememberSessionPort(sessionID, port)
 	return port, s, nil
 }
 
-func resolveOpenCodePortBySession(ctx context.Context, sessionID string) (string, error) {
+func (d *Discovery) resolveOpenCodePortBySession(ctx context.Context, sessionID string) (string, error) {
 	client := http.Client{Timeout: 500 * time.Millisecond, Transport: openCodeClient.Transport}
-	for _, server := range discoverOpenCodeServers() {
+	for _, server := range d.discoverOpenCodeServers() {
 		if server.port == "" {
 			continue
 		}
@@ -249,7 +249,7 @@ func (a *Adapter) DirectoryCatalog(ctx context.Context, req platforms.DirectoryC
 	directory := req.Directory
 	port := req.Port
 	if port == "" {
-		port = discoverOpenCodePortCtx(ctx, directory)
+		port = a.rt.discoverOpenCodePortCtx(ctx, directory)
 	}
 	models, defaults := a.modelsFor(ctx, "", directory, port)
 	out := &platforms.DirectoryCatalog{
@@ -285,7 +285,7 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 	if err != nil {
 		return nil, platforms.ErrNotFound
 	}
-	port := resolveOpenCodePortForSessionCtx(ctx, sessionID, session.Directory)
+	port := a.rt.resolveOpenCodePortForSessionCtx(ctx, sessionID, session.Directory)
 	models, _ := a.modelsFor(ctx, sessionID, session.Directory, port)
 	return models, nil
 }
@@ -381,19 +381,19 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 	}
 	err = sendMessageOnPort(ctx, port, req)
 	if err == nil {
-		rememberSessionPort(req.SessionID, port)
+		a.rt.rememberSessionPort(req.SessionID, port)
 		return nil
 	}
 	var upstream *platforms.UpstreamError
 	if errors.As(err, &upstream) || errors.Is(err, platforms.ErrUnsupported) {
 		return err
 	}
-	forgetSessionPort(req.SessionID, port)
-	InvalidateOpenCodePortCache()
+	a.rt.forgetSessionPort(req.SessionID, port)
+	a.rt.InvalidateOpenCodePortCache()
 	retryPort, _, retryResolveErr := a.resolvePortCtx(ctx, req.SessionID)
 	if retryResolveErr == nil && retryPort != "" && retryPort != port {
 		if retryErr := sendMessageOnPort(ctx, retryPort, req); retryErr == nil {
-			rememberSessionPort(req.SessionID, retryPort)
+			a.rt.rememberSessionPort(req.SessionID, retryPort)
 			return nil
 		}
 	}
@@ -618,7 +618,7 @@ func (a *Adapter) DisposeSession(ctx context.Context, req platforms.DisposeSessi
 	if err := sendJSON(ctx, http.MethodDelete, port, path, nil); err != nil && !isUpstreamNotFound(err) {
 		return err
 	}
-	forgetSessionPort(req.SessionID, port)
+	a.rt.forgetSessionPort(req.SessionID, port)
 	sessionCache.invalidate(port, path)
 	sessionCache.invalidate(port, path+"/message")
 	return nil
@@ -774,7 +774,7 @@ func (a *Adapter) ForkSession(ctx context.Context, req platforms.ForkSessionRequ
 	if err := json.Unmarshal(body, &parsed); err != nil || parsed.ID == "" {
 		return nil, fmt.Errorf("opencode fork: unexpected response %q", string(body))
 	}
-	rememberSessionPort(parsed.ID, port)
+	a.rt.rememberSessionPort(parsed.ID, port)
 	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
 }
 
@@ -811,9 +811,9 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		// running (the common case). Only fall back to a fresh uncached
 		// inventory refresh on a miss to catch a just-launched runtime.
 		portPhase := srvtiming.Begin(ctx, "runtime_ports_fresh")
-		port = discoverOpenCodePort(req.Directory)
+		port = a.rt.discoverOpenCodePort(req.Directory)
 		if port == "" {
-			port = discoverOpenCodePortFresh(req.Directory)
+			port = a.rt.discoverOpenCodePortFresh(req.Directory)
 		}
 		portPhase.EndWithDesc("port discovery (cached, fresh on miss)")
 	}
@@ -824,7 +824,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		log.WithFields(log.Fields{
 			"requested":       req.Directory,
 			"normalized":      normalizePortDirectory(req.Directory),
-			"discovered_dirs": discoveredOpenCodeDirs(),
+			"discovered_dirs": a.rt.discoveredOpenCodeDirs(),
 		}).Warn("no running OpenCode instance for directory")
 		return nil, fmt.Errorf("no running OpenCode instance for directory %s: %w", req.Directory, platforms.ErrPlatformUnreachable)
 	}
@@ -893,7 +893,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 			// Don't fail the entire creation if title setting fails.
 		}
 	}
-	rememberSessionPort(parsed.ID, port)
+	a.rt.rememberSessionPort(parsed.ID, port)
 
 	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
 }

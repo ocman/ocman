@@ -60,6 +60,8 @@ type liveStatusRegistry struct {
 	// portGen invalidates in-flight events from a stream whose port was
 	// already removed. Mirrors livePromptRegistry.portGen.
 	portGen map[string]uint64
+	// disc resolves a session directory to the instance serving it.
+	disc *Discovery
 	// seq is a monotonic counter stamped onto every event-written entry.
 	// Mirrors livePromptRegistry's version/applied pair, for the same
 	// reason: reconciling a snapshot against a live stream needs to know
@@ -199,7 +201,7 @@ func (a *Adapter) ClearSessionStatusForPort(port string) {
 // discovery map (directory -> port) so a worktree session folds onto the
 // project instance that actually serves it.
 func (r *liveStatusRegistry) turnState(sessionID, directory string, ports map[string]string) db.TurnState {
-	return r.turnStateForPort(sessionID, portForDirectory(ports, directory))
+	return r.turnStateForPort(sessionID, r.disc.portForDirectory(ports, directory))
 }
 
 // turnStateForPort is turnState for callers that already resolved the
@@ -233,7 +235,7 @@ func (a *Adapter) settleStatus(sessionID, directory string, inferred db.SessionS
 	}
 	return db.SettleSessionStatus(
 		a.turns.turnState(sessionID, directory, ports),
-		directoryHasLivePort(ports, directory),
+		a.rt.directoryHasLivePort(ports, directory),
 		inferred,
 	)
 }
@@ -263,7 +265,7 @@ var resolveSessionDirectory = normalizePortDirectory
 // portForDirectory returns the instance port serving a session directory,
 // folding a worktree back to its project root (worktree sessions run on the
 // project's shared instance). Empty when nothing live serves it.
-func portForDirectory(ports map[string]string, directory string) string {
+func (d *Discovery) portForDirectory(ports map[string]string, directory string) string {
 	if port, ok := ports[resolveSessionDirectory(directory)]; ok {
 		return port
 	}
@@ -272,7 +274,7 @@ func portForDirectory(ports map[string]string, directory string) string {
 			return port
 		}
 	}
-	return MachineServerPort()
+	return d.MachineServerPort()
 }
 
 // fetchSessionStatusSnapshot reads GET /session/status from one instance and

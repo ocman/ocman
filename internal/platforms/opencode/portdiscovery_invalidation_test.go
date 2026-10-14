@@ -9,7 +9,7 @@ import (
 )
 
 func TestInvalidationFencesInFlightPortScan(t *testing.T) {
-	resetPortCache()
+	td.resetPortCache()
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
@@ -23,20 +23,20 @@ func TestInvalidationFencesInFlightPortScan(t *testing.T) {
 		}
 		return map[string]string{"/repo": "1002"}
 	}
-	previous := discoverPortsImpl.Swap(&fn)
-	t.Cleanup(func() { discoverPortsImpl.Store(previous); resetPortCache() })
+	previous := discoverPortsOverride.Swap(&fn)
+	t.Cleanup(func() { discoverPortsOverride.Store(previous); td.resetPortCache() })
 	done := make(chan struct{})
-	go func() { DiscoverOpenCodePortsContext(t.Context()); close(done) }()
+	go func() { td.DiscoverOpenCodePortsContext(t.Context()); close(done) }()
 	<-started
-	InvalidateOpenCodePortCache()
+	td.InvalidateOpenCodePortCache()
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	if port := DiscoverOpenCodePortContext(ctx, "/repo"); port != "1002" {
+	if port := td.DiscoverOpenCodePortContext(ctx, "/repo"); port != "1002" {
 		t.Fatalf("new lookup joined obsolete in-flight scan: %q", port)
 	}
 	unblock()
 	<-done
-	if port := DiscoverOpenCodePortContext(t.Context(), "/repo"); port != "1002" {
+	if port := td.DiscoverOpenCodePortContext(t.Context(), "/repo"); port != "1002" {
 		t.Fatalf("old in-flight scan repopulated invalidated cache: %q", port)
 	}
 }

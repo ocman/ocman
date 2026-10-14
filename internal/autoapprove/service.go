@@ -26,6 +26,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -215,10 +216,7 @@ type Service struct {
 func NewService(deps Deps) *Service {
 	judge := newPermissionJudge(deps.OpenCodeAuth)
 	judge.store = deps.Store
-	if deps.OpenCodeDisabled {
-		judge.openCodePort = nil
-	}
-	return &Service{
+	svc := &Service{
 		deps:             deps,
 		judge:            judge,
 		sseSessions:      make(map[string]map[*Sink]struct{}),
@@ -226,6 +224,35 @@ func NewService(deps Deps) *Service {
 		safeCommandCache: make(map[string]map[string]string),
 		askedCache:       make(map[string]askedPermission),
 	}
+	if !deps.OpenCodeDisabled {
+		judge.openCodePort = svc.openCodePort
+	}
+	return svc
+}
+
+// openCodeDiscovery is the wired OpenCode adapter's port discovery, or nil
+// when no OpenCode adapter is registered.
+func (s *Service) openCodeDiscovery() *opencode.Discovery {
+	if a, ok := s.OpencodeAdapter().(*opencode.Adapter); ok && a != nil {
+		return a.Discovery()
+	}
+	return nil
+}
+
+// discoverOpenCodePorts lists the running instances (directory -> port).
+func (s *Service) discoverOpenCodePorts() map[string]string {
+	if d := s.openCodeDiscovery(); d != nil {
+		return d.DiscoverOpenCodePorts()
+	}
+	return map[string]string{}
+}
+
+// openCodePort resolves the instance serving directory, or "".
+func (s *Service) openCodePort(directory string) string {
+	if d := s.openCodeDiscovery(); d != nil {
+		return d.DiscoverOpenCodePort(directory)
+	}
+	return ""
 }
 
 // ResolveSessionDir resolves a session ID to its working directory via

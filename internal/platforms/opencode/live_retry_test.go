@@ -95,7 +95,7 @@ func TestLiveRetryNoticeLifecycle(t *testing.T) {
 	if a.sessionNoticeOnPort("s1", port) != nil {
 		t.Fatal("departed port or stale stream left retry notice")
 	}
-	if (*Adapter)(nil).sessionNoticeOnPort("s1", port) != nil || (&Adapter{}).sessionNoticeOnPort("s1", port) != nil || a.sessionNoticeOnPort("s1", "") != nil {
+	if (*Adapter)(nil).sessionNoticeOnPort("s1", port) != nil || (&Adapter{rt: td}).sessionNoticeOnPort("s1", port) != nil || a.sessionNoticeOnPort("s1", "") != nil {
 		t.Fatal("unavailable registry returned a notice")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
@@ -625,7 +626,9 @@ func ResetCachesForTests() {
 	ResetCaches()
 }
 
-// ResetCaches joins refreshers before a backend reload closes its database.
+// ResetCaches joins refreshers before a backend reload closes its database,
+// then clears every cache that is still package-level. Port discovery is
+// per adapter (Discovery), so a reload's new adapter starts empty.
 func ResetCaches() {
 	// Wait out any background refresh first, or it would repopulate the
 	// snapshot we are about to clear.
@@ -655,6 +658,12 @@ func ResetCaches() {
 	case <-sessionsRefreshWake:
 	default:
 	}
+
+	// The HTTP caches and the v2 dialect cache stay process-wide (keyed by
+	// port); a reload must not serve the previous backend's answers.
+	catalogCache.reset()
+	sessionCache.reset()
+	ocv2.ResetHostCache()
 }
 
 // dbGetSessions is the subset of *db.DB used by getSessionsCached.

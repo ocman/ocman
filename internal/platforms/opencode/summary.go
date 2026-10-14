@@ -16,7 +16,7 @@ func (a *Adapter) SessionSummary(ctx context.Context, id string) (*db.Session, e
 		return nil, err
 	}
 	row.Platform = string(a.ID())
-	port := portForDirectory(discoverOpenCodePorts(), row.Directory)
+	port := a.rt.portForDirectory(a.rt.discoverOpenCodePorts(), row.Directory)
 	row.Status = a.settleStatusOnPort(id, port, row.Status)
 	row.Notice = a.sessionNoticeOnPort(id, port)
 	row.LiveConnection = port != ""

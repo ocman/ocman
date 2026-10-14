@@ -510,7 +510,7 @@ func TestClearPromptsForPortReclaimsResolvedMarkersAndAffinity(t *testing.T) {
 	)
 	a.ObservePromptAsked(port, dir, "permission", platforms.LivePrompt{"id": pid, "sessionID": sid})
 	a.ObservePromptResolved(dir, "permission", sid, pid)
-	rememberSessionPort(sid, port)
+	td.rememberSessionPort(sid, port)
 	catalogCache.put(port, "/agent", []byte("catalog"))
 	sessionCache.put(port, "/session/"+sid, []byte("session"))
 
@@ -519,7 +519,7 @@ func TestClearPromptsForPortReclaimsResolvedMarkersAndAffinity(t *testing.T) {
 	if len(a.prompts.changed) != 0 {
 		t.Fatalf("resolved prompt markers = %d, want 0", len(a.prompts.changed))
 	}
-	if got := preferredSessionPort(sid); got != "" {
+	if got := td.preferredSessionPort(sid); got != "" {
 		t.Fatalf("session affinity after port removal = %q, want empty", got)
 	}
 	if len(catalogCache.entries) != 0 || len(sessionCache.entries) != 0 {
