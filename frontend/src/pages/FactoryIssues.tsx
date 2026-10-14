@@ -2,10 +2,11 @@ import { useDeferredValue, useState, type FormEvent } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
-import { Button, SearchField, SelectField } from '../components/Control';
+import { Button, SearchField, SelectField, TextareaField } from '../components/Control';
+import { IconButton } from '../components/IconButton';
 import { InlineAlert } from '../components/InlineAlert';
 import { ProjectLabel } from '../components/ProjectLabel';
-import { DataTableGroup, DataTableRow } from '../components/DataTable';
+import { DataTableGroup, DataTableRow, DataTableRowButton } from '../components/DataTable';
 import type { FactoryEpic, FactoryIssue } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
 import { useAddFactoryIssueComment, useCancelFactoryIssueTransfer, useFactoryGraphIssues, useFactoryIssueComments, useTransferFactoryIssue, useWorkEpics } from '../lib/queries';
@@ -27,7 +28,7 @@ export function EpicCell({ id, goal }: { id?: string; goal?: string }) {
 }
 
 export function FactoryIssueRow({ issue, epic, onOpen }: { issue: FactoryIssue; epic?: EpicRef; onOpen: () => void }) {
-	return <DataTableRow className={epic ? 'factory-grid-row' : ''} primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} title={`${issue.kind} issue`} /><button type="button" aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</button></div>} secondary={<span className="factory-list-subline"><Link to={`/factory/epics/${encodeURIComponent(issue.epicId)}`}>#{issue.id}</Link>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={epic && <><ProjectCell path={issue.project} /><EpicCell id={epic.id} goal={epic.goal} /></>} />;
+	return <DataTableRow className={epic ? 'factory-grid-row' : ''} primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} title={`${issue.kind} issue`} /><DataTableRowButton aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</DataTableRowButton></div>} secondary={<span className="factory-list-subline"><Link to={`/factory/epics/${encodeURIComponent(issue.epicId)}`}>#{issue.id}</Link>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={epic && <><ProjectCell path={issue.project} /><EpicCell id={epic.id} goal={epic.goal} /></>} />;
 }
 
 function IssueComments({ issue }: { issue: FactoryIssue }) {
@@ -46,7 +47,7 @@ function IssueComments({ issue }: { issue: FactoryIssue }) {
 			{comments.isError && <p role="alert">Could not load comments.</p>}
 			{comments.data && !comments.data.length && <EmptyState>No comments yet.</EmptyState>}
 			{!!comments.data?.length && <ol>{comments.data.map((comment) => <li key={comment.id}><header><strong>{comment.actor}</strong><time dateTime={new Date(comment.createdAt).toISOString()}>{new Date(comment.createdAt).toLocaleString()}</time></header><p>{comment.body}</p></li>)}</ol>}
-			<form onSubmit={submit}><label>Add comment<textarea maxLength={16000} value={body} onChange={(event) => { setBody(event.target.value); setStatus(''); }} /></label><button type="submit" disabled={addComment.isPending || !body.trim()}>{addComment.isPending ? 'Adding...' : 'Add comment'}</button>{addComment.isError && <p role="alert">Could not add comment.</p>}{status && <p role="status">{status}</p>}</form>
+			<form onSubmit={submit}><label>Add comment<TextareaField maxLength={16000} value={body} onChange={(event) => { setBody(event.target.value); setStatus(''); }} /></label><Button type="submit" disabled={addComment.isPending || !body.trim()}>{addComment.isPending ? 'Adding...' : 'Add comment'}</Button>{addComment.isError && <p role="alert">Could not add comment.</p>}{status && <p role="status">{status}</p>}</form>
 		</section>;
 }
 
@@ -83,7 +84,7 @@ export function IssueDrawer({ issue, preview = false, onClose }: { issue: Factor
   const blockers = preview ? issue.dependsOn : issue.blockers;
   const transfer = transferState(issue);
   return <Modal label={`Issue ${issue.id}`} onClose={onClose} backdropClassName="factory-issue-backdrop" dialogClassName="factory-issue-drawer">
-    <header><div><span>{issue.id}</span><h2>{issue.title}</h2></div><button className="factory-issue-close" type="button" onClick={onClose} aria-label="Close issue details" title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
+    <header><div><span>{issue.id}</span><h2>{issue.title}</h2></div><IconButton variant="ghost" icon="bi-x-lg" label="Close issue details" title="Close" onClick={onClose} /></header>
     {issue.description && <p>{issue.description}</p>}
     <dl>
       <div><dt>Status</dt><dd>{issue.status}</dd></div>
@@ -134,8 +135,8 @@ export function FactoryIssues() {
     <h2>Factory issues</h2>
 		<div className="factory-issue-toolbar factory-filter-bar" role="search"><label>Find issues<SearchField value={query} onChange={(event) => setQuery(event.target.value)} /></label><label>Issue status<SelectField value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Open only</option><option value="all">Open + closed</option><option value="closed">Closed only</option></SelectField></label><label>Issue type<SelectField value={kind} onChange={(event) => setKind(event.target.value)}><option value="">All types</option>{kinds.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField></label><label>Issue project<SelectField value={project} onChange={(event) => setProject(event.target.value)}><option value="">All projects</option>{projects.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField></label><span className="factory-result-count" aria-live="polite">{visible.length} shown{status === 'active' && closedCount > 0 ? ` · ${closedCount} closed hidden` : status === 'all' && closedCount > 0 ? ` · ${closedCount} closed` : ''}</span></div>
     {(epics.isLoading || queries.some((result) => result.isLoading)) && <p role="status">Loading issues...</p>}
-    {epics.isError && <p role="alert">{epics.error instanceof Error ? epics.error.message : 'Factory issues are unavailable.'} <button type="button" onClick={() => void epics.refetch()}>Retry</button></p>}
-    {failed && <p role="alert">{failed.error instanceof Error ? failed.error.message : 'Factory issues are unavailable.'} <button type="button" onClick={() => void failed.refetch()}>Retry</button></p>}
+    {epics.isError && <p role="alert">{epics.error instanceof Error ? epics.error.message : 'Factory issues are unavailable.'} <Button size="small" onClick={() => void epics.refetch()}>Retry</Button></p>}
+    {failed && <p role="alert">{failed.error instanceof Error ? failed.error.message : 'Factory issues are unavailable.'} <Button size="small" onClick={() => void failed.refetch()}>Retry</Button></p>}
     {!epics.isLoading && !epics.isError && !failed && !visible.length && <EmptyState>{issues.length ? 'No issues match this search.' : 'No Factory issues yet.'}</EmptyState>}
 		{!!visible.length && <div className="factory-list" aria-label="Issues">{groups.map((group) => { const items = visible.filter((issue) => groupFor(issue) === group); return <DataTableGroup key={group} label={group} noun="issues" count={items.length} markerClassName={`factory-status-dot--${group.toLowerCase().replaceAll(' ', '-')}`}>{items.map((issue) => <FactoryIssueRow key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} onOpen={() => navigate(`/factory/issues/${encodeURIComponent(issue.id)}`)} />)}</DataTableGroup>; })}</div>}
     {selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => navigate('/factory/issues')} />}

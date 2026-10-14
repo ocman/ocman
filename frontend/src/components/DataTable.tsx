@@ -24,3 +24,8 @@ export function DataTableRow({ primary, secondary, meta, className = '' }: { pri
     {meta && <div className="oc-data-table-row-meta">{meta}</div>}
   </div>;
 }
+
+/** A row title that opens something in place; styled like the row's links. */
+export function DataTableRowButton({ type = 'button', ...props }: ComponentProps<'button'>) {
+	return <button type={type} {...props} />;
+}

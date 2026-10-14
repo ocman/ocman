@@ -11,6 +11,8 @@ import { HostBadge } from '../../components/HostBadge';
 import { ProjectLabel } from '../../components/ProjectLabel';
 import { GitStatusLine } from '../../components/SessionTable';
 import { ArchiveIcon } from '../../components/ArchiveButton';
+import { Button } from '../../components/Control';
+import { IconButton } from '../../components/IconButton';
 import type { SidebarProjectGroup as ProjectGroup } from './SessionSidebar';
 
 export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleCollapsedProject,
@@ -54,10 +56,9 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
   return (
     <div ref={setNodeRef} style={style} className="session-sidebar-group">
       <div className="session-sidebar-group-header-row">
-        <button type="button" className="session-sidebar-group-drag" title="Drag to reorder"
-          aria-label="Drag to reorder project" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()}>
-          <i className="bi bi-grip-vertical" aria-hidden="true" />
-        </button>
+        <IconButton variant="ghost" size="compact" className="session-sidebar-group-drag" title="Drag to reorder"
+          label="Drag to reorder project" icon="bi-grip-vertical" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()} />
+        {/* eslint-disable-next-line no-restricted-syntax -- disclosure row with its own typography, not an action button */}
         <button type="button" className={`session-sidebar-group-header${collapsed ? ' collapsed' : ''}`}
           aria-expanded={!collapsed} title={group.directory || 'Unknown project'}
           onClick={() => toggleCollapsedProject(group.key ?? group.directory)}>
@@ -65,16 +66,16 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
         </button>
         <HostBadge remoteName={hostRemoteName} remoteId={hostRemoteId} stale={remoteSession?.stale} />
         {group.directory && <>
-          <button type="button" className="session-sidebar-group-new" title={`New session in ${label}`}
-            aria-label={`New session in ${label}`} onClick={(e) => {
+          <IconButton variant="ghost" size="compact" className="session-sidebar-group-new" icon="bi-plus-lg"
+            label={`New session in ${label}`} onClick={(e) => {
               e.stopPropagation();
               void onNewSessionInDirectory(group.directory, hostRemoteId, hostPlatform);
-            }}>+</button>
-          <button type="button" className="session-sidebar-group-new" title={`Archive ${label}`}
+            }} />
+          <Button type="button" variant="ghost" size="compact" className="session-sidebar-group-new" title={`Archive ${label}`}
             aria-label={`Archive ${label}`} onClick={(e) => {
               e.stopPropagation();
               onArchiveProject(group.directory, hostRemoteId);
-            }}><ArchiveIcon /></button>
+            }}><ArchiveIcon /></Button>
         </>}
       </div>
       {!collapsed && draftRows}
@@ -99,12 +100,12 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
                     </span>
                   )}
                 </span>
-                <button type="button" className="session-sidebar-group-new"
-                  title={`New session on ${dirLabel}`} aria-label={`New session on ${dirLabel}`}
+                <IconButton variant="ghost" size="compact" className="session-sidebar-group-new" icon="bi-plus-lg"
+                  label={`New session on ${dirLabel}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     void onNewSessionInDirectory(dir, checkout?.remoteId, checkout?.platform);
-                  }}>+</button>
+                  }} />
               </div>
             )}
             {nestSessions(sessions).map(({ session, depth }) => renderRow(session, true, depth))}
