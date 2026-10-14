@@ -150,6 +150,36 @@ describe('turn actions', () => {
   });
 });
 
+describe('Claude local commands', () => {
+  it.each([
+    ['<command-name>/model</command-name>\n <command-message>model</command-message>\n <command-args>opus</command-args>', '/model opus', 'Local command'],
+    ['<command-name>/model</command-name><command-message>model</command-message><command-args></command-args>', '/model', 'Local command'],
+    ['<local-command-stdout>Set model to `Opus 5.5`</local-command-stdout>', 'Set model to Opus 5.5', 'Command output'],
+    ['<local-command-stderr>Unknown model</local-command-stderr>', 'Unknown model', 'Command error'],
+  ])('renders %s without transcript markup', (text, expected, label) => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text }];
+    render(<AssistantThread />);
+    const entry = screen.getByLabelText(label);
+    expect(entry).toHaveTextContent(expected);
+    expect(entry.textContent).not.toContain('<');
+    expect(entry.closest('[data-message-id]')).toHaveClass('oc-msg-local-command');
+  });
+
+  it.each([
+    'Explain <command-name>/model</command-name>',
+    '<local-command-stdout>unfinished',
+    '<local-command-stdout>output</local-command-stdout> extra text',
+    '<command-name>/model</command-name><command-message>model</command-message><command-args></command-args> trailing',
+  ])('preserves ordinary text and incomplete wrappers: %s', (text) => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text }];
+    const { container } = render(<AssistantThread />);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(container.querySelector('[data-message-id]')).not.toHaveClass('oc-msg-local-command');
+  });
+});
+
 describe('AssistantThread slash-command skills', () => {
   const instructions = '# Review Pull Request\n\nReview the changes carefully.\n\nBase directory for this skill: /home/user/.config/opencode/skills/review-pr\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory.';
 

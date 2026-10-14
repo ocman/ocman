@@ -24,6 +24,8 @@ import { useUiStore } from '../lib/uiStore';
 import type { FC } from 'react';
 import { LinkPreviewStrip } from './GitHubLinkPreview';
 import { MarkdownText, ZoomableGraphicModal } from './assistant/MarkdownText';
+import { LocalCommand } from './assistant/LocalCommand';
+import { parseLocalCommand } from '../lib/localCommand';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
@@ -120,6 +122,8 @@ const SkillCall: FC<{ name: string; instructions: string }> = ({ name, instructi
 };
 
 const UserTextPart: FC<{ text: string }> = ({ text }) => {
+  const localCommand = parseLocalCommand(text);
+  if (localCommand) return <LocalCommand entry={localCommand} />;
   if (!text.trim()) return null;
   // Slash-command skills arrive as plain user text with this generated footer.
   const skill = /^Base directory for this skill: [^\r\n]+[/\\]([^/\\\r\n]+)\r?\nRelative paths in this skill [^\r\n]*are relative to this base directory\./m.exec(text);
@@ -163,6 +167,7 @@ const TimelineMarker: FC<{ timestamp: number }> = ({ timestamp }) => {
 
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
+  const localCommand = content.length === 1 && content[0].type === 'text' && parseLocalCommand(content[0].text);
   const id = useMessage((m) => m.id);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
@@ -193,7 +198,7 @@ const UserMessage: FC = () => {
       {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
     <MessagePrimitive.Root
-      className={`oc-msg oc-msg-user${failed ? ' oc-msg-failed' : ''}`}
+      className={`oc-msg oc-msg-user${localCommand && !failed ? ' oc-msg-local-command' : ''}${failed ? ' oc-msg-failed' : ''}`}
       data-message-id={id}
       style={borderStyle}
     >

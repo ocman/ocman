@@ -117,6 +117,13 @@
   border-left: 3px solid var(--accent3);
   padding: 16px 20px;
 }
+.oc-msg-user.oc-msg-local-command { background: transparent; border: 0; padding: 4px 0; }
+.oc-local-command { display: flex; align-items: baseline; gap: 10px; color: var(--text-dim); font-size: 0.875rem; }
+.oc-local-command > .bi { flex-shrink: 0; }
+.oc-local-command > code { color: var(--text); font-family: var(--font-conversation-mono); white-space: pre-wrap; }
+.oc-local-command > .oc-md { min-width: 0; }
+.oc-local-command .oc-md p { margin: 0; }
+.oc-local-command-error { color: var(--danger); }
 /* Failed-send banner attached to a user-message bubble. The bubble keeps
    its normal layout; the banner sits underneath the body and offers
    Retry / Dismiss without disturbing the surrounding thread spacing. */
