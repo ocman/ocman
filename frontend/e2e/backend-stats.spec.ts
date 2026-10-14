@@ -30,8 +30,11 @@ test('bottom stats start collapsed, align expanded items and remember the choice
 
 test('active session popover groups projects, accepts keyboard entry and closes on selection', async ({ mockedPage: page }) => {
   await page.route(/\/api\/sessions\?view=running-count$/, route => route.fulfill({ json: { count: 3 } }));
+  // The open session's row follows its live detail status (waiting), so the
+  // busy row in its project is another session.
+  const busy = { ...MOCK_SESSION, id: 'busy-myapp', title: 'Busy myapp task', status: 'busy' };
   await page.route(/\/api\/sessions\?limit=0$/, route => route.fulfill({ json: [
-    { ...MOCK_SESSION, status: 'busy' },
+    busy,
     { ...MOCK_SESSION_2, status: 'busy', archived: true, parentId: MOCK_SESSION.id },
     { ...MOCK_SESSION, id: 'other', title: 'Other project task', directory: '/projects/other', status: 'busy' },
   ] }));
@@ -47,7 +50,7 @@ test('active session popover groups projects, accepts keyboard entry and closes 
   await page.keyboard.press('Tab');
   await expect(panel).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(panel.getByRole('link', { name: MOCK_SESSION.title })).toBeFocused();
+  await expect(panel.getByRole('link', { name: busy.title })).toBeFocused();
   await panel.getByRole('link', { name: MOCK_SESSION_2.title }).click();
   await expect(panel).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION_2.id}\\?platform=opencode$`));
