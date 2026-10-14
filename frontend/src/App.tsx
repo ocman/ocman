@@ -85,7 +85,7 @@ export function GlobalHotkeys() {
     archiveSession(closed.platform, closed.id, closed.timeUpdated, false).catch((err) => {
       remoteLog.error('Failed to reopen closed session', err);
     });
-    patchSessionLists(closed.id, { archived: false });
+    patchSessionLists(closed.id, { archived: false }, closed.platform);
     navigate(`/session/${closed.id}`);
   }, [navigate]);
 

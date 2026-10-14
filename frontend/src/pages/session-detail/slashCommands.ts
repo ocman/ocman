@@ -302,7 +302,7 @@ const rename: SlashCommand = {
       await api.renameSession(session.id, newTitle);
       // Optimistically update the sidebar store so the renamed
       // title shows immediately instead of waiting for the 3s poll.
-      patchSessionLists(session.id, { title: newTitle });
+      patchSessionLists(session.id, { title: newTitle }, session.platform);
       setShowRenameToast(true);
     } catch (e) {
       remoteLog.error('Failed to rename session', e);

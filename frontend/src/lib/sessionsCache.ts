@@ -71,9 +71,16 @@ export function setSidebarSessions(sessions: Session[]): void {
  * Optimistically merge `patch` into every cached copy of a session. The
  * sidebar list is re-sorted, and a status change bumps the row's status
  * revision so an in-flight poll doesn't overwrite it.
+ *
+ * `platform` (the compound owner, e.g. `r-<id>:opencode`) identifies the
+ * session: two owners can hold the same id. Without it the patch applies
+ * only when one owner holds that id, never to every same-id row.
  */
 export function patchSessionLists(id: string, patch: Partial<Session>, platform?: string): void {
-  const matches = (s: Session) => s.id === id && (!platform || s.platform === platform);
+  const owners = platform === undefined ? ownersOf(id) : [platform];
+  if (owners.length !== 1) return;
+  const owner = owners[0];
+  const matches = (s: Session) => s.id === id && s.platform === owner;
   const sidebarRow = getSidebarSessions().find(matches);
   for (const [key, rows] of queryClient.getQueriesData<Session[]>({ queryKey: SESSIONS_KEY })) {
     if (!Array.isArray(rows) || !rows.some(matches)) continue;
@@ -92,6 +99,15 @@ export function patchSessionLists(id: string, patch: Partial<Session>, platform?
  * (see insertProvisionalSession) and the top of the sidebar. The next
  * poll reconciles the stub with the real row.
  */
+/** The platforms holding `id` across the cached lists. */
+function ownersOf(id: string): (string | undefined)[] {
+  const owners = new Set<string | undefined>();
+  for (const [, rows] of queryClient.getQueriesData<Session[]>({ queryKey: SESSIONS_KEY })) {
+    if (Array.isArray(rows)) for (const s of rows) if (s.id === id) owners.add(s.platform);
+  }
+  return [...owners];
+}
+
 export function seedSessionLists(session: Session): void {
   insertProvisionalSession(queryClient, session);
   queryClient.setQueryData<Session[]>(SIDEBAR_SESSIONS_KEY, (rows = EMPTY) => [session, ...rows.filter((s) => s.id !== session.id)]);

@@ -45,6 +45,28 @@ describe('session cache', () => {
     expect(getSidebarSessions().map((s) => [s.platform, !!s.archived])).toEqual([['opencode', false], ['r-x:opencode', true]]);
   });
 
+  it('never patches another owner holding the same session id', () => {
+    const local = row('a');
+    const remote = row('a', { platform: 'r-x:opencode' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [local, remote]);
+    queryClient.setQueryData(['sessions', { limit: 100 }], [local, remote]);
+    // Unqualified and ambiguous: nothing changes.
+    patchSessionLists('a', { title: 'Renamed' });
+    expect(getSidebarSessions().map((s) => s.title)).toEqual([undefined, undefined]);
+    // Qualified: only that owner's rows, in every list.
+    patchSessionLists('a', { title: 'Renamed' }, 'r-x:opencode');
+    for (const list of [getSidebarSessions(), queryClient.getQueryData<Session[]>(['sessions', { limit: 100 }])!]) {
+      expect(list.find((s) => s.platform === 'opencode')?.title).toBeUndefined();
+      expect(list.find((s) => s.platform === 'r-x:opencode')?.title).toBe('Renamed');
+    }
+  });
+
+  it('patches an unqualified id when a single owner holds it', () => {
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row('a'), row('b', { platform: 'r-x:opencode' })]);
+    patchSessionLists('b', { title: 'Only owner' });
+    expect(getSidebarSessions().find((s) => s.id === 'b')?.title).toBe('Only owner');
+  });
+
   it('skips identical sidebar writes and keeps the existing reference', () => {
     const first = [row('a')];
     setSidebarSessions(first);

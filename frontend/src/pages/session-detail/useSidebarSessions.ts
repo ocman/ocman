@@ -325,11 +325,11 @@ export function useSidebarSessions({
     const nextPinned = !target.pinned;
     // Optimistic update — flip the pin in place immediately so the
     // sort settles without waiting for the server.
-    patchSessionLists(target.id, { pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 });
+    patchSessionLists(target.id, { pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 }, target.platform);
     pinSession(target.platform, target.id, nextPinned).catch((err) => {
       remoteLog.error('Failed to pin/unpin session', err);
       // Revert on failure.
-      patchSessionLists(target.id, { pinned: target.pinned, pinnedAt: target.pinnedAt });
+      patchSessionLists(target.id, { pinned: target.pinned, pinnedAt: target.pinnedAt }, target.platform);
     });
   }, [pinSession]);
 

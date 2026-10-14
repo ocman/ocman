@@ -269,14 +269,15 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   pinSession: (platform, sessionId, pinned) => api.pinSession(platform, sessionId, pinned),
   getModels: (signal) => api.models(undefined, signal),
   sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => {
-    const previous = getSidebarSessions().find((s) => s.id === sessionId)?.timeUpdated;
+    const owns = (s: Session) => s.id === sessionId && (!platform || s.platform === platform);
+    const previous = getSidebarSessions().find(owns)?.timeUpdated;
     const now = Math.max(Date.now(), previous ?? 0);
-    if (!queue) patchSessionLists(sessionId, { timeUpdated: now });
+    if (!queue) patchSessionLists(sessionId, { timeUpdated: now }, platform);
     return api.sendMessage(sessionId, message, images, model, agent, reasoning, platform, queue).catch((error) => {
       // Don't undo activity that arrived through SSE while the request ran.
       if (!queue && previous !== undefined &&
-          getSidebarSessions().find((s) => s.id === sessionId)?.timeUpdated === now) {
-        patchSessionLists(sessionId, { timeUpdated: previous });
+          getSidebarSessions().find(owns)?.timeUpdated === now) {
+        patchSessionLists(sessionId, { timeUpdated: previous }, platform);
       }
       throw error;
     });

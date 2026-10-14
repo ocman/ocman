@@ -58,7 +58,8 @@ describe('usePromptSync', () => {
 
   it('mirrors prompt flags into the sidebar row', () => {
     renderHook(() => usePromptSync(opts({ pendingQuestion: pendingQ })));
-    expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { pendingPermission: false, pendingQuestion: true });
+    // Owner-qualified: another machine's session with this id keeps its badge.
+    expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { pendingPermission: false, pendingQuestion: true }, 'r-box:opencode');
   });
 
   it('fetches a permission across the session tree when REST says one is pending', async () => {

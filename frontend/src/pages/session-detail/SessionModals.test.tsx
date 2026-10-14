@@ -25,7 +25,7 @@ vi.mock('./RenameModal', () => ({
 import { api } from '../../lib/api';
 import { SessionModals, type SessionModalsProps } from './SessionModals';
 
-const session = { id: 's1', title: 'Old', directory: '/current', remoteId: 'local' } as Session;
+const session = { id: 's1', platform: 'opencode', title: 'Old', directory: '/current', remoteId: 'local' } as Session;
 const messages: Message[] = [
   { id: 'msg-user-1', sessionId: 's1', timeCreated: 1_700_000_000_000, data: { role: 'user' } },
 ];
@@ -82,7 +82,7 @@ describe('SessionModals', () => {
     const p = renderModals({ openModal: 'rename' });
     fireEvent.click(screen.getByText('rename-now'));
     expect(p.patchSession).toHaveBeenCalledWith({ title: 'Renamed' });
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { title: 'Renamed' });
+    expect(patchRecentSession).toHaveBeenCalledWith('s1', { title: 'Renamed' }, 'opencode');
     expect(p.onRenamed).toHaveBeenCalled();
   });
 
@@ -123,7 +123,7 @@ describe('SessionModals', () => {
     expect(p.onClose).toHaveBeenCalled();
     expect(api.moveSession).toHaveBeenCalledWith('s1', '/proj-local');
     await waitFor(() => expect(p.patchSession).toHaveBeenCalledWith({ directory: '/proj-local' }));
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { directory: '/proj-local' });
+    expect(patchRecentSession).toHaveBeenCalledWith('s1', { directory: '/proj-local' }, 'opencode');
   });
 
   it('reports a failed move on the pending bubble', async () => {

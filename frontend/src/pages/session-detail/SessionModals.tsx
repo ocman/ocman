@@ -65,13 +65,13 @@ export function SessionModals({
       .then(() => {
         pending.clear();
         patchSession({ directory });
-        patchSessionLists(session.id, { directory });
+        patchSessionLists(session.id, { directory }, session.platform);
       })
       .catch((error) => {
         remoteLog.error('Failed to move session', error);
         pending.fail(error instanceof Error ? error.message : 'Unknown error');
       });
-  }, [patchSession, pending, session.id]);
+  }, [patchSession, pending, session.id, session.platform]);
 
   const sameHost = (remoteId: string | undefined) => (remoteId || 'local') === (session.remoteId || 'local');
   const jumpHistory = messageJumpHistory?.sessionId === session.id ? messageJumpHistory : null;
@@ -85,7 +85,7 @@ export function SessionModals({
           onClose={onClose}
           onRenamed={(newTitle) => {
             patchSession({ title: newTitle });
-            patchSessionLists(session.id, { title: newTitle });
+            patchSessionLists(session.id, { title: newTitle }, session.platform);
             onRenamed();
           }}
         />

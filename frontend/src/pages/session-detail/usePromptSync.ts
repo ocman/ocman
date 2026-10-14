@@ -70,8 +70,8 @@ export function usePromptSync({
     patchSessionLists(id, {
       pendingPermission: pendingPermission !== null,
       pendingQuestion: pendingQuestion !== null,
-    });
-  }, [id, pendingPermission, pendingQuestion]);
+    }, session?.platform);
+  }, [id, pendingPermission, pendingQuestion, session?.platform]);
 
   // Reverse sync: when the session REST response or the sidebar poll
   // reports a pending prompt we don't yet have in state, fetch the

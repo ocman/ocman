@@ -86,7 +86,7 @@ describe('useSessionActions — /rename command', () => {
     });
 
     expect(renameSession).toHaveBeenCalledWith('sess-1', 'New Title');
-    expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { title: 'New Title' });
+    expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { title: 'New Title' }, 'opencode');
   });
 
   it('is a no-op when the title is blank', async () => {
