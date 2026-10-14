@@ -22,12 +22,16 @@ func (w *SSEFrameWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pending = append(w.pending, p...)
-	if len(w.pending) > MaxSSEFrameBytes && sseFrameEnd(w.pending) < 0 {
-		w.pending = nil
-		return 0, fmt.Errorf("SSE frame exceeds %d bytes", MaxSSEFrameBytes)
-	}
 	for {
 		end := sseFrameEnd(w.pending)
+		size := end
+		if end < 0 {
+			size = len(w.pending)
+		}
+		if size > MaxSSEFrameBytes {
+			w.pending = nil
+			return 0, fmt.Errorf("SSE frame exceeds %d bytes", MaxSSEFrameBytes)
+		}
 		if end < 0 {
 			return len(p), nil
 		}

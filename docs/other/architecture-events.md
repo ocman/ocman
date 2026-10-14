@@ -166,8 +166,14 @@ sequenceDiagram
   errors and never reconnects. The browser therefore replaces both the
   global and the session stream when the user returns: the tab becomes
   visible after 30 s hidden, the browser comes back `online`, or the clock
-  jumps while visible (the machine slept). The new stream's open runs the
-  usual reconnect reconciliation and skips any pending backoff.
+  jumps while visible (the machine slept), or a request fails on a dropped
+  connection (at most once per 5 s). Both streams also carry a named
+  `ocman.keepalive` every 15 s, and the browser replaces a stream that goes
+  40 s without one, including a first connection that never opened. The new
+  stream's open runs the usual reconnect reconciliation and skips any
+  pending backoff. The hub forwards platform bytes to the session stream
+  only as whole SSE frames, so keepalives and synthetic events never land
+  inside one.
 - A permission reply that lands while the stream is down is never replayed.
   While a permission prompt is open, the page polls
   `GET /api/session/{id}/permissions?refresh=1&platform=…`. The `platform`

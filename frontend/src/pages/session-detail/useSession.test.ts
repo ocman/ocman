@@ -1368,6 +1368,24 @@ describe('useSession — keepalive watchdog', () => {
   });
 });
 
+describe('useSession — keepalive watchdog before first open', () => {
+  // The snapshot loaded but the first stream hung connecting; events from
+  // that window are not replayed, so the replacement must reconcile.
+  it('reconciles when replacing a stream that never opened', async () => {
+    vi.useFakeTimers();
+    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
+    const first = FakeEventSource.latest()!;
+
+    act(() => { vi.advanceTimersByTime(KEEPALIVE_TIMEOUT_MS); });
+    expect(first.closed).toBe(true);
+    const fetches = fetchSession.mock.calls.length;
+    await act(async () => FakeEventSource.latest()!.open());
+    expect(fetchSession.mock.calls.length).toBe(fetches + 1);
+  });
+});
+
 describe('useSession — retryNow', () => {
   it('cancels the backoff timer and reconnects immediately', async () => {
     vi.useFakeTimers();

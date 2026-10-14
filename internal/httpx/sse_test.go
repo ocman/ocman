@@ -31,3 +31,21 @@ func TestSSEFrameWriterForwardsWholeFrames(t *testing.T) {
 		t.Fatalf("forwarded %q", got)
 	}
 }
+
+func TestSSEFrameWriterBoundsEveryFrame(t *testing.T) {
+	big := bytes.Repeat([]byte{'x'}, MaxSSEFrameBytes+1)
+	for name, input := range map[string][]byte{
+		"terminated oversized frame":   append(append([]byte{}, big...), "\n\n"...),
+		"oversized tail after a frame": append([]byte("data: ok\n\n"), big...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := &SSEFrameWriter{Dst: &bytes.Buffer{}}
+			if _, err := w.Write(input); err == nil {
+				t.Fatal("oversized frame accepted")
+			}
+			if len(w.pending) != 0 {
+				t.Fatal("oversized frame retained")
+			}
+		})
+	}
+}

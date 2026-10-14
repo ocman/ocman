@@ -143,7 +143,11 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       const query = routedPlatform ? `?platform=${encodeURIComponent(routedPlatform)}` : '';
       stopWatch();
       evtSource = new EventSource(`/api/session/${encodeURIComponent(sessionId)}/events${query}`);
-      stopWatch = watchKeepalive(evtSource, () => retryNowRef.current());
+      stopWatch = watchKeepalive(evtSource, () => {
+        // Even a stream that never opened may have missed events.
+        reconnectingAfterError = true;
+        retryNowRef.current();
+      });
       evtSource.onopen = () => {
         if (cancelled) return;
         attempt = 0;
