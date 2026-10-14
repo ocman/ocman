@@ -104,3 +104,27 @@ func TestDoctorWithoutOpenCodeSkipsItsDatabase(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorMissingOpenCodeDatabaseWithClaudeIsOptional(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	reg.Register(&fakePlatform{id: "claudecode"})
+	srv.WithStartupIssues(StartupIssue{ID: "opencode-db-missing", Message: "OpenCode database not found"})
+	srv.hostRouter = hostsvc.NewRouter(doctorHost{})
+	rr := httptest.NewRecorder()
+	srv.handleDoctor(rr, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
+	var got struct {
+		Checks []hostsvc.DoctorCheck `json:"checks"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range got.Checks {
+		if c.ID == "opencode-db" {
+			if c.Required || c.OK || c.Hint == "" {
+				t.Fatalf("missing OpenCode must be optional when Claude is registered: %+v", c)
+			}
+			return
+		}
+	}
+	t.Fatal("missing OpenCode setup notice disappeared")
+}

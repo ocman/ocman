@@ -19,16 +19,17 @@ hides only the feature it unlocks.
 
 Required:
 
-- **OpenCode**, with its database created. Install OpenCode:
-  https://opencode.ai, then run OpenCode once so it creates its database,
-  then restart ocman.
+- **OpenCode or Claude Code**. For OpenCode, install https://opencode.ai and
+  run it once to create its database. For Claude Code, install the `claude`
+  CLI and log in. Both platforms are enabled by default; a missing OpenCode
+  database does not prevent using Claude.
 - **git**: `brew install git`.
 
 Optional:
 
 | Tool | Unlocks | Hint |
 |------|---------|------|
-| tmux | launching managed OpenCode sessions, /wt worktree sessions and browser terminals | `brew install tmux` |
+| tmux | launching managed OpenCode or Claude sessions, /wt worktree sessions and browser terminals | `brew install tmux` |
 | lsof | discovering OpenCode instances you started yourself | Install lsof; discovering externally started OpenCode instances needs it |
 | whisper-cpp + ffmpeg | voice input in the composer | `brew install whisper-cpp`, `brew install ffmpeg` (without ffmpeg only wav/mp3/ogg/flac work) |
 

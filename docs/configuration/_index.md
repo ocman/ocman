@@ -60,7 +60,8 @@ API calls use that provider's billing, independently of any ChatGPT subscription
 ./ocman                                      # default: listens on 127.0.0.1:8228
 ./ocman -addr localhost:9090                 # custom listen address
 ./ocman -db /path/to/opencode.db             # custom OpenCode database path
-./ocman -platforms opencode,claudecode       # enable multiple platforms
+./ocman -platforms opencode                 # OpenCode only; default enables both platforms
+./ocman -platforms claudecode               # Claude Code only
 ```
 
 Ocman's own state (archived/seen flags, auth secret, favorites, cached projects) lives in

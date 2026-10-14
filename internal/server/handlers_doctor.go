@@ -29,7 +29,8 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) openCodeDBCheck() hostsvc.DoctorCheck {
-	c := hostsvc.DoctorCheck{ID: "opencode-db", Label: "OpenCode database", Required: true}
+	// A registered platform lets the app run even when OpenCode was skipped.
+	c := hostsvc.DoctorCheck{ID: "opencode-db", Label: "OpenCode database", Required: s.openCodeEnabled() || len(s.registry.Platforms()) == 0}
 	for _, issue := range s.startupIssues {
 		if issue.ID == "opencode-db-missing" {
 			c.Detail, c.Hint = issue.Message, "Run OpenCode once so it creates its database, then restart ocman"

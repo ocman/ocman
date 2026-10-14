@@ -57,7 +57,7 @@ the external origin so the Host allowlist accepts it. See
 
 ## Which platforms are supported?
 
-OpenCode. Platforms are wired through an adapter interface, so support for
+OpenCode and Claude Code. Platforms are wired through an adapter interface, so support for
 other agents is a new adapter rather than a rewrite.
 
 ## Which operating systems?

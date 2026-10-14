@@ -905,7 +905,7 @@ minimal and match the surrounding code.
 ## Key details
 
 - **`-platforms` flag**: comma-separated list of platforms to enable
-  (default `"opencode"`). Valid values are `opencode` and `claudecode`
+  (default `"opencode,claudecode"`). Valid values are `opencode` and `claudecode`
   (Claude Code via `internal/claudeprovider`; terminal sessions are read-only).
   Only the listed adapters are registered; the OpenCode database is
   not required when `opencode` is omitted from the list.

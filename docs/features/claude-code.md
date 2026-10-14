@@ -23,11 +23,11 @@ reads, stores, copies or refreshes your Claude credentials.
    an installed CLI to drive sessions, but automatic Claude updates are not
    blocked by an exact version pin. Recorded protocol fixtures use **2.1.220**;
    browsing transcripts also works when the CLI is absent.
-2. Start ocman with the platform enabled:
+2. Start ocman. OpenCode and Claude Code are both enabled by default:
 
    ```sh
    ocman -platforms claudecode            # Claude Code only
-   ocman -platforms opencode,claudecode   # both
+   ocman                                # both
    ```
 
    Without `opencode` in the list ocman does not need OpenCode, its binary or

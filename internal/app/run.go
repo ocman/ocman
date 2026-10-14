@@ -80,7 +80,7 @@ func run() {
 	}
 	sort.Strings(platformNames)
 	knownPlatformNames := strings.Join(platformNames, ", ")
-	platformsFlag := flag.String("platforms", string(platforms.OpenCodeID), "comma-separated list of platforms to enable ("+knownPlatformNames+")")
+	platformsFlag := flag.String("platforms", "opencode,claudecode", "comma-separated list of platforms to enable ("+knownPlatformNames+")")
 	authPassword := flag.String("auth-password", "", "password required to access ocman (prefer "+authPasswordEnv+" env or -auth-password-file)")
 	authPasswordFile := flag.String("auth-password-file", "", "read auth password from file (trimmed of trailing whitespace)")
 	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
