@@ -1,6 +1,7 @@
 package claudeprovider
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -126,7 +127,10 @@ type waitTicket struct {
 // acquire returns the session's child marked busy, spawning (or resuming) it.
 // At the cap an idle child is evicted; when every child is busy it waits.
 // input is recorded as pending when it joins an open turn.
-func (l *live) acquire(id, model, effort, input string, w *waitTicket) (*proc, error) {
+func (l *live) acquire(ctx context.Context, id, model, effort, input string, w *waitTicket) (*proc, error) {
+	// A waiter on l.slots wakes when ctx ends.
+	stop := context.AfterFunc(ctx, func() { l.mu.Lock(); l.slots.Broadcast(); l.mu.Unlock() })
+	defer stop()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	var waiter *os.File
@@ -134,6 +138,9 @@ func (l *live) acquire(id, model, effort, input string, w *waitTicket) (*proc, e
 	for {
 		if w.cancelled {
 			return nil, errAborted
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("claude provider stopping: %w", err)
 		}
 		if p := l.procs[id]; p != nil {
 			// Model changes use set_model. Effort is launch-only, and a rebound
@@ -172,7 +179,7 @@ func (l *live) acquire(id, model, effort, input string, w *waitTicket) (*proc, e
 			}
 		}
 		if !evicted || l.exitingLocked() {
-			l.waitSlotLocked(&waiter) // the evicted child frees its slot when reaped
+			l.waitSlotLocked(ctx, &waiter) // the evicted child frees its slot when reaped
 		}
 	}
 }
@@ -251,7 +258,12 @@ func (l *live) stopLocked(p *proc) {
 // stopAll ends the live: its children go and the retry workers retire
 // (idempotent: both the provider shutdown and the test harness call it).
 func (l *live) stopAll() {
-	l.stopOnce.Do(func() { close(l.done) })
+	l.stopOnce.Do(func() {
+		close(l.done)
+		if l.stop != nil {
+			l.stop()
+		}
+	})
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for _, p := range l.procs {

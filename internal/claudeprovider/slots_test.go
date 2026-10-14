@@ -69,3 +69,29 @@ func TestBrokenSlotStoreFailsVisibly(t *testing.T) {
 		t.Fatal("a child launched without a slot")
 	}
 }
+
+// A turn waiting for a machine-wide slot ends when the provider stops
+// instead of polling forever.
+func TestSlotWaitEndsWhenLiveStops(t *testing.T) {
+	dir := t.TempDir()
+	for range DefaultMaxProcs {
+		release, ok, err := trySlot(dir, "slot", DefaultMaxProcs)
+		if err != nil || !ok {
+			t.Fatalf("session slot: %v %v", ok, err)
+		}
+		t.Cleanup(release)
+	}
+	h := startLive(t, claudetest.Fixture("plain.jsonl"), func(o *Options) { o.SlotDir = dir })
+	id := h.create(t)
+	h.send(t, id, "hi")
+	h.live.mu.Lock()
+	tail := h.live.tails[id]
+	h.live.mu.Unlock()
+	time.Sleep(3 * slotPoll) // the turn is waiting for a slot
+	h.live.stopAll()
+	select {
+	case <-tail:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the slot wait ignored the provider stopping")
+	}
+}

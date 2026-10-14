@@ -314,7 +314,7 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 		}
 		defer close(done)
 		testHook("acquire", id)
-		p, err := l.acquire(id, model, effort, input, w)
+		p, err := l.acquire(l.ctx, id, model, effort, input, w)
 		if err == nil {
 			err = l.initializeProc(p)
 			if err == nil {

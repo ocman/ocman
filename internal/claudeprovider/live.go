@@ -1,6 +1,7 @@
 package claudeprovider
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -95,6 +96,9 @@ type live struct {
 	// (recordLater, settleLater) end with it instead of outliving it.
 	done     chan struct{}
 	stopOnce sync.Once
+	// ctx ends with done: waits for a slot select on it.
+	ctx  context.Context
+	stop context.CancelFunc
 }
 
 type viewEntry struct {
@@ -108,6 +112,7 @@ func newLive(idx *Index, opts Options, version string) *live {
 		waits: map[string]map[*waitTicket]bool{}, tails: map[string]chan struct{}{}, subs: map[string][]string{}, accepted: map[string]uint64{},
 		deferred: map[string]db.SessionStatus{}, unsettled: map[string]settlement{}, settling: map[string]bool{}, unrecorded: map[string]bool{}, done: make(chan struct{})}
 	l.cmds = newCommands(opts)
+	l.ctx, l.stop = context.WithCancel(context.Background())
 	l.slots = sync.NewCond(&l.mu)
 	l.syncOwnedLocked()
 	return l

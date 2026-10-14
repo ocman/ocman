@@ -78,7 +78,7 @@ func HelperSlot(ctx context.Context, dir string) (release func(), err error) {
 
 // waitSlotLocked blocks until a slot may have been freed. With machine slots
 // it announces the wait and polls, since another process frees the slot.
-func (l *live) waitSlotLocked(waiter **os.File) {
+func (l *live) waitSlotLocked(ctx context.Context, waiter **os.File) {
 	if l.opts.SlotDir == "" {
 		l.slots.Wait()
 		return
@@ -94,7 +94,10 @@ func (l *live) waitSlotLocked(waiter **os.File) {
 		}
 	}
 	l.mu.Unlock()
-	time.Sleep(slotPoll)
+	select {
+	case <-ctx.Done():
+	case <-time.After(slotPoll):
+	}
 	l.mu.Lock()
 }
 
