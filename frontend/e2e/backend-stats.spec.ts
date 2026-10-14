@@ -40,7 +40,8 @@ test('active session popover groups projects, accepts keyboard entry and closes 
   await trigger.hover();
   const panel = page.getByRole('dialog', { name: 'Active sessions' });
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole('heading')).toHaveCount(2);
+  await expect(panel.getByRole('heading', { level: 2, name: 'Total active sessions' })).toBeVisible();
+  await expect(panel.getByRole('heading', { level: 3 })).toHaveCount(2);
   await expect(panel.getByRole('link')).toHaveCount(3);
   await trigger.focus();
   await page.keyboard.press('Tab');
