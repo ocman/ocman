@@ -53,7 +53,7 @@ func machineRoot() string {
 // projectDir. RepoRoot stays the project's root so callers that create
 // sessions or name worktrees keep working per project.
 func (h *Host) ensureMachine(ctx context.Context, projectDir string,
-	fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error)) (*hostsvc.EnsureRuntimeResult, error) {
+	fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error), operation string) (*hostsvc.EnsureRuntimeResult, error) {
 	root := machineRoot()
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("creating OpenCode v2 working directory: %w", err)
@@ -69,7 +69,7 @@ func (h *Host) ensureMachine(ctx context.Context, projectDir string,
 		// Publication belongs to the detached flight, not a cancelled waiter.
 		h.publishMachineServer(res.Endpoint)
 		return res, nil
-	})
+	}, operation)
 	if err != nil {
 		return nil, err
 	}

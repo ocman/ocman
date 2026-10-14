@@ -29,6 +29,7 @@ func (h *Host) markStopped(root string) {
 	delete(h.instances, root)
 	delete(h.authorized, root)
 	h.stopped[root] = true
+	h.generations[root]++
 	h.mu.Unlock()
 	if ocv2.InstalledV2() {
 		h.publishMachineServer("")

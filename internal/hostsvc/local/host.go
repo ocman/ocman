@@ -78,14 +78,17 @@ type Host struct {
 	deps    Deps
 	runtime ocruntime.Runtime
 	store   ManagedStore
-	// sf collapses concurrent runtime operations for the same repo root.
-	sf singleflight.Group
+	// sf coalesces identical operations; runtimeLocks serialize root mutations.
+	sf           singleflight.Group
+	runtimeLocks sync.Map // repo root -> *sync.Mutex; inventory never takes these
 	// background tracks detached worktree naming so tests can wait for it.
 	background sync.WaitGroup
 	// instances retains cleanup handles; only successful probes authorize routing.
-	mu         sync.Mutex
-	instances  map[string]*ocruntime.Instance
-	authorized map[string]string
+	mu          sync.Mutex
+	instances   map[string]*ocruntime.Instance
+	authorized  map[string]string
+	generations map[string]uint64
+	mutating    map[string]bool
 	// stopped retains non-routable recovery until reconciliation commits.
 	stopped          map[string]bool
 	portWaitTimeout  time.Duration
@@ -101,6 +104,8 @@ func New(deps Deps) *Host {
 		deps: deps, runtime: rt, store: deps.ManagedStore,
 		instances:       map[string]*ocruntime.Instance{},
 		authorized:      map[string]string{},
+		generations:     map[string]uint64{},
+		mutating:        map[string]bool{},
 		stopped:         map[string]bool{},
 		portWaitTimeout: 15 * time.Second, portWaitInterval: 200 * time.Millisecond,
 	}

@@ -24,19 +24,19 @@ func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProj
 		return nil, fmt.Errorf("OpenCode is disabled")
 	}
 	if ocv2.InstalledV2() {
-		return h.ensureMachine(ctx, req.ProjectDir, h.ensureLocked)
+		return h.ensureMachine(ctx, req.ProjectDir, h.ensureLocked, "ensure")
 	}
 	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
-	return h.sfDoDetached(ctx, repoRoot, h.ensureLocked)
+	return h.sfDoDetached(ctx, repoRoot, h.ensureLocked, "ensure")
 }
 
 const sfLaunchTimeout = 2 * time.Minute
 
 // The shared launch outlives any one caller, bounded by sfLaunchTimeout.
-func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error)) (*hostsvc.EnsureRuntimeResult, error) {
+func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error), operation string) (*hostsvc.EnsureRuntimeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -48,7 +48,11 @@ func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(contex
 	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), sfLaunchTimeout)
 	go func() {
 		defer cancel()
-		v, err, _ := h.sf.Do(repoRoot, func() (any, error) { return fn(detached, repoRoot) })
+		v, err, _ := h.sf.Do(operation+"\x00"+repoRoot, func() (any, error) {
+			finish := h.beginRuntimeMutation(repoRoot)
+			defer finish()
+			return fn(detached, repoRoot)
+		})
 		done <- sfResult{v, err}
 	}()
 	select {
@@ -242,6 +246,7 @@ func (h *Host) setInstance(repoRoot string, inst *ocruntime.Instance) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.instances[repoRoot] = inst
+	h.generations[repoRoot]++
 }
 
 func (h *Host) clearInstance(repoRoot string) {
@@ -249,6 +254,7 @@ func (h *Host) clearInstance(repoRoot string) {
 	defer h.mu.Unlock()
 	delete(h.instances, repoRoot)
 	delete(h.authorized, repoRoot)
+	h.generations[repoRoot]++
 }
 
 func (h *Host) waitForProbe(ctx context.Context, inst *ocruntime.Instance) error {
@@ -296,7 +302,9 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 		}
 		return err
 	}
-	_, err, _ = h.sf.Do(repoRoot, func() (any, error) {
+	_, err, _ = h.sf.Do("stop\x00"+repoRoot, func() (any, error) {
+		finish := h.beginRuntimeMutation(repoRoot)
+		defer finish()
 		if stopped, err := h.reconcileStopped(ctx, repoRoot, false); stopped || err != nil {
 			return nil, err
 		}
@@ -324,13 +332,13 @@ func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsurePro
 		return nil, fmt.Errorf("OpenCode is disabled")
 	}
 	if ocv2.InstalledV2() {
-		return h.ensureMachine(ctx, req.ProjectDir, h.restartLocked)
+		return h.ensureMachine(ctx, req.ProjectDir, h.restartLocked, "restart")
 	}
 	root, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
-	return h.sfDoDetached(ctx, root, h.restartLocked)
+	return h.sfDoDetached(ctx, root, h.restartLocked, "restart")
 }
 
 func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode, error) {
