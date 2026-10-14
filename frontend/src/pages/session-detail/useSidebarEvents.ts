@@ -3,7 +3,7 @@ import type { MutableRefObject } from 'react';
 import { useApiStore } from '../../lib/apiStore';
 import { compareSidebarActivity, computeSidebarHash, filterInactiveChildren, mergeSidebarSessions } from '../../lib/sidebarHelpers';
 import { filterVisibleSessions, hasPendingPrompt } from '../../lib/sessionVisibility';
-import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
+import { onInboxChanged, onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
 import { eventRefresh } from '../../lib/eventRefresh';
 
@@ -34,6 +34,9 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
       if (subscribed) await refresh();
     };
     const changedRefresh = eventRefresh(refreshAfterCurrent);
+    const unsubscribeInbox = onInboxChanged(() => {
+      if (enabledRef.current && !document.hidden) changedRefresh.schedule();
+    });
     const unsubscribeChanged = onSessionChanged((sessionID, _session, patch, platform) => {
       if (!enabledRef.current || document.hidden) return;
       const matches = useApiStore.getState().recentSessions.filter(s => s.id === sessionID && (!platform || s.platform === platform));
@@ -101,6 +104,7 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
       }
     });
     return () => {
+      unsubscribeInbox();
       unsubscribeChanged();
       unsubscribeConnect();
       unsubscribeActivity();

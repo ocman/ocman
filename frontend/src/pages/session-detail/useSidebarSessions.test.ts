@@ -25,8 +25,13 @@ import { computeSidebarHash, visibleSidebarSessions } from '../../lib/sidebarHel
 let sessionChanged: ((sessionId: string, session?: Session, patch?: Partial<Session>, platform?: string) => void) | undefined;
 let sseConnect: (() => void) | undefined;
 let sessionActivity: ((sessionId: string, timeUpdated: number) => void) | undefined;
+let inboxChanged: (() => void) | undefined;
 
 vi.mock('../../lib/useGlobalEvents', () => ({
+  onInboxChanged: (cb: () => void) => {
+    inboxChanged = cb;
+    return () => { inboxChanged = undefined; };
+  },
   onSessionActivity: (cb: typeof sessionActivity) => {
     sessionActivity = cb;
     return () => { sessionActivity = undefined; };
@@ -44,6 +49,28 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('reconciles pending permissions when the inbox learns about a prompt', async () => {
+    vi.useFakeTimers();
+    const row = { id: 'background', platform: 'opencode', status: 'busy',
+      timeUpdated: Date.now(), pendingPermission: false } as Session;
+    const getSessions = vi.fn().mockResolvedValue([row]);
+    useApiStore.setState({ getSessions, recentSessions: [row], recentSessionsHash: computeSidebarHash([row]) });
+    const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    try {
+      await act(async () => { await view.result.current.loadRecentSessions(); });
+      getSessions.mockResolvedValue([{ ...row, pendingPermission: true }]);
+      act(() => inboxChanged?.());
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      expect(view.result.current.recentSessions[0].pendingPermission).toBe(true);
+      getSessions.mockResolvedValue([row]);
+      act(() => inboxChanged?.());
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      expect(view.result.current.recentSessions[0].pendingPermission).toBe(false);
+      view.unmount();
+      expect(inboxChanged).toBeUndefined();
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
   it.each(['busy', 'done'] as const)('preserves a %s transition returning to the request-start status', async (status) => {
     const row = { id: 'running', platform: 'r-box:opencode', status,
       timeUpdated: Date.now(), seen: true, seenTimeUpdated: 0 } as Session;
