@@ -3,6 +3,7 @@ package termmod
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -292,5 +293,42 @@ func TestWSForwardsCancellationAndClosesAfterAttach(t *testing.T) {
 	_, _, err = ws.ReadMessage()
 	if !websocket.IsCloseError(err, websocket.CloseInternalServerErr) {
 		t.Fatalf("cancelled attach = %v, want close 1011", err)
+	}
+}
+
+// An idle terminal ends with its request: shutdown cancels the request
+// context, but never closes a hijacked socket, so the handler closes it and
+// a host blocked reading keystrokes returns.
+func TestWSClosesIdleTerminalWhenRequestEnds(t *testing.T) {
+	attached, returned := make(chan struct{}), make(chan struct{})
+	host := &fakeHost{attach: func(_ context.Context, _ hostsvc.TermAttachRequest, c hostsvc.TermConn) error {
+		close(attached)
+		defer close(returned)
+		for { // like AttachLocalPTY's keystroke loop: ignores ctx
+			if _, err := c.Recv(); err != nil {
+				return err
+			}
+		}
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	srv := httptest.NewUnstartedServer(newMux(host, allow))
+	srv.Config.BaseContext = func(net.Listener) context.Context { return ctx }
+	srv.Start()
+	defer srv.Close()
+	ws, _, err := dial(t, srv, "dir=/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-attached
+	cancel() // the server's lifetime ends; the browser stays idle
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("an idle terminal kept its handler running after the request ended")
+	}
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := ws.ReadMessage(); err == nil {
+		t.Fatal("the terminal stream stayed open")
 	}
 }

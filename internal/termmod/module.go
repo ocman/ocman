@@ -103,6 +103,11 @@ func (m *Module) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	// Shutdown cancels the request but never closes a hijacked socket; an
+	// idle terminal would otherwise block in Recv and hold the server's
+	// handler join open.
+	stopClose := context.AfterFunc(r.Context(), func() { _ = conn.Close() })
+	defer stopClose()
 
 	err = host.TermAttach(r.Context(), hostsvc.TermAttachRequest{
 		Dir: dir, Window: windowName, Readonly: q.Get("readonly") == "1",
