@@ -114,6 +114,27 @@ it('keeps a peer edit when a send succeeds on the same mounted draft', async () 
   expect(await transact(['texts'], 'readonly', (tx) => tx.get('texts', 'peer-during-send'))).toEqual({ text: 'Other prompt', revision: 0 });
 });
 
+it('clears its own autosaved prefix when a longer prompt is submitted', async () => {
+  vi.useFakeTimers();
+  try {
+    let resolve!: () => void;
+    const onSend = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+    const view = render(<Composer isRunning={false} newConversation draftKey="own-prefix" onSend={onSend} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'Hello' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(getDraft('own-prefix')).toBe('Hello');
+    fireEvent.input(input, { target: { value: 'Hello world' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSend).toHaveBeenCalled();
+    expect(getDraft('own-prefix')).toBe('');
+    await act(async () => { resolve(); });
+    expect(input).toHaveValue('');
+    view.unmount();
+    expect(getDraft('own-prefix')).toBe('');
+  } finally { vi.useRealTimers(); }
+});
+
 it('restores the draft when a send fails after unmount', async () => {
   let reject!: (e: Error) => void;
   const onSend = vi.fn(() => new Promise<void>((_, r) => { reject = r; }));
