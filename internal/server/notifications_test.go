@@ -40,6 +40,9 @@ func TestPushSnapshotIncludesDoneWithoutChangingBrowserProjection(t *testing.T) 
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("done completion missing: %+v %v", rows, err)
 	}
+	if rows[0].Notification.BadgeCount != 0 {
+		t.Fatalf("push badge counts a done envelope hidden by the app: %+v", rows)
+	}
 	browser, err := s.notificationEntries(t.Context(), 0, 500)
 	if err != nil || len(browser) != 0 {
 		t.Fatalf("browser contract changed: %+v %v", browser, err)
@@ -218,10 +221,12 @@ func TestPushBadgeCountsInterruptedAttentionSessions(t *testing.T) {
 	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{
 		{ID: "interrupted", Platform: "fake", Status: db.StatusInterrupted, TimeUpdated: time.Now().UnixMilli()},
 		{ID: "finished", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()},
+		{ID: "shell", Platform: "fake", Status: db.StatusDone, TimeUpdated: time.Now().UnixMilli()},
+		{ID: "read", Platform: "fake", Status: db.StatusWaiting, Seen: true, TimeUpdated: time.Now().UnixMilli()},
 	}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
 	s.registry.Register(p)
 	rows, err := s.pushSnapshot(t.Context())
-	if err != nil || len(rows) != 1 || rows[0].Notification.BadgeCount != 2 {
+	if err != nil || len(rows) != 2 || rows[0].Notification.BadgeCount != 2 || rows[1].Notification.BadgeCount != 2 {
 		t.Fatalf("attention badge missed interrupted session: %+v %v", rows, err)
 	}
 }

@@ -103,7 +103,11 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 	}
 	attention := make(map[[2]string]bool)
 	for _, entry := range entries {
-		attention[[2]string{entry.platform,entry.ID}] = true
+		// Match useNotifyData's attention filter; done envelopes only trigger alerts.
+		if entry.PendingPermission || entry.PendingQuestion || (!entry.Seen && !entry.SuppressTerminal &&
+			(entry.Status == db.StatusWaiting || entry.Status == db.StatusError || entry.Status == db.StatusInterrupted)) {
+			attention[[2]string{entry.platform, entry.ID}] = true
+		}
 	}
 	for i := range out {
 		out[i].Notification.BadgeCount = len(attention)

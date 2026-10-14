@@ -16,6 +16,8 @@ attention sessions. A session needing both permission and question input counts
 once; same-id sessions on different owners count separately. Reading or resolving
 the sessions clears the badge when the app refreshes its notification state.
 Push alerts also carry the current count so a closed app can update its badge.
+Completed shell envelopes can trigger an alert, but do not count toward the
+badge unless they need permission or question input, matching the in-app count.
 Without a new push, changes made on another device refresh when this app opens.
 While open, the app dismisses session alerts once their unread/input state is
 resolved. Notifications newer than the fetched snapshot remain until a fresh
