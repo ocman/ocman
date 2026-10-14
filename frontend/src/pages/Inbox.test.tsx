@@ -153,6 +153,37 @@ describe('Inbox', () => {
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
   });
 
+  it('middle-click archives another message without opening it and ignores right-click', async () => {
+    renderInbox();
+    await screen.findByRole('heading', { name: 'Build finished' });
+    const other = screen.getByRole('button', { name: /Remote note/ });
+    fireEvent(other, new MouseEvent('auxclick', { bubbles: true, button: 2 }));
+    expect(api.archiveInboxItems).not.toHaveBeenCalled();
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 1 });
+    fireEvent(other, down);
+    expect(down.defaultPrevented).toBe(true);
+    fireEvent(other, new MouseEvent('auxclick', { bubbles: true, button: 1 }));
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '2', remoteId: 'laptop' }]));
+    expect(screen.getByRole('heading', { name: 'Build finished' })).toBeInTheDocument();
+  });
+
+  it('does not middle-click archive archived messages', async () => {
+    renderInbox('/inbox?status=archived');
+    const other = await screen.findByRole('button', { name: /Remote note/ });
+    fireEvent(other, new MouseEvent('auxclick', { bubbles: true, button: 1 }));
+    expect(api.archiveInboxItems).not.toHaveBeenCalled();
+  });
+
+  it('does not middle-click archive again while an archive is pending', async () => {
+    vi.mocked(api.archiveInboxItems).mockImplementation(() => new Promise(() => {}));
+    renderInbox();
+    const other = await screen.findByRole('button', { name: /Remote note/ });
+    fireEvent(other, new MouseEvent('auxclick', { bubbles: true, button: 1 }));
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledTimes(1));
+    fireEvent(other, new MouseEvent('auxclick', { bubbles: true, button: 1 }));
+    expect(api.archiveInboxItems).toHaveBeenCalledTimes(1);
+  });
+
   it('pins and unpins a message from its row', async () => {
     vi.mocked(api.inbox).mockResolvedValue({ items: [{ ...items[0], pinned: false }, { ...items[1], pinned: true, pinnedAt: Date.now() }], unreadTotal: 1 });
     renderInbox();

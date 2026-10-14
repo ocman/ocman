@@ -192,7 +192,13 @@ export function Inbox() {
             <button type="button" role="checkbox" className="inbox-select" disabled={archived} aria-checked={selected.has(itemKey(item))} onClick={() => toggle(item)} aria-label={`Select ${item.title}`}>
               <i className={`bi bi-${selected.has(itemKey(item)) ? 'check-square-fill' : categories.find(({ id }) => id === itemCategory(item))?.icon ?? 'chat-left-text'}`} aria-hidden="true" />
             </button>
-            <button type="button" className="inbox-message-open" onClick={() => open(item)} aria-current={activeKey === itemKey(item) ? 'true' : undefined}>
+            <button type="button" className="inbox-message-open" onClick={() => open(item)} aria-current={activeKey === itemKey(item) ? 'true' : undefined}
+              onMouseDown={(event) => { if (event.button === 1) event.preventDefault(); }}
+              onAuxClick={(event) => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                if (!archived && !archive.isPending) archiveItem(item);
+              }}>
               <span className="inbox-headline">
                 <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}{item.title}</span>
                 <span className="inbox-meta"><RelativeTime iso={new Date(item.createdAt).toISOString()} /></span>

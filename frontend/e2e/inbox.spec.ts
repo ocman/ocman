@@ -1,5 +1,37 @@
 import { test, expect } from './fixtures';
 
+for (const pinned of [false, true]) {
+  test(`clicked inbox row restores its timestamp after mouse leaves, pinned=${pinned}`, async ({ mockedPage: page }) => {
+    await page.route('**/api/inbox**', (route) => route.fulfill({ json: {
+      items: [{ id: 'hover', remoteId: 'local', title: 'Hover message', body: 'Message body', createdAt: 1, readAt: 1, pinned }], unreadTotal: 0,
+    } }));
+    await page.goto('/inbox');
+    const message = page.getByRole('button', { name: /Hover message/ });
+    const row = page.getByRole('article').filter({ has: message });
+    const archive = row.getByRole('button', { name: 'Archive', exact: true });
+    const timestamp = message.getByText(/ago$/);
+    await message.click();
+    await expect(archive).toBeVisible();
+    await expect(timestamp).toBeHidden();
+    await page.mouse.move(0, 0);
+    await expect(message).toHaveAttribute('aria-current', 'true');
+    await expect(timestamp).toBeVisible();
+    if (pinned) await expect(archive).toBeHidden();
+    else {
+      await expect(archive.locator('..')).toHaveCSS('opacity', '0');
+      await expect(archive.locator('..')).toHaveCSS('pointer-events', 'none');
+    }
+    // Keyboard navigation still exposes row controls.
+    await row.getByRole('checkbox').focus();
+    await page.keyboard.press('Tab');
+    await expect(message).toBeFocused();
+    await expect(archive).toBeVisible();
+    await page.keyboard.press('Tab');
+    await expect(row.getByRole('button', { name: pinned ? 'Unpin message' : 'Pin message' })).toBeFocused();
+    await expect(archive).toBeVisible();
+  });
+}
+
 test('code copying reports denial and succeeds on retry', async ({ mockedPage: page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
