@@ -7,7 +7,7 @@ import (
 
 // machineServer is the port of the OpenCode v2 server that serves every
 // directory on this machine ("" on v1 machines). v2 runs one server for
-// all projects, so lsof + working-directory discovery does not apply:
+// all projects, so per-project runtime lookup does not apply:
 // the host that launched it publishes the port here.
 var machineServer atomic.Value // string
 

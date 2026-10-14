@@ -1,9 +1,8 @@
 import { launchProgressReporter, type LaunchProgressReporter } from './launchProgressStore';
 
 /**
- * Poll cadence after launching opencode: the backend lsof cache has a
- * TTL (~3 s) and opencode needs a moment to boot + bind its port, so we
- * give it up to ~9.5 s before giving up. Mirrors createSessionWithLaunch.
+ * Poll after launching the managed instance while it boots and session
+ * state catches up. Give it up to ~9.5 s before giving up.
  */
 const RETRY_DELAYS_MS = [1500, 2000, 2000, 2000, 2000];
 
@@ -12,7 +11,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export interface LaunchAndWaitDeps {
-  /** Launch `opencode --port 0` in tmux for the directory. */
+  /** Ensure a managed OpenCode instance for the directory. */
   launch: (directory: string) => Promise<unknown>;
   /** Re-fetch session state so liveConnection reflects the new instance. */
   reload: () => Promise<void>;

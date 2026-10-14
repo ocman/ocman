@@ -2,90 +2,28 @@ package opencode
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
-	"regexp"
-	"runtime"
-	"strconv"
-	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
-	log "github.com/sirupsen/logrus"
 )
-
-var rePortSuffix = regexp.MustCompile(`:(\d+)$`)
-
-type pidPort struct {
-	pid  string
-	port string
-}
 
 type openCodeServer struct {
 	directory string
 	port      string
 }
 
+var managedPortSource atomic.Pointer[func(context.Context) map[string]string]
+
+// SetManagedPortSource wires the owner's verified managed runtime inventory.
+func SetManagedPortSource(source func(context.Context) map[string]string) {
+	managedPortSource.Store(&source)
+	resetPortCache()
+}
+
 func copyOpenCodeServers(servers []openCodeServer) []openCodeServer {
 	return append([]openCodeServer(nil), servers...)
 }
-
-// parseOpenCodeListeners accepts lsof's nine-character command truncation.
-func parseOpenCodeListeners(lsofOut string) []pidPort {
-	var candidates []pidPort
-	for _, line := range strings.Split(lsofOut, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 9 || !strings.HasPrefix(fields[0], "opencode") {
-			continue
-		}
-		pid := fields[1]
-		if _, err := strconv.Atoi(pid); err != nil {
-			log.WithField("pid", pid).Warn("skipping non-numeric PID in lsof output")
-			continue
-		}
-		m := rePortSuffix.FindStringSubmatch(fields[len(fields)-2])
-		if m != nil {
-			candidates = append(candidates, pidPort{pid: pid, port: m[1]})
-		}
-	}
-	return candidates
-}
-
-func lsofOutput(ctx context.Context, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "lsof", args...)
-	cmd.WaitDelay = 100 * time.Millisecond
-	return cmd.Output()
-}
-
-func pidCwd(pid string) (string, bool) {
-	return pidCwdContext(context.Background(), pid)
-}
-
-// Linux uses /proc; other hosts and unavailable procfs use a scoped lsof read.
-func pidCwdContext(ctx context.Context, pid string) (string, bool) {
-	if ctx.Err() != nil {
-		return "", false
-	}
-	if runtime.GOOS == "linux" {
-		if dir, err := os.Readlink(fmt.Sprintf("/proc/%s/cwd", pid)); err == nil {
-			return dir, true
-		}
-	}
-	cwdOut, err := lsofOutput(ctx, "-a", "-p", pid, "-d", "cwd", "-F", "n")
-	if err != nil {
-		return "", false
-	}
-	for _, line := range strings.Split(string(cwdOut), "\n") {
-		if strings.HasPrefix(line, "n/") {
-			return line[1:], true
-		}
-	}
-	return "", false
-}
-
-var lsofWarnOnce sync.Once
 
 const stalePortGrace = time.Minute
 
@@ -93,8 +31,6 @@ func discoverOpenCodePorts() map[string]string {
 	if ports := DiscoverOpenCodePortsContext(context.Background()); ports != nil {
 		return ports
 	}
-	// Failed scans must not make liveness readers or the watcher remove healthy
-	// instances immediately. Retain a short grace without renewing its TTL.
 	portCache.mu.Lock()
 	defer portCache.mu.Unlock()
 	if time.Since(portCache.lastSuccessfulAt) > stalePortGrace {
@@ -107,53 +43,22 @@ func discoverOpenCodeServersUncached() []openCodeServer {
 	return discoverOpenCodeServersUncachedContext(context.Background())
 }
 
-// Enumerate listeners, then resolve their directories with bounded fan-out.
 func discoverOpenCodeServersUncachedContext(ctx context.Context) []openCodeServer {
+	if ctx.Err() != nil {
+		return nil
+	}
 	if ocv2.InstalledV2() {
 		return append([]openCodeServer{}, machineServers()...)
 	}
-	out, err := lsofOutput(ctx, "-iTCP", "-sTCP:LISTEN", "-P", "-n")
-	if err != nil {
-		if ctx.Err() == nil {
-			lsofWarnOnce.Do(func() {
-				log.WithError(err).Warn("lsof failed; external OpenCode instance discovery skipped")
-			})
+	servers := []openCodeServer{}
+	if source := managedPortSource.Load(); source != nil {
+		ports := (*source)(ctx)
+		if ports == nil {
+			return nil
 		}
-		return nil
-	}
-	candidates := parseOpenCodeListeners(string(out))
-	if len(candidates) == 0 {
-		return []openCodeServer{}
-	}
-	workers := min(16, len(candidates))
-	type cwdResult struct {
-		dir  string
-		port string
-	}
-	jobs := make(chan pidPort, len(candidates))
-	results := make(chan cwdResult, len(candidates))
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Go(func() {
-			for c := range jobs {
-				if ctx.Err() != nil {
-					return
-				}
-				if dir, ok := pidCwdContext(ctx, c.pid); ok {
-					results <- cwdResult{dir: dir, port: c.port}
-				}
-			}
-		})
-	}
-	for _, c := range candidates {
-		jobs <- c
-	}
-	close(jobs)
-	wg.Wait()
-	close(results)
-	servers := make([]openCodeServer, 0, len(candidates))
-	for r := range results {
-		servers = append(servers, openCodeServer{directory: normalizePortDirectory(r.dir), port: r.port})
+		for directory, port := range ports {
+			servers = append(servers, openCodeServer{directory: normalizePortDirectory(directory), port: port})
+		}
 	}
 	return servers
 }
@@ -189,7 +94,6 @@ func readCachedServers() ([]openCodeServer, bool) {
 	return nil, false
 }
 
-// Multiple servers for one directory retain the existing unspecified choice.
 func discoverOpenCodePortsUncachedContext(ctx context.Context) map[string]string {
 	servers := discoverOpenCodeServersUncachedContext(ctx)
 	if servers == nil {

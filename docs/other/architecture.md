@@ -54,11 +54,11 @@ flowchart LR
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
-    Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
+    Ocman -->|managed inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode<br/>instances]
     Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
     Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
     ClaudeHooks[claude hook plugin<br/>terminal sessions, opt-in] -->|ocman hook → /hook| Ocman
-    Ocman -->|exec| Shell[git / tmux / lsof<br/>host tools]
+    Ocman -->|exec| Shell[git / tmux<br/>host tools]
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage + reviewer APIs]
@@ -90,7 +90,9 @@ flowchart LR
 - **opencode.db.** Foreign data, opened read-only. The one exception is the
   user-started maintenance job (`internal/ocmaint`, Settings → Maintenance).
   It stops the managed instances, refuses while any other process holds the
-  file, and moves old `summary.diffs` patches into a restorable dump.
+  file, and moves old `summary.diffs` patches into a restorable dump. Only this
+  opt-in maintenance operation uses lsof to check file holders; missing lsof
+  makes maintenance fail closed, not application startup.
   On an OpenCode v2 machine each connection gets TEMP views named `session`,
   `message` and `part` over v2's `session_v2`/`session_message` tables, so
   every query keeps its v1 SQL (`internal/db/v2views.go`).
@@ -582,8 +584,9 @@ flowchart TD
   views over `session_v2`/`session_message` all use it, so part ids agree
   everywhere. v1 servers are never probed.
 - **platforms/opencode.** Wraps the read-only DB queries (`internal/db`) plus
-  an HTTP client that attaches to live instances, with `lsof`-based discovery
-  for instances started outside ocman. One process-wide `/global/event` stream
+  an HTTP client that attaches only to managed instances. The local Host
+  supplies the tracked runtime inventory after API identity validation;
+  external processes are never scanned or adopted. One process-wide `/global/event` stream
   per instance keeps pending permission and question state in memory across
   all session directories. The same live stream captures completed bash parts
   containing Git commit summaries and stores immutable observations in

@@ -467,7 +467,7 @@ func (a *Adapter) RunShell(ctx context.Context, req platforms.RunShellRequest) e
 // runShellOnPort is the port-resolved core of RunShell, factored out so
 // tests can drive it against an httptest server without standing up a
 // full Adapter (which would need an OpenCode SQLite DB and a real
-// running instance for lsof to discover).
+// running managed instance to resolve).
 func runShellOnPort(ctx context.Context, port string, req platforms.RunShellRequest) error {
 	command := strings.TrimSpace(req.Command)
 	if command == "" {
@@ -804,14 +804,13 @@ func (a *Adapter) MoveSession(ctx context.Context, req platforms.MoveSessionRequ
 func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	// When the caller already knows the instance's port (e.g. a
 	// worktree session created on the project's single instance),
-	// skip discovery entirely — no lsof scan.
+	// skip the managed inventory lookup entirely.
 	port := req.Port
 	if port == "" {
 		// Fast path: reuse the cached port map when opencode is already
 		// running (the common case). Only fall back to a fresh uncached
-		// lsof scan on a miss — that scan is multi-hundred-ms on macOS and
-		// exists to catch a just-launched process the cache hasn't seen yet.
-		portPhase := srvtiming.Begin(ctx, "lsof_fresh")
+		// inventory refresh on a miss to catch a just-launched runtime.
+		portPhase := srvtiming.Begin(ctx, "runtime_ports_fresh")
 		port = discoverOpenCodePort(req.Directory)
 		if port == "" {
 			port = discoverOpenCodePortFresh(req.Directory)

@@ -71,7 +71,7 @@ layer, the SSE translator and the database's TEMP views (`internal/db/v2views.go
 so part ids (`prt<msg suffix><index>`) agree everywhere. Never add a second
 converter. On v2, `EnsureProjectOpencode` runs **one `opencode serve` per machine**
 (working directory `~/.local/share/ocman/opencode-v2[-<db hash>]`, keyed by the
-effective `OPENCODE_DB` so a server writing another database is never reused). Discovery skips `lsof` and
+effective `OPENCODE_DB` so a server writing another database is never reused). Runtime lookup
 resolves every directory to that port (`opencode.SetMachineServer`). The server's
 password is generated once and stored in `state.db` when none is configured,
 because v2 always requires one. Ctrl/Cmd+Enter follow-ups use v2's native session
@@ -567,7 +567,7 @@ are computed. Sessions retain their original directories and owners.
   actions plus `create`) and file tools, plus every tool a feature module
   contributes (`Deps.Tools`). Mounted at `/mcp` by the server package.
 - `internal/server/` — HTTP server, API handlers, static file serving
-  with SPA fallback, OpenCode port discovery via `lsof`. It is also the
+  with SPA fallback, managed OpenCode runtime inventory wiring. It is also the
   composition root for feature modules (`modules.go`).
 - `internal/module/` — the feature-module contract (see **Feature modules**
   below): `Module`, `Router`, `Guards`, the optional `Starter` / `Launcher` /
@@ -933,9 +933,10 @@ minimal and match the surrounding code.
   `AddAnalyticsSource`; from then on reads never fall back to opencode.db.
   Without OpenCode it is the analytics database itself
   (`db.OpenAnalyticsStore`, served as `Server.analytics`).
-- **OpenCode port discovery** uses `lsof` to find processes named
-  `opencode` listening on TCP, then resolves their cwd. macOS/Linux
-  only. Cached with a 10-second TTL.
+- **OpenCode runtime lookup** uses only the local Host's managed inventory,
+  including API-validated persisted instances on restart. External instances
+  are never discovered or adopted. Cached with a 10-second TTL. `lsof` is
+  used only by opt-in database maintenance and development port cleanup.
 - **Session reads go through one snapshot**
   (`internal/platforms/opencode/models_cache.go`). The full aggregate
   query in `db.GetSessions` is expensive (~4.3 s on a 12 GB OpenCode

@@ -35,7 +35,7 @@ var serverCache struct {
 var sessionPortAffinity sync.Map // sessionID -> port
 
 // portFlight coalesces concurrent cold-cache callers into a single
-// underlying lsof invocation.
+// underlying managed-inventory read.
 var portFlight singleflight.Group
 
 // serverFlight coalesces concurrent cold-cache callers that need the
@@ -43,11 +43,11 @@ var portFlight singleflight.Group
 var serverFlight singleflight.Group
 
 // portCacheTTL bounds how long a discovered port map is reused
-// before the next request triggers a fresh lsof scan.
+// before the next request refreshes the managed inventory.
 const portCacheTTL = 10 * time.Second
 
 // discoverPortsImpl is the seam used so tests can swap out the expensive
-// lsof execution. Stored as an atomic pointer so reads and writes are
+// inventory read. Stored as an atomic pointer so reads and writes are
 // race-free without a mutex.
 var discoverPortsImpl atomic.Pointer[func(context.Context) map[string]string]
 var discoverServersImpl atomic.Pointer[func() []openCodeServer]
@@ -94,7 +94,7 @@ func resetPortCache() {
 
 // InvalidateOpenCodePortCache clears cached OpenCode port-discovery data.
 // Callers that have just launched or restarted an OpenCode process should
-// invalidate so the next lookup does a fresh lsof scan instead of reusing
+// invalidate so the next lookup reads the managed inventory instead of reusing
 // a recently cached "not running yet" result.
 func InvalidateOpenCodePortCache() {
 	resetPortCache()
@@ -371,7 +371,7 @@ func DiscoverOpenCodePortFresh(directory string) string {
 // Used by the headless auto-approve watcher (internal/server) to
 // enumerate OpenCode processes it should subscribe to. Goes through the
 // same cached path as DiscoverOpenCodePort so back-to-back calls do not
-// run lsof again within portCacheTTL.
+// refresh the managed inventory again within portCacheTTL.
 func DiscoverOpenCodePorts() map[string]string {
 	return discoverOpenCodePorts()
 }
@@ -379,14 +379,14 @@ func DiscoverOpenCodePorts() map[string]string {
 // discoverOpenCodePortCtx is discoverOpenCodePort with Server-Timing instrumentation.
 func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
 	if cached, ok := readCachedPorts(); ok {
-		hit := srvtiming.Begin(ctx, "lsof_hit")
+		hit := srvtiming.Begin(ctx, "runtime_ports_hit")
 		port := lookupPortWithWorktreeFold(cached, directory)
 		hit.End()
 		return port
 	}
-	miss := srvtiming.Begin(ctx, "lsof_miss")
+	miss := srvtiming.Begin(ctx, "runtime_ports_miss")
 	port := discoverOpenCodePort(directory)
-	miss.EndWithDesc("ran fresh lsof scan")
+	miss.EndWithDesc("read managed runtime inventory")
 	return port
 }
 

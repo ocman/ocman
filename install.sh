@@ -59,7 +59,6 @@ doctor() {
 	req pnpm "npm install -g pnpm, or corepack enable pnpm"
 	opt tmux "needed to launch OpenCode sessions from ocman"
 	opt opencode "the agent ocman drives: https://opencode.ai"
-	opt lsof "used to discover externally started OpenCode instances"
 
 	[ "$missing" -eq 0 ] || die "install the missing tools above, then re-run"
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"runtime"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -25,9 +24,6 @@ func (h *Host) Doctor(context.Context) []hostsvc.DoctorCheck {
 	}
 	if h.deps.PlatformEnabled == nil || h.deps.PlatformEnabled(string(platforms.OpenCodeID)) {
 		checks = append([]hostsvc.DoctorCheck{binCheck(string(platforms.OpenCodeID), "OpenCode", true, "Install OpenCode: https://opencode.ai")}, checks...)
-	}
-	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-		checks = append(checks, binCheck("lsof", "lsof", false, "Install lsof; discovering externally started OpenCode instances needs it"))
 	}
 	checks = append(checks, whisperCheck())
 	if h.deps.StateDir != "" {

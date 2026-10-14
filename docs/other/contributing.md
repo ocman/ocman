@@ -36,7 +36,7 @@ graph TD
     HTTP --> Registry
     Registry --> OCAd
     OCAd --> OC_DB
-    OCAd -->|lsof + HTTP| OC
+    OCAd -->|managed inventory + HTTP| OC
     HTTP -->|archived/seen| State_DB
     Archive --> State_DB
 ```

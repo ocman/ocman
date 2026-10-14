@@ -86,12 +86,12 @@ describe('SetupPrompt', () => {
   });
 
   it('persists dismissal per failing set and re-shows for a newly missing tool', async () => {
-    mocks.getDoctor.mockResolvedValue(report(check('tmux', { ok: false }), check('lsof', { ok: false })));
+    mocks.getDoctor.mockResolvedValue(report(check('tmux', { ok: false }), check('mcp-listener', { ok: false })));
     const first = renderPrompt();
     await screen.findByTestId('setup-banner');
     fireEvent.click(screen.getByLabelText('Dismiss'));
     expect(screen.queryByTestId('setup-banner')).toBeNull();
-    expect(store.get('ocman.setup-banner-dismissed')).toBe('lsof,tmux');
+    expect(store.get('ocman.setup-banner-dismissed')).toBe('mcp-listener,tmux');
     first.unmount();
 
     const second = renderPrompt();
@@ -100,7 +100,7 @@ describe('SetupPrompt', () => {
     second.unmount();
 
     mocks.getDoctor.mockResolvedValue(report(
-      check('tmux', { ok: false }), check('lsof', { ok: false }), check('whisper', { ok: false }),
+      check('tmux', { ok: false }), check('mcp-listener', { ok: false }), check('login-shell-path', { ok: false }),
     ));
     renderPrompt();
     expect(await screen.findByTestId('setup-banner')).toBeTruthy();

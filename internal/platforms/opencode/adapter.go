@@ -184,7 +184,7 @@ type parentLookup interface {
 }
 
 // Owns reports whether this OpenCode session ID exists in the local
-// OpenCode database. It does NOT touch the live HTTP API or the lsof
+// OpenCode database. It does NOT touch the live HTTP API or the managed
 // port discovery path, so it's cheap enough to call from the
 // registry's cold-cache fan-out without paying the multi-hundred-ms
 // round-trip that Session would.
@@ -206,7 +206,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	// Try live data from OpenCode first.
 	livePhase := srvtiming.Begin(ctx, "live_path")
 	detail, ok := a.fetchSessionFromOpenCodeCtx(ctx, id, limit, offset)
-	livePhase.EndWithDesc("fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
+	livePhase.EndWithDesc("fetchSessionFromOpenCode (managed inventory + HTTP)")
 	if ok {
 		if err := a.attachSessionTree(ctx, id, detail); err != nil {
 			return nil, err

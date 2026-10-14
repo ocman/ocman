@@ -19,7 +19,7 @@ import (
 const (
 	// autoApproveRescanInterval is how often the watcher re-runs
 	// OpenCode port discovery to pick up newly-started or
-	// newly-stopped instances. 10 s matches the lsof cache TTL: any
+	// newly-stopped instances. 10 s matches the runtime inventory cache TTL: any
 	// faster would only return cached data, any slower would delay
 	// auto-approve for sessions started after ocman boot.
 	autoApproveRescanInterval = 10 * time.Second

@@ -2,13 +2,9 @@ package opencode
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 func resetPortCacheForTests() {
@@ -181,32 +177,5 @@ func TestCanceledDiscoveryDoesNotPoisonCache(t *testing.T) {
 	}
 	if port := DiscoverOpenCodePortContext(ctx, "/repo"); port != "" {
 		t.Fatal(port)
-	}
-}
-
-func TestDiscoveryCancelsListenerAndCwdSubprocesses(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
-	for _, tc := range []struct {
-		name, script string
-	}{
-		{"listeners", "#!/bin/sh\nexec sleep 30\n"},
-		{"directories", "#!/bin/sh\nif [ \"$1\" = \"-iTCP\" ]; then\n  i=0; while [ $i -lt 20 ]; do\n    printf 'opencode 999999 user 1u IPv4 0t0 TCP 127.0.0.1:1001 (LISTEN)\\n'\n    i=$((i+1))\n  done\nelse\n  exec sleep 30\nfi\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "lsof"), []byte(tc.script), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-			defer cancel()
-			start := time.Now()
-			if servers := discoverOpenCodeServersUncachedContext(ctx); len(servers) != 0 || ctx.Err() == nil {
-				t.Fatalf("canceled discovery returned %v", servers)
-			}
-			if time.Since(start) > time.Second {
-				t.Fatal("lsof subprocess did not stop after cancellation")
-			}
-		})
 	}
 }

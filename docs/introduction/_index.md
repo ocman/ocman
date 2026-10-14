@@ -30,7 +30,6 @@ Optional:
 | Tool | Unlocks | Hint |
 |------|---------|------|
 | tmux | launching managed OpenCode or Claude sessions, /wt worktree sessions and browser terminals | `brew install tmux` |
-| lsof | discovering OpenCode instances you started yourself | Install lsof; discovering externally started OpenCode instances needs it |
 | whisper-cpp + ffmpeg | voice input in the composer | `brew install whisper-cpp`, `brew install ffmpeg` (without ffmpeg only wav/mp3/ogg/flac work) |
 
 Apps launched from Finder get a minimal PATH. Ocman merges in your login

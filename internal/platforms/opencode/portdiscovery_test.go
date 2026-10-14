@@ -2,85 +2,14 @@ package opencode
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
-
-// TestPidCwd_ProcFsLinux verifies that pidCwd reads the cwd via /proc
-// on Linux without spawning a second lsof process.
-func TestPidCwd_ProcFsLinux(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("proc-based fast path is Linux-only")
-	}
-
-	// Use our own PID; /proc/<self>/cwd is always available.
-	pid := fmt.Sprintf("%d", os.Getpid())
-	dir, ok := pidCwd(pid)
-	if !ok {
-		t.Fatal("pidCwd returned false for own PID on Linux")
-	}
-	// The returned path should be an absolute directory that exists.
-	if !filepath.IsAbs(dir) {
-		t.Errorf("pidCwd returned non-absolute path %q", dir)
-	}
-	if _, err := os.Stat(dir); err != nil {
-		t.Errorf("pidCwd returned path that does not exist: %v", err)
-	}
-}
-
-// TestPidCwd_InvalidPidReturnsFalse verifies that an invalid/non-existent
-// PID returns (_, false) without panicking on all platforms.
-func TestPidCwd_InvalidPidReturnsFalse(t *testing.T) {
-	// PID "0" is reserved (kernel) and will not have an accessible cwd.
-	dir, ok := pidCwd("0")
-	if ok {
-		t.Errorf("expected pidCwd(\"0\") to fail, got dir=%q", dir)
-	}
-}
-
-// TestParseOpenCodeListeners_MatchesAcrossBinaryRenames pins the
-// COMMAND-column matching used by the lsof scan. OpenCode v1 ships as
-// a plain "opencode" binary; v2 ships as a Bun-bundled single-file
-// "opencode.exe", which lsof truncates to "opencode." in its 9-char
-// COMMAND column. Both must produce a (pid, port) candidate, while
-// unrelated processes ("opencod" prefix-miss, "ocaml") must be ignored.
-func TestParseOpenCodeListeners_MatchesAcrossBinaryRenames(t *testing.T) {
-	// Real-shaped lsof output: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME.
-	const sample = `COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
-opencode  25767 dries   12u  IPv4 0xca568d85139c12c0      0t0  TCP 127.0.0.1:64813 (LISTEN)
-opencode. 38828 dries   12u  IPv4 0xe608d6089558afa3      0t0  TCP 127.0.0.1:4096 (LISTEN)
-opencod   11111 dries   12u  IPv4 0x1111111111111111      0t0  TCP 127.0.0.1:9000 (LISTEN)
-ocaml     22222 dries    9u  IPv4 0x2222222222222222      0t0  TCP 127.0.0.1:9001 (LISTEN)
-opencode  notapid dries 9u  IPv4 0x3333333333333333      0t0  TCP 127.0.0.1:9002 (LISTEN)
-`
-
-	got := parseOpenCodeListeners(sample)
-
-	want := map[string]string{
-		"25767": "64813",
-		"38828": "4096",
-	}
-	if len(got) != len(want) {
-		t.Fatalf("parseOpenCodeListeners returned %d candidates, want %d: %+v", len(got), len(want), got)
-	}
-	for _, c := range got {
-		port, ok := want[c.pid]
-		if !ok {
-			t.Errorf("unexpected pid %q in result", c.pid)
-			continue
-		}
-		if c.port != port {
-			t.Errorf("pid %q: got port %q, want %q", c.pid, c.port, port)
-		}
-	}
-}
 
 // TestDiscoverOpenCodePorts_SingleflightsConcurrentMisses is the
 // headline B3 contract: when N goroutines hit a cold cache at once,

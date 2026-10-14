@@ -30,7 +30,7 @@ func (s *Server) newLocalHost() hostsvc.Host {
 			}
 		}
 	}
-	return hostlocal.New(hostlocal.Deps{
+	host := hostlocal.New(hostlocal.Deps{
 		DefaultPlatform: s.stateDB.DefaultPlatform,
 		Runtimes:        runtimes,
 		WorktreeNamers:  namers,
@@ -50,7 +50,6 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		ReplacementStopped:    s.opencodeReplacementStopped,
 		ReplacementStopping:   s.opencodeReplacementStopping,
 		CancelReplacementStop: s.cancelOpencodeReplacementStop,
-		DiscoverPort:          opencode.DiscoverOpenCodePortFresh,
 		// OpenCode v2: one server per machine, published to discovery.
 		SetMachineServer: opencode.SetMachineServer,
 		ManagedStore:     managedStoreOrNil(s.stateDB),
@@ -76,6 +75,8 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		TermAttach:       term.AttachLocalPTY,
 		StateDir:         stateDirOrEmpty(s.stateDB),
 	})
+	opencode.SetManagedPortSource(host.ManagedOpenCodePorts)
+	return host
 }
 
 // Runtime rows can be absent after a failed confirmation. The owner's durable

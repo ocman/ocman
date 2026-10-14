@@ -216,17 +216,11 @@ not trust the client-supplied `X-Forwarded-Proto` header for this decision.
 Sessions launched from ocman (command palette, Worktrees view, PR/Issue sidebar) are interactive
 out of the box: ocman manages one OpenCode instance per project on a port it allocates itself.
 
-For OpenCode v1 instances you start yourself, use an explicit port so ocman can discover them
-(OpenCode v2 works differently; see [OpenCode v2](#opencode-v2)):
-
-```sh
-opencode --port 0   # let OpenCode pick a free port
-# or pin a specific port, e.g. opencode --port 4096
-```
-
-Ocman finds listening OpenCode processes with `lsof` and connects automatically. Without
-`--port`, externally launched sessions are still readable from the database but interactive
-features stay disabled.
+Ocman connects only to its managed OpenCode instances, using its persisted
+runtime inventory and API identity probes. It does not discover or adopt
+instances you start yourself. Their saved sessions remain readable from the
+database. OpenCode v2 uses one managed server per machine; see
+[OpenCode v2](#opencode-v2).
 
 ### OpenCode v2
 

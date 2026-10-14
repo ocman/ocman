@@ -13,7 +13,6 @@ const DISMISS_STORAGE_KEY = 'ocman.setup-banner-dismissed';
 // section of docs/introduction/_index.md.
 const UNLOCKS: Record<string, string> = {
   tmux: 'launching managed OpenCode sessions, /wt worktree sessions and browser terminals',
-  lsof: 'discovering OpenCode instances you started yourself',
   whisper: 'voice input in the composer',
   'mcp-listener': 'the dedicated MCP endpoint for OpenCode',
 };

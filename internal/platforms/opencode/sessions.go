@@ -30,7 +30,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// Discover live instances for connection flags. Pending prompts come
 	// from the global event watcher, so session listing never fans out to
 	// every instance's /permission and /question endpoints.
-	portsPhase := srvtiming.Begin(ctx, "lsof_ports")
+	portsPhase := srvtiming.Begin(ctx, "runtime_ports")
 	ports := discoverOpenCodePorts()
 	portsPhase.End()
 

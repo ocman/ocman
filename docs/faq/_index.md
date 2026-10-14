@@ -62,8 +62,7 @@ other agents is a new adapter rather than a rewrite.
 
 ## Which operating systems?
 
-macOS and Linux. Port discovery for externally launched OpenCode instances
-uses `lsof`, so Windows is not supported.
+macOS and Linux. Managed sessions use tmux; Windows is not supported.
 
 ## Do sessions pile up forever?
 
