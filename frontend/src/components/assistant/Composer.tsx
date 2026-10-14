@@ -93,18 +93,19 @@ export function Composer({
   }, [disabled]);
 
   const [isBashMode, setIsBashMode] = useState(false);
+  const { revert, runtimeRestart, agentCatalog } = usePlatformCapabilities(platform);
+  const agentSelection = agentCatalog !== false;
   const hasModels = !!((models && models.length > 0) || (modelEntries && modelEntries.length > 0));
-  const hasAgents = !!(agents && agents.length > 0);
+  const hasAgents = agentSelection && !!(agents && agents.length > 0);
   const cyclableAgents = hasAgents
     ? (agents || []).filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => a.name)
     : KNOWN_AGENTS;
-  const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
-  const effectiveAgent = selectedAgent || activeAgent || '';
+  const agentOptions = agentSelection ? Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a))) : [];
+  const effectiveAgent = agentSelection ? selectedAgent || activeAgent || '' : '';
   const hasVariants = modelHasVariants(selectedModel, modelEntries);
-  const { revert, runtimeRestart } = usePlatformCapabilities(platform);
-  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants, revert, runtimeRestart }, commands, platform);
+  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent: agentSelection ? activeAgent : undefined, hasVariants, revert, runtimeRestart }, commands, platform);
   const pickers = useComposerPickers({
-    inputRef, sessionIdRef: draftKeyRef, scheduleDraftSave, models, agents, agentOptions,
+    inputRef, sessionIdRef: draftKeyRef, scheduleDraftSave, models, agents, agentOptions, agentSelection,
     onModelChange, onAgentChange, onRefreshModels,
   });
   const { openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker } = pickers;
@@ -349,8 +350,8 @@ export function Composer({
             autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} {...slash.inputAria}
             onBlur={slash.close} onKeyDown={handleInputKeyDown} onInput={handleInput} onPaste={attachments.handlePaste}
             data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
-          <ComposerToolbar isBashMode={isBashMode} uiDisabled={uiDisabled} disabled={disabled} disabledHint={disabledHint}
-            effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded} agents={agents}
+          <ComposerToolbar platform={platform} isBashMode={isBashMode} uiDisabled={uiDisabled} disabled={disabled} disabledHint={disabledHint}
+            effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded} agents={agents} agentSelection={agentSelection}
             selectorsLoading={newConversation && !agentsLoaded}
             openAgentPicker={() => { if (!uiDisabled) openAgentPicker(); }} hasModels={hasModels} modelUnavailable={modelUnavailable}
             openModelPicker={() => { if (!uiDisabled) openModelPicker(); }} modelButtonLabel={modelButtonLabel} effectiveModel={effectiveModel}

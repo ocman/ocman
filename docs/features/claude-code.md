@@ -237,10 +237,12 @@ itself. Sign-in stays with the CLI: run `claude` to log in or renew it.
   commands are the ones your `claude` reports for the directory (its startup
   handshake, run there with ocman's plugin and cached for 10 minutes). ocman's
   own skills, your `~/.claude/skills` and the project's `.claude/skills` are
-  marked as skills, as is any skill a session in that directory reported. The
-  subagents the CLI reports are listed as subagents; Claude has no primary
-  agents to pick. Without a working CLI the list is empty and `/name` is still
-  sent as prompt text.
+  marked as skills, as is any skill a session in that directory reported.
+  Claude's composer has no agent selector or agent-cycling shortcut because
+  ocman cannot change the main agent of a running Claude process. Claude's
+  native `--agent` option selects an agent at startup or resume; subagent
+  definitions are not selectable main agents in ocman. Without a working CLI
+  the command list is empty and `/name` is still sent as prompt text.
 - Forking copies the whole session: `/fork` offers only **Full session**,
   because the CLI has no measured way to fork at a chosen message.
 - Revert, unrevert and the session changes view are not available; `/undo`

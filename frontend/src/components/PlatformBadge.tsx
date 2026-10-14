@@ -28,6 +28,7 @@ function basePlatform(platform: string): string {
 
 interface PlatformBadgeProps {
   platform: string;
+  alwaysShow?: boolean;
   /**
    * Visual treatment:
    *   - undefined (default): full pill with the platform's accent
@@ -47,9 +48,9 @@ interface PlatformBadgeProps {
  * platform is registered the badge is hidden — it adds no information
  * when every session comes from the same platform.
  */
-export function PlatformBadge({ platform, variant }: PlatformBadgeProps) {
+export function PlatformBadge({ platform, variant, alwaysShow }: PlatformBadgeProps) {
   const multi = useMultiPlatform();
-  if (!multi) return null;
+  if (!multi && !alwaysShow) return null;
 
   // A remote session's platform is the compound "r-<remoteId>:<base>"
   // key (multi-remote support). Strip the prefix for display so the

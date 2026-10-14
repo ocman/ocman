@@ -23,6 +23,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath';
 
 vi.mock('../../lib/useCapabilities', () => ({
+  useMultiPlatform: () => false,
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => ({ shellExec: true }),
   useMachinePlatforms: () => [],

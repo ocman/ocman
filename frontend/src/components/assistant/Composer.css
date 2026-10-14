@@ -421,6 +421,8 @@
   font-size: 11px;
   color: var(--overlay0);
 }
+.oc-composer-bar .platform-icon-separator { display: none; }
+
 .oc-composer-bar-left {
   display: flex;
   align-items: center;

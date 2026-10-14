@@ -5,6 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer, type ComposerHandle } from './Composer';
 import { api, BackendUnavailableError } from '../../lib/api';
 
+vi.mock('../../lib/useCapabilities', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../lib/useCapabilities')>(),
+  usePlatformCapabilities: () => ({ agentCatalog: true }),
+}));
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();

@@ -23,6 +23,13 @@ function setup(over: Partial<UseComposerPickersOptions> = {}) {
 }
 
 describe('useComposerPickers', () => {
+  it('ignores picker requests and direct agent names when selection is unsupported', () => {
+    const { o, result } = setup({ agentSelection: false });
+    act(() => result.current.openAgentPicker(''));
+    act(() => result.current.openAgentPicker('build'));
+    expect(result.current.agent.open).toBe(false);
+    expect(o.onAgentChange).not.toHaveBeenCalled();
+  });
   it('applies a unique model/agent arg directly, otherwise opens the picker', () => {
     const { o, result } = setup();
     act(() => result.current.openModelPicker('Claude-Opus'));

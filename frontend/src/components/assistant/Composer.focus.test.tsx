@@ -6,6 +6,11 @@ import { Composer } from './Composer';
 import { api } from '../../lib/api';
 import { PermissionModeLock } from '../PermissionModeLock';
 
+vi.mock('../../lib/useCapabilities', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../lib/useCapabilities')>(),
+  usePlatformCapabilities: () => ({ agentCatalog: true }),
+}));
+
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });

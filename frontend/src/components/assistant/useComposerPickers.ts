@@ -9,6 +9,7 @@ export interface UseComposerPickersOptions {
   models: string[] | undefined;
   agents: AgentInfo[] | undefined;
   agentOptions: string[];
+  agentSelection?: boolean;
   onModelChange?: (model: string) => void;
   onAgentChange?: (agent: string) => void;
   onRefreshModels?: () => void;
@@ -26,6 +27,7 @@ export function useComposerPickers({
   models,
   agents,
   agentOptions,
+  agentSelection = true,
   onModelChange,
   onAgentChange,
   onRefreshModels,
@@ -91,6 +93,7 @@ export function useComposerPickers({
   }, [agents, agentOptions]);
 
   const openAgentPicker = useCallback((arg = '') => {
+    if (!agentSelection) return;
     const resolved = resolveAgentArg(arg);
     if (resolved) {
       onAgentChange?.(resolved);
@@ -98,7 +101,7 @@ export function useComposerPickers({
     }
     setAgentPickerQuery(arg);
     setAgentPickerOpen(true);
-  }, [resolveAgentArg, onAgentChange]);
+  }, [agentSelection, resolveAgentArg, onAgentChange]);
 
   const openSkillPicker = useCallback((arg: string) => {
     setSkillPickerQuery(arg);
@@ -141,7 +144,7 @@ export function useComposerPickers({
 
   return {
     model: { open: modelPickerOpen, query: modelPickerQuery, close: closeAndFocus(setModelPickerOpen), setOpen: setModelPickerOpen },
-    agent: { open: agentPickerOpen, query: agentPickerQuery, close: closeAndFocus(setAgentPickerOpen) },
+    agent: { open: agentSelection && agentPickerOpen, query: agentPickerQuery, close: closeAndFocus(setAgentPickerOpen) },
     skill: { open: skillPickerOpen, query: skillPickerQuery, close: closeAndFocus(setSkillPickerOpen) },
     routine: { open: routinePickerOpen, query: routinePickerQuery, close: closeAndFocus(setRoutinePickerOpen) },
     reasoning: { open: reasoningPickerOpen, close: closeAndFocus(setReasoningPickerOpen), setOpen: setReasoningPickerOpen },

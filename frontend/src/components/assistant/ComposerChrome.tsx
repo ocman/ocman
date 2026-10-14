@@ -7,6 +7,7 @@ import { agentColor } from '../../lib/agentColor';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
 import { formatCurrency, formatDate, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { ModelLabel } from '../ModelLogo';
+import { PlatformBadge } from '../PlatformBadge';
 import { API_EQUIVALENT_TITLE } from '../ApiEquivalentCost';
 import { Skeleton } from '../Skeleton';
 import { TargetSelector } from './ComposerSelectorRow';
@@ -167,6 +168,8 @@ export function ComposerFooter({
 }
 
 interface ComposerToolbarProps {
+  platform?: string;
+  agentSelection?: boolean;
   selectorsLoading?: boolean;
   isBashMode: boolean;
   uiDisabled: boolean;
@@ -206,25 +209,26 @@ export function ComposerToolbar({
   modelButtonLabel, effectiveModel, hasReasoning, openReasoningPicker,
   selectedReasoning, permissionControl, onLaunchRequest, launching, fileInputRef,
   addFiles, isDictationSupported, micRef, handleMicClick, micError, clearMicError,
-  isRunning, onAbort, sending, submit, selectorsLoading,
+  isRunning, onAbort, sending, submit, selectorsLoading, platform, agentSelection = true,
 }: ComposerToolbarProps) {
   return (
     <div className="oc-composer-bar">
       <div className="oc-composer-bar-left">
+        {platform && <PlatformBadge platform={platform} variant="icon" alwaysShow />}
         {isBashMode ? (
           <span className="oc-bar-shell">shell</span>
         ) : selectorsLoading ? (
           <span className="oc-composer-bar-left oc-bar-model" role="status" aria-label="Loading agents and models" aria-busy="true">
-            <Skeleton className="oc-skeleton-line" style={{ width: 56 }} />
+            {agentSelection && <Skeleton className="oc-skeleton-line" style={{ width: 56 }} />}
             <Skeleton className="oc-skeleton-line oc-bar-model" style={{ width: 144 }} />
             <Skeleton className="oc-skeleton-line" style={{ width: 48 }} />
           </span>
         ) : (
           <>
-            <button type="button" className="oc-bar-select" disabled={uiDisabled} onClick={openAgentPicker} title="Agent (click to change)">
+            {agentSelection && <button type="button" className="oc-bar-select" disabled={uiDisabled} onClick={openAgentPicker} title="Agent (click to change)">
               {effectiveAgent && agentsLoaded && <span className="oc-agent-swatch" aria-hidden="true" style={{ background: agentColor(effectiveAgent, agents) }} />}
               {effectiveAgent || 'Agent'}
-            </button>
+            </button>}
             {hasModels && (
               <button
                 type="button"

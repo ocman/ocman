@@ -148,6 +148,9 @@ func TestProtocolRoundTrip(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	defer adapter.Close()
+	if adapter.Capabilities().AgentCatalog {
+		t.Fatal("Claude must not advertise unsupported composer agent selection")
+	}
 	if adapter.ID() != PlatformID || adapter.Hello().CLIVersion != claudetest.Version {
 		t.Fatalf("hello = %+v", adapter.Hello())
 	}
