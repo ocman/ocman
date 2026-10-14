@@ -57,6 +57,7 @@ type initModel struct {
 	Value                 string   `json:"value"`
 	ResolvedModel         string   `json:"resolvedModel"`
 	DisplayName           string   `json:"displayName"`
+	Description           string   `json:"description"`
 	SupportedEffortLevels []string `json:"supportedEffortLevels"`
 }
 
@@ -142,11 +143,12 @@ func (l *live) catalog(ctx context.Context, dir string) platforms.DirectoryCatal
 		models.Models = nil
 		for _, m := range cached.models {
 			entry := platforms.SessionModel{Provider: "anthropic", ProviderName: "Anthropic", Model: m.Value,
-				ModelName: m.DisplayName, IsAvailable: true, Reasoning: m.SupportedEffortLevels}
+				ModelName: m.DisplayName, IsAvailable: true, Reasoning: m.SupportedEffortLevels, Description: m.Description}
 			models.Models = append(models.Models, entry)
-			// Existing transcripts name the resolved model, rather than its alias.
+			// Existing transcripts name the resolved model, rather than its
+			// alias: listed for lookups only, so the picker shows it once.
 			if m.ResolvedModel != "" && m.ResolvedModel != m.Value {
-				entry.Model = m.ResolvedModel
+				entry.Model, entry.Hidden = m.ResolvedModel, true
 				models.Models = append(models.Models, entry)
 			}
 		}

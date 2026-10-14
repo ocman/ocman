@@ -20,12 +20,13 @@ export interface ModelEntry {
   isFavorite: boolean;
   isCurrent: boolean;
   cooldownUntil: string;     // ISO expiry of the provider's cooldown, '' if none
+  description?: string;      // usage hint, when the platform reports one
 }
 
 // The server already sorts rich entries (session default → recents →
 // provider defaults → available), so we just tag `isCurrent`.
 function fromRich(modelEntries: SessionModelEntry[], currentModel: string | undefined): ModelEntry[] {
-  return modelEntries.map((m) => {
+  return modelEntries.filter((m) => !m.hidden).map((m) => {
     const value = qualifyModelRef(m.platform, m.provider ? `${m.provider}/${m.model}` : m.model);
     return {
       value,
@@ -42,6 +43,7 @@ function fromRich(modelEntries: SessionModelEntry[], currentModel: string | unde
       isFavorite: !!m.isFavorite,
       isCurrent: !!currentModel && value === currentModel,
       cooldownUntil: m.cooldownUntil || '',
+      description: m.description || '',
     };
   });
 }

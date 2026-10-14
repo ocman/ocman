@@ -1422,6 +1422,10 @@ export interface SessionModelEntry {
   isAvailable?: boolean;
   isFavorite?: boolean;
   reasoning?: string[];
+  // Optional usage hint shown under the name (platforms that report one).
+  description?: string;
+  // Lookup-only alias of another entry (e.g. a resolved model id): never listed.
+  hidden?: boolean;
   // ISO time the provider's active cooldown expires; absent when none.
   cooldownUntil?: string;
 }

@@ -128,11 +128,11 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
       if (form.sessionMode === 'existing') {
         const source = sessions.find((session) => session.id === form.sessionId) ?? sessions.find((session) => session.directory === form.directory && (session.remoteId || 'local') === (form.remoteId || 'local') && !session.parentId && !session.stale);
         loading = !source ? Promise.resolve(done([], [])) : Promise.all([api.agents(source.id, undefined, source.platform), api.sessionModels(source.id, source.platform)]).then(
-          ([agents, models]) => done(agents.map((agent) => agent.name), models.models.filter((model) => !models.hasProviders || model.isAvailable !== false).map((model) => `${model.provider}/${model.model}`)));
+          ([agents, models]) => done(agents.map((agent) => agent.name), models.models.filter((model) => !model.hidden && (!models.hasProviders || model.isAvailable !== false)).map((model) => `${model.provider}/${model.model}`)));
       } else {
         loading = api.prepareSession({ directory: form.directory, remoteId: form.remoteId || 'local', platform: modelPlatform }).then((prepared) => done(
           prepared.agents.filter((agent) => agent.mode !== 'subagent').map((agent) => agent.name),
-          prepared.models.models.filter((model) => !prepared.models.hasProviders || model.isAvailable !== false).map((model) => qualifyModelRef(model.platform, `${model.provider}/${model.model}`)), prepared.platform));
+          prepared.models.models.filter((model) => !model.hidden && (!prepared.models.hasProviders || model.isAvailable !== false)).map((model) => qualifyModelRef(model.platform, `${model.provider}/${model.model}`)), prepared.platform));
       }
       loading.catch(() => done([], [])).finally(() => { if (active) setCatalogLoading(false); });
     };

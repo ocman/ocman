@@ -261,6 +261,11 @@ type SessionModel struct {
 	IsAvailable       bool     `json:"isAvailable"`
 	IsFavorite        bool     `json:"isFavorite,omitempty"`
 	Reasoning         []string `json:"reasoning,omitempty"`
+	// Description is an optional usage hint shown under the model's name.
+	Description string `json:"description,omitempty"`
+	// Hidden entries only resolve names and options of a model stored under
+	// another id (e.g. an alias's resolved model); pickers leave them out.
+	Hidden bool `json:"hidden,omitempty"`
 	// CooldownUntil is when the provider's active cooldown expires; nil
 	// when it has none.
 	CooldownUntil *time.Time `json:"cooldownUntil,omitempty"`

@@ -71,6 +71,7 @@ export function ModelPicker({
         </span>
         <span className="oc-cmd-meta">
           {e.providerName || e.provider || ''}
+          {e.description && <> · {e.description}</>}
           {multiPlatform && e.platformName && <span className="oc-model-picker-badge oc-model-picker-badge--platform" data-testid="model-platform-badge">{e.platformName}</span>}
         </span>
       </div>

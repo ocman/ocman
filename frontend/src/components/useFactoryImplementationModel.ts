@@ -24,7 +24,7 @@ export function useFactoryImplementationModel(epic?: FactoryEpic) {
 	const entries = catalog.data?.hasProviders
 		? catalog.data.models.filter((model) => model.isAvailable !== false)
 		: availabilityUnknown(catalog.data?.models ?? []);
-	const models = entries.map((model) => `${model.provider}/${model.model}`);
+	const models = entries.filter((model) => !model.hidden).map((model) => `${model.provider}/${model.model}`);
 	const suggested = models.find((model) => implementationModelTier(model) === 'Balanced') ?? models.find((model) => implementationModelTier(model) === 'Fast') ?? '';
 	const [selection, setSelection] = useState<{ gate: string; model: string }>();
 	const gate = `${id}/${planGate?.proposalHash}`;

@@ -57,6 +57,15 @@ describe('ModelPicker cooldown', () => {
     expect(row('unknown').textContent).not.toContain('provider disconnected');
     expect(screen.getByTitle('Provider is not connected on this session\'s machine. Connect it or choose another provider.')).toBeInTheDocument();
   });
+
+  it('lists a hidden lookup alias once and shows usage hints', () => {
+    render(<ModelPicker open models={[]} modelEntries={[
+      { provider: 'anthropic', model: 'opus', modelName: 'Opus', description: 'Most capable', isAvailable: true },
+      { provider: 'anthropic', model: 'claude-opus-4-7', modelName: 'Opus', description: 'Most capable', isAvailable: true, hidden: true },
+    ]} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(row('Opus').textContent).toContain('Most capable');
+  });
 });
 
 describe('ModelPicker platforms', () => {

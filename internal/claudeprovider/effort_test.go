@@ -10,7 +10,7 @@ import (
 
 func TestDirectoryCatalogReasoningEffort(t *testing.T) {
 	response := `{"subtype":"success","request_id":"ocman-initialize","response":{"models":[` +
-		`{"value":"opus","resolvedModel":"claude-opus-4-7","displayName":"Claude Opus 4.7","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},` +
+		`{"value":"opus","resolvedModel":"claude-opus-4-7","displayName":"Claude Opus 4.7","description":"Most capable","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},` +
 		`{"value":"sonnet","resolvedModel":"sonnet","displayName":"Claude Sonnet","supportsEffort":true,"supportedEffortLevels":["low","medium","high"]},` +
 		`{"value":"haiku","displayName":"Claude Haiku","supportsEffort":false}]}}`
 	h := serveLive(t, initFixture(t, response), nil)
@@ -25,6 +25,10 @@ func TestDirectoryCatalogReasoningEffort(t *testing.T) {
 				t.Fatalf("catalog misses %s: %+v", model, cat.Models.Models)
 			}
 			entry := cat.Models.Models[i]
+			// Only the resolved alias is hidden; the hint follows the model.
+			if entry.Hidden != (model == "claude-opus-4-7") || (entry.Description == "Most capable") != (model == "opus" || model == "claude-opus-4-7") {
+				t.Fatalf("%s hidden=%v description=%q", model, entry.Hidden, entry.Description)
+			}
 			want := []string{"low", "medium", "high", "xhigh", "max"}
 			switch model {
 			case "sonnet":
