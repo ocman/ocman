@@ -15,6 +15,12 @@ type SessionIdle struct {
 	SessionID string
 }
 
+// FirstPromptAdded is the first successfully accepted input in a session.
+type FirstPromptAdded struct {
+	Platform, SessionID, Directory, Prompt string
+	HasCustomTitle                         bool
+}
+
 // Bus delivers typed server events to the modules that subscribed.
 //
 // Delivery is synchronous, in subscription order, so a subscriber can rely
@@ -22,8 +28,9 @@ type SessionIdle struct {
 // goroutine. A panicking subscriber is logged and the rest still run.
 // ponytail: one slice per event type; generic Topic[T] once there are ~6.
 type Bus struct {
-	mu   sync.RWMutex
-	idle []func(context.Context, SessionIdle)
+	mu          sync.RWMutex
+	idle        []func(context.Context, SessionIdle)
+	firstPrompt []func(context.Context, FirstPromptAdded)
 }
 
 // Subscriber is a module that reacts to server events.
@@ -40,6 +47,21 @@ func (b *Bus) OnSessionIdle(f func(context.Context, SessionIdle)) {
 func (b *Bus) PublishSessionIdle(ctx context.Context, e SessionIdle) {
 	b.mu.RLock()
 	subs := b.idle
+	b.mu.RUnlock()
+	for _, f := range subs {
+		deliver(func() { f(ctx, e) })
+	}
+}
+
+func (b *Bus) OnFirstPromptAdded(f func(context.Context, FirstPromptAdded)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.firstPrompt = append(b.firstPrompt, f)
+}
+
+func (b *Bus) PublishFirstPromptAdded(ctx context.Context, e FirstPromptAdded) {
+	b.mu.RLock()
+	subs := b.firstPrompt
 	b.mu.RUnlock()
 	for _, f := range subs {
 		deliver(func() { f(ctx, e) })

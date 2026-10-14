@@ -217,7 +217,7 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir + runtime seam]
     Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Lifecycle -->|creation, streamed attachments, restart + reload| Router
@@ -310,6 +310,10 @@ flowchart TD
   guards, lookups); modules never import the server or each other. Webhooks
   dispatch to routines through an interface. Sharing and Factory's dispatch
   wake-up react to the typed, synchronous `module.Bus` `SessionIdle` event.
+  `sessionsvc` publishes `FirstPromptAdded` once after a new conversation's
+  first successful input. `sessiontitles` handles it only on the owning machine:
+  Claude's adapter runs a tool-free, non-persisted Haiku helper, then a guarded
+  rename updates the title without adding a turn or overwriting a manual name.
   Factory launches (`module.Launcher`) once the MCP listener is up, because
   its sessions verify their ocman MCP connection, and closes (`module.Closer`)
   after the HTTP and MCP listeners stop. Analytics (`internal/analytics`) owns

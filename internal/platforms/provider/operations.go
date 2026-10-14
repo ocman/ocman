@@ -85,6 +85,9 @@ func (a *Adapter) Abort(ctx context.Context, req platforms.AbortRequest) error {
 	return a.call(ctx, a.Capabilities().Abort, "POST", sessionPath(req.SessionID, "/abort"), req, nil)
 }
 func (a *Adapter) RenameSession(ctx context.Context, req platforms.RenameSessionRequest) error {
+	if req.OnlyIfUntitled {
+		return a.call(ctx, a.Capabilities().AutoTitle, "POST", sessionPath(req.SessionID, "/auto-title"), req, nil)
+	}
 	return a.call(ctx, a.hello.Capabilities.Rename, "POST", sessionPath(req.SessionID, "/rename"), req, nil)
 }
 func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) error {

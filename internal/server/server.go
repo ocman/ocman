@@ -32,6 +32,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/NoUseFreak/ocman/internal/sessiontitles"
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/webhook"
@@ -140,6 +141,8 @@ type Server struct {
 	routineModOnce       sync.Once
 	idleProjects         *idleprojects.Module
 	idleProjectsOnce     sync.Once
+	sessionTitles        *sessiontitles.Module
+	sessionTitlesOnce    sync.Once
 	lifetimeMu           sync.Mutex
 	lifetimeCtx          context.Context // guarded by lifetimeMu
 	pluginsMod           *pluginsmod.Module
@@ -250,8 +253,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.broadcastSessionCreated(info)
 			s.refreshProjectsIndexAsync()
 		},
-		ProjectModels: s.projectModelList,
-		CooldownTimes: s.cooldownTimes,
+		FirstPromptAdded: s.firstPromptAdded,
+		ProjectModels:    s.projectModelList,
+		CooldownTimes:    s.cooldownTimes,
 	})
 	return s
 }

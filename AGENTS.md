@@ -538,6 +538,11 @@ are computed. Sessions retain their original directories and owners.
   `POST /api/session/snooze` and its joined wake-up worker. It checks deadlines
   at startup and every minute, independently of auto-archive. Archive persistence
   stays in `internal/state`; core injects session validation and SSE broadcasting.
+- `internal/sessiontitles/` — module: reacts to `module.FirstPromptAdded` on
+  the session's owner. Claude's optional `SessionTitleNamer` runs a tool-free,
+  non-persisted Haiku helper with its native 2.1.289 title prompt and helper
+  slots; `/auto-title` updates only sessions without a custom title, atomically
+  preserving manual renames. No naming command appears in the conversation.
 - `internal/queuesvc/` — follow-up message queue (#58). Queueing is an
   **explicit user gesture**: plain **Enter** in the composer sends
   immediately (mid-turn included — OpenCode interleaves the prompt into
@@ -1104,11 +1109,12 @@ are joined. Rules:
   over the `/api/session/` dispatcher.
 - `module.Bus` is typed and synchronous: subscribers run in order, so one can
   rely on earlier ones; slow work starts its own goroutine. Add an event type
-  only when a module needs it (today: `SessionIdle`, published after the
-  quota cooldown is recorded and the follow-up flush enqueued; Factory's
+  only when a module needs it. `FirstPromptAdded` starts owner-local session
+  naming after the first accepted input. `SessionIdle` is published after the
+  quota cooldown is recorded and the follow-up flush enqueued. Factory's
   subscriber only signals dispatch without blocking; the plugins module's spawns
   the reply read under its own recovery, since the bus cannot catch a panic
-  in a goroutine).
+  in a goroutine.
 - Persistence is owned by where the queries live. Existing tables keep their
   repositories in `internal/state` and stay in its append-only core sequence
   (`schema_version`); never renumber or edit a shipped migration. A module

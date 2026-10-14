@@ -93,6 +93,11 @@ func (l *live) serve(w http.ResponseWriter, r *http.Request) {
 		if err = decode(r, &req); err == nil {
 			err = l.rename(r.Context(), id, req.Title)
 		}
+	case "auto-title":
+		var req platforms.RenameSessionRequest
+		if err = decode(r, &req); err == nil {
+			err = l.renameWithCondition(r.Context(), id, req.Title, true)
+		}
 	case "fork":
 		var req platforms.ForkSessionRequest
 		if err = decode(r, &req); err == nil {
@@ -196,14 +201,22 @@ func (l *live) fork(ctx context.Context, src, messageID string) (*platforms.Crea
 // only while no child is writing the transcript; until then (or until the
 // transcript exists) it stays pending and the owned title is shown.
 func (l *live) rename(ctx context.Context, id, title string) error {
+	return l.renameWithCondition(ctx, id, title, false)
+}
+
+func (l *live) renameWithCondition(ctx context.Context, id, title string, onlyIfUntitled bool) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return statusError{http.StatusBadRequest, errors.New("title is required")}
 	}
 	l.mu.Lock()
+	if o := l.owned[id]; onlyIfUntitled && o != nil && o.Title != "" {
+		l.mu.Unlock()
+		return nil
+	}
 	var o *owned
 	err := l.updateOwnedLocked(func() {
-		if o = l.owned[id]; o != nil {
+		if o = l.owned[id]; o != nil && (!onlyIfUntitled || o.Title == "") {
 			o.Title, o.TitlePending = title, true
 		}
 	})

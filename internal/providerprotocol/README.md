@@ -32,6 +32,7 @@ prompts to the user.
 | POST /sessions | `CreateSessionRequest` / `CreateSessionResponse` |
 | POST /sessions/{id}/fork | `ForkSessionRequest` / `CreateSessionResponse` |
 | POST /sessions/{id}/rename | `RenameSessionRequest` |
+| POST /sessions/{id}/auto-title | `RenameSessionRequest`, only changes an owned session with no custom title; requires `autoTitle` |
 | POST /sessions/{id}/compact | `CompactRequest` |
 | POST /sessions/{id}/abort | `AbortRequest` |
 | POST /sessions/{id}/send | `SendMessageRequest` |

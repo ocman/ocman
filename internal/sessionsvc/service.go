@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -44,7 +45,8 @@ type Hooks struct {
 	// moved. Info carries what the service knows without extra I/O so
 	// the server can broadcast a provisional list row the frontend can
 	// show before the authoritative refetch lands.
-	SessionCreated func(info CreatedSession)
+	SessionCreated   func(info CreatedSession)
+	FirstPromptAdded func(context.Context, module.FirstPromptAdded)
 	// ProjectModels returns the ordered model list configured for dir's
 	// project (nil when none) and whether its fallthrough is switched
 	// off. Its first entry fills a prompt or command that names no model;
@@ -67,6 +69,7 @@ type Service struct {
 	sessionDirs        sync.Map
 	cooldowns          cooldowns
 	routinePublication routinePublication
+	firstPrompts       sync.Map
 }
 
 // New builds a Service over the given registry.
@@ -133,21 +136,6 @@ func (s *Service) resolve(ctx context.Context, sessionID, platformID string) (pl
 	return p, nil
 }
 
-// SendMessage sends a prompt to a session.
-func (s *Service) SendMessage(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
-	if req.Message == "" && len(req.Images) == 0 {
-		return validation("message or images required")
-	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
-	if err != nil {
-		return err
-	}
-	if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {
-		return err
-	}
-	return p.SendMessage(ctx, req)
-}
-
 // ExecuteCommand runs a slash command in a session.
 func (s *Service) ExecuteCommand(ctx context.Context, platformID string, req platforms.ExecuteCommandRequest) error {
 	if req.Command == "" {
@@ -160,7 +148,7 @@ func (s *Service) ExecuteCommand(ctx context.Context, platformID string, req pla
 	if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {
 		return err
 	}
-	return p.ExecuteCommand(ctx, req)
+	return s.deliverFirstPrompt(ctx, p, req.SessionID, strings.TrimSpace("/"+req.Command+" "+req.Arguments), func() error { return p.ExecuteCommand(ctx, req) })
 }
 
 // RunShell runs a raw shell command in the session's working directory.

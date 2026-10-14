@@ -59,6 +59,15 @@ again.
 
 ## What you get
 
+- **Automatic session titles.** After the first accepted prompt, ocman runs a
+  separate, tool-free Haiku helper using Claude Code's native title prompt,
+  recorded from CLI 2.1.289. The helper has no MCP servers and saves no transcript;
+  its prompt and reply never appear in your conversation. It uses the separate
+  helper budget, so naming does not interrupt your running turn. Explicit titles
+  and manual renames win, including a rename while generation is in progress.
+  A naming failure keeps the first-prompt title. This runs on the session's owner,
+  including remote machines. OpenCode keeps its own native automatic titling.
+
 - **Browsing.** Every Claude session, including ones you started in a terminal,
   is listed with its title, directory, tokens, last activity and status; the
   model shows in the session view and on each reply.

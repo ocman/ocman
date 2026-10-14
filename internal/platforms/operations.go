@@ -158,8 +158,9 @@ type SessionReverter interface {
 
 // RenameSessionRequest sets a new title for a session.
 type RenameSessionRequest struct {
-	SessionID string
-	Title     string
+	OnlyIfUntitled bool `json:"onlyIfUntitled,omitempty"`
+	SessionID      string
+	Title          string
 }
 
 // ForkSessionRequest branches a session into a new child session,

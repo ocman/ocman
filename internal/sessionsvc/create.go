@@ -142,6 +142,7 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	}
 	// The first send looks up project defaults by directory; we already know it.
 	s.sessionDirs.Store(resp.ID, req.Directory)
+	s.rememberFirstPrompt(adapter, resp.ID, req.Directory, req.Title)
 	if s.hooks.SessionCreated != nil {
 		s.hooks.SessionCreated(CreatedSession{
 			ID: resp.ID, Platform: string(adapter.ID()), Directory: req.Directory,

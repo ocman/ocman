@@ -34,7 +34,7 @@ import (
 func (s *Server) modules() []module.Module {
 	// Auto-approve first: it seeds the judge delay, which ran before every
 	// other startup step. Plugins next: their discovery came after it.
-	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule()}
+	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
 	}

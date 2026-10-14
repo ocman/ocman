@@ -138,6 +138,8 @@ type Capabilities struct {
 	// prompt state: the frontend's dismissal polls and the Inbox
 	// reconciliation skip the platform.
 	PushPrompts bool `json:"pushPrompts"`
+	// AutoTitle supports a guarded, background-generated session title.
+	AutoTitle bool `json:"autoTitle"`
 }
 
 // LiveState captures in-memory live status for a session, updated by

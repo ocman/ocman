@@ -16,3 +16,15 @@ func TestBusDeliversInOrderAndSurvivesPanics(t *testing.T) {
 		t.Fatalf("delivered %v", got)
 	}
 }
+
+func TestBusFirstPromptDeliveryAndPanicRecovery(t *testing.T) {
+	var b Bus
+	var got []FirstPromptAdded
+	b.OnFirstPromptAdded(func(context.Context, FirstPromptAdded) { panic("broken listener") })
+	b.OnFirstPromptAdded(func(_ context.Context, e FirstPromptAdded) { got = append(got, e) })
+	e := FirstPromptAdded{Platform: "claudecode", SessionID: "s", Prompt: "task"}
+	b.PublishFirstPromptAdded(t.Context(), e)
+	if len(got) != 1 || got[0] != e {
+		t.Fatal(got)
+	}
+}

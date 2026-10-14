@@ -108,7 +108,7 @@ func newSupervisor(ctx context.Context, opts Options, spool string) (*providersu
 				Composer: true, Abort: true, Compact: true, Fork: true, Events: true, SlashCommands: true, ModelCatalog: true, AgentCatalog: true,
 				RespondPermission: true, RespondQuestion: true, PermissionRules: true,
 				// ocman's judge decides Claude prompts too (FR-5); no revert (FR-8).
-				AutoApprove: true, PushPrompts: true}},
+				AutoApprove: true, PushPrompts: true, AutoTitle: true}},
 		},
 		Handler:  &handler{idx: idx, live: l, account: l.account},
 		Snapshot: func(_ context.Context, id string) ([]providerprotocol.Event, error) { return l.snapshot(id), nil },
