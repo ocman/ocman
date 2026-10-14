@@ -24,6 +24,7 @@ type testHost struct {
 	remoteID string
 	err      error
 	calls    atomic.Int32
+	onEnsure func() // runs before EnsureRuntime answers
 }
 
 func (h *testHost) RemoteID() string {
@@ -41,6 +42,9 @@ func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectO
 }
 
 func (h *testHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+	if h.onEnsure != nil {
+		h.onEnsure()
+	}
 	return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 }
 

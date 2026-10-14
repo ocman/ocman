@@ -368,10 +368,14 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 	if err := s.sessions.SendMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Agent: run.Agent, Model: run.Model}); err != nil {
 		return s.failDispatch(ctx, run, err)
 	}
-	return s.store.GetRoutineRun(ctx, run.ID)
+	// The run is launched; reading it back must not fail on a cancelled caller.
+	return s.store.GetRoutineRun(context.WithoutCancel(ctx), run.ID)
 }
 
+// failDispatch settles a claimed run even when the caller's context was
+// cancelled mid-launch: an unsettled running run blocks later runs.
 func (s *Service) failDispatch(ctx context.Context, run state.RoutineRun, cause error) (state.RoutineRun, error) {
+	ctx = context.WithoutCancel(ctx)
 	if err := s.finish(ctx, run, RunFailure, cause.Error(), ""); err != nil {
 		return state.RoutineRun{}, fmt.Errorf("recording routine failure after %w: %w", cause, err)
 	}
