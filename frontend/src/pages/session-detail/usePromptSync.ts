@@ -4,10 +4,10 @@ import { useApiStore } from '../../lib/apiStore';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import {
-  extractPendingPermission,
-  extractPendingQuestion,
   extractPendingQuestionFromParts,
   hasPendingQuestionInParts,
+  permissionFromRequest,
+  questionFromRequest,
 } from '../../lib/sseHelpers';
 import {
   storePendingQuestion,
@@ -99,9 +99,8 @@ export function usePromptSync({
       Promise.all(promptSessionIds.map((sessionId) => listPermissions(sessionId)))
         .then((permissionLists) => {
           if (cancelled) return;
-          for (const raw of permissionLists.flat()) {
-            const p = raw as Record<string, unknown>;
-            const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
+          for (const request of permissionLists.flat()) {
+            const perm = permissionFromRequest(request);
             if (!perm) continue;
             setPendingPermission(perm, promptSessionIds);
             setPermissionError(null);
@@ -114,9 +113,8 @@ export function usePromptSync({
       listQuestions(id)
         .then((questions) => {
           if (cancelled) return;
-          for (const raw of questions) {
-            const q = raw as Record<string, unknown>;
-            const question = extractPendingQuestion({ type: 'question.asked', properties: q });
+          for (const request of questions) {
+            const question = questionFromRequest(request);
             if (!question) continue;
             storePendingQuestion(id, question);
             setPendingQuestion(question);
@@ -152,10 +150,7 @@ export function usePromptSync({
       listQuestions(id)
         .then((questions) => {
           if (cancelled) return;
-          const stillPending = questions.some((raw) => {
-            const q = extractPendingQuestion({ type: 'question.asked', properties: raw as Record<string, unknown> });
-            return q?.requestId === pendingQuestionRequestId;
-          });
+          const stillPending = questions.some((request) => questionFromRequest(request)?.requestId === pendingQuestionRequestId);
           if (stillPending) return;
           // Both clears are id-safe: they only fire if the request id
           // still matches, so a follow-up asked between the poll and its
@@ -194,9 +189,7 @@ export function usePromptSync({
       refreshPermissions(pendingPermissionSessionId, ownerPlatform)
         .then((permissions) => {
           if (cancelled) return;
-          const stillPending = permissions.some((raw) =>
-            extractPendingPermission({ type: 'permission.asked', properties: raw as Record<string, unknown> })
-              ?.permissionId === pendingPermissionId);
+          const stillPending = permissions.some((request) => permissionFromRequest(request)?.permissionId === pendingPermissionId);
           misses = stillPending ? 0 : misses + 1;
           if (misses >= 2) clearPrompt('permission', pendingPermissionId);
         })

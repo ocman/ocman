@@ -62,3 +62,24 @@ export interface SessionNotice {
   retryAt: number;
   attempt: number;
 }
+
+/**
+ * A pending permission as `/api/session/{id}/permissions` returns it: the
+ * platform's `permission.asked` properties. Fields beyond `id` vary by
+ * platform; read it through `permissionFromRequest`.
+ */
+export interface PermissionRequest {
+  id: string;
+  sessionID?: string;
+  permission?: string;
+  patterns?: string[];
+  always?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+/** A pending question as `/api/session/{id}/questions` returns it (`question.asked` properties). */
+export interface QuestionRequest {
+  id: string;
+  sessionID?: string;
+  questions?: unknown;
+}

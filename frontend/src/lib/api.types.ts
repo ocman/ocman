@@ -300,7 +300,7 @@ export interface FactoryFormulaSaveRequest { id: string; source: string; }
 export interface FactoryFormulaValidationRequest { id?: string; source: string; }
 
 import type { Session } from './api.session.types';
-export type { Session, SessionNotice } from './api.session.types';
+export type { PermissionRequest, QuestionRequest, Session, SessionNotice } from './api.session.types';
 
 /**
  * Non-blocking condition attached to a full session detail response.

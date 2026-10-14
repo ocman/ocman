@@ -6,6 +6,8 @@ import type {
   DirectoryBrowseResponse,
   DirectorySearchResponse,
   ModelUsage,
+  PermissionRequest,
+  QuestionRequest,
   Project,
   Session,
   SessionDetail,
@@ -107,10 +109,10 @@ type ApiStore = {
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string, platform?: string, queue?: boolean) => Promise<void>;
-  listPermissions: (sessionId: string) => Promise<unknown[]>;
-  refreshPermissions: (sessionId: string, platform: string) => Promise<unknown[]>;
+  listPermissions: (sessionId: string) => Promise<PermissionRequest[]>;
+  refreshPermissions: (sessionId: string, platform: string) => Promise<PermissionRequest[]>;
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
-  listQuestions: (sessionId: string) => Promise<unknown[]>;
+  listQuestions: (sessionId: string) => Promise<QuestionRequest[]>;
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (sessionId: string, requestId: string) => Promise<void>;
   getAutoApprove: (sessionId: string) => Promise<{ enabled: boolean; overridden: boolean }>;

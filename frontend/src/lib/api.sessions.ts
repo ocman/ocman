@@ -2,7 +2,7 @@ import { apiFetch, BackendUnavailableError, fetchJSON, postJSON, queryString, ra
 import type { AgentInfo, NewSessionTarget, PrepareSessionResponse, StartSessionRequest, StartSessionResponse,
   ResolveTargetsResponse, Session, NotifyEntry, SessionDetail, SessionChanges, SessionInfo, TaskSessionData,
   SessionModelsResponse, QueuedMessage, PermissionRule, SlashCommand, ShareLink, GlobalShareLink,
-  SharedConversation } from './api.types';
+  SharedConversation, PermissionRequest, QuestionRequest } from './api.types';
 
 export const sessionApi = {
   runningSessionCount: (signal?: AbortSignal) =>
@@ -129,16 +129,16 @@ export const sessionApi = {
     }
     return readJSON<{ path: string; name: string; mime: string; size: number }>(resp);
   },
-  listPermissions: (sessionId: string) => fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
+  listPermissions: (sessionId: string) => fetchJSON<PermissionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
   // Owner-pinned live read; absence means resolved.
   refreshPermissions: (sessionId: string, platform: string) =>
-    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions${queryString({ refresh: 1, platform })}`),
+    fetchJSON<PermissionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions${queryString({ refresh: 1, platform })}`),
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject', platform?: string) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}${queryString({ platform })}`, { reply }, { parseJSON: false }),
   getPermissionRules: (sessionId: string) => fetchJSON<{ rules: PermissionRule[] }>(`/api/session/${encodeURIComponent(sessionId)}/permission-rules`),
   setPermissionRules: (sessionId: string, rules: PermissionRule[]) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/permission-rules`, { rules }, { method: 'PUT', parseJSON: false }),
-  listQuestions: (sessionId: string) => fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/questions`),
+  listQuestions: (sessionId: string) => fetchJSON<QuestionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/questions`),
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}`, { answers }, { parseJSON: false }),
   rejectQuestion: (sessionId: string, requestId: string) =>

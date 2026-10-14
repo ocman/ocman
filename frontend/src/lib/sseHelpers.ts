@@ -1,4 +1,4 @@
-import type { Message, Part } from './api';
+import type { Message, Part, PermissionRequest, QuestionRequest } from './api';
 import type { PendingQuestion, QuestionItem } from '../components/session/QuestionPrompt';
 import { truncatePartField } from './sseMessageHelpers';
 
@@ -236,6 +236,16 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
  * Returns `null` when the event isn't a question ask, lacks an id,
  * or carries no parsable questions.
  */
+/** Read a pending permission from the REST list (`PermissionRequest`). */
+export function permissionFromRequest(request: PermissionRequest): PendingPermission | null {
+  return extractPendingPermission({ type: 'permission.asked', properties: request });
+}
+
+/** Read a pending question from the REST list (`QuestionRequest`). */
+export function questionFromRequest(request: QuestionRequest): PendingQuestion | null {
+  return extractPendingQuestion({ type: 'question.asked', properties: request });
+}
+
 export function extractPendingQuestion(node: unknown): PendingQuestion | null {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
   const obj = node as Record<string, unknown>;
