@@ -15,6 +15,8 @@ On supported installed PWAs, the icon shows the number of distinct unread or
 attention sessions. A session needing both permission and question input counts
 once; same-id sessions on different owners count separately. Reading or resolving
 the sessions clears the badge when the app refreshes its notification state.
+Archived sessions, including sessions in archived projects, do not count or
+generate alerts until new activity resurfaces them under your archive settings.
 Push alerts also carry the current count so a closed app can update its badge.
 Completed shell envelopes can trigger an alert, but do not count toward the
 badge unless they need permission or question input, matching the in-app count.

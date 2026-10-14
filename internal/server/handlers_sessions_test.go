@@ -1399,7 +1399,7 @@ func notifyReference(t *testing.T, srv *Server, since int64, limit int) []notify
 		se := &all[i]
 		hasPrompt := se.PendingPermission || se.PendingQuestion
 		isUnseenTerminal := (se.Status == db.StatusWaiting || se.Status == db.StatusError) && !se.Seen
-		if !hasPrompt && !isUnseenTerminal {
+		if se.Archived || (!hasPrompt && !isUnseenTerminal) {
 			continue
 		}
 		out = append(out, notifyEntry{
@@ -1607,19 +1607,15 @@ func TestHandleSessionsNotify_AutoUnarchivesUpdatedSession(t *testing.T) {
 	}
 }
 
-// TestHandleSessionsNotify_IncludesArchivedSessions guards against the
-// tempting "archived sessions can't need attention" optimisation:
-// today they are returned, and the frontend depends on that.
-func TestHandleSessionsNotify_IncludesArchivedSessions(t *testing.T) {
+func TestHandleSessionsNotify_ExcludesArchivedSessions(t *testing.T) {
 	srv := newNotifyFixtureServer(t)
 	var got []notifyEntry
 	mustUnmarshal(t, []byte(getNotifyJSON(t, srv, "")), &got)
 	for _, e := range got {
 		if e.ID == "archived-stale" {
-			return
+			t.Errorf("archived session contributed to notification state: %+v", e)
 		}
 	}
-	t.Errorf("archived session missing from notify result: %+v", got)
 }
 
 // countingUnreadPlatform is a fakePlatform that also implements

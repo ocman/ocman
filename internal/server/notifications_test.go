@@ -15,6 +15,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type pushTestPlatform struct {
@@ -228,5 +229,66 @@ func TestPushBadgeCountsInterruptedAttentionSessions(t *testing.T) {
 	rows, err := s.pushSnapshot(t.Context())
 	if err != nil || len(rows) != 2 || rows[0].Notification.BadgeCount != 2 || rows[1].Notification.BadgeCount != 2 {
 		t.Fatalf("attention badge missed interrupted session: %+v %v", rows, err)
+	}
+}
+
+func TestNotificationBadgeExcludesArchivedSessions(t *testing.T) {
+	s := testServer(t)
+	now := time.Now().UnixMilli()
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{
+		{ID: "unread", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: now},
+		{ID: "prompt", Platform: "fake", Status: db.StatusBusy, Seen: true, PendingPermission: true, TimeUpdated: now},
+		{ID: "archived", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: now},
+		{ID: "archived-project", Platform: "fake", Directory: "/archived-project", Status: db.StatusWaiting, TimeUpdated: now},
+	}}, prompts: []platforms.LivePrompt{{"id": "request", "sessionID": "prompt"}},
+		life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
+	s.registry.Register(p)
+	if err := s.stateDB.ArchiveSession(t.Context(), "fake", "archived", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.stateDB.ArchiveProject(t.Context(), state.LocalRemoteID, "/archived-project"); err != nil {
+		t.Fatal(err)
+	}
+	for _, includeDone := range []string{"", "&includeDone=1"} {
+		w := httptest.NewRecorder()
+		s.handleSessionsNotify(w, httptest.NewRequest(http.MethodGet, "/api/sessions/notify?limit=500"+includeDone, nil))
+		var entries []notifyEntry
+		if err := json.Unmarshal(w.Body.Bytes(), &entries); err != nil || len(entries) != 2 {
+			t.Fatalf("browser badge should count only unread and prompt sessions: %s, %v", w.Body.String(), err)
+		}
+	}
+	rows, err := s.pushSnapshot(t.Context())
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("push should notify only unread and prompt sessions: %+v, %v", rows, err)
+	}
+	for _, row := range rows {
+		if row.Notification.BadgeCount != 2 {
+			t.Fatalf("push badge should be 2: %+v", row)
+		}
+	}
+}
+
+func TestNotifyProjectArchiveIsOwnerScoped(t *testing.T) {
+	s := testServer(t)
+	if err := s.stateDB.ArchiveProject(t.Context(), "owner", "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		owner   string
+		updated int64
+		want    int
+	}{
+		{"owner", 1, 0},
+		{"other", 1, 1},
+		{"", 1, 1},
+		{"owner", time.Now().Add(time.Hour).UnixMilli(), 1},
+	} {
+		entries, err := s.notificationEntriesForSessions(t.Context(), []db.Session{{
+			ID: "session", Platform: "fake", RemoteID: tc.owner, Directory: "/repo",
+			Status: db.StatusWaiting, TimeUpdated: tc.updated,
+		}}, false, true)
+		if err != nil || len(entries) != tc.want {
+			t.Fatalf("owner=%q updated=%d: entries=%+v, err=%v", tc.owner, tc.updated, entries, err)
+		}
 	}
 }

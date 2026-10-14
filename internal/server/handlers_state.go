@@ -304,19 +304,8 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 	return nil
 }
 
-// applyNotifySessionState is the notify-scoped counterpart of
-// applySessionState (FR-3). handleSessionsNotify filters on
-// prompt/status/Seen and projects seven fields, so this computes only
-// Seen — with identical semantics — and preserves the one state.db
-// side effect the full overlay performed on this path: auto-unarchiving
-// a session touched since it was archived.
-//
-// Everything else applySessionState derives is dropped on the floor by
-// the notify projection: pin state, the
-// archived-project fallback and host-identity stamping (both only feed
-// the Archived flag, which notify neither reads nor returns — archived
-// sessions are still listed), and the per-session unread counts, which
-// cost a message aggregate scan per unseen session.
+// applyNotifySessionState overlays seen and archive state without the full
+// list's per-session unread aggregates, pin, routine or Factory lookups.
 func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Session) error {
 	mode, err := s.archiveResurfaceMode(ctx)
 	if err != nil {
@@ -330,7 +319,10 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 	if err != nil {
 		return err
 	}
-
+	archivedProjects, err := s.stateDB.ArchivedProjects(ctx)
+	if err != nil {
+		return err
+	}
 	for i := range sessions {
 		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
 
@@ -344,13 +336,20 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 
 		// Use the same resurfacing policy as the full list: notify polls
 		// must not unarchive busy sessions behind the sidebar's back.
-		if archivedAtUpdate, ok := archived[key]; ok && shouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
-			if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
-				return err
+		if archivedAtUpdate, ok := archived[key]; ok {
+			if shouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
+				if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
+					return err
+				}
+			} else {
+				sessions[i].Archived = true
 			}
 		}
+		projectKey := projectArchiveKey(sessions[i].RemoteID, sessions[i].Directory)
+		if archivedAt, ok := archivedProjects[projectKey]; ok && sessions[i].TimeUpdated <= archivedAt {
+			sessions[i].Archived = true
+		}
 	}
-
 	return nil
 }
 

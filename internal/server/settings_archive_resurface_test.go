@@ -66,7 +66,7 @@ func TestArchiveResurfaceOverlay(t *testing.T) {
 							t.Fatal(err)
 						}
 						resurface := updated > 100 && (mode == "activity" || status != db.StatusBusy)
-						if path != "notify" && sessions[0].Archived == resurface {
+						if sessions[0].Archived == resurface {
 							t.Fatalf("updated=%d archived=%v, resurface=%v", updated, sessions[0].Archived, resurface)
 						}
 						archived, err := srv.stateDB.ArchivedSessions(ctx)

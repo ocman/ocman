@@ -69,6 +69,9 @@ func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Se
 	out := make([]notifyEntry, 0, len(all))
 	for i := range all {
 		se := &all[i]
+		if se.Archived {
+			continue
+		}
 		deferredPermission := false
 		if se.PendingPermission {
 			var err error
