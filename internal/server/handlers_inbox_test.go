@@ -303,5 +303,5 @@ func (f *fakeInboxRemotes) ArchiveInboxItems(ctx context.Context, _ string, ids 
 // must run before anything else reaches the Inbox module.
 func useInboxRemotes(s *Server, sources []string, items func(context.Context, string) ([]state.InboxItem, error)) {
 	remotes := &fakeInboxRemotes{store: s.stateDB, sources: sources, items: items}
-	s.inboxMod = s.newInboxModule(func() inbox.Remotes { return remotes })
+	s.inboxMod.set(s.newInboxModule(func() inbox.Remotes { return remotes }))
 }

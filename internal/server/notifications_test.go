@@ -95,7 +95,7 @@ func TestPushSnapshotUsesRemoteOwnersPermissionDecision(t *testing.T) {
 
 func TestOwnerRPCDefersPermissionsDuringJudgeDelay(t *testing.T) {
 	s := testServer(t).WithAutoApproveDefault(true)
-	s.autoapproveMod = s.newAutoapproveModule(autoapprove.Deps{DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil }})
+	s.autoapproveMod.set(s.newAutoapproveModule(autoapprove.Deps{DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil }}))
 	p := &fakePlatform{id: "owner", caps: platforms.Capabilities{AutoApprove: true}, listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
 		return []platforms.LivePrompt{{"id": "request", "sessionID": "child"}}, nil
 	}}

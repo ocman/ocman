@@ -60,9 +60,9 @@ func TestNotifyCachedLookupFailurePreservesFlags(t *testing.T) {
 
 func TestNotifyDeferredPermissionDoesNotTurnResolvedQuestionIntoCompletion(t *testing.T) {
 	s := testServer(t).WithAutoApproveDefault(true)
-	s.autoapproveMod = s.newAutoapproveModule(autoapprove.Deps{
+	s.autoapproveMod.set(s.newAutoapproveModule(autoapprove.Deps{
 		DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil },
-	})
+	}))
 	adapter := &emptyCachedNotifyPlatform{fakePlatform{
 		id: "fake", caps: platforms.Capabilities{AutoApprove: true},
 		sessions: []db.Session{{ID: "parent", Platform: "fake", Status: db.StatusWaiting, PendingPermission: true, PendingQuestion: true}},

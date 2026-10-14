@@ -135,7 +135,7 @@ func TestPreviewOwnerAndSignOut(t *testing.T) {
 		Identify: func(context.Context, *http.Client, previewauth.Token) ([]previewauth.Grant, error) {
 			return []previewauth.Grant{{WorkspaceID: "w1", WorkspaceName: "Acme"}}, nil
 		}}}
-	s.previewsMod = previews.NewModule(d)
+	s.previewsMod.set(previews.NewModule(d))
 
 	if rr := serve(s, localRequest(http.MethodGet, "/api/previews/providers?remoteId=r1", "")); rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("disconnected remote = %d", rr.Code)

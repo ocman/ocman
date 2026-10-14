@@ -104,7 +104,7 @@ func ModuleSchemas() []state.ModuleSchema {
 // projectForgeModule exists without a state DB too: templates then serve
 // the defaults. Owner, forge clients and platforms are read at call time.
 func (s *Server) projectForgeModule() *projectforge.Module {
-	s.projectForgeModOnce.Do(func() {
+	return s.projectForgeMod.get(func() *projectforge.Module {
 		d := projectforge.Deps{
 			Owner:          s.resolveOwner,
 			ResolveForge:   s.resolveForge,
@@ -123,34 +123,30 @@ func (s *Server) projectForgeModule() *projectforge.Module {
 		if s.stateDB != nil {
 			d.Store = s.stateDB // untyped nil otherwise
 		}
-		s.projectForgeMod = projectforge.NewModule(d)
+		return projectforge.NewModule(d)
 	})
-	return s.projectForgeMod
 }
 
 // bus delivers server events to every module that subscribes; built on
 // first use, after which the module set is fixed.
 func (s *Server) bus() *module.Bus {
-	s.busOnce.Do(func() {
-		s.busV = &module.Bus{}
+	return s.busV.get(func() *module.Bus {
+		b := &module.Bus{}
 		for _, m := range s.modules() {
 			if sub, ok := m.(module.Subscriber); ok {
-				sub.Subscribe(s.busV)
+				sub.Subscribe(b)
 			}
 		}
+		return b
 	})
-	return s.busV
 }
 
 // factoryModule exists without a state DB too: Factory then answers that
 // it is unavailable rather than 404.
 func (s *Server) factoryModule() *factorymod.Module {
-	s.factoryModOnce.Do(func() {
-		if s.factoryMod == nil {
-			s.factoryMod = s.newFactoryModule(nil)
-		}
+	return s.factoryMod.get(func() *factorymod.Module {
+		return s.newFactoryModule(nil)
 	})
-	return s.factoryMod
 }
 
 // newFactoryModule builds Factory over svc, or over the native service
@@ -175,11 +171,11 @@ func (s *Server) newFactoryModule(svc factorymod.Service) *factorymod.Module {
 }
 
 func (s *Server) sharingModule() *sharing.Module {
-	s.sharingModOnce.Do(func() {
-		if s.sharingMod != nil || s.stateDB == nil {
-			return
+	return s.sharingMod.get(func() *sharing.Module {
+		if s.stateDB == nil {
+			return nil
 		}
-		s.sharingMod = sharing.NewModule(sharing.Deps{
+		return sharing.NewModule(sharing.Deps{
 			Store:       s.stateDB,
 			Session:     s.resolvePlatformForSession,
 			Platform:    func(id platforms.ID) (platforms.Platform, bool) { return s.registry.Get(id) },
@@ -188,21 +184,20 @@ func (s *Server) sharingModule() *sharing.Module {
 			Guards:      module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
-	return s.sharingMod
 }
 
 func (s *Server) inboxModule() *inbox.Module {
-	s.inboxModOnce.Do(func() {
-		if s.inboxMod == nil && s.stateDB != nil {
-			s.inboxMod = s.newInboxModule(func() inbox.Remotes {
-				if s.remotes == nil {
-					return nil // untyped: a nil *remote.Manager would pass the module's nil check
-				}
-				return s.remotes
-			})
+	return s.inboxMod.get(func() *inbox.Module {
+		if s.stateDB == nil {
+			return nil
 		}
+		return s.newInboxModule(func() inbox.Remotes {
+			if s.remotes == nil {
+				return nil // untyped: a nil *remote.Manager would pass the module's nil check
+			}
+			return s.remotes
+		})
 	})
-	return s.inboxMod
 }
 
 func (s *Server) newInboxModule(remotes func() inbox.Remotes) *inbox.Module {
@@ -244,11 +239,11 @@ func (s *Server) resolvePermissionInbox(ctx context.Context, platform, sessionID
 // artifactsModule reads server state (auth, relay, public URL) at call
 // time, so options applied after New still take effect.
 func (s *Server) artifactsModule() *artifacts.Module {
-	s.artifactModOnce.Do(func() {
-		if s.artifactMod != nil || s.stateDB == nil {
-			return
+	return s.artifactMod.get(func() *artifacts.Module {
+		if s.stateDB == nil {
+			return nil
 		}
-		s.artifactMod = artifacts.NewModule(artifacts.Deps{
+		return artifacts.NewModule(artifacts.Deps{
 			Store:          s.stateDB,
 			ResolveProject: factoryProjectResolver{s}.ResolveLocalProject,
 			Projects:       func(ctx context.Context) ([]db.ProjectStats, error) { return s.router().Local().Projects(ctx) },
@@ -266,31 +261,31 @@ func (s *Server) artifactsModule() *artifacts.Module {
 			Broadcast:   s.broadcastGlobalEvent,
 		})
 	})
-	return s.artifactMod
 }
 
 // webhooksModule dispatches to routines, so it exists only beside them.
 func (s *Server) webhooksModule() *webhook.Module {
-	s.webhookModOnce.Do(func() {
-		if svc := s.routineService(); s.webhookMod == nil && svc != nil {
-			s.webhookMod = webhook.NewModule(webhook.Deps{
-				Store: s.stateDB, Routines: svc, RelayURL: func() string { return s.relayURL },
-			})
+	return s.webhookMod.get(func() *webhook.Module {
+		svc := s.routineService()
+		if svc == nil {
+			return nil
 		}
+		return webhook.NewModule(webhook.Deps{
+			Store: s.stateDB, Routines: svc, RelayURL: func() string { return s.relayURL },
+		})
 	})
-	return s.webhookMod
 }
 
 // routinesModule needs a state DB. Built once, on first use, like router().
 func (s *Server) routinesModule() *routines.Module {
-	s.routineModOnce.Do(func() {
-		if s.routineMod == nil && s.stateDB != nil {
-			s.routineMod = routines.NewModule(routines.Deps{
-				Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,
-			})
+	return s.routineMod.get(func() *routines.Module {
+		if s.stateDB == nil {
+			return nil
 		}
+		return routines.NewModule(routines.Deps{
+			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,
+		})
 	})
-	return s.routineMod
 }
 
 func (s *Server) routineService() *routines.Service {
@@ -377,8 +372,8 @@ func launchModules(ctx context.Context, mods []module.Module) (func(), error) {
 // pluginsModule exists without a state DB too: plugin routes then answer
 // that plugins are unavailable rather than 404.
 func (s *Server) pluginsModule() *pluginsmod.Module {
-	s.pluginsModOnce.Do(func() {
-		s.pluginsMod = pluginsmod.NewModule(pluginsmod.Deps{
+	return s.pluginsMod.get(func() *pluginsmod.Module {
+		return pluginsmod.NewModule(pluginsmod.Deps{
 			Store:          s.stateDB,
 			Local:          func() hostsvc.Host { return s.router().Local() },
 			CreatePlatform: s.createPlatform,
@@ -403,7 +398,6 @@ func (s *Server) pluginsModule() *pluginsmod.Module {
 			Guards:    module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
-	return s.pluginsMod
 }
 
 // RescanPlugins and SyncPluginProcesses are the plugin lifecycle's entry

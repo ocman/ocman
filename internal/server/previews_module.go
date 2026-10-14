@@ -12,12 +12,9 @@ import (
 // previewsModule reads auth, remotes, the public URL and forge credentials
 // at call time, so options applied after New still take effect.
 func (s *Server) previewsModule() *previews.Module {
-	s.previewsModOnce.Do(func() {
-		if s.previewsMod == nil {
-			s.previewsMod = previews.NewModule(s.previewDeps())
-		}
+	return s.previewsMod.get(func() *previews.Module {
+		return previews.NewModule(s.previewDeps())
 	})
-	return s.previewsMod
 }
 
 func (s *Server) previewDeps() previews.Deps {

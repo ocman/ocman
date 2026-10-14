@@ -21,12 +21,9 @@ func (s *Server) aaSvc() *autoapprove.Service { return s.autoapproveModule().Ser
 // constructions work and the dependency fields are wired by then. Tests may
 // assign s.autoapproveMod before that first use.
 func (s *Server) autoapproveModule() *autoapprove.Module {
-	s.autoapproveModOnce.Do(func() {
-		if s.autoapproveMod == nil {
-			s.autoapproveMod = s.newAutoapproveModule(s.autoapproveEngineDeps())
-		}
+	return s.autoapproveMod.get(func() *autoapprove.Module {
+		return s.newAutoapproveModule(s.autoapproveEngineDeps())
 	})
-	return s.autoapproveMod
 }
 
 func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Module {

@@ -10,7 +10,7 @@ import (
 
 // useFactory mounts Factory over svc. Build the mux after calling it: one
 // built earlier keeps the previous module's handlers.
-func useFactory(s *Server, svc factorymod.Service) { s.factoryMod = s.newFactoryModule(svc) }
+func useFactory(s *Server, svc factorymod.Service) { s.factoryMod.set(s.newFactoryModule(svc)) }
 
 // serveFactory serves one request through Factory's mounted routes.
 func serveFactory(s *Server, w http.ResponseWriter, r *http.Request) {

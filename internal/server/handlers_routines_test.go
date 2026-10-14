@@ -46,11 +46,11 @@ func routineHTTPServer(t *testing.T) (*Server, http.Handler, *atomic.Int32) {
 	var ids atomic.Int32
 	var now atomic.Int64
 	now.Store(1000)
-	srv.routineMod = routines.NewModule(routines.Deps{
+	srv.routineMod.set(routines.NewModule(routines.Deps{
 		Store: srv.stateDB, Router: router, Sessions: srv.sessions, Platforms: registry,
 		Now:   func() time.Time { return time.UnixMilli(now.Add(1)) },
 		NewID: func(prefix string) string { return prefix + string('0'+ids.Add(1)) },
-	})
+	}))
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)

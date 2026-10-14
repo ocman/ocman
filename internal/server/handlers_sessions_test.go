@@ -957,14 +957,14 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 	// The handler owns the settings write. This worker fixture has no Store,
 	// so its detached audit writes cannot outlive the handler's temporary DB.
 	done := make(chan struct{})
-	srv.autoapproveMod = srv.newAutoapproveModule(autoapprove.Deps{
+	srv.autoapproveMod.set(srv.newAutoapproveModule(autoapprove.Deps{
 		DefaultEnabled: true,
 		PromptNeedsUser: func(platform, session, kind, request string) {
 			if platform == "opencode" && session == sessionID && kind == "permission" && request == permissionID {
 				close(done)
 			}
 		},
-	})
+	}))
 	t.Cleanup(func() {
 		select {
 		case <-done:
@@ -1545,10 +1545,10 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 			srv, reg := newSessionsTestServer(t)
 			srv.WithAutoApproveDefault(tc.autoApprove)
 			if tc.aiReviewing || tc.aiDeclined {
-				srv.autoapproveMod = srv.newAutoapproveModule(autoapprove.Deps{
+				srv.autoapproveMod.set(srv.newAutoapproveModule(autoapprove.Deps{
 					DefaultEnabled: true,
 					SessionDir:     func(string) (string, error) { return "/repo", nil },
-				})
+				}))
 			}
 			pending := mkSession("fake", "pending", "pending", 10_000)
 			pending.Directory = "/repo"

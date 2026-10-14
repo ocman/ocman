@@ -16,13 +16,12 @@ import (
 )
 
 func (s *Server) notificationsModule() *notifications.Module {
-	s.notificationsModOnce.Do(func() {
-		s.notificationsMod = notifications.New(notifications.Deps{
+	return s.notificationsMod.get(func() *notifications.Module {
+		return notifications.New(notifications.Deps{
 			Store: s.stateDB, Snapshot: s.pushSnapshot,
 			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
-	return s.notificationsMod
 }
 
 // PermissionNotificationDeferred is wired into the owner's authenticated RPC

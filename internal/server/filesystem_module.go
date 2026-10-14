@@ -10,16 +10,13 @@ import (
 // filesystemModule exists without a state DB too: browsing and repository
 // reads need none, and signed files then fail as before.
 func (s *Server) filesystemModule() *filesystem.Module {
-	s.filesystemModOnce.Do(func() {
-		if s.filesystemMod == nil {
-			s.filesystemMod = filesystem.NewModule(filesystem.Deps{
-				Store:  s.stateDB,
-				Owner:  s.repoFilesOwner,
-				Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
-			})
-		}
+	return s.filesystemMod.get(func() *filesystem.Module {
+		return filesystem.NewModule(filesystem.Deps{
+			Store:  s.stateDB,
+			Owner:  s.repoFilesOwner,
+			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+		})
 	})
-	return s.filesystemMod
 }
 
 // repoFilesOwner requires an explicit remoteId, so a disconnected remote

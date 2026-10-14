@@ -9,8 +9,7 @@ import (
 )
 
 func (s *Server) platformSettingsModule() *platformsettings.Module {
-	s.platformSettingsOnce.Do(func() { s.platformSettingsMod = platformsettings.New(s.stateDB) })
-	return s.platformSettingsMod
+	return s.platformSettingsMod.get(func() *platformsettings.Module { return platformsettings.New(s.stateDB) })
 }
 
 func (s *Server) WithConfigReload(reload func(), selected string, overridden bool) *Server {

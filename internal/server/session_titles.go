@@ -14,8 +14,8 @@ func (s *Server) firstPromptAdded(ctx context.Context, e module.FirstPromptAdded
 }
 
 func (s *Server) sessionTitlesModule() *sessiontitles.Module {
-	s.sessionTitlesOnce.Do(func() {
-		s.sessionTitles = sessiontitles.NewModule(sessiontitles.Deps{
+	return s.sessionTitles.get(func() *sessiontitles.Module {
+		return sessiontitles.NewModule(sessiontitles.Deps{
 			Lookup: func(id string) (platforms.Platform, bool) {
 				if s.registry == nil {
 					return nil, false
@@ -31,5 +31,4 @@ func (s *Server) sessionTitlesModule() *sessiontitles.Module {
 			},
 		})
 	})
-	return s.sessionTitles
 }

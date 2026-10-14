@@ -6,12 +6,12 @@ import (
 )
 
 func (s *Server) idleProjectsModule() *idleprojects.Module {
-	s.idleProjectsOnce.Do(func() {
-		if s.stateDB != nil {
-			s.idleProjects = idleprojects.New(idleprojects.Deps{Store: s.stateDB, Targets: s.idleProjectTargets})
+	return s.idleProjects.get(func() *idleprojects.Module {
+		if s.stateDB == nil {
+			return nil
 		}
+		return idleprojects.New(idleprojects.Deps{Store: s.stateDB, Targets: s.idleProjectTargets})
 	})
-	return s.idleProjects
 }
 
 func (s *Server) idleProjectTargets() []idleprojects.Target {

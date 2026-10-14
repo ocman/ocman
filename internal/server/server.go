@@ -92,13 +92,11 @@ type Server struct {
 
 	// filesystemMod owns directory browsing, signed embedded files and
 	// repository file reads; built on first use (filesystemModule).
-	filesystemMod     *filesystem.Module
-	filesystemModOnce sync.Once
+	filesystemMod lazy[*filesystem.Module]
 
 	// autoapproveMod owns the auto-approve pipeline, its routes and its
 	// watcher; built lazily on first use. See autoapprove_engine.go.
-	autoapproveMod     *autoapprove.Module
-	autoapproveModOnce sync.Once
+	autoapproveMod lazy[*autoapprove.Module]
 
 	// broadcastHub fans out events to every connected /api/events
 	// client regardless of which session (if any) they're viewing.
@@ -133,32 +131,22 @@ type Server struct {
 
 	// routineMod is built on first use (routinesModule); tests may set it
 	// before then.
-	routineMod        *routines.Module
-	routineModOnce    sync.Once
-	idleProjects      *idleprojects.Module
-	idleProjectsOnce  sync.Once
-	sessionTitles     *sessiontitles.Module
-	sessionTitlesOnce sync.Once
-	lifetimeMu        sync.Mutex
-	lifetimeCtx       context.Context // guarded by lifetimeMu
+	routineMod    lazy[*routines.Module]
+	idleProjects  lazy[*idleprojects.Module]
+	sessionTitles lazy[*sessiontitles.Module]
+	lifetimeMu    sync.Mutex
+	lifetimeCtx   context.Context // guarded by lifetimeMu
 	// requests joins admitted HTTP handlers before teardown (both listeners).
-	requests             requestFence
-	pluginsMod           *pluginsmod.Module
-	pluginsModOnce       sync.Once
-	webhookMod           *webhook.Module
-	webhookModOnce       sync.Once
-	artifactMod          *artifacts.Module
-	artifactModOnce      sync.Once
-	inboxMod             *inbox.Module
-	inboxModOnce         sync.Once
-	sharingMod           *sharing.Module
-	sharingModOnce       sync.Once
-	busV                 *module.Bus
-	busOnce              sync.Once
-	notificationsMod     *notifications.Module
-	notificationsModOnce sync.Once
-	queueMod             *queuemod.Module
-	queueModOnce         sync.Once
+	requests         requestFence
+	pluginsMod       lazy[*pluginsmod.Module]
+	webhookMod       lazy[*webhook.Module]
+	artifactMod      lazy[*artifacts.Module]
+	inboxMod         lazy[*inbox.Module]
+	sharingMod       lazy[*sharing.Module]
+	busV             lazy[*module.Bus]
+	notificationsMod lazy[*notifications.Module]
+	queueMod         *queuemod.Module
+	queueModOnce     sync.Once
 
 	// runtime is the local Host's ocruntime.Runtime, injected into
 	// newLocalHost. Defaults to the native tmux runtime; tests override it
@@ -168,21 +156,16 @@ type Server struct {
 	openCodeAuth ocapi.Auth
 	// maintMod runs OpenCode database maintenance; nil without a DB path.
 	// Its gate refuses opencode launches while a job runs.
-	maintMod         *ocmaint.Module
-	logPath          string // resolved log file; "" when stderr only
-	version          string // build version (main.version), reported by /api/stats
-	startupIssues    []StartupIssue
-	factoryMod       *factorymod.Module
-	factoryModOnce   sync.Once
-	analyticsMod     *analytics.Module
-	analyticsModOnce sync.Once
+	maintMod      *ocmaint.Module
+	logPath       string // resolved log file; "" when stderr only
+	version       string // build version (main.version), reported by /api/stats
+	startupIssues []StartupIssue
+	factoryMod    lazy[*factorymod.Module]
+	analyticsMod  lazy[*analytics.Module]
 
-	projectForgeMod      *projectforge.Module
-	projectForgeModOnce  sync.Once
-	previewsMod          *previews.Module
-	previewsModOnce      sync.Once
-	platformSettingsOnce sync.Once
-	platformSettingsMod  *platformsettings.Module
+	projectForgeMod     lazy[*projectforge.Module]
+	previewsMod         lazy[*previews.Module]
+	platformSettingsMod lazy[*platformsettings.Module]
 }
 
 type factoryProjectResolver struct{ server *Server }
