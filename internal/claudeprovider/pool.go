@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/db"
 )
 
 // proc is one live claude child, driven over stream-json pipes (AD-6).
@@ -29,10 +27,8 @@ type proc struct {
 	pending map[string]bool
 	aborted bool // an interrupt was sent: the turn's result is not a failure
 	replied bool // the CLI sent assistant output since the last result
-	limited bool // a usage rejection arrived in the open turn (FR-7)
 	// startErr latches a failed ownership update at the replay echo.
 	startErr error
-	resets   int64       // its reset time, Unix ms
 	idle     *time.Timer // started when a turn completes
 	conv     *Converter  // touched only by the reader goroutine
 	// children maps a spawning Task/Agent call id to its subagent's
@@ -269,12 +265,8 @@ func (l *live) read(p *proc, stdout io.Reader) {
 // handle converts one stream-json line into v1 events.
 func (l *live) handle(p *proc, raw []byte) {
 	var m struct {
-		Type      string `json:"type"`
-		Parent    string `json:"parent_tool_use_id"`
-		RateLimit struct {
-			Status   string `json:"status"`
-			ResetsAt int64  `json:"resetsAt"`
-		} `json:"rate_limit_info"`
+		Type   string `json:"type"`
+		Parent string `json:"parent_tool_use_id"`
 	}
 	if json.Unmarshal(raw, &m) != nil {
 		return
@@ -330,14 +322,6 @@ func (l *live) handle(p *proc, raw []byte) {
 		}
 		if json.Unmarshal(raw, &e) == nil {
 			l.account.observe(e.Info)
-		}
-		// Only a rejection blocks turns; allowed_warning is informational (spike §5).
-		if m.RateLimit.Status == "rejected" {
-			l.mu.Lock()
-			p.limited, p.resets = true, m.RateLimit.ResetsAt*1000
-			l.mu.Unlock()
-			l.emit(p.id, "", "session.status", map[string]any{"sessionID": p.id,
-				"status": map[string]any{"type": db.StatusLimited, "resetsAt": m.RateLimit.ResetsAt * 1000}})
 		}
 	case "result":
 		l.result(p, raw)

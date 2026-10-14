@@ -106,10 +106,10 @@ again.
   stands. An auto-approval Claude received is still recorded as the judge's,
   and an "Allow always" whose outcome ocman could not save is applied once it
   can save again, also after a restart.
-- **Usage limits.** When Claude reports a usage limit mid-turn the session shows
-  as `limited` with the reset time. Queued messages, routines and plugin replies
-  wait for it, across an ocman restart; at the reset time the turn settles as
-  `error` and held messages are sent.
+- **Usage limits.** Session status follows the turn's outcome: `error` if the
+  turn failed, `done` if it completed. A usage limit does not keep a finished
+  session running until the quota resets. Usage windows remain available in
+  Subscription Usage.
 
 Sessions you started in a terminal are **read-only** in ocman: you can read them,
 but the composer is disabled and ocman refuses to send to them or queue

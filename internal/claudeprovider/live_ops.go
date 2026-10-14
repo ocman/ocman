@@ -290,7 +290,6 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 		l.mu.Lock()
 		l.clearViewLocked(id)
 		l.status[id] = db.Session{Status: db.StatusBusy}
-		l.stopResetLocked(id)
 		delete(l.deferred, id)
 		if l.waits[id] == nil {
 			l.waits[id] = map[*waitTicket]bool{}

@@ -173,7 +173,7 @@ func inferStatus(role, fin string, apiErr, closed bool) db.SessionStatus {
 // session settles the transcript with no live view (AD-10): a write time is
 // not a lifecycle signal, so an open turn nothing observes reads as
 // interrupted. The process (owned sessions) or hooks (terminal sessions)
-// overlay busy, limited and error.
+// overlay busy and settled turn outcomes.
 func (e *entry) session(time.Time) db.Session {
 	return db.Session{
 		ID: e.ID, ParentID: e.ParentID, Title: e.Title, Directory: e.Directory,

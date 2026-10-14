@@ -190,59 +190,40 @@ func drainIdle(t *testing.T, h *liveHarness) bool {
 	return state.Idle
 }
 
-// A rejected rate limit keeps the session limited, not idle, after its turn
-// ends: no idle edge (queue drain, routine, plugin reply) and no supervisor
-// drain until the reset time, across an ocman restart. At the reset the turn
-// settles as failed and the idle edge is delivered.
-func TestUsageLimitHoldsUntilReset(t *testing.T) {
-	h := startLive(t, "", nil)
-	id := h.create(t)
-	// Start the reset clock after CLI setup, not while building/probing it.
-	resets := time.Now().Unix() + 2
-	t.Setenv("FAKE_CLAUDE_FIXTURE", writeFixture(t, fmt.Sprintf(`{"direction":"stdin","message":{"type":"user"}}
+// Usage availability must not override a finished turn's outcome.
+func TestUsageLimitKeepsTurnOutcome(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("error=%t", failed), func(t *testing.T) {
+			h := startLive(t, "", nil)
+			id := h.create(t)
+			resets := time.Now().Unix() + 3600
+			t.Setenv("FAKE_CLAUDE_FIXTURE", writeFixture(t, fmt.Sprintf(`{"direction":"stdin","message":{"type":"user"}}
 {"direction":"stdout","message":{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":%d,"rateLimitType":"five_hour"}}}
-{"direction":"stdout","message":{"type":"result","is_error":true,"subtype":"success","result":"Claude usage limit reached"}}
-`, resets)))
-	h.send(t, id, "hi")
-	waitFor(t, "limited", func() bool { s, at, _ := h.events.get(id); return s == db.StatusLimited && at == resets*1000 })
-	waitFor(t, "result handled", func() bool { return h.visible(id, "usage limit reached") })
+{"direction":"stdout","message":{"type":"result","is_error":%t,"subtype":"success","result":"Claude usage limit reached"}}
+`, resets, failed)))
+			h.send(t, id, "hi")
+			waitFor(t, "result handled", func() bool { return h.visible(id, "usage limit reached") })
+			want := db.StatusDone
+			if failed {
+				want = db.StatusError
+			}
+			waitFor(t, "turn settled before quota reset", func() bool {
+				s, at, idles := h.events.get(id)
+				return s == want && at == 0 && idles == 1
+			})
+			settledAs(t, h.adapter, id, want)
 
-	// ocman restarts: a fresh adapter replays the unacknowledged turn.
-	h.adapter.Close()
-	restarted, err := provider.New(t.Context(), filepath.Join(h.dir, "s"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(restarted.Close)
-	idled := make(chan struct{}, 4)
-	restarted.SetSessionEventSink(platforms.SessionEventSink{OnSessionIdle: func(_, sid string) {
-		if sid == id {
-			idled <- struct{}{}
-		}
-	}})
-	go func() { _ = restarted.WatchEvents(t.Context()) }()
-	waitFor(t, "limited after restart", func() bool {
-		s := restarted.LiveStatus(id)
-		return s != nil && s.Status == string(db.StatusLimited)
-	})
-	settledAs(t, restarted, id, db.StatusLimited)
-	if _, _, idles := h.events.get(id); idles != 0 || len(idled) != 0 {
-		t.Fatal("a limited turn delivered an idle edge before its reset")
-	}
-	if drainIdle(t, h) {
-		t.Fatal("a limited session let the supervisor drain")
-	}
-
-	select {
-	case <-idled:
-	case <-time.After(10 * time.Second):
-		t.Fatal("no idle edge after the reset time")
-	}
-	if time.Now().Unix() < resets {
-		t.Fatal("idle edge before the reset time")
-	}
-	settledAs(t, restarted, id, db.StatusError)
-	if !drainIdle(t, h) {
-		t.Fatal("the supervisor must drain once the limit has reset")
+			// A fresh adapter must see the same terminal state after restart.
+			h.adapter.Close()
+			restarted, err := provider.New(t.Context(), filepath.Join(h.dir, "s"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(restarted.Close)
+			settledAs(t, restarted, id, want)
+			if !drainIdle(t, h) {
+				t.Fatal("the supervisor must drain once the turn finishes")
+			}
+		})
 	}
 }

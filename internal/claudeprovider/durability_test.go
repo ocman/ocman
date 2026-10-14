@@ -192,9 +192,8 @@ func TestAcceptedUnwrittenSendKeepsTurnOpen(t *testing.T) {
 	expectOneIdleAfter(t, h, id, gate)
 }
 
-// A send landing while a usage limit's reset settles the limited turn owns
-// the idle edge; the reset publishes none.
-func TestSendRacingLimitResetKeepsTurnOpen(t *testing.T) {
+// A send landing while a rejected turn settles owns the idle edge.
+func TestSendRacingUsageLimitResultKeepsTurnOpen(t *testing.T) {
 	gate := filepath.Join(t.TempDir(), "gate")
 	h := startLive(t, "", nil)
 	id := h.create(t)
@@ -204,8 +203,7 @@ func TestSendRacingLimitResetKeepsTurnOpen(t *testing.T) {
 			once.Do(func() { h.send(t, id, "second") })
 		}
 	})
-	// Leave at least one whole second after setup despite Unix truncation.
-	resets := time.Now().Unix() + 2
+	resets := time.Now().Unix() + 3600
 	t.Setenv("FAKE_CLAUDE_FIXTURE", writeFixture(t, fmt.Sprintf(`{"direction":"stdin","message":{"type":"user"}}
 {"direction":"stdout","message":{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":%d,"rateLimitType":"five_hour"}}}
 {"direction":"stdout","message":{"type":"result","is_error":true,"subtype":"success","result":"Claude usage limit reached"}}
@@ -216,8 +214,7 @@ func TestSendRacingLimitResetKeepsTurnOpen(t *testing.T) {
 {"direction":"stdout","message":{"type":"result","subtype":"success","is_error":false,"result":"SECOND"}}
 `, resets, gate)))
 	h.send(t, id, "first")
-	waitFor(t, "limited", func() bool { s, _, _ := h.events.get(id); return s == db.StatusLimited })
-	waitFor(t, "reset reached", func() bool { return h.gen(id) == 2 })
+	waitFor(t, "second turn accepted", func() bool { return h.gen(id) == 2 })
 	expectOneIdleAfter(t, h, id, gate)
 }
 
@@ -294,13 +291,13 @@ func TestResultOnlyOutputIsShown(t *testing.T) {
 func TestProcessStatusOverridesInference(t *testing.T) {
 	l := newLive(nil, Options{}, claudetest.Version)
 	l.status["s"] = db.Session{Status: db.StatusDone}
-	l.status["lim"] = db.Session{Status: db.StatusLimited, ResetsAt: 42}
+	l.status["failed"] = db.Session{Status: db.StatusError}
 	s := db.Session{ID: "s", Status: db.StatusInterrupted}
 	l.overlay(&s)
-	lim := db.Session{ID: "lim", Status: db.StatusDone}
-	l.overlay(&lim)
-	if s.Status != db.StatusDone || lim.Status != db.StatusLimited || lim.ResetsAt != 42 {
-		t.Fatalf("overlay = %+v %+v", s, lim)
+	failed := db.Session{ID: "failed", Status: db.StatusDone}
+	l.overlay(&failed)
+	if s.Status != db.StatusDone || failed.Status != db.StatusError {
+		t.Fatalf("overlay = %+v %+v", s, failed)
 	}
 }
 

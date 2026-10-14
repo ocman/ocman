@@ -82,7 +82,6 @@ type live struct {
 	hooks     map[string]hookState            // terminal sessions' hook-reported status (FR-6)
 	waits     map[string]map[*waitTicket]bool // turns not yet written to a child
 	tails     map[string]chan struct{}        // closed when the session's last turn was written
-	resets    map[string]*time.Timer          // limited sessions awaiting their reset
 	subs      map[string][]string             // subagent sessions streamed in a session's turn
 	accepted  map[string]uint64               // turns accepted per session (BeginTurn), see settle
 	deferred  map[string]db.SessionStatus     // a settle held back only by its own input's wait ticket
@@ -101,7 +100,7 @@ type viewEntry struct {
 func newLive(idx *Index, opts Options, version string) *live {
 	l := &live{idx: idx, opts: opts, versionErr: checkCLI(version), account: newAccount(opts), owned: map[string]*owned{},
 		procs: map[string]*proc{}, status: map[string]db.Session{}, view: map[string][]viewEntry{}, prompts: map[string]*prompt{}, hooks: map[string]hookState{},
-		waits: map[string]map[*waitTicket]bool{}, tails: map[string]chan struct{}{}, resets: map[string]*time.Timer{}, subs: map[string][]string{}, accepted: map[string]uint64{},
+		waits: map[string]map[*waitTicket]bool{}, tails: map[string]chan struct{}{}, subs: map[string][]string{}, accepted: map[string]uint64{},
 		deferred: map[string]db.SessionStatus{}, unsettled: map[string]settlement{}, settling: map[string]bool{}, unrecorded: map[string]bool{}}
 	l.cmds = newCommands(opts)
 	l.slots = sync.NewCond(&l.mu)
@@ -179,8 +178,8 @@ func (l *live) apply(id, key string, event providerprotocol.Event) {
 		}
 		l.status[id] = db.Session{Status: db.SessionStatus(p.Status.Type), ResetsAt: p.Status.ResetsAt}
 	case "session.idle":
-		// The idle edge keeps a failed or limited turn's terminal status.
-		if st := l.status[id].Status; st != db.StatusLimited && st != db.StatusError {
+		// The idle edge keeps a failed turn's terminal status.
+		if st := l.status[id].Status; st != db.StatusError {
 			l.status[id] = db.Session{Status: db.StatusDone}
 		}
 	}
@@ -292,8 +291,8 @@ func (l *live) ownedSession(id string) (owned, bool) {
 
 func now() int64 { return time.Now().UnixMilli() }
 
-// statuses lists the sessions whose status this process settled, with
-// their limited reset times (GET /sessions?live=1). The dashboard overlays
+// statuses lists the sessions whose status this process settled
+// (GET /sessions?live=1). The dashboard overlays
 // them on the browsing list: they survive a dashboard restart, while the
 // adapter's event-fed cache only holds turns replayed since it connected.
 func (l *live) statuses() []db.Session {

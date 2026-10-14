@@ -18,7 +18,7 @@ import (
 
 // result ends the turn unless accepted input is still outstanding. It honours
 // is_error/subtype (an API or execution failure is an error), an interrupt
-// (aborted: settled, not failed) and a usage rejection (limited until reset).
+// (aborted: settled, not failed). Usage limits do not override the outcome.
 func (l *live) result(p *proc, raw []byte) {
 	var r struct {
 		IsError        bool     `json:"is_error"`
@@ -55,8 +55,7 @@ func (l *live) result(p *proc, raw []byte) {
 		}
 		return
 	}
-	limited, resets := p.limited, p.resets
-	p.busy, p.aborted, p.limited = false, false, false
+	p.busy, p.aborted = false, false
 	p.idle = time.AfterFunc(l.opts.IdleTimeout, func() {
 		l.mu.Lock()
 		defer l.mu.Unlock()
@@ -64,7 +63,6 @@ func (l *live) result(p *proc, raw []byte) {
 			l.stopLocked(p)
 		}
 	})
-	l.stopResetLocked(p.id) // an earlier limited turn's timer is superseded
 	gen := l.accepted[p.id]
 	l.slots.Broadcast()
 	l.mu.Unlock()
@@ -75,47 +73,10 @@ func (l *live) result(p *proc, raw []byte) {
 		l.resultMessage(p.id, r.Result)
 	}
 	switch {
-	case limited:
-		if failed {
-			l.errorMessage(p.id, reason)
-		}
-		l.awaitReset(p.id, resets, gen)
 	case failed:
 		l.fail(p.id, errors.New(reason), gen)
 	default:
 		l.settle(p.id, db.StatusDone, gen)
-	}
-}
-
-// awaitReset keeps a usage-limited session limited, not idle, until its reset
-// time, then settles the failed turn so held work may drain. A new turn
-// cancels it (BeginTurn). The supervisor outlives ocman, so this survives an
-// ocman restart; the unacknowledged turn is replayed to the new adapter.
-func (l *live) awaitReset(id string, at int64, gen uint64) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.stopResetLocked(id)
-	var t *time.Timer
-	t = time.AfterFunc(time.Until(time.UnixMilli(at)), func() {
-		l.mu.Lock()
-		current := l.resets[id] == t
-		if current {
-			delete(l.resets, id)
-		}
-		l.mu.Unlock()
-		// settle re-checks under the publish lock: a send accepted since
-		// the limited turn ended owns the next idle edge.
-		if current {
-			l.settle(id, db.StatusError, gen)
-		}
-	})
-	l.resets[id] = t
-}
-
-func (l *live) stopResetLocked(id string) {
-	if t := l.resets[id]; t != nil {
-		t.Stop()
-		delete(l.resets, id)
 	}
 }
 

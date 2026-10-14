@@ -213,7 +213,7 @@ func TestProjectSupervisorFollowsDashboardConfiguration(t *testing.T) {
 }
 
 // After a dashboard restart, a fresh list, detail and lifecycle read the
-// failed or limited status (with its reset time) the project supervisor
+// failed status (including usage-limit failures) the project supervisor
 // settled, not the transcript's inference, though the turns were
 // acknowledged and are no longer replayed.
 func TestRestartedDashboardKeepsSettledStatus(t *testing.T) {
@@ -249,9 +249,21 @@ func TestRestartedDashboardKeepsSettledStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := created.ID
-	for i, want := range []db.SessionStatus{db.StatusError, db.StatusLimited} {
+	for range 2 {
+		want := db.StatusError
+		idled := make(chan struct{}, 1)
+		p.SetSessionEventSink(platforms.SessionEventSink{OnSessionIdle: func(_, sid string) {
+			if sid == id {
+				idled <- struct{}{}
+			}
+		}})
 		if err := p.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: id, Message: "go"}); err != nil {
 			t.Fatal(err)
+		}
+		select {
+		case <-idled:
+		case <-time.After(10 * time.Second):
+			t.Fatal("finished turn did not idle before quota reset")
 		}
 		eventually(t, "turn settled", func() bool { s := p.LiveStatus(id); return s != nil && s.Status == string(want) })
 		stop()
@@ -261,8 +273,8 @@ func TestRestartedDashboardKeepsSettledStatus(t *testing.T) {
 			listed, detail, life = read(p, id)
 			return listed.Status == want && detail.Status == want && life.Status == want
 		})
-		if i == 1 && (listed.ResetsAt != resets*1000 || detail.ResetsAt != resets*1000) {
-			t.Fatalf("reset time lost: list %d detail %d, want %d", listed.ResetsAt, detail.ResetsAt, resets*1000)
+		if listed.ResetsAt != 0 || detail.ResetsAt != 0 {
+			t.Fatalf("quota reset leaked into session state: list %d detail %d", listed.ResetsAt, detail.ResetsAt)
 		}
 	}
 	stop()
