@@ -176,8 +176,11 @@ func OpenReadWrite(path string) (*DB, error) {
 
 // Close closes the database.
 func (d *DB) Close() error {
-	if d.mirror != nil && d.mirror.db != d.db {
-		_ = d.mirror.db.Close()
+	if d.mirror != nil {
+		d.mirror.close() // joins a running analytics sync first
+		if d.mirror.db != d.db {
+			_ = d.mirror.db.Close()
+		}
 	}
 	return d.db.Close()
 }

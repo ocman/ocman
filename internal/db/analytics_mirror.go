@@ -74,7 +74,11 @@ type analyticsMirror struct {
 	db *sql.DB
 	// gate serialises syncs (capacity 1). A channel rather than a mutex so
 	// waiting honours the caller's context.
-	gate     chan struct{}
+	gate chan struct{}
+	// stop ends every sync when the mirror closes; see close.
+	stop     context.Context
+	stopSync context.CancelFunc
+	closed   sync.Once
 	ready    atomic.Bool
 	building atomic.Bool
 	lastSync atomic.Int64 // unix nanos of the last successful sync
@@ -113,6 +117,7 @@ func (d *DB) EnableAnalyticsMirror(path, source string) error {
 		return err
 	}
 	m := &analyticsMirror{db: mdb, gate: make(chan struct{}, 1)}
+	m.stop, m.stopSync = context.WithCancel(context.Background())
 	var fullAt string
 	_ = mdb.QueryRow(`SELECT value FROM meta WHERE key = 'full_at'`).Scan(&fullAt)
 	if ms, err := strconv.ParseInt(fullAt, 10, 64); err == nil && ms > 0 {
@@ -196,7 +201,7 @@ func (d *DB) rebuildMirrorInBackground() {
 	}
 	go func() {
 		defer m.building.Store(false)
-		if err := d.SyncAnalyticsMirror(context.Background()); err != nil {
+		if err := d.SyncAnalyticsMirror(m.stop); err != nil && m.stop.Err() == nil {
 			log.WithError(err).Warn("building analytics mirror")
 		}
 	}()
@@ -213,6 +218,9 @@ func (d *DB) SyncAnalyticsMirror(ctx context.Context) error {
 
 func (d *DB) syncMirror(ctx context.Context, wait bool) error {
 	m := d.mirror
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer context.AfterFunc(m.stop, cancel)()
 	if wait {
 		select {
 		case m.gate <- struct{}{}:
@@ -253,6 +261,16 @@ func (d *DB) syncMirror(ctx context.Context, wait bool) error {
 	}
 	m.lastSync.Store(start.UnixNano())
 	return nil
+}
+
+// close cancels any running sync, waits for it to leave the gate, and keeps
+// the gate so no later sync starts: once it returns, no sync goroutine
+// (startup's or a background rebuild) touches either database.
+func (m *analyticsMirror) close() {
+	m.closed.Do(func() {
+		m.stopSync()
+		m.gate <- struct{}{}
+	})
 }
 
 // windowStart is the oldest time_created the incremental sync must re-read:

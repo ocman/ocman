@@ -74,3 +74,44 @@ func TestAnalyticsSourceErrorFailsTheSync(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Close must not return while a sync still reads or writes the databases:
+// it cancels the sync and waits for it.
+func TestCloseJoinsRunningMirrorSync(t *testing.T) {
+	d, err := OpenAnalyticsStore(t.TempDir() + "/analytics-cache.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	d.AddAnalyticsSource(func(ctx context.Context, _, _ int64) ([]AnalyticsSession, []AnalyticsMessage, error) {
+		close(started)
+		<-ctx.Done()
+		time.Sleep(50 * time.Millisecond) // still busy after cancellation
+		return nil, nil, ctx.Err()
+	})
+	synced := make(chan struct{})
+	go func() {
+		_ = d.SyncAnalyticsMirror(context.Background())
+		close(synced)
+	}()
+	<-started
+	closed := make(chan error, 1)
+	go func() { closed <- d.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close never cancelled the running sync")
+	}
+	select {
+	case <-synced:
+	default:
+		t.Fatal("Close returned while the sync was still running")
+	}
+	_ = d.Close() // a second Close must not block on the held gate
+	if err := d.SyncAnalyticsMirror(t.Context()); err == nil {
+		t.Fatal("a sync after Close ran")
+	}
+}
