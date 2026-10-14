@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderComponent, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsTab } from './SettingsTab';
 
@@ -47,7 +49,55 @@ vi.mock('../../lib/usePwaInstall', () => ({
   usePwaInstall: () => ({ canInstall: true, installed: false, promptInstall }),
 }));
 
+function render(ui: ReactElement, url = '/settings') {
+  const router = createMemoryRouter([{ path: '/settings', element: ui }], { initialEntries: [url] });
+  return { ...renderComponent(<RouterProvider router={router} />), router };
+}
+
 describe('SettingsTab actions', () => {
+  it('restores the selected group and search from the URL after remounting', () => {
+    const { router, unmount } = render(<SettingsTab />, '/settings?dir=project');
+    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space & diffs' } });
+    const url = `/settings${router.state.location.search}`;
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get('tab')).toBe('plugins');
+    expect(params.get('q')).toBe('disk space & diffs');
+    expect(params.get('dir')).toBe('project');
+    unmount();
+    render(<SettingsTab />, url);
+    expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('disk space & diffs');
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search settings' }), { key: 'Escape' });
+    expect(screen.getByText('Plugin management')).toBeVisible();
+  });
+
+  it('clears the URL search when selecting a group or a search result', () => {
+    const { router } = render(<SettingsTab />, '/settings?tab=plugins&q=disk+space&dir=project');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'sharing' } });
+    expect(router.state.location.search).toBe('?tab=sharing&dir=project');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
+    fireEvent.click(screen.getByRole('button', { name: /Remove old diffs/ }));
+    expect(router.state.location.search).toBe('?tab=maintenance&dir=project');
+  });
+
+  it.each(['unknown', 'behaviour'])('falls back to the first visible group for tab=%s', (tab) => {
+    render(<SettingsTab />, `/settings?tab=${tab}`);
+    expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('notifications');
+  });
+
+  it('follows URL navigation and replaces history while editing search', async () => {
+    const { router } = render(<SettingsTab />, '/settings?tab=plugins');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
+    expect(router.state.historyAction).toBe('REPLACE');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: '' } });
+    expect(router.state.location.search).toBe('?tab=plugins');
+    await act(() => router.navigate('/settings?tab=sharing&q=custom'));
+    expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('custom');
+    await act(() => router.navigate(-1));
+    expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
+    expect(screen.getByText('Plugin management')).toBeVisible();
+  });
+
   it('selects a group from the compact navigation and clears the search view', () => {
     render(<SettingsTab />);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });

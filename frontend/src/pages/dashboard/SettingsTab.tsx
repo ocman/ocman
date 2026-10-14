@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../../lib/headerContext';
 import { PromptTemplateSettings } from '../../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../../components/RemoteSettings';
@@ -55,8 +56,17 @@ export function SettingsTab() {
     { id: 'app', label: 'App', show: showAppSection },
     { id: 'account', label: 'Account', show: authRequired },
   ] satisfies Array<{ id: SettingsGroupId; label: string; show: boolean }>).filter((g) => g.show);
-  const [active, setActive] = useState<SettingsGroupId>(groups[0].id);
-  const [query, setQuery] = useState('');
+  const [params, setParams] = useSearchParams();
+  const active = groups.find((g) => g.id === params.get('tab'))?.id ?? groups[0].id;
+  const query = params.get('q') ?? '';
+  const updateView = (tab: SettingsGroupId, query: string) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tab);
+      if (query) next.set('q', query); else next.delete('q');
+      return next;
+    }, { replace: true });
+  };
   const [target, setTarget] = useState<RevealRequest | null>(null);
   const searching = query.trim() !== '';
   const groupLabels = Object.fromEntries(groups.map((g) => [g.id, g.label]));
@@ -64,14 +74,12 @@ export function SettingsTab() {
   const missing = target && !found ? settingEntry(target.id) : null;
 
   const pick = (id: SettingId) => {
-    setQuery('');
-    setActive(settingEntry(id).group);
+    updateView(settingEntry(id).group, '');
     setTarget((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
   };
   const selectGroup = (id: SettingsGroupId) => {
-    setQuery('');
+    updateView(id, '');
     setTarget(null);
-    setActive(id);
   };
 
   return (
@@ -82,8 +90,8 @@ export function SettingsTab() {
           aria-label="Search settings"
           placeholder="Search settings"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
+          onChange={(e) => updateView(active, e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') updateView(active, ''); }}
         />
         <label className={styles.compact}>
           <span className={styles.caption}>Settings group</span>
