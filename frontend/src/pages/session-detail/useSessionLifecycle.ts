@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRe
 import { useApiStore } from '../../lib/apiStore';
 import { initialSessionView, seedDeltaOwnedFields, type SessionView } from '../../lib/sessionReducer';
 import { onPageResume } from '../../lib/pageResume';
+import { watchKeepalive } from '../../lib/sseKeepalive';
 import { createSessionSse, reduceBatchedSessionView } from './sessionSse';
 import { isSessionPageRestore, latestPage, viewFromDetail } from './sessionView';
 import type { SseDebugEvent, UseSessionOptions, UseSessionStatus } from './useSession';
@@ -79,6 +80,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     // Page restores and subsequent reads cannot undo another client's archive.
     let opened = entryRef.current.opened;
     let evtSource: EventSource | null = null;
+    let stopWatch = () => {};
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     let hasConnectedOnce = false;
@@ -89,13 +91,15 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      // Live status seen after this point outranks the response's.
+      const statusRevision = viewRef.current._statusRevision ?? 0;
       try {
         const detail = await fetchSession(sessionId, pageSize, 0, controller.signal, routedPlatform, opened);
         if (cancelled || controller.signal.aborted) return false;
         opened = true;
         entryRef.current.opened = true;
         events.flush();
-        dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode });
+        dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode, statusRevision });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);
         setRefreshing(false);
@@ -137,7 +141,9 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     const connect = () => {
       if (cancelled) return;
       const query = routedPlatform ? `?platform=${encodeURIComponent(routedPlatform)}` : '';
+      stopWatch();
       evtSource = new EventSource(`/api/session/${encodeURIComponent(sessionId)}/events${query}`);
+      stopWatch = watchKeepalive(evtSource, () => retryNowRef.current());
       evtSource.onopen = () => {
         if (cancelled) return;
         attempt = 0;
@@ -156,6 +162,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       evtSource.onerror = () => {
         if (cancelled) return;
         events.flush();
+        stopWatch();
         reconnectingAfterError = true;
         evtSource?.close();
         evtSource = null;
@@ -197,6 +204,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       // Injected fetchers may ignore abort. Abandon their pagination slot now.
       loadMoreInFlightRef.current = false;
       setLoadingMore(false);
+      stopWatch();
       evtSource?.close();
       evtSource = null;
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }

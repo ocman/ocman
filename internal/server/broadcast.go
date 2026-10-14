@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // --- Global broadcast hub ---
@@ -309,9 +311,10 @@ func (s *Server) broadcastQuestionResolved(sessionID, requestID, reason string) 
 	s.broadcastGlobalEvent("ocman.question.resolved", payload)
 }
 
-// globalEventsKeepaliveInterval is how often we send an SSE comment to
-// keep the connection (and any intermediary proxy) alive while idle.
-const globalEventsKeepaliveInterval = 25 * time.Second
+// sseKeepaliveInterval is how often browser streams carry a named
+// keepalive: it keeps idle proxies open and lets the client detect a
+// half-open stream (frontend KEEPALIVE_TIMEOUT_MS). A var for tests.
+var sseKeepaliveInterval = 15 * time.Second
 
 // handleGlobalEvents serves GET /api/events: an app-wide SSE stream
 // that fans out broadcast events to every connected client regardless
@@ -343,7 +346,7 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	keepalive := time.NewTicker(globalEventsKeepaliveInterval)
+	keepalive := time.NewTicker(sseKeepaliveInterval)
 	defer keepalive.Stop()
 
 	ctx := r.Context()
@@ -352,9 +355,7 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			// SSE comment line — ignored by EventSource but keeps the
-			// connection warm through idle-timeout proxies.
-			if _, err := w.Write([]byte(": keepalive\n\n")); err != nil {
+			if _, err := io.WriteString(w, httpx.SSEKeepalive); err != nil {
 				return
 			}
 			flusher.Flush()

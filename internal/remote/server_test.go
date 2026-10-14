@@ -1,7 +1,6 @@
 package remote
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -23,20 +22,6 @@ import (
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
-
-func TestSSEFrameWriterRejectsOversizedFrame(t *testing.T) {
-	var dst bytes.Buffer
-	w := &sseFrameWriter{dst: &dst}
-
-	n, err := w.Write(bytes.Repeat([]byte{'x'}, maxSSEFrameBytes+1))
-
-	if err == nil || n != 0 {
-		t.Fatalf("Write = (%d, %v), want (0, error)", n, err)
-	}
-	if dst.Len() != 0 || len(w.pending) != 0 {
-		t.Fatalf("oversized frame was retained or forwarded")
-	}
-}
 
 func TestForgeHostRPCsRejectRelativePaths(t *testing.T) {
 	srv := &Server{host: localStubHost{}}

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { api, AuthError, BackendUnavailableError, fetchJSON, postJSON, registerAuthErrorHandler } from './api';
+import { reportConnectionDrop } from './pageResume';
+
+vi.mock('./pageResume', () => ({ reportConnectionDrop: vi.fn() }));
 
 // Each test installs its own fetch stub. We restore between tests so
 // state doesn't leak.
@@ -179,6 +182,15 @@ describe('backend-down error classification', () => {
   it('postJSON maps a network failure to BackendUnavailableError', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))));
     await expect(postJSON('/api/thing', {})).rejects.toBeInstanceOf(BackendUnavailableError);
+  });
+
+  it('replaces live streams when a request loses its connection', async () => {
+    // The dropped connection can leave EventSources half-open (abort then
+    // send showed nothing until a reload).
+    vi.mocked(reportConnectionDrop).mockClear();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Load failed'))));
+    await postJSON('/api/session/s/abort', undefined).catch(() => undefined);
+    expect(reportConnectionDrop).toHaveBeenCalledOnce();
   });
 
   it('postJSON maps a non-JSON 200 body to BackendUnavailableError', async () => {

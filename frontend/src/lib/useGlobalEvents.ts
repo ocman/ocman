@@ -3,6 +3,7 @@ import { notifyPromptDismissed } from './useToastNotify';
 import { recheckNotifyData } from './useNotifyData';
 import { markBackendReachable, markBackendUnreachable } from './backendStatus';
 import { onPageResume } from './pageResume';
+import { watchKeepalive } from './sseKeepalive';
 import type { QueuedMessage, Session } from './api';
 import { clearSettingsCache } from './projectSettingsCache';
 
@@ -31,6 +32,7 @@ import { clearSettingsCache } from './projectSettingsCache';
  */
 
 let source: EventSource | null = null;
+let stopWatch = () => {};
 let refCount = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
@@ -252,6 +254,7 @@ function open(): void {
   if (source) return;
   const next = new EventSource('/api/events');
   source = next;
+  stopWatch = watchKeepalive(next, recycle);
   next.addEventListener('ocman.settings.changed', clearSettingsCache);
   next.addEventListener('ocman.inbox.changed', () => {
     for (const cb of inboxChangedListeners) cb();
@@ -296,6 +299,7 @@ function open(): void {
   });
   next.onerror = () => {
     if (source !== next) return;
+    stopWatch();
     next.close();
     source = null;
     const delay = nextReconnectDelay();
@@ -322,6 +326,7 @@ function close(): void {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  stopWatch();
   source?.close();
   source = null;
   reconnectAttempt = 0;

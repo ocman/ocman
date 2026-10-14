@@ -1,9 +1,11 @@
 package sessionlifecycle
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -97,7 +99,10 @@ func (m *Module) HandleSessionRename(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) HandleSessionAbort(w http.ResponseWriter, r *http.Request) {
 	m.d.WithSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
-		if err := m.d.Sessions().Abort(r.Context(), platformHint(r), platforms.AbortRequest{SessionID: sessionID}); err != nil {
+		// A client dropping the connection must not cancel the stop it asked for.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+		defer cancel()
+		if err := m.d.Sessions().Abort(ctx, platformHint(r), platforms.AbortRequest{SessionID: sessionID}); err != nil {
 			writeSessionError(w, "aborting session", err)
 			return
 		}

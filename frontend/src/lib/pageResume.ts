@@ -10,7 +10,7 @@
  * signal, which runs their usual reconnect reconciliation.
  */
 
-/** Shorter absences keep the stream; the server keepalive is 25s. */
+/** Shorter absences keep the stream; the keepalive watchdog covers the rest. */
 export const RESUME_AFTER_MS = 30_000;
 const CLOCK_TICK_MS = 10_000;
 
@@ -40,6 +40,20 @@ function onTick(): void {
   lastTick = now;
   // Hidden tabs are throttled; visibilitychange covers those.
   if (!document.hidden && gap >= CLOCK_TICK_MS + RESUME_AFTER_MS) fire();
+}
+
+// A dropped connection (Safari "Load failed" over Tailscale) fails in-flight
+// fetches, yet the EventSources on it can stay half-open with no error, so
+// the conversation stalls until a reload. A failed fetch replaces them.
+const DROP_THROTTLE_MS = 5_000;
+let lastDrop = -Infinity;
+
+/** Report a fetch network failure. Throttled so a dead backend cannot loop. */
+export function reportConnectionDrop(): void {
+  const now = Date.now();
+  if (now - lastDrop < DROP_THROTTLE_MS) return;
+  lastDrop = now;
+  fire();
 }
 
 /** Subscribe to resume signals. Returns the unsubscribe function. */

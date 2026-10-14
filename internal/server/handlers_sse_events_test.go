@@ -103,6 +103,34 @@ func TestSessionEvents_StreamBytesFlowProducesOk(t *testing.T) {
 	}
 }
 
+// The browser can only tell a half-open stream from a quiet one by a named
+// keepalive, and it must never split a proxied frame.
+func TestSessionEvents_KeepaliveBetweenWholeFrames(t *testing.T) {
+	old := sseKeepaliveInterval
+	sseKeepaliveInterval = 5 * time.Millisecond
+	t.Cleanup(func() { sseKeepaliveInterval = old })
+	srv, reg := newSessionsTestServer(t)
+	reg.Register(&fakePlatform{
+		id:       "fake",
+		sessions: []db.Session{{ID: "s1", Platform: "fake"}},
+		proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+			_, _ = io.WriteString(w, "data: {\"a\"")
+			time.Sleep(50 * time.Millisecond)
+			_, err := io.WriteString(w, ":1}\n\n")
+			return err
+		},
+	})
+	rr := httptest.NewRecorder()
+	srv.handleSessionEvents(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1/events", nil))
+	body := rr.Body.String()
+	if !strings.Contains(body, "event: ocman.keepalive\n") {
+		t.Fatalf("no keepalive in %q", body)
+	}
+	if !strings.Contains(body, "data: {\"a\":1}\n\n") {
+		t.Fatalf("proxied frame was split: %q", body)
+	}
+}
+
 // TestSessionEvents_UnreachableAfterFirstByteStaysOk locks in the
 // boundary case: if ProxyEvents successfully writes bytes and *then*
 // hits an unreachable error (e.g. the OpenCode process is killed

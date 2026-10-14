@@ -34,6 +34,7 @@ import {
   onSseConnect,
   useGlobalEvents,
 } from './useGlobalEvents';
+import { KEEPALIVE_TIMEOUT_MS } from './sseKeepalive';
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -195,8 +196,30 @@ describe('useGlobalEvents connection', () => {
     act(() => FakeEventSource.instances[0].open());
     reconcile.mockClear();
 
-    await awayFor(5 * 60_000);
+    // Shorter than the keepalive watchdog, so only the resume signal acts.
+    await awayFor(KEEPALIVE_TIMEOUT_MS - 1);
 
+    expect(FakeEventSource.instances).toHaveLength(2);
+    act(() => FakeEventSource.instances[1].open());
+    expect(reconcile).toHaveBeenCalledOnce();
+    unsubscribe();
+    unmount();
+  });
+
+  it('replaces a visible stream that stops receiving keepalives', async () => {
+    const reconcile = vi.fn();
+    const unsubscribe = onSseConnect(reconcile);
+    const { unmount } = renderHook(() => useGlobalEvents());
+    const first = FakeEventSource.instances[0];
+    act(() => first.open());
+    reconcile.mockClear();
+
+    await act(() => vi.advanceTimersByTimeAsync(KEEPALIVE_TIMEOUT_MS - 1));
+    act(() => first.listeners.get('ocman.keepalive')!());
+    await act(() => vi.advanceTimersByTimeAsync(KEEPALIVE_TIMEOUT_MS - 1));
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    await act(() => vi.advanceTimersByTimeAsync(1));
     expect(FakeEventSource.instances).toHaveLength(2);
     act(() => FakeEventSource.instances[1].open());
     expect(reconcile).toHaveBeenCalledOnce();

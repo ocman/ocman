@@ -1,15 +1,14 @@
 package remote
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
@@ -109,7 +108,7 @@ func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsSe
 		return err
 	}
 	w := &eventStreamWriter{stream: stream}
-	raw := &sseFrameWriter{dst: w}
+	raw := &httpx.SSEFrameWriter{Dst: w}
 	if s.proxyEvents != nil {
 		return s.proxyEvents(stream.Context(), req.Platform, req.SessionId, p, raw, w, func() {})
 	}
@@ -134,46 +133,6 @@ func (w *eventStreamWriter) Write(p []byte) (int, error) {
 }
 
 // Hold partial upstream writes until a complete SSE frame is available.
-type sseFrameWriter struct {
-	dst     io.Writer
-	mu      sync.Mutex
-	pending []byte
-}
-
-const maxSSEFrameBytes = 4 << 20
-
-func (w *sseFrameWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.pending = append(w.pending, p...)
-	if len(w.pending) > maxSSEFrameBytes && sseFrameEnd(w.pending) < 0 {
-		w.pending = nil
-		return 0, fmt.Errorf("remote: SSE frame exceeds %d bytes", maxSSEFrameBytes)
-	}
-	for {
-		end := sseFrameEnd(w.pending)
-		if end < 0 {
-			return len(p), nil
-		}
-		if _, err := w.dst.Write(w.pending[:end]); err != nil {
-			return len(p), err
-		}
-		w.pending = w.pending[end:]
-		if len(w.pending) == 0 {
-			w.pending = nil
-		}
-	}
-}
-func sseFrameEnd(p []byte) int {
-	lf, crlf := bytes.Index(p, []byte("\n\n")), bytes.Index(p, []byte("\n\r\n"))
-	if lf >= 0 && (crlf < 0 || lf < crlf) {
-		return lf + 2
-	}
-	if crlf >= 0 {
-		return crlf + 3
-	}
-	return -1
-}
 
 func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	if s.inboxStore == nil {

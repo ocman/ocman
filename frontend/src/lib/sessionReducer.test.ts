@@ -1199,6 +1199,27 @@ describe('seedDeltaOwnedFields', () => {
 // upsertSnapshotPart longest-wins rule (via reconcile load)
 // ---------------------------------------------------------------------------
 
+describe('reconcile load — live status fence', () => {
+  // Idle triggers a refetch; a prompt sent before it returns starts a new
+  // turn, and the older snapshot must not flip the live status back.
+  it('keeps a status observed live after the refetch started', () => {
+    const started = makeView({ session: makeSession({ status: 'done', title: 'old' }) });
+    const fence = started._statusRevision ?? 0;
+    const live = reduceSessionView(started, { type: 'sse', event: sseEvent('session.status', { sessionID: 'sess-1', status: { type: 'busy' } }) });
+    const incoming = makeView({ session: makeSession({ status: 'done', title: 'new' }) });
+    const after = reduceSessionView(live, { type: 'load', view: incoming, mode: 'reconcile', statusRevision: fence });
+    expect(after.session?.status).toBe('busy');
+    expect(after.session?.title).toBe('new');
+  });
+
+  it('takes the snapshot status when nothing live arrived meanwhile', () => {
+    const before = makeView({ session: makeSession({ status: 'busy' }) });
+    const incoming = makeView({ session: makeSession({ status: 'done' }) });
+    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile', statusRevision: before._statusRevision ?? 0 });
+    expect(after.session?.status).toBe('done');
+  });
+});
+
 describe('reconcile load — longest-wins for delta-owned streaming fields', () => {
   it('keeps the local value when the reconcile snapshot has shorter text', () => {
     // Simulates: cache had "1 2 3 4 5 " (delta-owned by seed). Server

@@ -13,6 +13,7 @@ import type { SessionDetail } from '../../lib/api';
 import { aggregateSessionTreeStats } from '../../lib/sessionStatus';
 import { useSession } from './useSession';
 import { useApiStore } from '../../lib/apiStore';
+import { KEEPALIVE_TIMEOUT_MS } from '../../lib/sseKeepalive';
 
 // ---------- Fake EventSource ----------
 
@@ -965,9 +966,10 @@ describe('useSession — returning to the tab', () => {
     renderHook(() => useSession(SID, { fetchSession, reconnectDelay: () => 10 }));
     await vi.waitFor(() => expect(fetchSession).toHaveBeenCalledTimes(1));
     const first = FakeEventSource.latest()!;
-    act(() => first.open());
+    act(() => { first.open(); first.emitNamed('ocman.keepalive', {}); });
 
-    await awayFor(5 * 60_000);
+    // Shorter than the keepalive watchdog, so only the resume signal acts.
+    await awayFor(KEEPALIVE_TIMEOUT_MS - 1);
 
     expect(first.closed).toBe(true);
     expect(FakeEventSource.instances).toHaveLength(2);
@@ -1337,6 +1339,32 @@ describe('useSession — unmount', () => {
     const sse = FakeEventSource.latest()!;
     unmount();
     expect(sse.closed).toBe(true);
+  });
+});
+
+describe('useSession — keepalive watchdog', () => {
+  it('replaces a stream that stops receiving keepalives and reconciles', async () => {
+    vi.useFakeTimers();
+    const detail = makeDetail();
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
+    const first = FakeEventSource.latest()!;
+    act(() => { first.open(); first.emitNamed('ocman.keepalive', {}); });
+
+    // Keepalives hold the stream.
+    act(() => { vi.advanceTimersByTime(KEEPALIVE_TIMEOUT_MS - 1); first.emitNamed('ocman.keepalive', {}); });
+    act(() => { vi.advanceTimersByTime(KEEPALIVE_TIMEOUT_MS - 1); });
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    // Half-open: no error, just silence.
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(first.closed).toBe(true);
+    const second = FakeEventSource.latest()!;
+    expect(second).not.toBe(first);
+    const fetches = fetchSession.mock.calls.length;
+    await act(async () => second.open());
+    expect(fetchSession.mock.calls.length).toBe(fetches + 1);
   });
 });
 

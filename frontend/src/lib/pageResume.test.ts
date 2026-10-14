@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { onPageResume, RESUME_AFTER_MS } from './pageResume';
+import { onPageResume, reportConnectionDrop, RESUME_AFTER_MS } from './pageResume';
 
 let hidden = false;
 Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -49,6 +49,16 @@ describe('onPageResume', () => {
     vi.setSystemTime(Date.now() + 5 * 60_000);
     vi.advanceTimersByTime(10_000);
     expect(resumed).toHaveBeenCalledOnce();
+  });
+
+  it('fires on a dropped connection, at most once per throttle window', () => {
+    vi.setSystemTime(Date.now() + 60_000);
+    reportConnectionDrop();
+    reportConnectionDrop();
+    expect(resumed).toHaveBeenCalledOnce();
+    vi.setSystemTime(Date.now() + 5_000);
+    reportConnectionDrop();
+    expect(resumed).toHaveBeenCalledTimes(2);
   });
 
   it('stops listening once the last subscriber leaves', () => {

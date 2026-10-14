@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
@@ -13,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
@@ -78,15 +80,22 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	// ocman.permission.* events into the stream, which the gRPC tunnel
 	// forwards verbatim. The hub observes git refresh hints without invoking
 	// its own judge.
+	// Platform bytes arrive in arbitrary chunks; only whole frames may reach
+	// lw, so sinks and keepalives never land inside one.
+	raw := &httpx.SSEFrameWriter{Dst: lw}
+	stopKeepalive := keepSSEAlive(ctx, lw, flush)
+	defer stopKeepalive()
+
 	var err error
 	if isRemotePlatformID(string(adapter.ID())) {
-		tee := &autoapprove.Tee{W: lw, Flush: flush, OnGitCommand: func(id, action string) {
+		tee := &autoapprove.Tee{W: raw, Flush: flush, OnGitCommand: func(id, action string) {
 			s.broadcastGitCommand(ctx, string(adapter.ID()), id, action)
 		}}
 		err = adapter.ProxyEvents(ctx, sessionID, tee, flush)
 	} else {
-		err = s.proxyOwnerSessionEvents(ctx, sessionID, adapter, lw, lw, flush)
+		err = s.proxyOwnerSessionEvents(ctx, sessionID, adapter, raw, lw, flush)
 	}
+	stopKeepalive()
 	if err == nil {
 		span.SetStatus(codes.Ok, "stream ended")
 		return
@@ -182,6 +191,33 @@ func (s *Server) proxyOwnerSessionEvents(ctx context.Context, sessionID string, 
 		},
 	}
 	return adapter.ProxyEvents(ctx, sessionID, tee, flush)
+}
+
+// keepSSEAlive writes a named keepalive every sseKeepaliveInterval until
+// the returned stop is called; stop waits for the writer and is idempotent,
+// so nothing writes after the handler returns.
+func keepSSEAlive(ctx context.Context, w io.Writer, flush func()) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(sseKeepaliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := io.WriteString(w, httpx.SSEKeepalive); err != nil {
+					return
+				}
+				if flush != nil {
+					flush()
+				}
+			}
+		}
+	}()
+	return func() { cancel(); <-done }
 }
 
 // lazyHeaderWriter delays the implicit 200 OK status write until the

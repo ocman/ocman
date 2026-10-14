@@ -190,7 +190,8 @@ func TestActionDependencies(t *testing.T) {
 			calls := 0
 			current := actionTestSessions{call: func(c context.Context, p string, req any) error {
 				calls++
-				if c != ctx || p != "r-owner:opencode" || !reflect.DeepEqual(req, tc.want) {
+				// Abort detaches from the request (TestAbortOutlivesClientDisconnect).
+				if (c != ctx && tc.name != "abort") || p != "r-owner:opencode" || !reflect.DeepEqual(req, tc.want) {
 					t.Fatalf("dependency received ctx=%v platform=%q request=%+v; want %+v", c, p, req, tc.want)
 				}
 				return nil
@@ -236,6 +237,28 @@ func TestActionDependencies(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A flaky client connection must not cancel the stop the user asked for.
+func TestAbortOutlivesClientDisconnect(t *testing.T) {
+	var got error
+	m := NewModule(Deps{
+		Sessions: func() Sessions {
+			return actionTestSessions{call: func(c context.Context, _ string, _ any) error { got = c.Err(); return nil }}
+		},
+		Guards: module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }},
+		WithSessionPath: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
+			fn(w, r, r.PathValue("id"), "")
+		},
+	})
+	mux := http.NewServeMux()
+	m.Routes(routeTestRouter{mux: mux})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/session/s1/abort", nil).WithContext(ctx))
+	if got != nil {
+		t.Fatalf("abort ran on a cancelled context: %v", got)
 	}
 }
 

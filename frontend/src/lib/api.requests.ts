@@ -1,5 +1,6 @@
 import { record as recordPerf, templatePath } from './perfRing';
 import { markBackendReachable, markBackendUnreachable, reportNetworkFailure } from './backendStatus';
+import { reportConnectionDrop } from './pageResume';
 
 export class AuthError extends Error {
   constructor(message = 'unauthorized') {
@@ -53,7 +54,10 @@ export async function fetchResponse(input: string, init?: RequestInit, reportGat
     resp = await fetch(input, init);
   } catch (err) {
     const mapped = toBackendError(err, 'connect');
-    if (mapped instanceof BackendUnavailableError) reportNetworkFailure(mapped.message);
+    if (mapped instanceof BackendUnavailableError) {
+      reportNetworkFailure(mapped.message);
+      reportConnectionDrop();
+    }
     throw mapped;
   }
   if (reportGatewayStatus && (resp.status === 502 || resp.status === 504)) markBackendUnreachable(statusLine(resp));
