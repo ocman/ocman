@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
@@ -11,5 +12,5 @@ import (
 // opencode binary; v2 cases opt in with ocv2.SetInstalledV2(true).
 func TestMain(m *testing.M) {
 	ocv2.SetInstalledV2(false)
-	os.Exit(m.Run())
+	os.Exit(claudetest.Run(m))
 }

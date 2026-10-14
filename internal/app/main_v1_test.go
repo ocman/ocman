@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms/claudecode"
 )
@@ -28,5 +29,5 @@ func TestMain(m *testing.M) {
 	if os.Getenv("OCMAN_TEST_NO_OPENCODE") == "" {
 		ocv2.SetInstalledV2(false)
 	}
-	os.Exit(m.Run())
+	os.Exit(claudetest.Run(m))
 }

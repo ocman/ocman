@@ -54,6 +54,7 @@ func InstallFakeTmux(t testing.TB, bin, pids string) {
 // PATH. The executable is built and warmed once per test binary (macOS
 // first-exec latency must not consume the production version-probe or
 // readiness deadline) and hard-linked into the caller's temp dir.
+// Packages using Binary must call Run from TestMain to remove the shared build.
 func Binary(t testing.TB) string {
 	t.Helper()
 	fakeOnce.Do(func() {
@@ -90,6 +91,19 @@ func Binary(t testing.TB) string {
 		}
 	}
 	return binary
+}
+
+// Run executes the suite and removes its shared build, even if tests or the
+// build failed. Caller-owned links remain valid after removing the shared link.
+func Run(m *testing.M) int {
+	code := m.Run()
+	if fakeShared != "" {
+		if err := os.RemoveAll(filepath.Dir(fakeShared)); err != nil {
+			fmt.Fprintln(os.Stderr, "remove fake claude build:", err)
+			return 1
+		}
+	}
+	return code
 }
 
 var (
