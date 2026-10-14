@@ -11,6 +11,8 @@ let results: unknown[];
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // jsdom has no layout; visible controls have a box in these navigation tests.
+  vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([new DOMRect(0, 0, 100, 20)] as unknown as DOMRectList);
   requests = [];
   results = [{ provider: 'opengraph', kind: 'page', id: 'example.com', url, title: 'A useful article', description: 'The description', image: 'https://example.com/card.png', imageAlt: 'Article cover', meta: ['Example'], state: 'ok' }];
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
@@ -20,7 +22,7 @@ beforeEach(() => {
   }));
   previewAuthChanged();
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 async function advance(ms: number) {
   for (let remaining = ms; remaining > 0; remaining -= 100) {
@@ -207,4 +209,25 @@ it('cancels a pending metadata lookup on Escape', async () => {
   await advance(1000);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(anchor).toHaveFocus();
+});
+
+it('skips CSS-hidden and inert tool controls when leaving the preview', async () => {
+  vi.useRealTimers();
+  const user = userEvent.setup();
+  render(<>
+    <MarkdownContent text={`[article](${url})`} />
+    <div style={{ display: 'none' }}><button>Hidden tool header</button></div>
+    <button style={{ visibility: 'hidden' }}>Invisible tool header</button>
+    <div inert><button>Inert tool header</button></div>
+    <a href="#after">Next visible link</a>
+  </>);
+  const hidden = screen.getByText('Hidden tool header');
+  hidden.getClientRects = () => [] as unknown as DOMRectList;
+  await user.tab();
+  await screen.findByRole('dialog', { name: 'Link preview' }, { timeout: 3000 });
+  await user.tab();
+  expect(screen.getByTestId('provider-preview-card')).toHaveFocus();
+  await user.tab();
+  expect(screen.getByRole('link', { name: 'Next visible link' })).toHaveFocus();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });

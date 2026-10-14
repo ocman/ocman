@@ -68,7 +68,8 @@ export function MarkdownPreviewLink({ href, children, ...props }: ComponentProps
       if (event.shiftKey) trigger.current?.focus();
       else {
         const items = Array.from(document.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]'))
-          .filter((item) => item.tabIndex >= 0 && !item.matches(':disabled') && !item.closest('[hidden]') && !panel?.contains(item));
+          .filter((item) => item.tabIndex >= 0 && !item.matches(':disabled') && !item.closest('[hidden],[inert]')
+            && item.getClientRects().length > 0 && getComputedStyle(item).visibility === 'visible' && !panel?.contains(item));
         const next = items[(items.indexOf(trigger.current!) + 1) % items.length];
         close();
         next?.focus();
