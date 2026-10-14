@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -157,16 +158,16 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 		return cached
 	}
 
-	const flightKey = "discoverOpenCodePorts"
+	portCache.mu.Lock()
+	generation := portCache.generation
+	portCache.mu.Unlock()
+	flightKey := "discoverOpenCodePorts:" + strconv.FormatUint(generation, 10)
 	result := portFlight.DoChan(flightKey, func() (interface{}, error) {
 		scanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if cached, ok := readCachedPorts(); ok {
 			return cached, nil
 		}
-		portCache.mu.Lock()
-		generation := portCache.generation
-		portCache.mu.Unlock()
 		result := (*discoverPortsImpl.Load())(scanCtx)
 		if err := scanCtx.Err(); err != nil {
 			return nil, err
