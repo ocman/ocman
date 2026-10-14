@@ -51,8 +51,3 @@ export function AnalyticsTab() {
     </>
   );
 }
-
-export function LegacyAnalyticsRedirect({ section }: { section: 'overview' | 'performance' }) {
-  const { search } = useLocation();
-  return <Navigate to={`/analytics/${section}${search}`} replace />;
-}

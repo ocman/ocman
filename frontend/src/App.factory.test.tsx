@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from './App';
@@ -38,8 +38,10 @@ vi.mock('./lib/queries', () => ({
   useMaterializeFactoryPlan: vi.fn(),
 }));
 
-function renderRoute(path: string) {
+// Factory pages are lazy route chunks: wait for the Suspense fallback to go.
+async function renderRoute(path: string) {
   render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+  await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 }
 
 beforeEach(() => {
@@ -74,60 +76,60 @@ beforeEach(() => {
 });
 
 describe('Factory routes', () => {
-  it('renders action inbox and live work on the Factory overview', () => {
-    renderRoute('/factory');
+  it('renders action inbox and live work on the Factory overview', async () => {
+    await renderRoute('/factory');
     expect(screen.getByRole('heading', { name: 'Action inbox' })).toBeInTheDocument();
     expect(screen.getByText('Nothing needs your attention.')).toBeInTheDocument();
     expect(screen.getByText('No agents are working right now.')).toBeInTheDocument();
   });
 
-  it('keeps the epic list focused on epics', () => {
-    renderRoute('/factory/epics');
+  it('keeps the epic list focused on epics', async () => {
+    await renderRoute('/factory/epics');
     expect(screen.getByRole('heading', { name: 'Epics' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Action inbox' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Live work' })).not.toBeInTheDocument();
   });
 
-  it('explains the Factory process', () => {
-    renderRoute('/factory/how-to');
+  it('explains the Factory process', async () => {
+    await renderRoute('/factory/how-to');
     expect(screen.getByRole('heading', { name: 'How Factory works' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Create an epic' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Review the result' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'How to', current: 'page' })).toHaveAttribute('href', '/factory/how-to');
   });
 
-  it('renders an explicit loading state for epic routes', () => {
+  it('renders an explicit loading state for epic routes', async () => {
     vi.mocked(useWorkEpics).mockReturnValue({ isLoading: true, isError: false } as never);
-    renderRoute('/factory/epics');
+    await renderRoute('/factory/epics');
     expect(screen.getByRole('status')).toHaveTextContent('Loading epics…');
   });
 
-  it('renders a retryable error state for the issue route', () => {
+  it('renders a retryable error state for the issue route', async () => {
     vi.mocked(useWorkEpics).mockReturnValue({ isLoading: false, isError: true, error: new Error('Factory unavailable'), refetch: vi.fn() } as never);
-    renderRoute('/factory/issues');
+    await renderRoute('/factory/issues');
     expect(screen.getByRole('alert')).toHaveTextContent('Factory unavailable');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
-  it('renders an epic graph', () => {
+  it('renders an epic graph', async () => {
     const epic = { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 1, formulaRevision: 1, formulaHash: 'hash', formulaOrigin: 'built-in', instantiationId: 'request-1' };
     vi.mocked(useWorkEpic).mockReturnValue({ data: epic, isLoading: false, isError: false } as never);
     vi.mocked(useFactoryIssues).mockReturnValue({ data: [
       { id: 'issue-1', epicId: epic.id, kind: 'mol', title: 'Child Formula', status: 'open', formulaId: 'custom/child', formulaVersion: 1, formulaHash: 'child-hash', bindings: { goal: 'Ship Factory' } },
       { id: 'issue-2', epicId: epic.id, parentId: 'issue-1', kind: 'task', title: 'Child work', status: 'open' },
     ], isLoading: false, isError: false } as never);
-    renderRoute('/factory/epics/epic-1');
+    await renderRoute('/factory/epics/epic-1');
     expect(screen.getByRole('heading', { name: 'Ship Factory' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open issue issue-1' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open issue issue-2' }));
     expect(screen.getByRole('dialog', { name: 'Issue issue-2' })).toHaveTextContent('Child work');
   });
 
-  it('renders issues as tickets', () => {
+  it('renders issues as tickets', async () => {
     const epic = { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 1, formulaRevision: 1, formulaHash: 'hash', formulaOrigin: 'built-in', instantiationId: 'request-1' };
     vi.mocked(useWorkEpics).mockReturnValue({ data: [epic], isLoading: false, isError: false } as never);
     vi.mocked(useFactoryGraphIssues).mockReturnValue([{ data: [{ id: 'issue-1', epicId: epic.id, kind: 'plan', project: '/repo', title: 'Plan Factory', status: 'open' }], isLoading: false, isError: false }] as never);
-    renderRoute('/factory/issues');
+    await renderRoute('/factory/issues');
     expect(screen.getByRole('heading', { name: 'Factory issues' })).toBeInTheDocument();
 		expect(screen.getByText('#issue-1')).toBeInTheDocument();
     expect(screen.getByText('Plan Factory')).toBeInTheDocument();

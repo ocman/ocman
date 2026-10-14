@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { TerminalPane } from './TerminalPane';
+import { lazyComponent } from './lazyComponent';
 import { ErrorBoundary } from './ErrorBoundary';
 import type { TermWindow } from '../lib/api';
 import { api } from '../lib/api';
 import { remoteLog } from '../lib/remoteLog';
 import { withDeadline } from '../lib/coalescedRefresh';
 import './SessionTerminalDock.css';
+
+// xterm loads with the first open terminal.
+const TerminalPane = lazyComponent(() => import('./TerminalPane').then((m) => m.TerminalPane), 'Loading terminal…');
 
 const MIN_HEIGHT = 120;
 const MAX_HEIGHT = 700;

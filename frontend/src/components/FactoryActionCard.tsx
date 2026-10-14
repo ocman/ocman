@@ -5,11 +5,14 @@ import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useFac
 import { Button, TextField } from './Control';
 import { FactoryRecoveryActions } from './FactoryRecoveryActions';
 import { FactoryImplementationModel } from './FactoryImplementationModel';
-import { FactoryPlanGraph } from './FactoryPlanGraph';
-import { proposalIssues } from '../pages/factoryGraph';
+import { lazyComponent } from './lazyComponent';
+import { proposalIssues } from '../pages/factoryProposalIssues';
 import { useFactoryImplementationModel } from './useFactoryImplementationModel';
 import './FactoryEpicCard.css';
 import { MarkdownContent } from './assistant/MarkdownText';
+
+// The plan graph (@xyflow, dagre) loads only when a card shows one.
+const FactoryPlanGraph = lazyComponent(() => import('./FactoryPlanGraph').then((m) => m.FactoryPlanGraph), 'Loading plan graph…');
 
 function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate }) {
 	const epicID = epic.id;

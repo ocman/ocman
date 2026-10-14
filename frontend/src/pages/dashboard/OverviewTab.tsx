@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import './chartSetup';
 import { Bar, Line } from 'react-chartjs-2';
 import { EmptyState } from '../../components/EmptyState';
 import { InlineAlert } from '../../components/InlineAlert';

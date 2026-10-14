@@ -4,7 +4,8 @@ import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate } from '
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
+import { DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
+import { lazyComponent } from './components/lazyComponent';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { RootRedirect } from './pages/RootRedirect';
 import { WorktreesView } from './pages/WorktreesView';
@@ -45,6 +46,9 @@ import { Inbox } from './pages/Inbox';
 import { MainNav } from './components/MainNav';
 import { featureRoutes } from './features';
 import { patchSessionLists } from './lib/sessionsCache';
+
+// Analytics (chart.js) loads with its route.
+const AnalyticsTab = lazyComponent(() => import('./pages/dashboard/AnalyticsTab').then((m) => m.AnalyticsTab), 'Loading analytics…');
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner

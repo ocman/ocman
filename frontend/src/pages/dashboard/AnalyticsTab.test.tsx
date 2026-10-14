@@ -14,7 +14,8 @@ vi.mock('../../lib/headerContext', () => ({
   usePageTitle: vi.fn(),
 }));
 
-import { AnalyticsTab, LegacyAnalyticsRedirect } from './AnalyticsTab';
+import { AnalyticsTab } from './AnalyticsTab';
+import { LegacyAnalyticsRedirect } from '../Dashboard';
 
 function LocationMarker() {
   const location = useLocation();

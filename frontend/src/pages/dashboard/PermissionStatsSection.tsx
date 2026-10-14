@@ -1,4 +1,5 @@
 import { Bar } from 'react-chartjs-2';
+import './chartSetup';
 import type { PermissionStats } from '../../lib/api';
 import { BAR_OPTIONS_STACKED, CHART_COLORS } from '../../lib/chartConfig';
 import { formatNumber, formatPercent, formatSeconds } from '../../lib/format';

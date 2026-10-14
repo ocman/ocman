@@ -3,6 +3,7 @@
  */
 import { Link, useNavigate } from 'react-router-dom';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import './chartSetup';
 import './StatsLogTables.css';
 import type { MetricsPerformance, ProjectLogEntry, RequestMetricsRow, SessionLogEntry } from '../../lib/api';
 import {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import './chartSetup';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKENS_BY_MODEL, CHART_COLORS, COST_DOUGHNUT_OPTIONS, DOUGHNUT_OPTIONS } from '../../lib/chartConfig';
 import { formatCompactNumber, formatCurrency, formatNumber, formatPercent, renderModel } from '../../lib/format';

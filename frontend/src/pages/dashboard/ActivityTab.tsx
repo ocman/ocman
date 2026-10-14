@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import './chartSetup';
 import './ActivityTab.css';
 import { InlineAlert } from '../../components/InlineAlert';
 import { Bar, Line } from 'react-chartjs-2';

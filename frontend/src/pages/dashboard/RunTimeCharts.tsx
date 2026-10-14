@@ -1,4 +1,5 @@
 import { Bar } from 'react-chartjs-2';
+import './chartSetup';
 import { InlineAlert } from '../../components/InlineAlert';
 import { BAR_OPTIONS_HOURLY, CHART_COLORS } from '../../lib/chartConfig';
 import { useAgentRunHours, useUIUsage } from '../../lib/queries';

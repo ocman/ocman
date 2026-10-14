@@ -10,8 +10,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import type { SettingsGroupId } from '../lib/settingsCatalog';
-import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryHowTo, FactoryOverview, FactoryQueue } from '../pages/Factory';
-import { FactoryIssues } from '../pages/FactoryIssues';
+import { lazyComponent } from '../components/lazyComponent';
 import { Routines } from '../pages/Routines';
 import { Artifacts } from '../pages/Artifacts';
 import { ArtifactDetail } from '../pages/ArtifactDetail';
@@ -21,6 +20,16 @@ import { SharingSettings } from '../components/SharingSettings';
 import { WebhookRelaySettings } from '../components/WebhookRelaySettings';
 import { IdleProjectSettings } from '../components/IdleProjectSettings';
 import { PlatformSettings } from '../components/PlatformSettings';
+
+// Factory pages pull in the epic graph (@xyflow, dagre): load them with the route.
+const factoryPages = () => import('../pages/Factory');
+const FactoryOverview = lazyComponent(() => factoryPages().then((m) => m.FactoryOverview));
+const FactoryHowTo = lazyComponent(() => factoryPages().then((m) => m.FactoryHowTo));
+const FactoryEpics = lazyComponent(() => factoryPages().then((m) => m.FactoryEpics));
+const FactoryEpicDetail = lazyComponent(() => factoryPages().then((m) => m.FactoryEpicDetail));
+const FactoryIssues = lazyComponent(() => import('../pages/FactoryIssues').then((m) => m.FactoryIssues));
+const FactoryQueue = lazyComponent(() => factoryPages().then((m) => m.FactoryQueue));
+const FactoryConfiguration = lazyComponent(() => factoryPages().then((m) => m.FactoryConfiguration));
 
 export interface FeatureRoute {
   path: string;

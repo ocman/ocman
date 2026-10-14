@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { Outlet, useSearchParams, useLocation } from 'react-router-dom';
-import { Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
+import { Navigate, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import type { Project, Session } from '../lib/api';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useUiStore } from '../lib/uiStore';
@@ -8,12 +7,14 @@ import { useSessions as useTQSessions, useProjects as useTQProjects } from '../l
 import { DashboardContext, type DashboardCtx } from './dashboard/context';
 
 // Re-export tab components so App.tsx can import from a single place.
-export { AnalyticsTab, LegacyAnalyticsRedirect } from './dashboard/AnalyticsTab';
 export { SessionsTab } from './dashboard/SessionsTab';
 export { ProjectsTab } from './dashboard/ProjectsTab';
 export { SettingsTab } from './dashboard/SettingsTab';
 
-ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
+export function LegacyAnalyticsRedirect({ section }: { section: 'overview' | 'performance' }) {
+  const { search } = useLocation();
+  return <Navigate to={`/analytics/${section}${search}`} replace />;
+}
 
 // Stable empty arrays so `data ?? []` doesn't create a new reference on
 // every render while the query is still loading.
