@@ -82,8 +82,9 @@ func TestCloseJoinsRunningMirrorSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started := make(chan struct{})
+	started, sourceDone := make(chan struct{}), make(chan struct{})
 	d.AddAnalyticsSource(func(ctx context.Context, _, _ int64) ([]AnalyticsSession, []AnalyticsMessage, error) {
+		defer close(sourceDone)
 		close(started)
 		<-ctx.Done()
 		time.Sleep(50 * time.Millisecond) // still busy after cancellation
@@ -106,9 +107,14 @@ func TestCloseJoinsRunningMirrorSync(t *testing.T) {
 		t.Fatal("Close never cancelled the running sync")
 	}
 	select {
-	case <-synced:
+	case <-sourceDone:
 	default:
 		t.Fatal("Close returned while the sync was still running")
+	}
+	select {
+	case <-synced:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sync never returned")
 	}
 	_ = d.Close() // a second Close must not block on the held gate
 	if err := d.SyncAnalyticsMirror(t.Context()); err == nil {
