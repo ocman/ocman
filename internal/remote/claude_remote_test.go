@@ -181,7 +181,7 @@ func TestHubAnswersRemoteClaudePermission(t *testing.T) {
 	var pending []platforms.LivePrompt
 	waitUntil(t, "pending prompt on the hub", func() bool {
 		pending, _ = claude.ListPermissions(t.Context(), created.ID)
-		return len(pending) == 1
+		return len(pending) == 1 && strings.Contains(events.String(), "permission.asked")
 	})
 	if pending[0]["permission"] != "bash" || !strings.Contains(events.String(), "permission.asked") {
 		t.Fatalf("prompt = %+v\nevents:\n%s", pending[0], events.String())
