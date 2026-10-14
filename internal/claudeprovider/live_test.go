@@ -292,24 +292,24 @@ func TestForkRenameAndCommands(t *testing.T) {
 	}
 }
 
-// Outside the pinned range every create path fails with an explicit error.
-func TestUnsupportedCLIVersion(t *testing.T) {
-	t.Setenv("FAKE_CLAUDE_VERSION", "2.0.9")
+// Missing installations fail clearly; updated CLIs do not need an exact pin.
+func TestCLIAvailability(t *testing.T) {
+	t.Setenv("FAKE_CLAUDE_VERSION", "unavailable")
 	h := startLive(t, claudetest.Fixture("plain.jsonl"), nil)
 	_, err := h.adapter.CreateSession(t.Context(), platforms.CreateSessionRequest{Directory: h.dir})
-	if err == nil || !strings.Contains(err.Error(), "claude CLI 2.0.9 is unsupported") {
+	if err == nil || !strings.Contains(err.Error(), "claude CLI not found") {
 		t.Fatalf("create error = %v", err)
 	}
-	for v, ok := range map[string]bool{"2.1.220": true, "2.1.289": false, "2.1.219": false, "2.2.0": false, "unavailable": false} {
+	for v, ok := range map[string]bool{"2.1.220": true, "2.1.289": true, "2.1.219": true, "2.2.0": true, "unavailable": false} {
 		if got := checkCLI(v) == nil; got != ok {
 			t.Fatalf("checkCLI(%q) ok = %v", v, got)
 		}
 	}
-	// Every accepted version has recorded fixtures (NFR-5 evidence).
+	// The recorded fixture versions remain pinned independently of launches.
 	for _, v := range TestedCLI {
 		for _, name := range []string{"plain.jsonl", "permission.jsonl", "subagent.jsonl"} {
 			if _, err := os.Stat(filepath.Join(filepath.Dir(claudetest.Fixture(name)), "..", v, name)); err != nil {
-				t.Fatalf("accepted CLI %s has no %s fixture: %v", v, name, err)
+				t.Fatalf("tested CLI %s has no %s fixture: %v", v, name, err)
 			}
 		}
 	}

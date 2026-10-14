@@ -19,12 +19,10 @@ reads, stores, copies or refreshes your Claude credentials.
 
 ## Setup
 
-1. Install Claude Code and log in once in a terminal (`claude`). Ocman accepts
-   only the CLI versions its protocol fixtures were recorded with: currently
-   **2.1.220**. Any other version (including newer ones) makes creating or
-   driving a session fail with an explicit `claude CLI <version> is
-   unsupported` error; browsing still works. A version is added once its
-   stream-json and control-protocol fixtures are recorded.
+1. Install Claude Code and log in once in a terminal (`claude`). Ocman requires
+   an installed CLI to drive sessions, but automatic Claude updates are not
+   blocked by an exact version pin. Recorded protocol fixtures use **2.1.220**;
+   browsing transcripts also works when the CLI is absent.
 2. Start ocman with the platform enabled:
 
    ```sh

@@ -18,21 +18,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/providersupervisor"
 )
 
-// TestedCLI lists the claude versions ocman accepts (AD-5, NFR-5): exactly
-// those with recorded stream-json/control fixtures under
-// internal/claudeprovider/testdata/<version>/. The spike measured 2.1.220 only and warned
-// against inferring a range from it; add a version by recording its fixtures.
+// TestedCLI lists versions with recorded stream-json/control fixtures under
+// internal/claudeprovider/testdata/<version>/; it is evidence, not a launch gate.
 var TestedCLI = []string{"2.1.220"}
 
-// checkCLI is the explicit unsupported-version error shown when a Claude
-// session is created or driven with an untested CLI.
+// checkCLI requires an installed CLI without rejecting automatic updates.
 func checkCLI(version string) error {
 	tested := strings.Join(TestedCLI, ", ")
 	if version == "unavailable" {
 		return fmt.Errorf("claude CLI not found: install Claude Code %s", tested)
-	}
-	if !slices.Contains(TestedCLI, version) {
-		return fmt.Errorf("claude CLI %s is unsupported: ocman is tested with Claude Code %s only", version, tested)
 	}
 	return nil
 }
