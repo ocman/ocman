@@ -35,6 +35,7 @@ type Deps struct {
 	Sessions       func() Sessions
 	Adapter        func(context.Context, string, string) (platforms.Platform, bool)
 	SendNow        func(context.Context, string, platforms.SendMessageRequest) error
+	PrepareSend    func(context.Context, string, platforms.SendMessageRequest) (func(context.Context) error, error)
 	Broadcast      func(string, []byte)
 	SessionChanged func(string)
 	Guards         module.Guards

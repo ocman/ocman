@@ -52,6 +52,12 @@ type Sender interface {
 	SendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error
 }
 
+// SendPreparer separates cancellable owner reads from admitted mutation.
+// Senders without discovery reads can keep implementing Sender alone.
+type SendPreparer interface {
+	PrepareSend(context.Context, string, platforms.SendMessageRequest) (func(context.Context) error, error)
+}
+
 // StatusInferer reports whether a session's turn is still running. Used
 // only at flush time (the authoritative gate).
 type StatusInferer interface {

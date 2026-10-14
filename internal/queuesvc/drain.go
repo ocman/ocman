@@ -75,13 +75,22 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool,
 		Agent:     head.Agent,
 		Reasoning: head.Reasoning,
 	}
+	send := func(ctx context.Context) error { return s.sender.SendNow(ctx, head.Platform, req) }
+	var prepareErr error
+	if preparer, ok := s.sender.(SendPreparer); ok {
+		send, prepareErr = preparer.PrepareSend(ctx, head.Platform, req)
+	}
 	if ctx.Err() != nil {
 		return // A cancelled pre-send read must leave the payload held.
 	}
 	// Admission is complete. Finish delivery and its durable receipt even
 	// if the caller stops while the upstream accepts the prompt.
 	ctx = context.WithoutCancel(ctx)
-	if err := s.sender.SendNow(ctx, head.Platform, req); err != nil {
+	err = prepareErr
+	if err == nil {
+		err = send(ctx)
+	}
+	if err != nil {
 		if errors.Is(err, ErrDeferred) {
 			return // ordering wait, not a delivery failure
 		}

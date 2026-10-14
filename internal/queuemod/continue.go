@@ -52,7 +52,14 @@ func (s *Module) continueSession(ctx context.Context, platformID, sessionID, pro
 		s.setExhaustedNotice(platformID, sessionID, recovers)
 		return true
 	}
-	if err := s.d.SendNow(context.WithoutCancel(ctx), platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: continuationPrompt, Model: model}); err != nil {
+	send, err := s.prepareDirect(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: continuationPrompt, Model: model})
+	if ctx.Err() != nil {
+		return true
+	}
+	if err == nil {
+		err = send(context.WithoutCancel(ctx))
+	}
+	if err != nil {
 		log.WithError(err).WithField("sessionID", sessionID).Warn("continuing session on next model")
 		return false
 	}

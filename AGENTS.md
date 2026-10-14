@@ -555,6 +555,9 @@ are computed. Sessions retain their original directories and owners.
   handlers before closing the dispatcher. A cancelled read leaves its payload held.
   Sweep iteration, lifecycle reads and model selection stay cancellable; only
   admitted delivery and durable dequeue/failure receipts detach cancellation.
+  The shared sender prepares owner/model/first-prompt reads through
+  `sessionsvc.PrepareSendMessage` before mutation admission. Runtime recovery
+  reads retain the caller's lifetime and deadline too.
   `Server.onSessionIdle` records cooldown and admits the flush through the module
   before publishing the synchronous typed bus event. Direct send and owner-routed
   runtime recovery remain the shared server seam in `session_send.go`.

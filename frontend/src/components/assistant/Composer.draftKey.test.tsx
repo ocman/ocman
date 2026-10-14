@@ -135,6 +135,40 @@ it('clears its own autosaved prefix when a longer prompt is submitted', async ()
   } finally { vi.useRealTimers(); }
 });
 
+it('keeps an independently discarded and retyped prompt with a newer revision', async () => {
+  saveDraft('same-text-revision', 'First prompt');
+  let resolve!: () => void;
+  const onSend = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const view = render(<Composer isRunning={false} newConversation draftKey="same-text-revision" onSend={onSend} />);
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  act(() => { discardDraft('same-text-revision'); saveDraft('same-text-revision', 'First prompt'); });
+  await act(async () => { resolve(); });
+  expect(screen.getByRole('textbox')).toHaveValue('First prompt');
+  view.unmount();
+  expect(getDraft('same-text-revision')).toBe('First prompt');
+});
+
+it('stores a rejected competing prompt without overwriting a later peer edit', async () => {
+  saveDraft('rejected-claim', 'First prompt');
+  const onSend = vi.fn(async () => { throw new Error('Session creation is already in progress'); });
+  const view = render(<Composer isRunning={false} newConversation draftKey="rejected-claim" onSend={onSend} />);
+  fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Other prompt' } });
+  await act(async () => { fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' }); });
+  expect(getDraft('rejected-claim')).toBe('Other prompt');
+  view.unmount();
+
+  saveDraft('rejected-newer', 'First prompt');
+  let reject!: (error: Error) => void;
+  const pending = render(<Composer isRunning={false} newConversation draftKey="rejected-newer" onSend={() => new Promise<void>((_, no) => { reject = no; })} />);
+  fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Other prompt' } });
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  act(() => saveDraft('rejected-newer', 'Newer peer edit'));
+  await act(async () => { reject(new Error('Session creation is already in progress')); });
+  expect(getDraft('rejected-newer')).toBe('Newer peer edit');
+  pending.unmount();
+  expect(getDraft('rejected-newer')).toBe('Newer peer edit');
+});
+
 it('restores the draft when a send fails after unmount', async () => {
   let reject!: (e: Error) => void;
   const onSend = vi.fn(() => new Promise<void>((_, r) => { reject = r; }));

@@ -53,7 +53,7 @@ export function Composer({
   const draftKeyRef = useRef(draftKey);
   const inFlightRef = useRef<string | null>(null);
   const syncInputRef = useRef<(text: string) => void>(() => {});
-  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, inFlightRef, (text) => syncInputRef.current(text));
+  const { clearDraftNow, scheduleDraftSave, syncDraftNow } = useComposerDrafts(inputRef, draftKey, inFlightRef, (text) => syncInputRef.current(text));
   const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
   const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine, platform, initialAttachments, onAttachmentProcessing, onAttachmentsChange);
   const { images, files } = attachments;
@@ -138,9 +138,9 @@ export function Composer({
   const { isRecording, isBusy: audioBusy, micError, setMicError, micRef, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled: audioDisabled, inputRef });
   // Attachments are bound to the current target, so they block switching it.
   const selectorDisabled = sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0;
-  const clearAfterSubmit = (submittedText?: string) => {
+  const clearAfterSubmit = (submittedText?: string, submittedRevision?: number) => {
     const key = draftKeyRef.current;
-    if (key) clearDraftNow(key, submittedText);
+    if (key) clearDraftNow(key, submittedText, submittedRevision);
     const remaining = key ? getDraft(key) : '';
     if (inputRef.current) inputRef.current.value = remaining;
     slash.close();
@@ -158,8 +158,9 @@ export function Composer({
     const key = draftKeyRef.current;
     const text = el.value.trim();
     const draftVersion = key ? getDraftVersion(key) : 0;
+    const previousDraft = key ? getDraft(key) : '';
     inFlightRef.current = text;
-    if (key) clearDraftNow(key, text);
+    if (key) clearDraftNow(key, text, draftVersion);
     sendingRef.current = true;
     setSending(true);
     onRetryChange?.(null);
@@ -170,7 +171,7 @@ export function Composer({
         const submitted = execute();
         if (submitted) await submitted;
         // Re-pointed mid-send: the textarea now holds another session's draft.
-        if (mountedRef.current && draftKeyRef.current === key) clearAfterSubmit(text);
+        if (mountedRef.current && draftKeyRef.current === key) clearAfterSubmit(text, draftVersion);
         else {
           // A failed attempt may have restored the draft before a retry landed.
           if (key && getDraft(key) === text) clearDraft(key);
@@ -178,7 +179,8 @@ export function Composer({
         }
         break;
       } catch (err) {
-        if (key && text && !getDraft(key)) saveDraft(key, text, draftVersion);
+        if (key && text) saveDraft(key, text, draftVersion, previousDraft);
+        if (mountedRef.current && key && draftKeyRef.current === key) syncDraftNow(key);
         // Back on the initiating key with an empty box: show the failed prompt again.
         if (mountedRef.current && draftKeyRef.current === key && !el.value.trim()) el.value = text;
         if (!retryBackend || !(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;

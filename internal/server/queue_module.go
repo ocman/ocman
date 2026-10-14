@@ -21,7 +21,7 @@ func (s *Server) queueModule() *queuemod.Module {
 				}
 				return s.sessions
 			},
-			Adapter: s.adapterForSession, SendNow: s.sendNow,
+			Adapter: s.adapterForSession, SendNow: s.sendNow, PrepareSend: s.prepareSendNow,
 			Broadcast: s.broadcastGlobalEvent, SessionChanged: s.broadcastSessionChanged,
 			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		}

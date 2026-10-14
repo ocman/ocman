@@ -3,22 +3,51 @@ package server
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	log "github.com/sirupsen/logrus"
 )
 
+const sendPreparationTimeout = 10 * time.Second
+
 // sendNow is the shared direct-send seam for composer, lifecycle and queue.
 func (s *Server) sendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
-	err := s.sessions.SendMessage(ctx, platformID, req)
-	if err == nil || !errors.Is(err, platforms.ErrPlatformUnreachable) {
+	send, err := s.prepareSendNow(ctx, platformID, req)
+	if err != nil {
 		return err
 	}
-	if !s.relaunchOpencodeForSession(ctx, platformID, req.SessionID) {
-		return err
+	return send(ctx)
+}
+
+// Read/model preparation uses the caller's cancellable context; the returned
+// delivery may use an uncancelled receipt context once a queue admits it.
+func (s *Server) prepareSendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) (func(context.Context) error, error) {
+	read, cancel := context.WithTimeout(ctx, sendPreparationTimeout)
+	send, err := s.sessions.PrepareSendMessage(read, platformID, req)
+	cancel()
+	if err != nil {
+		return nil, err
 	}
-	return s.sessions.SendMessage(ctx, platformID, req)
+	return func(delivery context.Context) error {
+		err := send(delivery)
+		// Native inbox admission is never replayed on an uncertain response.
+		if err == nil || req.Delivery == "queue" || !errors.Is(err, platforms.ErrPlatformUnreachable) {
+			return err
+		}
+		// Recovery reads and launches still use the preparation lifetime.
+		read, cancel := context.WithTimeout(ctx, sendPreparationTimeout)
+		defer cancel()
+		if read.Err() != nil || !s.relaunchOpencodeForSession(read, platformID, req.SessionID) {
+			return err
+		}
+		retry, prepareErr := s.sessions.PrepareSendMessage(read, platformID, req)
+		if prepareErr != nil {
+			return prepareErr
+		}
+		return retry(delivery)
+	}, nil
 }
 
 // Relaunch only on the adapter's owner, never inferred directory ownership.

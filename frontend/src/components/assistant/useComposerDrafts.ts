@@ -24,6 +24,7 @@ export function useComposerDrafts(
   // failed send restoring its prompt, another tab).
   const persistedRef = useRef('');
   const versionRef = useRef(0);
+  const ownSaveRef = useRef<{ sid: string; text: string; revision: number } | undefined>(undefined);
 
   const cancelPending = useCallback(() => {
     if (timerRef.current) {
@@ -32,12 +33,24 @@ export function useComposerDrafts(
     }
   }, []);
 
-  /** Cancel pending autosave; a submission clears only its exact stored text. */
-  const clearDraftNow = useCallback((sid: string, submittedText?: string) => {
+  /** Clear this composer's autosave or submitted text, retaining independent peer edits. */
+  const clearDraftNow = useCallback((sid: string, submittedText?: string, submittedRevision?: number) => {
     cancelPending();
-    clearDraft(sid, submittedText);
+    const own = ownSaveRef.current;
+    const expected = submittedText !== undefined && own?.sid === sid && own.revision === submittedRevision ? own.text : submittedText;
+    ownSaveRef.current = undefined;
+    clearDraft(sid, expected, submittedRevision);
     persistedRef.current = getDraft(sid);
   }, [cancelPending]);
+
+  const syncDraftNow = useCallback((sid: string) => {
+    const el = inputRef.current;
+    if (!el || sid !== sessionId) return;
+    ownSaveRef.current = undefined;
+    versionRef.current = getDraftVersion(sid);
+    el.value = persistedRef.current = getDraft(sid);
+    onSyncRef.current?.(el.value);
+  }, [inputRef, sessionId]);
 
   /** Debounced autosave (300ms). Empty text clears the draft instead. */
   const scheduleDraftSave = useCallback((sid: string, getText: () => string) => {
@@ -56,7 +69,10 @@ export function useComposerDrafts(
       timerRef.current = null;
       if (version !== getDraftVersion(sid)) return;
       const text = getText().trim();
-      if (text) saveDraft(sid, text, version);
+      if (text) {
+        saveDraft(sid, text, version);
+        ownSaveRef.current = { sid, text, revision: version };
+      }
       else { discardDraft(sid); versionRef.current = getDraftVersion(sid); }
       persistedRef.current = text;
     }, 300);
@@ -67,6 +83,7 @@ export function useComposerDrafts(
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el || !sessionId) return;
+    ownSaveRef.current = undefined;
     versionRef.current = getDraftVersion(sessionId);
     el.value = persistedRef.current = getDraft(sessionId);
     return () => {
@@ -91,12 +108,10 @@ export function useComposerDrafts(
     return subscribeDraftTexts(() => {
       const stored = getDraft(sessionId);
       if (stored === persistedRef.current || el.value.trim() !== persistedRef.current || timerRef.current || inFlightRef.current) return;
-      versionRef.current = getDraftVersion(sessionId);
       // Synchronizing is not a user edit: no autosave, no revision change.
-      el.value = persistedRef.current = stored;
-      onSyncRef.current?.(stored);
+      syncDraftNow(sessionId);
     });
-  }, [sessionId, inputRef, inFlightRef]);
+  }, [sessionId, inputRef, inFlightRef, syncDraftNow]);
 
-  return { clearDraftNow, scheduleDraftSave };
+  return { clearDraftNow, scheduleDraftSave, syncDraftNow };
 }

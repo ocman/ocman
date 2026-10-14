@@ -220,6 +220,7 @@ flowchart TD
     Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
+    Modules -->|"queuemod: bounded preparation, then admitted delivery"| Sessions
     Lifecycle -->|creation, streamed attachments, restart + reload| Router
     Server --> Recovery[internal/sessionrecovery<br/>interruption history + replacement fences]
     Recovery -->|owner-local lifecycle reads| Registry
@@ -422,6 +423,9 @@ flowchart TD
   Sweep iteration and pre-send lifecycle/model reads stay cancellable and bounded.
   Only actual admitted delivery and durable dequeue/failure receipts detach
   cancellation, so a stalled owner read cannot hold shutdown open indefinitely.
+  `sessionsvc.PrepareSendMessage` resolves the adapter, model and first-prompt
+  metadata before returning a mutation-only delivery callback. Shared runtime
+  recovery still reads through the preparation lifetime, including before retry.
   Project model settings and provider cooldown persistence retain their existing
   state tables; the combined project-defaults route invalidates the module cache.
 - **platforms.SessionEventSink.** The registry installs status and idle callbacks

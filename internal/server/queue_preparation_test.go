@@ -13,9 +13,13 @@ type coldQueueOwner struct {
 	*fakePlatform
 	blockAt, reads              int
 	entered, release, cancelled chan struct{}
+	t                           *testing.T
 }
 
 func (p *coldQueueOwner) Session(ctx context.Context, id string, _, _ int) (*platforms.SessionDetail, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		p.t.Error("sender preparation read has no deadline")
+	}
 	p.reads++
 	if p.reads == p.blockAt {
 		close(p.entered)
@@ -40,7 +44,7 @@ func TestQueueShutdownCancelsRealSenderPreparation(t *testing.T) {
 			sent := make(chan struct{}, 1)
 			p := &coldQueueOwner{
 				fakePlatform: &fakePlatform{id: "r-cold:opencode", sendMessageFn: func(platforms.SendMessageRequest) error { sent <- struct{}{}; return nil }},
-				blockAt:      blockAt, entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}),
+				blockAt:      blockAt, entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}), t: t,
 			}
 			reg.Register(p)
 			ctx, cancel := context.WithCancel(t.Context())

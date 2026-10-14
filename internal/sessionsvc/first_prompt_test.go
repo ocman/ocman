@@ -128,3 +128,37 @@ func TestFirstPromptCommandAndUnknownMetadata(t *testing.T) {
 		t.Fatal("unknown metadata emitted a late event")
 	}
 }
+
+func TestPreparedMessageDeliversWithoutMoreOwnerReads(t *testing.T) {
+	p := &firstPromptPlatform{
+		fakePlatform: fakePlatform{id: "r-owner:claudecode"},
+		detail:       &platforms.SessionDetail{Session: &db.Session{ID: "s", Directory: "/repo", Title: "Mine"}},
+	}
+	var events []module.FirstPromptAdded
+	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{p.id: p}}, Hooks{
+		ProjectModels:    func(context.Context, string) ([]string, bool) { return []string{"anthropic/haiku"}, false },
+		FirstPromptAdded: func(_ context.Context, e module.FirstPromptAdded) { events = append(events, e) },
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	send, err := svc.PrepareSendMessage(ctx, string(p.id), platforms.SendMessageRequest{
+		SessionID: "s", Message: "full task", Model: "anthropic/haiku", Agent: "plan", Reasoning: "high",
+		Images: []platforms.ImageAttachment{{URL: "data:image/png;base64,a", Mime: "image/png"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.reads != 2 || len(p.sent) != 0 || len(events) != 0 {
+		t.Fatalf("preparation mutated: reads=%d sends=%v events=%v", p.reads, p.sent, events)
+	}
+	cancel()
+	p.detail, p.readErr = nil, errors.New("owner reads must not run after admission")
+	if err := send(context.WithoutCancel(ctx)); err != nil {
+		t.Fatal(err)
+	}
+	if p.reads != 2 || len(p.sent) != 1 || p.sent[0].Model != "anthropic/haiku" || p.sent[0].Agent != "plan" || p.sent[0].Reasoning != "high" || len(p.sent[0].Images) != 1 {
+		t.Fatalf("prepared delivery changed: reads=%d sends=%+v", p.reads, p.sent)
+	}
+	if len(events) != 1 || events[0].Platform != string(p.id) || events[0].Prompt != "full task" || !events[0].HasCustomTitle {
+		t.Fatal(events)
+	}
+}

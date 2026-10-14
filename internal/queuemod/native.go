@@ -33,18 +33,54 @@ func mergeQueued(ocman, native []queuedMessageView) []queuedMessageView {
 // still holds older follow-ups natively, it joins the back of that queue
 // instead of being sent at once, so it cannot overtake them.
 func (s *Module) sendHeld(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
-	if len(s.nativeQueuedViews(ctx, platformID, req.SessionID)) > 0 {
-		native := req
-		native.Delivery = "queue"
-		err := s.d.Sessions().SendMessage(ctx, platformID, native)
-		if !errors.Is(err, platforms.ErrUnsupported) {
-			return err
-		}
-		// The selection cannot be changed while older native inputs remain.
-		// Keep this head for the next idle edge without spending retries.
-		return queuesvc.ErrDeferred
+	send, err := s.PrepareSend(ctx, platformID, req)
+	if err != nil {
+		return err
 	}
-	return s.d.SendNow(ctx, platformID, req)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return send(ctx)
+}
+
+// PrepareSend completes ordering and shared sender discovery before admission.
+func (s *Module) PrepareSend(ctx context.Context, platformID string, req platforms.SendMessageRequest) (func(context.Context) error, error) {
+	native := len(s.nativeQueuedViews(ctx, platformID, req.SessionID)) > 0
+	if native {
+		req.Delivery = "queue"
+	}
+	send, err := s.prepareDirect(ctx, platformID, req)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, queuesvc.ErrDeferred
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !native {
+		return send, nil
+	}
+	return func(delivery context.Context) error {
+		err := send(delivery)
+		if errors.Is(err, platforms.ErrUnsupported) {
+			return queuesvc.ErrDeferred
+		}
+		return err
+	}, nil
+}
+
+func (s *Module) prepareDirect(ctx context.Context, platformID string, req platforms.SendMessageRequest) (func(context.Context) error, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if s.d.PrepareSend != nil {
+		return s.d.PrepareSend(ctx, platformID, req)
+	}
+	return func(delivery context.Context) error {
+		if req.Delivery == "queue" {
+			return s.d.Sessions().SendMessage(delivery, platformID, req)
+		}
+		return s.d.SendNow(delivery, platformID, req)
+	}, nil
 }
 
 // enqueueFollowUp holds send for the session's next idle edge.

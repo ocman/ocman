@@ -94,8 +94,10 @@ function write(id: string, next: (stored: TextRecord | undefined) => TextRecord 
   });
 }
 
-export function saveDraft(id: string, text: string, version = getDraftVersion(id)) {
+/** expectedText fences failed-send restoration against independently changed peer text. */
+export function saveDraft(id: string, text: string, version = getDraftVersion(id), expectedText?: string) {
   if (version !== getDraftVersion(id)) return;
+  if (expectedText !== undefined && getDraft(id) && getDraft(id) !== expectedText) return;
   if (!text) { discardDraft(id); return; }
   bump(id);
   setMemory(id, { text, revision: version });
@@ -103,15 +105,17 @@ export function saveDraft(id: string, text: string, version = getDraftVersion(id
   // A peer's discard raised the revision: this autosave is stale and must not land.
   const discard = discards.get(id);
   write(id, (stored) => {
+    if (expectedText !== undefined && stored?.text && stored.text !== expectedText) return undefined;
     const revision = discard?.optimistic === version ? discard.committed ?? version : version;
     return (stored?.revision || 0) <= revision ? { text, revision } : undefined;
   });
 }
 
 /** Remove sent text without invalidating newer edits: only the exact text/revision seen here is cleared. */
-export function clearDraft(id: string, submittedText?: string) {
+export function clearDraft(id: string, expectedText?: string, expectedRevision?: number) {
   const expected = texts.get(id);
-  if (!expected?.text || (submittedText !== undefined && expected.text !== submittedText)) return;
+  if (!expected?.text || (expectedText !== undefined && expected.text !== expectedText) ||
+    (expectedRevision !== undefined && expected.revision !== expectedRevision)) return;
   bump(id);
   setMemory(id, { text: '', revision: expected.revision });
   emit();

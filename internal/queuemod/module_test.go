@@ -2,6 +2,7 @@ package queuemod
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -172,5 +173,31 @@ func TestSettingsAndProjectModelInvalidation(t *testing.T) {
 	}
 	if models, off := NewModule(Deps{}).ProjectModelList(t.Context(), "/src/repo"); models != nil || off {
 		t.Fatalf("absent store: %v %v", models, off)
+	}
+}
+
+func TestPreparationCancellationDoesNotSpendQueueRetries(t *testing.T) {
+	for _, preparationErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(preparationErr.Error(), func(t *testing.T) {
+			store, err := state.Open(statetest.Path(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			m := NewModule(Deps{
+				Store: store, Adapter: func(context.Context, string, string) (platforms.Platform, bool) { return lifecyclePlatform{}, true },
+				PrepareSend: func(context.Context, string, platforms.SendMessageRequest) (func(context.Context) error, error) {
+					return nil, errors.Join(errors.New("owner preparation"), preparationErr)
+				},
+				Broadcast: func(string, []byte) {},
+			})
+			if err := m.Service().Enqueue(t.Context(), "opencode", true, platforms.SendMessageRequest{SessionID: "s", Message: "held"}); err != nil {
+				t.Fatal(err)
+			}
+			m.Service().Flush(t.Context(), "opencode", "s")
+			if rows, err := m.Service().List(t.Context(), "opencode", "s"); err != nil || len(rows) != 1 || rows[0].Attempts != 0 {
+				t.Fatalf("preparation spent retry budget: %+v %v", rows, err)
+			}
+		})
 	}
 }
