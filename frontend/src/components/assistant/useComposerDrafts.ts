@@ -32,11 +32,11 @@ export function useComposerDrafts(
     }
   }, []);
 
-  /** Cancel any pending autosave and drop the stored draft for `sid`. */
-  const clearDraftNow = useCallback((sid: string) => {
+  /** Cancel pending autosave; a submission clears only its exact stored text. */
+  const clearDraftNow = useCallback((sid: string, submittedText?: string) => {
     cancelPending();
-    clearDraft(sid);
-    persistedRef.current = '';
+    clearDraft(sid, submittedText);
+    persistedRef.current = getDraft(sid);
   }, [cancelPending]);
 
   /** Debounced autosave (300ms). Empty text clears the draft instead. */

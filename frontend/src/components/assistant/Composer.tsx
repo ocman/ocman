@@ -138,13 +138,14 @@ export function Composer({
   const { isRecording, isBusy: audioBusy, micError, setMicError, micRef, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled: audioDisabled, inputRef });
   // Attachments are bound to the current target, so they block switching it.
   const selectorDisabled = sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0;
-  const clearAfterSubmit = () => {
-    if (inputRef.current) inputRef.current.value = '';
-    slash.close();
-    setIsBashMode(false);
-    attachments.clear();
+  const clearAfterSubmit = (submittedText?: string) => {
     const key = draftKeyRef.current;
-    if (key) clearDraftNow(key);
+    if (key) clearDraftNow(key, submittedText);
+    const remaining = key ? getDraft(key) : '';
+    if (inputRef.current) inputRef.current.value = remaining;
+    slash.close();
+    syncInputRef.current(remaining);
+    attachments.clear();
   };
 
   const runSubmit = async (execute: () => void | Promise<void>, retryBackend = false) => {
@@ -158,7 +159,7 @@ export function Composer({
     const text = el.value.trim();
     const draftVersion = key ? getDraftVersion(key) : 0;
     inFlightRef.current = text;
-    if (key) clearDraftNow(key);
+    if (key) clearDraftNow(key, text);
     sendingRef.current = true;
     setSending(true);
     onRetryChange?.(null);
@@ -169,7 +170,7 @@ export function Composer({
         const submitted = execute();
         if (submitted) await submitted;
         // Re-pointed mid-send: the textarea now holds another session's draft.
-        if (mountedRef.current && draftKeyRef.current === key) clearAfterSubmit();
+        if (mountedRef.current && draftKeyRef.current === key) clearAfterSubmit(text);
         else {
           // A failed attempt may have restored the draft before a retry landed.
           if (key && getDraft(key) === text) clearDraft(key);

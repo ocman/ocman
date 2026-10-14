@@ -109,9 +109,9 @@ export function saveDraft(id: string, text: string, version = getDraftVersion(id
 }
 
 /** Remove sent text without invalidating newer edits: only the exact text/revision seen here is cleared. */
-export function clearDraft(id: string) {
+export function clearDraft(id: string, submittedText?: string) {
   const expected = texts.get(id);
-  if (!expected?.text) return;
+  if (!expected?.text || (submittedText !== undefined && expected.text !== submittedText)) return;
   bump(id);
   setMemory(id, { text: '', revision: expected.revision });
   emit();
