@@ -22,8 +22,7 @@
 .inbox-message-open:focus-visible, .inbox-select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* Hover swaps the timestamp for row actions, like the session sidebar. */
 .inbox-message-actions { position: absolute; top: 0; right: 0; display: flex; gap: 2px; margin: 14px 14px 0 0; opacity: 0; pointer-events: none; }
-.inbox-message-actions.pinned { position: static; flex-shrink: 0; }
-.inbox-message-actions.pinned, .inbox-message:hover .inbox-message-actions, .inbox-message:has(:focus-visible) .inbox-message-actions { opacity: 1; pointer-events: auto; }
+.inbox-message-actions.pinned, .inbox-message:hover .inbox-message-actions, .inbox-message:has(:focus-visible) .inbox-message-actions { position: static; flex-shrink: 0; opacity: 1; pointer-events: auto; }
 .inbox-message-actions.pinned .inbox-message-archive { display: none; }
 .inbox-message:hover .inbox-message-archive, .inbox-message:has(:focus-visible) .inbox-message-archive { display: inline-flex; }
 .inbox-message-actions .oc-icon-button { width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: var(--text-dim); }

@@ -2,8 +2,9 @@ import { test, expect } from './fixtures';
 
 for (const pinned of [false, true]) {
   test(`clicked inbox row restores its timestamp after mouse leaves, pinned=${pinned}`, async ({ mockedPage: page }) => {
+    const title = 'Hover message with a long subject that must not overlap the pin and archive controls';
     await page.route('**/api/inbox**', (route) => route.fulfill({ json: {
-      items: [{ id: 'hover', remoteId: 'local', title: 'Hover message', body: 'Message body', createdAt: 1, readAt: 1, pinned }], unreadTotal: 0,
+      items: [{ id: 'hover', remoteId: 'local', title, body: 'Message body', createdAt: 1, readAt: 1, pinned }], unreadTotal: 0,
     } }));
     await page.goto('/inbox');
     const message = page.getByRole('button', { name: /Hover message/ });
@@ -13,6 +14,9 @@ for (const pinned of [false, true]) {
     await message.click();
     await expect(archive).toBeVisible();
     await expect(timestamp).toBeHidden();
+    const subject = await message.getByText(title, { exact: true }).boundingBox();
+    const pin = await row.getByRole('button', { name: pinned ? 'Unpin message' : 'Pin message' }).boundingBox();
+    expect(subject!.x + subject!.width).toBeLessThanOrEqual(pin!.x);
     await page.mouse.move(0, 0);
     await expect(message).toHaveAttribute('aria-current', 'true');
     await expect(timestamp).toBeVisible();

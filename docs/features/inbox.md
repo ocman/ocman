@@ -18,7 +18,10 @@ Opening a message marks it read. Mark unread returns it to the unread list.
 The selected message has a unique URL, including its owning machine. Refreshing,
 sharing the link, or navigating browser history restores that message. Links to
 archived messages also preserve the archived view.
-Archiving the open message with either archive button or Delete/Backspace opens
+Middle-click a message in the list to archive it without opening it. Row actions
+appear on hover or keyboard focus; clicking a message does not keep them visible
+after the mouse leaves. Touch screens always show the controls.
+Archiving the open message with middle-click, either archive button, or Delete/Backspace opens
 the next message below that matches the current filters. If none is below, it
 opens the nearest matching message above; if none remain, the reader clears.
 This also works in Unread after reading has hidden the current row.
