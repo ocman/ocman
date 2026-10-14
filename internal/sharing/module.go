@@ -29,14 +29,31 @@ type Deps struct {
 	Guards      module.Guards
 }
 
-type Module struct{ Deps }
+type Module struct {
+	Deps
+	publishers module.Workers // idle-edge publishes, joined by Run
+}
 
 var (
 	_ module.Module     = (*Module)(nil)
 	_ module.Subscriber = (*Module)(nil)
+	_ module.Starter    = (*Module)(nil)
+	_ module.Runner     = (*Module)(nil)
 )
 
-func NewModule(deps Deps) *Module { return &Module{deps} }
+func NewModule(deps Deps) *Module { return &Module{Deps: deps} }
+
+// Start binds idle-edge publishes to the server's lifetime.
+func (m *Module) Start(ctx context.Context) error {
+	m.publishers.Bind(ctx)
+	return nil
+}
+
+// Run joins the publishes once the server stops.
+func (m *Module) Run(ctx context.Context) {
+	<-ctx.Done()
+	m.publishers.Close()
+}
 
 func (m *Module) Name() string { return "sharing" }
 
@@ -59,16 +76,16 @@ func (m *Module) Subscribe(b *module.Bus) {
 		if !ok {
 			return
 		}
-		go func() {
+		m.publishers.Go(func(ctx context.Context) {
 			defer func() {
 				if r := recover(); r != nil {
 					log.WithFields(log.Fields{"panic": r, "stack": string(debug.Stack()), "session_id": e.SessionID}).Error("share relay publisher panicked")
 				}
 			}()
-			if err := m.PublishCompletedTurn(context.Background(), adapter, e.SessionID); err != nil {
+			if err := m.PublishCompletedTurn(ctx, adapter, e.SessionID); err != nil {
 				log.WithError(err).WithField("session_id", e.SessionID).Warn("publishing completed turn to share relay")
 			}
-		}()
+		})
 	})
 }
 

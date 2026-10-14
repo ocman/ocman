@@ -1,6 +1,7 @@
 package sharing
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -64,5 +65,56 @@ func TestSubscribePublishesOnSessionIdle(t *testing.T) {
 	case <-adapter.looked:
 	case <-time.After(5 * time.Second):
 		t.Fatal("idle edge did not reach the share publisher")
+	}
+}
+
+type blockingSessionAdapter struct {
+	platforms.Platform
+	entered  chan struct{}
+	returned chan struct{}
+}
+
+func (blockingSessionAdapter) ID() platforms.ID { return "opencode" }
+
+func (a blockingSessionAdapter) Session(ctx context.Context, _ string, _, _ int) (*platforms.SessionDetail, error) {
+	close(a.entered)
+	<-ctx.Done()
+	close(a.returned)
+	return nil, ctx.Err()
+}
+
+// A publish started by an idle edge runs under the module's lifetime and is
+// joined by Run, so it never reads state.db after shutdown.
+func TestRunJoinsIdlePublisher(t *testing.T) {
+	store, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if _, err := store.CreateShareLink(t.Context(), "opencode", "s", 0); err != nil {
+		t.Fatal(err)
+	}
+	adapter := blockingSessionAdapter{entered: make(chan struct{}), returned: make(chan struct{})}
+	m := NewModule(Deps{Store: store, Platform: func(platforms.ID) (platforms.Platform, bool) { return adapter, true }})
+	var bus module.Bus
+	m.Subscribe(&bus)
+	ctx, cancel := context.WithCancel(t.Context())
+	if err := m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ran := make(chan struct{})
+	go func() { m.Run(ctx); close(ran) }()
+	bus.PublishSessionIdle(t.Context(), module.SessionIdle{Platform: "opencode", SessionID: "s"})
+	<-adapter.entered
+	cancel()
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return: the publisher ignored the lifetime")
+	}
+	select {
+	case <-adapter.returned:
+	default:
+		t.Fatal("Run returned before the publisher")
 	}
 }
