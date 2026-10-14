@@ -46,6 +46,7 @@ func (m *Module) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		RefreshChecks bool   `json:"refreshChecks"`
 		Refresh       bool   `json:"refresh"`
 		PRStatus      bool   `json:"prStatus"`
+		OpenGraph     bool   `json:"openGraph"`
 	}
 	if !httpx.ReadJSON(w, r, maxPreviewResolveBody, &req) {
 		return
@@ -89,6 +90,17 @@ func (m *Module) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		ctx = linkpreview.WithPreviewRefresh(ctx)
 	}
 	previews := svc.Resolve(ctx, viewerID, home, refs)
+	if req.OpenGraph && !req.PRStatus && req.ChecksSHA == "" && m.previewAccessAllowed(r) {
+		rich := false
+		for _, p := range previews {
+			rich = rich || (p.Title != "" && (p.State == linkpreview.StateOK || p.Stale))
+		}
+		if !rich {
+			if p := svc.ResolveOpenGraph(ctx, viewerID, home, req.Text); p.State == linkpreview.StateOK && p.Title != "" {
+				previews = []linkpreview.Preview{p}
+			}
+		}
+	}
 	if previews == nil {
 		previews = []linkpreview.Preview{}
 	}

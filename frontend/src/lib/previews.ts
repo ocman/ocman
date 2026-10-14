@@ -26,6 +26,9 @@ export interface PreviewResult extends PreviewRef {
   checks?: PRChecks;
   prStatus?: PRMergeability;
   title?: string;
+  description?: string;
+  image?: string;
+  imageAlt?: string;
   status?: string;
   /** Bootstrap icon class, e.g. `bi-kanban`. */
   icon?: string;
@@ -200,8 +203,8 @@ export async function removePreviewApp(id: string): Promise<PreviewApps> {
 }
 
 /** Discovers and resolves previews in `text`; the server owns discovery and credentials. */
-export async function resolvePreviews(text: string, remoteId = 'local', signal?: AbortSignal, refresh = false): Promise<PreviewResult[]> {
-  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text, ...(refresh ? { refresh: true } : {}) }, { signal });
+export async function resolvePreviews(text: string, remoteId = 'local', signal?: AbortSignal, refresh = false, openGraph = false): Promise<PreviewResult[]> {
+  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text, ...(refresh ? { refresh: true } : {}), ...(openGraph ? { openGraph: true } : {}) }, { signal });
   return previews;
 }
 

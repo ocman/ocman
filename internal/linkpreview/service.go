@@ -332,6 +332,7 @@ func safeURL(raw string) string {
 func sanitize(p Preview, ref Ref) Preview {
 	out := Preview{
 		Ref: ref, Title: short(p.Title, 200), Status: short(p.Status, 40),
+		Description: short(p.Description, 500), Image: safeURL(p.Image), ImageAlt: short(p.ImageAlt, 200),
 		UpdatedAt: p.UpdatedAt, State: StateOK, Stale: p.Stale,
 	}
 	if u := safeURL(p.URL); u != "" {

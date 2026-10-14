@@ -12,6 +12,7 @@ import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ComponentProps, FC, ReactNode } from 'react';
 import { Link, useInRouterContext } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
+import { MarkdownPreviewLink } from '../MarkdownPreviewLink';
 import { FactoryActionCard } from '../FactoryActionCard';
 import { FactoryMarkerCard } from '../FactoryMarkerCard';
 import { factoryActionFromHref } from '../factoryEpicStatus';
@@ -220,6 +221,7 @@ function MarkdownLink(props: any) {
   // In-app paths must not reload the page; anchors and externals stay plain.
   if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;
   const local = internal || href?.startsWith('#');
+  if (/^https?:\/\//.test(href ?? '')) return <MarkdownPreviewLink {...rest} href={href} target="_blank" rel="noopener noreferrer">{children}</MarkdownPreviewLink>;
   return <a {...rest} href={href} target={local ? undefined : '_blank'} rel={local ? undefined : 'noopener noreferrer'}>{children}</a>;
 }
 

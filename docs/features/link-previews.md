@@ -4,11 +4,24 @@ weight: 18
 ---
 
 Links in a conversation can render as preview cards. Ocman supports GitHub,
-Forgejo, GitLab, Slack, Notion, Linear and Jira Cloud. Previews are fetched on
-this machine with this machine's credentials: your CLI logins, tokens you paste
-in Settings, or a sign-in. The browser only learns which providers are set up
-and which link hosts they cover, so text that cannot produce a preview is never
-sent to the server.
+Forgejo, GitLab, Slack, Notion, Linear and Jira Cloud, plus Open Graph metadata
+from public web pages. Provider previews use this machine's CLI logins, tokens
+you paste in Settings, or a sign-in. Open Graph requests send no credentials.
+
+## Hover previews
+
+Hover over a markdown link or focus it with the keyboard for half a second to
+request a preview. The card appears once its metadata loads. You can move onto
+the card and click it; leaving the link and card dismisses it, as does Escape.
+
+Rich provider cards take priority. Otherwise, pages with an `og:title` can show
+their title, description, site name and image. Pages without usable metadata
+keep their normal link. Open Graph needs no provider setup and is fetched only
+for the hovered or focused link, rather than every URL in a message.
+
+Ocman fetches public HTTP(S) pages and proxies their preview images. Loopback,
+private-network addresses and nonstandard ports are blocked, including redirects.
+Pages requiring a login cannot supply Open Graph metadata through this fallback.
 
 ## Fallback link or rich card
 
@@ -61,9 +74,9 @@ Cards distinguish unavailable checks from a commit with no CI status.
 | Linear | `https://linear.app/<workspace>/issue/<KEY-n>[/slug]` | Issue identifier |
 | Jira Cloud | `https://<site>.atlassian.net/browse/<KEY-n>` | Issue key, searched on every connected site |
 
-Only `https` links on the exact hosts listed here or in your configuration are
-recognized. A link on any other host stays plain text, and ocman never
-contacts that host. One message previews at most 20 resources.
+Automatic provider cards recognize only `https` links on the hosts listed here
+or in your configuration. Other HTTP(S) markdown links can use the Open Graph
+hover fallback. One message automatically previews at most 20 provider resources.
 
 ### Ticket IDs
 

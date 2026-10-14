@@ -80,6 +80,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("/api/previews/connect", post(m.handlePreviewConnect))
 	r.Handle("/api/previews/disconnect", post(m.handlePreviewDisconnect))
 	r.Handle("/api/previews/resolve", post(m.handlePreviewResolve))
+	r.Handle("/api/previews/image", get(m.handlePreviewImage))
 	r.Handle("/api/previews/token", post(m.handlePreviewToken))
 	r.Handle("/api/previews/apps", get(m.handlePreviewApps))
 	r.Handle("/api/previews/apps/save", post(m.handleSavePreviewApp))

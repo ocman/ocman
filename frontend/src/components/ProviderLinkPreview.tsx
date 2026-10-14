@@ -25,6 +25,8 @@ const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean }> = ({ pre
     <span className="gh-preview__icon"><i className={`bi ${preview.icon || 'bi-link-45deg'}`} aria-hidden="true" /></span>
     <span className="gh-preview__body">
       <span className="gh-preview__title">{label(preview)}</span>
+      {preview.image && <img className="gh-preview__image" src={`/api/previews/image?url=${encodeURIComponent(preview.image)}`} alt={preview.imageAlt ?? ''} onError={(event) => { event.currentTarget.hidden = true; }} />}
+      {preview.description && <span className="gh-preview__description">{preview.description}</span>}
       <span className="gh-preview__meta">
         {statusClass ? <span className={`gh-preview__state gh-preview__state--${statusClass}`}>{preview.status}</span> : preview.status}
         {preview.status && preview.meta?.some(Boolean) && ' · '}

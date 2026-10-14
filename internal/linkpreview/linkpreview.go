@@ -7,6 +7,8 @@
 // fixed API hosts (see API). Results are cached per viewer, owner, provider,
 // workspace and resource so one browser's private metadata never reaches
 // another.
+// Explicit Open Graph fallback requests use a separate credential-free client
+// restricted to public network addresses, including every redirect and image.
 package linkpreview
 
 import (
@@ -53,16 +55,19 @@ func (r Ref) key() string {
 // Preview is the normalized preview result.
 type Preview struct {
 	Ref
-	Title     string          `json:"title,omitempty"`
-	Status    string          `json:"status,omitempty"`
-	Icon      string          `json:"icon,omitempty"` // Bootstrap icon class, e.g. bi-kanban
-	Meta      []string        `json:"meta,omitempty"` // short, display-safe facts
-	UpdatedAt time.Time       `json:"updatedAt,omitzero"`
-	State     State           `json:"state"`
-	Stale     bool            `json:"stale,omitempty"` // cached data served while rate limited
-	HeadSHA   string          `json:"headSha,omitempty"`
-	Checks    *forge.CIStatus `json:"checks,omitempty"`
-	PRStatus  *PRStatus       `json:"prStatus,omitempty"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Image       string          `json:"image,omitempty"`
+	ImageAlt    string          `json:"imageAlt,omitempty"`
+	Status      string          `json:"status,omitempty"`
+	Icon        string          `json:"icon,omitempty"` // Bootstrap icon class, e.g. bi-kanban
+	Meta        []string        `json:"meta,omitempty"` // short, display-safe facts
+	UpdatedAt   time.Time       `json:"updatedAt,omitzero"`
+	State       State           `json:"state"`
+	Stale       bool            `json:"stale,omitempty"` // cached data served while rate limited
+	HeadSHA     string          `json:"headSha,omitempty"`
+	Checks      *forge.CIStatus `json:"checks,omitempty"`
+	PRStatus    *PRStatus       `json:"prStatus,omitempty"`
 	// Choices are the candidates for an ambiguous ticket identifier; a
 	// resolver returning them makes the preview StateAmbiguous.
 	Choices []Choice `json:"choices,omitempty"`

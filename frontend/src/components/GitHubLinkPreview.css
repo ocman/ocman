@@ -90,6 +90,28 @@
   font-size: 11px;
 }
 
+.gh-preview__image {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+}
+
+.gh-preview__description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  color: var(--text-dim);
+}
+
+.oc-link-preview .gh-preview {
+  margin: 0;
+}
+
+.oc-link-preview .gh-preview__title {
+  white-space: normal;
+}
+
 .gh-preview__state {
   font-weight: 600;
   font-size: 10px;

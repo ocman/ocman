@@ -62,6 +62,7 @@ flowchart LR
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage + reviewer APIs]
+    Ocman -->|credential-free HTTP, public addresses only| WebPages[Open Graph pages<br/>and raster preview images]
     Ocman -->|encrypted Web Push + VAPID| Push[Browser push services]
     Push -->|wake service worker + OS notification| Browser
     Ocman <-->|gRPC + token: sessions, upstream identities, hosts, plugins| Remotes[Remote ocman<br/>instances]
@@ -72,6 +73,8 @@ flowchart LR
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
+- **Public web pages.** The hub reads Open Graph metadata on delayed markdown
+  link hover and proxies preview images. Provider-specific cards take priority.
 - **Browser push services.** Opt-in device subscriptions receive encrypted Web
   Push alerts even with the page closed. The browser service worker displays
   session-context notifications and opens an owner-qualified session route on click.
@@ -719,8 +722,19 @@ flowchart TD
   its link hosts, account display names, and the rule patterns routed to a
   configured provider. `useProviderPreviews` only posts text with a link on
   a configured host or a routed-rule match, so unconfigured links never cost
-  a request. Cards carry no connect flow; Settings → Link previews manages
+  a request. Explicit markdown-link hover requests can also resolve public
+  Open Graph metadata, as described below. Cards carry no connect flow; Settings → Link previews manages
   tokens and sign-ins, and `ocman:preview-auth-changed` reloads previews.
+- **Open Graph hover previews.** Markdown links wait 500 ms on hover or keyboard
+  focus, then resolve through the same endpoint with `openGraph: true`. A rich
+  provider result wins; otherwise one public HTTP(S) page supplies `og:title`,
+  `og:description`, `og:site_name` and `og:image`. This explicit fallback requires
+  app access and shares the metadata cache, fetch budget and concurrency limit.
+  Its credential-free client validates DNS addresses before dialing and on every
+  redirect, rejects private networks and nonstandard ports, and bounds HTML to
+  1 MiB. Images go through `/api/previews/image`, with the same address checks,
+  a 2 MiB limit and raster-only responses. The browser never fetches the image
+  host directly. Missing metadata leaves the original link alone.
 - **Forge previews** (`linkpreview.Forge`, `internal/previews/forges.go`).
   GitHub, every https Forgejo host (tea logins, saved-token hosts and app
   hosts) and GitLab hosts (`gitlab.com`, saved-token and app hosts) resolve
@@ -818,6 +832,7 @@ flowchart TD
     Stores --> Persistence[Browser persistence<br/>IndexedDB drafts, text + receipts]
     Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
+    Comp -->|delayed markdown hover: provider or Open Graph card, proxied image| API
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
     Stores -->|visible pane reads; session rows carry Factory tags| API[lib/ API client]
     Stores --> SSE[SSE subscription]
