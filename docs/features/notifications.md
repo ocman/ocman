@@ -11,10 +11,24 @@ details panel was open. The link's owner takes precedence over cached sessions.
 
 ## App icon count
 
-On supported installed PWAs, the icon shows the number of distinct unread or
-attention sessions. A session needing both permission and question input counts
-once; same-id sessions on different owners count separately. Reading or resolving
-the sessions clears the badge when the app refreshes its notification state.
+On supported installed PWAs, **Settings → Notifications → App icon badge** lets
+you choose what contributes to the count:
+
+- Unread sessions and input requests, including permission and choice prompts.
+- Primary Inbox unread messages.
+- Factory Inbox unread messages.
+- Routines Inbox unread messages.
+
+The first three sources are enabled by default; Routines Inbox is off. These
+preferences are shared by every device connected to this ocman instance and apply
+to foreground counts and background push. Routine sessions are excluded from
+the count and session alerts. Explicit Inbox messages from routines can still
+count when you enable Routines Inbox.
+
+A session needing both permission and question input counts once; same-id
+sessions on different owners count separately. Inbox permission requests never
+add another count. Reading, resolving or archiving items removes their count
+when the app refreshes its notification state.
 Archived sessions, including sessions in archived projects, do not count or
 generate alerts until new activity resurfaces them under your archive settings.
 Push alerts also carry the current count so a closed app can update its badge.

@@ -303,7 +303,8 @@ type testRouter struct {
 	mux *http.ServeMux
 }
 
-func (r testRouter) Handle(pattern string, h http.HandlerFunc) { r.mux.HandleFunc(pattern, h) }
+func (r testRouter) Handle(pattern string, h http.HandlerFunc)  { r.mux.HandleFunc(pattern, h) }
+func (r testRouter) Setting(pattern string, h http.HandlerFunc) { r.Handle(pattern, h) }
 
 func TestModuleRoutesEnforceMethodAndAuth(t *testing.T) {
 	m := fixture(t)
@@ -329,6 +330,10 @@ func TestModuleRoutesEnforceMethodAndAuth(t *testing.T) {
 		{http.MethodGet, "/api/notifications/push-key", false, http.StatusUnauthorized},
 		{http.MethodGet, "/api/notifications/push-key", true, http.StatusOK},
 		{http.MethodGet, "/api/notifications/subscribe", true, http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/settings/notification-badge", false, http.StatusUnauthorized},
+		{http.MethodPost, "/api/settings/notification-badge", false, http.StatusUnauthorized},
+		{http.MethodGet, "/api/settings/notification-badge", true, http.StatusOK},
+		{http.MethodDelete, "/api/settings/notification-badge", true, http.StatusMethodNotAllowed},
 	} {
 		r := httptest.NewRequest(tc.method, tc.path, nil)
 		if tc.auth {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // notifyEntry is the bounded payload shared by all notification consumers.
@@ -66,10 +67,17 @@ func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Se
 	if err := s.applyNotifySessionState(ctx, all); err != nil {
 		return nil, err
 	}
+	if err := s.sessions.WaitForRoutineCreation(ctx); err != nil {
+		return nil, err
+	}
+	routines, err := s.stateDB.RoutineSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]notifyEntry, 0, len(all))
 	for i := range all {
 		se := &all[i]
-		if se.Archived {
+		if se.Archived || se.RoutineID != "" || routines[state.Key{Platform: se.Platform, SessionID: se.ID}] != "" {
 			continue
 		}
 		deferredPermission := false

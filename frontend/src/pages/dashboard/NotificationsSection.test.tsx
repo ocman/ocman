@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NotificationsSection } from './SettingsSections';
 import { useUiStore } from '../../lib/uiStore';
 import { enablePush, disablePush, pushSubscribed, pushSupported } from '../../lib/pushNotifications';
+import { useBadgeSettings, useSaveBadgeSettings } from '../../lib/badgeSettings';
 
 vi.mock('../../lib/pushNotifications', () => ({ enablePush: vi.fn(), disablePush: vi.fn(), pushSubscribed: vi.fn(), pushSupported: vi.fn() }));
+vi.mock('../../lib/badgeSettings', () => ({ useBadgeSettings: vi.fn(), useSaveBadgeSettings: vi.fn() }));
 
 beforeEach(() => {
+  vi.mocked(useBadgeSettings).mockReturnValue({ data: { sessions: true, primary: true, factory: true, routines: false } } as ReturnType<typeof useBadgeSettings>);
+  vi.mocked(useSaveBadgeSettings).mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue({}) } as unknown as ReturnType<typeof useSaveBadgeSettings>);
   vi.stubGlobal('Notification', { permission: 'granted', requestPermission: vi.fn().mockResolvedValue('granted') });
   vi.mocked(pushSupported).mockReturnValue(true);
   vi.mocked(pushSubscribed).mockResolvedValue(false);
@@ -15,7 +19,7 @@ beforeEach(() => {
   vi.mocked(disablePush).mockResolvedValue(undefined);
   useUiStore.setState({ notificationsEnabled: false });
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.resetAllMocks(); useUiStore.setState({ notificationsEnabled: false }); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); useUiStore.setState({ notificationsEnabled: false }); });
 
 it('registers background push before marking notifications enabled', async () => {
   render(<NotificationsSection />);
@@ -84,4 +88,24 @@ it('shows Home Screen instructions when the browser lacks notifications', async 
   expect(screen.getByLabelText('System notifications')).toBeDisabled();
   expect(screen.getByText(/add ocman to your Home Screen/)).toBeInTheDocument();
   await act(async () => {});
+});
+
+it('offers four badge sources and saves the combined session and input setting', async () => {
+  render(<NotificationsSection />);
+  expect(screen.getByLabelText('Unread sessions and input requests')).toBeChecked();
+  expect(screen.getByLabelText('Primary Inbox unread')).toBeChecked();
+  expect(screen.getByLabelText('Factory Inbox unread')).toBeChecked();
+  expect(screen.getByLabelText('Routines Inbox unread')).not.toBeChecked();
+  fireEvent.click(screen.getByLabelText('Unread sessions and input requests'));
+  await waitFor(() => expect(useSaveBadgeSettings().mutateAsync).toHaveBeenCalledWith({ sessions: false, primary: true, factory: true, routines: false }));
+});
+
+it('shows retry instead of controls when badge settings fail to load', () => {
+  const refetch = vi.fn();
+  vi.mocked(useBadgeSettings).mockReturnValue({ isError: true, refetch, isFetching: false } as unknown as ReturnType<typeof useBadgeSettings>);
+  render(<NotificationsSection />);
+  expect(screen.getByText('Could not load badge settings.')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Primary Inbox unread')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(refetch).toHaveBeenCalledOnce();
 });

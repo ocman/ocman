@@ -12,6 +12,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/notifications"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func (s *Server) notificationsModule() *notifications.Module {
@@ -40,6 +41,10 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 		return nil, err
 	}
 	entries, err := s.notificationEntriesForSessions(ctx, sortAndLimitSessions(all, 500), true, true)
+	if err != nil {
+		return nil, err
+	}
+	settings, err := s.notificationsModule().BadgeSettings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -104,13 +109,22 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 	attention := make(map[[2]string]bool)
 	for _, entry := range entries {
 		// Match useNotifyData's attention filter; done envelopes only trigger alerts.
-		if entry.PendingPermission || entry.PendingQuestion || (!entry.Seen && !entry.SuppressTerminal &&
-			(entry.Status == db.StatusWaiting || entry.Status == db.StatusError || entry.Status == db.StatusInterrupted)) {
+		if settings.Sessions && (entry.PendingPermission || entry.PendingQuestion || (!entry.Seen && !entry.SuppressTerminal &&
+			(entry.Status == db.StatusWaiting || entry.Status == db.StatusError || entry.Status == db.StatusInterrupted))) {
 			attention[[2]string{entry.platform, entry.ID}] = true
 		}
 	}
+	inboxCount := 0
+	if settings.Primary || settings.Factory || settings.Routines {
+		inboxCount, err = s.inboxModule().BadgeCount(ctx, map[string]bool{
+			state.InboxGeneral: settings.Primary, state.InboxFactory: settings.Factory, state.InboxRoutine: settings.Routines,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	for i := range out {
-		out[i].Notification.BadgeCount = len(attention)
+		out[i].Notification.BadgeCount = len(attention) + inboxCount
 	}
 	return out, nil
 }

@@ -13,6 +13,7 @@ import { SpeechSettings } from '../../components/SpeechSettings';
 import { DefaultAgentSetting } from '../../components/DefaultAgentSetting';
 import { enablePush, disablePush, pushSupported, pushSubscribed } from '../../lib/pushNotifications';
 import { Button } from '../../components/Control';
+import { AppBadgeSettings } from '../../components/AppBadgeSettings';
 import {
   notificationsSupported,
   requestNotificationPermission,
@@ -110,6 +111,7 @@ export function NotificationsSection() {
           onSave={(next) => setBellEnabled(next)}
         />
       </SettingRow>
+      <AppBadgeSettings />
     </>
   );
 }

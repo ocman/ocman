@@ -51,6 +51,8 @@ func New(d Deps) *Module {
 func (*Module) Name() string { return "notifications" }
 
 func (m *Module) Routes(r module.Router) {
+	r.Setting("GET /api/settings/notification-badge", m.d.Guards.Auth(m.badgeSettings))
+	r.Setting("POST /api/settings/notification-badge", m.d.Guards.Auth(m.badgeSettings))
 	r.Handle("GET /api/notifications/push-key", m.d.Guards.Auth(m.publicKey))
 	r.Handle("POST /api/notifications/subscribe", m.d.Guards.Auth(m.subscribe))
 	r.Handle("POST /api/notifications/subscription", m.d.Guards.Auth(m.subscriptionStatus))

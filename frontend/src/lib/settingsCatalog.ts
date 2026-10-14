@@ -29,6 +29,12 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'app-icon-badge': {
+    group: 'notifications', title: 'App icon badge',
+    description: 'Choose which unread items contribute to the installed app icon count. These settings apply to every device connected to this ocman instance, including background push. Reading or archiving items removes their count.',
+    example: 'Include unread sessions and Primary Inbox messages, but disable Factory and Routines messages. Permission and choice prompts count once per session, never again as Inbox permission items.',
+    keywords: 'badge count ipad ios unread primary factory routines permissions choices',
+  },
   'enabled-platforms': {
     group: 'platforms', title: 'Enabled platforms',
     description: 'Choose the coding platforms enabled on this machine. Changes reload the backend after active turns, prompts and queued messages finish, without restarting the app. An explicit -platforms CLI flag overrides these choices. Configure remotes on their own Settings page.',

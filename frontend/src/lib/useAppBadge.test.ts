@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { attentionSessionCount, updateAppBadge, useAppBadge } from './useAppBadge';
 import { useNotifyData } from './useNotifyData';
+import { useInbox } from './queries';
+import { useBadgeSettings } from './badgeSettings';
 
 vi.mock('./useNotifyData', () => ({ useNotifyData: vi.fn(), useNotifyStore: (select: (state: { lastFetched: number }) => number) => select({ lastFetched: 100 }) }));
-afterEach(() => { vi.unstubAllGlobals(); vi.resetAllMocks(); });
+vi.mock('./queries', () => ({ useInbox: vi.fn() }));
+vi.mock('./badgeSettings', () => ({ useBadgeSettings: vi.fn() }));
+beforeEach(() => {
+  vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as unknown as ReturnType<typeof useInbox>);
+  vi.mocked(useBadgeSettings).mockReturnValue({ data: { sessions: true, primary: true, factory: true, routines: false } } as ReturnType<typeof useBadgeSettings>);
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
 
 it('counts distinct unread or attention sessions, including seen sessions needing input', () => {
   expect(attentionSessionCount([
@@ -41,4 +49,48 @@ it('handles unsupported browsers and rejected OS updates', async () => {
   vi.stubGlobal('navigator', {}); await updateAppBadge(1);
   vi.stubGlobal('navigator', { setAppBadge: vi.fn().mockRejectedValue(new Error('denied')) });
   await expect(updateAppBadge(1)).resolves.toBeUndefined();
+});
+
+it('combines selected unread Inbox categories with sessions, excluding permission items', async () => {
+  const setAppBadge = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { setAppBadge });
+  vi.mocked(useNotifyData).mockReturnValue([{ id: 'session', status: 'busy', seen: true, pendingQuestion: true }]);
+  vi.mocked(useInbox).mockReturnValue({ data: { items: [
+    { id: 'same', remoteId: 'local', category: 'general' }, { id: 'same', remoteId: 'remote' },
+    { id: 'factory', category: 'factory' }, { id: 'routine', category: 'routine' },
+    { id: 'permission', category: 'permission' }, { id: 'legacy-permission', permission: {} },
+    { id: 'read', readAt: 1 }, { id: 'archived', archivedAt: 1 },
+  ], unreadTotal: 6 } } as ReturnType<typeof useInbox>);
+  const hook = renderHook(() => useAppBadge());
+  await waitFor(() => expect(setAppBadge).toHaveBeenLastCalledWith(4));
+  vi.mocked(useBadgeSettings).mockReturnValue({ data: { sessions: false, primary: false, factory: true, routines: true } } as ReturnType<typeof useBadgeSettings>);
+  hook.rerender();
+  await waitFor(() => expect(setAppBadge).toHaveBeenLastCalledWith(2));
+  vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as unknown as ReturnType<typeof useInbox>);
+  vi.stubGlobal('navigator', { setAppBadge, clearAppBadge: vi.fn().mockResolvedValue(undefined) });
+  hook.rerender();
+  await waitFor(() => expect(navigator.clearAppBadge).toHaveBeenCalledOnce());
+});
+
+it('preserves the current badge until settings and Inbox data are loaded', () => {
+  const setAppBadge = vi.fn();
+  vi.stubGlobal('navigator', { setAppBadge });
+  vi.mocked(useNotifyData).mockReturnValue([]);
+  vi.mocked(useInbox).mockReturnValue({ data: undefined } as ReturnType<typeof useInbox>);
+  const hook = renderHook(() => useAppBadge());
+  expect(setAppBadge).not.toHaveBeenCalled();
+  vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as unknown as ReturnType<typeof useInbox>);
+  vi.mocked(useBadgeSettings).mockReturnValue({ data: undefined } as ReturnType<typeof useBadgeSettings>);
+  hook.rerender();
+  expect(setAppBadge).not.toHaveBeenCalled();
+});
+
+it('clears the badge when all sources are disabled even if snapshots are unavailable', async () => {
+  const clearAppBadge = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { setAppBadge: vi.fn(), clearAppBadge });
+  vi.mocked(useNotifyData).mockReturnValue(null);
+  vi.mocked(useInbox).mockReturnValue({ data: undefined } as ReturnType<typeof useInbox>);
+  vi.mocked(useBadgeSettings).mockReturnValue({ data: { sessions: false, primary: false, factory: false, routines: false } } as ReturnType<typeof useBadgeSettings>);
+  renderHook(() => useAppBadge());
+  await waitFor(() => expect(clearAppBadge).toHaveBeenCalledOnce());
 });
