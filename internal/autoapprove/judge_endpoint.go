@@ -175,5 +175,6 @@ func parseTypeSafeVerdict(body []byte, threshold float64) JudgeResult {
 	if answer.Choice == "safe" && *selected >= threshold {
 		return JudgeResult{Verdict: verdictSafe, Reasoning: fmt.Sprintf("Reviewer classified the request as safe (probability %.4f).", *selected)}
 	}
-	return JudgeResult{Verdict: verdictUnsafe, Reasoning: "Reviewer classified the request as unsafe or insufficiently certain; human review required."}
+	label := map[string]string{"safe": "yes", "unsafe": "no", "uncertain": "uncertain"}[answer.Choice]
+	return JudgeResult{Verdict: verdictUnsafe, Reasoning: fmt.Sprintf("Reviewer did not auto-approve (answer: %s, confidence: %.2f%%, required safe confidence: %.2f%%). Human review required.", label, *selected*100, threshold*100)}
 }

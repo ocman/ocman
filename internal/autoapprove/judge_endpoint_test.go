@@ -196,6 +196,24 @@ func TestTypeSafeProbabilityGate(t *testing.T) {
 	}
 }
 
+func TestTypeSafeDeclinedReasoning(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{"unsafe", `{"choice":"unsafe","probabilities":{"safe":0.05,"unsafe":0.9,"uncertain":0.05}}`, "answer: no, confidence: 90.00%, required safe confidence: 99.00%"},
+		{"below threshold", `{"choice":"safe","probabilities":{"safe":0.98,"unsafe":0.01,"uncertain":0.01}}`, "answer: yes, confidence: 98.00%, required safe confidence: 99.00%"},
+		{"uncertain", `{"choice":"uncertain","probabilities":{"safe":0.05,"unsafe":0.05,"uncertain":0.9}}`, "answer: uncertain, confidence: 90.00%, required safe confidence: 99.00%"},
+		{"fractional confidence", `{"choice":"unsafe","probabilities":{"safe":0.002,"unsafe":0.995,"uncertain":0.003}}`, "answer: no, confidence: 99.50%, required safe confidence: 99.00%"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := parseTypeSafeVerdict([]byte(`{"answers":{"verdict":`+tc.body+`}}`), .99)
+			if result.Verdict != verdictUnsafe || result.EvaluationFailed || !strings.Contains(result.Reasoning, tc.want) {
+				t.Fatalf("result = %+v, want reasoning containing %q", result, tc.want)
+			}
+		})
+	}
+}
+
 func TestEndpointCacheScopeWithInflightSettingsChange(t *testing.T) {
 	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
