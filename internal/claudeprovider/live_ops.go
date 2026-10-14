@@ -283,7 +283,8 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 	if l.foreign(&o) {
 		return l.foreignError(o)
 	}
-	w := &waitTicket{}
+	input := uuid.NewString() // echoed by --replay-user-messages when the CLI starts it
+	w := &waitTicket{input: input}
 	done := make(chan struct{})
 	var prev chan struct{}
 	err := l.sup.BeginTurn(id, func() {
@@ -302,7 +303,6 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 	if err != nil {
 		return statusError{http.StatusConflict, err}
 	}
-	input := uuid.NewString() // echoed by --replay-user-messages when the CLI starts it
 	msg := map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": userContent(text, images)},
 		"parent_tool_use_id": nil, "session_id": "", "uuid": input}
 	// "provider/model" from the composer; claude takes the model alone.
@@ -320,20 +320,35 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 			if err == nil {
 				err = l.changeModel(p, model)
 			}
-			l.mu.Lock()
-			cancelled := w.cancelled
-			l.mu.Unlock()
-			if err == nil && cancelled {
-				err = errAborted
-			}
 			if err == nil {
-				err = l.write(p, msg)
+				// The cancellation check and the write share the stdin lock
+				// with an interrupt, so an abort either cancels this input or
+				// sees it written ahead of the interrupt.
+				p.writeMu.Lock()
+				l.mu.Lock()
+				if w.cancelled {
+					err = errAborted
+				} else {
+					w.written = true
+				}
+				l.mu.Unlock()
+				if err == nil {
+					err = l.writeLocked(p, msg)
+				}
+				p.writeMu.Unlock()
 			}
 			if err != nil {
 				l.mu.Lock()
-				p.busy = false
-				l.stopLocked(p)
-				l.mu.Unlock()
+				if errors.Is(err, errAborted) && p.pending[input] {
+					// Joined a running turn: the interrupt's result settles it.
+					delete(p.pending, input)
+					l.mu.Unlock()
+					l.finishDeferredResult(p)
+				} else {
+					p.busy = false
+					l.stopLocked(p)
+					l.mu.Unlock()
+				}
 			} else {
 				testHook("written", id)
 			}

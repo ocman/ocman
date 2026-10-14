@@ -25,6 +25,12 @@ func sdkInitializeRequest() map[string]any {
 
 // control waits for the CLI's acknowledgment, exit or deadline, never holding l.mu.
 func (l *live) control(ctx context.Context, p *proc, id string, request map[string]any) (json.RawMessage, error) {
+	return l.controlAt(ctx, p, id, request, nil)
+}
+
+// controlAt runs boundary while holding the stdin write lock, just before the
+// request is written: it observes exactly the inputs written ahead of it.
+func (l *live) controlAt(ctx context.Context, p *proc, id string, request map[string]any, boundary func()) (json.RawMessage, error) {
 	if id == "" {
 		id = "req_" + uuid.NewString()
 	}
@@ -37,7 +43,13 @@ func (l *live) control(ctx context.Context, p *proc, id string, request map[stri
 		delete(p.controls, id)
 		p.controlMu.Unlock()
 	}()
-	if err := l.write(p, map[string]any{"type": "control_request", "request_id": id, "request": request}); err != nil {
+	p.writeMu.Lock()
+	if boundary != nil {
+		boundary()
+	}
+	err := l.writeLocked(p, map[string]any{"type": "control_request", "request_id": id, "request": request})
+	p.writeMu.Unlock()
+	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, controlTimeout)

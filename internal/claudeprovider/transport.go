@@ -18,6 +18,11 @@ func (l *live) read(p *proc, stdout io.Reader) {
 	// A terminal result followed by process exit keeps its actual error text.
 	// Missing accepted inputs or corrupt output are still transport failures.
 	l.mu.Lock()
+	// Out of the reusable inventory before any idle edge: a follow-up must
+	// resume a fresh child, never write to this exited one.
+	if l.procs[p.id] == p {
+		delete(l.procs, p.id)
+	}
 	l.stopRunCeilingLocked(p)
 	var result struct {
 		IsError bool   `json:"is_error"`

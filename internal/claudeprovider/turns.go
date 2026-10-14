@@ -267,7 +267,25 @@ func (l *live) abort(ctx context.Context, id string) error {
 	}
 	p.aborted = true
 	l.mu.Unlock()
-	data, err := l.control(ctx, p, "", map[string]any{"subtype": "interrupt"})
+	// The interrupt covers only inputs written ahead of it. A turn not yet
+	// written was cancelled above and removes its own input; one admitted
+	// after the boundary runs after the interrupt and settles itself.
+	covered := map[string]bool{}
+	data, err := l.controlAt(ctx, p, "", map[string]any{"subtype": "interrupt"}, func() {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		unwritten := map[string]bool{}
+		for w := range l.waits[id] {
+			if !w.written {
+				unwritten[w.input] = true
+			}
+		}
+		for input := range p.pending {
+			if !unwritten[input] {
+				covered[input] = true
+			}
+		}
+	})
 	var response struct {
 		Queued []json.RawMessage `json:"still_queued"`
 	}
@@ -278,21 +296,23 @@ func (l *live) abort(ctx context.Context, id string) error {
 	if err != nil {
 		p.aborted = false
 	} else {
-		remaining := map[string]bool{}
+		still := map[string]bool{}
 		for _, raw := range response.Queued {
-			var id string
-			if json.Unmarshal(raw, &id) != nil {
-				var input struct {
+			var input string
+			if json.Unmarshal(raw, &input) != nil {
+				var queued struct {
 					UUID string `json:"uuid"`
 				}
-				_ = json.Unmarshal(raw, &input)
-				id = input.UUID
+				_ = json.Unmarshal(raw, &queued)
+				input = queued.UUID
 			}
-			if p.pending[id] {
-				remaining[id] = true
+			still[input] = true
+		}
+		for input := range covered {
+			if !still[input] {
+				delete(p.pending, input)
 			}
 		}
-		p.pending = remaining
 	}
 	l.mu.Unlock()
 	l.finishDeferredResult(p)

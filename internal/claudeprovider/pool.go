@@ -117,7 +117,11 @@ var errAborted = errors.New("aborted before start")
 
 // waitTicket is one turn between BeginTurn and writing its input; abort
 // cancels it, so a turn waiting for a slot never starts later.
-type waitTicket struct{ cancelled bool }
+type waitTicket struct {
+	input     string // the user message this turn writes
+	cancelled bool
+	written   bool // the input reached the child's stdin (under l.mu)
+}
 
 // acquire returns the session's child marked busy, spawning (or resuming) it.
 // At the cap an idle child is evicted; when every child is busy it waits.
@@ -255,6 +259,12 @@ func (l *live) stopAll() {
 func (l *live) write(p *proc, msg any) error {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
+	return l.writeLocked(p, msg)
+}
+
+// writeLocked writes one stdin frame; the caller holds p.writeMu, so the
+// frame's position relative to other frames is the caller's decision.
+func (l *live) writeLocked(p *proc, msg any) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
