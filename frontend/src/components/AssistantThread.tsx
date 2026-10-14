@@ -26,6 +26,8 @@ import { LinkPreviewStrip } from './GitHubLinkPreview';
 import { MarkdownText, ZoomableGraphicModal } from './assistant/MarkdownText';
 import { LocalCommand } from './assistant/LocalCommand';
 import { parseLocalCommand } from '../lib/localCommand';
+import { parseTaskNotification } from '../lib/taskNotification';
+import { TaskNotification } from './assistant/TaskNotification';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
@@ -122,6 +124,8 @@ const SkillCall: FC<{ name: string; instructions: string }> = ({ name, instructi
 };
 
 const UserTextPart: FC<{ text: string }> = ({ text }) => {
+  const notification = parseTaskNotification(text);
+  if (notification) return <TaskNotification notification={notification} />;
   const localCommand = parseLocalCommand(text);
   if (localCommand) return <LocalCommand entry={localCommand} />;
   if (!text.trim()) return null;

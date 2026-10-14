@@ -180,6 +180,83 @@ describe('Claude local commands', () => {
   });
 });
 
+describe('Claude task notifications', () => {
+  const notification = `<task-notification>
+<task-id>a8c55d66aa2b920c7</task-id>
+<tool-use-id>toolu_01NAYXoxPMCm4xD6ACK2qS2U</tool-use-id>
+<output-file>/private/tmp/claude/tasks/a8c55d66aa2b920c7.output</output-file>
+<status>completed</status>
+<summary>Agent "Review backend composition &amp; boundaries" finished</summary>
+<note>The agent can be resumed.</note>
+<result>## Findings
+
+**Eight findings**, ranked by impact. Raw A & B stay intact.</result>
+<usage><subagent_tokens>86431</subagent_tokens><tool_uses>24</tool_uses><duration_ms>170733</duration_ms></usage>
+</task-notification>`;
+
+  it('renders a task summary and Markdown result instead of raw XML', async () => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: notification }];
+    render(<AssistantThread />);
+    const task = screen.getByLabelText('Task notification');
+    expect(task).toHaveTextContent('Agent "Review backend composition & boundaries" finished');
+    expect(task).toHaveTextContent('Completed');
+    expect(screen.getByRole('heading', { name: 'Findings' })).toBeInTheDocument();
+    expect(screen.getByText('Eight findings').tagName).toBe('STRONG');
+    expect(task).toHaveTextContent('Raw A & B stay intact.');
+    expect(task.textContent).not.toContain('<task-notification>');
+    const details = screen.getByText('Task details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    await userEvent.click(screen.getByText('Task details'));
+    expect(details).toHaveAttribute('open');
+    expect(details).toHaveTextContent('a8c55d66aa2b920c7');
+    expect(details).toHaveTextContent('toolu_01NAYXoxPMCm4xD6ACK2qS2U');
+    expect(details).toHaveTextContent('/private/tmp/claude/tasks/a8c55d66aa2b920c7.output');
+    expect(details).toHaveTextContent('The agent can be resumed.');
+    expect(details).toHaveTextContent('86431');
+    expect(details).toHaveTextContent('24');
+    expect(details).toHaveTextContent('170733');
+    expect(screen.queryByRole('link', { name: 'Open detailed subagent session' })).toBeNull();
+  });
+
+  it.each([
+    `Explain this: ${notification}`,
+    notification.replace('</task-notification>', ''),
+    notification + '\nMore text',
+    notification + notification,
+    notification.replace('</result>', ''),
+    '<task-notification><result>Missing summary and status</result></task-notification>',
+  ])('preserves ordinary text and incomplete notifications', (text) => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text }];
+    const { container } = render(<AssistantThread />);
+    expect(container.textContent).toContain(text);
+    expect(screen.queryByLabelText('Task notification')).toBeNull();
+  });
+
+  it.each(['failed', 'error', 'running', 'stopped'])('renders %s notifications without optional fields', (status) => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: `<task-notification><status>${status}</status><summary>Background task</summary></task-notification>` }];
+    render(<AssistantThread />);
+    const task = screen.getByLabelText('Task notification');
+    expect(task).toHaveTextContent('Background task');
+    expect(task).toHaveTextContent(status.charAt(0).toUpperCase() + status.slice(1));
+    if (status === 'failed' || status === 'error') expect(task).toHaveClass('oc-tool-error');
+    else if (status === 'running') expect(task).toHaveClass('oc-tool-running');
+    else expect(task).not.toHaveClass('oc-tool-running');
+    expect(screen.queryByText('Task details')).toBeNull();
+  });
+
+  it('decodes XML entities once and treats metadata as text', () => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: `<task-notification><summary>&lt;script&gt; &quot;task&quot; &apos;done&apos; &amp;amp;</summary><status>completed</status><result>**Result** &lt;img src=x onerror=alert(1)&gt;</result><note>&lt;img src=x onerror=alert(1)&gt;</note></task-notification>` }];
+    const { container } = render(<AssistantThread />);
+    expect(screen.getByText('<script> "task" \'done\' &amp;')).toBeInTheDocument();
+    expect(screen.getByText('Result').tagName).toBe('STRONG');
+    expect(container.querySelector('script, img')).toBeNull();
+  });
+});
+
 describe('AssistantThread slash-command skills', () => {
   const instructions = '# Review Pull Request\n\nReview the changes carefully.\n\nBase directory for this skill: /home/user/.config/opencode/skills/review-pr\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory.';
 

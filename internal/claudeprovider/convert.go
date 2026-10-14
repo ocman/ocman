@@ -200,7 +200,10 @@ func (c *Converter) result(b block, ts int64) {
 	if b.Type != "tool_result" || state == nil {
 		return
 	}
-	output := flatten(b.Content)
+	output, attachments := toolResultContent(b.Content)
+	if len(attachments) > 0 {
+		state["attachments"] = attachments
+	}
 	state["status"], state["output"] = "completed", output
 	if b.IsError {
 		state["status"], state["error"] = "error", output
@@ -247,21 +250,34 @@ func toolTitle(input map[string]any) string {
 	return ""
 }
 
-// flatten turns a tool_result's string-or-blocks content into text.
-func flatten(content json.RawMessage) string {
+// toolResultContent preserves displayable blocks in the v1 tool-result shape.
+func toolResultContent(content json.RawMessage) (string, []map[string]any) {
 	var text string
 	if json.Unmarshal(content, &text) == nil {
-		return text
+		return text, nil
 	}
 	var blocks []block
 	if json.Unmarshal(content, &blocks) != nil {
-		return string(content)
+		return string(content), nil
 	}
 	var out []string
+	var attachments []map[string]any
 	for _, b := range blocks {
-		if b.Type == "text" {
+		switch b.Type {
+		case "text":
 			out = append(out, b.Text)
+		case "tool_reference":
+			if b.ToolName != "" {
+				out = append(out, "Available tool: "+b.ToolName)
+			}
+		case "image":
+			if strings.HasPrefix(b.Source.MediaType, "image/") && b.Source.Data != "" {
+				attachments = append(attachments, map[string]any{
+					"type": "file", "mime": b.Source.MediaType,
+					"url": "data:" + b.Source.MediaType + ";base64," + b.Source.Data,
+				})
+			}
 		}
 	}
-	return strings.Join(out, "\n")
+	return strings.Join(out, "\n"), attachments
 }

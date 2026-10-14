@@ -996,6 +996,10 @@
 }
 .oc-task-result:focus-visible { outline: 1px solid var(--accent); }
 .oc-task-result-expanded { max-height: none; }
+.oc-task-notification .oc-task-result { cursor: auto; }
+.oc-task-details { white-space: normal; overflow-wrap: anywhere; }
+.oc-task-details summary { cursor: pointer; }
+.oc-task-details dd { margin: 0 0 8px; white-space: pre-wrap; }
 .oc-task-result > :first-child,
 .oc-task-result > :first-child > :first-child { margin-top: 0; }
 .oc-task-result > :last-child,

@@ -6,6 +6,7 @@
 
 import type { Part, PartData, FilePart, TaskSessionData } from './api';
 import { extractTaskId } from './taskId';
+import { parseAgentResult } from './taskNotification';
 import { SHELL_DESC_META, type ToolApproval } from './threadHelpers';
 import { isImageMime, isSynthesizedTerminal, relativizePath, truncate } from './convertMessages';
 
@@ -184,11 +185,14 @@ function renderSpecialTool(
       const label = agentType ? `${desc} (${agentType})` : desc;
       const taskId = extractTaskId(st);
       let taskOutput = '';
+      let taskDetails: string[][] = [];
       const status = toolStatus(ctx, st.status, partIdx);
       if (typeof st.output === 'string' && st.output.trim()) {
         // Some platforms wrap the final output in <task_result> tags;
         // strip the OpenCode task_id line if present.
-        taskOutput = truncate(st.output.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(), 5000);
+        const parsed = parseAgentResult(st.output);
+        taskDetails = parsed.details;
+        taskOutput = truncate(parsed.text.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(), 5000);
       }
       // Sub-session data for the embedded thread preview — available
       // while running (polling) and after completion (persisted).
@@ -208,7 +212,7 @@ function renderSpecialTool(
         toolCallId,
         toolName: '__task__',
         argsText: `${status}${toolTimeSuffix(ctx, partIdx)}\n${label}`,
-        result: JSON.stringify({ taskId, taskOutput, subSession, liveTools }),
+        result: JSON.stringify({ taskId, taskOutput, taskDetails, subSession, liveTools }),
       };
     }
     case 'question':
@@ -286,8 +290,15 @@ export function convertToolPart(
   let title = st.title || st.metadata?.description || inp.description || '';
   const toolName = pd.tool || 'unknown';
 
+  const images: ImageItem[] = [];
+  if (st.attachments && Array.isArray(st.attachments)) {
+    for (const att of st.attachments as FilePart[]) {
+      if (isImageMime(att.mime) && att.url) images.push({ type: 'image', image: att.url });
+    }
+  }
+
   const special = renderSpecialTool(ctx, toolName, st, input, inp, argsText, title, partIdx, toolCallId);
-  if (special) return { toolCall: special, images: [] };
+  if (special) return { toolCall: special, images };
 
   // For edit/write tools, generate a unified diff; the diff is shown as
   // the result so args are dropped. Pass a structured payload so
@@ -314,13 +325,6 @@ export function convertToolPart(
 
   const toolCall = genericBlock(ctx, toolName, st, title, argsText, resultText, partIdx, toolCallId);
 
-  // Extract image attachments from tool results (e.g. screenshot tools).
-  const images: ImageItem[] = [];
-  if (st.attachments && Array.isArray(st.attachments)) {
-    for (const att of st.attachments as FilePart[]) {
-      if (isImageMime(att.mime) && att.url) images.push({ type: 'image', image: att.url });
-    }
-  }
   return { toolCall, images };
 }
 

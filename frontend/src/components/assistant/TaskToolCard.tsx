@@ -8,6 +8,7 @@ import { usePrintCollapse } from '../../lib/printCollapseContext';
 import type { Part, PartData } from '../../lib/api';
 import { MarkdownText } from './MarkdownText';
 import { ToolDuration } from './toolRenderers';
+import { TaskDetails } from './TaskNotification';
 
 function taskActivity(
   liveTools: { toolName: string; summary?: string }[],
@@ -42,6 +43,7 @@ export const TaskToolCard: FC<{ argsText: string; result: unknown; timeInfo: { s
 
   let sessionId = '';
   let taskOutput = '';
+  let taskDetails: string[][] = [];
   type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };
   let liveTools: LiveTool[] = [];
   let subParts: Part[] = [];
@@ -49,6 +51,7 @@ export const TaskToolCard: FC<{ argsText: string; result: unknown; timeInfo: { s
     const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
     sessionId = parsed.taskId || '';
     const rawTaskOutput = parsed.taskOutput || '';
+    if (Array.isArray(parsed.taskDetails)) taskDetails = parsed.taskDetails;
     taskOutput = (rawTaskOutput.match(/<task_result(?:\s[^>]*)?>([\s\S]*?)(?:<\/task_result>|$)/i)?.[1] ?? rawTaskOutput).trim();
     if (Array.isArray(parsed.liveTools)) liveTools = parsed.liveTools as LiveTool[];
     if (parsed.subSession) {
@@ -91,6 +94,7 @@ export const TaskToolCard: FC<{ argsText: string; result: unknown; timeInfo: { s
       ) : (
         <div className="oc-task-activity" data-testid="subagent-activity" title={activity} aria-live="polite">{activity}</div>
       )}
+      <TaskDetails details={taskDetails} />
     </div>
   );
 };
