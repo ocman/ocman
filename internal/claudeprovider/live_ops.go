@@ -77,15 +77,15 @@ func (l *live) serve(w http.ResponseWriter, r *http.Request) {
 	case "send":
 		var req platforms.SendMessageRequest
 		if err = decode(r, &req); err == nil {
-			err = l.turn(r.Context(), id, req.Message, req.Images, req.Model)
+			err = l.turn(r.Context(), id, req.Message, req.Images, req.Model, req.Reasoning)
 		}
 	case "command":
 		var req platforms.ExecuteCommandRequest
 		if err = decode(r, &req); err == nil {
-			err = l.turn(r.Context(), id, strings.TrimSpace("/"+req.Command+" "+req.Arguments), nil, req.Model)
+			err = l.turn(r.Context(), id, strings.TrimSpace("/"+req.Command+" "+req.Arguments), nil, req.Model, req.Reasoning)
 		}
 	case "compact":
-		err = l.turn(r.Context(), id, "/compact", nil, "")
+		err = l.turn(r.Context(), id, "/compact", nil, "", "")
 	case "abort":
 		err = l.abort(id)
 	case "rename":
@@ -269,7 +269,7 @@ func (l *live) flushTitle(ctx context.Context, id string) error {
 
 // turn starts a turn: BeginTurn synchronously, then the child is acquired
 // (which may wait for a pool slot) and the input written.
-func (l *live) turn(ctx context.Context, id, text string, images []platforms.ImageAttachment, model string) error {
+func (l *live) turn(ctx context.Context, id, text string, images []platforms.ImageAttachment, model, effort string) error {
 	if err := l.usable(); err != nil {
 		return err
 	}
@@ -314,7 +314,7 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 		}
 		defer close(done)
 		testHook("acquire", id)
-		p, err := l.acquire(id, model, input, w)
+		p, err := l.acquire(id, model, effort, input, w)
 		if err == nil {
 			if err = l.write(p, msg); err != nil {
 				l.mu.Lock()

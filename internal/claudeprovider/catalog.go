@@ -49,6 +49,15 @@ type cachedCommands struct {
 	at     time.Time
 	list   []initCommand
 	agents []initAgent
+	models []initModel
+}
+
+// initModel is the CLI's ModelInfo, including its model-specific effort levels.
+type initModel struct {
+	Value                 string   `json:"value"`
+	ResolvedModel         string   `json:"resolvedModel"`
+	DisplayName           string   `json:"displayName"`
+	SupportedEffortLevels []string `json:"supportedEffortLevels"`
 }
 
 func newCommands(opts Options) *commands {
@@ -72,7 +81,7 @@ func (c *commands) list(ctx context.Context, dir string) (cachedCommands, error)
 	if err != nil {
 		return cachedCommands{}, err
 	}
-	cached = cachedCommands{at: time.Now(), list: res.Commands, agents: res.Agents}
+	cached = cachedCommands{at: time.Now(), list: res.Commands, agents: res.Agents, models: res.Models}
 	c.mu.Lock()
 	c.dirs[dir] = cached
 	c.mu.Unlock()
@@ -128,6 +137,19 @@ func (l *live) catalog(ctx context.Context, dir string) platforms.DirectoryCatal
 	if err != nil {
 		log.WithError(err).WithField("directory", dir).Debug("claude command catalog")
 		return cat
+	}
+	if len(cached.models) > 0 {
+		models.Models = nil
+		for _, m := range cached.models {
+			entry := platforms.SessionModel{Provider: "anthropic", ProviderName: "Anthropic", Model: m.Value,
+				ModelName: m.DisplayName, IsAvailable: true, Reasoning: m.SupportedEffortLevels}
+			models.Models = append(models.Models, entry)
+			// Existing transcripts name the resolved model, rather than its alias.
+			if m.ResolvedModel != "" && m.ResolvedModel != m.Value {
+				entry.Model = m.ResolvedModel
+				models.Models = append(models.Models, entry)
+			}
+		}
 	}
 	for _, a := range cached.agents {
 		if a.Name != "" {

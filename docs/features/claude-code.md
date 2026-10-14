@@ -89,6 +89,11 @@ again.
   error instead of waiting. A command
   whose only output is its result text (for example `/cost`) shows that text as
   the reply.
+- **Reasoning effort.** The composer offers the effort levels your Claude CLI
+  reports for the selected model. Selecting an effort passes `--effort` to Claude;
+  selecting default leaves the CLI's configured default in effect. Changing it
+  resumes an idle session with the new setting. Messages sent during a running
+  turn keep that turn's model and effort.
 - **Turn outcome.** A turn ends when every message you sent during it has
   finished: a message sent mid-turn keeps the session busy until Claude has run
   it. A failed result, a crashed `claude` or a failed launch ends the turn as

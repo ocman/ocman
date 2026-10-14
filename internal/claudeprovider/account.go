@@ -113,6 +113,7 @@ type initResponse struct {
 	Account  *initAccount  `json:"account"`
 	Commands []initCommand `json:"commands"`
 	Agents   []initAgent   `json:"agents"`
+	Models   []initModel   `json:"models"`
 }
 
 // initialize runs the CLI in dir only for the control handshake: no user
