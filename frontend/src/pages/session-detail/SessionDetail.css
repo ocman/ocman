@@ -500,12 +500,18 @@ button.session-sidebar-group-header.collapsed::before {
   align-items: center;
   gap: 2px;
 }
+.session-sidebar-actions .oc-icon-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+}
+.session-sidebar-actions > span { display: flex; }
 .session-sidebar-item:hover .session-sidebar-meta > .session-sidebar-time,
-.session-sidebar-item:focus-visible .session-sidebar-meta > .session-sidebar-time {
+.session-sidebar-item:focus-within .session-sidebar-meta > .session-sidebar-time {
   display: none;
 }
 .session-sidebar-item:hover .session-sidebar-actions,
-.session-sidebar-item:focus-visible .session-sidebar-actions {
+.session-sidebar-item:focus-within .session-sidebar-actions {
   display: flex;
 }
 
