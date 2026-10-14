@@ -1137,7 +1137,9 @@ are joined. Rules:
   routes use Go mux patterns (`"GET /api/session/{id}/shares"`), which win
   over the `/api/session/` dispatcher.
 - `module.Bus` is typed and synchronous: subscribers run in order, so one can
-  rely on earlier ones; slow work starts its own goroutine. Add an event type
+  rely on earlier ones; slow work starts its own goroutine through
+  `module.Workers` (bound in `Start`, joined in `Run`), never a bare `go` on
+  `context.Background()`, so it cannot outlive state.db. Add an event type
   only when a module needs it. `FirstPromptAdded` starts owner-local session
   naming after the first accepted input. `SessionIdle` is published after the
   quota cooldown is recorded and the follow-up flush enqueued. Factory's
