@@ -11,8 +11,10 @@ you paste in Settings, or a sign-in. Open Graph requests send no credentials.
 ## Hover previews
 
 Hover over a markdown link or focus it with the keyboard for half a second to
-request a preview. The card appears once its metadata loads. You can move onto
-the card and click it; leaving the link and card dismisses it, as does Escape.
+request a preview. The card appears once its metadata loads. Tab enters the card,
+Shift+Tab returns to the link, and Tab from the card continues to the next page
+control. You can move onto the card and click it; leaving the link and card
+dismisses it, as does Escape. Escape also cancels a preview that is still loading.
 
 Rich provider cards take priority. Otherwise, pages with an `og:title` can show
 their title, description, site name and image. Pages without usable metadata
@@ -176,8 +178,12 @@ GitLab). Revoke personal tokens at the provider yourself.
 - **Private stays private at the provider.** Slack private channels and DMs
   always show as denied. Notion previews only pages shared with the integration
   or chosen at sign-in.
-- **Fixed hosts.** Preview requests go only to each provider's API hosts. They
+- **Fixed provider hosts.** Provider API requests go only to each provider's
+  API hosts. They
   never follow redirects, and link text is never fetched as a URL.
+- **Public-page fallback.** Explicit Open Graph requests fetch the selected URL
+  without credentials. Public-address checks apply to every page, image and
+  redirect; private-network addresses are rejected before dialing.
 
 ## Testing
 

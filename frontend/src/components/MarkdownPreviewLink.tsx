@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState, type ComponentProps, type CSSProperties, type RefObject, type KeyboardEvent } from 'react';
 import { hasRichPreview, useProviderPreviews } from '../lib/useProviderPreviews';
 import { Popover } from './Popover';
 import { ProviderPreview } from './ProviderLinkPreview';
@@ -16,13 +16,17 @@ export function MarkdownPreviewLink({ href, children, ...props }: ComponentProps
   const close = () => { cancel(); setActiveURL(null); };
   const closeOnScroll = useEffectEvent(close);
   const focused = () => trigger.current === document.activeElement || !!document.getElementById(id)?.contains(document.activeElement);
+  const escapePending = useEffectEvent((event: globalThis.KeyboardEvent) => {
+    if (event.key === 'Escape' && !document.getElementById(id) && (hovered.current || focused())) close();
+  });
 
   useEffect(() => {
     const scroll = (event: Event) => {
       if (!(event.target instanceof Node) || !document.getElementById(id)?.contains(event.target)) closeOnScroll();
     };
     window.addEventListener('scroll', scroll, true);
-    return () => { clearTimeout(timer.current); window.removeEventListener('scroll', scroll, true); };
+    document.addEventListener('keydown', escapePending);
+    return () => { clearTimeout(timer.current); window.removeEventListener('scroll', scroll, true); document.removeEventListener('keydown', escapePending); };
   }, [href, id]);
 
   const enter = () => {
@@ -50,18 +54,39 @@ export function MarkdownPreviewLink({ href, children, ...props }: ComponentProps
     cancel();
     timer.current = setTimeout(() => { if (!hovered.current && !focused()) close(); }, 150);
   };
+  const tab = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Tab') return;
+    const panel = document.getElementById(id);
+    const card = panel?.querySelector<HTMLAnchorElement>('a[href]');
+    if (!card) return;
+    if (event.currentTarget === trigger.current) {
+      if (event.shiftKey) return;
+      event.preventDefault();
+      card.focus();
+    } else {
+      event.preventDefault();
+      if (event.shiftKey) trigger.current?.focus();
+      else {
+        const items = Array.from(document.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]'))
+          .filter((item) => item.tabIndex >= 0 && !item.matches(':disabled') && !item.closest('[hidden]') && !panel?.contains(item));
+        const next = items[(items.indexOf(trigger.current!) + 1) % items.length];
+        close();
+        next?.focus();
+      }
+    }
+  };
 
   return <>
     <a {...props} ref={trigger} href={href} onMouseEnter={() => { hovered.current = true; enter(); }} onMouseLeave={leave}
-      onFocus={enter} onBlur={blur} onClick={close}>
+      onFocus={enter} onBlur={blur} onClick={close} onKeyDown={tab}>
       {children}
     </a>
     {active && <LinkCard href={href} id={id} triggerRef={trigger} position={position} onClose={close}
-      onEnter={() => { hovered.current = true; cancel(); }} onLeave={leave} onFocus={cancel} onBlur={blur} />}
+      onEnter={() => { hovered.current = true; cancel(); }} onLeave={leave} onFocus={cancel} onBlur={blur} onKeyDown={tab} />}
   </>;
 }
 
-function LinkCard({ href, id, triggerRef, position, onClose, onEnter, onLeave, onFocus, onBlur }: {
+function LinkCard({ href, id, triggerRef, position, onClose, onEnter, onLeave, onFocus, onBlur, onKeyDown }: {
   href: string;
   id: string;
   triggerRef: RefObject<HTMLAnchorElement | null>;
@@ -71,12 +96,13 @@ function LinkCard({ href, id, triggerRef, position, onClose, onEnter, onLeave, o
   onLeave: () => void;
   onFocus: () => void;
   onBlur: () => void;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
   const { previews, providers, refreshChecks } = useProviderPreviews(href, true);
   const preview = previews.find(hasRichPreview);
   return <Popover open={!!preview} onClose={onClose} triggerRef={triggerRef} id={id}
     label="Link preview" className="oc-link-preview" autoFocus={false} style={position}>
-    <div onMouseEnter={onEnter} onMouseLeave={onLeave} onFocus={onFocus} onBlur={onBlur}>
+    <div onMouseEnter={onEnter} onMouseLeave={onLeave} onFocus={onFocus} onBlur={onBlur} onKeyDown={onKeyDown}>
       {preview && <ProviderPreview preview={preview} providers={providers} refreshChecks={refreshChecks} />}
     </div>
   </Popover>;

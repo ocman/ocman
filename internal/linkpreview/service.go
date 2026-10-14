@@ -48,13 +48,16 @@ type window struct {
 // Service resolves Refs for a viewer with caching, in-flight dedup, bounded
 // concurrency, a per-grant fetch budget and 429 backoff.
 type Service struct {
-	tokens    Tokens
-	client    *http.Client
-	resolvers []Resolver
-	byID      map[string]Resolver
-	now       func() time.Time
-	sem       chan struct{}
-	group     singleflight.Group
+	tokens Tokens
+	client *http.Client
+	// PublicClient is credential-free and DNS-guarded. Tests may replace its
+	// transport with fixtures without changing production address validation.
+	PublicClient *http.Client
+	resolvers    []Resolver
+	byID         map[string]Resolver
+	now          func() time.Time
+	sem          chan struct{}
+	group        singleflight.Group
 
 	mu      sync.Mutex
 	cache   map[string]entry
@@ -72,7 +75,8 @@ func New(tokens Tokens, client *http.Client, resolvers ...Resolver) *Service {
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	s := &Service{
 		tokens: tokens, client: c, resolvers: resolvers, byID: map[string]Resolver{}, now: time.Now,
-		sem: make(chan struct{}, maxInFlight), cache: map[string]entry{}, backoff: map[string]time.Time{}, budget: map[string]window{},
+		PublicClient: publicPageClient(),
+		sem:          make(chan struct{}, maxInFlight), cache: map[string]entry{}, backoff: map[string]time.Time{}, budget: map[string]window{},
 	}
 	for _, r := range resolvers {
 		s.byID[r.Provider()] = r
@@ -178,7 +182,7 @@ func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOn
 	if ctx.Value(previewRefreshKey{}) == true {
 		fresh = false
 	}
-	limited := !fresh && (now.Before(s.backoff[gk]) || !s.spend(gk, now))
+	limited := !fresh && (now.Before(s.backoff[previewBackoffKey(gk, ref)]) || !s.spend(gk, now))
 	s.mu.Unlock()
 	if fresh {
 		return cached.p
@@ -194,6 +198,15 @@ func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOn
 		return staleOr(cached, hit, ref)
 	}
 	return p
+}
+
+func previewBackoffKey(gk string, ref Ref) string {
+	if ref.Provider == "opengraph" {
+		if u, err := url.Parse(ref.URL); err == nil {
+			return gk + "\x00" + u.Scheme + "://" + strings.ToLower(u.Host)
+		}
+	}
+	return gk
 }
 
 // spend takes one fetch from the grant's per-minute budget. Caller holds mu.
@@ -263,7 +276,7 @@ func (s *Service) fetch(ctx context.Context, r Resolver, api *API, grant bool, v
 			wait = defaultBackoff
 		}
 		s.mu.Lock()
-		s.backoff[gk] = s.now().Add(wait)
+		s.backoff[previewBackoffKey(gk, ref)] = s.now().Add(wait)
 		s.mu.Unlock()
 		return Preview{Ref: ref, State: StateRateLimited}
 	case he != nil && he.Status == http.StatusForbidden:

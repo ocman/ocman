@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import { MarkdownContent } from './assistant/MarkdownText';
 import { previewAuthChanged, PreviewOwnerContext } from '../lib/previews';
 
@@ -158,4 +159,52 @@ it('discards a pending preview when a streamed markdown link changes', async () 
   rerender(<MarkdownContent text="[article](https://another.example/new)" />);
   await advance(1000);
   expect(requests).toHaveLength(0);
+});
+
+it('lets Tab enter the card and continue to the next page control', async () => {
+  vi.useRealTimers();
+  const user = userEvent.setup();
+  render(<><MarkdownContent text={`[article](${url})`} /><a href="#after">Next link</a></>);
+  await user.tab();
+  expect(screen.getByRole('link', { name: 'article' })).toHaveFocus();
+  await screen.findByRole('dialog', { name: 'Link preview' }, { timeout: 3000 });
+  await user.tab();
+  expect(screen.getByTestId('provider-preview-card')).toHaveFocus();
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  await user.tab({ shift: true });
+  expect(screen.getByRole('link', { name: 'article' })).toHaveFocus();
+  await user.tab();
+  expect(screen.getByTestId('provider-preview-card')).toHaveFocus();
+  await user.tab();
+  expect(screen.getByRole('link', { name: 'Next link' })).toHaveFocus();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('cancels the hover delay on Escape without resolving metadata', async () => {
+  fireEvent.mouseEnter(link());
+  await advance(200);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await advance(1000);
+  expect(requests).toHaveLength(0);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('cancels a pending metadata lookup on Escape', async () => {
+  let finish!: (response: Response) => void;
+  let signal: AbortSignal | undefined;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).includes('/providers')) return new Response(JSON.stringify({ providers: [], rules: [] }));
+    signal = init?.signal ?? undefined;
+    return new Promise<Response>((resolve) => { finish = resolve; });
+  });
+  const anchor = link();
+  act(() => anchor.focus());
+  await advance(800);
+  expect(signal).toBeDefined();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish(new Response(JSON.stringify({ previews: results }))));
+  await advance(1000);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(anchor).toHaveFocus();
 });

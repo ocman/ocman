@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -16,7 +18,7 @@ import (
 // ResolveOpenGraph is an explicit, single-link fallback. Transcript discovery
 // never fetches arbitrary pages. It shares the provider cache and fetch budget.
 func (s *Service) ResolveOpenGraph(ctx context.Context, viewerID, ownerID, raw string) Preview {
-	r := openGraph{}
+	r := openGraph{client: s.PublicClient}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return Preview{State: StateError}
@@ -28,7 +30,7 @@ func (s *Service) ResolveOpenGraph(ctx context.Context, viewerID, ownerID, raw s
 	return s.cached(ctx, r, "", true, false, viewerID, ownerID, grantKey(viewerID, ownerID, r.Provider(), ""), ref)
 }
 
-type openGraph struct{}
+type openGraph struct{ client *http.Client }
 
 func (openGraph) Provider() string                   { return "opengraph" }
 func (openGraph) APIHosts() []string                 { return nil }
@@ -40,6 +42,10 @@ func (openGraph) ParseURL(u *url.URL) (Ref, bool) {
 	copyURL := *u
 	u = &copyURL
 	u.Fragment = ""
+	u.Host = strings.ToLower(u.Host)
+	if (u.Scheme == "https" && u.Port() == "443") || (u.Scheme == "http" && u.Port() == "80") {
+		u.Host = strings.TrimSuffix(u.Host, ":"+u.Port())
+	}
 	return Ref{Provider: "opengraph", Kind: "page", ID: u.Hostname(), URL: u.String()}, true
 }
 
@@ -110,7 +116,7 @@ func fetchPublicPage(ctx context.Context, client *http.Client, raw, accept strin
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, "", &HTTPError{Status: resp.StatusCode}
+		return nil, nil, "", &HTTPError{Status: resp.StatusCode, RetryAfter: publicPageRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil || int64(len(body)) > limit {
@@ -123,8 +129,18 @@ func fetchPublicPage(ctx context.Context, client *http.Client, raw, accept strin
 	return body, resp.Request.URL, contentType, nil
 }
 
-func (openGraph) Fetch(ctx context.Context, _ *API, ref Ref) (Preview, error) {
-	return fetchOpenGraph(ctx, publicPageClient(), ref)
+func publicPageRetryAfter(value string, now time.Time) time.Duration {
+	if secs, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return time.Duration(min(max(secs, 0), int64(maxBackoff/time.Second))) * time.Second
+	}
+	if deadline, err := http.ParseTime(value); err == nil {
+		return min(max(deadline.Sub(now), 0), maxBackoff)
+	}
+	return 0
+}
+
+func (g openGraph) Fetch(ctx context.Context, _ *API, ref Ref) (Preview, error) {
+	return fetchOpenGraph(ctx, g.client, ref)
 }
 
 func fetchOpenGraph(ctx context.Context, client *http.Client, ref Ref) (Preview, error) {
@@ -200,7 +216,7 @@ func (s *Service) OpenGraphImage(ctx context.Context, raw string) ([]byte, strin
 	case <-ctx.Done():
 		return nil, "", ctx.Err()
 	}
-	return fetchOpenGraphImage(ctx, publicPageClient(), raw)
+	return fetchOpenGraphImage(ctx, s.PublicClient, raw)
 }
 
 func fetchOpenGraphImage(ctx context.Context, client *http.Client, raw string) ([]byte, string, error) {

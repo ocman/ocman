@@ -729,7 +729,8 @@ flowchart TD
   focus, then resolve through the same endpoint with `openGraph: true`. A rich
   provider result wins; otherwise one public HTTP(S) page supplies `og:title`,
   `og:description`, `og:site_name` and `og:image`. This explicit fallback requires
-  app access and shares the metadata cache, fetch budget and concurrency limit.
+  app access and shares the metadata cache, aggregate fetch budget and concurrency
+  limit. Upstream backoff is origin-scoped and honors bounded `Retry-After` values.
   Its credential-free client validates DNS addresses before dialing and on every
   redirect, rejects private networks and nonstandard ports, and bounds HTML to
   1 MiB. Images go through `/api/previews/image`, with the same address checks,
