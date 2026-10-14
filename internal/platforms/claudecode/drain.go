@@ -3,6 +3,7 @@ package claudecode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -56,7 +57,11 @@ func (d *drained) broadcast(e providerprotocol.Event) {
 		if id == props.SessionID {
 			select {
 			case ch <- e:
-			default: // ponytail: a stalled browser misses it; its reconnect lists pending prompts
+			default:
+				// A stalled browser loses its stream, never a prompt: it
+				// reconnects and lists what is pending.
+				close(ch)
+				delete(d.subs, ch)
 			}
 		}
 	}
@@ -160,9 +165,19 @@ func (p *claudePlatform) proxyDraining(ctx context.Context, id string, d *draine
 	defer unsubscribe()
 	browsing := make(chan error, 1)
 	go func() { browsing <- p.Adapter.ProxyEvents(ctx, id, out, out.Flush) }()
+	joined := false
+	defer func() { // the browsing stream writes w: never outlive it
+		cancel()
+		if !joined {
+			<-browsing
+		}
+	}()
 	for typ, list := range map[string]func(context.Context, string) ([]platforms.LivePrompt, error){
 		"permission.asked": d.adapter.ListPermissions, "question.asked": d.adapter.ListQuestions} {
-		prompts, _ := list(ctx, id)
+		prompts, err := list(ctx, id)
+		if err != nil {
+			return err
+		}
 		for _, pr := range prompts {
 			props, _ := json.Marshal(pr)
 			if err := out.event(providerprotocol.Event{Type: typ, Properties: props}); err != nil {
@@ -172,11 +187,15 @@ func (p *claudePlatform) proxyDraining(ctx context.Context, id string, d *draine
 	}
 	for {
 		select {
-		case e := <-events:
+		case e, ok := <-events:
+			if !ok {
+				return errors.New("draining stream fell behind")
+			}
 			if err := out.event(e); err != nil {
 				return err
 			}
 		case err := <-browsing:
+			joined = true
 			return err
 		case <-d.done:
 			return nil
