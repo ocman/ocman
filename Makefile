@@ -108,13 +108,15 @@ dev-relay: ## Run the share relay locally (:8231, store in tmp/relay-data)
 
 restart-claude-supervisors: ## Stop managed Claude supervisors; next create/send relaunches them (interrupts active turns)
 	@command -v tmux >/dev/null
-	@tmux -L ocman-agents list-sessions -F '#{session_name}' 2>/dev/null | \
-	while IFS= read -r session; do \
-		case "$$session" in \
-			claudecode-*) \
-				tmux -L ocman-agents kill-session -t "=$$session" || exit $$?; \
-				echo "Stopped $$session; next create/send will relaunch it." ;; \
-		esac; \
+	@for server in ocman-agents ocman-provider; do \
+		tmux -L "$$server" list-sessions -F '#{session_name}' 2>/dev/null | \
+		while IFS= read -r session; do \
+			case "$$session" in \
+				claudecode-*) \
+					tmux -L "$$server" kill-session -t "=$$session" || exit $$?; \
+					echo "Stopped $$session on $$server; next create/send will relaunch it." ;; \
+			esac; \
+		done || exit $$?; \
 	done
 
 .PHONY: restart-claude-supervisors
