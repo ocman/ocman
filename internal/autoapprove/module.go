@@ -82,15 +82,19 @@ func (m *Module) Start(ctx context.Context) error {
 		}
 	}
 	m.svc.SetJudgeDelayMs(delay)
+	m.svc.Bind(ctx)
 	return nil
 }
 
 // Run is the headless watcher: it subscribes to every OpenCode instance's
 // event stream so permission prompts are judged with no browser open.
+// It then joins the background judges.
 func (m *Module) Run(ctx context.Context) {
 	if m.openCode() {
 		m.svc.RunWatcher(ctx)
 	}
+	<-ctx.Done()
+	m.svc.Shutdown()
 }
 
 func (m *Module) openCode() bool { return m.OpenCode == nil || m.OpenCode() }

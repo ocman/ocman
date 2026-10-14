@@ -51,8 +51,13 @@ func (s *Service) Ensure(
 	delayMs := s.judgeDelayMs.Load()
 	judgeStartsAt := time.Now().Add(time.Duration(delayMs) * time.Millisecond).UnixMilli()
 
-	ctx, ok := s.claimAutoApproveWithStart(context.Background(), sessionID, permissionID, judgeStartsAt)
+	life, running := s.beginJob()
+	if !running {
+		return
+	}
+	ctx, ok := s.claimAutoApproveWithStart(life, sessionID, permissionID, judgeStartsAt)
 	if !ok {
+		s.jobs.Done()
 		// Cache hit. Either another goroutine is already handling the
 		// judge for this permission, or a verdict was recorded earlier
 		// in this process. Replay the current state to the (possibly
@@ -66,6 +71,7 @@ func (s *Service) Ensure(
 	}
 	s.emitPermissionPending(sessionID, permissionID, judgeStartsAt)
 	go func() {
+		defer s.jobs.Done()
 		defer s.releaseAutoApprove(sessionID, permissionID)
 		s.backgroundAutoApprove(
 			ctx,

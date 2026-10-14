@@ -184,6 +184,14 @@ type Service struct {
 	sseSessions   map[string]map[*Sink]struct{}
 	sseSessionsMu sync.Mutex
 
+	// life bounds every background judge; Shutdown cancels it, refuses new
+	// ones and joins the running ones (jobs).
+	lifeMu  sync.Mutex
+	life    context.Context
+	stop    context.CancelFunc
+	stopped bool
+	jobs    sync.WaitGroup
+
 	// autoApprove tracks the per-permission state of the pipeline.
 	// Keyed by "sessionID|permissionID". See autoApproveStatus.
 	autoApprove   map[string]*autoApproveStatus
@@ -392,4 +400,38 @@ func (s *Sink) close() {
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
+}
+
+// Bind ties background judges to the module's lifetime.
+func (s *Service) Bind(ctx context.Context) {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	s.life, s.stop = context.WithCancel(ctx)
+}
+
+// Shutdown cancels every background judge and waits for them; later
+// Ensure calls start none, so a reloaded composition never races one.
+func (s *Service) Shutdown() {
+	s.lifeMu.Lock()
+	s.stopped = true
+	if s.stop != nil {
+		s.stop()
+	}
+	s.lifeMu.Unlock()
+	s.jobs.Wait()
+}
+
+// beginJob reserves a background judge under the lifetime, or reports
+// shutdown.
+func (s *Service) beginJob() (context.Context, bool) {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	if s.stopped {
+		return nil, false
+	}
+	s.jobs.Add(1)
+	if s.life == nil {
+		return context.Background(), true
+	}
+	return s.life, true
 }
