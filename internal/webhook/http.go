@@ -281,7 +281,7 @@ func (m *Module) redeliver(w http.ResponseWriter, r *http.Request, inbox state.W
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
-	id, err := Redeliver(m.store, m.routines, inbox.ID, req.DeliveryID, time.Now())
+	id, err := Redeliver(r.Context(), m.store, m.routines, inbox.ID, req.DeliveryID, time.Now())
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "delivery not found", http.StatusNotFound)
 		return

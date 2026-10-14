@@ -138,7 +138,7 @@ func (p *Poller) Poll(ctx context.Context) error {
 					if _, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), string(headers), string(query), envelope.Request.ReceivedAt); dispatchErr != nil {
 						err = dispatchErr
 					} else if p.Routines != nil {
-						err = Dispatch(p.Store, p.Routines, p.Inbox.ID, delivery.ID, envelope, now())
+						err = Dispatch(ctx, p.Store, p.Routines, p.Inbox.ID, delivery.ID, envelope, now())
 					}
 					if err == nil {
 						err = client.AcknowledgeInboxDelivery(ctx, p.Inbox.ID, delivery.ID, p.Inbox.AcknowledgmentToken)

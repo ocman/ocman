@@ -102,7 +102,7 @@ func TestWebhookMCPLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := dispatcher.calls
-		if err := webhook.Dispatch(srv.stateDB, dispatcher, "inbox", tc.name, e, time.Now()); err != nil {
+		if err := webhook.Dispatch(t.Context(), srv.stateDB, dispatcher, "inbox", tc.name, e, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		if got := dispatcher.calls > before; got != tc.match {

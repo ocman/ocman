@@ -31,7 +31,7 @@ func TestWebhookLaunchFailureIsLoggedAsFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "d1", Body: []byte("{}")}
-	if err := webhook.Dispatch(h.db, h.svc, "inbox", "d1", e, time.UnixMilli(h.now.Load())); err != nil {
+	if err := webhook.Dispatch(t.Context(), h.db, h.svc, "inbox", "d1", e, time.UnixMilli(h.now.Load())); err != nil {
 		t.Fatal(err)
 	}
 	log, err := h.db.ListWebhookDeliveries(ctx, "inbox", 10)

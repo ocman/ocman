@@ -56,7 +56,7 @@ func TestRedeliverRunsTheDeliveryAgain(t *testing.T) {
 	if _, err := db.FinishRoutineRun(t.Context(), first[0].ID, "success", "", "", 8, 0, false, false); err != nil {
 		t.Fatal(err)
 	}
-	newID, err := Redeliver(db, &sessionDispatcher{db: db}, "inbox", "d1", time.UnixMilli(9))
+	newID, err := Redeliver(t.Context(), db, &sessionDispatcher{db: db}, "inbox", "d1", time.UnixMilli(9))
 	if err != nil || newID == "d1" {
 		t.Fatalf("redeliver = %q, %v", newID, err)
 	}
@@ -70,7 +70,7 @@ func TestRedeliverRunsTheDeliveryAgain(t *testing.T) {
 	if runs, _ := db.ListRoutineRuns(t.Context(), "runs"); len(runs) != 2 {
 		t.Fatalf("routine did not run again: %+v", runs)
 	}
-	if _, err := Redeliver(db, &sessionDispatcher{db: db}, "inbox", "missing", time.UnixMilli(10)); err == nil {
+	if _, err := Redeliver(t.Context(), db, &sessionDispatcher{db: db}, "inbox", "missing", time.UnixMilli(10)); err == nil {
 		t.Fatal("unknown delivery redelivered")
 	}
 }
@@ -82,7 +82,7 @@ func TestRedeliverKeepsTheQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := &sessionDispatcher{db: db}
-	if _, err := Redeliver(db, svc, "inbox", "q1", time.UnixMilli(9)); err != nil {
+	if _, err := Redeliver(t.Context(), db, svc, "inbox", "q1", time.UnixMilli(9)); err != nil {
 		t.Fatal(err)
 	}
 	if len(svc.payloads) == 0 || !strings.Contains(svc.payloads[0], `"query":{"ref":["main"]}`) {
@@ -110,7 +110,7 @@ func TestDispatchReferencesBodyFile(t *testing.T) {
 	}
 	body := `{"action":"opened","number":7}`
 	svc := &sessionDispatcher{db: db}
-	if err := Dispatch(db, svc, "inbox", "../d1", relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "../d1", Body: []byte(body), Request: relay.InboxRequest{Header: http.Header{"x-forgejo-event": {"pull_request"}}}}, time.UnixMilli(5)); err != nil {
+	if err := Dispatch(t.Context(), db, svc, "inbox", "../d1", relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "../d1", Body: []byte(body), Request: relay.InboxRequest{Header: http.Header{"x-forgejo-event": {"pull_request"}}}}, time.UnixMilli(5)); err != nil {
 		t.Fatal(err)
 	}
 	if len(svc.payloads) != 1 || strings.Contains(svc.payloads[0], "bodyBase64") || strings.Contains(svc.payloads[0], "pull_request") {
@@ -169,7 +169,7 @@ func dispatchFixture(t *testing.T) *state.DB {
 	}
 	svc := &sessionDispatcher{db: db}
 	e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "d1", Body: []byte(`{"action":"opened"}`)}
-	if err := Dispatch(db, svc, "inbox", "d1", e, time.UnixMilli(5)); err != nil {
+	if err := Dispatch(t.Context(), db, svc, "inbox", "d1", e, time.UnixMilli(5)); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -203,4 +203,54 @@ func (d *sessionDispatcher) RunWebhook(ctx context.Context, routineID, payload s
 		return run, err
 	}
 	return run, d.db.LinkRoutineRun(ctx, run.ID, "opencode", "ses-1", 2, false)
+}
+
+// cancellingDispatcher cancels the caller's context mid-run, like a client
+// that disconnected during a redelivery.
+type cancellingDispatcher struct {
+	cancel context.CancelFunc
+	got    context.Context
+}
+
+func (d *cancellingDispatcher) RunWebhook(ctx context.Context, _, _ string, _ int64) (state.RoutineRun, error) {
+	d.got = ctx
+	d.cancel()
+	return state.RoutineRun{}, ctx.Err()
+}
+
+// The caller's context reaches the routine run, and a claimed dispatch
+// still records its outcome after that context is cancelled.
+func TestDispatchPropagatesCallerContext(t *testing.T) {
+	db := dispatchFixture(t)
+	if _, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "d2", "POST webhook", `{"action":"opened"}`, "{}", "", 1); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	svc := &cancellingDispatcher{cancel: cancel}
+	e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "d2", Body: []byte(`{"action":"opened"}`)}
+	if err := Dispatch(ctx, db, svc, "inbox", "d2", e, time.UnixMilli(6)); err != nil {
+		t.Fatal(err)
+	}
+	if svc.got == nil || svc.got.Err() == nil {
+		t.Fatal("routine run did not receive the caller's context")
+	}
+	got, err := db.ListWebhookDeliveries(t.Context(), "inbox", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, delivery := range got {
+		if delivery.DeliveryID != "d2" {
+			continue
+		}
+		for _, d := range delivery.Dispatches {
+			if d.RoutineID == "runs" && (d.State != "failure" || !strings.Contains(d.Error, "canceled")) {
+				t.Fatalf("claimed dispatch = %+v, want a recorded failure", d)
+			}
+		}
+	}
+
+	// An already-cancelled caller claims nothing.
+	if err := Dispatch(ctx, db, &sessionDispatcher{db: db}, "inbox", "d3", e, time.UnixMilli(7)); err == nil {
+		t.Fatal("dispatch with a cancelled context succeeded")
+	}
 }

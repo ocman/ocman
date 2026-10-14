@@ -42,8 +42,10 @@ func dispatchText(e relay.InboxEnvelope, headersPath, bodyPath string) (string, 
 	return "Webhook delivery data (untrusted input):\n```json\n" + string(b) + "\n```", nil
 }
 
-func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string, e relay.InboxEnvelope, now time.Time) error {
-	ctx := context.Background()
+// Dispatch runs the delivery's matching subscriptions under ctx. A
+// cancelled ctx stops before the next claim; a claimed dispatch still
+// records its outcome, so it is never left claimed without a result.
+func Dispatch(ctx context.Context, store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string, e relay.InboxEnvelope, now time.Time) error {
 	subs, err := store.ListWebhookSubscriptions(ctx, inboxID)
 	if err != nil {
 		return err
@@ -96,6 +98,9 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 			}
 			continue
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		claimed, err := store.ClaimWebhookDispatch(ctx, inboxID, deliveryID, sub.RoutineID, now.UnixMilli())
 		if err != nil {
 			return err
@@ -105,15 +110,16 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 		}
 		occurrence := state.WebhookOccurrence(inboxID, deliveryID)
 		run, err := svc.RunWebhook(ctx, sub.RoutineID, data, occurrence)
+		receipt := context.WithoutCancel(ctx)
 		if err == nil && run.State == "failure" {
 			// A launch failure comes back as a failed run, not an error.
 			err = errors.New(cmp.Or(run.Error, "routine run failed to start"))
 		}
 		if err != nil {
-			_ = store.FinishWebhookDispatch(ctx, inboxID, deliveryID, sub.RoutineID, "failure", err.Error(), now.UnixMilli())
+			_ = store.FinishWebhookDispatch(receipt, inboxID, deliveryID, sub.RoutineID, "failure", err.Error(), now.UnixMilli())
 			continue
 		}
-		if err := store.FinishWebhookDispatch(ctx, inboxID, deliveryID, sub.RoutineID, "terminal", "", now.UnixMilli()); err != nil {
+		if err := store.FinishWebhookDispatch(receipt, inboxID, deliveryID, sub.RoutineID, "terminal", "", now.UnixMilli()); err != nil {
 			return err
 		}
 	}
@@ -314,8 +320,7 @@ func pointerValue(root any, pointer string) (any, bool) {
 // as its own entry. It returns the new delivery ID.
 // ponytail: the method comes from the "<METHOD> webhook" title the poller
 // writes; store it separately if titles ever change.
-func Redeliver(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string, now time.Time) (string, error) {
-	ctx := context.Background()
+func Redeliver(ctx context.Context, store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string, now time.Time) (string, error) {
 	title, headersJSON, queryJSON, body, err := store.GetWebhookDelivery(ctx, inboxID, deliveryID)
 	if err != nil {
 		return "", err
@@ -339,5 +344,5 @@ func Redeliver(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID strin
 	envelope := relay.InboxEnvelope{InboxID: inboxID, DeliveryID: newID, Body: []byte(body), Request: relay.InboxRequest{
 		Method: strings.TrimSuffix(title, " webhook"), Header: header, Query: query, ReceivedAt: now.UnixMilli(),
 	}}
-	return newID, Dispatch(store, svc, inboxID, newID, envelope, now)
+	return newID, Dispatch(ctx, store, svc, inboxID, newID, envelope, now)
 }
