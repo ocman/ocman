@@ -13,10 +13,11 @@ import { api, type PermissionRule, type Project, type Routine, type RoutineInput
 import type { WebhookInbox } from '../lib/api.types';
 import { saveTrigger, triggerFor, type Trigger } from '../lib/webhookFilters';
 import { cleanTitle } from '../lib/format';
-import { useSessions } from '../lib/queries';
+import { useProjects, useSessions } from '../lib/queries';
 import styles from './RoutineEditorDrawer.module.css';
 
 const EMPTY_SESSIONS: Session[] = [];
+const EMPTY_PROJECTS: Project[] = [];
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 type FormState = {
   name: string; prompt: string; directory: string; agent: string; model: string;
@@ -86,27 +87,20 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const [editing, setEditing] = useState(routine?.id);
   const [rules, setRules] = useState(() => routine ? parsePermissionRules(routine.permissionRulesJSON) : []);
   const [trigger, setTrigger] = useState<Trigger>(() => triggerFor(routine?.id, inboxes));
-  const [projects, setProjects] = useState<Project[]>([]);
   const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as string[], platform: '' });
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
-  useEffect(() => {
-    let active = true;
-    api.projects().then((items) => { if (active) setProjects(items); }, (err) => { if (active) setError(err instanceof Error ? err.message : 'Could not load projects.'); });
-    return () => { active = false; };
-  }, []);
+  const projectsQ = useProjects();
+  const projects = projectsQ.data ?? EMPTY_PROJECTS;
 
   const sessionsQ = useSessions({ dir: form.directory }, { enabled: !!form.directory });
   const sessions = (form.directory && sessionsQ.data) || EMPTY_SESSIONS;
   const sessionsLoading = sessionsQ.isFetching;
-  const sessionsError = sessionsQ.error;
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- surface the query failure in the form's one error slot
-    if (sessionsError) setError(sessionsError instanceof Error ? sessionsError.message : 'Could not load sessions.');
-  }, [sessionsError]);
+  const lookupError = projectsQ.error ? (projectsQ.error instanceof Error ? projectsQ.error.message : 'Could not load projects.')
+    : sessionsQ.error ? (sessionsQ.error instanceof Error ? sessionsQ.error.message : 'Could not load sessions.') : '';
 
   // An existing session offers its own catalog; a routine creating sessions
   // offers every platform's models on the machine, and the model's platform
@@ -167,7 +161,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((value) => ({ value, label: value || 'Default model' }));
 
   return <form onSubmit={submit}>
-      {error && <InlineAlert>{error}</InlineAlert>}
+      {(error || lookupError) && <InlineAlert>{error || lookupError}</InlineAlert>}
       <fieldset disabled={busy} className={styles.fields}>
         <label className={styles.field}>Name<TextField required data-autofocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
         <label className={styles.field}>Prompt<TextareaField className={styles.prompt} required value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} /></label>

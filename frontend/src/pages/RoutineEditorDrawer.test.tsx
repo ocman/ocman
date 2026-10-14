@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import { renderWithQuery } from '../test/renderWithQuery';
 import userEvent from '@testing-library/user-event';
 import { api, type Routine } from '../lib/api';
 import { RoutineEditorForm } from './RoutineEditorDrawer';
@@ -24,7 +25,7 @@ beforeEach(() => {
 });
 
 function editor(value = routine) {
-  render(<RoutineEditorForm routine={value} inboxes={[]} onClose={vi.fn()} onSaved={vi.fn()} onRefresh={vi.fn()} />);
+  renderWithQuery(<RoutineEditorForm routine={value} inboxes={[]} onClose={vi.fn()} onSaved={vi.fn()} onRefresh={vi.fn()} />);
 }
 
 it('defaults to the current checkout and saves an explicit cleanup opt-in', async () => {

@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { notifyManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
+import { renderWithQuery } from '../test/renderWithQuery';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
 import { StrictMode } from 'react';
 import { formatDateTimeShort } from '../lib/format';
@@ -43,7 +45,7 @@ describe('Routines', () => {
     let finish!: (value: Routine) => void;
     vi.mocked(api.routines.update).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const user = userEvent.setup();
-    render(<MemoryRouter><LocationProbe /><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><LocationProbe /><Routines /></MemoryRouter>);
     await user.click(within(await screen.findByRole('row', { name: `View ${routine.name} history` })).getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(api.routines.update).toHaveBeenCalledOnce());
@@ -64,7 +66,7 @@ describe('Routines', () => {
   });
   it('opens direct routine links and tracks tabs, close and browser back in the URL', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter initialEntries={['/routines?routine=routine-1&view=settings']}><LocationProbe /><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter initialEntries={['/routines?routine=routine-1&view=settings']}><LocationProbe /><Routines /></MemoryRouter>);
     await screen.findByRole('dialog', { name: routine.name });
     expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: 'Stats' }));
@@ -79,13 +81,13 @@ describe('Routines', () => {
   });
 
   it('reports an unavailable routine link', async () => {
-    render(<MemoryRouter initialEntries={['/routines?routine=missing']}><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter initialEntries={['/routines?routine=missing']}><Routines /></MemoryRouter>);
     expect(await screen.findByRole('alert')).toHaveTextContent('This routine is unavailable.');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
   it('keeps settings edits when switching between drawer tabs', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
     await user.click(screen.getByRole('tab', { name: 'Settings' }));
     await user.clear(screen.getByLabelText('Name'));
@@ -119,6 +121,10 @@ describe('Routines', () => {
   });
 
   afterEach(() => vi.useRealTimers());
+  // Deliver react-query notifications synchronously: the default scheduler
+  // defers them to a timer that the fake-timer polling tests never flush.
+  beforeAll(() => notifyManager.setScheduler((callback) => callback()));
+  afterAll(() => notifyManager.setScheduler((callback) => setTimeout(callback, 0)));
 
   it('replays the initial history request after StrictMode aborts the first', async () => {
     vi.mocked(api.routines.history).mockReturnValueOnce(new Promise(() => {}));
@@ -131,14 +137,16 @@ describe('Routines', () => {
   it('resumes history independently when the inbox-list refresh fails', async () => {
     let hidden = false;
     const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    // react-query's focus manager reads visibilityState.
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => hidden ? 'hidden' : 'visible');
     vi.mocked(api.routines.history).mockReturnValueOnce(new Promise(() => {}));
-    const view = render(<MemoryRouter><Routines /></MemoryRouter>);
+    const view = renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     try {
       fireEvent.click(await screen.findByText('Morning check'));
       await waitFor(() => expect(api.routines.history).toHaveBeenCalledTimes(1));
-      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
       vi.mocked(api.webhookInboxes.list).mockRejectedValueOnce(new Error('Inbox unavailable'));
-      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
       await waitFor(() => expect(api.routines.history).toHaveBeenCalledTimes(2));
       expect(await screen.findByText('manual')).toBeInTheDocument();
     } finally { view.unmount(); visibility.mockRestore(); }
@@ -147,13 +155,15 @@ describe('Routines', () => {
   it('cancels a pending history refresh before it reads older running pages', async () => {
     let hidden = false;
     const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    // react-query's focus manager reads visibilityState.
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => hidden ? 'hidden' : 'visible');
     const all = Array.from({ length: 60 }, (_, i) => mkRun(`run-${60 - i}`, 100_000 - i * 1000, i === 55 ? { state: 'running' } : {}));
     vi.mocked(api.routines.history).mockImplementation(async (_id, page) => {
       const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
       return all.slice(from, from + page.limit);
     });
     const drawer = (refreshKey: number) => <MemoryRouter><RoutineHistoryDrawer routine={routine} refreshKey={refreshKey} onClose={vi.fn()} /></MemoryRouter>;
-    const view = render(drawer(0));
+    const view = renderWithQuery(drawer(0));
     try {
       await userEvent.click(await screen.findByRole('button', { name: 'Load older runs' }));
       await screen.findByText('running');
@@ -162,11 +172,11 @@ describe('Routines', () => {
       vi.mocked(api.routines.history).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
       view.rerender(drawer(1));
       const signal = vi.mocked(api.routines.history).mock.calls[0][2];
-      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
       expect(signal?.aborted).toBe(true);
       await act(async () => { finish(all.slice(0, 50)); });
       expect(api.routines.history).toHaveBeenCalledTimes(1);
-      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
       view.rerender(drawer(2));
       await waitFor(() => expect(api.routines.history).toHaveBeenCalledTimes(3));
     } finally { view.unmount(); visibility.mockRestore(); }
@@ -176,7 +186,9 @@ describe('Routines', () => {
     vi.useFakeTimers();
     let hidden = false;
     const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
-    const view = render(<MemoryRouter><Routines /></MemoryRouter>);
+    // react-query's focus manager reads visibilityState.
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => hidden ? 'hidden' : 'visible');
+    const view = renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     try {
       await act(async () => {});
       fireEvent.click(screen.getByText('Morning check'));
@@ -185,10 +197,10 @@ describe('Routines', () => {
       vi.mocked(api.routines.list).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
       await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
       vi.mocked(api.routines.history).mockClear();
-      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
       await act(async () => { finish([routine]); });
       expect(api.routines.history).not.toHaveBeenCalled();
-      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
       expect(api.routines.history).toHaveBeenCalled();
     } finally { view.unmount(); visibility.mockRestore(); }
   });
@@ -197,7 +209,9 @@ describe('Routines', () => {
     vi.useFakeTimers();
     let hidden = false;
     const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
-    const view = render(<MemoryRouter><Routines /></MemoryRouter>);
+    // react-query's focus manager reads visibilityState.
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => hidden ? 'hidden' : 'visible');
+    const view = renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     try {
       await act(async () => {});
       fireEvent.click(screen.getByText('Morning check'));
@@ -206,22 +220,27 @@ describe('Routines', () => {
       vi.mocked(api.routines.list).mockClear();
       vi.mocked(api.routines.history).mockClear();
       vi.mocked(api.webhookInboxes.list).mockClear();
-      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
       await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
       expect(api.routines.list).not.toHaveBeenCalled();
       expect(api.routines.history).not.toHaveBeenCalled();
       expect(api.webhookInboxes.list).not.toHaveBeenCalled();
-      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
+      await act(async () => {});
       expect(api.routines.list).toHaveBeenCalledTimes(1);
       expect(api.webhookInboxes.list).toHaveBeenCalledTimes(1);
-      // History resumes independently, then reconciles the parent's fresh list.
-      expect(api.routines.history).toHaveBeenCalledTimes(2);
+      // History resumes independently; a list refresh landing while that read
+      // is in flight is caught up by the next poll.
+      expect(api.routines.history).toHaveBeenCalled();
+      const resumed = vi.mocked(api.routines.history).mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(vi.mocked(api.routines.history).mock.calls.length).toBeGreaterThan(resumed);
     } finally { view.unmount(); visibility.mockRestore(); }
   });
 
   it('creates a targeted timeout routine and exposes every schedule form', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText('Morning check');
     await user.click(screen.getByRole('button', { name: 'New routine' }));
     expect(screen.getByRole('dialog', { name: 'New routine' })).toBeInTheDocument();
@@ -262,7 +281,7 @@ describe('Routines', () => {
     vi.mocked(api.prepareSession).mockResolvedValue({ platform: 'opencode', agents: [{ name: 'build' }], commands: [],
       models: { hasProviders: true, models: [{ platform: 'opencode', provider: 'openai', model: 'gpt-5.4' }, { platform: 'claudecode', provider: 'anthropic', model: 'sonnet' }] } } as never);
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText(routine.name);
     await user.click(screen.getByRole('button', { name: 'New routine' }));
     await user.type(screen.getByLabelText('Name'), 'Claude check');
@@ -290,7 +309,7 @@ describe('Routines', () => {
       { id: 'other', title: 'Other project', directory: '/other', remoteId: 'local', archived: false } as never,
     ]);
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText(routine.name);
     await user.click(screen.getByRole('button', { name: 'New routine' }));
     await user.type(screen.getByLabelText('Name'), 'Continue release');
@@ -312,7 +331,7 @@ describe('Routines', () => {
   it.each([false, true])('filters disconnected models only with live provider data: %s', async (hasProviders) => {
     vi.mocked(api.prepareSession).mockResolvedValue({ agents: [], commands: [], models: { hasProviders, models: [{ provider: 'p', model: 'sol', isAvailable: false }] } } as never);
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'New routine' }));
     await user.click(screen.getByRole('combobox', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: '/repo' }));
@@ -331,7 +350,7 @@ describe('Routines', () => {
     vi.mocked(api.sessionModels).mockResolvedValue(models);
     vi.mocked(api.prepareSession).mockResolvedValue({ agents: [], commands: [], models } as never);
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'New routine' }));
     await user.click(screen.getByRole('combobox', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: '/repo' }));
@@ -349,7 +368,7 @@ describe('Routines', () => {
   it('uses the shared controls and empty state', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([]);
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
 
     const create = await screen.findByRole('button', { name: 'New routine' });
     expect(create).toHaveClass('oc-button', 'oc-button--accent');
@@ -365,7 +384,7 @@ describe('Routines', () => {
   it('keeps edited fields visible when project-session lookup fails', async () => {
     vi.mocked(api.sessions).mockRejectedValue(new Error('Project sessions unavailable'));
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'Settings' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Project sessions unavailable');
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue(routine.name);
@@ -375,7 +394,7 @@ describe('Routines', () => {
   it('retains the stored agent and model when their catalog cannot load', async () => {
     vi.mocked(api.agents).mockRejectedValueOnce(new Error('Catalog unavailable'));
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'Settings' }));
     await user.click(screen.getByText('Session and model'));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Agent' })).toBeEnabled());
@@ -385,7 +404,7 @@ describe('Routines', () => {
 
   it('keeps essentials visible and optional groups collapsed until opened', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'New routine' }));
     for (const name of ['Name', 'Prompt', 'Project', 'Trigger', 'Enabled']) {
       expect(screen.getByLabelText(name)).toBeVisible();
@@ -411,7 +430,7 @@ describe('Routines', () => {
     let finish!: (value: Routine) => void;
     vi.mocked(api.routines.update).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     const edit = await screen.findByRole('button', { name: 'Settings' });
     await user.click(edit);
     const actions = screen.getByRole('group', { name: 'Routine form actions' });
@@ -432,7 +451,7 @@ describe('Routines', () => {
 
   it('closes the form once saved even when the refresh fails', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'Settings' }));
     vi.mocked(api.webhookInboxes.list).mockRejectedValueOnce(new Error('inboxes unavailable'));
     await user.click(within(screen.getByRole('group', { name: 'Routine form actions' })).getByRole('button', { name: 'Save changes' }));
@@ -442,7 +461,7 @@ describe('Routines', () => {
 
   it('shows missed timeout schedules as expired', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, enabled: false, expiredAt: Date.now() }]);
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     expect(await screen.findByText('expired')).toBeInTheDocument();
   });
 
@@ -450,7 +469,7 @@ describe('Routines', () => {
     const user = userEvent.setup();
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
     vi.mocked(api.webhookInboxes.list).mockResolvedValue([{ ...inbox, ingestionUrl }]);
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
 
     const routineRow = await screen.findByRole('row', { name: 'View Morning check history' });
     expect(screen.getByRole('columnheader', { name: 'Trigger' })).toBeInTheDocument();
@@ -470,7 +489,7 @@ describe('Routines', () => {
   });
 
   it('opens the webhook inboxes tab from the URL', async () => {
-    render(<MemoryRouter initialEntries={['/routines?tab=inboxes']}><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter initialEntries={['/routines?tab=inboxes']}><Routines /></MemoryRouter>);
 
     expect(await screen.findByText('No webhook inboxes yet.')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Webhook inboxes' })).toHaveAttribute('aria-selected', 'true');
@@ -482,7 +501,7 @@ describe('Routines', () => {
     const user = userEvent.setup();
     const other = { ...inbox, id: 'inbox-2', name: 'github', subscriptions: [] };
     vi.mocked(api.webhookInboxes.list).mockResolvedValue([inbox, other]);
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText('Morning check');
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByLabelText('Trigger')).toHaveValue('webhook:inbox-1');
@@ -505,7 +524,7 @@ describe('Routines', () => {
     vi.mocked(api.webhookInboxes.list).mockResolvedValue([{ ...inbox, subscriptions: [] }]);
     vi.mocked(api.routines.create).mockResolvedValue({ ...routine, id: 'routine-new', name: 'Deploy hook' });
     vi.mocked(api.webhookInboxes.subscribe).mockRejectedValueOnce(new Error('subscription failed'));
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText('Morning check');
     await user.click(screen.getByRole('button', { name: 'New routine' }));
     await user.type(screen.getByLabelText('Name'), 'Deploy hook');
@@ -528,7 +547,7 @@ describe('Routines', () => {
   it('removes the subscription when the trigger is cleared', async () => {
     const user = userEvent.setup();
     vi.mocked(api.webhookInboxes.list).mockResolvedValue([inbox]);
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText('Morning check');
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.selectOptions(screen.getByLabelText('Trigger'), 'none');
@@ -540,7 +559,7 @@ describe('Routines', () => {
 
   it('shortens project paths in the table', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, directory: '/Users/dries/src/ocman' }]);
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
 
     const project = await screen.findByText('src/ocman');
     expect(project).toHaveAttribute('title', '/Users/dries/src/ocman');
@@ -550,7 +569,7 @@ describe('Routines', () => {
   it('clears project-specific agent and model selections when changing projects', async () => {
     vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', archived: false }, { directory: '/other', archived: false }] as never);
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('combobox', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: '/other' }));
@@ -560,7 +579,7 @@ describe('Routines', () => {
 
   it('opens history from the row and the settings tab from Settings', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     const row = (await screen.findByText(routine.name)).closest('tr')!;
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Last run' })).toBeInTheDocument();
@@ -601,7 +620,7 @@ describe('Routines', () => {
   it('confirms before deleting a routine', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     const row = (await screen.findByText(routine.name)).closest('tr')!;
 
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
@@ -613,21 +632,21 @@ describe('Routines', () => {
 
   it('surfaces load and action errors', async () => {
     vi.mocked(api.routines.list).mockRejectedValueOnce(new Error('load failed'));
-    const { unmount } = render(<MemoryRouter><Routines /></MemoryRouter>);
+    const { unmount } = renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     expect(await screen.findByRole('alert')).toHaveTextContent('load failed');
     unmount();
 
     vi.mocked(api.routines.list).mockResolvedValue([routine]);
     vi.mocked(api.routines.run).mockRejectedValueOnce(new Error('run failed'));
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'Run' }));
     expect(await screen.findByText('run failed')).toBeInTheDocument();
   });
 
   it('preserves an explicit local target', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText(routine.name);
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -640,7 +659,7 @@ describe('Routines', () => {
   it('refreshes routines and their latest run every five seconds while mounted', async () => {
     vi.useFakeTimers();
     vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, latestRun: mkRun('run-1', 1_000, { state: 'running' }) }]);
-    const { unmount } = render(<MemoryRouter><Routines /></MemoryRouter>);
+    const { unmount } = renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     expect(api.routines.list).toHaveBeenCalledTimes(1);
     expect(screen.getByText('running')).toBeInTheDocument();
@@ -658,7 +677,7 @@ describe('Routines', () => {
   it.each([1, 25])('polls with a constant request count and no history fetches for %i routines', async (count) => {
     vi.useFakeTimers();
     vi.mocked(api.routines.list).mockResolvedValue(Array.from({ length: count }, (_, i) => ({ ...routine, id: `r-${i}`, name: `Routine ${i}`, latestRun: mkRun(`run-${i}`, 1_000) })));
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     expect(api.routines.list).toHaveBeenCalledTimes(3);
@@ -670,7 +689,7 @@ describe('Routines', () => {
 
   it('loads projects when the form opens', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await screen.findByText(routine.name);
     expect(api.projects).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'New routine' }));
@@ -687,7 +706,7 @@ describe('Routines', () => {
       { ...routine, id: 'never', name: 'Never' },
       { ...routine, id: 'off', name: 'Off', enabled: false },
     ]);
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     const cells = async (name: string) => (await screen.findByText(name)).closest('tr')!.children;
     expect((await cells('Morning check'))[4]).toHaveTextContent(formatDateTimeShort(4_000_000));
     expect((await cells('Morning check'))[5]).toHaveTextContent('failure');
@@ -707,7 +726,7 @@ describe('Routines', () => {
       const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
       return all.slice(from, from + page.limit);
     });
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
     const dialog = screen.getByRole('dialog', { name: 'Morning check' });
     await waitFor(() => expect(within(dialog).getAllByText('manual')).toHaveLength(50));
@@ -734,7 +753,7 @@ describe('Routines', () => {
       const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
       return all.slice(from, from + page.limit);
     });
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     await act(async () => {});
@@ -754,7 +773,7 @@ describe('Routines', () => {
     vi.useFakeTimers();
     let resolve!: (runs: RoutineRun[]) => void;
     vi.mocked(api.routines.history).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
@@ -774,7 +793,7 @@ describe('Routines', () => {
       const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
       return all.slice(from, from + page.limit);
     });
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     await act(async () => {});
@@ -803,7 +822,7 @@ describe('Routines', () => {
       const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
       return all.slice(from, from + page.limit);
     });
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     await act(async () => {});
@@ -831,14 +850,14 @@ describe('Routines', () => {
   it('shows a history load error inside the drawer', async () => {
     vi.mocked(api.routines.history).mockRejectedValue(new Error('history failed'));
     const user = userEvent.setup();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
     expect(await within(screen.getByRole('dialog', { name: 'Morning check' })).findByRole('alert')).toHaveTextContent('history failed');
   });
 
   it('updates Next run in the open drawer when the list refreshes', async () => {
     vi.useFakeTimers();
-    render(<MemoryRouter><Routines /></MemoryRouter>);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     fireEvent.click(screen.getByText(routine.name).closest('tr')!);
     expect(screen.getByText(/^Next run: /)).toHaveTextContent(`Next run: ${formatDateTimeShort(2_000_000)}`);

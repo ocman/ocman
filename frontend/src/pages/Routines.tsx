@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { useDocumentVisible } from '../lib/usePanelVisible';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, ButtonGroup } from '../components/Control';
 import { EmptyState } from '../components/EmptyState';
@@ -9,6 +8,7 @@ import { RoutineStateBadge } from '../components/RoutineStateBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/Tabs';
 import { api, type Routine } from '../lib/api';
 import type { WebhookInbox } from '../lib/api.types';
+import { useRoutines, useWebhookInboxes } from '../lib/routineQueries';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
 import { RoutineEditorDrawer } from './RoutineEditorDrawer';
 import { WebhookInboxDrawer } from './WebhookInboxDrawer';
@@ -17,13 +17,20 @@ import { formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import styles from './Routines.module.css';
 
+const EMPTY_ROUTINES: Routine[] = [];
+const EMPTY_INBOXES: WebhookInbox[] = [];
+
 export function Routines() {
-  const visible = useDocumentVisible();
   usePageTitle('Routines');
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === 'inboxes' ? 'inboxes' : 'routines';
-  const [routines, setRoutines] = useState<Routine[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
+  // Both lists poll while the page is visible (react-query pauses hidden tabs).
+  const routinesQ = useRoutines();
+  const inboxesQ = useWebhookInboxes();
+  const routines = routinesQ.data ?? EMPTY_ROUTINES;
+  const inboxes = inboxesQ.data ?? EMPTY_INBOXES;
+  // Bumps on every successful read so the open history drawer refreshes too.
+  const refreshKey = routinesQ.dataUpdatedAt;
   const historyId = searchParams.get('routine') ?? undefined;
   const view = searchParams.get('view');
   const detailTab = view === 'settings' || view === 'stats' ? view : 'history';
@@ -34,39 +41,16 @@ export function Routines() {
     return next;
   });
   const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const loading = routinesQ.isPending || inboxesQ.isPending;
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [inboxes, setInboxes] = useState<WebhookInbox[]>([]);
+  const [actionError, setError] = useState('');
+  const loadError = routinesQ.error ?? inboxesQ.error;
+  const error = actionError || (loadError ? (loadError instanceof Error ? loadError.message : 'Could not load routines.') : '');
   const [inboxDrawer, setInboxDrawer] = useState<string>();
 
   const load = async () => {
-    const [items, inboxItems] = await Promise.all([api.routines.list(), api.webhookInboxes.list()]);
-    setRoutines(items); setInboxes(inboxItems); setRefreshKey((key) => key + 1);
+    await Promise.all([routinesQ.refetch({ throwOnError: true }), inboxesQ.refetch({ throwOnError: true })]);
   };
-
-  useEffect(() => {
-    if (!visible) return;
-    let active = true;
-    let refreshing = false;
-    const controller = new AbortController();
-    const refresh = async () => {
-      if (refreshing) return;
-      refreshing = true;
-      try {
-        const [items, inboxItems] = await Promise.all([api.routines.list(controller.signal), api.webhookInboxes.list(controller.signal)]);
-        if (active) { setRoutines(items); setInboxes(inboxItems); setRefreshKey((key) => key + 1); }
-      } catch (err) {
-        if (active) setError(err instanceof Error ? err.message : 'Could not load routines.');
-      } finally {
-        refreshing = false;
-        if (active) setLoading(false);
-      }
-    };
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 5_000);
-    return () => { active = false; controller.abort(); window.clearInterval(interval); };
-  }, [visible]);
 
   const openCreate = () => {
     selectRoutine(); setShowForm(true); setError('');

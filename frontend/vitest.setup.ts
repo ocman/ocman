@@ -7,6 +7,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { closeDraftDbForTests } from './src/lib/draftDb';
 import { queryClient } from './src/lib/queryClient';
+
 import { afterEach } from 'vitest';
 import { cleanup, configure } from '@testing-library/react';
 
