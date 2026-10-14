@@ -27,6 +27,7 @@ type Module struct {
 	reload              func()
 	idle                func(context.Context) (bool, error)
 	inFlight            int
+	admitted            uint64 // Begin calls ever, so a reload sees one raced in
 }
 
 func New(store *state.DB) *Module { return &Module{store: store} }
@@ -54,6 +55,7 @@ func (m *Module) Begin(ctx context.Context) (func(), error) {
 		return nil, fmt.Errorf("platform configuration is reloading after active work finishes: %w", platforms.ErrBusy)
 	}
 	m.inFlight++
+	m.admitted++
 	return func() { m.mu.Lock(); m.inFlight--; m.mu.Unlock() }, nil
 }
 
@@ -72,16 +74,25 @@ func (m *Module) Run(ctx context.Context) {
 	}
 }
 
+// tryReload checks idleness without the lock (sends and Settings need it),
+// then reloads only if nothing was admitted meanwhile.
 func (m *Module) tryReload(ctx context.Context) bool {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if !m.pending || m.reload == nil || m.inFlight != 0 {
+		m.mu.Unlock()
 		return false
 	}
+	admitted := m.admitted
+	m.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	idle, err := m.idle(ctx)
 	if err != nil || !idle {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.pending || m.inFlight != 0 || m.admitted != admitted {
 		return false
 	}
 	m.reload()

@@ -99,3 +99,39 @@ func TestReloadWorker(t *testing.T) {
 		t.Fatal("worker did not reload")
 	}
 }
+
+// The idle check runs without the lock: sends are admitted meanwhile, and
+// one admitted during the check defers the reload to the next tick.
+func TestIdleCheckDoesNotHoldTheLock(t *testing.T) {
+	m := New(nil)
+	checking, release := make(chan struct{}), make(chan struct{})
+	reloaded := false
+	m.Configure(func() { reloaded = true }, nil, false, func(context.Context) (bool, error) {
+		close(checking)
+		<-release
+		return true, nil
+	})
+	m.pending = true
+	result := make(chan bool, 1)
+	go func() { result <- m.tryReload(t.Context()) }()
+	<-checking
+	begun := make(chan func(), 1)
+	go func() {
+		done, err := m.Begin(DrainContext(t.Context()))
+		if err != nil {
+			t.Error(err)
+		}
+		begun <- done
+	}()
+	select {
+	case done := <-begun:
+		done()
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("Begin waited for the idle check")
+	}
+	close(release)
+	if <-result || reloaded {
+		t.Fatal("reloaded over work admitted during the idle check")
+	}
+}
