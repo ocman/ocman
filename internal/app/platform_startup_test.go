@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"flag"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,12 +47,28 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 		}
 		knownPlatforms["test-provider"] = func(context.Context, *db.DB, *state.DB, ocapi.Auth) platforms.Platform { return startupPlatform{} }
 		flag.CommandLine = flag.NewFlagSet("ocman", flag.ExitOnError)
-		os.Args = []string{"ocman", "-platforms=test-provider", "-addr=127.0.0.1:0", "-mcp-addr=", "-log-file=off"}
-		time.AfterFunc(time.Second, func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) })
+		addr := os.Getenv("OCMAN_TEST_STARTUP_ADDR")
+		os.Args = []string{"ocman", "-platforms=test-provider", "-addr=" + addr, "-mcp-addr=", "-log-file=off"}
+		go func() {
+			for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+				if conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond); err == nil {
+					_ = conn.Close()
+					_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+					return
+				}
+			}
+			_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+		}()
 		Run("dev", skillCatalog)
 		return
 	}
 	dir := t.TempDir()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().String()
+	_ = listener.Close()
 	bin := filepath.Join(dir, "bin")
 	if err := os.Mkdir(bin, 0700); err != nil {
 		t.Fatal(err)
@@ -61,7 +78,7 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestStartupWithoutOpenCode$")
-	cmd.Env = append(os.Environ(), "OCMAN_TEST_NO_OPENCODE=1", "OCMAN_TEST_EXEC_MARKER="+marker,
+	cmd.Env = append(os.Environ(), "OCMAN_TEST_NO_OPENCODE=1", "OCMAN_TEST_EXEC_MARKER="+marker, "OCMAN_TEST_STARTUP_ADDR="+addr,
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir,
 		"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
 		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=")
