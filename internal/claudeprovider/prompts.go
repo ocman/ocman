@@ -267,7 +267,16 @@ func (l *live) recordLater(id string, pr *prompt) {
 	}
 	go func() {
 		for delay := time.Duration(recordRetry.Load()); ; delay = min(2*delay, time.Minute) {
-			time.Sleep(delay)
+			timer := time.NewTimer(delay)
+			select {
+			case <-timer.C:
+			case <-l.done: // the live is gone: nothing will spool this again
+				timer.Stop()
+				l.mu.Lock()
+				pr.retrying = false
+				l.mu.Unlock()
+				return
+			}
 			l.mu.Lock()
 			gone, busy := l.prompts[id] != pr, pr.answering
 			if !gone && !busy {

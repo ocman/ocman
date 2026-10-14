@@ -113,6 +113,49 @@ func TestSpoolOutageAcrossContinuationAndExitSettles(t *testing.T) {
 	}
 }
 
+// A stopped live retires its durable-publication retry workers instead of
+// leaving them sleeping forever against a spool path that will never work
+// again (a removed test spool, or a provider shutdown).
+func TestStopRetiresRetryWorkers(t *testing.T) {
+	fastRetries(t)
+	gate := filepath.Join(t.TempDir(), "gate") // never opened: the child ends only by kill
+	h, _ := promptHarness(t, writeFixture(t, `{"direction":"stdin","message":{"type":"user"}}
+{"direction":"stdout","message":{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"make"},"tool_use_id":"t1"}}}
+{"direction":"stdin","message":{"type":"control_response","response":{"subtype":"success","request_id":"r1"}}}
+{"direction":"wait","message":`+fmt.Sprintf("%q", gate)+`}
+`), nil)
+	id := h.create(t)
+	h.send(t, id, "go")
+	var p []platforms.LivePrompt
+	waitFor(t, "prompt", func() bool { p, _ = h.adapter.ListPermissions(t.Context(), id); return len(p) == 1 })
+	restore := h.spoolDown(t, id)
+	defer restore()
+	if err := h.adapter.RespondPermission(t.Context(), platforms.RespondPermissionRequest{SessionID: id, PermissionID: p[0]["id"].(string), Reply: "once"}); err == nil {
+		t.Fatal("an unrecorded reply was acknowledged")
+	}
+	h.live.mu.Lock()
+	proc := h.live.procs[id]
+	h.live.mu.Unlock()
+	_ = proc.cmd.Process.Kill()
+	holdOutage(t, h, id)
+	// Both workers are retrying what the down spool cannot take.
+	waitFor(t, "settle worker running", func() bool { h.live.mu.Lock(); defer h.live.mu.Unlock(); return h.live.settling[id] })
+	waitFor(t, "record worker running", func() bool {
+		h.live.mu.Lock()
+		defer h.live.mu.Unlock()
+		pr := h.live.prompts[p[0]["id"].(string)]
+		return pr != nil && pr.retrying
+	})
+	h.live.stopAll()
+	waitFor(t, "settle worker retired", func() bool { h.live.mu.Lock(); defer h.live.mu.Unlock(); return !h.live.settling[id] })
+	waitFor(t, "record worker retired", func() bool {
+		h.live.mu.Lock()
+		defer h.live.mu.Unlock()
+		pr := h.live.prompts[p[0]["id"].(string)]
+		return pr != nil && !pr.retrying
+	})
+}
+
 // A prompt claude withdraws (interrupt) or abandons (exit) while the spool
 // is down stays pending, unanswerable and owned until its cancellation is
 // recorded; the turn then settles and the supervisor drains.

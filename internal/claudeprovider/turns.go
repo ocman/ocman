@@ -149,7 +149,16 @@ type settlement struct {
 func (l *live) settleLater(id string) {
 	delay := time.Duration(settleRetry.Load())
 	for {
-		time.Sleep(delay)
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-l.done: // the live is gone: nothing will spool this again
+			timer.Stop()
+			l.mu.Lock()
+			delete(l.settling, id)
+			l.mu.Unlock()
+			return
+		}
 		l.mu.Lock()
 		s, ok := l.unsettled[id]
 		if !ok {

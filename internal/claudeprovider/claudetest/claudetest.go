@@ -3,11 +3,13 @@
 package claudetest
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -48,24 +50,56 @@ func InstallFakeTmux(t testing.TB, bin, pids string) {
 	})
 }
 
-// Binary builds a caller-owned fake as "claude", so it can be moved onto PATH.
-// Warm it before returning: macOS first-exec latency must not consume the
-// production version-probe or readiness deadline.
+// Binary returns a caller-owned fake as "claude", so it can be moved onto
+// PATH. The executable is built and warmed once per test binary (macOS
+// first-exec latency must not consume the production version-probe or
+// readiness deadline) and hard-linked into the caller's temp dir.
 func Binary(t testing.TB) string {
 	t.Helper()
-	binary := filepath.Join(t.TempDir(), "claude")
-	cmd := exec.Command("go", "build", "-o", binary, filepath.Join(root(), "internal", "claudeprovider", "testdata", "fakeclaude"))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build fake claude: %v\n%s", err, out)
+	fakeOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "fakeclaude")
+		if err != nil {
+			fakeErr = err
+			return
+		}
+		fakeShared = filepath.Join(dir, "claude")
+		cmd := exec.Command("go", "build", "-o", fakeShared, filepath.Join(root(), "internal", "claudeprovider", "testdata", "fakeclaude"))
+		cmd.Env = buildEnv
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fakeErr = fmt.Errorf("build fake claude: %w\n%s", err, out)
+			return
+		}
+		// Do not write a caller's FAKE_CLAUDE_ARGS or use its version override.
+		warm := exec.Command(fakeShared, "--version")
+		warm.Env = []string{}
+		if out, err := warm.CombinedOutput(); err != nil {
+			fakeErr = fmt.Errorf("warm fake claude: %w\n%s", err, out)
+		}
+	})
+	if fakeErr != nil {
+		t.Fatal(fakeErr)
 	}
-	// Do not write a caller's FAKE_CLAUDE_ARGS or use its version override.
-	warm := exec.CommandContext(t.Context(), binary, "--version")
-	warm.Env = []string{}
-	if out, err := warm.CombinedOutput(); err != nil {
-		t.Fatalf("warm fake claude: %v\n%s", err, out)
+	binary := filepath.Join(t.TempDir(), "claude")
+	if err := os.Link(fakeShared, binary); err != nil { // cross-device: copy
+		data, rerr := os.ReadFile(fakeShared)
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		if werr := os.WriteFile(binary, data, 0o700); werr != nil {
+			t.Fatal(werr)
+		}
 	}
 	return binary
 }
+
+var (
+	fakeOnce   sync.Once
+	fakeShared string
+	fakeErr    error
+	// buildEnv is the real environment, captured before any test's
+	// t.Setenv("HOME", …) can send go build to a cold, HOME-based cache.
+	buildEnv = os.Environ()
+)
 
 // Fixture returns the absolute path of a recorded fixture, e.g. "plain.jsonl".
 func Fixture(name string) string {

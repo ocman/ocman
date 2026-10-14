@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -116,11 +117,18 @@ type initResponse struct {
 	Models   []initModel   `json:"models"`
 }
 
+// initTimeout bounds one control-handshake CLI call: a claude that never
+// answers initialize is killed, not waited on. Tests shorten it to exercise
+// the timeout path without paying 15 s.
+var initTimeout atomic.Int64
+
+func init() { initTimeout.Store(int64(15 * time.Second)) }
+
 // initialize runs the CLI in dir only for the control handshake: no user
 // message is sent, so no turn runs, no transcript is written and nothing is
 // billed. args are extra launch flags (e.g. --plugin-dir).
 func initialize(ctx context.Context, slots, cli, dir string, env []string, args ...string) (initResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(initTimeout.Load()))
 	defer cancel()
 	release, err := HelperSlot(ctx, slots)
 	if err != nil {

@@ -111,7 +111,13 @@ func TestAccountPlanFromInitializeIsCached(t *testing.T) {
 	}
 }
 
+func setInitTimeout(t *testing.T, d time.Duration) {
+	old := initTimeout.Swap(int64(d))
+	t.Cleanup(func() { initTimeout.Store(old) })
+}
+
 func TestAccountSignedOutAndCLIFailure(t *testing.T) {
+	setInitTimeout(t, 300*time.Millisecond) // the "other request" case waits out the handshake timeout
 	for name, tc := range map[string]struct {
 		response string
 		code     int

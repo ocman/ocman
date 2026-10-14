@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/permissions"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
@@ -51,10 +51,11 @@ func TestDelayedAIApprovalKeepsProvenance(t *testing.T) {
 			if err := st.SetJudgeDelayMs(t.Context(), 0); err != nil {
 				t.Fatal(err)
 			}
-			cli := filepath.Join(t.TempDir(), "judge")
-			if err := os.WriteFile(cli, []byte("#!/bin/sh\ncat >/dev/null\nprintf '%s' '{\"verdict\":\"safe\",\"reasoning\":\"Builds.\"}'\n"), 0o700); err != nil {
-				t.Fatal(err)
-			}
+			// The prewarmed fake answers the judge call: a fresh shell
+			// script's first exec can stall seconds under the suite's
+			// parallel load, which used to blow the harness' waits.
+			t.Setenv("FAKE_CLAUDE_PRINT", `{"verdict":"safe","reasoning":"Builds."}`)
+			cli := claudetest.Binary(t)
 			var id atomic.Value
 			var armed atomic.Bool
 			restores := make(chan func(), 1)
@@ -181,10 +182,8 @@ func TestLegacySupervisorLeavesApprovalToUser(t *testing.T) {
 	if err := st.SetJudgeDelayMs(t.Context(), 0); err != nil {
 		t.Fatal(err)
 	}
-	cli := filepath.Join(t.TempDir(), "judge")
-	if err := os.WriteFile(cli, []byte("#!/bin/sh\ncat >/dev/null\nprintf '%s' '{\"verdict\":\"safe\",\"reasoning\":\"Builds.\"}'\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("FAKE_CLAUDE_PRINT", `{"verdict":"safe","reasoning":"Builds."}`)
+	cli := claudetest.Binary(t)
 	var id atomic.Value
 	id.Store("")
 	var restore atomic.Pointer[func()]

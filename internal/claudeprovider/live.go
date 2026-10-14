@@ -90,6 +90,11 @@ type live struct {
 	// unrecorded sessions have a transcript whose ownership update failed.
 	unrecorded map[string]bool
 	children   int // claude children started and not yet reaped
+	// done closes when the live is stopped (provider shutdown or the test
+	// harness tearing it down); the durable-publication retry workers
+	// (recordLater, settleLater) end with it instead of outliving it.
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 type viewEntry struct {
@@ -101,7 +106,7 @@ func newLive(idx *Index, opts Options, version string) *live {
 	l := &live{idx: idx, opts: opts, versionErr: checkCLI(version), account: newAccount(opts), owned: map[string]*owned{},
 		procs: map[string]*proc{}, status: map[string]db.Session{}, view: map[string][]viewEntry{}, prompts: map[string]*prompt{}, hooks: map[string]hookState{},
 		waits: map[string]map[*waitTicket]bool{}, tails: map[string]chan struct{}{}, subs: map[string][]string{}, accepted: map[string]uint64{},
-		deferred: map[string]db.SessionStatus{}, unsettled: map[string]settlement{}, settling: map[string]bool{}, unrecorded: map[string]bool{}}
+		deferred: map[string]db.SessionStatus{}, unsettled: map[string]settlement{}, settling: map[string]bool{}, unrecorded: map[string]bool{}, done: make(chan struct{})}
 	l.cmds = newCommands(opts)
 	l.slots = sync.NewCond(&l.mu)
 	l.syncOwnedLocked()

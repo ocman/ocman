@@ -248,7 +248,10 @@ func (l *live) stopLocked(p *proc) {
 	})
 }
 
+// stopAll ends the live: its children go and the retry workers retire
+// (idempotent: both the provider shutdown and the test harness call it).
 func (l *live) stopAll() {
+	l.stopOnce.Do(func() { close(l.done) })
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for _, p := range l.procs {
