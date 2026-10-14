@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -429,7 +429,7 @@ coverage-check: ## Compare coverage/*.json against $(BASELINE_DIR)
 	./scripts/coverage-ratchet.sh "$(BASELINE_DIR)" $(SUITE)
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers lint-settings-rows
+lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers lint-settings-rows lint-css-tokens
 
 lint-backend:
 	go vet ./...
@@ -463,6 +463,12 @@ lint-host-helpers:
 # Suppress justified exceptions with `{/* ocman:allow-raw-setting */}`.
 lint-settings-rows:
 	./scripts/check-settings-rows.sh
+
+# Guard against var(--x) naming a custom property defined nowhere, which
+# silently falls back to inherited styles (off-theme UI).
+lint-css-tokens:
+	./scripts/check_css_tokens_test.sh
+	./scripts/check-css-tokens.sh
 
 # Regenerate the gRPC stubs for the multi-remote contract. Requires
 # protoc plus the Go plugins:

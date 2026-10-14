@@ -36,7 +36,7 @@
   height: 32px;
   padding: 0;
   border-top: 1px solid var(--border);
-  background: var(--bg-elevated);
+  background: var(--bg-card);
   overflow-x: auto;
   scrollbar-width: none;
 }

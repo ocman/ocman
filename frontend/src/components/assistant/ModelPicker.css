@@ -74,7 +74,7 @@
   padding: 0;
 }
 .oc-model-picker-badge--default {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
 .oc-model-picker-badge--archived {

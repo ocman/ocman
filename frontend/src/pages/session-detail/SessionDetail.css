@@ -718,7 +718,7 @@ button.session-sidebar-group-header.collapsed::before {
   padding: 10px 12px;
   font-size: 14px;
   border: 1px solid var(--border);
-  background: var(--bg-input);
+  background: var(--bg-card);
   color: var(--text);
 }
 

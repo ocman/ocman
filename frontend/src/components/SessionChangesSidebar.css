@@ -186,7 +186,7 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
   border-radius: 8px;
   margin-bottom: 8px;
   overflow: hidden;
-  background: var(--bg-elevated);
+  background: var(--bg-card);
 }
 
 .oc-change-group-header {

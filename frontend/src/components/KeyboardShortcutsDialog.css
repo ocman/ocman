@@ -65,7 +65,7 @@
 }
 
 .oc-shortcuts-section {
-  background: var(--bg-sunken, transparent);
+  background: var(--mantle);
   border: 1px solid var(--border);
   border-radius: 0;
   padding: 10px 0;
@@ -117,7 +117,7 @@
   height: 22px;
   padding: 0 6px;
   font-size: 12px;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-family: var(--font-conversation-mono);
   font-weight: 500;
   line-height: 1;
   color: var(--text);

@@ -832,7 +832,7 @@ make test-all-fast    # backend + frontend + e2e in parallel, fail fast
 make coverage         # collect coverage/*.json (SUITE=go|frontend|all)
 make coverage-check   # ratchet coverage/*.json against $(BASELINE_DIR)
 
-make lint             # go vet, golangci-lint, tsc -b, eslint + the three guards
+make lint             # go vet, golangci-lint, tsc -b, eslint + the guards
 make build            # production: pnpm install + pnpm build, then go build -o ocman .
 make build-desktop    # Wails desktop app (the -gui path) into build/bin/
 make proto            # regenerate internal/remote/proto stubs (needs protoc)
@@ -927,8 +927,8 @@ pnpm exec vite build && pnpm test:e2e   # Playwright e2e (chromium) against the 
 
 Locally, `make test` and `make lint` cover the same ground.
 `make lint` runs `go vet`, `golangci-lint run`, `tsc -b`, `pnpm lint`,
-and the three guard scripts (platform-branching, host-helpers,
-settings-rows). Install `golangci-lint` locally — CI enforces it and
+and the guard scripts (platform-branching, host-helpers, settings-rows,
+css-tokens). Install `golangci-lint` locally — CI enforces it and
 `.golangci.yml` enables linters beyond the standard set. Keep diffs
 minimal and match the surrounding code.
 

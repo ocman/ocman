@@ -1262,7 +1262,7 @@
   margin: 0 16px 8px;
   border: 1px solid var(--border);
   border-radius: 0;
-  background: color-mix(in srgb, var(--bg-card) 85%, var(--bg-panel) 15%);
+  background: color-mix(in srgb, var(--bg-card) 85%, var(--bg) 15%);
 }
 
 .oc-sse-debug > summary {

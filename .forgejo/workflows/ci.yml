@@ -50,6 +50,10 @@ jobs:
         run: |
           ./scripts/check_host_helpers_test.sh
           ./scripts/check-host-helpers.sh
+      - name: CSS token guard
+        run: |
+          ./scripts/check_css_tokens_test.sh
+          ./scripts/check-css-tokens.sh
       - name: Test with coverage
         run: make coverage SUITE=frontend
       - name: Fetch coverage baseline

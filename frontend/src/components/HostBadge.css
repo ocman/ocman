@@ -14,8 +14,8 @@
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.03em;
-  background: color-mix(in srgb, var(--muted) 12%, transparent);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--text-dim) 12%, transparent);
+  color: var(--text-dim);
   border: 1px solid var(--border);
   line-height: 1;
   white-space: nowrap;
@@ -36,5 +36,5 @@
 }
 
 .host-badge.stale::before {
-  background: var(--muted);
+  background: var(--text-dim);
 }

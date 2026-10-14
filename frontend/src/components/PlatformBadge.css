@@ -21,8 +21,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  background: var(--surface-alt);
-  color: var(--muted);
+  background: var(--bg-card);
+  color: var(--text-dim);
   border: 1px solid var(--border);
   line-height: 1;
   white-space: nowrap;
