@@ -44,6 +44,33 @@ func TestChecks_ParsesCombinedStatus(t *testing.T) {
 	}
 }
 
+func TestChecks_SkippedDeployDoesNotKeepSuccessfulPRPending(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Statuses returned for bouwbuddy PR #40.
+		_, _ = w.Write([]byte(`{"state":"success","statuses":[
+			{"status":"success","context":"Test and deploy / Tests (build) (pull_request)"},
+			{"status":"success","context":"Test and deploy / Tests (integration) (pull_request)"},
+			{"status":"skipped","context":"Test and deploy / Deploy rp501ssd (pull_request)"}
+		]}`))
+	}))
+	defer srv.Close()
+
+	ci, _, err := newTestClient(t, srv, "tok").Checks(context.Background(), "dries/bouwbuddy", "d7b89d74")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ci.State != forge.CIStateSuccess {
+		t.Errorf("successful PR with skipped deploy: got %q, want success", ci.State)
+	}
+	if len(ci.Checks) != 3 {
+		t.Fatalf("expected 3 checks, got %d", len(ci.Checks))
+	}
+	if ci.Checks[2].State != forge.CIStateSuccess {
+		t.Errorf("skipped deploy: got %q, want success", ci.Checks[2].State)
+	}
+}
+
 func TestChecks_NoStatusesIsUnknown(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -144,6 +171,7 @@ func TestChecks_MalformedJSONErrors(t *testing.T) {
 func TestFjStatusState(t *testing.T) {
 	cases := map[string]forge.CIState{
 		"success": forge.CIStateSuccess,
+		"skipped": forge.CIStateSuccess,
 		"warning": forge.CIStateSuccess,
 		"pending": forge.CIStatePending,
 		"running": forge.CIStatePending,

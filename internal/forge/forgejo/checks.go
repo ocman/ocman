@@ -39,7 +39,7 @@ func (c *Client) Checks(ctx context.Context, repo, sha string) (forge.CIStatus, 
 
 	var raw struct {
 		Statuses []struct {
-			Status    string `json:"status"` // success | pending | failure | error | warning
+			Status    string `json:"status"` // success | skipped | pending | failure | error | warning
 			Context   string `json:"context"`
 			TargetURL string `json:"target_url"`
 		} `json:"statuses"`
@@ -62,7 +62,7 @@ func (c *Client) Checks(ctx context.Context, repo, sha string) (forge.CIStatus, 
 // fjStatusState maps a Forgejo/Gitea commit-status state to a CIState.
 func fjStatusState(state string) forge.CIState {
 	switch state {
-	case "success":
+	case "success", "skipped":
 		return forge.CIStateSuccess
 	case "pending", "running":
 		return forge.CIStatePending
