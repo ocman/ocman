@@ -58,6 +58,7 @@ function renderSidebar(
   groups: SidebarProjectGroup[] = [group],
   onReorderProjects: (keys: string[]) => void = vi.fn(),
   collapsedProjectSet: Set<string> = new Set(),
+  showArchivedRecent = false,
 ) {
   return render(
     <MemoryRouter><SessionSidebar
@@ -65,7 +66,7 @@ function renderSidebar(
       sidebarWidth={300}
       sidebarView={sidebarView}
       setSidebarView={setSidebarView}
-      showArchivedRecent={false}
+      showArchivedRecent={showArchivedRecent}
       setShowArchivedRecent={setShowArchivedRecent}
       loadingRecentSessions={false}
       recentSessions={group.sessions}
@@ -101,6 +102,33 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it.each(['recent', 'projects'] as const)('hides snoozed pins and reveals snoozed rows independently of archives in %s', (view) => {
+    const rows = [
+      session({ id: 'pin', title: 'Snoozed pin', pinned: true, archived: true, snoozedUntil: Date.now() + 60_000 }),
+      session({ id: 'nap', title: 'Snoozed row', archived: true, snoozedUntil: Date.now() + 60_000 }),
+      session({ id: 'archive', title: 'Archived row', archived: true }),
+    ];
+    renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, view);
+    expect(screen.queryByText('Snoozed pin')).not.toBeInTheDocument();
+    expect(screen.queryByText('Snoozed row')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    const toggle = screen.getByRole('checkbox', { name: 'Show snoozed' });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(screen.getAllByText('Snoozed pin').length).toBeGreaterThan(0);
+    expect(screen.getByText('Snoozed row')).toBeInTheDocument();
+    expect(screen.queryByText('Archived row')).not.toBeInTheDocument();
+    expect(localStorage.getItem('ocman:sidebar-filter:snoozed')).toBe('true');
+    fireEvent.click(toggle);
+    expect(screen.queryByText('Snoozed pin')).not.toBeInTheDocument();
+  });
+
+  it('keeps snoozed rows hidden even when showing archives, prompts and the active session', () => {
+    const rows = [session({ title: 'Active snoozed pin', pinned: true, pendingPermission: true, archived: true, snoozedUntil: 9999999999999 })];
+    renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, 'recent', undefined, undefined, undefined, undefined, undefined, true);
+    expect(screen.queryByText('Active snoozed pin')).not.toBeInTheDocument();
+  });
+
   it.each([false, true])('omits project and branch context on nested rows with flat=%s', (flat) => {
     const props = {
       session: session(), inGroup: false, flat, active: false, activeId: 'other',

@@ -228,8 +228,8 @@ describe('useSessionSeen', () => {
     const patchSession = vi.fn();
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
 
-    expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false });
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false }, 'opencode');
+    expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false, snoozedUntil: 0 });
+    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false, snoozedUntil: 0 }, 'opencode');
     expect(markSessionSeen).toHaveBeenCalledWith('opencode', 's1', 42);
     await waitFor(() => expect(recheckFaviconNotify).toHaveBeenCalled());
     expect(useUiStore.getState().lastOpenedSessionId).toBe('s1');

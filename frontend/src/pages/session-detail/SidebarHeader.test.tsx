@@ -8,6 +8,7 @@ it('keeps the filter button neutral with every filter changed and the menu open'
     projects={[]} projectFilter="" setProjectFilter={vi.fn()}
     searchQuery="" setSearchQuery={vi.fn()}
     showArchivedRecent setShowArchivedRecent={vi.fn()}
+    showSnoozed={false} setShowSnoozed={vi.fn()}
     showChildren={false} setShowChildren={vi.fn()}
     showFactory setShowFactory={vi.fn()}
     showRoutines setShowRoutines={vi.fn()}
@@ -27,6 +28,7 @@ it('represents a removed project selection and lets the user clear it', () => {
     projectFilter: '/repo', setProjectFilter: vi.fn(),
     searchQuery: '', setSearchQuery: vi.fn(),
     showArchivedRecent: false, setShowArchivedRecent: vi.fn(),
+    showSnoozed: false, setShowSnoozed: vi.fn(),
     showChildren: true, setShowChildren: vi.fn(),
     showFactory: false, setShowFactory: vi.fn(),
     showRoutines: false, setShowRoutines: vi.fn(),
@@ -55,6 +57,7 @@ it('searches projects and selects an organization prefix', () => {
     projectFilter="" setProjectFilter={setProjectFilter}
     searchQuery="" setSearchQuery={vi.fn()}
     showArchivedRecent={false} setShowArchivedRecent={vi.fn()}
+    showSnoozed={false} setShowSnoozed={vi.fn()}
     showChildren setShowChildren={vi.fn()}
     showFactory={false} setShowFactory={vi.fn()}
     showRoutines={false} setShowRoutines={vi.fn()}

@@ -71,6 +71,17 @@ describe('useSidebarSessions project visibility', () => {
       expect(inboxChanged).toBeUndefined();
     } finally { view.unmount(); vi.useRealTimers(); }
   });
+  it('retains unpinned snoozed rows for the default-off display filter', async () => {
+    const row = { id: 'nap', platform: 'opencode', archived: true, snoozedUntil: Date.now() + 60_000, timeUpdated: Date.now() } as Session;
+    useApiStore.setState({ getSessions: vi.fn().mockResolvedValue([row]), recentSessions: [], recentSessionsHash: '' });
+    const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    await act(async () => { await view.result.current.loadRecentSessions(); });
+    expect(view.result.current.showArchivedRecent).toBe(false);
+    expect(view.result.current.recentSessions).toEqual([row]);
+    view.unmount();
+  });
+
   it.each(['busy', 'done'] as const)('preserves a %s transition returning to the request-start status', async (status) => {
     const row = { id: 'running', platform: 'r-box:opencode', status,
       timeUpdated: Date.now(), seen: true, seenTimeUpdated: 0 } as Session;

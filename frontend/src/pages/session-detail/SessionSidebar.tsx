@@ -134,6 +134,7 @@ export function SessionSidebar({
   const [showChildren, setShowChildren] = useSidebarFilter('children', true);
   const [showFactory, setShowFactory] = useSidebarFilter('factory', false);
   const [showRoutines, setShowRoutines] = useSidebarFilter('routines', false);
+  const [showSnoozed, setShowSnoozed] = useSidebarFilter('snoozed', false);
   const draftSessionIds = useDraftSessionIds();
   // Sessions hidden by the Factory/routine filters, including descendants.
   const hiddenSessions = useMemo(() => {
@@ -209,21 +210,21 @@ export function SessionSidebar({
     return sidebarProjectGroups.flatMap((group) => {
       const projectMatches = !!query && fuzzyMatch(query, group.directory);
       const sessions = group.sessions.filter((session) =>
-        session.id === activeId || session.pinned || alwaysShowPrompts && hasPendingPrompt(session) ||
+        (!session.snoozedUntil || showSnoozed) && (session.id === activeId || session.pinned || alwaysShowPrompts && hasPendingPrompt(session) ||
         !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
-        (showArchivedRecent || !session.archived) &&
+        (session.snoozedUntil ? showSnoozed : showArchivedRecent || !session.archived) &&
         (showChildren || !session.parentId) &&
-        (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
+        (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]))),
       );
       return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
     });
-  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent]);
+  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed]);
 
   const filteredPinnedSessions = useMemo(() => {
     return recentSessions
-      .filter((session) => session.pinned)
+      .filter((session) => session.pinned && (!session.snoozedUntil || showSnoozed))
       .sort((a, b) => b.pinnedAt - a.pinnedAt);
-  }, [recentSessions]);
+  }, [recentSessions, showSnoozed]);
   const sortableGroups = useMemo(
     () => filteredProjectGroups.filter((g) => !g.isPinned),
     [filteredProjectGroups],
@@ -232,12 +233,12 @@ export function SessionSidebar({
     const query = searchQuery.trim();
     return recentSessions.filter((session) =>
       !session.pinned &&
-      (session.id === activeId || alwaysShowPrompts && hasPendingPrompt(session) || !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
-      (showArchivedRecent || !session.archived) &&
+      (!session.snoozedUntil || showSnoozed) && (session.id === activeId || alwaysShowPrompts && hasPendingPrompt(session) || !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
+      (session.snoozedUntil ? showSnoozed : showArchivedRecent || !session.archived) &&
       (showChildren || !session.parentId) &&
       (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]))),
     );
-  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent]);
+  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed]);
 
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.
@@ -357,6 +358,7 @@ export function SessionSidebar({
         setSearchQuery={setSearchQuery}
         showArchivedRecent={showArchivedRecent}
         setShowArchivedRecent={setShowArchivedRecent}
+        showSnoozed={showSnoozed} setShowSnoozed={setShowSnoozed}
         showChildren={showChildren}
         setShowChildren={setShowChildren}
         showFactory={showFactory}

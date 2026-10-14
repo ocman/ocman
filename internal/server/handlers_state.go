@@ -129,7 +129,7 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 
 	payload, _ := json.Marshal(map[string]any{
 		"sessionID": req.SessionID, "platform": platform,
-		"patch": map[string]bool{"archived": req.Archived},
+		"patch": map[string]any{"archived": req.Archived, "snoozedUntil": 0},
 	})
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
 	writeJSON(w, map[string]bool{"ok": true})
@@ -175,6 +175,10 @@ func (s *Server) applySessionStateReadOnly(ctx context.Context, sessions []db.Se
 }
 
 func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.Session, write bool) error {
+	snoozed, err := s.stateDB.SnoozedSessions(ctx)
+	if err != nil {
+		return err
+	}
 	mode, err := s.archiveResurfaceMode(ctx)
 	if err != nil {
 		return err
@@ -248,6 +252,7 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 		if !isRemotePlatformID(sessions[i].Platform) || routineSessions[key] != "" {
 			sessions[i].RoutineID = routineSessions[key]
 		}
+		sessions[i].SnoozedUntil = snoozed[key]
 		sessions[i].FactoryAttemptID = factorySessions[key]
 		if sessions[i].FactoryAttemptID == "" && sessions[i].ParentID != "" {
 			// A subagent of an attempt session belongs to the attempt too, even

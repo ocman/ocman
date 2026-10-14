@@ -36,6 +36,7 @@ export interface Session {
   pendingPermission: boolean;
   pendingQuestion: boolean;
   archived: boolean;
+  snoozedUntil?: number;
   seen: boolean;
   pinned: boolean;
   pinnedAt: number;

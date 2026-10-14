@@ -104,6 +104,7 @@ type Session struct {
 	PendingPermission bool          `json:"pendingPermission"`
 	PendingQuestion   bool          `json:"pendingQuestion"`
 	Archived          bool          `json:"archived"`
+	SnoozedUntil      int64         `json:"snoozedUntil"`
 	Seen              bool          `json:"seen"`
 	Pinned            bool          `json:"pinned"`
 	PinnedAt          int64         `json:"pinnedAt"`

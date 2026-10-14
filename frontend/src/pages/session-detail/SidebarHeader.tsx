@@ -14,6 +14,8 @@ export interface SidebarHeaderProps {
   showArchivedRecent: boolean;
   setShowArchivedRecent: (updater: (current: boolean) => boolean) => void;
   showChildren: boolean;
+  showSnoozed: boolean;
+  setShowSnoozed: (show: boolean) => void;
   setShowChildren: (show: boolean) => void;
   showFactory: boolean;
   setShowFactory: (show: boolean) => void;
@@ -35,6 +37,8 @@ export function SidebarHeader({
   setSearchQuery,
   showArchivedRecent,
   setShowArchivedRecent,
+  showSnoozed,
+  setShowSnoozed,
   showChildren,
   setShowChildren,
   showFactory,
@@ -113,6 +117,10 @@ export function SidebarHeader({
                 }}
               />
               <span>Show archived</span>
+            </label>
+            <label>
+              <input type="checkbox" checked={showSnoozed} onChange={(event) => setShowSnoozed(event.target.checked)} />
+              <span>Show snoozed</span>
             </label>
             <label>
               <input

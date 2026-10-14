@@ -20,6 +20,9 @@ func TestSnoozeSessionAndWakeBroadcast(t *testing.T) {
 	sub, stop := srv.broadcastHub.subscribe()
 	defer stop()
 	until := time.Now().Add(time.Hour).UnixMilli()
+	if err := srv.stateDB.PinSession(t.Context(), "r-box:opencode", "s1"); err != nil {
+		t.Fatal(err)
+	}
 	body, _ := json.Marshal(map[string]any{"platform": "r-box:opencode", "sessionId": "s1", "until": until})
 	response := httptest.NewRecorder()
 	mux := http.NewServeMux()
@@ -29,6 +32,13 @@ func TestSnoozeSessionAndWakeBroadcast(t *testing.T) {
 		t.Fatalf("snooze: %d %s", response.Code, response.Body.String())
 	}
 	assertSnoozeEvent(t, sub, true)
+	rows := []db.Session{{ID: "s1", Platform: "r-box:opencode"}}
+	if err := srv.applySessionState(t.Context(), rows); err != nil {
+		t.Fatal(err)
+	}
+	if !rows[0].Pinned || rows[0].SnoozedUntil != until {
+		t.Fatalf("snoozed pin missing metadata: %+v", rows[0])
+	}
 	select {
 	case <-sub.ch:
 		t.Fatal("woke before deadline")
@@ -42,6 +52,9 @@ func TestSnoozeSessionAndWakeBroadcast(t *testing.T) {
 	go func() { defer close(done); srv.snoozeModule().Run(ctx) }()
 	defer func() { cancel(); <-done }()
 	assertSnoozeEvent(t, sub, false)
+	if err := srv.applySessionState(t.Context(), rows); err != nil || !rows[0].Pinned || rows[0].SnoozedUntil != 0 {
+		t.Fatalf("wake lost pin or kept deadline: %+v, %v", rows[0], err)
+	}
 }
 
 func assertSnoozeEvent(t *testing.T, sub *broadcastSub, archived bool) {
@@ -52,13 +65,14 @@ func assertSnoozeEvent(t *testing.T, sub *broadcastSub, archived bool) {
 			SessionID string `json:"sessionID"`
 			Platform  string `json:"platform"`
 			Patch     struct {
-				Archived bool `json:"archived"`
+				Archived     bool  `json:"archived"`
+				SnoozedUntil int64 `json:"snoozedUntil"`
 			} `json:"patch"`
 		}
 		if err := json.Unmarshal(ev.data, &payload); err != nil {
 			t.Fatal(err)
 		}
-		if ev.event != "ocman.session.changed" || payload.SessionID != "s1" || payload.Platform != "r-box:opencode" || payload.Patch.Archived != archived {
+		if ev.event != "ocman.session.changed" || payload.SessionID != "s1" || payload.Platform != "r-box:opencode" || payload.Patch.Archived != archived || (payload.Patch.SnoozedUntil > 0) != archived {
 			t.Fatalf("wrong event: %s %s", ev.event, ev.data)
 		}
 	case <-time.After(time.Second):
@@ -82,6 +96,29 @@ func TestSnoozeSessionValidation(t *testing.T) {
 		mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/session/snooze", strings.NewReader(body)))
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d", body, response.Code)
+		}
+	}
+}
+
+func TestSnoozedSessionsOutsideWindow(t *testing.T) {
+	srv, registry := newSessionsTestServer(t)
+	until := time.Now().Add(time.Hour).UnixMilli()
+	for _, owner := range []string{"opencode", "r-box:opencode"} {
+		registry.Register(&summaryPlatform{fakePlatform: fakePlatform{id: owner}, row: mkSession(owner, "old", owner, 1)})
+		if err := srv.stateDB.SnoozeSession(t.Context(), owner, "old", until); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rr := httptest.NewRecorder()
+	srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions?since=10000&limit=0", nil))
+	var rows []db.Session
+	mustUnmarshal(t, rr.Body.Bytes(), &rows)
+	if rr.Code != http.StatusOK || len(rows) != 2 {
+		t.Fatalf("missing old snoozed rows: %d %s", rr.Code, rr.Body)
+	}
+	for _, row := range rows {
+		if row.SnoozedUntil != until || row.Pinned {
+			t.Fatalf("wrong snooze metadata: %+v", row)
 		}
 	}
 }

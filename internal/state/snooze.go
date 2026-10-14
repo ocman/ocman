@@ -32,6 +32,25 @@ func (d *DB) SnoozeSession(ctx context.Context, platform, sessionID string, unti
 	return err
 }
 
+// SnoozedSessions returns deadlines keyed by owner-qualified session identity.
+func (d *DB) SnoozedSessions(ctx context.Context) (map[Key]int64, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, snoozed_until FROM archived_session WHERE snoozed_until > 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	deadlines := make(map[Key]int64)
+	for rows.Next() {
+		var key Key
+		var until int64
+		if err := rows.Scan(&key.Platform, &key.SessionID, &until); err != nil {
+			return nil, err
+		}
+		deadlines[key] = until
+	}
+	return deadlines, rows.Err()
+}
+
 // WakeSnoozedSessions atomically removes due archives and protects the woken
 // sessions from inactivity-based auto-archive. Deadlines survive restarts.
 func (d *DB) WakeSnoozedSessions(ctx context.Context, now int64) ([]Key, error) {

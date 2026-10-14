@@ -43,16 +43,24 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Force-include pinned sessions that fell outside the time window.
-	// The pinned set is typically <10 entries; each miss is a single
+	// Force-include pinned and snoozed sessions outside the time window.
+	// These sets are typically small; each miss is a single
 	// adapter lookup. Silently skip sessions that are deleted or
 	// inaccessible.
-	if pinned, err := s.stateDB.PinnedSessions(ctx); err == nil && len(pinned) > 0 {
+	preserved, _ := s.stateDB.PinnedSessions(ctx)
+	if preserved == nil {
+		preserved = make(map[state.Key]int64)
+	}
+	snoozed, _ := s.stateDB.SnoozedSessions(ctx)
+	for key, until := range snoozed {
+		preserved[key] = until
+	}
+	if len(preserved) > 0 {
 		have := make(map[state.Key]bool, len(all))
 		for _, sess := range all {
 			have[state.Key{Platform: sess.Platform, SessionID: sess.ID}] = true
 		}
-		for key := range pinned {
+		for key := range preserved {
 			if have[key] {
 				continue
 			}
@@ -155,6 +163,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		detail.Session.Archived = row[0].Archived
+		detail.Session.SnoozedUntil = row[0].SnoozedUntil
 		detail.Session.Seen = row[0].Seen
 		detail.Session.SeenTimeUpdated = row[0].SeenTimeUpdated
 		detail.Session.FactoryAttemptID = row[0].FactoryAttemptID

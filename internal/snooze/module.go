@@ -60,14 +60,14 @@ func (m *Module) handleSnooze(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "snoozing session", err)
 		return
 	}
-	m.broadcast(platform, req.SessionID, true)
+	m.broadcast(platform, req.SessionID, req.Until)
 	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }
 
-func (m *Module) broadcast(platform, sessionID string, archived bool) {
+func (m *Module) broadcast(platform, sessionID string, until int64) {
 	payload, _ := json.Marshal(map[string]any{
 		"sessionID": sessionID, "platform": platform,
-		"patch": map[string]bool{"archived": archived},
+		"patch": map[string]any{"archived": until > 0, "snoozedUntil": until},
 	})
 	m.d.Broadcast("ocman.session.changed", payload)
 }
@@ -104,6 +104,6 @@ func (m *Module) wake(ctx context.Context) {
 		return
 	}
 	for _, key := range keys {
-		m.broadcast(key.Platform, key.SessionID, false)
+		m.broadcast(key.Platform, key.SessionID, 0)
 	}
 }

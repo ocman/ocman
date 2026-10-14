@@ -27,6 +27,10 @@ func TestSnoozeLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
+	deadlines, err := d.SnoozedSessions(t.Context())
+	if err != nil || len(deadlines) != 2 || deadlines[Key{"opencode", "same"}] != until || deadlines[Key{"r-box:claudecode", "same"}] != until {
+		t.Fatalf("deadlines after restart: %v, %v", deadlines, err)
+	}
 	archived, err := d.ArchivedSessions(t.Context())
 	if err != nil || len(archived) != 2 || archived[Key{"opencode", "same"}] != math.MaxInt64 {
 		t.Fatalf("archives: %v, %v", archived, err)
@@ -46,6 +50,16 @@ func TestSnoozeLifecycle(t *testing.T) {
 	keys, err = d.WakeSnoozedSessions(t.Context(), until+1)
 	if err != nil || len(keys) != 0 {
 		t.Fatalf("repeat wake: %v, %v", keys, err)
+	}
+	deadlines, err = d.SnoozedSessions(t.Context())
+	if err != nil || len(deadlines) != 0 {
+		t.Fatalf("woken deadlines: %v, %v", deadlines, err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SnoozedSessions(t.Context()); err == nil {
+		t.Fatal("ignored closed store")
 	}
 }
 

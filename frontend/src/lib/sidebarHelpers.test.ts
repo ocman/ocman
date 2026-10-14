@@ -107,6 +107,11 @@ describe('filterInactiveChildren', () => {
 });
 
 describe('computeSidebarHash', () => {
+  it('tracks snooze deadlines separately from archives', () => {
+    const row = makeSession({ archived: true });
+    expect(computeSidebarHash([row])).not.toBe(computeSidebarHash([{ ...row, snoozedUntil: 123 }]));
+    expect(computeSidebarHash([{ ...row, snoozedUntil: 123 }])).not.toBe(computeSidebarHash([{ ...row, snoozedUntil: 456 }]));
+  });
   it('returns the empty string for an empty array', () => {
     expect(computeSidebarHash([])).toBe('');
   });

@@ -59,7 +59,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
     if (document.hidden) return;
     lastMarked.current = updated;
-    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false } : {}) }, platform);
+    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false, snoozedUntil: 0 } : {}) }, platform);
     const request = sessionSeenInterrupted
       ? markSessionSeen(platform, id, updated, true)
       : markSessionSeen(platform, id, updated);
@@ -78,7 +78,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     openedIdentity.current = identity;
     if (restoring && session?.archived) { closeArchivedSession(); return; }
     recordOpenedSession(sessionSeenId);
-    patchSession({ seen: true, ...(opening ? { archived: false } : {}) });
+    patchSession({ seen: true, ...(opening ? { archived: false, snoozedUntil: 0 } : {}) });
     markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated, opening);
     return () => {
       // A quick departure still acknowledges the latest content actually shown.
