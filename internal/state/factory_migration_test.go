@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 	_ "modernc.org/sqlite"
 )
 
@@ -243,7 +243,7 @@ func TestFactoryCapacityPolicyIsDurable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy := factory.CapacityPolicy{GlobalCapacity: 12, ProjectCapacity: 3, ProjectOverrides: map[string]int{"/repo": 2}}
+	policy := model.FactoryCapacityPolicy{GlobalCapacity: 12, ProjectCapacity: 3, ProjectOverrides: map[string]int{"/repo": 2}}
 	if err := db.SetFactoryCapacityPolicy(context.Background(), policy); err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
-	session := factory.PlanningSession{Platform: "agent", ID: "session-1"}
+	session := model.PlanningSession{Platform: "agent", ID: "session-1"}
 	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", session); err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	if err != nil || !ok || got != session {
 		t.Fatalf("planning session = %#v, %v, %v", got, ok, err)
 	}
-	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", factory.PlanningSession{Platform: "agent", ID: "session-2"}); err == nil {
+	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", model.PlanningSession{Platform: "agent", ID: "session-2"}); err == nil {
 		t.Fatal("Planning Session mapping was overwritten")
 	}
 	if err := db.DeleteFactoryPlanningSession(ctx, "work-1"); err != nil {
@@ -374,7 +374,7 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	if cleanups, err := db.ListFactoryPlanningSessionCleanups(ctx); err != nil || len(cleanups) != 0 {
 		t.Fatalf("deleted planning cleanup = %#v, %v", cleanups, err)
 	}
-	if err := db.AppendFactoryAudit(ctx, factory.FactoryAuditRecord{EpicID: "epic-1", WorkID: "work-1", Actor: "dries", Action: "plan.approved", Details: map[string]int{"revision": 2}, At: time.Unix(10, 0)}); err != nil {
+	if err := db.AppendFactoryAudit(ctx, model.AuditRecord{EpicID: "epic-1", WorkID: "work-1", Actor: "dries", Action: "plan.approved", Details: map[string]int{"revision": 2}, At: time.Unix(10, 0)}); err != nil {
 		t.Fatal(err)
 	}
 	var action, details string
@@ -384,7 +384,7 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	if action != "plan.approved" || details != `{"revision":2}` {
 		t.Fatalf("audit = %q, %s", action, details)
 	}
-	record := factory.FactoryAuditRecord{EpicID: "epic-1", Actor: "dries", Action: "plan.cancelled", Details: map[string]string{"reason": "duplicate"}, At: time.Unix(20, 0)}
+	record := model.AuditRecord{EpicID: "epic-1", Actor: "dries", Action: "plan.cancelled", Details: map[string]string{"reason": "duplicate"}, At: time.Unix(20, 0)}
 	if err := db.AppendFactoryAuditOnce(ctx, record); err != nil {
 		t.Fatal(err)
 	}

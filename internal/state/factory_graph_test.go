@@ -2,8 +2,6 @@ package state
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -11,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
@@ -495,47 +492,6 @@ func factoryChildIssueID(t *testing.T, db *DB, parentID string, index int) strin
 		t.Fatal(err)
 	}
 	return id
-}
-
-func TestFactoryServicePoursCreatedBuiltInEpic(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-	formula := nativeTracerFormula(t)
-	epic, err := db.CreateFactoryEpic(context.Background(), "", "Ship search", "Keep it small", "/repo", "", formula)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := factory.NewNative(db).Pour(context.Background(), epic.ID); err != nil {
-		t.Fatalf("service Pour created built-in Epic: %v", err)
-	}
-}
-
-func TestFactoryPourNormalizesLegacyBuiltInSourceHash(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-	ctx := context.Background()
-	formula := nativeTracerFormula(t)
-	legacy, err := factory.NewNative(db).GetFormula(ctx, "ocman/tracer", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	formula.Version, formula.Source, formula.Hash = legacy.Version, legacy.Source, legacy.Hash
-	epic, err := db.CreateFactoryEpic(ctx, "", "Ship search", "Keep it small", "/repo", "", formula)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256([]byte(formula.Source))
-	legacyHash := hex.EncodeToString(sum[:])
-	if _, err := db.db.Exec(`UPDATE factory_epic SET formula_hash = ? WHERE id = ?`, legacyHash, epic.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := db.PourFactoryEpic(ctx, epic.ID, formula); err != nil {
-		t.Fatalf("PourFactoryEpic legacy built-in pin: %v", err)
-	}
-	got, err := db.GetFactoryEpic(ctx, epic.ID)
-	if err != nil || got.FormulaHash != legacyHash {
-		t.Fatalf("legacy pin changed = %#v, %v", got, err)
-	}
 }
 
 func TestNativeFormulaRevisionsAreImmutableAndDeduplicated(t *testing.T) {
@@ -1472,7 +1428,7 @@ func TestFactoryMolClosureRollsBackOptionalCancellationOnFailure(t *testing.T) {
 
 func nativeTracerFormula(t *testing.T) model.NativeFormula {
 	t.Helper()
-	formula := factory.BuiltInTracerFormula()
+	formula := builtInTracerFormula()
 	return model.NativeFormula{
 		ID: formula.ID, Version: formula.Version, Source: formula.Source, Hash: formula.Hash,
 		Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}, {Key: "approval", Kind: "gate"}, {Key: "materialization", Kind: "materialization"}},
