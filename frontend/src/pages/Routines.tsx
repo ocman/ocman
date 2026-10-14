@@ -7,8 +7,7 @@ import { DataTable } from '../components/DataTable';
 import { RoutineStateBadge } from '../components/RoutineStateBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/Tabs';
 import { api, type Routine } from '../lib/api';
-import type { WebhookInbox } from '../lib/api.types';
-import { useRoutines, useWebhookInboxes } from '../lib/routineQueries';
+import { useRoutineLists } from '../lib/routineQueries';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
 import { RoutineEditorDrawer } from './RoutineEditorDrawer';
 import { WebhookInboxDrawer } from './WebhookInboxDrawer';
@@ -17,20 +16,12 @@ import { formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import styles from './Routines.module.css';
 
-const EMPTY_ROUTINES: Routine[] = [];
-const EMPTY_INBOXES: WebhookInbox[] = [];
-
 export function Routines() {
   usePageTitle('Routines');
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === 'inboxes' ? 'inboxes' : 'routines';
   // Both lists poll while the page is visible (react-query pauses hidden tabs).
-  const routinesQ = useRoutines();
-  const inboxesQ = useWebhookInboxes();
-  const routines = routinesQ.data ?? EMPTY_ROUTINES;
-  const inboxes = inboxesQ.data ?? EMPTY_INBOXES;
-  // Bumps on every successful read so the open history drawer refreshes too.
-  const refreshKey = routinesQ.dataUpdatedAt;
+  const { routines, inboxes, loading, loadError, refreshKey, reload: load } = useRoutineLists();
   const historyId = searchParams.get('routine') ?? undefined;
   const view = searchParams.get('view');
   const detailTab = view === 'settings' || view === 'stats' ? view : 'history';
@@ -41,16 +32,10 @@ export function Routines() {
     return next;
   });
   const [showForm, setShowForm] = useState(false);
-  const loading = routinesQ.isPending || inboxesQ.isPending;
   const [busy, setBusy] = useState(false);
   const [actionError, setError] = useState('');
-  const loadError = routinesQ.error ?? inboxesQ.error;
-  const error = actionError || (loadError ? (loadError instanceof Error ? loadError.message : 'Could not load routines.') : '');
+  const error = actionError || loadError;
   const [inboxDrawer, setInboxDrawer] = useState<string>();
-
-  const load = async () => {
-    await Promise.all([routinesQ.refetch({ throwOnError: true }), inboxesQ.refetch({ throwOnError: true })]);
-  };
 
   const openCreate = () => {
     selectRoutine(); setShowForm(true); setError('');

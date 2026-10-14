@@ -9,15 +9,13 @@ import { PermissionRulesEditor } from '../components/PermissionRulesEditor';
 import { useMachinePlatforms } from '../lib/useCapabilities';
 import { basePlatform, modelRefPlatform, qualifyModelRef } from '../lib/modelRef';
 import { WebhookTriggerFields } from '../components/WebhookTriggerFields';
-import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
+import { api, type PermissionRule, type Routine, type RoutineInput, type RoutineScheduleKind, type RoutineSessionMode } from '../lib/api';
 import type { WebhookInbox } from '../lib/api.types';
 import { saveTrigger, triggerFor, type Trigger } from '../lib/webhookFilters';
 import { cleanTitle } from '../lib/format';
-import { useProjects, useSessions } from '../lib/queries';
+import { useRoutineFormLookups } from '../lib/routineQueries';
 import styles from './RoutineEditorDrawer.module.css';
 
-const EMPTY_SESSIONS: Session[] = [];
-const EMPTY_PROJECTS: Project[] = [];
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 type FormState = {
   name: string; prompt: string; directory: string; agent: string; model: string;
@@ -93,14 +91,9 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const [error, setError] = useState('');
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
-  const projectsQ = useProjects();
-  const projects = projectsQ.data ?? EMPTY_PROJECTS;
 
-  const sessionsQ = useSessions({ dir: form.directory }, { enabled: !!form.directory });
-  const sessions = (form.directory && sessionsQ.data) || EMPTY_SESSIONS;
-  const sessionsLoading = sessionsQ.isFetching;
-  const lookupError = projectsQ.error ? (projectsQ.error instanceof Error ? projectsQ.error.message : 'Could not load projects.')
-    : sessionsQ.error ? (sessionsQ.error instanceof Error ? sessionsQ.error.message : 'Could not load sessions.') : '';
+  const { projects, sessions, sessionsLoading, lookupError } = useRoutineFormLookups(form.directory);
+  const shownError = error || lookupError;
 
   // An existing session offers its own catalog; a routine creating sessions
   // offers every platform's models on the machine, and the model's platform
@@ -161,7 +154,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((value) => ({ value, label: value || 'Default model' }));
 
   return <form onSubmit={submit}>
-      {(error || lookupError) && <InlineAlert>{error || lookupError}</InlineAlert>}
+      {shownError && <InlineAlert>{shownError}</InlineAlert>}
       <fieldset disabled={busy} className={styles.fields}>
         <label className={styles.field}>Name<TextField required data-autofocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
         <label className={styles.field}>Prompt<TextareaField className={styles.prompt} required value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} /></label>

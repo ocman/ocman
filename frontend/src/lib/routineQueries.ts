@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { api, type Routine } from './api';
+import { api, type Project, type Routine, type Session } from './api';
+import { useProjects, useSessions } from './queries';
 import type { WebhookInbox } from './api.types';
 
 /** How often the Routines page refreshes run state while visible. */
@@ -22,4 +23,44 @@ export function useWebhookInboxes() {
     refetchInterval: ROUTINES_POLL_MS,
     staleTime: 0,
   });
+}
+
+/** A query or action failure as user-facing text. */
+export function errorText(error: unknown, fallback: string): string {
+  if (!error) return '';
+  return error instanceof Error ? error.message : fallback;
+}
+
+const EMPTY_ROUTINES: Routine[] = [];
+const EMPTY_INBOXES: WebhookInbox[] = [];
+const EMPTY_PROJECTS: Project[] = [];
+const EMPTY_SESSIONS: Session[] = [];
+
+/** The Routines page's two polled lists, read and reloaded together. */
+export function useRoutineLists() {
+  const routinesQ = useRoutines();
+  const inboxesQ = useWebhookInboxes();
+  return {
+    routines: routinesQ.data ?? EMPTY_ROUTINES,
+    inboxes: inboxesQ.data ?? EMPTY_INBOXES,
+    loading: routinesQ.isPending || inboxesQ.isPending,
+    loadError: errorText(routinesQ.error ?? inboxesQ.error, 'Could not load routines.'),
+    // Bumps on every successful read so an open history drawer refreshes too.
+    refreshKey: routinesQ.dataUpdatedAt,
+    reload: async () => {
+      await Promise.all([routinesQ.refetch({ throwOnError: true }), inboxesQ.refetch({ throwOnError: true })]);
+    },
+  };
+}
+
+/** Projects and the chosen project's sessions for the routine form. */
+export function useRoutineFormLookups(directory: string) {
+  const projectsQ = useProjects();
+  const sessionsQ = useSessions({ dir: directory }, { enabled: !!directory });
+  return {
+    projects: projectsQ.data ?? EMPTY_PROJECTS,
+    sessions: (directory && sessionsQ.data) || EMPTY_SESSIONS,
+    sessionsLoading: sessionsQ.isFetching,
+    lookupError: errorText(projectsQ.error, 'Could not load projects.') || errorText(sessionsQ.error, 'Could not load sessions.'),
+  };
 }
