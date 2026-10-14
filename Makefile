@@ -106,6 +106,19 @@ dev-relay: ## Run the share relay locally (:8231, store in tmp/relay-data)
 		-store $(RELAY_STORE) \
 		-ttl $(RELAY_TTL)
 
+restart-claude-supervisors: ## Stop managed Claude supervisors; next create/send relaunches them (interrupts active turns)
+	@command -v tmux >/dev/null
+	@tmux -L ocman-agents list-sessions -F '#{session_name}' 2>/dev/null | \
+	while IFS= read -r session; do \
+		case "$$session" in \
+			claudecode-*) \
+				tmux -L ocman-agents kill-session -t "=$$session" || exit $$?; \
+				echo "Stopped $$session; next create/send will relaunch it." ;; \
+		esac; \
+	done
+
+.PHONY: restart-claude-supervisors
+
 # Emergency nuke: kill anything holding the dev ports. Use when a previous
 # `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
 # run even when nothing is listening — xargs is a no-op on empty stdin on
