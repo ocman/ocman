@@ -77,7 +77,7 @@ enabled through initialization. Ocman keeps Claude Code's native system prompt
 and user/project settings, corresponding to the SDK's Claude Code preset rather
 than its empty system-prompt default.
 
-A result ends one turn, but background agents can owe another turn. Ocman reads
+A result ends one turn, but background tasks can owe another turn. Ocman reads
 Claude's session-state events and delegated-task lifecycle before publishing idle.
 Older CLIs that emit no session-state events use the task ledger and result frame.
 The SDK's `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` bounds the wait between turns to
@@ -124,8 +124,9 @@ fail visibly, and process shutdown allows stdin EOF, then SIGTERM, then SIGKILL.
   turn keep that turn's model and effort.
 - **Turn outcome.** A turn ends when every message you sent during it has
   finished: a message sent mid-turn keeps the session busy until Claude has run
-  it, and delegated background agents keep it busy until their continuation
-  finishes. A failed result, a crashed `claude` or a failed launch ends the turn as
+  it, and background tasks (agents, workflows, background shells and monitors)
+  keep it busy until they end and their continuation finishes, as in Claude
+  Code's own session runner. Abort stops them. A failed result, a crashed `claude` or a failed launch ends the turn as
   `error` (a routine run records a failure); an abort ends it without an error,
   including a turn still waiting for one of the 4 process slots, which then
   never starts.

@@ -11,7 +11,10 @@ import (
 )
 
 // sdkSystem tracks the SDK's delegated-task ledger and authoritative run state.
-// Background shells/monitors are excluded: they may never end and owe no agent turn.
+// Like Claude Code's own session runner, every live background task except a
+// teammate holds the turn, shells and monitors included: their completion
+// wakes Claude for a follow-up turn, so the session is not done until then.
+// An interrupt kills them, so one that never ends is ended by Stop.
 func (l *live) sdkSystem(p *proc, raw []byte) {
 	var event struct {
 		Subtype  string `json:"subtype"`
@@ -35,7 +38,7 @@ func (l *live) sdkSystem(p *proc, raw []byte) {
 			wake = event.State != "idle" && !p.busy
 		}
 	case "task_started":
-		if event.TaskID != "" && (event.TaskType == "local_agent" || event.TaskType == "local_workflow") {
+		if event.TaskID != "" && event.TaskType != "in_process_teammate" {
 			if p.tasks == nil {
 				p.tasks = map[string]bool{}
 			}
@@ -45,7 +48,7 @@ func (l *live) sdkSystem(p *proc, raw []byte) {
 		delete(p.tasks, event.TaskID)
 	case "task_updated":
 		switch event.Patch.Status {
-		case "completed", "failed", "stopped":
+		case "completed", "failed", "killed", "stopped":
 			delete(p.tasks, event.TaskID)
 		}
 	}

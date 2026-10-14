@@ -36,12 +36,14 @@ func TestSDKIdleBeforeResultAndBackgroundContinuation(t *testing.T) {
 }
 
 func TestSDKTaskLifecycleVariants(t *testing.T) {
-	for _, taskType := range []string{"local_agent", "local_workflow", "local_bash", "remote_agent"} {
-		for _, status := range []string{"completed", "failed", "stopped"} {
+	// Like Claude Code's own session runner, every background task but a
+	// teammate holds the turn: shells and monitors included.
+	for _, taskType := range []string{"local_agent", "local_workflow", "local_bash", "monitor_ws", "monitor_mcp", "remote_agent", "in_process_teammate"} {
+		for _, status := range []string{"completed", "failed", "killed", "stopped"} {
 			l, p := sdkLifecycle(t)
 			l.system(p, []byte(`{"subtype":"task_started","task_type":"`+taskType+`","task_id":"task"}`))
 			l.result(p, []byte(`{"subtype":"success"}`))
-			tracked := taskType == "local_agent" || taskType == "local_workflow"
+			tracked := taskType != "in_process_teammate"
 			if p.busy != tracked {
 				t.Fatalf("%s busy=%v", taskType, p.busy)
 			}
