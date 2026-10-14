@@ -314,13 +314,7 @@ func (s *Server) startMCPListener() func() {
 	mux.HandleFunc("/mcp/", h)
 	mux.HandleFunc("/hook", requirePOST(s.requireLoopbackPeer(s.handleHook)))
 	srv := newHTTPServer(ln.Addr().String(), withSecurityHeaders(mux))
-	s.lifetimeMu.Lock()
-	parent := s.lifetimeCtx
-	s.lifetimeMu.Unlock()
-	if parent == nil {
-		parent = context.Background()
-	}
-	listenerCtx, stopRequests := context.WithCancel(parent)
+	listenerCtx, stopRequests := context.WithCancel(s.lifetime())
 	srv.BaseContext = func(net.Listener) context.Context { return listenerCtx }
 	done := make(chan struct{})
 

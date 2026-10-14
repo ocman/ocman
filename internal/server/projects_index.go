@@ -125,13 +125,7 @@ func (s *Server) refreshProjectsIndex(ctx context.Context) error {
 // Shared scans belong to the server, while every caller waits independently.
 func (s *Server) runProjectsRefresh(done chan struct{}) {
 	// Plugin cleanup must not erase the lifetime of queued shared work.
-	s.lifetimeMu.Lock()
-	ctx := s.lifetimeCtx
-	s.lifetimeMu.Unlock()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	ctx, cancel := context.WithTimeout(s.lifetime(), time.Minute)
 	defer cancel()
 	runWithRecover("projects-index", func() {
 		if err := s.driveProjectsRefresh(ctx, done); err != nil {

@@ -65,3 +65,20 @@ func TestQueueCooldownVisibleBeforeOrderedBusSubscribers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Idle-edge subscribers receive the server's lifetime, so work they derive
+// from it stops at shutdown.
+func TestSessionIdlePublishesServerLifetime(t *testing.T) {
+	r := newCooldownRig(t)
+	lifetime, cancel := context.WithCancel(t.Context())
+	cancel()
+	r.srv.lifetimeMu.Lock()
+	r.srv.lifetimeCtx = lifetime
+	r.srv.lifetimeMu.Unlock()
+	var got error
+	r.srv.bus().OnSessionIdle(func(ctx context.Context, _ module.SessionIdle) { got = ctx.Err() })
+	r.srv.onSessionIdle("opencode", "s1")
+	if got == nil {
+		t.Fatal("SessionIdle was published without the server lifetime")
+	}
+}

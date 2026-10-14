@@ -63,5 +63,15 @@ func (s *Server) onSessionIdle(platform, id string) {
 		return
 	}
 	s.queueModule().OnSessionIdle(platform, id)
-	s.bus().PublishSessionIdle(context.Background(), module.SessionIdle{Platform: platform, SessionID: id})
+	s.bus().PublishSessionIdle(s.lifetime(), module.SessionIdle{Platform: platform, SessionID: id})
+}
+
+// lifetime is the serving context, or Background before Start.
+func (s *Server) lifetime() context.Context {
+	s.lifetimeMu.Lock()
+	defer s.lifetimeMu.Unlock()
+	if s.lifetimeCtx == nil {
+		return context.Background()
+	}
+	return s.lifetimeCtx
 }
