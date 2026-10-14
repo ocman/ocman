@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platformsettings"
 )
@@ -50,12 +49,19 @@ func (s *Server) configIdle(ctx context.Context) (bool, error) {
 		if isRemotePlatformID(string(p.ID())) {
 			continue
 		}
+		if reader, ok := p.(platforms.ReloadIdleReader); ok {
+			idle, err := reader.ReloadIdle(ctx)
+			if err != nil || !idle {
+				return false, err
+			}
+			continue
+		}
 		sessions, err := p.Sessions(ctx, "", 0)
 		if err != nil {
 			return false, err
 		}
 		for _, session := range sessions {
-			if session.Status == db.StatusBusy || session.Status == db.StatusWaiting || session.Status == db.StatusLimited || session.PendingPermission || session.PendingQuestion {
+			if platforms.ReloadSessionActive(session) {
 				return false, nil
 			}
 		}

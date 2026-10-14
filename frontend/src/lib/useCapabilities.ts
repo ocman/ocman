@@ -103,7 +103,7 @@ export function useCapabilities(): CapabilitiesResponse | null {
       if (!cancelled) setState(c);
     };
     subscribers.add(handler);
-    const unsubscribeConnect = onSseConnect(invalidateAndReload);
+    const unsubscribeConnect = onSseConnect(() => invalidateAndReload());
     if (!cached) loadCapabilities().catch(() => {
       // Network errors leave state at null. Components defaulting
       // through usePlatformCapabilities will treat that as "no

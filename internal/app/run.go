@@ -165,6 +165,10 @@ func run() {
 		}
 	}()
 
+	startupPassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
+	if err != nil {
+		fatal("Failed to configure OpenCode server auth: %v", err)
+	}
 	serve := func(ctx context.Context, listener net.Listener, reload func()) error {
 		ctx, cancel := context.WithCancel(ctx)
 		stateDBPath := state.DefaultDBPath()
@@ -257,10 +261,7 @@ func run() {
 			}
 		}
 
-		opencodePassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
-		if err != nil {
-			fatal("Failed to configure OpenCode server auth: %v", err)
-		}
+		opencodePassword := startupPassword
 		if enabledPlatforms[string(opencodeplatform.PlatformID)] && opencodePassword == "" && ocv2.InstalledV2() {
 			if opencodePassword, err = v2ServerPassword(ctx, stateDB); err != nil {
 				fatal("Failed to configure OpenCode v2 server auth: %v", err)
@@ -331,7 +332,8 @@ func run() {
 			// Start the remote-access gRPC server when -remote-listen is set
 			// (multi-remote support). Off by default so single-host installs
 			// are byte-for-byte unchanged (NFR-6).
-			listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, stateDB, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay)
+			listening, listenAddr, tlsOn, stopRemote := startRemoteServer(ctx, srv, stateDB, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay)
+			defer stopRemote()
 			srv.WithRemoteAccess(ident.InstanceID, listenAddr, listening, tlsOn)
 
 			// Start the hub-side remote manager: it loads any saved remotes

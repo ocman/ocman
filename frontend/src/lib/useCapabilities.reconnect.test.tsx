@@ -93,4 +93,18 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
     view.unmount();
     expect(connections.size).toBe(0);
   });
+
+  it('keeps reconnect refresh subscribed when another consumer unmounts', async () => {
+    capabilities.mockResolvedValueOnce(resp()).mockResolvedValue(resp('new-owner'));
+    const mod = await import('./useCapabilities');
+    const first = renderHook(() => mod.useCapabilities());
+    const survivor = renderHook(() => mod.useCapabilities());
+    await flush();
+    first.unmount();
+    act(() => { for (const cb of connections) cb(); });
+    await flush();
+    expect(survivor.result.current?.hosts).toHaveLength(2);
+    survivor.unmount();
+    expect(connections.size).toBe(0);
+  });
 });

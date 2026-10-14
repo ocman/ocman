@@ -934,6 +934,10 @@ minimal and match the surrounding code.
   (Claude Code via `internal/claudeprovider`; terminal sessions are read-only).
   Only the listed adapters are registered; the OpenCode database is
   not required when `opencode` is omitted from the list.
+  Settings → Platforms persists the local selection; an explicit CLI flag
+  overrides it. Saving drains active local turns, prompts and queues, then
+  reloads the backend in the same process and on the same port. Completed
+  `waiting` conversations without pending prompts do not block that drain.
 - **Pure-Go SQLite**: uses `modernc.org/sqlite` (no CGo, no C compiler required).
 - **Two databases**: OpenCode's DB is opened read-only
   (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`).

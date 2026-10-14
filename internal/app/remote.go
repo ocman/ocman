@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/server"
@@ -24,32 +25,36 @@ func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay 
 }
 
 // Remote access is opt-in; a listener failure must not block the dashboard.
-func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.DB, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string, trustedOverlay bool) (bool, string, bool) {
+func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.DB, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string, trustedOverlay bool) (bool, string, bool, func()) {
 	if listenAddr == "" {
-		return false, "", false
+		return false, "", false, func() {}
 	}
 	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version).
 		UseInboxStore(stateDB).UsePlugins(srv.RemotePluginOperation).UseSessions(srv.SessionService()).
 		UseWebhookDispatcher(srv.RoutineService()).UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseEventProxy(srv.ProxyRemoteSessionEvents).
 		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred)
-	ln, err := remote.NewListener(remote.ListenConfig{Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
+	ln, err := remote.NewListener(remote.ListenConfig{Context: ctx, Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
 	if err != nil {
 		log.WithError(err).Error("remote: failed to start gRPC server; continuing without it")
-		return false, "", false
+		return false, "", false, func() {}
 	}
 	if !ln.TLS() {
 		log.WithField("addr", ln.Addr()).Warn("remote: gRPC bearer tokens are unencrypted; plaintext transport is safe only over an encrypted trusted overlay such as Tailscale or WireGuard")
 	}
+	served := make(chan struct{})
 	go func() {
+		defer close(served)
 		if err := ln.Serve(); err != nil {
 			log.WithError(err).Warn("remote: gRPC server stopped")
 		}
 	}()
-	go func() { <-ctx.Done(); ln.Stop() }()
+	var once sync.Once
+	stop := func() { once.Do(func() { ln.Stop(); <-served }) }
+	unhook := context.AfterFunc(ctx, stop)
 	transport := "trusted-overlay"
 	if ln.TLS() {
 		transport = "tls"
 	}
 	log.WithFields(log.Fields{"addr": ln.Addr(), "transport": transport}).Info("remote: gRPC server listening")
-	return true, ln.Addr(), ln.TLS()
+	return true, ln.Addr(), ln.TLS(), func() { unhook(); stop() }
 }

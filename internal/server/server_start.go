@@ -99,6 +99,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// no-op when telemetry is disabled (its global TracerProvider is
 	// the SDK noop in that case).
 	httpServer := newHTTPServer(ln.Addr().String(), s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux)))))
+	httpServer.BaseContext = func(net.Listener) context.Context { return ctx }
 
 	// The MCP endpoint also gets its own loopback-only listener so local
 	// MCP clients work without a cookie, without exposing the tools

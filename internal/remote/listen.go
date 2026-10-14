@@ -1,9 +1,11 @@
 package remote
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -13,6 +15,7 @@ import (
 
 // ListenConfig configures the remote-side gRPC server.
 type ListenConfig struct {
+	Context context.Context // owner lifetime; nil for standalone listeners
 	// Addr is the bind address (e.g. "0.0.0.0:8230").
 	Addr string
 	// Token is the remote-access token inbound hubs must present.
@@ -28,10 +31,11 @@ type ListenConfig struct {
 // Listener bundles a running gRPC server with its net.Listener so the
 // caller can serve and later stop it.
 type Listener struct {
-	grpc *grpc.Server
-	ln   net.Listener
-	addr string
-	tls  bool
+	grpc   *grpc.Server
+	ln     net.Listener
+	addr   string
+	tls    bool
+	cancel context.CancelFunc
 }
 
 // Addr returns the actual bound address (useful when Addr used :0).
@@ -44,7 +48,7 @@ func (l *Listener) TLS() bool { return l.tls }
 func (l *Listener) Serve() error { return l.grpc.Serve(l.ln) }
 
 // Stop gracefully stops the server.
-func (l *Listener) Stop() { l.grpc.GracefulStop() }
+func (l *Listener) Stop() { l.stopWithin(5 * time.Second) }
 
 // NewListener binds the address and registers the Ocman service with the
 // bearer-token interceptors and optional TLS. It does not start serving;
@@ -65,15 +69,23 @@ func NewListener(cfg ListenConfig, srv *Server) (*Listener, error) {
 	}
 
 	unary, stream := NewAuthInterceptors(cfg.Token)
+	parent := cfg.Context
+	if parent == nil {
+		parent = context.Background()
+	}
+	lifetime, cancel := context.WithCancel(parent)
+	lu, ls := lifetimeInterceptors(lifetime)
 	opts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(unary),
-		grpc.StreamInterceptor(stream),
+		grpc.ChainUnaryInterceptor(lu, unary),
+		grpc.ChainStreamInterceptor(ls, stream),
+		grpc.WaitForHandlers(true),
 	}
 
 	useTLS := hasCert
 	if useTLS {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
+			cancel()
 			ln.Close()
 			return nil, fmt.Errorf("remote: loading TLS keypair: %w", err)
 		}
@@ -84,5 +96,5 @@ func NewListener(cfg ListenConfig, srv *Server) (*Listener, error) {
 	pb.RegisterOcmanServer(gs, srv)
 	pb.RegisterUsageServer(gs, &usageServer{owner: srv})
 
-	return &Listener{grpc: gs, ln: ln, addr: ln.Addr().String(), tls: useTLS}, nil
+	return &Listener{grpc: gs, ln: ln, addr: ln.Addr().String(), tls: useTLS, cancel: cancel}, nil
 }

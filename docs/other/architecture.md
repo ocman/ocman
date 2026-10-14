@@ -336,6 +336,11 @@ flowchart TD
   then rebuilds the backend on the same address and process, including databases,
   analytics and prompt watchers. The desktop window stays open; browser SSE
   reconnection refreshes capabilities and session data.
+  HTTP/SSE and inbound gRPC contexts belong to that composition; listener cleanup
+  is joined before its databases close. Explicit or generated OpenCode credentials
+  are resolved once per process and reused by every replacement composition.
+  Claude's `platforms.ReloadIdleReader` checks project supervisors independently
+  of best-effort browsing, including persisted supervisors still recovering.
 - **Idle projects** (`internal/idleprojects`). An owner-local module holds the
   configurable idle timeout and minute sweep. It checks archive state, live
   sessions, queued messages, and active background work before calling

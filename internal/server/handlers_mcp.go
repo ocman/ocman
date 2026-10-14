@@ -314,18 +314,32 @@ func (s *Server) startMCPListener() func() {
 	mux.HandleFunc("/mcp/", h)
 	mux.HandleFunc("/hook", requirePOST(s.requireLoopbackPeer(s.handleHook)))
 	srv := newHTTPServer(ln.Addr().String(), withSecurityHeaders(mux))
+	s.lifetimeMu.Lock()
+	parent := s.lifetimeCtx
+	s.lifetimeMu.Unlock()
+	if parent == nil {
+		parent = context.Background()
+	}
+	listenerCtx, stopRequests := context.WithCancel(parent)
+	srv.BaseContext = func(net.Listener) context.Context { return listenerCtx }
+	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
 		log.WithField("addr", ln.Addr().String()).Info("mcp server started")
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.WithError(err).Warn("mcp: dedicated listener stopped")
 		}
 	}()
 	return func() {
+		stopRequests()
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(ctx)
+		if err := srv.Shutdown(ctx); err != nil {
+			_ = srv.Close()
+		}
 		_ = ln.Close() // Shutdown can run before Serve has registered the listener.
+		<-done
 	}
 }
 

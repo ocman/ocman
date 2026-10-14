@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,38 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+type authoritativeReloadPlatform struct{ *fakePlatform }
+
+func (authoritativeReloadPlatform) ReloadIdle(context.Context) (bool, error) {
+	return false, errors.New("project status unavailable")
+}
+
+func TestConfigReloadUsesAuthoritativeStatusDespiteSuccessfulBrowsing(t *testing.T) {
+	srv, _ := startTestServer(t, nil)
+	srv.registry = platforms.NewRegistry()
+	srv.registry.Register(authoritativeReloadPlatform{&fakePlatform{id: "claudecode", sessions: []db.Session{{Status: db.StatusDone}}}})
+	if idle, err := srv.configIdle(t.Context()); idle || err == nil {
+		t.Fatalf("browsing hid project-status error: idle=%v err=%v", idle, err)
+	}
+}
+
+func TestConfigReloadAllowsFinishedWaitingConversationsWithoutPrompts(t *testing.T) {
+	srv, _ := startTestServer(t, nil)
+	srv.registry = platforms.NewRegistry()
+	status := db.SettleSessionStatus(db.TurnSettled, true, db.InferSessionStatus("assistant", "stop", "", false))
+	p := &fakePlatform{id: "opencode", sessions: []db.Session{{Status: status}}}
+	srv.registry.Register(p)
+	if idle, err := srv.configIdle(t.Context()); !idle || err != nil {
+		t.Fatalf("finished assistant turn blocks reload: %v %v", idle, err)
+	}
+	for _, pending := range []db.Session{{Status: status, PendingPermission: true}, {Status: status, PendingQuestion: true}} {
+		p.sessions = []db.Session{pending}
+		if idle, err := srv.configIdle(t.Context()); idle || err != nil {
+			t.Fatalf("pending prompt ignored: %v %v", idle, err)
+		}
+	}
+}
 
 func TestPlatformSettingsOwnerLocalRoute(t *testing.T) {
 	srv, _ := startTestServer(t, nil)
@@ -44,7 +77,7 @@ func TestConfigReloadWaitsForLocalTurnsPromptsAndQueue(t *testing.T) {
 	srv.registry.Register(local)
 	srv.registry.Register(&fakePlatform{id: "r-other:opencode", sessions: []db.Session{{Status: db.StatusBusy}}})
 	for _, session := range []db.Session{
-		{Status: db.StatusBusy}, {Status: db.StatusWaiting}, {Status: db.StatusLimited},
+		{Status: db.StatusBusy}, {Status: db.StatusLimited},
 		{Status: db.StatusDone, PendingPermission: true}, {Status: db.StatusDone, PendingQuestion: true},
 	} {
 		local.sessions = []db.Session{session}

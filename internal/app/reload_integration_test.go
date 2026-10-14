@@ -112,6 +112,11 @@ func TestPlatformReloadInProcess(t *testing.T) {
 		}
 	}
 	waitCatalog(2)
+	stream, err := http.Get(base + "/api/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stream.Body.Close() })
 	save(`{"enabled":["claudecode"]}`)
 	time.Sleep(1200 * time.Millisecond)
 	if starts.Load() != 1 {
