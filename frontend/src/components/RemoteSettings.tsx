@@ -39,7 +39,7 @@ export function RemoteSettings() {
 
   return (
     <div className={styles.settings} data-testid="remote-settings">
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {(error || remotesQ.isError) && <div className={styles.error} role="alert">{error ?? 'Could not load remote machines.'}</div>}
 
       <DataTable framed aria-label="Machines" className={styles.table}>
         <thead>

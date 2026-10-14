@@ -7,8 +7,9 @@ import { api } from './api';
 export function useRemotes() {
   return useQuery({
     queryKey: ['remotes'],
-    // Single-host instances answer with an error: show no remotes.
-    queryFn: ({ signal }) => api.listRemotes(signal).catch(() => []),
+    // Single-host instances answer with an empty list. A failure rejects, so
+    // a failed refetch keeps the machines already shown.
+    queryFn: ({ signal }) => api.listRemotes(signal),
   });
 }
 
