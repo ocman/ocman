@@ -13,7 +13,6 @@ import (
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/webhook"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -31,13 +30,13 @@ type Server struct {
 	enrichSession                  func(context.Context, string, string, *platforms.SessionDetail)
 	proxyEvents                    func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
 	permissionNotificationDeferred func(string, string) bool
-	webhookDispatcher              webhook.RoutineDispatcher
+	webhooks                       WebhookInboxes
 	plugins                        PluginHandler
 }
 
 func (s *Server) UseInboxStore(store *state.DB) *Server { s.inboxStore = store; return s }
-func (s *Server) UseWebhookDispatcher(dispatcher webhook.RoutineDispatcher) *Server {
-	s.webhookDispatcher = dispatcher
+func (s *Server) UseWebhookInboxes(w WebhookInboxes) *Server {
+	s.webhooks = w
 	return s
 }
 func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, version string) *Server {
@@ -135,7 +134,7 @@ func (w *eventStreamWriter) Write(p []byte) (int, error) {
 // Hold partial upstream writes until a complete SSE frame is available.
 
 func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	if s.inboxStore == nil {
+	if s.webhooks == nil {
 		return nil, status.Error(codes.FailedPrecondition, "webhook state is unavailable")
 	}
 	var input struct {
@@ -148,11 +147,11 @@ func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb
 	if err := unmarshalJSON(req.Payload, &input); err != nil {
 		return nil, err
 	}
-	inbox, err := webhook.RegisterWithSecret(ctx, s.inboxStore, input.RoutineID, input.RelayURL, input.EnrollmentToken, input.Secret, input.SecretHeader, nil)
+	inbox, err := s.webhooks.RegisterWithSecret(ctx, input.RoutineID, input.RelayURL, input.EnrollmentToken, input.Secret, input.SecretHeader)
 	return jsonResp(inbox, err)
 }
 func (s *Server) PollWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
-	if s.inboxStore == nil {
+	if s.webhooks == nil {
 		return nil, status.Error(codes.FailedPrecondition, "webhook state is unavailable")
 	}
 	var input struct {
@@ -161,11 +160,7 @@ func (s *Server) PollWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.Emp
 	if err := unmarshalJSON(req.Payload, &input); err != nil {
 		return nil, err
 	}
-	inbox, err := s.inboxStore.GetWebhookInbox(ctx, input.RoutineID)
-	if err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, (&webhook.Poller{Store: s.inboxStore, Inbox: inbox, Routines: s.webhookDispatcher}).Poll(ctx)
+	return &pb.Empty{}, s.webhooks.Poll(ctx, input.RoutineID)
 }
 
 func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

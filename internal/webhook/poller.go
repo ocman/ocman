@@ -157,3 +157,25 @@ func (p *Poller) Poll(ctx context.Context) error {
 		cursor = page.Cursor
 	}
 }
+
+// LocalInboxes registers and polls this machine's inboxes. It is the
+// implementation the composition root injects into internal/remote, which
+// declares only the narrow interface it calls.
+type LocalInboxes struct {
+	Store    *state.DB
+	Routines RoutineDispatcher
+}
+
+// RegisterWithSecret registers routineID's inbox with the relay.
+func (l LocalInboxes) RegisterWithSecret(ctx context.Context, routineID, relayURL, enrollmentToken, secret, secretHeader string) (state.WebhookInbox, error) {
+	return RegisterWithSecret(ctx, l.Store, routineID, relayURL, enrollmentToken, secret, secretHeader, nil)
+}
+
+// Poll drains routineID's inbox once.
+func (l LocalInboxes) Poll(ctx context.Context, routineID string) error {
+	inbox, err := l.Store.GetWebhookInbox(ctx, routineID)
+	if err != nil {
+		return err
+	}
+	return (&Poller{Store: l.Store, Inbox: inbox, Routines: l.Routines}).Poll(ctx)
+}

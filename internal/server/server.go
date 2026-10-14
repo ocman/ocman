@@ -340,6 +340,12 @@ func (s *Server) RoutineService() webhook.RoutineDispatcher {
 	return nil
 }
 
+// localWebhookInboxes is this machine's webhook inbox implementation, which
+// the composition root injects into the remote manager.
+func (s *Server) localWebhookInboxes() webhook.LocalInboxes {
+	return webhook.LocalInboxes{Store: s.stateDB, Routines: s.RoutineService()}
+}
+
 // WithAutoApproveDefault sets the server-wide default for auto-approve.
 // When true, sessions that have no per-session override start with
 // auto-approve enabled. Must be called before Start.

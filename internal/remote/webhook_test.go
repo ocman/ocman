@@ -10,6 +10,7 @@ import (
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/webhook"
 )
 
 func TestManagerLocalWebhookLifecycle(t *testing.T) {
@@ -37,7 +38,7 @@ func TestManagerLocalWebhookLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	manager := &Manager{store: store}
+	manager := &Manager{store: store, webhooks: webhook.LocalInboxes{Store: store}}
 
 	inbox, err := manager.RegisterWebhookInbox(t.Context(), "local", "routine", relay.URL, "enroll")
 	if err != nil || inbox.ID != "inbox" {
@@ -93,7 +94,7 @@ func TestRemoteWebhookRPCRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := NewServer(platforms.NewRegistry(), localStubHost{}, "remote", "test").UseInboxStore(store).UseWebhookDispatcher(nil)
+	server := NewServer(platforms.NewRegistry(), localStubHost{}, "remote", "test").UseWebhookInboxes(webhook.LocalInboxes{Store: store})
 	grpcConn := startTestServer(t, "token", server)
 	client := pb.NewOcmanClient(grpcConn)
 	remote := &RemoteConn{client: client, remoteID: "owner"}
@@ -105,7 +106,6 @@ func TestRemoteWebhookRPCRoundTrip(t *testing.T) {
 		t.Fatalf("poll: %v", err)
 	}
 	manager := &Manager{remotes: map[int64]*managedRemote{1: {conn: remote}}}
-	manager.SetWebhookDispatcher(nil)
 	if _, err := manager.RegisterWebhookInboxWithSecret(t.Context(), "owner", "routine", relay.URL, "enroll", "secret", "X-Secret"); err != nil {
 		t.Fatalf("manager register: %v", err)
 	}

@@ -58,7 +58,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// processes stop here, after the listeners and launched modules close.
 	defer s.stopPluginProcesses()
 	if s.remotes != nil {
-		s.remotes.SetWebhookDispatcher(s.RoutineService())
+		s.remotes.SetWebhookInboxes(s.localWebhookInboxes())
 	}
 	if s.db != nil {
 		if _, ok := s.registry.Get(opencode.PlatformID); ok {
