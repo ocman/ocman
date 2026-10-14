@@ -265,6 +265,9 @@ authorizes a machine endpoint, and that proof is process-local. An inconclusive
 probe preserves an endpoint only if this owner process previously validated it;
 a cold durable handle alone authorizes nothing. Identity rejection or successful
 Stop revokes authorization even when the cleanup handle remains for recovery.
+Startup and minute health scans update this proof in the background. Runtime
+lookup reads it without probing other servers, and a successful launch invalidates
+discovery before session creation continues.
 
 The local projects index uses stale-while-refresh persistence. On startup the
 server hydrates the last snapshot from `state.db`; a request receives that

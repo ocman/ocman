@@ -24,6 +24,7 @@ var portCache struct {
 	lastSuccessful   map[string]string
 	lastSuccessfulAt time.Time
 	updated          time.Time
+	generation       uint64
 }
 
 var serverCache struct {
@@ -83,6 +84,7 @@ func setDiscoverServersImplForTests(fn func() []openCodeServer) func() {
 func resetPortCache() {
 	portCache.mu.Lock()
 	portCache.ports = nil
+	portCache.generation++
 	portCache.updated = time.Time{}
 	portCache.mu.Unlock()
 
@@ -162,6 +164,9 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 		if cached, ok := readCachedPorts(); ok {
 			return cached, nil
 		}
+		portCache.mu.Lock()
+		generation := portCache.generation
+		portCache.mu.Unlock()
 		result := (*discoverPortsImpl.Load())(scanCtx)
 		if err := scanCtx.Err(); err != nil {
 			return nil, err
@@ -170,6 +175,10 @@ func DiscoverOpenCodePortsContext(ctx context.Context) map[string]string {
 			return nil, errors.New("OpenCode port discovery failed")
 		}
 		portCache.mu.Lock()
+		if portCache.generation != generation {
+			portCache.mu.Unlock()
+			return copyMap(result), nil
+		}
 		portCache.ports = result
 		portCache.lastSuccessful = copyMap(result)
 		portCache.updated = time.Now()

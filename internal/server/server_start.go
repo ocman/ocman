@@ -74,6 +74,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	workers.Go(func() { s.runAutoArchiveLoop(ctx) })
 	workers.Go(func() { s.runProjectsIndexLoop(ctx) })
 	if _, enabled := s.registry.Get(platforms.OpenCodeID); enabled {
+		if health, ok := s.router().Local().(interface{ RunOpenCodeHealthChecks(context.Context) }); ok {
+			workers.Go(func() { health.RunOpenCodeHealthChecks(ctx) })
+		}
 		workers.Go(func() { ocv2.WatchInstalledVersion(ctx) })
 		if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
 			workers.Go(func() { sup.RunMachineSupervisor(ctx) })

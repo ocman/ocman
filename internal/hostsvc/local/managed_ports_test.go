@@ -15,7 +15,7 @@ func TestManagedPortsRecoverOnlyHealthyOwnedInstances(t *testing.T) {
 	}
 	rt := &fakeRuntime{probe: func(inst *ocruntime.Instance) bool { return inst.RepoRoot == "/healthy" }}
 	h := New(Deps{Runtime: rt, ManagedStore: store})
-	ports := h.ManagedOpenCodePorts(t.Context())
+	ports := h.RefreshManagedOpenCodePorts(t.Context())
 	if len(ports) != 1 || ports["/healthy"] != "1001" || rt.launchCount() != 0 {
 		t.Fatalf("ports = %v; launches = %d", ports, rt.launchCount())
 	}
@@ -45,7 +45,7 @@ func TestManagedPortsRespectRoutingAndStopState(t *testing.T) {
 				h.setInstance("/repo", inst)
 			}
 			h.stopped["/repo"] = tc.stopped
-			ports := h.ManagedOpenCodePorts(t.Context())
+			ports := h.RefreshManagedOpenCodePorts(t.Context())
 			if (ports["/repo"] == "1001") != tc.want {
 				t.Fatalf("ports = %v", ports)
 			}
@@ -61,18 +61,18 @@ func (failingListStore) List(context.Context) (map[string]ManagedInstance, error
 
 func TestManagedPortsDisabledCanceledAndStoreFailure(t *testing.T) {
 	h := New(Deps{PlatformEnabled: func(string) bool { return false }})
-	if ports := h.ManagedOpenCodePorts(t.Context()); ports == nil || len(ports) != 0 {
+	if ports := h.RefreshManagedOpenCodePorts(t.Context()); ports == nil || len(ports) != 0 {
 		t.Fatal(ports)
 	}
 	h = New(Deps{ManagedStore: failingListStore{}})
-	if ports := h.ManagedOpenCodePorts(t.Context()); ports != nil {
+	if ports := h.RefreshManagedOpenCodePorts(t.Context()); ports != nil {
 		t.Fatal(ports)
 	}
 	h = New(Deps{})
 	h.setInstance("/repo", &ocruntime.Instance{})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if ports := h.ManagedOpenCodePorts(ctx); ports != nil {
+	if ports := h.RefreshManagedOpenCodePorts(ctx); ports != nil {
 		t.Fatal(ports)
 	}
 }

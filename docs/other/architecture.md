@@ -54,7 +54,7 @@ flowchart LR
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
-    Ocman -->|managed inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode<br/>instances]
+    Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode<br/>instances]
     Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
     Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
     ClaudeHooks[claude hook plugin<br/>terminal sessions, opt-in] -->|ocman hook → /hook| Ocman
@@ -596,7 +596,13 @@ flowchart TD
   worktree. The old `EnsureProjectOpencode` gRPC method remains an OpenCode
   alias for one release. Only tracked instances are reused; persisted entries
   must pass an API identity probe after restart. External instances are never
-  adopted. `RestartProjectOpencode` stops and relaunches the tracked
+  adopted. The local Host probes at startup and every minute, with four concurrent
+  probes and a two-second deadline per instance. Inventory reads use the validated
+  in-memory routing map without network probes. Definite failures revoke routing
+  but retain cleanup handles; inconclusive probes preserve warm authorization.
+  Launches and routing changes invalidate discovery immediately, and stale scans
+  cannot repopulate an invalidated port cache. The server joins the health worker
+  before closing databases. `RestartProjectOpencode` stops and relaunches the tracked
   instance. Owner-local replacement callbacks use the read-only
   `ManagedRootReader.ManagedOpencodeRoot` view of that same main-checkout
   identity, so external linked worktrees share membership and nested independent

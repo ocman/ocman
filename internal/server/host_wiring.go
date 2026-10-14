@@ -51,10 +51,11 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		ReplacementStopping:   s.opencodeReplacementStopping,
 		CancelReplacementStop: s.cancelOpencodeReplacementStop,
 		// OpenCode v2: one server per machine, published to discovery.
-		SetMachineServer: opencode.SetMachineServer,
-		ManagedStore:     managedStoreOrNil(s.stateDB),
-		OpenCodeAuth:     func() ocapi.Auth { return s.openCodeAuth },
-		OpenCodeReloaded: opencode.InvalidateCatalogsForPort,
+		SetMachineServer:        opencode.SetMachineServer,
+		ManagedStore:            managedStoreOrNil(s.stateDB),
+		OpenCodeAuth:            func() ocapi.Auth { return s.openCodeAuth },
+		OpenCodeReloaded:        opencode.InvalidateCatalogsForPort,
+		RuntimeInventoryChanged: opencode.InvalidateOpenCodePortCache,
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/gRPC).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.

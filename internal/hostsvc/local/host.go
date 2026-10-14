@@ -35,27 +35,28 @@ type Deps struct {
 	Runtime                 ocruntime.Runtime
 	// BeforeReplace prepares history, BeforeStop records the stop boundary,
 	// and AfterStop confirms reconciliation.
-	BeforeReplace         func(context.Context, string, string) error
-	BeforeStop            func(context.Context, string, *ocruntime.Instance) error
-	AfterStop             func(context.Context, string) error
-	ReplacementStopped    func(context.Context, string) (bool, error)
-	ReplacementStopping   func(context.Context, string) (*ocruntime.Instance, error)
-	CancelReplacementStop func(context.Context, string) error
-	DiscoverPort          func(string) string
-	SetMachineServer      func(string)
-	ManagedStore          ManagedStore
-	OpenCodeAuth          func() ocapi.Auth
-	OpenCodeReloaded      func(port string)
-	TmuxSessions          func(context.Context) ([]hostsvc.TmuxSession, error)
-	Projects              func(context.Context) ([]db.ProjectStats, error)
-	ProjectUpstreams      func(context.Context, string) (*hostsvc.ProjectUpstreams, error)
-	FetchPRHead           func(context.Context, hostsvc.FetchPRHeadRequest) (string, error)
-	Caps                  func() hostsvc.HostCaps
-	TermWindows           func(context.Context, string) ([]hostsvc.TermWindow, error)
-	TermCreateWindow      func(context.Context, string) (string, error)
-	TermKillWindow        func(context.Context, string, string) error
-	TermAttach            func(context.Context, hostsvc.TermAttachRequest, hostsvc.TermConn) error
-	StateDir              string
+	BeforeReplace           func(context.Context, string, string) error
+	BeforeStop              func(context.Context, string, *ocruntime.Instance) error
+	AfterStop               func(context.Context, string) error
+	ReplacementStopped      func(context.Context, string) (bool, error)
+	ReplacementStopping     func(context.Context, string) (*ocruntime.Instance, error)
+	CancelReplacementStop   func(context.Context, string) error
+	DiscoverPort            func(string) string
+	SetMachineServer        func(string)
+	ManagedStore            ManagedStore
+	OpenCodeAuth            func() ocapi.Auth
+	OpenCodeReloaded        func(port string)
+	RuntimeInventoryChanged func()
+	TmuxSessions            func(context.Context) ([]hostsvc.TmuxSession, error)
+	Projects                func(context.Context) ([]db.ProjectStats, error)
+	ProjectUpstreams        func(context.Context, string) (*hostsvc.ProjectUpstreams, error)
+	FetchPRHead             func(context.Context, hostsvc.FetchPRHeadRequest) (string, error)
+	Caps                    func() hostsvc.HostCaps
+	TermWindows             func(context.Context, string) ([]hostsvc.TermWindow, error)
+	TermCreateWindow        func(context.Context, string) (string, error)
+	TermKillWindow          func(context.Context, string, string) error
+	TermAttach              func(context.Context, hostsvc.TermAttachRequest, hostsvc.TermConn) error
+	StateDir                string
 }
 
 // ManagedInstance mirrors the durable runtime fields needed for recovery.

@@ -52,7 +52,7 @@ func TestInventoryCannotJoinOrSuppressRuntimeMutations(t *testing.T) {
 			h := New(Deps{Runtime: rt})
 			h.authorizeInstance(root, &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", RepoRoot: root, Kind: ocruntime.KindNativeTmux, ID: "old"})
 			inventory := make(chan map[string]string, 1)
-			go func() { inventory <- h.ManagedOpenCodePorts(t.Context()) }()
+			go func() { inventory <- h.RefreshManagedOpenCodePorts(t.Context()) }()
 			<-started
 			mutation := make(chan error, 1)
 			go func() {
@@ -116,7 +116,7 @@ func TestInventoryCannotRestoreClearedOrRevokedAuthorization(t *testing.T) {
 				h.authorizeInstance("/repo", &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", ID: "old"})
 			}
 			result := make(chan map[string]string, 1)
-			go func() { result <- h.ManagedOpenCodePorts(t.Context()) }()
+			go func() { result <- h.RefreshManagedOpenCodePorts(t.Context()) }()
 			<-started
 			if change == "revoke warm" {
 				h.revokeInstanceAuthorization("/repo")
@@ -192,7 +192,7 @@ func TestInventoryHonorsDurableStopFencesWithoutRunningMutations(t *testing.T) {
 			if scenario == "warm pending" || scenario == "different pending" {
 				h.authorizeInstance("/repo", inst)
 			}
-			ports := h.ManagedOpenCodePorts(t.Context())
+			ports := h.RefreshManagedOpenCodePorts(t.Context())
 			if (ports["/repo"] == "1001") != (scenario == "warm pending") {
 				t.Fatal(ports)
 			}

@@ -3,9 +3,12 @@ package local
 import (
 	"context"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 type inventoryCandidate struct {
@@ -14,10 +17,9 @@ type inventoryCandidate struct {
 	cold, authorized bool
 }
 
-// ManagedOpenCodePorts observes tracked runtimes without joining mutation
-// flights or holding locks across callbacks/probes. Generations fence stale
-// reads, including persisted rows read across a stop or replacement.
-func (h *Host) ManagedOpenCodePorts(ctx context.Context) map[string]string {
+// RefreshManagedOpenCodePorts probes tracked runtimes in the background.
+// Generations fence observations across a stop or replacement.
+func (h *Host) RefreshManagedOpenCodePorts(ctx context.Context) map[string]string {
 	if !h.opencodeEnabled() {
 		return map[string]string{}
 	}
@@ -45,34 +47,76 @@ func (h *Host) ManagedOpenCodePorts(ctx context.Context) map[string]string {
 			}
 		}
 	}
+	var probes sync.WaitGroup
+	var failed atomic.Bool
+	// ponytail: four concurrent probes; no per-runtime scheduling state.
+	slots := make(chan struct{}, 4)
+scan:
 	for root, candidate := range candidates {
-		if ctx.Err() != nil {
-			return nil
-		}
-		h.mu.Lock()
-		current := h.currentInventoryCandidateLocked(root, candidate)
-		h.mu.Unlock()
-		if !current {
+		if ocv2.InstalledV2() && root != machineRoot() {
 			continue
 		}
-		blocked, err := h.inventoryStopFence(ctx, root, candidate)
-		if err != nil {
-			return nil
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			break scan
 		}
-		if !blocked {
-			err = h.runtime.Probe(ctx, &candidate.instance)
-		}
-		h.mu.Lock()
-		if h.currentInventoryCandidateLocked(root, candidate) {
-			switch {
-			case blocked, err != nil && !ambiguousProbe(err):
-				delete(h.authorized, root)
-				h.generations[root]++
-			case err == nil:
-				h.authorizeInstanceLocked(root, &candidate.instance)
+		probes.Go(func() {
+			defer func() { <-slots }()
+			if !h.refreshInventoryCandidate(ctx, root, candidate) {
+				failed.Store(true)
 			}
+		})
+	}
+	probes.Wait()
+	if ctx.Err() != nil || failed.Load() {
+		return nil
+	}
+	return h.ManagedOpenCodePorts(ctx)
+}
+
+func (h *Host) refreshInventoryCandidate(ctx context.Context, root string, candidate inventoryCandidate) bool {
+	h.mu.Lock()
+	current := h.currentInventoryCandidateLocked(root, candidate)
+	h.mu.Unlock()
+	if !current {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	blocked, err := h.inventoryStopFence(ctx, root, candidate)
+	if err != nil {
+		return false
+	}
+	if !blocked {
+		err = h.runtime.Probe(ctx, &candidate.instance)
+	}
+	h.mu.Lock()
+	if h.currentInventoryCandidateLocked(root, candidate) {
+		switch {
+		case blocked, err != nil && !ambiguousProbe(err):
+			delete(h.authorized, root)
+			h.generations[root]++
+		case err == nil:
+			h.authorizeInstanceLocked(root, &candidate.instance)
 		}
-		h.mu.Unlock()
+		if ocv2.InstalledV2() && root == machineRoot() {
+			h.publishMachineServer(h.authorized[root])
+		}
+	}
+	h.mu.Unlock()
+	h.runtimeInventoryChanged()
+	return true
+}
+
+// ManagedOpenCodePorts reads routing proof without network probes. Persisted
+// handles become routable only after the startup scan or an explicit ensure.
+func (h *Host) ManagedOpenCodePorts(ctx context.Context) map[string]string {
+	if !h.opencodeEnabled() {
+		return map[string]string{}
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -132,5 +176,6 @@ func (h *Host) beginRuntimeMutation(root string) func() {
 		delete(h.mutating, root)
 		h.mu.Unlock()
 		lock.Unlock()
+		h.runtimeInventoryChanged()
 	}
 }
