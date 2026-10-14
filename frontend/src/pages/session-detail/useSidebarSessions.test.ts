@@ -634,6 +634,22 @@ describe('useSidebarSessions live refresh', () => {
     expect(useApiStore.getState().recentSessions).toEqual([row]);
   });
 
+  it.each([0, 9999999999999])('admits an old settled archived row through activity only when snoozedUntil=%s', async (snoozedUntil) => {
+    const row = { id: 'old', platform: 'opencode', pinned: false, archived: true, snoozedUntil,
+      timeUpdated: 1, directory: '/repo', status: 'done' } as Session;
+    const peekSession = vi.fn().mockResolvedValue({ session: row });
+    useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
+    const view = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    expect(view.result.current.showArchivedRecent).toBe(false);
+    await act(async () => { sessionActivity?.(row.id, Date.now()); });
+    expect(peekSession).toHaveBeenCalledWith(row.id, expect.anything());
+    expect(view.result.current.recentSessions).toEqual(snoozedUntil ? [row] : []);
+    view.unmount();
+  });
+
   it.each(['pendingPermission', 'pendingQuestion'] as const)('keeps an old %s through activity, reconciliation and fresh load until answered', async (prompt) => {
     const row = { id: 'old-prompt', platform: 'opencode', timeUpdated: 1, seen: false, seenTimeUpdated: 0, lastTurnCompletedAt: 0,
       directory: '/repo', status: 'waiting', archived: true, pendingPermission: prompt === 'pendingPermission', pendingQuestion: prompt === 'pendingQuestion' } as Session;

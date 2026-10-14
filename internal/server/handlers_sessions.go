@@ -72,6 +72,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			if err != nil || row == nil {
 				continue
 			}
+			if dir != "" && row.Directory != dir {
+				continue
+			}
 			all = append(all, *row)
 		}
 	}

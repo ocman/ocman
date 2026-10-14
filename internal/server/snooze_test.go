@@ -104,7 +104,9 @@ func TestSnoozedSessionsOutsideWindow(t *testing.T) {
 	srv, registry := newSessionsTestServer(t)
 	until := time.Now().Add(time.Hour).UnixMilli()
 	for _, owner := range []string{"opencode", "r-box:opencode"} {
-		registry.Register(&summaryPlatform{fakePlatform: fakePlatform{id: owner}, row: mkSession(owner, "old", owner, 1)})
+		row := mkSession(owner, "old", owner, 1)
+		row.Directory = map[string]string{"opencode": "/a", "r-box:opencode": "/b"}[owner]
+		registry.Register(&summaryPlatform{fakePlatform: fakePlatform{id: owner}, row: row})
 		if err := srv.stateDB.SnoozeSession(t.Context(), owner, "old", until); err != nil {
 			t.Fatal(err)
 		}
@@ -119,6 +121,19 @@ func TestSnoozedSessionsOutsideWindow(t *testing.T) {
 	for _, row := range rows {
 		if row.SnoozedUntil != until || row.Pinned {
 			t.Fatalf("wrong snooze metadata: %+v", row)
+		}
+	}
+	for _, dir := range []string{"/a", "/b", "/missing"} {
+		rr := httptest.NewRecorder()
+		srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions?since=10000&limit=0&dir="+dir, nil))
+		var rows []db.Session
+		mustUnmarshal(t, rr.Body.Bytes(), &rows)
+		want := 1
+		if dir == "/missing" {
+			want = 0
+		}
+		if rr.Code != http.StatusOK || len(rows) != want || want == 1 && rows[0].Directory != dir {
+			t.Fatalf("wrong directory scope for %s: %d %s", dir, rr.Code, rr.Body)
 		}
 	}
 }
