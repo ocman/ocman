@@ -68,3 +68,35 @@ func TestModuleIdleReplyRecoversPanic(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond) // an unrecovered panic would abort the test binary here
 }
+
+// The idle reply runs under the module's lifetime and Run joins it, so it
+// never reads state.db after shutdown.
+func TestModuleRunJoinsIdleReply(t *testing.T) {
+	store := openStore(t)
+	key := state.PluginConversationKey{PluginID: "org.example.chatops", AccountID: "T1", ThreadID: "C1:1"}
+	if _, _, err := store.LinkPluginConversation(t.Context(), key, state.PluginConversationSession{PlatformID: "opencode", SessionID: "ses"}); err != nil {
+		t.Fatal(err)
+	}
+	entered, returned := make(chan struct{}), make(chan struct{})
+	m := NewModule(Deps{Store: store, Adapter: func(ctx context.Context, _, _ string) (platforms.Platform, bool) {
+		close(entered)
+		<-ctx.Done()
+		close(returned)
+		return nil, false
+	}})
+	bus := &module.Bus{}
+	m.Subscribe(bus)
+	ctx, cancel := context.WithCancel(t.Context())
+	m.Bind(ctx)
+	ran := make(chan struct{})
+	go func() { m.Run(ctx); close(ran) }()
+	bus.PublishSessionIdle(t.Context(), module.SessionIdle{Platform: "opencode", SessionID: "ses"})
+	<-entered
+	cancel()
+	<-ran
+	select {
+	case <-returned:
+	default:
+		t.Fatal("Run returned while the idle reply still ran")
+	}
+}

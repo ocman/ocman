@@ -141,8 +141,10 @@ func (m *Module) conversationDeliveryAllowed(ctx context.Context, pluginID strin
 // kickConversationOutbox pumps without waiting for the next tick, so a fresh
 // reply and the next reply in a conversation both go out immediately.
 func (m *Module) kickConversationOutbox() {
-	go runWithRecover("plugin-conversation-pump", func() {
-		m.pumpConversationOutbox(context.Background())
+	m.workers.Go(func(ctx context.Context) {
+		runWithRecover("plugin-conversation-pump", func() {
+			m.pumpConversationOutbox(ctx)
+		})
 	})
 }
 

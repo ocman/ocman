@@ -67,6 +67,8 @@ type Deps struct {
 type Module struct {
 	deps  Deps
 	store *state.DB
+	// workers are the idle replies and outbox kicks, joined by Run.
+	workers module.Workers
 
 	mu          sync.Mutex
 	recovered   bool
@@ -121,6 +123,7 @@ func (m *Module) Bind(ctx context.Context) {
 	m.mu.Lock()
 	m.ctx = ctx
 	m.mu.Unlock()
+	m.workers.Bind(ctx)
 }
 
 // Start binds ctx and runs discovery, starting approved processes. A
@@ -141,6 +144,7 @@ func (m *Module) Run(ctx context.Context) {
 	wg.Go(func() { m.runConversationDeliveryPump(ctx) })
 	wg.Go(func() { m.runConversationReplyReconciliation(ctx) })
 	wg.Wait()
+	m.workers.Close()
 }
 
 // Stop unbinds the lifetime context and stops every process.
@@ -156,8 +160,10 @@ func (m *Module) Stop() {
 // bus cannot catch a panic there.
 func (m *Module) Subscribe(b *module.Bus) {
 	b.OnSessionIdle(func(_ context.Context, e module.SessionIdle) {
-		go runWithRecover("plugin-conversation-reply", func() {
-			m.ReplyToConversation(context.Background(), e.Platform, e.SessionID)
+		m.workers.Go(func(ctx context.Context) {
+			runWithRecover("plugin-conversation-reply", func() {
+				m.ReplyToConversation(ctx, e.Platform, e.SessionID)
+			})
 		})
 	})
 }
