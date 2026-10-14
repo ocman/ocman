@@ -46,6 +46,16 @@ describe('implementation model choice', () => {
 		await waitFor(() => expect(picker()).toHaveTextContent('p/terra'));
 	});
 
+	it('never offers or suggests a hidden lookup alias', async () => {
+		vi.mocked(api.sessionModels).mockResolvedValue({ models: [
+			{ provider: 'p', model: 'claude-opus-4-7', hidden: true }, { provider: 'p', model: 'terra' },
+		], hasProviders: true });
+		mount();
+		await waitFor(() => expect(picker()).toHaveTextContent('p/terra'));
+		await userEvent.setup().click(picker());
+		expect(screen.queryByRole('option', { name: /claude-opus-4-7/ })).not.toBeInTheDocument();
+	});
+
 	it('keeps historical models when provider availability is unknown', async () => {
 		vi.mocked(api.sessionModels).mockResolvedValue({ models: [{ provider: 'p', model: 'sol', isAvailable: false }], hasProviders: false });
 		mount();

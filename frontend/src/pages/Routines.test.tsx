@@ -326,6 +326,26 @@ describe('Routines', () => {
     }
   });
 
+  it.each(['fresh', 'existing'])('omits hidden lookup aliases from the %s session model list', async (mode) => {
+    const models = { hasProviders: true, models: [{ provider: 'anthropic', model: 'opus' }, { provider: 'anthropic', model: 'claude-opus-4-7', hidden: true }] };
+    vi.mocked(api.sessionModels).mockResolvedValue(models);
+    vi.mocked(api.prepareSession).mockResolvedValue({ agents: [], commands: [], models } as never);
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'New routine' }));
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    await user.click(screen.getByRole('option', { name: '/repo' }));
+    await user.click(screen.getByText('Session and model'));
+    if (mode === 'existing') {
+      await user.selectOptions(screen.getByLabelText('Session'), 'existing');
+      await waitFor(() => expect(api.sessionModels).toHaveBeenCalled());
+    }
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).toBeEnabled());
+    await user.click(screen.getByRole('combobox', { name: 'Model' }));
+    expect(await screen.findByRole('option', { name: 'anthropic/opus' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'anthropic/claude-opus-4-7' })).not.toBeInTheDocument();
+  });
+
   it('uses the shared controls and empty state', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([]);
     const user = userEvent.setup();
