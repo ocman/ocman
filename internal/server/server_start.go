@@ -102,7 +102,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Server-Timing captures otelhttp's overhead too. otelhttp is a
 	// no-op when telemetry is disabled (its global TracerProvider is
 	// the SDK noop in that case).
-	httpServer := newHTTPServer(ln.Addr().String(), s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux)))))
+	httpServer := newHTTPServer(ln.Addr().String(), s.requests.track(s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux))))))
 	httpServer.BaseContext = func(net.Listener) context.Context { return ctx }
 
 	// The MCP endpoint also gets its own loopback-only listener so local
@@ -115,7 +115,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		return err
 	}
 	defer closeModules()
-	defer stopMCP()
+	// Both listeners are closed (forcibly past their grace) before admitted
+	// handlers are joined, and those finish before module teardown.
+	defer func() { stopMCP(); s.requests.close() }()
 
 	// Start the server in a goroutine so we can wait for the context.
 	errCh := make(chan error, 1)
@@ -149,8 +151,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	}
 }
 
-// shutdownTimeout bounds a graceful shutdown.
-const shutdownTimeout = 5 * time.Second
+// shutdownTimeout bounds a graceful shutdown; a variable for tests.
+var shutdownTimeout = 5 * time.Second
 
 // shutdownHTTP stops srv gracefully within timeout, then cuts off what
 // remains: a stuck request must not turn a reload into a fatal exit.

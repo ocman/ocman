@@ -133,14 +133,16 @@ type Server struct {
 
 	// routineMod is built on first use (routinesModule); tests may set it
 	// before then.
-	routineMod           *routines.Module
-	routineModOnce       sync.Once
-	idleProjects         *idleprojects.Module
-	idleProjectsOnce     sync.Once
-	sessionTitles        *sessiontitles.Module
-	sessionTitlesOnce    sync.Once
-	lifetimeMu           sync.Mutex
-	lifetimeCtx          context.Context // guarded by lifetimeMu
+	routineMod        *routines.Module
+	routineModOnce    sync.Once
+	idleProjects      *idleprojects.Module
+	idleProjectsOnce  sync.Once
+	sessionTitles     *sessiontitles.Module
+	sessionTitlesOnce sync.Once
+	lifetimeMu        sync.Mutex
+	lifetimeCtx       context.Context // guarded by lifetimeMu
+	// requests joins admitted HTTP handlers before teardown (both listeners).
+	requests             requestFence
 	pluginsMod           *pluginsmod.Module
 	pluginsModOnce       sync.Once
 	webhookMod           *webhook.Module

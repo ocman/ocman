@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -115,5 +116,76 @@ func TestServerStartsAndJoinsRuntimeHealthWorker(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not finish joining health worker")
+	}
+}
+
+// detachedInstallHost runs an install that, like a confirmed Factory
+// action, ignores the request's cancellation and finishes a durable write.
+type detachedInstallHost struct {
+	hostsvc.Host
+	started chan struct{}
+	written *atomic.Bool
+}
+
+func (h detachedInstallHost) HookPlugin() (bool, bool) { return true, false }
+func (h detachedInstallHost) UninstallHookPlugin(context.Context) error {
+	return nil
+}
+func (h detachedInstallHost) InstallHookPlugin(ctx context.Context) error {
+	close(h.started)
+	<-ctx.Done()
+	time.Sleep(shutdownTimeout + 200*time.Millisecond) // outlives the forced close
+	h.written.Store(true)
+	return nil
+}
+
+// A forced close after the grace period cuts the connection, but the server
+// does not return (so teardown cannot run) until admitted handlers finish.
+func TestServerShutdownJoinsHandlersAfterForcedClose(t *testing.T) {
+	t.Setenv("OCMAN_PLUGIN_DIR", t.TempDir())
+	old := shutdownTimeout
+	shutdownTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { shutdownTimeout = old })
+	srv := testServer(t)
+	var written atomic.Bool
+	host := detachedInstallHost{Host: srv.router().Local(), started: make(chan struct{}), written: &written}
+	srv.hostRouter = hostsvc.NewRouter(host)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- srv.StartOnListener(ctx, ln) }()
+	go func() {
+		for {
+			resp, err := http.Post("http://"+ln.Addr().String()+"/api/hook-plugin/install", "application/json", nil)
+			if err == nil {
+				_ = resp.Body.Close()
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	select {
+	case <-host.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("install did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("shutdown did not finish")
+	}
+	if !written.Load() {
+		t.Fatal("server returned while an admitted handler still ran")
 	}
 }
