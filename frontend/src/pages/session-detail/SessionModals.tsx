@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
 import { api } from '../../lib/api';
 import type { Message, Part, Project, Session } from '../../lib/api';
-import { useApiStore } from '../../lib/apiStore';
 import { remoteLog } from '../../lib/remoteLog';
 import { RenameModal } from './RenameModal';
 import { ForkPicker } from './ForkPicker';
@@ -9,6 +8,7 @@ import { MessageJumpPicker } from './MessageJumpPicker';
 import { MovePathDialog, MovePicker } from './MovePicker';
 import type { UsePendingSendResult } from './usePendingSend';
 import type { SessionModal } from './useSessionModal';
+import { patchSessionLists } from '../../lib/sessionsCache';
 
 export interface MessageJumpHistory {
   sessionId: string;
@@ -58,7 +58,6 @@ export function SessionModals({
   onRenamed,
   onScrollToMessage,
 }: SessionModalsProps) {
-  const patchRecentSession = useApiStore((state) => state.patchRecentSession);
 
   const handleMoveDestination = useCallback((directory: string) => {
     pending.begin(`/move ${directory}`);
@@ -66,13 +65,13 @@ export function SessionModals({
       .then(() => {
         pending.clear();
         patchSession({ directory });
-        patchRecentSession(session.id, { directory });
+        patchSessionLists(session.id, { directory });
       })
       .catch((error) => {
         remoteLog.error('Failed to move session', error);
         pending.fail(error instanceof Error ? error.message : 'Unknown error');
       });
-  }, [patchRecentSession, patchSession, pending, session.id]);
+  }, [patchSession, pending, session.id]);
 
   const sameHost = (remoteId: string | undefined) => (remoteId || 'local') === (session.remoteId || 'local');
   const jumpHistory = messageJumpHistory?.sessionId === session.id ? messageJumpHistory : null;
@@ -86,7 +85,7 @@ export function SessionModals({
           onClose={onClose}
           onRenamed={(newTitle) => {
             patchSession({ title: newTitle });
-            patchRecentSession(session.id, { title: newTitle });
+            patchSessionLists(session.id, { title: newTitle });
             onRenamed();
           }}
         />

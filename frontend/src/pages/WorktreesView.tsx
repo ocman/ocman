@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { WorktreeEntry } from '../lib/api';
 import { api } from '../lib/api';
-import { useApiStore } from '../lib/apiStore';
+import { useSessions } from '../lib/queries';
 import { relativeTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
@@ -37,8 +37,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
   const navigate = useNavigate();
   const allowed = useOpencodeLaunch(remoteId);
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
-  const cachedSessions = useApiStore((s) => s.cachedSessions);
-  const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
+  const { data: cachedSessions = null, refetch: refetchSessions } = useSessions({ limit: 100 }, { enabled: false });
 
   const [worktrees, setWorktrees] = useState<WorktreeEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +60,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
     try {
       const [wtResp] = await Promise.all([
         api.worktree.list(projectDir, remoteId),
-        refreshCachedSessions().catch(() => []),
+        refetchSessions(),
       ]);
       setWorktrees(wtResp.worktrees);
     } catch (err) {
@@ -69,7 +68,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
     } finally {
       setLoading(false);
     }
-  }, [projectDir, remoteId, refreshCachedSessions]);
+  }, [projectDir, remoteId, refetchSessions]);
 
   // Only list once the owner can serve it: a disconnected owner would 503,
   // and when capability polling reports it back the rows load by themselves.

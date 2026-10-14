@@ -12,7 +12,8 @@ import type { Session } from '../../lib/api';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { api } from '../../lib/api';
 
-const patchRecentSession = vi.fn();
+const patchRecentSession = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/sessionsCache', () => ({ patchSessionLists: patchRecentSession }));
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign(
@@ -22,7 +23,7 @@ vi.mock('../../lib/apiStore', () => ({
         abortSession: vi.fn().mockResolvedValue(undefined),
         archiveSession: vi.fn().mockResolvedValue(undefined),
       }),
-    { getState: () => ({ pushClosedSession: vi.fn(), patchRecentSession }) },
+    { getState: () => ({ pushClosedSession: vi.fn() }) },
   ),
 }));
 

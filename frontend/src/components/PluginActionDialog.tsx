@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { APIError } from '../lib/api';
-import { useApiStore } from '../lib/apiStore';
 import { pluginActions, type PluginActionRequest, type PluginActionResponse } from '../lib/plugins';
 import { Modal } from './Modal';
 
@@ -24,7 +23,6 @@ export function PluginActionDialog({ label, request: initialRequest, onClose }: 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const refreshSessions = useApiStore((s) => s.refreshCachedSessions);
   const pending = useRef<{ request: PluginActionRequest; promise: Promise<PluginActionResponse>; handled: boolean } | null>(null);
 
   useEffect(() => {
@@ -43,7 +41,6 @@ export function PluginActionDialog({ label, request: initialRequest, onClose }: 
         if (item.kind === 'navigation') navigate(`/${item.target}`);
         if (item.kind === 'refresh') {
           void queryClient.invalidateQueries({ queryKey: [item.target === 'actions' ? 'plugin-actions' : item.target] });
-          if (item.target === 'sessions') void refreshSessions().catch(() => {});
         }
       }
     }).catch((err: unknown) => {
@@ -54,7 +51,7 @@ export function PluginActionDialog({ label, request: initialRequest, onClose }: 
       setError(category ? ERRORS[category] : 'The action failed. It was not retried.');
     });
     return () => { ignore = true; };
-  }, [request, navigate, queryClient, refreshSessions]);
+  }, [request, navigate, queryClient]);
 
   const confirmation = response?.confirmation;
   const running = !response && !error;

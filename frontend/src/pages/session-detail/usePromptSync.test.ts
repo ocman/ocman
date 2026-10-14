@@ -5,14 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../../lib/api';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 
-const patchRecentSession = vi.fn();
+const patchRecentSession = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/sessionsCache', () => ({ patchSessionLists: patchRecentSession }));
 const listPermissions = vi.fn<(sid?: string) => Promise<unknown[]>>(async () => []);
 const listQuestions = vi.fn(async (): Promise<unknown[]> => []);
 const refreshPermissions = vi.fn<(sid?: string) => Promise<unknown[]>>(async () => []);
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ patchRecentSession, listPermissions, listQuestions, refreshPermissions }),
+    selector({ listPermissions, listQuestions, refreshPermissions }),
 }));
 
 import { usePromptSync, type UsePromptSyncOptions } from './usePromptSync';

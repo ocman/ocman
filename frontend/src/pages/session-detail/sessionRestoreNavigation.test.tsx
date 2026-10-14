@@ -6,6 +6,8 @@ import { useSession, type UseSessionOptions } from './useSession';
 import { useSessionSeen } from './useSessionSeen';
 import { useApiStore } from '../../lib/apiStore';
 import type { Session, SessionDetail } from '../../lib/api';
+import { SIDEBAR_SESSIONS_KEY } from '../../lib/sessionsCache';
+import { queryClient } from '../../lib/queryClient';
 
 vi.mock('../../lib/useGlobalEvents', () => ({ onSessionChanged: () => () => {}, onSseConnect: () => () => {} }));
 vi.mock('../../lib/useFaviconNotify', () => ({ recheckFaviconNotify: () => {} }));
@@ -28,7 +30,8 @@ it('reopens the original session after a browser reload followed by a route unmo
     if (!peek) archived = false;
     return { session: { ...row, archived }, messages: [], parts: [] } as SessionDetail;
   });
-  useApiStore.setState({ sessionCache: new Map(), recentSessions: [], markSessionSeen: vi.fn().mockResolvedValue({ ok: true }) });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+  useApiStore.setState({sessionCache: new Map(), markSessionSeen: vi.fn().mockResolvedValue({ ok: true })});
   function SessionPage() {
     const { session, patchSession } = useSession(row.id, { fetchSession });
     useSessionSeen({ session, patchSession });

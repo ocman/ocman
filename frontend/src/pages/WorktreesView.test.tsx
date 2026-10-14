@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { WorktreesView } from './WorktreesView';
 import { api } from '../lib/api';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '../lib/queryClient';
 import type { Session, WorktreeEntry } from '../lib/api';
 
 // The view pulls in several hooks/stores that hit the network or the
@@ -24,10 +26,7 @@ vi.mock('../lib/uiStore', () => ({
   useUiStore: (selector: (s: { openWorktreeForm: () => void }) => unknown) =>
     selector({ openWorktreeForm }),
 }));
-const store = { cachedSessions: [] as Session[], refreshCachedSessions: () => Promise.resolve([]) };
-vi.mock('../lib/apiStore', () => ({
-  useApiStore: (selector: (s: typeof store) => unknown) => selector(store),
-}));
+const store = { cachedSessions: [] as Session[] };
 
 function wt(overrides: Partial<WorktreeEntry> = {}): WorktreeEntry {
   return {
@@ -53,14 +52,14 @@ function SwitchTo({ to }: { to: string }) {
 
 function renderView(entry = '/project/%2Frepo/worktrees', switchTo?: string) {
   return render(
-    <MemoryRouter initialEntries={[entry]}>
+    <QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[entry]}>
       <div id="header-actions-slot" />
       {switchTo && <SwitchTo to={switchTo} />}
       <Routes>
         <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
         <Route path="/session/:id" element={<SessionLocation />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter></QueryClientProvider>,
   );
 }
 
@@ -73,6 +72,7 @@ describe('WorktreesView', () => {
     launchState.allowed = true;
     launchState.askedFor = [];
     store.cachedSessions = [];
+    vi.spyOn(api, 'sessions').mockImplementation(() => Promise.resolve(store.cachedSessions));
     openWorktreeForm.mockClear();
     vi.spyOn(api.worktree, 'list').mockResolvedValue({
       worktrees: [wt({ path: '/repo', branch: 'main', main: true }), wt()],
@@ -300,12 +300,12 @@ describe('WorktreesView', () => {
 
       launchState.allowed = true;
       view.rerender(
-        <MemoryRouter initialEntries={['/project/%2Frepo/worktrees?remoteId=B']}>
+        <QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/project/%2Frepo/worktrees?remoteId=B']}>
           <div id="header-actions-slot" />
           <Routes>
             <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
           </Routes>
-        </MemoryRouter>,
+        </MemoryRouter></QueryClientProvider>,
       );
       expect(await screen.findByText('feature')).toBeInTheDocument();
       expect(api.worktree.list).toHaveBeenCalledWith('/repo', 'B');

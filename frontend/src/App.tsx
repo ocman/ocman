@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './lib/queryClient';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
@@ -43,6 +44,7 @@ import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { Inbox } from './pages/Inbox';
 import { MainNav } from './components/MainNav';
 import { featureRoutes } from './features';
+import { patchSessionLists } from './lib/sessionsCache';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -73,13 +75,13 @@ export function GlobalHotkeys() {
   // Pops the closed-session stack, unarchives it on the server, flips the
   // optimistic flag in the recent-sessions list, then navigates to it.
   const reopenClosedSession = useCallback(() => {
-    const { popClosedSession, archiveSession, patchRecentSession } = useApiStore.getState();
+    const { popClosedSession, archiveSession } = useApiStore.getState();
     const closed = popClosedSession();
     if (!closed) return;
     archiveSession(closed.platform, closed.id, closed.timeUpdated, false).catch((err) => {
       remoteLog.error('Failed to reopen closed session', err);
     });
-    patchRecentSession(closed.id, { archived: false });
+    patchSessionLists(closed.id, { archived: false });
     navigate(`/session/${closed.id}`);
   }, [navigate]);
 
@@ -279,28 +281,6 @@ function PerfDevHandle() {
   }, []);
   return null;
 }
-
-// Shared QueryClient for TanStack Query. Sensible defaults:
-// - staleTime: 10s — data is considered fresh for 10s after fetch,
-//   so rapid navigation doesn't re-fetch immediately.
-// - No auto-retry on 4xx (client errors are not transient).
-// - Retry once on 5xx / network errors.
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 10_000,
-      retry: (failureCount, error) => {
-        // Don't retry client errors (4xx) or aborts.
-        if (error instanceof DOMException && error.name === 'AbortError') return false;
-        if (error instanceof Error && error.message.match(/^HTTP [45]\d\d/)) {
-          const status = parseInt(error.message.slice(5), 10);
-          if (status >= 400 && status < 500) return false;
-        }
-        return failureCount < 1;
-      },
-    },
-  },
-});
 
 // Refresh the session list the moment a session is created/changed
 // upstream, instead of waiting for the next poll tick. Registered at

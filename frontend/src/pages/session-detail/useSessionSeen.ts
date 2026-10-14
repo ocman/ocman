@@ -11,6 +11,7 @@ import { projectRootForDirectory } from '../../lib/worktrees';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { pickNextSessionAfterArchive, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import { isSessionPageRestore } from './sessionView';
+import { getSidebarSessions, patchSessionLists } from '../../lib/sessionsCache';
 
 export interface UseSessionSeenOptions {
   session: SessionMetadata | null;
@@ -32,7 +33,6 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   }, []);
   const recordOpenedSession = useUiStore((state) => state.recordOpenedSession);
   const markSessionSeen = useApiStore((state) => state.markSessionSeen);
-  const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const { setInfo } = useHeaderInfo();
   usePageTitle(cleanTitle(session?.title) || 'Session');
 
@@ -49,17 +49,17 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const closeArchivedSession = useCallback(() => {
     if (!sessionSeenId || !sessionSeenPlatform) return;
     const store = useApiStore.getState();
-    const candidates = sidebarNavigableSessions(store.recentSessions).filter((row) => !row.archived || row.id === sessionSeenId);
+    const candidates = sidebarNavigableSessions(getSidebarSessions()).filter((row) => !row.archived || row.id === sessionSeenId);
     const next = pickNextSessionAfterArchive(candidates, { id: sessionSeenId, directory: sessionDirectory ?? '' }, useUiStore.getState().sidebarView);
     patchSession({ archived: true });
-    patchRecentSession(sessionSeenId, { archived: true }, sessionSeenPlatform);
+    patchSessionLists(sessionSeenId, { archived: true }, sessionSeenPlatform);
     store.updateCachedSession(sessionSeenId, (cached) => ({ ...cached, session: { ...cached.session, archived: true } }));
     navigate(next ? `/session/${next.id}` : '/session/new', { replace: true });
-  }, [sessionSeenId, sessionSeenPlatform, sessionDirectory, patchSession, patchRecentSession, navigate]);
+  }, [sessionSeenId, sessionSeenPlatform, sessionDirectory, patchSession, navigate]);
   const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
     if (document.hidden) return;
     lastMarked.current = updated;
-    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false, snoozedUntil: 0 } : {}) }, platform);
+    patchSessionLists(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false, snoozedUntil: 0 } : {}) }, platform);
     const request = sessionSeenInterrupted
       ? markSessionSeen(platform, id, updated, true)
       : markSessionSeen(platform, id, updated);
@@ -68,7 +68,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
         recheckFaviconNotify();
       })
       .catch((err) => remoteLog.error('Failed to mark session seen', err));
-  }, [markSessionSeen, patchRecentSession, sessionSeenInterrupted]);
+  }, [markSessionSeen, sessionSeenInterrupted]);
 
   useEffect(() => {
     if (!visible || !sessionSeenId || !sessionSeenPlatform) return;

@@ -10,9 +10,10 @@ vi.mock('../../lib/api', () => ({
     moveSession: vi.fn().mockResolvedValue(undefined),
   },
 }));
-const patchRecentSession = vi.fn();
+const patchRecentSession = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/sessionsCache', () => ({ patchSessionLists: patchRecentSession }));
 vi.mock('../../lib/apiStore', () => ({
-  useApiStore: (selector: (s: Record<string, unknown>) => unknown) => selector({ patchRecentSession }),
+  useApiStore: (selector: (s: Record<string, unknown>) => unknown) => selector({}),
 }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 vi.mock('./RenameModal', () => ({

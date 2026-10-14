@@ -16,7 +16,7 @@ export function ActiveSessions({ count, enabled }: { count: number; enabled: boo
   const id = useId();
   const [position, setPosition] = useState<CSSProperties | null>(null);
   const open = enabled && position !== null;
-  const sessions = useSessions({ limit: 0 }, { enabled: open, refetchInterval: 5000 });
+  const sessions = useSessions({ limit: 0 }, { enabled: open, poll: true });
   const projects = useProjects({ enabled: open });
   const identity = projectIdentityIndex(projects.data ?? []);
   const groups = new Map<string, { project: ProjectIdentity; sessions: Session[] }>();

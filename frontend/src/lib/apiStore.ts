@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
-import { compareSidebarCompletion, computeSidebarHash } from './sidebarHelpers';
+import { getSidebarSessions, patchSessionLists, seedSessionLists } from './sessionsCache';
 import type {
   CapabilitiesResponse,
   DirectoryBrowseResponse,
@@ -59,32 +59,12 @@ export function resetWhisperStatusCache() {
 type ApiStore = {
   requests: Record<string, RequestStatus>;
   pendingInterruptionReads: Record<string, { timeUpdated: number; confirmed?: boolean }>;
-  // Cached list of all sessions (no directory filter). `null` means never
-  // fetched; components can render immediately from this value while
-  // `refreshCachedSessions` updates it in the background.
-  cachedSessions: Session[] | null;
   /**
-   * The sidebar session list, shared across all components so that optimistic
-   * writes from the session-detail page (SSE-derived status, seen, pending
-   * prompt flags) survive navigation without being clobbered by the next poll.
-   *
-   * Write protocol:
-   *   - `setRecentSessions(sessions, hash)` — full replace from the poll.
-   *     `hash` is the pre-computed computeSidebarHash value so the polling
-   *     loop can skip redundant writes without recomputing.
-   *   - `patchRecentSession(id, patch)` — merges a partial update into the
-   *     matching row and updates the hash. No-op when the session is not yet
-   *     in the list. Always wins over a concurrent poll write because Zustand
-   *     reducers are synchronous.
-   *
-   * `recentSessionsHash` tracks the last hash written by the poll so it can
-   * cheaply skip no-op full-replaces.
+   * Per-row status write counters for the sidebar list (see
+   * lib/sessionsCache). A poll that started before an optimistic status
+   * write keeps the newer status instead of overwriting it.
    */
-  recentSessions: Session[];
-  recentSessionsHash: string;
   recentStatusRevisions: Record<string, number>;
-  setRecentSessions: (sessions: Session[], hash: string) => void;
-  patchRecentSession: (id: string, patch: Partial<Session>, platform?: string) => void;
   /**
    * Stack of recently-closed (archived) sessions, most-recent last. Pushed
    * by the archive call sites and popped by the "reopen last closed session"
@@ -114,7 +94,6 @@ type ApiStore = {
   browseDirectories: (directory?: string, signal?: AbortSignal) => Promise<DirectoryBrowseResponse>;
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => Promise<DirectorySearchResponse>;
   getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
-  refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
   /** Reads a session without opening it, so it is not unarchived. */
   peekSession: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionDetail>;
@@ -158,39 +137,7 @@ type ApiStore = {
 export const useApiStore = create<ApiStore>((set, get) => ({
   requests: {},
   pendingInterruptionReads: {},
-  cachedSessions: null,
-  recentSessions: [],
-  recentSessionsHash: '',
   recentStatusRevisions: {},
-  setRecentSessions: (sessions, hash) => {
-    const reads = get().pendingInterruptionReads;
-    const rows = sessions.map(s => {
-      const read = reads[`${s.platform}:${s.id}`];
-      if (!read || s.status !== 'interrupted' || s.timeUpdated > read.timeUpdated || (s.seen && s.seenTimeUpdated >= read.timeUpdated)) return s;
-      return { ...s, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, read.timeUpdated) };
-    });
-    if (rows.some((s, i) => s !== sessions[i])) hash = computeSidebarHash(rows);
-    // Skip when hash unchanged — same guard previously in the hook.
-    if (get().recentSessionsHash === hash) return;
-    // A completed cold-load read stays pending until its sidebar row exists.
-    const pendingInterruptionReads = Object.fromEntries(Object.entries(get().pendingInterruptionReads)
-      .filter(([key, read]) => !read.confirmed || !sessions.some(s => `${s.platform}:${s.id}` === key)));
-    set({ recentSessions: rows, recentSessionsHash: hash, pendingInterruptionReads });
-  },
-  patchRecentSession: (id, patch, platform) => {
-    set((state) => {
-      const idx = state.recentSessions.findIndex((s) => s.id === id && (!platform || s.platform === platform));
-      if (idx === -1) return state;
-      const updated = { ...state.recentSessions[idx], ...patch };
-      const key = `${updated.platform}:${id}`;
-      const next = [...state.recentSessions];
-      next[idx] = updated;
-      next.sort(compareSidebarCompletion);
-      // Recompute hash so the next poll's dedup check stays accurate.
-      return { recentSessions: next, recentSessionsHash: computeSidebarHash(next),
-        recentStatusRevisions: patch.status !== undefined ? { ...state.recentStatusRevisions, [key]: (state.recentStatusRevisions[key] ?? 0) + 1 } : state.recentStatusRevisions };
-    });
-  },
   closedSessionStack: [],
   pushClosedSession: (session) => {
     set((state) => {
@@ -287,19 +234,9 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     };
     // Seed the detail cache so SessionDetail skips the loading spinner.
     get().setCachedSession(id, stub);
-    // Prepend the stub to cachedSessions AND recentSessions so the sidebar
-    // renders it immediately instead of waiting up to one 3 s poll tick.
-    // The next poll reconciles the stub with the real server row.
-    set((state) => {
-      const recent = [stub.session, ...state.recentSessions.filter((s) => s.id !== id)];
-      return {
-        cachedSessions: state.cachedSessions
-          ? [stub.session, ...state.cachedSessions.filter((s) => s.id !== id)]
-          : [stub.session],
-        recentSessions: recent,
-        recentSessionsHash: computeSidebarHash(recent),
-      };
-    });
+    // Show the stub in the sidebar and every loaded list immediately
+    // instead of waiting for a poll tick.
+    seedSessionLists(stub.session);
   },
   runRequest: async <T,>(key: string, task: () => Promise<T>) => {
     set((state) => ({
@@ -343,21 +280,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     // Per-params variance (since, limit) doesn't need its own loading row —
     // the dashboard only cares about the latest request's status.
     const key = params?.dir ? `sessions:get:dir:${params.dir}` : 'sessions:get';
-    const isFullList = !params?.dir && !params?.since && !params?.limit;
-    return get().runRequest(key, async () => {
-      const result = await api.sessions(params, signal);
-      // Opportunistically keep the shared cache warm whenever the full,
-      // unfiltered session list is fetched — e.g. when the Dashboard loads.
-      if (isFullList) set({ cachedSessions: result });
-      return result;
-    });
-  },
-  refreshCachedSessions: (signal) => {
-    return get().runRequest('sessions:get', async () => {
-      const result = await api.sessions({ limit: 100 }, signal);
-      set({ cachedSessions: result });
-      return result;
-    });
+    return get().runRequest(key, () => api.sessions(params, signal));
   },
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
   peekSession: (id, signal, platform) => get().runRequest(`session:peek:${platform ?? ''}:${id}`, () => api.session(id, 1, 0, signal, platform, true)),
@@ -377,15 +300,15 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     try {
       const result = await get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated, interrupted));
       succeeded = true;
-      const row = get().recentSessions.find(s => s.platform === platform && s.id === sessionId);
+      const row = getSidebarSessions().find(s => s.platform === platform && s.id === sessionId);
       if (interrupted && row?.status === 'interrupted' && row.timeUpdated <= timeUpdated) {
-        get().patchRecentSession(sessionId, { seen: true, seenTimeUpdated: Math.max(row.seenTimeUpdated, timeUpdated) }, platform);
+        patchSessionLists(sessionId, { seen: true, seenTimeUpdated: Math.max(row.seenTimeUpdated, timeUpdated) }, platform);
       }
       return result;
     } finally {
       if (interrupted) set(state => {
         if (state.pendingInterruptionReads[key] !== pending) return state;
-        if (succeeded && !state.recentSessions.some(s => s.platform === platform && s.id === sessionId)) {
+        if (succeeded && !getSidebarSessions().some(s => s.platform === platform && s.id === sessionId)) {
           return { pendingInterruptionReads: { ...state.pendingInterruptionReads, [key]: { timeUpdated, confirmed: true } } };
         }
         const next = { ...state.pendingInterruptionReads };
@@ -398,16 +321,16 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
   sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => {
-    const previous = get().recentSessions.find((s) => s.id === sessionId)?.timeUpdated;
+    const previous = getSidebarSessions().find((s) => s.id === sessionId)?.timeUpdated;
     const now = Math.max(Date.now(), previous ?? 0);
-    if (!queue) get().patchRecentSession(sessionId, { timeUpdated: now });
+    if (!queue) patchSessionLists(sessionId, { timeUpdated: now });
     return get().runRequest(`message:send:${sessionId}`, () =>
       api.sendMessage(sessionId, message, images, model, agent, reasoning, platform, queue),
     ).catch((error) => {
       // Don't undo activity that arrived through SSE while the request ran.
       if (!queue && previous !== undefined &&
-          get().recentSessions.find((s) => s.id === sessionId)?.timeUpdated === now) {
-        get().patchRecentSession(sessionId, { timeUpdated: previous });
+          getSidebarSessions().find((s) => s.id === sessionId)?.timeUpdated === now) {
+        patchSessionLists(sessionId, { timeUpdated: previous });
       }
       throw error;
     });

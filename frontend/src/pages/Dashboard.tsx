@@ -66,7 +66,7 @@ export function DashboardLayout() {
   const sinceHours = timeRange > 0 ? timeRange : 30 * 24;
   const sessionsQ = useTQSessions(
     { sinceHours },
-    { refetchInterval: isOnDashboard ? 5000 : undefined },
+    { poll: isOnDashboard },
   );
   const projectsQ = useTQProjects();
 

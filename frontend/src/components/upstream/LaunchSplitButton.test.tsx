@@ -3,13 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { LaunchSplitButton } from './LaunchSplitButton';
 import * as api from '../../lib/upstreamApi';
-import { useApiStore } from '../../lib/apiStore';
 import userEvent from '@testing-library/user-event';
 import { LaunchPlatformContext } from './launchPlatform';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions } from '../../lib/sessionsCache';
+import { queryClient } from '../../lib/queryClient';
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  useApiStore.setState({ recentSessions: [], recentSessionsHash: '' });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
 });
 
 describe('LaunchSplitButton', () => {
@@ -29,7 +30,7 @@ describe('LaunchSplitButton', () => {
     expect(screen.getByRole('button', { name: 'More launch options' })).toBeDisabled();
     finish({ childSessionId: 'review-1', mode: 'session', platform: 'r-box:opencode', remoteId: 'box' });
     await waitFor(() => expect(screen.getByTestId('launch-default')).toBeEnabled());
-    expect(useApiStore.getState().recentSessions[0]?.id).toBe('review-1');
+    expect(getSidebarSessions()[0]?.id).toBe('review-1');
   });
 
   it('launches on the active session\'s platform', async () => {
@@ -95,7 +96,7 @@ describe('LaunchSplitButton', () => {
       expect(screen.getByTestId('launch-default')).toHaveTextContent('Launched ✓');
     });
 
-    const recent = useApiStore.getState().recentSessions;
+    const recent = getSidebarSessions();
     expect(recent[0]?.id).toBe('child-1');
     expect(recent[0]?.title).toBe('pr #42');
     expect(recent[0]?.platform).toBe('r-box:opencode');
@@ -128,7 +129,7 @@ describe('LaunchSplitButton', () => {
     await waitFor(() => {
       expect(api.postHandle).toHaveBeenCalled();
     });
-    expect(useApiStore.getState().recentSessions).toHaveLength(0);
+    expect(getSidebarSessions()).toHaveLength(0);
   });
 
   it('offers review options for a PR and sends action:review', async () => {
@@ -210,6 +211,6 @@ describe('LaunchSplitButton', () => {
     fireEvent.click(screen.getByTestId('launch-default'));
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('initial prompt was not sent'));
-    expect(useApiStore.getState().recentSessions[0]?.id).toBe('child-4');
+    expect(getSidebarSessions()[0]?.id).toBe('child-4');
   });
 });

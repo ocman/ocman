@@ -49,7 +49,7 @@ export function ProjectDetail() {
   const identity = useMemo(() => projectIdentityIndex(projectsQ.data ?? []), [projectsQ.data]);
   const sessionsQ = useSessions(
     { sinceHours, limit: 0 },
-    { refetchInterval: 5000, enabled: !!directory },
+    { poll: true, enabled: !!directory },
   );
   const projectKey = identity(directory ?? '', ownerId ?? undefined).key;
   const sessions = (sessionsQ.data ?? []).filter(s => identity(s.directory || '', s.remoteId).key === projectKey);

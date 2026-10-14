@@ -4,7 +4,7 @@ import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { hasPendingPrompt } from '../../lib/sessionVisibility';
-import { computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
+import { filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
@@ -12,6 +12,7 @@ import { useSidebarFilter } from './useSidebarFilter';
 import { flushSync } from 'react-dom';
 import { withDeadline } from '../../lib/coalescedRefresh';
 import { useSidebarEvents } from './useSidebarEvents';
+import { getSidebarSessions, patchSessionLists, setSidebarSessions, useSidebarSessionList } from '../../lib/sessionsCache';
 
 /**
  * Reconciliation backstop for events missed while disconnected. Normal
@@ -66,8 +67,8 @@ export interface UseSidebarSessionsResult {
  * Owns everything the Recent Sessions sidebar needs:
  *
  *   - the list of sessions in the last 72 h, refreshed from global SSE
- *     invalidations with a slow reconciliation poll. It lives in Zustand
- *     (useApiStore.recentSessions) so SSE-derived optimistic writes
+ *     invalidations with a slow reconciliation poll. It lives in the
+ *     react-query session cache (lib/sessionsCache) so SSE-derived optimistic writes
  *     from the session-detail page survive navigation; the poll then
  *     merges over them (see mergeSidebarSessions for which fields are
  *     sticky and which the server owns);
@@ -80,7 +81,7 @@ export interface UseSidebarSessionsResult {
  *     forcibly expanded.
  *
  * Cross-cutting writes (status mirror, permission/question mirror,
- * seen mirror) go directly to the store via patchRecentSession so
+ * seen mirror) go directly to the cache via patchSessionLists so
  * they win over any concurrent poll replace.
  */
 export function useSidebarSessions({
@@ -99,9 +100,7 @@ export function useSidebarSessions({
   const getSession = useApiStore((s) => s.getSession);
   const archiveSession = useApiStore((s) => s.archiveSession);
   const pinSession = useApiStore((s) => s.pinSession);
-  const recentSessions = useApiStore((s) => s.recentSessions);
-  const storeSetRecentSessions = useApiStore((s) => s.setRecentSessions);
-  const patchRecentSession = useApiStore((s) => s.patchRecentSession);
+  const recentSessions = useSidebarSessionList();
   const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
   const expandProjects = useUiStore((s) => s.expandProjects);
 
@@ -142,7 +141,7 @@ export function useSidebarSessions({
       return recentRequest.current.promise;
     }
     const promise = withDeadline(15_000, async (signal) => {
-      const requestStart = useApiStore.getState().recentSessions;
+      const requestStart = getSidebarSessions();
       const startedStatusRevisions = useApiStore.getState().recentStatusRevisions;
       const pendingReads = useApiStore.getState().pendingInterruptionReads;
       try {
@@ -157,7 +156,7 @@ export function useSidebarSessions({
         // When the open session is older than the recent window, fetch it once
         // by id so it is always present in the sidebar.
         const fallback = openSessionFallbackRef.current;
-        const liveFallback = fallback && useApiStore.getState().recentSessions.find(s => s.id === fallback.id && s.platform === fallback.platform);
+        const liveFallback = fallback && getSidebarSessions().find(s => s.id === fallback.id && s.platform === fallback.platform);
         if (fallback && liveFallback) {
           openSessionFallbackRef.current = { ...fallback, seen: liveFallback.seen, seenTimeUpdated: liveFallback.seenTimeUpdated };
         }
@@ -180,16 +179,15 @@ export function useSidebarSessions({
           : visible;
         const merged = mergeSidebarSessions(
           candidates,
-          useApiStore.getState().recentSessions,
+          getSidebarSessions(),
           id,
           requestStart,
           { ...pendingReads, ...useApiStore.getState().pendingInterruptionReads },
           { started: startedStatusRevisions, current: useApiStore.getState().recentStatusRevisions },
         );
 
-        const hash = computeSidebarHash(merged);
-        if (force) flushSync(() => storeSetRecentSessions(merged, hash));
-        else storeSetRecentSessions(merged, hash);
+        if (force) flushSync(() => setSidebarSessions(merged));
+        else setSidebarSessions(merged);
         setLoadingRecentSessions(false);
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -200,7 +198,7 @@ export function useSidebarSessions({
     recentRequest.current = request;
     void promise.finally(() => { if (recentRequest.current === request) recentRequest.current = null; }).catch(() => {});
     return promise;
-  }, [getSessions, getSession, id, storeSetRecentSessions]);
+  }, [getSessions, getSession, id]);
 
   const reconcileRecentSessions = useCallback(async (signal?: AbortSignal) => {
     const pending = recentRequest.current;
@@ -299,14 +297,8 @@ export function useSidebarSessions({
             id: target.id,
             timeUpdated: target.timeUpdated,
           });
-          const { recentSessions: current, setRecentSessions: storeSetter, recentSessionsHash } = useApiStore.getState();
-          const next = current.flatMap((session) => session.id !== target.id ? [session]
-            : showArchivedRecentRef.current || session.pinned || hasPendingPrompt(session) ? [{ ...session, archived: true }] : []);
-          // Only write if something actually changed.
-          if (next !== current) storeSetter(next, computeSidebarHash(next));
-          // Suppress TS: recentSessionsHash is read to satisfy the linter,
-          // but we don't need it here — the store handles dedup internally.
-          void recentSessionsHash;
+          setSidebarSessions(getSidebarSessions().flatMap((session) => session.id !== target.id ? [session]
+            : showArchivedRecentRef.current || session.pinned || hasPendingPrompt(session) ? [{ ...session, archived: true }] : []));
           if (isCurrent) {
             // No session left: stay on the detail page with the `new`
             // sentinel so the sidebar + empty-detail hint show instead
@@ -333,13 +325,13 @@ export function useSidebarSessions({
     const nextPinned = !target.pinned;
     // Optimistic update — flip the pin in place immediately so the
     // sort settles without waiting for the server.
-    patchRecentSession(target.id, { pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 });
+    patchSessionLists(target.id, { pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 });
     pinSession(target.platform, target.id, nextPinned).catch((err) => {
       remoteLog.error('Failed to pin/unpin session', err);
       // Revert on failure.
-      patchRecentSession(target.id, { pinned: target.pinned, pinnedAt: target.pinnedAt });
+      patchSessionLists(target.id, { pinned: target.pinned, pinnedAt: target.pinnedAt });
     });
-  }, [pinSession, patchRecentSession]);
+  }, [pinSession]);
 
   // Opening a session expands its project group for good. This used to be
   // derived per-render and never persisted, so navigating to another

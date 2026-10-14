@@ -8,25 +8,26 @@ import { newSessionPath } from '../../lib/newSessionPath';
 import { transact } from '../../lib/draftDb';
 import * as draftsModule from '../../lib/newConversationDrafts';
 import { useEffect } from 'react';
-import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import type { Session } from '../../lib/api';
+import { SIDEBAR_SESSIONS_KEY } from '../../lib/sessionsCache';
+import { queryClient } from '../../lib/queryClient';
 
 beforeEach(() => {
   localStorage.clear();
   useNewConversationDrafts.setState({ drafts: [] });
-  useApiStore.setState({ recentSessions: [] });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
   useUiStore.setState({ lastOpenedSessionId: undefined });
 });
 
 it.each(['empty', 'previous', 'latest'])('keeps the session workspace mounted after discarding its last draft: %s', async (target) => {
   rememberConversationDraft({ draftId: 'last', directory: '/repo' });
   if (target !== 'empty') {
-    useApiStore.setState({ recentSessions: [
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [
       { id: 'latest', timeUpdated: 2, archived: false },
       { id: 'previous', timeUpdated: 1, archived: false },
       { id: 'archived', timeUpdated: 3, archived: true },
-    ] as Session[] });
+    ] as Session[]);
     useUiStore.setState({ lastOpenedSessionId: target === 'previous' ? 'previous' : 'archived' });
   }
   const unmount = vi.fn();

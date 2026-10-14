@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type GlobalShareLink, type RelaySource, type Session } from '../lib/api';
+import { useSessions } from '../lib/queries';
 import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { SettingRow, SettingToggle } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
@@ -25,17 +26,18 @@ const RELAY_SOURCE_LABELS: Record<Exclude<RelaySource, ''>, string> = {
   builtin: 'built-in default',
 };
 
+const EMPTY_SESSIONS: Session[] = [];
+
 export function SharingSettings() {
   const [enabled, setEnabled] = useState(true);
   const [relayUrl, setRelayUrl] = useState('');
   const [relaySource, setRelaySource] = useState<RelaySource>('');
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const sessions = useSessions().data ?? EMPTY_SESSIONS;
   const sharingSave = useSettingSave();
   const state = useShareLinks(api.listAllShares, (link: GlobalShareLink) => api.revokeShareLink(link.sessionId, link.token));
   const { setError } = state;
 
   useEffect(() => {
-    void api.sessions().then(setSessions, () => setSessions([]));
     api.getSharingEnabled().then(
       (sharing) => {
         setEnabled(sharing.enabled);

@@ -6,7 +6,8 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Session } from '../lib/api';
 import { SnoozeButton } from './SnoozeButton';
 import { snoozeDeadline, SNOOZE_OPTIONS } from '../lib/snooze';
-import { useApiStore } from '../lib/apiStore';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists } from '../lib/sessionsCache';
+import { queryClient } from '../lib/queryClient';
 
 vi.mock('../lib/api', () => ({ api: { snoozeSession: vi.fn() } }));
 const session = { id: 's1', platform: 'r-box:claudecode' } as Session;
@@ -15,7 +16,7 @@ const localSession = { ...session, platform: 'opencode', archived: false };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.snoozeSession).mockResolvedValue({ ok: true });
-  useApiStore.setState({ recentSessions: [localSession, { ...session, archived: false }] });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [localSession, { ...session, archived: false }]);
 });
 
 describe('snooze deadlines', () => {
@@ -42,8 +43,8 @@ describe('SnoozeButton', () => {
     await user.click(screen.getByRole('menuitem', { name: 'In 30 mins' }));
     await waitFor(() => expect(api.snoozeSession).toHaveBeenCalledWith(session.platform, 's1', expect.any(Number)));
     // State is delivered by SSE, not overwritten by the unordered HTTP response.
-    expect(useApiStore.getState().recentSessions.find((row) => row.platform === session.platform)?.archived).toBe(false);
-    expect(useApiStore.getState().recentSessions.find((row) => row.platform === localSession.platform)?.archived).toBe(false);
+    expect(getSidebarSessions().find((row) => row.platform === session.platform)?.archived).toBe(false);
+    expect(getSidebarSessions().find((row) => row.platform === localSession.platform)?.archived).toBe(false);
     expect(click).not.toHaveBeenCalled();
   });
 
@@ -61,7 +62,7 @@ describe('SnoozeButton', () => {
     vi.mocked(api.snoozeSession).mockRejectedValueOnce(new Error('Offline'));
     await user.click(submit);
     expect(await screen.findByRole('alert')).toHaveTextContent('Offline');
-    expect(useApiStore.getState().recentSessions.every((row) => !row.archived)).toBe(true);
+    expect(getSidebarSessions().every((row) => !row.archived)).toBe(true);
     await user.click(screen.getByRole('button', { name: 'Snooze' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.snoozeSession).toHaveBeenLastCalledWith(session.platform, 's1', new Date('2099-01-02T14:30').getTime());
@@ -92,11 +93,11 @@ describe('SnoozeButton', () => {
     await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
     await user.click(screen.getByRole('menuitem', { name: 'In 30 mins' }));
     act(() => {
-      useApiStore.getState().patchRecentSession(session.id, { archived: true }, session.platform);
-      useApiStore.getState().patchRecentSession(session.id, { archived: false }, session.platform);
+      patchSessionLists(session.id, { archived: true }, session.platform);
+      patchSessionLists(session.id, { archived: false }, session.platform);
     });
     await act(async () => { resolve({ ok: true }); });
-    expect(useApiStore.getState().recentSessions.every((row) => !row.archived)).toBe(true);
+    expect(getSidebarSessions().every((row) => !row.archived)).toBe(true);
   });
 
   it('dismisses the custom dialog with Escape without activating its row', async () => {

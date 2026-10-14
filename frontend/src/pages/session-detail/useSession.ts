@@ -12,6 +12,7 @@ import { reduceBatchedSessionView } from './sessionSse';
 import { platformMessageCount } from './sessionView';
 import { useSessionCache } from './useSessionCache';
 import { useSessionLifecycle } from './useSessionLifecycle';
+import { patchSessionLists } from '../../lib/sessionsCache';
 
 export { latestPage, platformMessageCount } from './sessionView';
 
@@ -139,7 +140,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   useEffect(() => {
     // Keep the shared row current when the detail stream leads global events.
     if (!liveId || liveId !== sessionId || view._statusFresh === false) return;
-    useApiStore.getState().patchRecentSession(liveId, {
+    patchSessionLists(liveId, {
       status: liveStatus, notice, liveConnection,
     }, platform);
   }, [sessionId, liveId, platform, liveStatus, notice, liveConnection,

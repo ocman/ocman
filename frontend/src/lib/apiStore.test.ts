@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { SESSION_CACHE_MAX, resetWhisperStatusCache, useApiStore } from './apiStore';
 import { api, type SessionDetail, type Session } from './api';
-import { computeSidebarHash } from './sidebarHelpers';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebarSessions } from './sessionsCache';
+import { queryClient } from './queryClient';
 
 it('scopes lifecycle patches to the owning platform', () => {
   const local = makeSessionDetail('same').session;
   const remote = { ...local, platform: 'r-A:opencode' };
-  useApiStore.setState({ recentSessions: [local, remote] });
-  useApiStore.getState().patchRecentSession('same', { status: 'limited', resetsAt: 12345 }, remote.platform);
-  expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)?.status).toBe('done');
-  expect(useApiStore.getState().recentSessions.find(s => s.platform === remote.platform)).toMatchObject({ status: 'limited', resetsAt: 12345 });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [local, remote]);
+  patchSessionLists('same', { status: 'limited', resetsAt: 12345 }, remote.platform);
+  expect(getSidebarSessions().find(s => s.platform === local.platform)?.status).toBe('done');
+  expect(getSidebarSessions().find(s => s.platform === remote.platform)).toMatchObject({ status: 'limited', resetsAt: 12345 });
 });
 
 function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): SessionDetail {
@@ -60,17 +61,17 @@ describe('interruption read acknowledgement', () => {
 
   it('publishes a confirmed cold read before dropping its owner-qualified marker', async () => {
     vi.spyOn(api, 'markSessionSeen').mockResolvedValue({ ok: true });
-    useApiStore.setState({ recentSessions: [], pendingInterruptionReads: {}, recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({ pendingInterruptionReads: {} });
     await useApiStore.getState().markSessionSeen('r-box:opencode', 's', 100, true);
     const local = { ...makeSessionDetail('s').session, status: 'interrupted' as const, timeUpdated: 100, seen: false };
     const remote = { ...local, platform: 'r-box:opencode' };
-    useApiStore.getState().setRecentSessions([local], computeSidebarHash([local]));
-    expect(useApiStore.getState().recentSessions[0].seen).toBe(false);
+    setSidebarSessions([local]);
+    expect(getSidebarSessions()[0].seen).toBe(false);
     expect(useApiStore.getState().pendingInterruptionReads['r-box:opencode:s']).toMatchObject({ confirmed: true });
-    useApiStore.getState().setRecentSessions([local, remote], computeSidebarHash([local, remote]));
-    expect(useApiStore.getState().recentSessions[1]).toMatchObject({ seen: true, seenTimeUpdated: 100 });
+    setSidebarSessions([local, remote]);
+    expect(getSidebarSessions()[1]).toMatchObject({ seen: true, seenTimeUpdated: 100 });
     expect(useApiStore.getState().pendingInterruptionReads).toEqual({});
-    expect(useApiStore.getState().recentSessionsHash).toBe(computeSidebarHash(useApiStore.getState().recentSessions));
   });
 
   it.each([
@@ -80,20 +81,22 @@ describe('interruption read acknowledgement', () => {
   ] as const)('reconciles a successful cold read only for the same interruption: %s/%i', async (status, updated, seen) => {
     let finish!: (value: { ok: boolean }) => void;
     vi.spyOn(api, 'markSessionSeen').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-    useApiStore.setState({ recentSessions: [], pendingInterruptionReads: {} });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({ pendingInterruptionReads: {} });
     const reading = useApiStore.getState().markSessionSeen('r-box:opencode', 's', 100, true);
     const row = { ...makeSessionDetail('s').session, platform: 'r-box:opencode', status, timeUpdated: updated, seenTimeUpdated: 0, seen: false };
     const local = { ...row, platform: 'opencode' };
-    useApiStore.setState({ recentSessions: [local, row] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [local, row]);
     finish({ ok: true });
     await reading;
-    expect(useApiStore.getState().recentSessions.find(s => s.platform === row.platform)?.seen).toBe(seen);
-    expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)?.seen).toBe(false);
+    expect(getSidebarSessions().find(s => s.platform === row.platform)?.seen).toBe(seen);
+    expect(getSidebarSessions().find(s => s.platform === local.platform)?.seen).toBe(false);
   });
 
   it('keeps newer and other-owner reads pending when an older request completes', async () => {
     const row = { ...makeSessionDetail('s').session, status: 'interrupted' as const, timeUpdated: 100 };
-    useApiStore.setState({ recentSessions: [row, { ...row, platform: 'r-box:opencode' }], pendingInterruptionReads: {} });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row, { ...row, platform: 'r-box:opencode' }]);
+    useApiStore.setState({ pendingInterruptionReads: {} });
     let finishOld!: (value: { ok: boolean }) => void;
     let finishNew!: (value: { ok: boolean }) => void;
     let failOther!: (error: Error) => void;
@@ -265,36 +268,29 @@ describe('runRequest AbortError handling', () => {
 
 describe('seedNewSession', () => {
   beforeEach(() => {
-    useApiStore.setState({
-      sessionCache: new Map(),
-      sessionCacheOrder: [],
-      cachedSessions: null,
-      recentSessions: [],
-      recentSessionsHash: '',
-    });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({ sessionCache: new Map(), sessionCacheOrder: [] });
   });
 
   it('prepends the stub to recentSessions so the sidebar shows it instantly', () => {
     const existing = makeSessionDetail('existing').session;
-    useApiStore.setState({ recentSessions: [existing] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [existing]);
 
     useApiStore.getState().seedNewSession('new-1', '/repo', 'opencode', 'pr #7', 'box');
 
-    const recent = useApiStore.getState().recentSessions;
+    const recent = getSidebarSessions();
     expect(recent[0].id).toBe('new-1');
     expect(recent[0].title).toBe('pr #7');
     expect(recent[0].remoteId).toBe('box');
     expect(recent[0].liveConnection).toBe(true);
     expect(useApiStore.getState().sessionCache.get('new-1')?.session.liveConnection).toBe(true);
     expect(recent.map((s) => s.id)).toEqual(['new-1', 'existing']);
-    // Hash is recomputed so the next poll's dedup check stays accurate.
-    expect(useApiStore.getState().recentSessionsHash).not.toBe('');
   });
 
   it('does not duplicate a session already in recentSessions', () => {
     useApiStore.getState().seedNewSession('dup', '/repo', 'opencode');
     useApiStore.getState().seedNewSession('dup', '/repo', 'opencode');
-    const recent = useApiStore.getState().recentSessions;
+    const recent = getSidebarSessions();
     expect(recent.filter((s) => s.id === 'dup')).toHaveLength(1);
   });
 });

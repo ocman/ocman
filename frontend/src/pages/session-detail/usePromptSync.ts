@@ -14,6 +14,7 @@ import {
   loadPendingQuestion,
   clearPendingQuestion,
 } from './usePromptHandlers';
+import { patchSessionLists } from '../../lib/sessionsCache';
 
 export interface UsePromptSyncOptions {
   id: string | undefined;
@@ -58,7 +59,6 @@ export function usePromptSync({
   setPendingQuestion,
   setPermissionError,
 }: UsePromptSyncOptions): void {
-  const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const listPermissions = useApiStore((state) => state.listPermissions);
   const refreshPermissions = useApiStore((state) => state.refreshPermissions);
   const listQuestions = useApiStore((state) => state.listQuestions);
@@ -67,11 +67,11 @@ export function usePromptSync({
   // lights up/clears immediately from SSE.
   useEffect(() => {
     if (!id) return;
-    patchRecentSession(id, {
+    patchSessionLists(id, {
       pendingPermission: pendingPermission !== null,
       pendingQuestion: pendingQuestion !== null,
     });
-  }, [id, pendingPermission, pendingQuestion, patchRecentSession]);
+  }, [id, pendingPermission, pendingQuestion]);
 
   // Reverse sync: when the session REST response or the sidebar poll
   // reports a pending prompt we don't yet have in state, fetch the

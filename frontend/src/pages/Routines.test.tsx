@@ -299,7 +299,7 @@ describe('Routines', () => {
     await user.click(screen.getByRole('option', { name: '/repo · Build box' }));
     await user.click(screen.getByText('Session and model'));
     await user.selectOptions(screen.getByLabelText('Session'), 'existing');
-    await waitFor(() => expect(api.sessions).toHaveBeenCalledWith({ dir: '/repo' }));
+    await waitFor(() => expect(api.sessions).toHaveBeenCalledWith(expect.objectContaining({ dir: '/repo' }), expect.anything()));
     await user.click(screen.getByRole('combobox', { name: 'Existing session' }));
     expect(screen.queryByRole('option', { name: 'Subagent · Build box' })).not.toBeInTheDocument();
     await user.click(await screen.findByRole('option', { name: 'Release review · Build box' }));
@@ -363,7 +363,7 @@ describe('Routines', () => {
   });
 
   it('keeps edited fields visible when project-session lookup fails', async () => {
-    vi.mocked(api.sessions).mockRejectedValueOnce(new Error('Project sessions unavailable'));
+    vi.mocked(api.sessions).mockRejectedValue(new Error('Project sessions unavailable'));
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'Settings' }));

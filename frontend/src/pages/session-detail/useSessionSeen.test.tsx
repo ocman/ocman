@@ -40,8 +40,16 @@ import { HeaderContext, type HeaderInfo } from '../../lib/headerContext';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import type { Session } from '../../lib/api';
 import { useSessionSeen } from './useSessionSeen';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists } from '../../lib/sessionsCache';
+import { queryClient } from '../../lib/queryClient';
 
-const ownerQualifiedPatch = useApiStore.getState().patchRecentSession;
+const cacheMock = vi.hoisted(() => ({ spy: false }));
+vi.mock('../../lib/sessionsCache', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/sessionsCache')>();
+  // Recorded by default; one test runs the real owner-qualified patch.
+  const patchSessionLists = vi.fn((...args: Parameters<typeof actual.patchSessionLists>) => { if (!cacheMock.spy) actual.patchSessionLists(...args); });
+  return { ...actual, patchSessionLists };
+});
 
 const session = {
   id: 's1', platform: 'opencode', directory: '/home/u/repo', title: 'Fix bug', timeUpdated: 42, remoteId: 'r1',
@@ -49,7 +57,7 @@ const session = {
 
 describe('useSessionSeen', () => {
   const markSessionSeen = vi.fn(async () => ({ ok: true }));
-  const patchRecentSession = vi.fn();
+  const patchRecentSession = vi.mocked(patchSessionLists);
   const setInfo = vi.fn();
   const wrapper = ({ children }: { children: ReactNode }) => (
     <HeaderContext.Provider value={{ info: {}, setInfo }}>{children}</HeaderContext.Provider>
@@ -57,7 +65,9 @@ describe('useSessionSeen', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useApiStore.setState({ markSessionSeen, patchRecentSession, recentSessions: [] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({ markSessionSeen });
+    cacheMock.spy = true;
     useUiStore.setState({ lastOpenedSessionId: undefined });
   });
 
@@ -66,7 +76,8 @@ describe('useSessionSeen', () => {
   it('closes an archive missed while disconnected when the global stream reconnects', async () => {
     vi.useFakeTimers();
     const peekSession = vi.fn(async () => ({ session: { ...session, archived: true }, messages: [], parts: [] }));
-    useApiStore.setState({ peekSession, recentSessions: [session] as Session[] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [session] as Session[]);
+    useApiStore.setState({peekSession });
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession: vi.fn() }), { wrapper });
     act(() => { for (const cb of connectListeners) cb(); });
     await act(async () => vi.advanceTimersByTimeAsync(250));
@@ -77,7 +88,7 @@ describe('useSessionSeen', () => {
   it('does not optimistically reopen an archived session restored by a page reload', () => {
     Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: vi.fn(() => [{ type: 'reload' }]) });
     const patchSession = vi.fn();
-    useApiStore.setState({ recentSessions: [] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
     const { unmount } = renderHook(() => useSessionSeen({ session: { ...session, archived: true }, patchSession }), { wrapper });
     expect(patchSession.mock.calls.some(([patch]) => patch.archived === false)).toBe(false);
     expect(navigate).toHaveBeenCalledWith('/session/new', { replace: true });
@@ -121,7 +132,7 @@ describe('useSessionSeen', () => {
   it.each([false, true])('closes the open session when another client archives it, hidden=%s', (hidden) => {
     const visibility = vi.spyOn(document, 'hidden', 'get').mockReturnValue(hidden);
     const patchSession = vi.fn();
-    useApiStore.setState({ recentSessions: [session, { ...session, id: 'next' }] as Session[] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [session, { ...session, id: 'next' }] as Session[]);
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
     act(() => {
       for (const cb of changedListeners) cb('s1', undefined, { archived: true }, 'r-other:opencode');
@@ -139,15 +150,16 @@ describe('useSessionSeen', () => {
   it('acknowledges only the viewed owner when session IDs match', () => {
     const local = { ...session, platform: 'opencode', status: 'interrupted', seen: false, seenTimeUpdated: 0 } as Session;
     const remote = { ...local, platform: 'r-box:opencode', status: 'busy' as const };
-    useApiStore.setState({ recentSessions: [local, remote], patchRecentSession: ownerQualifiedPatch });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [local, remote]);
+    cacheMock.spy = false;
     const patchSession = vi.fn();
     const { rerender } = renderHook(
       ({ value }) => useSessionSeen({ session: value, patchSession }),
       { wrapper, initialProps: { value: remote as SessionMetadata } },
     );
     rerender({ value: { ...remote, status: 'interrupted' } });
-    expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)?.seen).toBe(false);
-    expect(useApiStore.getState().recentSessions.find(s => s.platform === remote.platform)?.seen).toBe(true);
+    expect(getSidebarSessions().find(s => s.platform === local.platform)?.seen).toBe(false);
+    expect(getSidebarSessions().find(s => s.platform === remote.platform)?.seen).toBe(true);
     expect(markSessionSeen).toHaveBeenLastCalledWith(remote.platform, remote.id, remote.timeUpdated, true);
   });
 

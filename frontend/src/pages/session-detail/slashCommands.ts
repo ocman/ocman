@@ -16,6 +16,7 @@ import { remoteLog } from '../../lib/remoteLog';
 import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
 import type { UsePendingSendResult } from './usePendingSend';
 import { reloadSlashCommands } from '../../components/assistant/useSlashMenu';
+import { patchSessionLists } from '../../lib/sessionsCache';
 
 export interface CommandSession {
   id: string;
@@ -301,7 +302,7 @@ const rename: SlashCommand = {
       await api.renameSession(session.id, newTitle);
       // Optimistically update the sidebar store so the renamed
       // title shows immediately instead of waiting for the 3s poll.
-      useApiStore.getState().patchRecentSession(session.id, { title: newTitle });
+      patchSessionLists(session.id, { title: newTitle });
       setShowRenameToast(true);
     } catch (e) {
       remoteLog.error('Failed to rename session', e);

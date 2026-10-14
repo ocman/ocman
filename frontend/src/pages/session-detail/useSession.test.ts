@@ -14,6 +14,8 @@ import { aggregateSessionTreeStats } from '../../lib/sessionStatus';
 import { useSession } from './useSession';
 import { useApiStore } from '../../lib/apiStore';
 import { KEEPALIVE_TIMEOUT_MS } from '../../lib/sseKeepalive';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions } from '../../lib/sessionsCache';
+import { queryClient } from '../../lib/queryClient';
 
 // ---------- Fake EventSource ----------
 
@@ -140,7 +142,8 @@ function makeDetail(overrides: Partial<SessionDetail> = {}): SessionDetail {
 
 beforeEach(() => {
   FakeEventSource.reset();
-  useApiStore.setState({ sessionCache: new Map(), sessionCacheOrder: [], recentSessions: [], recentSessionsHash: '' });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+  useApiStore.setState({sessionCache: new Map(), sessionCacheOrder: [] });
 });
 
 afterEach(() => {
@@ -173,19 +176,19 @@ describe('useSession — bounded SSE work (#722)', () => {
 
   it('keeps the sidebar running after navigating away from a live session', async () => {
     const row = makeDetail().session;
-    useApiStore.setState({ recentSessions: [row, { ...row, platform: 'r-box:opencode' }], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row, { ...row, platform: 'r-box:opencode' }]);
     const { result, sse, frame, rerender, unmount } = await setup();
     act(() => sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } }));
     frame();
     expect(result.current.session?.status).toBe('busy');
     await act(async () => rerender({ id: 'other' }));
-    expect(useApiStore.getState().recentSessions.find(s => s.id === SID)?.status).toBe('busy');
-    expect(useApiStore.getState().recentSessions.find(s => s.platform === 'r-box:opencode')?.status).toBe('done');
+    expect(getSidebarSessions().find(s => s.id === SID)?.status).toBe('busy');
+    expect(getSidebarSessions().find(s => s.platform === 'r-box:opencode')?.status).toBe('done');
     unmount();
   });
 
   it('records a repeated live busy status as a newer sidebar observation', async () => {
-    useApiStore.setState({ recentSessions: [makeDetail().session] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [makeDetail().session]);
     const { sse, unmount } = await setup();
     const busy = { type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } };
     act(() => sse.emitMessage(busy));
@@ -199,37 +202,37 @@ describe('useSession — bounded SSE work (#722)', () => {
     const detail = makeDetail();
     const busy = { ...detail, session: { ...detail.session, status: 'busy' as const } };
     useApiStore.getState().setCachedSession(SID, busy);
-    useApiStore.setState({ recentSessions: [detail.session] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [detail.session]);
     let finish!: (detail: SessionDetail) => void;
     const fetchSession = vi.fn().mockReturnValue(new Promise<SessionDetail>((resolve) => { finish = resolve; }));
     const view = renderHook(() => useSession(SID, { fetchSession }));
     expect(view.result.current.session?.status).toBe('busy');
-    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    expect(getSidebarSessions()[0].status).toBe('done');
     await act(async () => finish(busy));
-    expect(useApiStore.getState().recentSessions[0].status).toBe('busy');
+    expect(getSidebarSessions()[0].status).toBe('busy');
     await act(async () => FakeEventSource.latest()!.emitMessage({ type: 'session.idle', properties: { sessionID: SID } }));
     // The reconciled REST snapshot remains authoritative.
-    expect(useApiStore.getState().recentSessions[0].status).toBe('busy');
+    expect(getSidebarSessions()[0].status).toBe('busy');
     fetchSession.mockResolvedValue(detail);
     await act(async () => { await view.result.current.refresh(); });
-    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    expect(getSidebarSessions()[0].status).toBe('done');
     view.unmount();
   });
 
   it.each(['status', 'delta', 'tool', 'idle'])('does not publish cached status after refresh failure, but accepts a subsequent live %s event', async (eventType) => {
     const detail = makeDetail();
     useApiStore.getState().setCachedSession(SID, { ...detail, session: { ...detail.session, status: 'busy' } });
-    useApiStore.setState({ recentSessions: [detail.session] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [detail.session]);
     const view = renderHook(() => useSession(SID, { fetchSession: vi.fn().mockRejectedValue(new Error('offline')) }));
     await waitFor(() => expect(view.result.current.refreshError).toBe('offline'));
     expect(view.result.current.session?.status).toBe('busy');
-    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    expect(getSidebarSessions()[0].status).toBe('done');
     const sse = FakeEventSource.latest()!;
     act(() => {
       sse.emitMessage({ type: 'session.status', properties: { sessionID: 'other', status: { type: 'busy' } } });
       sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: 'invalid' } });
     });
-    expect(useApiStore.getState().recentSessions[0].status).toBe('done');
+    expect(getSidebarSessions()[0].status).toBe('done');
     const revision = useApiStore.getState().recentStatusRevisions[`opencode:${SID}`] ?? 0;
     const events = {
       status: { type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } },
@@ -238,7 +241,7 @@ describe('useSession — bounded SSE work (#722)', () => {
       idle: { type: 'session.idle', properties: { sessionID: SID } },
     };
     await act(async () => sse.emitMessage(events[eventType as keyof typeof events]));
-    await waitFor(() => expect(useApiStore.getState().recentSessions[0].status).toBe(eventType === 'idle' ? 'done' : 'busy'));
+    await waitFor(() => expect(getSidebarSessions()[0].status).toBe(eventType === 'idle' ? 'done' : 'busy'));
     expect(useApiStore.getState().recentStatusRevisions[`opencode:${SID}`]).toBeGreaterThan(revision);
     view.unmount();
   });

@@ -319,6 +319,8 @@ vi.mock('../../../components/AssistantThread', async () => {
 // reuse the cached modules instead of paying re-import cost.
 import { SessionDetail } from '../SessionDetail';
 import { useApiStore } from '../../../lib/apiStore';
+import { queryClient as sessionsQueryClient } from '../../../lib/queryClient';
+import { SIDEBAR_SESSIONS_KEY } from '../../../lib/sessionsCache';
 
 /**
  * Adapter that reads the URL :id and forwards it as a prop to the
@@ -440,7 +442,6 @@ export interface RenderHandle {
     setCachedSession: ReturnType<typeof vi.fn>;
     getCachedSession: ReturnType<typeof vi.fn>;
     updateCachedSession: ReturnType<typeof vi.fn>;
-    refreshCachedSessions: ReturnType<typeof vi.fn>;
   };
   api: ReturnType<typeof makeApiStub>;
   /** Populated after the page mounts — undefined if SSE never started. */
@@ -501,15 +502,16 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
     // mirror effect: it merges live messages/parts into a cached
     // detail entry. Tests can read its calls to verify the merge.
     updateCachedSession: vi.fn(),
-    refreshCachedSessions: vi.fn().mockResolvedValue([]),
   };
 
   // Apply spies to the real store. Zustand merges the patch onto
   // the existing slice so untouched selectors keep working.
+  const { recentSessions, ...storeOverrides } = (opts.storeOverrides ?? {}) as { recentSessions?: Session[] };
   useApiStore.setState({
     ...storeSpies,
-    ...(opts.storeOverrides ?? {}),
+    ...storeOverrides,
   } as unknown as Parameters<typeof useApiStore.setState>[0]);
+  if (recentSessions) sessionsQueryClient.setQueryData(SIDEBAR_SESSIONS_KEY, recentSessions);
 
   const sessionId = opts.sessionId ?? detail.session.id;
   // Mirror what `pages/session-detail/index.tsx` does in production:

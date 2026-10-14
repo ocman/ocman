@@ -20,7 +20,7 @@ vi.hoisted(() => {
 import { api, type Session, type SessionDetail } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
-import { computeSidebarHash, visibleSidebarSessions } from '../../lib/sidebarHelpers';
+import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
 
 let sessionChanged: ((sessionId: string, session?: Session, patch?: Partial<Session>, platform?: string) => void) | undefined;
 let sseConnect: (() => void) | undefined;
@@ -47,6 +47,8 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 }));
 
 import { useSidebarSessions } from './useSidebarSessions';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists } from '../../lib/sessionsCache';
+import { queryClient } from '../../lib/queryClient';
 
 describe('useSidebarSessions project visibility', () => {
   it('reconciles pending permissions when the inbox learns about a prompt', async () => {
@@ -54,7 +56,8 @@ describe('useSidebarSessions project visibility', () => {
     const row = { id: 'background', platform: 'opencode', status: 'busy',
       timeUpdated: Date.now(), pendingPermission: false } as Session;
     const getSessions = vi.fn().mockResolvedValue([row]);
-    useApiStore.setState({ getSessions, recentSessions: [row], recentSessionsHash: computeSidebarHash([row]) });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+    useApiStore.setState({getSessions });
     const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
       sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     try {
@@ -73,7 +76,8 @@ describe('useSidebarSessions project visibility', () => {
   });
   it('retains unpinned snoozed rows for the default-off display filter', async () => {
     const row = { id: 'nap', platform: 'opencode', archived: true, snoozedUntil: Date.now() + 60_000, timeUpdated: Date.now() } as Session;
-    useApiStore.setState({ getSessions: vi.fn().mockResolvedValue([row]), recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions: vi.fn().mockResolvedValue([row]) });
     const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
       sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     await act(async () => { await view.result.current.loadRecentSessions(); });
@@ -91,13 +95,14 @@ describe('useSidebarSessions project visibility', () => {
     let finish!: (rows: Session[]) => void;
     const getSessions = vi.fn().mockReturnValueOnce(new Promise<Session[]>((resolve) => { finish = resolve; }))
       .mockResolvedValue([localResponse, middle]);
-    useApiStore.setState({ getSessions, recentSessions: [local, row], recentSessionsHash: computeSidebarHash([local, row]) });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [local, row]);
+    useApiStore.setState({getSessions });
     const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
       sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     const read = view.result.current.loadRecentSessions();
     act(() => {
-      useApiStore.getState().patchRecentSession(row.id, { status: middle.status }, row.platform);
-      useApiStore.getState().patchRecentSession(row.id, { status }, row.platform);
+      patchSessionLists(row.id, { status: middle.status }, row.platform);
+      patchSessionLists(row.id, { status }, row.platform);
     });
     await act(async () => { finish([localResponse, middle]); await read; });
     expect(view.result.current.recentSessions.find(s => s.platform === row.platform)?.status).toBe(status);
@@ -112,11 +117,12 @@ describe('useSidebarSessions project visibility', () => {
     let finish!: (rows: Session[]) => void;
     const getSessions = vi.fn().mockReturnValueOnce(new Promise<Session[]>((resolve) => { finish = resolve; }))
       .mockResolvedValue([row]);
-    useApiStore.setState({ getSessions, recentSessions: [row], recentSessionsHash: computeSidebarHash([row]) });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+    useApiStore.setState({getSessions });
     const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
       sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     const read = view.result.current.loadRecentSessions();
-    act(() => useApiStore.getState().patchRecentSession(row.id, { status }, row.platform));
+    act(() => patchSessionLists(row.id, { status }, row.platform));
     await act(async () => { finish([row]); await read; });
     expect(view.result.current.recentSessions[0].status).toBe(status);
     await act(async () => { await view.result.current.loadRecentSessions(); });
@@ -127,7 +133,8 @@ describe('useSidebarSessions project visibility', () => {
     vi.useFakeTimers();
     const row = { id: 'fresh', platform: 'opencode', status: 'done', timeUpdated: Date.now() } as Session;
     const getSessions = vi.fn().mockReturnValueOnce(new Promise(() => {})).mockResolvedValue([row]);
-    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions });
     const options = { id: undefined, sessionId: 'open', collapsedProjects: [], sidebarView: 'recent' as const,
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
     const view = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: true } });
@@ -144,7 +151,8 @@ describe('useSidebarSessions project visibility', () => {
     const getSessions = vi.fn().mockResolvedValue([]);
     const getSession = vi.fn().mockResolvedValue({ session: { id: 'outside' } });
     (read === 'list' ? getSessions : getSession).mockReturnValueOnce(new Promise(() => {}));
-    useApiStore.setState({ getSessions, getSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions, getSession });
     const view = renderHook(() => useSidebarSessions({ enabled: false, id: read === 'fallback' ? 'outside' : undefined, sessionId: undefined,
       collapsedProjects: [], sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     try {
@@ -160,7 +168,8 @@ describe('useSidebarSessions project visibility', () => {
     let finish!: (rows: Session[]) => void;
     const getSessions = vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const getSession = vi.fn().mockResolvedValue({ session: { id: 'outside' } });
-    useApiStore.setState({ getSessions, getSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions, getSession });
     const options = { id: 'outside', sessionId: 'outside', collapsedProjects: [], sidebarView: 'recent' as const,
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
     const { rerender } = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: true } });
@@ -173,7 +182,8 @@ describe('useSidebarSessions project visibility', () => {
     const old = { id: 'old', platform: 'opencode', status: 'done', timeUpdated: 1 } as Session;
     const fresh = { ...old, id: 'new' };
     const getSessions = vi.fn().mockReturnValueOnce(new Promise<Session[]>((resolve) => { finish = resolve; })).mockResolvedValue([fresh]);
-    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions });
     const options = { id: undefined, sessionId: 'open', collapsedProjects: [], sidebarView: 'recent' as const,
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
     const { result, rerender } = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: true } });
@@ -187,7 +197,8 @@ describe('useSidebarSessions project visibility', () => {
   it('keeps a Factory tag-only change from a later session list read', async () => {
     const row = { id: 'factory', platform: 'opencode', status: 'done', timeUpdated: 1 } as Session;
     const getSessions = vi.fn().mockResolvedValue([row]);
-    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions });
     const { result } = renderHook(() => useSidebarSessions({ id: 'factory', sessionId: 'factory', collapsedProjects: [],
       sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     await waitFor(() => expect(result.current.recentSessions).toHaveLength(1));
@@ -199,7 +210,8 @@ describe('useSidebarSessions project visibility', () => {
     const row = { id: 'open', platform: 'opencode', directory: '/repo', status: 'done', timeUpdated: 1 } as Session;
     const getSessions = vi.fn().mockResolvedValue([row]);
     const peekSession = vi.fn();
-    useApiStore.setState({ getSessions, peekSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions, peekSession });
     const options = { id: row.id, sessionId: row.id, collapsedProjects: [], sidebarView: 'recent' as const,
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
     const { rerender, result } = renderHook(({ enabled }) => useSidebarSessions({ ...options, enabled }), { initialProps: { enabled: false } });
@@ -220,7 +232,8 @@ describe('useSidebarSessions project visibility', () => {
     let finish!: (rows: Session[]) => void;
     const row = { id: 'new', platform: 'opencode', timeUpdated: Date.now() } as Session;
     const getSessions = vi.fn().mockImplementationOnce(() => new Promise<Session[]>(resolve => { finish = resolve; })).mockResolvedValue([row]);
-    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions });
     const { result } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -241,7 +254,8 @@ describe('useSidebarSessions project visibility', () => {
     let finish!: (detail: SessionDetail) => void;
     const getSessions = vi.fn().mockResolvedValue([archived]);
     const getSession = vi.fn(() => new Promise<SessionDetail>(resolve => { finish = resolve; }));
-    useApiStore.setState({ getSessions, getSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions, getSession });
     const { result } = renderHook(() => useSidebarSessions({
       id: open.id, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -261,7 +275,8 @@ describe('useSidebarSessions project visibility', () => {
     vi.useFakeTimers();
     let finish: (() => void) | undefined;
     const getSessions = vi.fn().mockResolvedValue([]);
-    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions });
     const { unmount } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -288,7 +303,8 @@ describe('useSidebarSessions project visibility', () => {
       timeUpdated: Date.now() - 96 * 60 * 60 * 1000, seenTimeUpdated: 0, unreadCount: 0 } as Session;
     const getSession = vi.fn().mockResolvedValue({ session: row, messages: [], parts: [] });
     const post = vi.spyOn(api, 'markSessionSeen').mockResolvedValue({ ok: true });
-    useApiStore.setState({ getSessions: vi.fn().mockResolvedValue([]), getSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions: vi.fn().mockResolvedValue([]), getSession });
     const abortSignalRef = { current: new AbortController() };
     const { result } = renderHook(() => useSidebarSessions({
       id: row.id, sessionId: row.id, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
@@ -296,7 +312,7 @@ describe('useSidebarSessions project visibility', () => {
     try {
       await waitFor(() => expect(result.current.recentSessions[0]?.id).toBe(row.id));
       await act(async () => {
-        useApiStore.getState().patchRecentSession(row.id, { seen: true, seenTimeUpdated: row.timeUpdated }, row.platform);
+        patchSessionLists(row.id, { seen: true, seenTimeUpdated: row.timeUpdated }, row.platform);
         await useApiStore.getState().markSessionSeen(row.platform, row.id, row.timeUpdated, true);
       });
       for (let i = 0; i < 2; i++) {
@@ -321,7 +337,8 @@ describe('useSidebarSessions project visibility', () => {
     ];
     const rows = fixtures.map((row) => ({ platform: 'opencode', directory: '/repo', timeUpdated: 1,
       seen: false, seenTimeUpdated: 0, unreadCount: 0, ...row } as Session));
-    useApiStore.setState({ getSessions: vi.fn().mockResolvedValue(rows), recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions: vi.fn().mockResolvedValue(rows) });
     const { result } = renderHook(() => useSidebarSessions({
       id: 'open', sessionId: 'open', collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -340,7 +357,8 @@ describe('useSidebarSessions project visibility', () => {
     const all = [...sessions, quiet];
     const getSessions = vi.fn(async ({ limit }: { limit?: number } = {}) =>
       all.slice(0, limit === 0 ? undefined : (limit ?? 500)));
-    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions });
     const { result, rerender } = renderHook(({ sidebarView }: { sidebarView: 'recent' | 'projects' }) =>
       useSidebarSessions({
         id: sessions[0].id, sessionId: sessions[0].id, collapsedProjects: [], sidebarView,
@@ -363,11 +381,9 @@ describe('useSidebarSessions project visibility', () => {
       seen: false, seenTimeUpdated: 0, unreadCount: 0,
     } as Session));
     const open = { ...sessions[0], id: 'older-open', directory: '/repo/older', timeUpdated: Date.now() - 96 * 60 * 60 * 1000 };
-    useApiStore.setState({
-      getSessions: vi.fn().mockResolvedValue(sessions),
-      getSession: vi.fn().mockResolvedValue({ session: open }),
-      recentSessions: [], recentSessionsHash: '',
-    });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions: vi.fn().mockResolvedValue(sessions),
+      getSession: vi.fn().mockResolvedValue({ session: open }) });
     const { result } = renderHook(() => useSidebarSessions({
       id: open.id, sessionId: open.id, collapsedProjects: [], sidebarView: 'projects',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -387,7 +403,8 @@ describe('useSidebarSessions project visibility', () => {
     } as Session));
     const getSessions = vi.fn(async ({ limit }: { limit?: number } = {}) =>
       sessions.slice(0, limit === 0 ? undefined : (limit ?? 500)));
-    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({getSessions });
     const { result } = renderHook(() => useSidebarSessions({
       id: sessions[0].id, sessionId: sessions[0].id, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -407,24 +424,22 @@ describe('useSidebarSessions live refresh', () => {
     getSessions.mockReset().mockResolvedValue([]);
     sessionChanged = undefined;
     sseConnect = undefined;
-    useApiStore.setState({
-      getSessions,
-      recentSessions: [{ id: 'session-1', status: 'done' } as Session],
-      recentSessionsHash: '',
-    });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [{ id: 'session-1', status: 'done' } as Session]);
+    useApiStore.setState({getSessions });
   });
 
   it('refreshes unread state immediately after a crash status event', async () => {
     const busy = { id: 'crashed', platform: 'opencode', status: 'busy', seen: true, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
     const interrupted = { ...busy, status: 'interrupted', seen: false } as Session;
-    useApiStore.setState({ recentSessions: [busy], peekSession: vi.fn().mockResolvedValue({ session: interrupted }) });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [busy]);
+    useApiStore.setState({peekSession: vi.fn().mockResolvedValue({ session: interrupted })});
     const abortSignalRef = { current: new AbortController() };
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef, navigate: vi.fn(),
     }));
     await act(async () => sessionChanged?.('crashed', undefined, { status: 'interrupted' }, 'opencode'));
-    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ status: 'interrupted', seen: false });
+    expect(getSidebarSessions()[0]).toMatchObject({ status: 'interrupted', seen: false });
   });
 
   it('does not undo viewing an interruption while its status refresh is in flight', async () => {
@@ -432,16 +447,17 @@ describe('useSidebarSessions live refresh', () => {
     const interrupted = { ...busy, status: 'interrupted', seen: false } as Session;
     let finish!: (value: SessionDetail) => void;
     const peekSession = vi.fn(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
-    useApiStore.setState({ recentSessions: [busy], peekSession });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [busy]);
+    useApiStore.setState({peekSession});
     const abortSignalRef = { current: new AbortController() };
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef, navigate: vi.fn(),
     }));
     act(() => sessionChanged?.('crashed', undefined, { status: 'interrupted' }, 'opencode'));
-    act(() => useApiStore.getState().patchRecentSession('crashed', { seen: true }, 'opencode'));
+    act(() => patchSessionLists('crashed', { seen: true }, 'opencode'));
     await act(async () => finish({ session: interrupted, messages: [], parts: [] }));
-    expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+    expect(getSidebarSessions()[0].seen).toBe(true);
   });
 
   it.each([
@@ -452,23 +468,24 @@ describe('useSidebarSessions live refresh', () => {
     const row = { id: 'crashed', platform: 'opencode', status: 'busy', seen: true, timeUpdated: 100, seenTimeUpdated: 100, lastTurnCompletedAt: 50 } as Session;
     let finish!: (value: SessionDetail) => void;
     const peekSession = vi.fn(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
-    useApiStore.setState({ recentSessions: [row], peekSession });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+    useApiStore.setState({peekSession});
     const abortSignalRef = { current: new AbortController() };
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef, navigate: vi.fn(),
     }));
     act(() => sessionChanged?.(row.id, undefined, { status: 'interrupted' }, row.platform));
-    act(() => useApiStore.getState().patchRecentSession(row.id, { status, timeUpdated: 200, seen, seenTimeUpdated: 200 }, row.platform));
+    act(() => patchSessionLists(row.id, { status, timeUpdated: 200, seen, seenTimeUpdated: 200 }, row.platform));
     await act(async () => finish({ session: { ...row, status: 'interrupted', seen: oldSeen, lastTurnCompletedAt: 100 }, messages: [], parts: [] }));
-    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ status, timeUpdated: 200, seen, seenTimeUpdated: 200, lastTurnCompletedAt: 100 });
+    expect(getSidebarSessions()[0]).toMatchObject({ status, timeUpdated: 200, seen, seenTimeUpdated: 200, lastTurnCompletedAt: 100 });
   });
 
   it('preserves viewing an interruption after a list refresh starts', async () => {
     const row = { id: 'crashed', platform: 'r-box:opencode', status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 100 } as Session;
     let finish!: (value: Session[]) => void;
     getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finish = resolve; }));
-    useApiStore.setState({ recentSessions: [row] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
     const abortSignalRef = { current: new AbortController() };
     const { result } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
@@ -476,9 +493,9 @@ describe('useSidebarSessions live refresh', () => {
     }));
     let loading!: Promise<void>;
     act(() => { loading = result.current.loadRecentSessions(); });
-    act(() => useApiStore.getState().patchRecentSession(row.id, { seen: true }, row.platform));
+    act(() => patchSessionLists(row.id, { seen: true }, row.platform));
     await act(async () => { finish([row]); await loading; });
-    expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+    expect(getSidebarSessions()[0].seen).toBe(true);
   });
 
   it.each([true, false])('preserves a read whose POST starts before the GET, POST finishes first: %s', async (postFinishesFirst) => {
@@ -487,7 +504,7 @@ describe('useSidebarSessions live refresh', () => {
     let finishPost!: (value: { ok: boolean }) => void;
     getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finishGet = resolve; }));
     const post = vi.spyOn(api, 'markSessionSeen').mockImplementation(() => new Promise<{ ok: boolean }>((resolve) => { finishPost = resolve; }));
-    useApiStore.setState({ recentSessions: [row] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
     const abortSignalRef = { current: new AbortController() };
     const { result } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
@@ -496,16 +513,16 @@ describe('useSidebarSessions live refresh', () => {
     try {
       let reading!: Promise<{ ok: boolean }>;
       act(() => {
-        useApiStore.getState().patchRecentSession(row.id, { seen: true }, row.platform);
+        patchSessionLists(row.id, { seen: true }, row.platform);
         reading = useApiStore.getState().markSessionSeen(row.platform, row.id, 100, true);
       });
       let loading!: Promise<void>;
       act(() => { loading = result.current.loadRecentSessions(); });
       if (postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
       await act(async () => { finishGet([row]); await loading; });
-      expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+      expect(getSidebarSessions()[0].seen).toBe(true);
       if (!postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
-      expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+      expect(getSidebarSessions()[0].seen).toBe(true);
     } finally {
       post.mockRestore();
     }
@@ -517,7 +534,8 @@ describe('useSidebarSessions live refresh', () => {
     let finishPost!: (value: { ok: boolean }) => void;
     getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finishGet = resolve; }));
     const post = vi.spyOn(api, 'markSessionSeen').mockImplementation(() => new Promise<{ ok: boolean }>((resolve) => { finishPost = resolve; }));
-    useApiStore.setState({ recentSessions: [], pendingInterruptionReads: {} });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({pendingInterruptionReads: {}});
     const abortSignalRef = { current: new AbortController() };
     const { result } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
@@ -527,15 +545,15 @@ describe('useSidebarSessions live refresh', () => {
       let reading!: Promise<{ ok: boolean }>;
       act(() => { loading = result.current.loadRecentSessions(); });
       act(() => {
-        useApiStore.getState().patchRecentSession(row.id, { seen: true, seenTimeUpdated: 100 }, row.platform);
+        patchSessionLists(row.id, { seen: true, seenTimeUpdated: 100 }, row.platform);
         reading = useApiStore.getState().markSessionSeen(row.platform, row.id, 100, true);
       });
-      expect(useApiStore.getState().recentSessions).toEqual([]);
+      expect(getSidebarSessions()).toEqual([]);
       if (postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
       await act(async () => { finishGet([row]); await loading; });
-      expect(useApiStore.getState().recentSessions[0]).toMatchObject({ seen: true, seenTimeUpdated: 100 });
+      expect(getSidebarSessions()[0]).toMatchObject({ seen: true, seenTimeUpdated: 100 });
       if (!postFinishesFirst) await act(async () => { finishPost({ ok: true }); await reading; });
-      expect(useApiStore.getState().recentSessions[0].seen).toBe(true);
+      expect(getSidebarSessions()[0].seen).toBe(true);
       expect(useApiStore.getState().pendingInterruptionReads).toEqual({});
     } finally {
       post.mockRestore();
@@ -547,7 +565,8 @@ describe('useSidebarSessions live refresh', () => {
     let finish!: (value: Session[]) => void;
     getSessions.mockImplementation(() => new Promise<Session[]>((resolve) => { finish = resolve; }));
     const peekSession = vi.fn(() => new Promise<SessionDetail>(() => {}));
-    useApiStore.setState({ recentSessions: [row], peekSession });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+    useApiStore.setState({peekSession});
     const abortSignalRef = { current: new AbortController() };
     const { result } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
@@ -556,24 +575,24 @@ describe('useSidebarSessions live refresh', () => {
     let loading!: Promise<void>;
     act(() => { loading = result.current.loadRecentSessions(); });
     act(() => sessionChanged?.(row.id, undefined, { status: 'interrupted' }, row.platform));
-    expect(useApiStore.getState().recentSessions[0].seen).toBe(false);
+    expect(getSidebarSessions()[0].seen).toBe(false);
     await act(async () => { finish([{ ...row, status: 'interrupted', seen: false }]); await loading; });
-    expect(useApiStore.getState().recentSessions[0].seen).toBe(false);
+    expect(getSidebarSessions()[0].seen).toBe(false);
   });
 
   it('updates background activity without reordering or refetching and ignores older events', () => {
-    useApiStore.setState({ recentSessions: [
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [
       { id: 'first', timeCreated: 2, lastTurnCompletedAt: 120_000, timeUpdated: 120_000 },
       { id: 'background', timeCreated: 1, lastTurnCompletedAt: 60_000, timeUpdated: 60_000 },
-    ] as Session[] });
+    ] as Session[]);
     const { unmount } = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     act(() => sessionActivity?.('background', 180_000));
-    expect(useApiStore.getState().recentSessions.map((s) => s.id)).toEqual(['first', 'background']);
+    expect(getSidebarSessions().map((s) => s.id)).toEqual(['first', 'background']);
     act(() => sessionActivity?.('background', 90_000));
-    expect(useApiStore.getState().recentSessions[1].timeUpdated).toBe(180_000);
+    expect(getSidebarSessions()[1].timeUpdated).toBe(180_000);
     expect(getSessions).not.toHaveBeenCalled();
     unmount();
     expect(sessionActivity).toBeUndefined();
@@ -583,34 +602,35 @@ describe('useSidebarSessions live refresh', () => {
     const first = { id: 'first', platform: 'opencode', timeCreated: 1, lastTurnCompletedAt: 120_001 } as Session;
     const background = { ...first, id: 'background', lastTurnCompletedAt: 60_000 };
     const otherOwner = { ...background, platform: 'r-owner:opencode' };
-    useApiStore.setState({ recentSessions: [first, background, otherOwner] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [first, background, otherOwner]);
     renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
       sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     act(() => sessionChanged?.('background', undefined, { lastUserPromptAt: 120_003 }, background.platform));
-    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ id: 'background', platform: 'opencode', lastUserPromptAt: 120_003 });
+    expect(getSidebarSessions()[0]).toMatchObject({ id: 'background', platform: 'opencode', lastUserPromptAt: 120_003 });
     act(() => sessionChanged?.('background', undefined, { lastUserPromptAt: 120_000 }, background.platform));
-    expect(useApiStore.getState().recentSessions[0].lastUserPromptAt).toBe(120_003);
-    expect(useApiStore.getState().recentSessions.find(s => s.platform === otherOwner.platform)?.lastUserPromptAt).toBeUndefined();
+    expect(getSidebarSessions()[0].lastUserPromptAt).toBe(120_003);
+    expect(getSidebarSessions().find(s => s.platform === otherOwner.platform)?.lastUserPromptAt).toBeUndefined();
     expect(getSessions).not.toHaveBeenCalled();
   });
 
   it('ignores per-token activity that stays within the same minute bucket', () => {
-    useApiStore.setState({ recentSessions: [{ id: 'streaming', timeUpdated: 120_000 }] as Session[] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [{ id: 'streaming', timeUpdated: 120_000 }] as Session[]);
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
-    const before = useApiStore.getState().recentSessions;
+    const before = getSidebarSessions();
     act(() => sessionActivity?.('streaming', 150_000));
-    expect(useApiStore.getState().recentSessions).toBe(before);
+    expect(getSidebarSessions()).toBe(before);
     act(() => sessionActivity?.('streaming', 180_000));
-    expect(useApiStore.getState().recentSessions[0].timeUpdated).toBe(180_000);
+    expect(getSidebarSessions()[0].timeUpdated).toBe(180_000);
   });
 
   it('loads an unknown active session once and applies its latest streaming timestamp', async () => {
     let resolve!: (value: { session: Session }) => void;
     const peekSession = vi.fn(() => new Promise<{ session: Session }>((done) => { resolve = done; }));
-    useApiStore.setState({ peekSession: peekSession as never, recentSessions: [] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({peekSession: peekSession as never });
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -618,27 +638,29 @@ describe('useSidebarSessions live refresh', () => {
     act(() => { sessionActivity?.('old', 180_000); sessionActivity?.('old', 180_001); });
     expect(peekSession).toHaveBeenCalledOnce();
     await act(async () => { resolve({ session: { id: 'old', timeUpdated: 1, directory: '/repo', status: 'busy' } as Session }); });
-    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ id: 'old', timeUpdated: 180_001 });
+    expect(getSidebarSessions()[0]).toMatchObject({ id: 'old', timeUpdated: 180_001 });
     expect(getSessions).not.toHaveBeenCalled();
   });
 
   it('keeps an old archived pinned child discovered through activity', async () => {
     const row = { id: 'pin', pinned: true, archived: true, parentId: 'parent',
       timeUpdated: 1, directory: '/repo', status: 'done' } as Session;
-    useApiStore.setState({ peekSession: vi.fn().mockResolvedValue({ session: row }), recentSessions: [] });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({peekSession: vi.fn().mockResolvedValue({ session: row }) });
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     await act(async () => { sessionActivity?.('pin', Date.now()); });
-    expect(useApiStore.getState().recentSessions).toEqual([row]);
+    expect(getSidebarSessions()).toEqual([row]);
   });
 
   it.each([0, 9999999999999])('admits an old settled archived row through activity only when snoozedUntil=%s', async (snoozedUntil) => {
     const row = { id: 'old', platform: 'opencode', pinned: false, archived: true, snoozedUntil,
       timeUpdated: 1, directory: '/repo', status: 'done' } as Session;
     const peekSession = vi.fn().mockResolvedValue({ session: row });
-    useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({peekSession });
     const view = renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -654,7 +676,8 @@ describe('useSidebarSessions live refresh', () => {
     const row = { id: 'old-prompt', platform: 'opencode', timeUpdated: 1, seen: false, seenTimeUpdated: 0, lastTurnCompletedAt: 0,
       directory: '/repo', status: 'waiting', archived: true, pendingPermission: prompt === 'pendingPermission', pendingQuestion: prompt === 'pendingQuestion' } as Session;
     const getSessions = vi.fn().mockResolvedValue([row]);
-    useApiStore.setState({ peekSession: vi.fn().mockResolvedValue({ session: row }), getSessions, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({peekSession: vi.fn().mockResolvedValue({ session: row }), getSessions });
     const options = { id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent' as const,
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn() };
     const first = renderHook(() => useSidebarSessions(options));
@@ -664,7 +687,7 @@ describe('useSidebarSessions live refresh', () => {
     expect(first.result.current.recentSessions).toEqual([row]);
     expect(getSessions).toHaveBeenCalledWith({ since: expect.any(Number), limit: 0 }, expect.anything());
     first.unmount();
-    useApiStore.setState({ recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
     const fresh = renderHook(() => useSidebarSessions({ ...options, sessionId: 'ready' }));
     await waitFor(() => expect(fresh.result.current.recentSessions).toEqual([row]));
     getSessions.mockResolvedValue([]);
@@ -678,31 +701,34 @@ describe('useSidebarSessions live refresh', () => {
     const peekSession = vi.fn().mockResolvedValue({ session: {
       id: 'stale', timeUpdated: 1, directory: '/repo', status: 'waiting',
     } as Session });
-    useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({peekSession });
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     await act(async () => { sessionActivity?.('stale', Date.now()); });
-    expect(useApiStore.getState().recentSessions).toEqual([]);
+    expect(getSidebarSessions()).toEqual([]);
   });
 
   it('keeps a busy archived session hidden on activity', async () => {
     const peekSession = vi.fn().mockResolvedValue({ session: {
       id: 'archived', timeUpdated: Date.now(), directory: '/repo', status: 'busy', archived: true,
     } as Session });
-    useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({peekSession });
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     await act(async () => { sessionActivity?.('archived', Date.now()); });
     expect(peekSession).toHaveBeenCalledWith('archived', expect.anything());
-    expect(useApiStore.getState().recentSessions).toEqual([]);
+    expect(getSidebarSessions()).toEqual([]);
   });
 
   it('refreshes on session changes and SSE reconnects', async () => {
     const abortController = new AbortController();
+    getSessions.mockResolvedValue([{ id: 'session-1', status: 'done' } as Session]);
     renderHook(() => useSidebarSessions({
       id: undefined,
       sessionId: 'session-1',
@@ -715,7 +741,7 @@ describe('useSidebarSessions live refresh', () => {
     await waitFor(() => expect(getSessions).toHaveBeenCalledTimes(1));
 
     act(() => sessionChanged?.('session-1', undefined, { status: 'busy' }));
-    expect(useApiStore.getState().recentSessions[0].status).toBe('busy');
+    expect(getSidebarSessions()[0].status).toBe('busy');
     expect(getSessions).toHaveBeenCalledTimes(1);
 
     act(() => sessionChanged?.('session-1'));
@@ -731,7 +757,8 @@ describe('useSidebarSessions live refresh', () => {
     // The global list snapshot can still be stale at the terminal edge.
     getSessions.mockResolvedValueOnce([first, background]);
     const peekSession = vi.fn().mockResolvedValue({ session: { ...background, status, lastTurnCompletedAt: 180_000 } });
-    useApiStore.setState({ peekSession, recentSessions: [first, background], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [first, background]);
+    useApiStore.setState({peekSession });
     const abortSignalRef = { current: new AbortController() };
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
@@ -740,9 +767,9 @@ describe('useSidebarSessions live refresh', () => {
     await act(async () => { sessionChanged?.('background', undefined, { status }); });
     expect(getSessions).not.toHaveBeenCalled();
     expect(peekSession).toHaveBeenCalledWith('background', expect.anything(), background.platform);
-    expect(useApiStore.getState().recentSessions.map(s => s.id)).toEqual(['background', 'first']);
-    expect(useApiStore.getState().recentSessions[0].lastTurnCompletedAt).toBe(180_000);
-    expect(useApiStore.getState().recentSessions[0].status).toBe(status);
+    expect(getSidebarSessions().map(s => s.id)).toEqual(['background', 'first']);
+    expect(getSidebarSessions()[0].lastTurnCompletedAt).toBe(180_000);
+    expect(getSidebarSessions()[0].status).toBe(status);
   });
 
   it('qualifies completion fetches and patches when owners share a session ID', async () => {
@@ -751,17 +778,18 @@ describe('useSidebarSessions live refresh', () => {
     const remote = { ...local, platform: 'r-owner:opencode', lastTurnCompletedAt: 60_000 };
     getSessions.mockResolvedValueOnce([local, remote]);
     const peekSession = vi.fn().mockResolvedValue({ session: { ...remote, lastTurnCompletedAt: 180_000 } });
-    useApiStore.setState({ peekSession, recentSessions: [local, remote], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [local, remote]);
+    useApiStore.setState({peekSession });
     const abortSignalRef = { current: new AbortController() };
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
     }));
     await act(async () => { sessionChanged?.('shared', undefined, { status: 'waiting' }, remote.platform); });
     expect(peekSession).toHaveBeenCalledWith('shared', expect.anything(), remote.platform);
-    expect(useApiStore.getState().recentSessions.find(s => s.platform === local.platform)).toMatchObject({
+    expect(getSidebarSessions().find(s => s.platform === local.platform)).toMatchObject({
       status: 'busy', lastTurnCompletedAt: 120_000,
     });
-    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ platform: remote.platform, status: 'waiting', lastTurnCompletedAt: 180_000 });
+    expect(getSidebarSessions()[0]).toMatchObject({ platform: remote.platform, status: 'waiting', lastTurnCompletedAt: 180_000 });
   });
 
   it('only refetches ambiguous unqualified events instead of guessing an owner', async () => {
@@ -769,7 +797,8 @@ describe('useSidebarSessions live refresh', () => {
       status: 'busy', timeCreated: 1, timeUpdated: 1 } as Session));
     getSessions.mockResolvedValueOnce(rows);
     const peekSession = vi.fn();
-    useApiStore.setState({ peekSession, recentSessions: rows, recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, rows);
+    useApiStore.setState({peekSession });
     const abortSignalRef = { current: new AbortController() };
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
@@ -777,7 +806,7 @@ describe('useSidebarSessions live refresh', () => {
     await act(async () => { sessionChanged?.('shared', undefined, { status: 'waiting' }); });
     expect(peekSession).not.toHaveBeenCalled();
     await waitFor(() => expect(getSessions).toHaveBeenCalledOnce());
-    expect(useApiStore.getState().recentSessions.every(s => s.status === 'busy')).toBe(true);
+    expect(getSidebarSessions().every(s => s.status === 'busy')).toBe(true);
   });
 
   it.each([{ id: 'other', platform: 'opencode' }, { id: 'shared', platform: 'r-other:opencode' }])(
@@ -785,14 +814,14 @@ describe('useSidebarSessions live refresh', () => {
       const row = { id: 'shared', platform: 'opencode', status: 'busy', timeCreated: 1,
         timeUpdated: 1, lastTurnCompletedAt: 100 } as Session;
       getSessions.mockResolvedValueOnce([row]);
-      useApiStore.setState({ recentSessions: [row], recentSessionsHash: '',
-        peekSession: vi.fn().mockResolvedValue({ session: { ...row, ...identity, lastTurnCompletedAt: 999 } }) });
+      queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+      useApiStore.setState({peekSession: vi.fn().mockResolvedValue({ session: { ...row, ...identity, lastTurnCompletedAt: 999 } })});
       const abortSignalRef = { current: new AbortController() };
       renderHook(() => useSidebarSessions({
         id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
       }));
       await act(async () => { sessionChanged?.(row.id, undefined, { status: 'waiting' }, row.platform); });
-      expect(useApiStore.getState().recentSessions[0].lastTurnCompletedAt).toBe(100);
+      expect(getSidebarSessions()[0].lastTurnCompletedAt).toBe(100);
     },
   );
 
@@ -802,7 +831,8 @@ describe('useSidebarSessions live refresh', () => {
     let finish!: (result: { session: Session }) => void;
     const peekSession = vi.fn(() => new Promise<{ session: Session }>(resolve => { finish = resolve; }));
     getSessions.mockResolvedValueOnce([{ ...row, status: 'waiting' }]);
-    useApiStore.setState({ recentSessions: [row], recentSessionsHash: '', peekSession: peekSession as never });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+    useApiStore.setState({peekSession: peekSession as never});
     const abortSignalRef = { current: new AbortController() };
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent', abortSignalRef, navigate: vi.fn(),
@@ -810,7 +840,7 @@ describe('useSidebarSessions live refresh', () => {
     await act(async () => { sessionChanged?.(row.id, undefined, { status: 'waiting' }, row.platform); });
     act(() => { sessionChanged?.(row.id, undefined, { status: 'busy' }, row.platform); });
     await act(async () => { finish({ session: { ...row, status: 'waiting', lastTurnCompletedAt: 200 } }); });
-    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ status: 'busy', lastTurnCompletedAt: 200 });
+    expect(getSidebarSessions()[0]).toMatchObject({ status: 'busy', lastTurnCompletedAt: 200 });
     expect(peekSession).toHaveBeenCalledOnce();
     expect(getSessions).not.toHaveBeenCalled();
   });
@@ -820,13 +850,14 @@ describe('useSidebarSessions live refresh', () => {
       const peekSession = vi.fn().mockResolvedValue({ session: {
         id: 'internal', title, parentId: '', directory: '/repo', status: 'busy', timeUpdated: 1,
       } as Session });
-      useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
+      queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+      useApiStore.setState({peekSession });
       renderHook(() => useSidebarSessions({
         id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
         abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
       }));
       await act(async () => { sessionActivity?.('internal', 180_000); });
-      expect(useApiStore.getState().recentSessions).toEqual([]);
+      expect(getSidebarSessions()).toEqual([]);
       await act(async () => { sessionActivity?.('internal', 180_001); });
       expect(peekSession).toHaveBeenCalledOnce();
     },
@@ -853,7 +884,8 @@ describe('useSidebarSessions project collapse', () => {
 
   beforeEach(() => {
     getSessions.mockClear();
-    useApiStore.setState({ getSessions, recentSessions: [open], recentSessionsHash: '' });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [open]);
+    useApiStore.setState({getSessions });
     useUiStore.setState({ collapsedProjects: [DIR] });
   });
 
@@ -877,7 +909,7 @@ describe('useSidebarSessions project collapse', () => {
     // A later sidebar update (SSE status patch, reconciliation) must not
     // silently undo that choice.
     await act(async () => {
-      useApiStore.getState().patchRecentSession('session-1', { status: 'busy' });
+      patchSessionLists('session-1', { status: 'busy' });
     });
     expect(useUiStore.getState().collapsedProjects).toContain(DIR);
   });
@@ -889,8 +921,8 @@ describe('useSidebarSessions archive navigation', () => {
     const pinned = { id: 'pin', platform: 'opencode', pinned: true, archived: false,
       timeUpdated: 1, seen: false, seenTimeUpdated: 0, unreadCount: 0 } as Session;
     const archived = { ...pinned, archived: true };
-    useApiStore.setState({ recentSessions: [pinned], recentSessionsHash: computeSidebarHash([pinned]),
-      getSessions: vi.fn().mockResolvedValue([archived]), archiveSession: vi.fn().mockResolvedValue(undefined) });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [pinned]);
+    useApiStore.setState({getSessions: vi.fn().mockResolvedValue([archived]), archiveSession: vi.fn().mockResolvedValue(undefined)});
     try {
       const { result } = renderHook(() => useSidebarSessions({
         id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
@@ -909,7 +941,8 @@ describe('useSidebarSessions archive navigation', () => {
   it('opens the next row the filtered sidebar shows, not a hidden session', async () => {
     vi.useFakeTimers();
     const sessions = ['cur', 'hidden', 'next'].map((id) => ({ id, platform: 'opencode', timeUpdated: 1 } as Session));
-    useApiStore.setState({ recentSessions: sessions, recentSessionsHash: '', archiveSession: vi.fn().mockResolvedValue(undefined) });
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, sessions);
+    useApiStore.setState({archiveSession: vi.fn().mockResolvedValue(undefined)});
     visibleSidebarSessions.current = [sessions[0], sessions[2]];
     const navigate = vi.fn();
     try {

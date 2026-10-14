@@ -13,8 +13,10 @@ import { api, type PermissionRule, type Project, type Routine, type RoutineInput
 import type { WebhookInbox } from '../lib/api.types';
 import { saveTrigger, triggerFor, type Trigger } from '../lib/webhookFilters';
 import { cleanTitle } from '../lib/format';
+import { useSessions } from '../lib/queries';
 import styles from './RoutineEditorDrawer.module.css';
 
+const EMPTY_SESSIONS: Session[] = [];
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 type FormState = {
   name: string; prompt: string; directory: string; agent: string; model: string;
@@ -85,10 +87,8 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const [rules, setRules] = useState(() => routine ? parsePermissionRules(routine.permissionRulesJSON) : []);
   const [trigger, setTrigger] = useState<Trigger>(() => triggerFor(routine?.id, inboxes));
   const [projects, setProjects] = useState<Project[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
   const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as string[], platform: '' });
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
@@ -99,19 +99,14 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
     return () => { active = false; };
   }, []);
 
+  const sessionsQ = useSessions({ dir: form.directory }, { enabled: !!form.directory });
+  const sessions = (form.directory && sessionsQ.data) || EMPTY_SESSIONS;
+  const sessionsLoading = sessionsQ.isFetching;
+  const sessionsError = sessionsQ.error;
   useEffect(() => {
-    let active = true;
-    const load = () => {
-      if (!form.directory) { setSessions([]); return; }
-      setSessionsLoading(true);
-      api.sessions({ dir: form.directory }).then(
-        (items) => { if (active) setSessions(items ?? []); },
-        (err) => { if (active) setError(err instanceof Error ? err.message : 'Could not load sessions.'); },
-      ).finally(() => { if (active) setSessionsLoading(false); });
-    };
-    load();
-    return () => { active = false; };
-  }, [form.directory]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- surface the query failure in the form's one error slot
+    if (sessionsError) setError(sessionsError instanceof Error ? sessionsError.message : 'Could not load sessions.');
+  }, [sessionsError]);
 
   // An existing session offers its own catalog; a routine creating sessions
   // offers every platform's models on the machine, and the model's platform

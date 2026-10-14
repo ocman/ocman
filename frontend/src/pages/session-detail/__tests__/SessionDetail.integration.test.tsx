@@ -15,10 +15,16 @@ import {
   renderSessionPage,
 } from './harness';
 import { recordFailedSend, clearFailedSends } from '../../../lib/failedSends';
-import { useApiStore } from '../../../lib/apiStore';
 import { formatDate } from '../../../lib/format';
 import { useUiStore } from '../../../lib/uiStore';
 import { __handleSessionChangedForTests } from '../../../lib/useGlobalEvents';
+import { getSidebarSessions, patchSessionLists } from '../../../lib/sessionsCache';
+
+// Pass-through spy: the real patch still runs, calls are recorded.
+vi.mock('../../../lib/sessionsCache', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/sessionsCache')>();
+  return { ...actual, patchSessionLists: vi.fn(actual.patchSessionLists) };
+});
 
 beforeEach(() => {
   useUiStore.getState().setSidebarView('recent');
@@ -1441,7 +1447,7 @@ describe('SessionDetail — sidebar archive', () => {
     await flushPromises(8);
     await waitFor(() => expect(handle.store.markSessionSeen).toHaveBeenCalled());
     await waitFor(() => {
-      const row = useApiStore.getState().recentSessions.find((s) => s.id === 'sess_1');
+      const row = getSidebarSessions().find((s) => s.id === 'sess_1');
       expect(row?.archived).toBe(false);
     });
   });
@@ -1641,11 +1647,9 @@ describe('SessionDetail — status badge follows the backend', () => {
 
   // Only API/SSE status is shared; the page's display-only error overlay stays local.
   it('mirrors authoritative status without writing its display-only status into shared state', async () => {
-    const patchRecentSession = vi.fn();
-    const handle = renderSessionPage({
-      sessionId: 'sess_1',
-      storeOverrides: { patchRecentSession },
-    });
+    const patchRecentSession = vi.mocked(patchSessionLists);
+    patchRecentSession.mockClear();
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises(8);
     await waitFor(() => expect(handle.sse()).toBeDefined());
 

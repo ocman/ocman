@@ -1,12 +1,13 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { api } from './api';
-import { useApiStore } from './apiStore';
+import { useSessions } from './queries';
 import { pluginActions, type PluginActionContext, type PluginActionRequest } from './plugins';
 
 export function usePluginActions(projectDirectory: string | undefined, enabled: boolean) {
   const location = useLocation();
-  const sessions = useApiStore((s) => s.cachedSessions);
+  // Read the palette's recent list without fetching it here.
+  const sessions = useSessions({ limit: 100 }, { enabled: false }).data;
   const route = location.pathname.split('/')[1] || 'sessions';
   const ownerId = new URLSearchParams(location.search).get('remoteId') || 'local';
   const sessionId = route === 'session' ? location.pathname.split('/')[2] : undefined;

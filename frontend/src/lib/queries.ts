@@ -14,6 +14,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 export * from './factoryQueries';
 import { api } from './api';
+import { queryClient as appQueryClient } from './queryClient';
 import { useActivityScope } from './activityScopes';
 import { withDeadline } from './coalescedRefresh';
 import { queryEventRefresh } from './queryEventRefresh';
@@ -136,6 +137,9 @@ export function useArchiveInboxItems() {
 // Sessions list
 // ---------------------------------------------------------------------------
 
+/** The one polling cadence for session lists that poll. */
+export const SESSIONS_POLL_MS = 5000;
+
 type SessionsParams = {
   dir?: string;
   /**
@@ -159,12 +163,12 @@ type SessionsParams = {
  * the `queryFn` at fetch time.
  *
  * @param params  Filter params forwarded to `/api/sessions`.
- * @param options.refetchInterval  Per-consumer polling interval (ms).
- * @param options.enabled          Whether the query should run.
+ * @param options.poll     Poll at the shared SESSIONS_POLL_MS cadence.
+ * @param options.enabled  Whether the query should run.
  */
 export function useSessions(
   params?: SessionsParams,
-  options?: { refetchInterval?: number; enabled?: boolean },
+  options?: { poll?: boolean; enabled?: boolean },
 ) {
   useActivityScope(options?.enabled === false ? undefined : 'sessions');
   // Build a stable query key from the params. `sinceHours` is a stable
@@ -184,9 +188,11 @@ export function useSessions(
       return api.sessions({ dir: params?.dir, since, limit: params?.limit }, signal)
         .then((r) => r ?? []);
     },
-    refetchInterval: options?.refetchInterval,
+    refetchInterval: options?.poll ? SESSIONS_POLL_MS : undefined,
     enabled: options?.enabled,
-  });
+  // Pinned to the app client: every session list lives in one cache that
+  // code outside React patches too (lib/sessionsCache).
+  }, appQueryClient);
 }
 
 export function useRunningSessionCount(enabled: boolean) {
@@ -205,11 +211,13 @@ export function useRunningSessionCount(enabled: boolean) {
  * instantly, before the authoritative refetch that
  * `invalidateQueries(['sessions'])` triggers overwrites it. No-op for
  * lists that don't have data yet (they'll fetch fresh anyway) or that
- * are directory-scoped to a different directory.
+ * are directory-scoped to a different directory. The sidebar's merged
+ * list is reconciled by its own loader and is left alone.
  */
 export function insertProvisionalSession(qc: QueryClient, session: Session): void {
   for (const [key, existing] of qc.getQueriesData<Session[]>({ queryKey: ['sessions'] })) {
     if (!existing) continue; // no data yet → it'll fetch fresh anyway
+    if ((key[1] as { view?: string } | undefined)?.view === 'sidebar') continue;
     // Respect a directory filter: don't inject a /repo/a session into a
     // list scoped to /repo/b. The dir (when present) lives in the
     // second key segment (see useSessions' queryKey).

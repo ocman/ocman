@@ -8,10 +8,12 @@ import type { Session } from '../lib/api';
 import type { PluginAction, PluginActionRequest } from '../lib/plugins';
 import { useUiStore } from '../lib/uiStore';
 import { CommandPalette } from './CommandPalette';
+import { queryClient } from '../lib/queryClient';
+
+// The palette's recent list: the same cache entry useSessions({ limit: 100 }) reads.
+const seedRecentSessions = (sessions: Session[]) => queryClient.setQueryData(['sessions', { limit: 100 }], sessions);
 
 const mocks = vi.hoisted(() => ({
-  cachedSessions: [] as Session[],
-  refreshCachedSessions: vi.fn(async () => []),
   launchAllowed: false,
 }));
 vi.mock('../lib/apiStore', () => ({ useApiStore: (selector: (state: typeof mocks) => unknown) => selector(mocks) }));
@@ -51,7 +53,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   Element.prototype.scrollIntoView = vi.fn();
   useUiStore.getState().openCommandPalette();
-  mocks.cachedSessions = [];
   mocks.launchAllowed = false;
   requests = [];
   list = () => json([contribution()]);
@@ -73,10 +74,10 @@ afterEach(() => vi.unstubAllGlobals());
 describe('plugin command contributions', () => {
   it.each(['project', 'session'])('opens a worktree on the %s owner despite an identical local path', async (route) => {
     mocks.launchAllowed = true;
-    mocks.cachedSessions = [
+    seedRecentSessions([
       { id: 'ses-local', directory: '/repo', platform: 'opencode' },
       { id: 'ses-remote', directory: '/repo', platform: 'r-B:opencode', remoteId: 'B' },
-    ] as Session[];
+    ] as Session[]);
     renderPalette(route === 'project' ? '/project/%2Frepo?remoteId=B' : '/session/ses-remote?platform=r-B%3Aopencode');
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '>wt' } });
     fireEvent.click(await screen.findByRole('option', { name: /wt/ }));
@@ -221,7 +222,6 @@ describe('plugin command contributions', () => {
     await screen.findByText('Action completed.');
     await waitFor(() => expect(screen.getByLabelText('Current route').textContent).toBe('/settings'));
     for (const key of ['plugin-actions', 'sessions', 'projects']) expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] });
-    expect(mocks.refreshCachedSessions).toHaveBeenCalledTimes(1);
   });
 
   it.each(['project', 'session'])('resolves an uncached current %s independently of recent sessions', async (route) => {
@@ -264,7 +264,7 @@ describe('plugin command contributions', () => {
   });
 
   it.each(['project', 'session'])('merges global and %s actions using opaque context identities', async (route) => {
-    mocks.cachedSessions = [{ id: 'ses-1', projectId: 'proj-1', directory: '/private/work', remoteId: 'owner-1' } as Session];
+    seedRecentSessions([{ id: 'ses-1', projectId: 'proj-1', directory: '/private/work', remoteId: 'owner-1' } as Session]);
     const placements: string[] = [];
     list = (params) => {
       placements.push(params.get('placement')!);

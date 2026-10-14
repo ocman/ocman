@@ -3,6 +3,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { api, type Session } from './api';
 import { useApiStore } from './apiStore';
 import { computeSidebarHash, mergeSidebarSessions } from './sidebarHelpers';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebarSessions } from './sessionsCache';
+import { queryClient } from './queryClient';
 
 const sessions = [
   { id: 'newer', platform: 'opencode', timeCreated: 2, lastTurnCompletedAt: 120_000, timeUpdated: 120_000 },
@@ -11,7 +13,7 @@ const sessions = [
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  useApiStore.setState({ recentSessions: sessions, recentSessionsHash: '' });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, sessions);
 });
 
 it('orders by the exact latest prompt, halt or completion, ignoring streams and reads', () => {
@@ -30,17 +32,16 @@ it('orders by the exact latest prompt, halt or completion, ignoring streams and 
 
 it('stores unread corrections when hidden-tab SSE already updated status and activity', () => {
   const current = [{ ...sessions[0], status: 'done', seen: true, seenTimeUpdated: 60_000, unreadCount: 0 }] as Session[];
-  const store = useApiStore.getState();
-  store.setRecentSessions(current, computeSidebarHash(current));
+  setSidebarSessions(current);
   const next = [{ ...current[0], seen: false, unreadCount: 1 }];
-  const merged = mergeSidebarSessions(next, useApiStore.getState().recentSessions);
-  store.setRecentSessions(merged, computeSidebarHash(merged));
-  expect(useApiStore.getState().recentSessions[0]).toMatchObject({ seen: false, unreadCount: 1 });
+  const merged = mergeSidebarSessions(next, getSidebarSessions());
+  setSidebarSessions(merged);
+  expect(getSidebarSessions()[0]).toMatchObject({ seen: false, unreadCount: 1 });
 });
 
 it('does not reorder when an SSE patch advances streaming activity', () => {
-  useApiStore.getState().patchRecentSession('older', { timeUpdated: 180_000 });
-  expect(useApiStore.getState().recentSessions.map((s) => s.id)).toEqual(['newer', 'older']);
+  patchSessionLists('older', { timeUpdated: 180_000 });
+  expect(getSidebarSessions().map((s) => s.id)).toEqual(['newer', 'older']);
 });
 
 it('keeps live activity without using it to order a stale refresh', () => {
@@ -50,23 +51,22 @@ it('keeps live activity without using it to order a stale refresh', () => {
 });
 
 it('keeps concurrent streams stable across minute boundaries and refreshes', () => {
-  const store = useApiStore.getState();
-  store.patchRecentSession('older', { timeUpdated: 180_001 });
-  store.patchRecentSession('newer', { timeUpdated: 180_002 });
-  store.patchRecentSession('older', { timeUpdated: 180_003 });
-  store.patchRecentSession('newer', { timeUpdated: 239_999 });
-  const live = useApiStore.getState().recentSessions;
+  patchSessionLists('older', { timeUpdated: 180_001 });
+  patchSessionLists('newer', { timeUpdated: 180_002 });
+  patchSessionLists('older', { timeUpdated: 180_003 });
+  patchSessionLists('newer', { timeUpdated: 239_999 });
+  const live = getSidebarSessions();
   expect(live.map((s) => s.id)).toEqual(['newer', 'older']);
   expect(mergeSidebarSessions([...live].reverse(), live).map((s) => s.id)).toEqual(['newer', 'older']);
-  store.patchRecentSession('newer', { timeUpdated: 240_000 });
-  expect(useApiStore.getState().recentSessions.map((s) => s.id)).toEqual(['newer', 'older']);
+  patchSessionLists('newer', { timeUpdated: 240_000 });
+  expect(getSidebarSessions().map((s) => s.id)).toEqual(['newer', 'older']);
 });
 
 it('keeps a sent message in place before its request completes', async () => {
   let finish!: () => void;
   vi.spyOn(api, 'sendMessage').mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
   const sending = useApiStore.getState().sendMessage('older', 'hello');
-  expect(useApiStore.getState().recentSessions[0].id).toBe('newer');
+  expect(getSidebarSessions()[0].id).toBe('newer');
   finish();
   await sending;
 });
@@ -74,13 +74,13 @@ it('keeps a sent message in place before its request completes', async () => {
 it('does not move a queued message until it is sent', async () => {
   vi.spyOn(api, 'sendMessage').mockResolvedValue();
   await useApiStore.getState().sendMessage('older', 'hello', undefined, undefined, undefined, undefined, undefined, true);
-  expect(useApiStore.getState().recentSessions).toEqual(sessions);
+  expect(getSidebarSessions()).toEqual(sessions);
 });
 
 it('restores ordering if sending fails', async () => {
   vi.spyOn(api, 'sendMessage').mockRejectedValue(new Error('offline'));
   await expect(useApiStore.getState().sendMessage('older', 'hello')).rejects.toThrow('offline');
-  expect(useApiStore.getState().recentSessions).toEqual(sessions);
+  expect(getSidebarSessions()).toEqual(sessions);
 });
 
 it('does not roll back newer SSE activity when a send fails', async () => {
@@ -88,10 +88,10 @@ it('does not roll back newer SSE activity when a send fails', async () => {
   vi.spyOn(api, 'sendMessage').mockReturnValue(new Promise<void>((_, reject) => { fail = reject; }));
   const sending = useApiStore.getState().sendMessage('older', 'hello');
   const live = Date.now() + 100;
-  useApiStore.getState().patchRecentSession('older', { timeUpdated: live });
+  patchSessionLists('older', { timeUpdated: live });
   fail(new Error('offline'));
   await expect(sending).rejects.toThrow('offline');
-  expect(useApiStore.getState().recentSessions.find(s => s.id === 'older')?.timeUpdated).toBe(live);
+  expect(getSidebarSessions().find(s => s.id === 'older')?.timeUpdated).toBe(live);
 });
 
 it('promotes a completed turn once and preserves its timestamp over stale polls', () => {
@@ -120,10 +120,10 @@ it('keeps completion and read watermarks isolated across owners with matching ID
   const remote = { ...local, platform: 'r-owner:opencode', lastTurnCompletedAt: 100_000, seen: false, seenTimeUpdated: 0 };
   const merged = mergeSidebarSessions([remote, local], [local, remote]);
   expect(merged.find(s => s.platform === remote.platform)).toMatchObject({ lastTurnCompletedAt: 100_000, seen: false, seenTimeUpdated: 0 });
-  useApiStore.setState({ recentSessions: merged });
-  useApiStore.getState().patchRecentSession('shared', { lastTurnCompletedAt: 400_000 }, remote.platform);
-  expect(useApiStore.getState().recentSessions[0]).toMatchObject({ platform: remote.platform, lastTurnCompletedAt: 400_000 });
-  expect(useApiStore.getState().recentSessions[1]).toMatchObject({ platform: local.platform, lastTurnCompletedAt: 300_000 });
+  queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, merged);
+  patchSessionLists('shared', { lastTurnCompletedAt: 400_000 }, remote.platform);
+  expect(getSidebarSessions()[0]).toMatchObject({ platform: remote.platform, lastTurnCompletedAt: 400_000 });
+  expect(getSidebarSessions()[1]).toMatchObject({ platform: local.platform, lastTurnCompletedAt: 300_000 });
   const peek = vi.spyOn(api, 'session').mockResolvedValue({ session: remote } as never);
   await useApiStore.getState().peekSession('shared', undefined, remote.platform);
   expect(peek).toHaveBeenCalledWith('shared', 1, 0, undefined, remote.platform, true);

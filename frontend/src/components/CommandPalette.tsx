@@ -2,6 +2,7 @@ import { useState, useEffect, useId, useRef, useMemo, useCallback } from 'react'
 import './CommandPalette.css';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApiStore } from '../lib/apiStore';
+import { useSessions } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
@@ -154,11 +155,9 @@ export function CommandPalette() {
   });
   const navigate = useNavigate();
   const location = useLocation();
-  const sessions = useApiStore((s) => s.cachedSessions);
   const projects = useApiStore((s) => s.getProjects);
   const browseDirectories = useApiStore((s) => s.browseDirectories);
   const searchDirectories = useApiStore((s) => s.searchDirectories);
-  const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
   const launchAllowed = useOpencodeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const paletteOpen = useUiStore((s) => s.paletteOpen);
@@ -169,6 +168,9 @@ export function CommandPalette() {
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
   const openShortcuts = useUiStore((s) => s.openShortcuts);
   const mode = paletteMode;
+  // Fetched while the session search is open; the cached list stays
+  // readable for route lookups after it closes.
+  const sessions = useSessions({ limit: 100 }, { enabled: paletteOpen && mode === 'search' }).data ?? null;
   const [actionInvocation, setActionInvocation] = useState<{ label: string; request: PluginActionRequest } | null>(null);
   const [worktreeError, setWorktreeError] = useState<string | null>(null);
   const worktreeLookup = useRef<AbortController | null>(null);
@@ -407,15 +409,6 @@ export function CommandPalette() {
       controller.abort();
     };
   }, [paletteOpen, mode, projectBrowser.open, projectBrowser.directory, query, searchDirectories]);
-
-  useEffect(() => {
-    if (!paletteOpen) return;
-    if (mode === 'search') {
-      const controller = new AbortController();
-      refreshCachedSessions(controller.signal).catch(() => {});
-      return () => controller.abort();
-    }
-  }, [paletteOpen, mode, refreshCachedSessions]);
 
   const results: ResultItem[] = useMemo(() => {
     if (mode === 'search') {
