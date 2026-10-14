@@ -1,23 +1,15 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
-import type { HostCapabilityEntry } from '../lib/api.types';
+import { useHostCapabilities } from '../lib/settingsQueries';
 import { plugins, type PluginRegistration } from '../lib/plugins';
 import { SettingRow } from './SettingRow';
 import { PluginSettingsCard } from './PluginSettingsCard';
 import { Button, ButtonGroup, SelectField } from './Control';
 
 export function PluginSettings() {
-  const [hosts, setHosts] = useState<HostCapabilityEntry[] | null>(null);
+  const hostsQ = useHostCapabilities();
+  const hosts = hostsQ.data ?? null;
+  const error = hostsQ.isError;
   const [owner, setOwner] = useState('');
-  const [error, setError] = useState(false);
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    api.capabilities(controller.signal).then((result) => {
-      if (!controller.signal.aborted) { setHosts(result.hosts ?? []); setError(false); }
-    }).catch(() => { if (!controller.signal.aborted) setError(true); });
-    return () => controller.abort();
-  }, [revision]);
   const selected = owner || hosts?.[0]?.remoteId || '';
   const host = hosts?.find((entry) => entry.remoteId === selected);
   return <>
@@ -27,7 +19,7 @@ export function PluginSettings() {
         {hosts?.map((entry) => <option key={entry.remoteId} value={entry.remoteId}>{entry.remoteName}</option>)}
         {owner && !host && <option value={owner}>{owner} (unavailable)</option>}
       </SelectField>
-      <Button type="button" onClick={() => setRevision((n) => n + 1)}>Refresh owners</Button>
+      <Button type="button" onClick={() => { void hostsQ.refetch(); }}>Refresh owners</Button>
       </ButtonGroup>
     </SettingRow>
     {error ? <p role="alert">Could not load plugin owners. Refresh owners to retry.</p>

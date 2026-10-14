@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { renderWithQuery } from '../test/renderWithQuery';
 import { RemoteSettings } from './RemoteSettings';
 
 vi.mock('../lib/api', () => ({
@@ -32,7 +33,7 @@ function seed(remotes: unknown[] = []) {
 describe('RemoteSettings', () => {
   it('lists machines in a shared table and edits in a drawer without replacing the row', async () => {
     seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     await screen.findByText('Box');
     expect(screen.getByRole('table', { name: 'Machines' })).toHaveClass('oc-data-table');
     expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Machine', 'Connection', 'Status', 'Actions']);
@@ -50,7 +51,7 @@ describe('RemoteSettings', () => {
   it('keeps the edit drawer and values after a failed save, then allows retry', async () => {
     seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
     m.updateRemote.mockRejectedValueOnce(new Error('connection failed')).mockResolvedValueOnce({ ok: true });
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByDisplayValue('Box'), { target: { value: 'Renamed' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -65,7 +66,7 @@ describe('RemoteSettings', () => {
     seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
     let resolve!: (value: unknown) => void;
     m.updateRemote.mockImplementation(() => new Promise((done) => { resolve = done; }));
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(screen.getByDisplayValue('Box')).toBeDisabled();
@@ -79,7 +80,7 @@ describe('RemoteSettings', () => {
 
   it('uses shared action controls and fields throughout the add and edit forms', async () => {
     seed([{ localId: 1, displayName: 'Box', address: 'ws:8230', enabled: true, health: 'connected' }]);
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     await screen.findByText('Box');
     for (const button of screen.getAllByRole('button')) expect(button).toHaveClass('oc-button');
     for (const field of screen.getAllByRole('textbox')) expect(field).toHaveClass('oc-field');
@@ -100,7 +101,7 @@ describe('RemoteSettings', () => {
       m.listRemotes.mockResolvedValue([{ ...remote, enabled: !enabled }]);
       return { ok: true };
     });
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     const toggle = await screen.findByRole('button', { name: enabled ? 'Disable' : 'Enable' });
     fireEvent.click(toggle);
     await waitFor(() => expect(m.updateRemote).toHaveBeenCalledWith(1, {
@@ -125,7 +126,7 @@ describe('RemoteSettings', () => {
     }]);
     let reject!: (error: unknown) => void;
     m.updateRemote.mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     const toggle = await screen.findByRole('button', { name: 'Disable' });
     fireEvent.click(toggle);
     expect(toggle).toBeDisabled();
@@ -138,7 +139,7 @@ describe('RemoteSettings', () => {
 
   it('shows the non-removable "This machine" entry with listen status', async () => {
     seed();
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     expect(await screen.findByText('This machine')).toBeInTheDocument();
     expect(screen.getByText(/inst123/)).toBeInTheDocument();
     expect(screen.getByText(/listening on 0.0.0.0:8230/)).toBeInTheDocument();
@@ -147,7 +148,7 @@ describe('RemoteSettings', () => {
   it('reveals the token only via the explicit action', async () => {
     seed();
     m.revealRemoteToken.mockResolvedValue({ token: 'super-secret' });
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
 
     // Token is not present until revealed.
     await screen.findByText('This machine');
@@ -166,7 +167,7 @@ describe('RemoteSettings', () => {
         lastSeen: 0, sessionCount: 2,
       },
     ]);
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     expect(await screen.findByText('Box')).toBeInTheDocument();
     expect(screen.getByText('connected')).toBeInTheDocument();
   });
@@ -174,7 +175,7 @@ describe('RemoteSettings', () => {
   it('adds a remote via the form and refreshes the list', async () => {
     seed();
     m.addRemote.mockResolvedValue({ localId: 9 });
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     await screen.findByText('This machine');
 
     fireEvent.change(screen.getByLabelText('Remote address'), { target: { value: 'ws:8230' } });
@@ -201,7 +202,7 @@ describe('RemoteSettings', () => {
       },
     ]);
     m.updateRemote.mockResolvedValue({ ok: true });
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     await screen.findByText('Box');
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -229,7 +230,7 @@ describe('RemoteSettings', () => {
         lastSeen: 0, sessionCount: 0,
       },
     ]);
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     await screen.findByText('Box');
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
@@ -248,7 +249,7 @@ describe('RemoteSettings', () => {
     ]);
     m.reconnectRemote.mockResolvedValue({ ok: true });
     m.removeRemote.mockResolvedValue({ ok: true });
-    render(<RemoteSettings />);
+    renderWithQuery(<RemoteSettings />);
     await screen.findByText('Box');
 
     await act(async () => {

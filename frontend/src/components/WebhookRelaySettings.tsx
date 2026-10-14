@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useWebhookRelaySettings } from '../lib/settingsQueries';
 import { api } from '../lib/api';
 import type { WebhookRelaySettings as View } from '../lib/api.types';
 import { useSettingSave } from '../lib/useSaveStatus';
@@ -7,20 +9,19 @@ import { SettingRow, SettingText } from './SettingRow';
 
 /** Relay host and enrollment token used when creating webhook inboxes. */
 export function WebhookRelaySettings() {
-  const [view, setView] = useState<View>();
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
+  const relayQ = useWebhookRelaySettings();
+  const view = relayQ.data;
+  const [saveError, setError] = useState('');
+  const error = saveError || (relayQ.error ? (relayQ.error instanceof Error ? relayQ.error.message : 'Could not load webhook settings') : '');
   const relaySave = useSettingSave();
   const tokenSave = useSettingSave();
   // Remount the token field after each save so the typed secret leaves the DOM.
   const [tokenKey, setTokenKey] = useState(0);
 
-  useEffect(() => {
-    api.getWebhookRelay().then(setView, (err: unknown) => setError(err instanceof Error ? err.message : 'Could not load webhook settings'));
-  }, []);
-
   const save = async (input: { relayUrl?: string; enrollmentToken?: string }) => {
     setError('');
-    try { setView(await api.setWebhookRelay(input)); } catch (err) { setError(err instanceof Error ? err.message : 'Could not save'); throw err; }
+    try { queryClient.setQueryData<View>(['webhook-relay'], await api.setWebhookRelay(input)); } catch (err) { setError(err instanceof Error ? err.message : 'Could not save'); throw err; }
   };
 
   if (!view) return error ? <p role="alert" className="routine-error">{error}</p> : null;

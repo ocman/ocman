@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { renderWithQuery } from '../test/renderWithQuery';
 import { MemoryRouter } from 'react-router-dom';
 import { SharingSettings } from './SharingSettings';
 import { copyToClipboard } from '../lib/clipboard';
@@ -36,7 +37,7 @@ function seed(
 }
 
 function renderUI() {
-  return render(
+  return renderWithQuery(
     <MemoryRouter>
       <SharingSettings />
     </MemoryRouter>,

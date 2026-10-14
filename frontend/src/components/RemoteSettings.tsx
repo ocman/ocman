@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import styles from './RemoteSettings.module.css';
 import { api } from '../lib/api';
-import type { RemoteStatus, RemoteAccessStatus } from '../lib/api.types';
+import type { RemoteStatus } from '../lib/api.types';
+import { useRemoteAccess, useRemotes } from '../lib/settingsQueries';
 import { Button, ButtonGroup, TextField } from './Control';
 import { CheckboxField } from './CheckboxField';
 import { DataTable } from './DataTable';
@@ -15,21 +16,17 @@ import { ModalFooter } from './ModalFooter';
  * add / edit / reconnect / remove actions. Tokens are never displayed
  * except via the explicit reveal action on this machine's own token.
  */
+const EMPTY_REMOTES: RemoteStatus[] = [];
+
 export function RemoteSettings() {
-  const [access, setAccess] = useState<RemoteAccessStatus | null>(null);
-  const [remotes, setRemotes] = useState<RemoteStatus[]>([]);
+  const access = useRemoteAccess().data ?? null;
+  const remotesQ = useRemotes();
+  const remotes = remotesQ.data ?? EMPTY_REMOTES;
   const [revealed, setRevealed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<RemoteStatus | null>(null);
 
-  const refresh = useCallback(() => {
-    api.listRemotes().then(setRemotes).catch(() => { /* empty on single-host */ });
-  }, []);
-
-  useEffect(() => {
-    api.remoteAccess().then(setAccess).catch(() => setAccess(null));
-    refresh();
-  }, [refresh]);
+  const refresh = () => { void remotesQ.refetch(); };
 
   async function revealToken() {
     try {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { renderWithQuery } from '../../test/renderWithQuery';
 
 vi.hoisted(() => {
   const mem = new Map<string, string>();
@@ -54,7 +55,7 @@ describe('Archived session resurfacing', () => {
   it('keeps the setting disabled if loading fails', async () => {
     mockDefaults();
     m.getArchiveResurface.mockRejectedValue(new Error('offline'));
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
     await act(async () => {});
     expect(screen.getByRole('combobox', { name: 'Show archived sessions again' })).toBeDisabled();
   });
@@ -63,7 +64,7 @@ describe('Archived session resurfacing', () => {
     mockDefaults();
     m.getArchiveResurface.mockResolvedValue({ mode: 'activity' });
     m.setArchiveResurface.mockRejectedValue(new Error('offline'));
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
     const select = screen.getByRole('combobox', { name: 'Show archived sessions again' });
     await waitFor(() => expect(select).toBeEnabled());
     expect(select).toHaveTextContent('Any activity');
@@ -77,7 +78,7 @@ describe('Archived session resurfacing', () => {
   it('loads the default and saves any activity', async () => {
     mockDefaults();
     m.setArchiveResurface.mockResolvedValue({ mode: 'activity' });
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
     const select = screen.getByRole('combobox', { name: 'Show archived sessions again' });
     await waitFor(() => expect(select).toBeEnabled());
     expect(select).toHaveTextContent('Session halts (default)');
@@ -92,7 +93,7 @@ describe('SessionsSection worktree inherit toggle (#101)', () => {
   it('reflects the loaded enabled state', async () => {
     mockDefaults();
     m.getWorktreeInheritPermissions.mockResolvedValue({ enabled: false });
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
     const toggle = await screen.findByTestId('worktree-inherit-toggle');
     await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(false));
   });
@@ -101,7 +102,7 @@ describe('SessionsSection worktree inherit toggle (#101)', () => {
     mockDefaults();
     m.getWorktreeInheritPermissions.mockResolvedValue({ enabled: true });
     m.setWorktreeInheritPermissions.mockResolvedValue({ enabled: false });
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
     const toggle = await screen.findByTestId('worktree-inherit-toggle');
     await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
 
@@ -115,7 +116,7 @@ describe('SessionsSection worktree inherit toggle (#101)', () => {
     mockDefaults();
     m.getWorktreeInheritPermissions.mockResolvedValue({ enabled: true });
     m.setWorktreeInheritPermissions.mockRejectedValue(new Error('boom'));
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
     const toggle = await screen.findByTestId('worktree-inherit-toggle');
     await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
 
@@ -130,7 +131,7 @@ describe('SessionsSection message metadata toggle', () => {
   it('shows message metadata only after the setting is enabled', async () => {
     mockDefaults();
     m.getWorktreeInheritPermissions.mockResolvedValue({ enabled: true });
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     const toggle = await screen.findByRole('checkbox', { name: 'Show metadata between message sections' });
     expect(toggle).not.toBeChecked();
@@ -147,7 +148,7 @@ describe('SessionsSection auto-archive settings', () => {
     m.getAutoArchiveSettings.mockReturnValue(new Promise(() => {}));
     m.getModelFallthroughSettings.mockReturnValue(new Promise(() => {}));
 
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     expect(screen.getByRole('checkbox', { name: 'Automatically archive inactive sessions and projects' })).toBeDisabled();
     expect(screen.queryByRole('spinbutton', { name: 'Archive inactive sessions and projects after days' })).not.toBeInTheDocument();
@@ -157,7 +158,7 @@ describe('SessionsSection auto-archive settings', () => {
     mockDefaults();
     m.getAutoArchiveSettings.mockResolvedValue({ enabled: true, ttlDays: 30 });
 
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     // The toggle renders checked (disabled) before settings load, so wait
     // for the TTL field, which only appears once they have.
@@ -168,7 +169,7 @@ describe('SessionsSection auto-archive settings', () => {
   it('can disable auto-archive and hides the TTL', async () => {
     mockDefaults();
     m.setAutoArchiveSettings.mockResolvedValue({ enabled: false, ttlDays: 7 });
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     const toggle = await screen.findByRole('checkbox', { name: 'Automatically archive inactive sessions and projects' });
     // A click on the still-disabled toggle (settings not loaded yet) is ignored.
@@ -182,7 +183,7 @@ describe('SessionsSection auto-archive settings', () => {
   it('saves a custom TTL', async () => {
     mockDefaults();
     m.setAutoArchiveSettings.mockResolvedValue({ enabled: true, ttlDays: 14 });
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     const input = await screen.findByRole('spinbutton', { name: 'Archive inactive sessions and projects after days' });
     fireEvent.change(input, { target: { value: '14' } });
@@ -194,7 +195,7 @@ describe('SessionsSection auto-archive settings', () => {
     mockDefaults();
     let resolveSave!: (value: { enabled: boolean; ttlDays: number }) => void;
     m.setAutoArchiveSettings.mockReturnValue(new Promise((resolve) => { resolveSave = resolve; }));
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     const input = await screen.findByRole('spinbutton', { name: 'Archive inactive sessions and projects after days' });
     fireEvent.change(input, { target: { value: '14' } });
@@ -210,7 +211,7 @@ describe('SessionsSection model fallthrough thresholds', () => {
   it('loads and saves both thresholds', async () => {
     mockDefaults();
     m.setModelFallthroughSettings.mockResolvedValue({ patienceMinutes: 2, fallbackMinutes: 15 });
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     const patience = await screen.findByRole('spinbutton', { name: 'Model fallthrough patience in minutes' });
     expect(patience).toHaveValue(5);
@@ -223,7 +224,7 @@ describe('SessionsSection model fallthrough thresholds', () => {
   it('reverts when the save fails', async () => {
     mockDefaults();
     m.setModelFallthroughSettings.mockRejectedValue(new Error('boom'));
-    render(<SessionsSection />);
+    renderWithQuery(<SessionsSection />);
 
     const cooldown = await screen.findByRole('spinbutton', { name: 'Model fallthrough cooldown in minutes' });
     fireEvent.change(cooldown, { target: { value: '30' } });

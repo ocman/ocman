@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { renderWithQuery } from '../test/renderWithQuery';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { plugins, type PluginRegistration } from '../lib/plugins';
@@ -46,7 +47,7 @@ beforeEach(() => {
 });
 
 async function open() {
-  render(<PluginSettings />);
+  renderWithQuery(<PluginSettings />);
   return screen.findByRole('region', { name: 'Example plugin' });
 }
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
@@ -77,7 +78,7 @@ it('shows rejected discovery diagnostics for the selected owner and clears them 
 it('shows owner and catalog loading, an empty state, and rescan results', async () => {
   let resolve!: (p: PluginRegistration[]) => void;
   vi.mocked(plugins.list).mockReturnValue(new Promise((r) => { resolve = r; }));
-  render(<PluginSettings />);
+  renderWithQuery(<PluginSettings />);
   expect(screen.getByRole('status')).toHaveTextContent('Loading plugin owners');
   expect(await screen.findByText('Loading plugins…')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Rescan plugins' })).toBeDisabled();
@@ -331,7 +332,7 @@ it('requires disabled state and explicit confirmation to permanently remove data
 it('gates unsupported owners, clears old data on switching and ignores stale responses', async () => {
   let resolve!: (p: PluginRegistration[]) => void;
   vi.mocked(plugins.list).mockImplementation((owner) => owner === 'local' ? new Promise((r) => { resolve = r; }) : Promise.resolve([]));
-  render(<PluginSettings />);
+  renderWithQuery(<PluginSettings />);
   await screen.findByText('Loading plugins…');
   fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'remote' } });
   expect(await screen.findByText('No plugins discovered.')).toBeVisible();
@@ -358,7 +359,7 @@ it('handles owner disconnect and capability refresh without falling back to loca
 
 it('supports retrying owner and catalog failures and sanitizes mutation errors', async () => {
   vi.mocked(api.capabilities).mockRejectedValueOnce(new Error('offline'));
-  render(<PluginSettings />);
+  renderWithQuery(<PluginSettings />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plugin owners');
   vi.mocked(plugins.list).mockRejectedValueOnce(new Error('offline'));
   click('Refresh owners');

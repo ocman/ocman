@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type GlobalShareLink, type RelaySource, type Session } from '../lib/api';
 import { useSessions } from '../lib/queries';
+import { useSharingSettings } from '../lib/settingsQueries';
+import { useQueryClient } from '@tanstack/react-query';
+import type { SharingSettings as SharingSettingsView } from '../lib/api.types';
 import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { SettingRow, SettingToggle } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
@@ -29,26 +32,25 @@ const RELAY_SOURCE_LABELS: Record<Exclude<RelaySource, ''>, string> = {
 const EMPTY_SESSIONS: Session[] = [];
 
 export function SharingSettings() {
-  const [enabled, setEnabled] = useState(true);
-  const [relayUrl, setRelayUrl] = useState('');
-  const [relaySource, setRelaySource] = useState<RelaySource>('');
+  const queryClient = useQueryClient();
+  const sharingQ = useSharingSettings();
+  const enabled = sharingQ.data?.enabled ?? true;
+  const relayUrl = sharingQ.data?.relayUrl ?? '';
+  const relaySource: RelaySource = sharingQ.data?.relaySource ?? '';
   const sessions = useSessions().data ?? EMPTY_SESSIONS;
   const sharingSave = useSettingSave();
   const state = useShareLinks(api.listAllShares, (link: GlobalShareLink) => api.revokeShareLink(link.sessionId, link.token));
   const { setError } = state;
 
+  const loadError = sharingQ.error;
   useEffect(() => {
-    api.getSharingEnabled().then(
-      (sharing) => {
-        setEnabled(sharing.enabled);
-        setRelayUrl(sharing.relayUrl);
-        setRelaySource(sharing.relaySource);
-      },
-      (err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load sharing settings'),
-    );
-  }, [setError]);
+    // The share-link list owns the page's one error slot.
+    if (loadError) setError(loadError instanceof Error ? loadError.message : 'Failed to load sharing settings');
+  }, [loadError, setError]);
 
   const handleToggle = useCallback(async (want: boolean) => {
+    const setEnabled = (value: boolean) => queryClient.setQueryData<SharingSettingsView>(['sharing-settings'],
+      (prev) => ({ relayUrl: '', relaySource: '', ...prev, enabled: value }));
     setEnabled(want); // optimistic
     setError(null);
     try {
@@ -58,7 +60,7 @@ export function SharingSettings() {
       setError(err instanceof Error ? err.message : 'Failed to save setting');
       throw err; // let SettingToggle surface the failure indicator
     }
-  }, [setError]);
+  }, [queryClient, setError]);
 
   return (
     <div data-testid="sharing-settings">

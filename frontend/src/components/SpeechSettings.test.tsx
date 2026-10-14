@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { act, cleanup, screen, fireEvent } from '@testing-library/react';
+import { renderWithQuery } from '../test/renderWithQuery';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { SpeechSettings } from './SpeechSettings';
 import { useUiStore } from '../lib/uiStore';
@@ -10,25 +11,25 @@ beforeEach(() => { vi.spyOn(api, 'whisperStatus').mockResolvedValue({ available:
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 it('shows missing Whisper in speech settings', async () => {
-  render(<SpeechSettings />);
+  renderWithQuery(<SpeechSettings />);
   expect(await screen.findByText(/Whisper is unavailable/)).toBeInTheDocument();
   expect(screen.getByText(/Install whisper-cpp and a model/)).toBeInTheDocument();
 });
 
 it('reports available Whisper', async () => {
   vi.mocked(api.whisperStatus).mockResolvedValue({ available: true });
-  render(<SpeechSettings />);
+  renderWithQuery(<SpeechSettings />);
   expect(await screen.findByText('Whisper is available.')).toBeInTheDocument();
 });
 
 it('reports a failed Whisper availability check', async () => {
   vi.mocked(api.whisperStatus).mockRejectedValue(new Error('offline'));
-  render(<SpeechSettings />);
+  renderWithQuery(<SpeechSettings />);
   expect(await screen.findByText('Could not check Whisper availability.')).toBeInTheDocument();
 });
 it('disables automatic reading when speech is unavailable', () => {
   vi.stubGlobal('speechSynthesis', undefined);
-  render(<SpeechSettings />);
+  renderWithQuery(<SpeechSettings />);
   expect(screen.getByRole('checkbox', { name: 'Automatically read answers aloud' })).toBeDisabled();
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
 });
@@ -44,7 +45,7 @@ it('loads delayed voices, persists preferences and previews the selected voice',
     text: string;
     constructor(text: string) { this.text = text; }
   });
-  const { unmount } = render(<SpeechSettings />);
+  const { unmount } = renderWithQuery(<SpeechSettings />);
   getVoices.mockReturnValue([voice, { ...voice, voiceURI: 'remote', name: 'Remote', localService: false }]);
   act(() => synth.dispatchEvent(new Event('voiceschanged')));
   expect(screen.getByRole('option', { name: 'Voice (en-US, local)' })).toBeInTheDocument();
