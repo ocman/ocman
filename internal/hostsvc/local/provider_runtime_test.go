@@ -107,7 +107,16 @@ func TestProviderDeadPersistedRowIsReprobedAndRelaunched(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for m.Runtime.Probe(t.Context(), &result.Runtime) == nil && time.Now().Before(deadline) {
+	// Closing the socket precedes process exit. ensureRoot correctly refuses
+	// to replace a still-alive supervisor whose API is already shutting down.
+	for time.Now().Before(deadline) {
+		alive, err := m.Runtime.Alive(t.Context(), &result.Runtime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !alive {
+			break
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	newResult, err := restarted.ensureRoot(t.Context(), root)
