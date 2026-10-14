@@ -496,7 +496,9 @@
 .oc-search-select.oc-bar-search { display: inline-block; }
 .oc-search-select.oc-bar-search > button {
   min-height: 0;
-  padding: 2px;
+  height: 18px;
+  padding: 0 2px;
+  font: inherit;
   border: none;
   background: transparent;
   max-width: 200px;
