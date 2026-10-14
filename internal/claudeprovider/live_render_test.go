@@ -137,6 +137,65 @@ func TestPartialStreamAgreesWithStoredParts(t *testing.T) {
 	}
 }
 
+// liveCompleted returns the last upsert of each message's time.completed.
+func liveCompleted(got *seen) map[string]any {
+	got.mu.Lock()
+	defer got.mu.Unlock()
+	completed := map[string]any{}
+	for _, e := range got.events {
+		if e.Type != "message.updated" {
+			continue
+		}
+		var m struct {
+			Info struct {
+				ID   string         `json:"id"`
+				Time map[string]any `json:"time"`
+			} `json:"info"`
+		}
+		_ = json.Unmarshal(e.Properties, &m)
+		completed[m.Info.ID] = m.Info.Time["completed"]
+	}
+	return completed
+}
+
+// A live assistant message is published open, without time.completed, until
+// the next message or the turn's result closes it: its lines carry no
+// stop_reason, and a completed message without a finish reads as a settled
+// turn, which hid the running turn's indicators.
+func TestLiveMessageOpenUntilClosed(t *testing.T) {
+	rows := []string{
+		`{"direction":"stdin","message":{"type":"user"}}`,
+		`{"direction":"stdout","message":{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"id":"msg_a","model":"haiku"}}}}`,
+		`{"direction":"stdout","message":{"type":"assistant","parent_tool_use_id":null,"message":{"id":"msg_a","model":"haiku","content":[{"type":"tool_use","id":"toolu_a","name":"Read","input":{"file_path":"x"}}]}}}`,
+		`{"direction":"stdout","message":{"type":"user","parent_tool_use_id":null,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_a","content":"ok"}]}}}`,
+		`{"direction":"stdout","message":{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"message_start","message":{"id":"msg_b","model":"haiku"}}}}`,
+		`{"direction":"stdout","message":{"type":"assistant","parent_tool_use_id":null,"message":{"id":"msg_b","model":"haiku","content":[{"type":"text","text":"done"}]}}}`,
+		`{"direction":"wait","message":"$HOLD"}`,
+		`{"direction":"stdout","message":{"type":"result","subtype":"success","is_error":false}}`,
+	}
+	hold := filepath.Join(t.TempDir(), "hold")
+	fixturePath := filepath.Join(t.TempDir(), "open.jsonl")
+	if err := os.WriteFile(fixturePath, []byte(strings.ReplaceAll(strings.Join(rows, "\n")+"\n", "$HOLD", hold)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, got := promptHarness(t, fixturePath, nil)
+	id := h.create(t)
+	if err := h.adapter.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: id, Message: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "second message text", func() bool { return liveParts(got)["prt_msg_b_0000"]["text"] == "done" })
+	if c := liveCompleted(got); c["msg_a"] == nil || c["msg_b"] != nil {
+		t.Fatalf("mid-turn completion: msg_a %v (want set), msg_b %v (want open)", c["msg_a"], c["msg_b"])
+	}
+	if err := os.WriteFile(hold, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "turn idle", func() bool { _, _, n := h.events.get(id); return n == 1 })
+	if c := liveCompleted(got); c["msg_b"] == nil {
+		t.Fatal("result did not close the last message")
+	}
+}
+
 // The directory catalog lists the commands the CLI's own initialize reports
 // in that directory with ocman's plugin loaded; a skill a session's init
 // named is offered as a skill.

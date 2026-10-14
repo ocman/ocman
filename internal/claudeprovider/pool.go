@@ -325,6 +325,7 @@ func (l *live) handle(p *proc, raw []byte) error {
 		if m.Type == "user" && m.Parent == "" && json.Unmarshal(raw, &echo) == nil && echo.IsReplay {
 			l.started(p, echo.UUID)
 		}
+		open, _ := conv.Live()
 		var info map[string]any
 		var parts []map[string]any
 		if m.Type == "stream_event" {
@@ -337,7 +338,10 @@ func (l *live) handle(p *proc, raw []byte) error {
 			info, parts = conv.Live()
 		}
 		conv.Messages, conv.Parts = nil, nil // finished groups are already published
-		l.publish(conv.SessionID, info, parts)
+		if cur, _ := conv.Live(); open != nil && (cur == nil || cur["id"] != open["id"]) {
+			l.publish(conv.SessionID, open, nil) // closed: now with its completion
+		}
+		l.publish(conv.SessionID, openInfo(info), parts)
 	case "rate_limit_event":
 		var e struct {
 			Info json.RawMessage `json:"rate_limit_info"`
@@ -346,6 +350,7 @@ func (l *live) handle(p *proc, raw []byte) error {
 			l.account.observe(e.Info)
 		}
 	case "result":
+		l.closeOpen(p)
 		if !l.initializationFailure(p, raw) {
 			l.result(p, raw)
 		}

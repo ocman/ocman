@@ -2,6 +2,7 @@ package claudeprovider
 
 import (
 	"encoding/json"
+	"maps"
 	"time"
 )
 
@@ -111,6 +112,36 @@ func (l *live) publish(id string, info map[string]any, parts []map[string]any) {
 	}
 	for _, part := range parts {
 		l.emit(id, "p:"+part["id"].(string), "message.part.updated", map[string]any{"part": part})
+	}
+}
+
+// openInfo is info as published while its message is still open. The
+// converter stamps time.completed on every line, since a stored transcript
+// has no other end, but a v1 message has one only once its step ended: the
+// UI reads a completed message without a finish reason (live lines carry no
+// stop_reason) as a settled turn and drops the running indicators.
+func openInfo(info map[string]any) map[string]any {
+	t, ok := info["time"].(map[string]any)
+	if info["role"] != "assistant" || !ok || t["completed"] == nil {
+		return info
+	}
+	out := maps.Clone(info)
+	out["time"] = map[string]any{"created": t["created"]}
+	return out
+}
+
+// closeOpen publishes the open assistant messages of p's session and its
+// subagents with their completion: a result line ends the model's turn, and
+// the live view replayed to a browser must not keep them open.
+func (l *live) closeOpen(p *proc) {
+	convs := []*Converter{p.conv}
+	for _, c := range p.children {
+		convs = append(convs, c)
+	}
+	for _, c := range convs {
+		if info, _ := c.Live(); info != nil && info["role"] == "assistant" {
+			l.publish(c.SessionID, info, nil)
+		}
 	}
 }
 
