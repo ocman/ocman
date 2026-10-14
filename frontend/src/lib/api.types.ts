@@ -1140,6 +1140,8 @@ export interface PlatformCapabilities {
   revert?: boolean;
   runtimeRestart?: boolean;
   pushPrompts?: boolean;
+  /** The platform generates a guarded background title (server-side only). */
+  autoTitle?: boolean;
 }
 
 /**

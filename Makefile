@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -469,6 +469,13 @@ lint-settings-rows:
 lint-css-tokens:
 	./scripts/check_css_tokens_test.sh
 	./scripts/check-css-tokens.sh
+
+# Refresh the Go DTO snapshot (frontend/src/lib/contracts/go-dtos.json) that
+# the frontend's hand-written API types are checked against. The Go test
+# fails when the snapshot is stale; the vitest contract test fails when
+# api.types.ts no longer matches it.
+contracts: ## Regenerate the frontend API contract snapshot from the Go DTOs
+	UPDATE_FRONTEND_CONTRACTS=1 go test -count=1 ./internal/frontendcontract/
 
 # Regenerate the gRPC stubs for the multi-remote contract. Requires
 # protoc plus the Go plugins:

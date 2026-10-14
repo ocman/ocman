@@ -1,0 +1,360 @@
+{
+  "SessionStatus": [
+    "busy",
+    "done",
+    "error",
+    "interrupted",
+    "limited",
+    "waiting"
+  ],
+  "dtos": {
+    "HostCapabilities": [
+      {
+        "name": "gitDiff",
+        "omitempty": false
+      },
+      {
+        "name": "opencode",
+        "omitempty": false
+      },
+      {
+        "name": "opencodeLaunch",
+        "omitempty": false
+      },
+      {
+        "name": "projects",
+        "omitempty": false
+      },
+      {
+        "name": "tmux",
+        "omitempty": false
+      },
+      {
+        "name": "whisper",
+        "omitempty": false
+      },
+      {
+        "name": "worktrees",
+        "omitempty": false
+      }
+    ],
+    "Message": [
+      {
+        "name": "data",
+        "omitempty": false
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      },
+      {
+        "name": "sessionId",
+        "omitempty": false
+      },
+      {
+        "name": "timeCreated",
+        "omitempty": false
+      }
+    ],
+    "Part": [
+      {
+        "name": "data",
+        "omitempty": false
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      },
+      {
+        "name": "messageId",
+        "omitempty": false
+      },
+      {
+        "name": "sessionId",
+        "omitempty": false
+      },
+      {
+        "name": "timeCreated",
+        "omitempty": false
+      }
+    ],
+    "PlatformCapabilities": [
+      {
+        "name": "abort",
+        "omitempty": false
+      },
+      {
+        "name": "agentCatalog",
+        "omitempty": false
+      },
+      {
+        "name": "autoApprove",
+        "omitempty": false
+      },
+      {
+        "name": "autoTitle",
+        "omitempty": false
+      },
+      {
+        "name": "compact",
+        "omitempty": false
+      },
+      {
+        "name": "composer",
+        "omitempty": false
+      },
+      {
+        "name": "events",
+        "omitempty": false
+      },
+      {
+        "name": "fileChanges",
+        "omitempty": false
+      },
+      {
+        "name": "fork",
+        "omitempty": false
+      },
+      {
+        "name": "forkAtMessage",
+        "omitempty": false
+      },
+      {
+        "name": "liveConnectionHint",
+        "omitempty": true
+      },
+      {
+        "name": "modelCatalog",
+        "omitempty": false
+      },
+      {
+        "name": "move",
+        "omitempty": false
+      },
+      {
+        "name": "permissionRules",
+        "omitempty": false
+      },
+      {
+        "name": "pushPrompts",
+        "omitempty": false
+      },
+      {
+        "name": "respondPermission",
+        "omitempty": false
+      },
+      {
+        "name": "respondQuestion",
+        "omitempty": false
+      },
+      {
+        "name": "revert",
+        "omitempty": false
+      },
+      {
+        "name": "runtimeRestart",
+        "omitempty": false
+      },
+      {
+        "name": "sessionInfo",
+        "omitempty": false
+      },
+      {
+        "name": "shellExec",
+        "omitempty": false
+      },
+      {
+        "name": "slashCommands",
+        "omitempty": false
+      }
+    ],
+    "Session": [
+      {
+        "name": "activeDurationMs",
+        "omitempty": false
+      },
+      {
+        "name": "archived",
+        "omitempty": false
+      },
+      {
+        "name": "directory",
+        "omitempty": false
+      },
+      {
+        "name": "durationMs",
+        "omitempty": false
+      },
+      {
+        "name": "factoryAttemptId",
+        "omitempty": true
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      },
+      {
+        "name": "lastHaltAt",
+        "omitempty": false
+      },
+      {
+        "name": "lastTurnCompletedAt",
+        "omitempty": false
+      },
+      {
+        "name": "lastUserPromptAt",
+        "omitempty": false
+      },
+      {
+        "name": "liveConnection",
+        "omitempty": false
+      },
+      {
+        "name": "messageCount",
+        "omitempty": false
+      },
+      {
+        "name": "notice",
+        "omitempty": true
+      },
+      {
+        "name": "parentId",
+        "omitempty": true
+      },
+      {
+        "name": "pendingPermission",
+        "omitempty": false
+      },
+      {
+        "name": "pendingQuestion",
+        "omitempty": false
+      },
+      {
+        "name": "pinned",
+        "omitempty": false
+      },
+      {
+        "name": "pinnedAt",
+        "omitempty": false
+      },
+      {
+        "name": "platform",
+        "omitempty": false
+      },
+      {
+        "name": "projectDefaultModel",
+        "omitempty": true
+      },
+      {
+        "name": "projectId",
+        "omitempty": false
+      },
+      {
+        "name": "remoteId",
+        "omitempty": true
+      },
+      {
+        "name": "remoteName",
+        "omitempty": true
+      },
+      {
+        "name": "resetsAt",
+        "omitempty": true
+      },
+      {
+        "name": "routineId",
+        "omitempty": true
+      },
+      {
+        "name": "seen",
+        "omitempty": false
+      },
+      {
+        "name": "seenTimeUpdated",
+        "omitempty": false
+      },
+      {
+        "name": "shareUrl",
+        "omitempty": false
+      },
+      {
+        "name": "snoozedUntil",
+        "omitempty": false
+      },
+      {
+        "name": "stale",
+        "omitempty": true
+      },
+      {
+        "name": "status",
+        "omitempty": false
+      },
+      {
+        "name": "summaryAdditions",
+        "omitempty": false
+      },
+      {
+        "name": "summaryDeletions",
+        "omitempty": false
+      },
+      {
+        "name": "summaryFiles",
+        "omitempty": false
+      },
+      {
+        "name": "timeCreated",
+        "omitempty": false
+      },
+      {
+        "name": "timeUpdated",
+        "omitempty": false
+      },
+      {
+        "name": "title",
+        "omitempty": false
+      },
+      {
+        "name": "totalCost",
+        "omitempty": false
+      },
+      {
+        "name": "totalEffectiveCost",
+        "omitempty": false
+      },
+      {
+        "name": "totalEstCost",
+        "omitempty": false
+      },
+      {
+        "name": "totalInputTokens",
+        "omitempty": false
+      },
+      {
+        "name": "totalOutputTokens",
+        "omitempty": false
+      },
+      {
+        "name": "unreadCount",
+        "omitempty": false
+      }
+    ],
+    "SessionNotice": [
+      {
+        "name": "attempt",
+        "omitempty": false
+      },
+      {
+        "name": "kind",
+        "omitempty": false
+      },
+      {
+        "name": "message",
+        "omitempty": false
+      },
+      {
+        "name": "retryAt",
+        "omitempty": false
+      }
+    ]
+  }
+}
