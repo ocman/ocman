@@ -24,30 +24,6 @@
   margin-left: auto;
 }
 
-.backend-stats-active.oc-button {
-  padding: 0;
-  font: inherit;
-  color: inherit;
-}
-
-.backend-stats-project + .backend-stats-project {
-  margin-top: 12px;
-}
-
-.backend-stats-project h3 {
-  margin: 0 0 4px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.backend-stats-project .oc-button {
-  display: flex;
-  justify-content: flex-start;
-  width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
 .backend-stats-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));

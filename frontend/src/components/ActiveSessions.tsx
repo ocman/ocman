@@ -8,6 +8,7 @@ import { EmptyState } from './EmptyState';
 import { Popover } from './Popover';
 import { ProjectLabel } from './ProjectLabel';
 import { TOOLTIP_DELAY_MS } from './Tooltip';
+import styles from './ActiveSessions.module.css';
 
 export function ActiveSessions({ count, enabled }: { count: number; enabled: boolean }) {
   const trigger = useRef<HTMLButtonElement>(null);
@@ -39,7 +40,7 @@ export function ActiveSessions({ count, enabled }: { count: number; enabled: boo
   useEffect(() => () => clearTimeout(timer.current), [enabled]);
 
   return <>
-    <Button ref={trigger} variant="ghost" size="compact" className="backend-stats-active"
+    <Button ref={trigger} variant="ghost" size="compact" className={styles.trigger}
       title="Currently running sessions, including archived sessions and subagents"
       aria-label={`Total active sessions: ${count}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       disabled={!enabled} onMouseEnter={enter} onMouseLeave={leave} onFocus={() => { if (!open) show(); }}
@@ -54,14 +55,15 @@ export function ActiveSessions({ count, enabled }: { count: number; enabled: boo
       <span className="backend-stats-label">tas</span>: {count}
     </Button>
     <Popover open={open} onClose={close} triggerRef={trigger} id={id} label="Active sessions" style={position ?? undefined} autoFocus={false}>
-      <div onMouseEnter={cancelTimer} onMouseLeave={leave}
+      <div className={styles.content} onMouseEnter={cancelTimer} onMouseLeave={leave}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget) && !trigger.current?.contains(event.relatedTarget)) close(); }}>
+        <h2 className={styles.title}>Total active sessions</h2>
         {sessions.isError ? <EmptyState>Could not load active sessions. <Button variant="ghost" size="small" onClick={() => void sessions.refetch()}>Retry</Button></EmptyState>
           : sessions.isPending ? <EmptyState>Loading active sessions…</EmptyState>
           : groups.size === 0 ? <EmptyState>No active sessions</EmptyState>
-          : [...groups.values()].map(({ project, sessions: rows }) => <section key={project.key} className="backend-stats-project">
-            <h3><ProjectLabel path={project.directory} />{project.remoteName && <small> · {project.remoteName}</small>}</h3>
-            {rows.map(session => <RouteButton key={`${session.platform}:${session.id}`} variant="ghost" size="small"
+          : [...groups.values()].map(({ project, sessions: rows }) => <section key={project.key} className={styles.project}>
+            <h3 className={styles.projectTitle}><ProjectLabel path={project.directory} />{project.remoteName && <small> · {project.remoteName}</small>}</h3>
+            {rows.map(session => <RouteButton key={`${session.platform}:${session.id}`} className={styles.session}
               to={`/session/${encodeURIComponent(session.id)}?platform=${encodeURIComponent(session.platform)}`}
               onClick={close}>{cleanTitle(session.title) || session.id}</RouteButton>)}
           </section>)}

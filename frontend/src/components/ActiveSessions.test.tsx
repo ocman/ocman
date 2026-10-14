@@ -49,7 +49,8 @@ it('delays hover, groups every busy session by project, and closes on navigation
   const panel = screen.getByRole('dialog', { name: 'Active sessions' });
   expect(panel).not.toHaveFocus();
   expect(useSessions).toHaveBeenLastCalledWith({ limit: 0 }, { enabled: true, refetchInterval: 5000 });
-  expect(within(panel).getAllByRole('heading')).toHaveLength(2);
+  expect(within(panel).getByRole('heading', { level: 2, name: 'Total active sessions' })).toBeVisible();
+  expect(within(panel).getAllByRole('heading', { level: 3 })).toHaveLength(2);
   const alpha = within(panel).getByRole('heading', { name: 'repo/alpha' }).closest('section')!;
   expect(within(alpha).getAllByRole('link')).toHaveLength(2);
   expect(screen.queryByText('Finished task')).not.toBeInTheDocument();
