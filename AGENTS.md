@@ -72,7 +72,8 @@ so part ids (`prt<msg suffix><index>`) agree everywhere. Never add a second
 converter. On v2, `EnsureProjectOpencode` runs **one `opencode serve` per machine**
 (working directory `~/.local/share/ocman/opencode-v2[-<db hash>]`, keyed by the
 effective `OPENCODE_DB` so a server writing another database is never reused). Runtime lookup
-resolves every directory to that port (`opencode.SetMachineServer`). The server's
+resolves every directory to that port (`Discovery.SetMachineServer` on the
+OpenCode adapter's discovery). The server's
 password is generated once and stored in `state.db` when none is configured,
 because v2 always requires one. Ctrl/Cmd+Enter follow-ups use v2's native session
 inbox (`platforms.NativeQueue`, `delivery: "queue"`) unless ocman's own queue
@@ -370,7 +371,9 @@ are computed. Sessions retain their original directories and owners.
   desktop window (`internal/gui`) around the same HTTP server instead
   of only serving HTTP.
 - `internal/platforms/` — `Platform` interface, `Registry`, common
-  types/errors.
+  types/errors, and the compound platform-id helpers (`SplitPlatformID`,
+  `CompoundPlatformID`, `ErrRemoteOffline`), so modules never import
+  `internal/remote` just to parse an owner.
 - `internal/plugins/` — native executable discovery, versioned NDJSON protocol,
   process supervision, `action.v1` / `conversation.v1` brokers, and `pane.v1`
   read-only sidebar trees. Trusted
@@ -482,7 +485,10 @@ are computed. Sessions retain their original directories and owners.
   it they degrade to the loopback listen address, which is why the plugins doc
   tells operators to set it before pointing a plugin at a remote provider.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
-  + HTTP proxy client.
+  + HTTP proxy client. Port discovery (port map, session affinity, v2
+  machine server, managed inventory source) is an `opencode.Discovery` owned
+  by each adapter (`Adapter.Discovery()`); the server wires the local Host's
+  hooks to the registered adapter's, so a backend reload starts empty.
 - `internal/platforms/claudecode/` — Claude browsing/project adapter composition,
   project supervisor recovery and draining, plus the provider and hook
   subcommands. Skills and the MCP address are passed in by application startup;
@@ -681,7 +687,9 @@ are computed. Sessions retain their original directories and owners.
   `internal/hostsvc/local/` is the only package that reaches for
   git/tmux/whisper directly; handlers resolve an owner and delegate.
 - `internal/remote/` — multi-remote gRPC client/server plus the
-  generated `proto` stubs (regenerate with `make proto`).
+  generated `proto` stubs (regenerate with `make proto`). It declares the
+  narrow `WebhookInboxes` interface it calls; the composition root injects
+  `webhook.LocalInboxes`, so `remote` never imports the webhook module.
 - `internal/gitexec/` — hardened `git` subprocess construction (strips
   `GIT_DIR`/`GIT_INDEX_FILE`, disables terminal prompts and optional
   locks). Every git invocation must go through it.
@@ -694,8 +702,9 @@ are computed. Sessions retain their original directories and owners.
   proposals; the user's confirmation card runs them), the planning,
   implementation and verification session launchers, Epic control sessions,
   and the domain service's lifecycle. The domain and its dispatcher stay in
-  `internal/factory`; tables stay in `internal/state`. It is a separate
-  package because `internal/state` tests import `internal/factory`.
+  `internal/factory`; tables stay in `internal/state`. Only state's external
+  tests (`package state_test`) import `internal/factory`, so the two packages
+  can now be merged without a test import cycle.
 - `internal/pluginsmod/` — module: every `/api/plugins` route, discovery and
   process supervision, owner-local management, the remote `PluginOperation`
   handler, palette actions, pane reads, and the conversation.v1 broker with its
@@ -996,7 +1005,10 @@ minimal and match the surrounding code.
     reconciliation runs every 5 minutes regardless, so deletions and
     missed events are always corrected.
   - The cache is package-global and assumes **one local OpenCode
-    database** per process (see "Two databases" above).
+    database** per process (see "Two databases" above). `ResetCaches`,
+    run on backend reload, clears it together with the other package-level
+    caches (catalog/session HTTP caches, `ocv2`'s dialect cache); port
+    discovery is per adapter and needs no reset.
 - **Session status** is a closed, typed set — `db.SessionStatus`
   (`busy`, `waiting`, `done`, `error`, `interrupted`), mirrored by the
   exported TS `SessionStatus` union. It is **settled from the agent's own
@@ -1129,8 +1141,8 @@ are joined. Rules:
   through `webhook.Routines`).
 - Dependencies that can change after `server.New` (relay URL, auth, remotes)
   are functions read at call time, and each module is built once on first
-  use (`sync.Once`), like `router()`. Tests may assign a module field before
-  that first use. Pass an untyped nil, never a nil pointer, for an absent
+  use through the server's `lazy[T]` field helper (`get(build)`), like
+  `router()`. Tests may `set` a module before that first use. Pass an untyped nil, never a nil pointer, for an absent
   interface.
 - Guards come from the server: `Router.Local` / `LocalSetting` for a whole
   mount, or `Router.Handle` plus `Deps.Guards` when subroutes differ. Session

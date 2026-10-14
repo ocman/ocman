@@ -314,7 +314,10 @@ flowchart TD
   their routes, background loops, MCP tools and event subscriptions. The
   server lists them once in `modules()` and hands each narrow `Deps` (store,
   guards, lookups); modules never import the server or each other. Webhooks
-  dispatch to routines through an interface. Sharing and Factory's dispatch
+  dispatch to routines through an interface, and `internal/remote` reaches
+  the owner's webhook inboxes through its own `WebhookInboxes` interface
+  (injected `webhook.LocalInboxes`). Modules are built once on first use via
+  the server's generic `lazy[T]` field. Sharing and Factory's dispatch
   wake-up react to the typed, synchronous `module.Bus` `SessionIdle` event.
   `sessionsvc` publishes `FirstPromptAdded` once after a new conversation's
   first successful input. `sessiontitles` handles it only on the owning machine:
@@ -389,7 +392,7 @@ flowchart TD
   service; Claude supervisor recovery stays in `platforms/claudecode`.
 - **autoapprove.Judge.** The safe-command cache runs before backend selection.
   Each uncached permission selects a judge through `Deps.SelectJudge`, defaulting
-  to OpenCode port discovery. When no OpenCode instance is reachable and
+  to the registered OpenCode adapter's port discovery. When no OpenCode instance is reachable and
   `claudecode` is enabled, `autoapprove.ClaudeJudge` runs `claude -p --model
   haiku` with no tools. With neither, an explicit `needs-user` verdict leaves the
   prompt unanswered.
@@ -578,7 +581,8 @@ flowchart TD
 - **platforms.Registry.** The session-scoped seam. One adapter per platform;
   remotes register as compound-ID platforms so handlers can't tell local from
   remote. `platforms/identity` holds built-in IDs without depending on adapters
-  or databases.
+  or databases; the compound-ID helpers and `ErrRemoteOffline` live in
+  `internal/platforms`, so modules never import the gRPC client to parse one.
 - **hostsvc.Router.** The directory-scoped seam (git, worktrees, tmux,
   projects and forge-repository detection/fetch). It resolves the owning host
   and delegates, the same transparency
@@ -600,8 +604,11 @@ flowchart TD
   probes and a two-second deadline per instance. Inventory reads use the validated
   in-memory routing map without network probes. Definite failures revoke routing
   but retain cleanup handles; inconclusive probes preserve warm authorization.
-  Launches and routing changes invalidate discovery immediately, and stale scans
-  cannot repopulate an invalidated port cache. The server joins the health worker
+  Launches and routing changes invalidate discovery immediately through the
+  Host's `RuntimeInventoryChanged` hook (`internal/tmux` knows nothing about
+  the adapter), and stale scans cannot repopulate an invalidated port cache.
+  Discovery state is an `opencode.Discovery` owned by each OpenCode adapter,
+  so a backend reload's new adapter starts with no stale ports or affinity. The server joins the health worker
   before closing databases. `RestartProjectOpencode` stops and relaunches the tracked
   instance. Owner-local replacement callbacks use the read-only
   `ManagedRootReader.ManagedOpencodeRoot` view of that same main-checkout
