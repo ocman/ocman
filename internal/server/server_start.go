@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -144,10 +145,24 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		return err
 	case <-ctx.Done():
 		log.Info("shutting down server...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
+		return shutdownHTTP(httpServer, shutdownTimeout)
 	}
+}
+
+// shutdownTimeout bounds a graceful shutdown.
+const shutdownTimeout = 5 * time.Second
+
+// shutdownHTTP stops srv gracefully within timeout, then cuts off what
+// remains: a stuck request must not turn a reload into a fatal exit.
+func shutdownHTTP(srv *http.Server, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err := srv.Shutdown(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		log.WithField("timeout", timeout).Warn("graceful shutdown timed out; closing remaining connections")
+		return srv.Close()
+	}
+	return err
 }
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
