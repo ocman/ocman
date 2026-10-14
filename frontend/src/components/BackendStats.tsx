@@ -3,6 +3,7 @@ import { useApiStore } from '../lib/apiStore';
 import { useRunningSessionCount } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { IconButton } from './IconButton';
+import { ActiveSessions } from './ActiveSessions';
 import { useLongTaskMonitor } from '../lib/useLongTaskMonitor';
 import './BackendStats.css';
 
@@ -135,9 +136,7 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
     <div className="backend-stats">
       <div className="backend-stats-row">
         {runningSessions !== undefined && (
-          <span className="backend-stats-item" title="Currently running sessions, including archived sessions and subagents">
-            <span className="backend-stats-label">active sessions</span>: {runningSessions}
-          </span>
+          <ActiveSessions count={runningSessions} enabled={enabled} />
         )}
         <IconButton
           className="backend-stats-toggle"
