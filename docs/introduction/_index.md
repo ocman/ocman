@@ -79,15 +79,10 @@ automatically, so parallel worktree sessions get isolated files and staging
 areas without a process per worktree.
 
 With OpenCode v2, ocman instead runs one server for the whole machine (see
-[Configuration](../configuration#opencode-v2)). With v1, if you prefer to run
-OpenCode yourself, start it with an explicit port so ocman can discover it:
-
-```sh
-opencode --port 0   # let OpenCode pick a free port
-```
-
-Without `--port`, externally launched sessions stay readable but the composer
-is disabled.
+[Configuration](../configuration#opencode-v2)). Start conversations through
+ocman to use its managed instances. Instances you start yourself are never
+discovered or adopted. Saved sessions remain visible from the database;
+interactive controls require a connection to an ocman-managed instance.
 
 ## Where to next
 

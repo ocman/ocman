@@ -549,9 +549,9 @@ flowchart TD
   OpenCode worktrees still share one project instance, or the v2 machine
   server, with a per-session working directory. There is no process per
   worktree. The old `EnsureProjectOpencode` gRPC method remains an OpenCode
-  alias for one release. The owning host may use discovery once to
-  adopt a healthy instance that started before its managed registry entry
-  existed. `RestartProjectOpencode` stops and relaunches the tracked
+  alias for one release. Only tracked instances are reused; persisted entries
+  must pass an API identity probe after restart. External instances are never
+  adopted. `RestartProjectOpencode` stops and relaunches the tracked
   instance. Owner-local replacement callbacks use the read-only
   `ManagedRootReader.ManagedOpencodeRoot` view of that same main-checkout
   identity, so external linked worktrees share membership and nested independent

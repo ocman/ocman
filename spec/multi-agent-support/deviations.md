@@ -650,7 +650,8 @@ Per-requirement status and evidence are in `conformance.md`.
 - **Spec:** AD-5 / NFR-5 pinned and tested range; the spike said not to infer a range from 2.1.220 alone.
 - **What we did instead:** `[2.1.220, 2.2.0)` is accepted; anything else makes create, send and fork fail with an explicit `claude CLI <v> is unsupported` error, and no CLI with `claude CLI not found: install Claude Code 2.1.220 or later (below 2.2.0)`.
 - **Why:** The installed default CLI was already 2.1.289; pinning one patch release would reject it on every auto-update.
-- **Follow-up:** Resolved by claude-code-provider.1.3.60: ocman accepts exactly the versions in `TestedCLI` (`2.1.220`), each of which must have `plain`, `permission` and `subagent` fixtures (`TestUnsupportedCLIVersion`). Consequence: an auto-updated CLI (2.1.289 on the spike machine) is refused for driving until its fixtures are recorded manually; browsing is unaffected.
+- **Historical follow-up:** claude-code-provider.1.3.60 restricted driving to versions in `TestedCLI` (`2.1.220`), each with `plain`, `permission` and `subagent` fixtures. The former `TestUnsupportedCLIVersion` enforced that gate, so automatic updates were refused.
+- **Current behavior:** Exact-version launch gating has been removed. `TestCLIAvailability` rejects a missing CLI while allowing installed updates. `TestedCLI` still identifies recorded protocol evidence; allowing an update does not claim that its permission or subagent flows have been measured. Browsing remains available without the CLI.
 
 ### Usage limit detection follows the documented rejected status
 - **Task:** claude-code-provider.1.3.10
