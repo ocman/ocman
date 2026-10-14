@@ -6,7 +6,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -24,7 +23,7 @@ func (s *Server) createPlatform(ctx context.Context, host hostsvc.Host, requeste
 			return "", "", err
 		}
 	}
-	owner, base := remote.SplitPlatformID(requested)
+	owner, base := platforms.SplitPlatformID(requested)
 	if owner != "" && owner != host.RemoteID() {
 		return "", "", fmt.Errorf("platform does not belong to remoteId")
 	}
@@ -43,7 +42,7 @@ func (s *Server) defaultPlatformFor(ctx context.Context, host hostsvc.Host) (str
 	}
 	var bases []string
 	for _, p := range s.registry.Platforms() {
-		if owner, base := remote.SplitPlatformID(string(p.ID())); owner == id {
+		if owner, base := platforms.SplitPlatformID(string(p.ID())); owner == id {
 			bases = append(bases, base)
 		}
 	}
@@ -58,7 +57,7 @@ func (s *Server) defaultPlatformFor(ctx context.Context, host hostsvc.Host) (str
 
 func platformForHost(host hostsvc.Host, base string) string {
 	if id := host.RemoteID(); id != "" && id != "local" {
-		return remote.CompoundPlatformID(id, base)
+		return platforms.CompoundPlatformID(id, base)
 	}
 	return base
 }

@@ -3,7 +3,7 @@ package inbox
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -22,7 +22,7 @@ func (m *Module) inboxSessionContext(ctx context.Context, source string, items [
 		}
 		if source != "local" {
 			// The owner enriched this row in the existing InboxItems RPC.
-			session.Platform = remote.CompoundPlatformID(source, session.Platform)
+			session.Platform = platforms.CompoundPlatformID(source, session.Platform)
 		} else if m.SessionTitle != nil {
 			key := [2]string{session.Platform, session.SessionID}
 			title, loaded := titles[key]

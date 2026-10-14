@@ -9,7 +9,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -58,7 +57,7 @@ func (t Target) Validate(w http.ResponseWriter) bool {
 }
 
 func remoteIDForPlatform(platform string) string {
-	if remoteID, _ := remote.SplitPlatformID(platform); remoteID != "" {
+	if remoteID, _ := platforms.SplitPlatformID(platform); remoteID != "" {
 		return remoteID
 	}
 	return "local"
@@ -80,7 +79,7 @@ func (m *Module) draftOwner(w http.ResponseWriter, platform, directory string) (
 // EnsureProjectForCreate launches on the platform's owner, folding worktrees to their project root.
 // Local OpenCode ensure failures retain the existing port-discovery fallback.
 func (m *Module) EnsureProjectForCreate(w http.ResponseWriter, r *http.Request, platform, directory string) (hostsvc.Host, string, bool) {
-	remoteID, base := remote.SplitPlatformID(platform)
+	remoteID, base := platforms.SplitPlatformID(platform)
 	host, ok := m.draftOwner(w, platform, directory)
 	if !ok {
 		return nil, "", false

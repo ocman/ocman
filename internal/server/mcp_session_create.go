@@ -10,7 +10,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
@@ -44,7 +43,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 	if !s.server.sessions.KnownPlatform(platformID) {
 		return internalmcp.CreatedSession{}, fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate)
 	}
-	remoteID, base := remote.SplitPlatformID(platformID)
+	remoteID, base := platforms.SplitPlatformID(platformID)
 	owner := remoteIDForPlatform(platformID)
 	host, ok := s.server.router().LookupRemote(owner)
 	if !ok {

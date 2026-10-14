@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -61,7 +61,7 @@ func (m *Module) inboxItems(ctx context.Context, source string, archived bool) (
 		return r.InboxItems(ctx, source)
 	}
 	if source != "local" {
-		return nil, remote.ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	if archived {
 		return m.Store.ListArchivedInboxItems(ctx)
@@ -148,7 +148,7 @@ func (m *Module) handleInboxList(w http.ResponseWriter, r *http.Request) {
 			}
 			if item.Permission != nil && result.source != "local" {
 				permission := *item.Permission
-				permission.Platform = remote.CompoundPlatformID(result.source, permission.Platform)
+				permission.Platform = platforms.CompoundPlatformID(result.source, permission.Platform)
 				item.Permission = &permission
 			}
 			pinnedAt := pinned[state.InboxKey{RemoteID: result.source, ItemID: item.ID}]

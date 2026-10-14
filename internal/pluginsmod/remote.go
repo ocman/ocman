@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -59,7 +60,7 @@ func pluginResponse(value any, err error) remote.PluginResponse {
 		category = plugins.ErrorInvalidArgument
 	case errors.Is(err, errPluginConflict):
 		category = plugins.ErrorConflict
-	case errors.Is(err, plugins.ErrUnavailable), errors.Is(err, remote.ErrRemoteOffline):
+	case errors.Is(err, plugins.ErrUnavailable), errors.Is(err, platforms.ErrRemoteOffline):
 		category = plugins.ErrorUnavailable
 	case errors.Is(err, context.Canceled):
 		category = plugins.ErrorCancelled
@@ -157,13 +158,13 @@ func (m *Module) RouteOperation(ctx context.Context, owner string, req remote.Pl
 	if owner == "local" {
 		response = m.localPluginOperation(ctx, req, false)
 	} else if remotes := m.remotes(); remotes == nil {
-		return pluginResponse(nil, remote.ErrRemoteOffline)
+		return pluginResponse(nil, platforms.ErrRemoteOffline)
 	} else {
 		var err error
 		response, err = remotes.PluginOperation(ctx, owner, req)
 		if err != nil {
 			// Transport errors never expose remote diagnostics or request contents.
-			return pluginResponse(nil, remote.ErrRemoteOffline)
+			return pluginResponse(nil, platforms.ErrRemoteOffline)
 		}
 	}
 	if response.Error != nil {

@@ -10,7 +10,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
 // startSendBody is delivered in the start request. Failures leave the created
@@ -61,7 +60,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 
 	var platform, sessionID, directory, worktreePath, branch string
 	if req.Worktree {
-		remoteID, base := remote.SplitPlatformID(req.Platform)
+		remoteID, base := platforms.SplitPlatformID(req.Platform)
 		if remoteID == "" {
 			// git is a host-local precondition; a remote validates its own.
 			if _, err := exec.LookPath("git"); err != nil {

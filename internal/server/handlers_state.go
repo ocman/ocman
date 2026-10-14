@@ -10,7 +10,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -113,7 +112,7 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		// client-reported value is the same remote clock the later
 		// applySessionState comparison uses, so store it verbatim.
 		ts := req.SessionTimeUpdated
-		if remoteID, _ := remote.SplitPlatformID(platform); remoteID == "" {
+		if remoteID, _ := platforms.SplitPlatformID(platform); remoteID == "" {
 			if now := time.Now().UnixMilli(); now > ts {
 				ts = now
 			}

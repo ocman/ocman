@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/sessionlifecycle"
 )
 
@@ -23,7 +23,7 @@ func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, 
 }
 
 func remoteIDForPlatform(platform string) string {
-	if remoteID, _ := remote.SplitPlatformID(platform); remoteID != "" {
+	if remoteID, _ := platforms.SplitPlatformID(platform); remoteID != "" {
 		return remoteID
 	}
 	return "local"

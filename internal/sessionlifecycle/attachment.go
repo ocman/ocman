@@ -9,7 +9,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
 func (m *Module) HandleSessionAttachment(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +22,7 @@ func (m *Module) HandleSessionAttachment(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "session not found", http.StatusNotFound)
 			return
 		}
-		remoteID, _ := remote.SplitPlatformID(string(adapter.ID()))
+		remoteID, _ := platforms.SplitPlatformID(string(adapter.ID()))
 		if remoteID == "" {
 			remoteID = "local"
 		}

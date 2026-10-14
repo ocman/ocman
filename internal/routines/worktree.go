@@ -9,7 +9,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -28,7 +27,7 @@ func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensur
 	}
 	done := s.sessions.BeginRoutineCreation()
 	defer done()
-	_, base := remote.SplitPlatformID(platformID)
+	_, base := platforms.SplitPlatformID(platformID)
 	created, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: run.Directory, Branch: "routine/" + run.ID, NewBranch: true, MustCreateBranch: true, Title: title, PermissionRules: rules})
 	if err != nil {
 		return "", err

@@ -14,7 +14,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -138,7 +137,7 @@ func (s *Service) defaultPlatform(ctx context.Context, remoteID string) (string,
 	}
 	var bases []string
 	for _, p := range s.platforms.Platforms() {
-		if owner, base := remote.SplitPlatformID(string(p.ID())); owner == remoteID {
+		if owner, base := platforms.SplitPlatformID(string(p.ID())); owner == remoteID {
 			bases = append(bases, base)
 		}
 	}
@@ -325,12 +324,12 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 			return s.failDispatch(ctx, run, err)
 		}
 	}
-	owner, base := remote.SplitPlatformID(platformID)
+	owner, base := platforms.SplitPlatformID(platformID)
 	if owner != "" && owner != host.RemoteID() {
 		return s.failDispatch(ctx, run, errors.New("routine platform does not belong to target"))
 	}
 	if host.RemoteID() != "" && host.RemoteID() != "local" {
-		platformID = remote.CompoundPlatformID(host.RemoteID(), base)
+		platformID = platforms.CompoundPlatformID(host.RemoteID(), base)
 	}
 	if !s.sessions.KnownPlatform(platformID) {
 		return s.failDispatch(ctx, run, fmt.Errorf("routine platform %q is unavailable", platformID))
@@ -421,7 +420,7 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 				// write resurfaces the session, so wait until it's quiet, then
 				// ponytail: writes >5s late still resurface. Remotes use the owner clock.
 				stamp := detail.Session.TimeUpdated
-				if remoteID, _ := remote.SplitPlatformID(run.Platform); remoteID == "" {
+				if remoteID, _ := platforms.SplitPlatformID(run.Platform); remoteID == "" {
 					if stamp = s.now().UnixMilli(); stamp-detail.Session.TimeUpdated < settleQuietPeriod.Milliseconds() {
 						continue
 					}

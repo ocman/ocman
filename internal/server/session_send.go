@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -61,13 +60,13 @@ func (s *Server) relaunchOpencodeForSession(ctx context.Context, platformID, ses
 		return false
 	}
 	dir := projectRootForDirectory(detail.Session.Directory)
-	owner, _ := remote.SplitPlatformID(string(adapter.ID()))
+	owner, _ := platforms.SplitPlatformID(string(adapter.ID()))
 	host, ok := s.router().LookupRemote(owner)
 	if !ok {
 		log.WithFields(log.Fields{"sessionID": sessionID, "remoteId": owner}).Warn("not relaunching opencode: session owner is not connected")
 		return false
 	}
-	_, base := remote.SplitPlatformID(platformID)
+	_, base := platforms.SplitPlatformID(platformID)
 	res, err := host.EnsureRuntime(ctx, base, dir)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"sessionID": sessionID, "directory": dir}).Warn("relaunching opencode for unreachable session")

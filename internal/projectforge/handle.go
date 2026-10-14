@@ -17,7 +17,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -106,7 +105,7 @@ func (m *Module) handleHandle(w http.ResponseWriter, r *http.Request) {
 // launchSession creates a session in the project directory, no checkout.
 func (m *Module) launchSession(w http.ResponseWriter, r *http.Request, req handleRequest, host hostsvc.Host, platform, prompt string) {
 	port := ""
-	_, base := remote.SplitPlatformID(platform)
+	_, base := platforms.SplitPlatformID(platform)
 	ensured, err := host.EnsureRuntime(r.Context(), base, state.ProjectRootForDirectory(req.Dir))
 	if err != nil && base != string(platforms.OpenCodeID) {
 		http.Error(w, "launching runtime: "+err.Error(), http.StatusBadGateway)
@@ -158,7 +157,7 @@ func (m *Module) launchWorktree(
 			}
 		}
 	}
-	_, base := remote.SplitPlatformID(platform)
+	_, base := platforms.SplitPlatformID(platform)
 	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: repoRoot, Branch: branch, NewBranch: newBranch})
 	if err != nil {
 		log.WithError(err).Warn("handle worktree: launch")
