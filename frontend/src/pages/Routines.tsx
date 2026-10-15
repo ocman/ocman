@@ -62,7 +62,7 @@ export function Routines() {
     <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'inboxes' ? { tab: value } : {}, { replace: true })} className={styles.tabs}>
       <TabsList aria-label="Routine views"><TabsTrigger value="routines">Routines</TabsTrigger><TabsTrigger value="inboxes">Webhook inboxes</TabsTrigger></TabsList>
       {error && !showForm && <p role="alert" className={styles.error}>{error}</p>}
-      {showForm && ready && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
+      {showForm && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
       {historyRoutine && ready && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} inboxes={inboxes} activeTab={detailTab} onTabChange={(view) => selectRoutine(historyRoutine.id, view)} refreshKey={refreshKey} onRefresh={refreshAfterSave} onSaved={saved} onClose={() => selectRoutine()} />}
       {historyId && !historyRoutine && !loading && !error && <p role="alert">This routine is unavailable.</p>}
       {inboxDrawer !== undefined && <WebhookInboxDrawer key={inboxDrawer} inbox={inboxes.find((inbox) => inbox.id === inboxDrawer) ?? null} routines={routines} onClose={() => setInboxDrawer(undefined)} onChange={() => void load().catch((err: Error) => setError(err.message))} onEditRoutine={openSettings} />}
