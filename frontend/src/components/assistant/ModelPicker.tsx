@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import type { SessionModelEntry } from '../../lib/api';
 import { ModelLabel } from '../ModelLogo';
+import { PlatformLogo } from '../PlatformBadge';
 import { CommandListPicker } from './CommandListPicker';
 import { buildModelEntries, isPinnedModel, modelSearchKeys, modelSectionOf, type ModelEntry } from './modelEntries';
 import { ModelBadges } from './ModelBadges';
@@ -43,6 +44,14 @@ export function ModelPicker({
     () => buildModelEntries(models, modelEntries, currentModel),
     [modelEntries, models, currentModel],
   );
+  const [platform, setPlatform] = useState('all');
+  const platforms = useMemo(() => Array.from(
+    new Map(entries.filter((entry) => entry.platform).map((entry) => [entry.platform, entry.platformName])),
+    ([value, label]) => ({ value, label: <><PlatformLogo platform={value} />{label}</> }),
+  ), [entries]);
+  const showTabs = platforms.length > 1;
+  const activePlatform = showTabs && platforms.some((tab) => tab.value === platform) ? platform : 'all';
+  const visibleEntries = activePlatform === 'all' ? entries : entries.filter((entry) => entry.platform === activePlatform);
 
   // Re-render every second while a cooldown is running so the countdown
   // moves and the badge drops the moment it expires.
@@ -72,7 +81,7 @@ export function ModelPicker({
         <span className="oc-cmd-meta">
           {e.providerName || e.provider || ''}
           {e.description && <> · {e.description}</>}
-          {multiPlatform && e.platformName && <span className="oc-model-picker-badge oc-model-picker-badge--platform" data-testid="model-platform-badge">{e.platformName}</span>}
+          {multiPlatform && e.platformName && <span className="oc-model-picker-badge oc-model-picker-badge--platform" data-testid="model-platform-badge"><PlatformLogo platform={e.platform} />{e.platformName}</span>}
         </span>
       </div>
       {onToggleFavorite && e.provider && (
@@ -97,7 +106,12 @@ export function ModelPicker({
   return (
     <CommandListPicker<ModelEntry>
       open={open}
-      entries={entries}
+      entries={visibleEntries}
+      tabs={showTabs ? {
+        value: activePlatform,
+        items: [{ value: 'all', label: 'All' }, ...platforms],
+        onChange: setPlatform,
+      } : undefined}
       fuseKeys={modelSearchKeys}
       pinned={isPinnedModel}
       // Section only when we have rich data (string fallback has no section

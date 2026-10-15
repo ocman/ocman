@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { createPortal } from 'react-dom';
 import { weightedSearch, type SearchKey } from '../../lib/weightedSearch';
 import { Modal } from '../Modal';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../Tabs';
 import '../CommandPalette.css';
 import './ModelPicker.css';
 
@@ -100,6 +101,11 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
   onClose: () => void;
   /** Backspace-on-empty handler (model picker uses it to step back). */
   onBack?: () => void;
+  tabs?: {
+    value: string;
+    items: { value: string; label: ReactNode }[];
+    onChange: (value: string) => void;
+  };
 }
 
 /**
@@ -127,6 +133,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
   onSelect,
   onClose,
   onBack,
+  tabs,
 }: CommandListPickerProps<T>) {
   // Parent remounts on open (conditional render), so useState picks up
   // initialQuery fresh each invocation without resurrecting stale state.
@@ -214,13 +221,8 @@ export function CommandListPicker<T extends PickerEntryBase>({
 
   const total = entries.length;
 
-  return createPortal(
-    <Modal
-      label={placeholder(total)}
-      onClose={onClose}
-      backdropClassName="oc-cmd-backdrop"
-      dialogClassName={`oc-cmd-palette oc-model-picker${dialogClassName ? ` ${dialogClassName}` : ''}`}
-    >
+  const content = (
+    <>
       <div className="oc-cmd-input-wrap">
         {searchable ? (
           <>
@@ -288,6 +290,27 @@ export function CommandListPicker<T extends PickerEntryBase>({
           );
         })}
       </div>
+    </>
+  );
+
+  return createPortal(
+    <Modal
+      label={placeholder(total)}
+      onClose={onClose}
+      backdropClassName="oc-cmd-backdrop"
+      dialogClassName={`oc-cmd-palette oc-model-picker${dialogClassName ? ` ${dialogClassName}` : ''}`}
+    >
+      {tabs ? (
+        <Tabs className="oc-model-picker-tabs" value={tabs.value} onValueChange={(value) => {
+          setSelectedIndex(0);
+          tabs.onChange(value);
+        }}>
+          <TabsList aria-label="Model platforms">
+            {tabs.items.map((tab) => <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>)}
+          </TabsList>
+          <TabsContent value={tabs.value}>{content}</TabsContent>
+        </Tabs>
+      ) : content}
     </Modal>,
     document.body,
   );

@@ -2,11 +2,19 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useMultiPlatform } from '../lib/useCapabilities';
-import { PlatformBadge } from './PlatformBadge';
+import { PlatformBadge, PlatformLogo } from './PlatformBadge';
 
 vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: vi.fn() }));
 
 beforeEach(() => vi.mocked(useMultiPlatform).mockReturnValue(true));
+
+it('renders decorative platform logos, including remote platforms, without broken unknown icons', () => {
+	const { container, rerender } = render(<PlatformLogo platform="r-owner:claudecode" />);
+	expect(container.querySelector('img')).toHaveAttribute('src', '/platform-claudecode.svg');
+	expect(container.querySelector('img')).toHaveAttribute('alt', '');
+	rerender(<PlatformLogo platform="custom" />);
+	expect(container).toBeEmptyDOMElement();
+});
 
 it('hides redundant badges when only one platform is available', () => {
 	vi.mocked(useMultiPlatform).mockReturnValue(false);

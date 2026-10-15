@@ -1,4 +1,23 @@
 /* ── /model command palette ────────────────────────────── */
+.oc-model-picker-tabs,
+.oc-model-picker-tabs > .oc-tabs-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.oc-model-picker-tabs > .oc-tabs-list {
+  overflow-x: auto;
+}
+
+.oc-model-picker-tabs .oc-tabs-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .oc-model-picker .oc-model-picker-check {
   display: inline-flex;
   align-items: center;

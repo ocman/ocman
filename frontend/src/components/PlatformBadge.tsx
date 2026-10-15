@@ -26,6 +26,11 @@ function basePlatform(platform: string): string {
   return platform;
 }
 
+export function PlatformLogo({ platform }: { platform: string }) {
+  const meta = META[basePlatform(platform)];
+  return meta ? <img src={meta.icon} width={16} height={16} alt="" /> : null;
+}
+
 interface PlatformBadgeProps {
   platform: string;
   alwaysShow?: boolean;
