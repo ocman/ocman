@@ -212,6 +212,14 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "permission asked", func() bool { return len(pending(p1, id)) == 1 })
+	rows, err := p1.Sessions(t.Context(), "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rowIndex := slices.IndexFunc(rows, func(s db.Session) bool { return s.ID == id })
+	if rowIndex < 0 || !rows[rowIndex].PendingPermission || rows[rowIndex].Status != db.StatusWaiting {
+		t.Fatalf("background permission must appear as waiting in the session list: %+v", rows)
+	}
 	permission := fmt.Sprint(pending(p1, id)[0]["id"])
 	first := endpoint()
 	stop1()
@@ -282,7 +290,7 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 		t.Fatal(l, err)
 	}
 	listed, _ := p3.Sessions(ctx, "", 0)
-	if i := slices.IndexFunc(listed, func(s db.Session) bool { return s.ID == main.ID }); i < 0 || listed[i].Status != db.StatusBusy {
+	if i := slices.IndexFunc(listed, func(s db.Session) bool { return s.ID == main.ID }); i < 0 || listed[i].Status != db.StatusWaiting || !listed[i].PendingPermission {
 		t.Fatalf("list = %+v", listed)
 	}
 	if refreshed, err := p3.RefreshPermissions(ctx, main.ID); err != nil || len(refreshed) != 1 {

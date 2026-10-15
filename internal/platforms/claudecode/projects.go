@@ -281,9 +281,12 @@ func (p *claudePlatform) Sessions(ctx context.Context, dir string, since int64) 
 			s.Status, s.ResetsAt = st.Status, st.ResetsAt
 		}
 		// A prompt waiting for the user is only in the adapter's view.
-		if a := p.projects.owner(s.ID); a != nil && s.Status == db.StatusBusy {
-			if live := a.LiveStatus(s.ID); live != nil && live.Status == string(db.StatusWaiting) {
-				s.Status = db.StatusWaiting
+		if a := p.projects.owner(s.ID); a != nil {
+			if live := a.LiveStatus(s.ID); live != nil {
+				s.PendingPermission, s.PendingQuestion = live.PendingPermission, live.PendingQuestion
+				if s.Status == db.StatusBusy && (live.Status == string(db.StatusWaiting) || s.PendingPermission || s.PendingQuestion) {
+					s.Status = db.StatusWaiting
+				}
 			}
 		}
 	}
