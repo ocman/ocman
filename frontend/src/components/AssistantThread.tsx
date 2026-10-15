@@ -129,6 +129,9 @@ const UserTextPart: FC<{ text: string }> = ({ text }) => {
   const localCommand = parseLocalCommand(text);
   if (localCommand) return <LocalCommand entry={localCommand} />;
   if (!text.trim()) return null;
+  // Claude places the directory before the skill body rather than in a footer.
+  const skillHeader = /^Base directory for this skill: [^\r\n]+[/\\]([^/\\\r\n]+)\r?\n\r?\n/.exec(text);
+  if (skillHeader) return <SkillCall name={skillHeader[1]} instructions={text} />;
   // Slash-command skills arrive as plain user text with this generated footer.
   const skill = /^Base directory for this skill: [^\r\n]+[/\\]([^/\\\r\n]+)\r?\nRelative paths in this skill [^\r\n]*are relative to this base directory\./m.exec(text);
   if (skill) {

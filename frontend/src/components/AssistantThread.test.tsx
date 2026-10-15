@@ -260,6 +260,35 @@ describe('Claude task notifications', () => {
 describe('AssistantThread slash-command skills', () => {
   const instructions = '# Review Pull Request\n\nReview the changes carefully.\n\nBase directory for this skill: /home/user/.config/opencode/skills/review-pr\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory.';
 
+  it.each([
+    '/Users/user/.claude/skills/devtoys',
+    'C:\\Users\\user\\.claude\\skills\\devtoys',
+  ])('collapses Claude skill content from %s without losing the instructions', async (directory) => {
+    const user = userEvent.setup();
+    threadState.renderUser = true;
+    const text = `Base directory for this skill: ${directory}\r\n\r\n# devtoys\r\n\r\nUse the CLI directly.\r\n\r\n## Introspection\r\nRun --help first.`;
+    message.content = [{ type: 'text', text }];
+    render(<AssistantThread />);
+
+    const toggle = screen.getByRole('button', { name: '/devtoys' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(/Use the CLI directly/)).not.toBeInTheDocument();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(/Use the CLI directly/).textContent).toBe(text);
+    await user.click(toggle);
+    expect(screen.queryByText(/Use the CLI directly/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a Claude skill header quoted inside a user prompt as plain text', () => {
+    threadState.renderUser = true;
+    const text = 'Explain this:\nBase directory for this skill: /Users/user/.claude/skills/devtoys\n\n# devtoys\nUse the CLI directly.';
+    message.content = [{ type: 'text', text }];
+    const { container } = render(<AssistantThread />);
+    expect(screen.queryByRole('button', { name: '/devtoys' })).not.toBeInTheDocument();
+    expect(container.textContent).toContain(text);
+  });
+
   it('collapses skill instructions and lets the user expand them', async () => {
     const user = userEvent.setup();
     threadState.renderUser = true;
