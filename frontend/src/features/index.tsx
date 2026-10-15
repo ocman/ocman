@@ -20,6 +20,7 @@ import { SharingSettings } from '../components/SharingSettings';
 import { WebhookRelaySettings } from '../components/WebhookRelaySettings';
 import { IdleProjectSettings } from '../components/IdleProjectSettings';
 import { PlatformSettings } from '../components/PlatformSettings';
+import { ConversationSection } from '../pages/dashboard/SettingsSections';
 
 // Factory pages pull in the epic graph (@xyflow, dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
@@ -85,6 +86,7 @@ export const FEATURES: Feature[] = [
     nav: { to: '/artifacts', label: 'Artifacts', icon: 'bi-box-seam' },
   },
   { id: 'plugins', settings: { id: 'plugins', label: 'Plugins', mount: 'active', Section: PluginSettings } },
+  { id: 'conversation', settings: { id: 'conversation', label: 'Conversation', mount: 'active', Section: ConversationSection } },
   { id: 'platforms', settings: { id: 'platforms', label: 'Platforms', mount: 'active', Section: PlatformSettings } },
   { id: 'idle-projects', settings: { id: 'idle-projects', label: 'Idle projects', mount: 'active', Section: IdleProjectSettings } },
   { id: 'auto-approve', settings: { id: 'auto-approve', label: 'Auto-approve', mount: 'always', Section: AutoApproveSection } },

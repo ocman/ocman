@@ -120,6 +120,22 @@ export function NotificationsSection() {
 // Sessions
 // ---------------------------------------------------------------------------
 
+export function ConversationSection() {
+  const compactToolCalls = useUiStore((s) => s.compactToolCalls);
+  const setCompactToolCalls = useUiStore((s) => s.setCompactToolCalls);
+  const save = useSettingSave();
+  return (
+    <SettingRow setting="compact-tool-calls">
+      <SettingToggle
+        ariaLabel="Compact tool calls"
+        checked={compactToolCalls}
+        save={save}
+        onSave={setCompactToolCalls}
+      />
+    </SettingRow>
+  );
+}
+
 export function SessionsSection() {
   const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
   const setDashboardTimeRangeDefault = useUiStore((s) => s.setDashboardTimeRangeDefault);

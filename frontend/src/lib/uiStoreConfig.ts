@@ -50,6 +50,7 @@ export const uiStorePersistence: PersistOptions<UiStore, Partial<UiStore>> = {
     sidebarStatsExpanded: s.sidebarStatsExpanded,
     bellEnabled: s.bellEnabled,
     showToolDetails: s.showToolDetails,
+    compactToolCalls: s.compactToolCalls,
     showReasoning: s.showReasoning,
     showMessageMetadata: s.showMessageMetadata,
     autoReadAnswers: s.autoReadAnswers,

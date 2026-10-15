@@ -8,6 +8,7 @@ import { TodoList } from '../TodoList';
 import { isMutedLineTool } from '../../lib/mutedTools';
 import { useIsPrinting } from '../../lib/useIsPrinting';
 import { usePrintCollapse } from '../../lib/printCollapseContext';
+import { useUiStore } from '../../lib/uiStore';
 import {
   highlightDiffCode,
   toolOutputLanguage,
@@ -78,6 +79,7 @@ function toolApprovals(artifact: unknown): ToolApproval[] {
 
 const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, artifact, result }) => {
   const [expandedState, setExpanded] = useState(false);
+  const compactToolCalls = useUiStore((s) => s.compactToolCalls);
   // While printing / saving to PDF, force every block open so the
   // exported transcript is complete. CSS lifts the max-height caps
   // (see the @media print block in tokens.css); this additionally
@@ -298,12 +300,12 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
     // The command is whatever is left after the status/meta lines, kept
     // verbatim — multi-line commands (heredocs) render as typed.
     const command = remainingArgs.trim();
-    const description = shellDescription;
+    const description = compactToolCalls && !expanded ? undefined : shellDescription;
     const bashOutput = outputDisplay;
     const bashIsLong = shellOutputIsLong(bashOutput);
     const forcePrintCollapse = isPrinting && printCollapse;
-    const bashExpanded = expanded || !bashIsLong;
-    const bashOutputDisplay = bashExpanded ? bashOutput : shellOutputPreview(bashOutput);
+    const bashExpanded = expanded || (!compactToolCalls && !bashIsLong);
+    const bashOutputDisplay = bashExpanded ? bashOutput : compactToolCalls ? '' : shellOutputPreview(bashOutput);
     const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
       <div className={`oc-tool oc-tool-shell ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
@@ -311,7 +313,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
             <pre className="oc-shell-block" data-testid="shell-output-block">
 {description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <span className="oc-shell-cmd" dangerouslySetInnerHTML={{ __html: highlightDiffCode(command, 'bash') }} />{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
-              {bashIsLong && (
+              {(compactToolCalls ? !!bashOutput : bashIsLong) && (
                 <button
                   type="button"
                   className="oc-tool-expand oc-shell-output-toggle"

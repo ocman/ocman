@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
@@ -17,6 +17,7 @@ vi.mock('../../lib/printCollapseContext', async (orig) => ({
 }));
 
 import { ToolCallDisplay } from './ToolCallDisplay';
+import { useUiStore } from '../../lib/uiStore';
 
 type Props = ComponentProps<typeof ToolCallDisplay>;
 const renderTool = (p: Partial<Props>) =>
@@ -24,6 +25,39 @@ const renderTool = (p: Partial<Props>) =>
   render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />, { wrapper: MemoryRouter });
 
 describe('ToolCallDisplay bash output', () => {
+  afterEach(() => useUiStore.setState({ compactToolCalls: false }));
+
+  it.each(['bash', 'mcp_bash'])('hides %s output in compact mode until expanded', (toolName) => {
+    useUiStore.setState({ compactToolCalls: true });
+    renderTool({ toolName, argsText: 'completed\n@desc:Run tests\npnpm test', result: 'passed' });
+
+    expect(screen.getByTestId('shell-output-block')).toHaveTextContent('$ pnpm test');
+    expect(screen.getByTestId('shell-output-block')).not.toHaveTextContent('passed');
+    expect(screen.queryByText('# Run tests')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show full output' }));
+    expect(screen.getByTestId('shell-output-block')).toHaveTextContent('passed');
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse output' }));
+    expect(screen.getByTestId('shell-output-block')).not.toHaveTextContent('passed');
+  });
+
+  it('does not offer an output toggle for an empty compact command', () => {
+    useUiStore.setState({ compactToolCalls: true });
+    renderTool({ argsText: 'running\nsleep 10' });
+    expect(screen.getByTestId('bash-spinner')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('expands compact output for printing', () => {
+    useUiStore.setState({ compactToolCalls: true });
+    printing.isPrinting = true;
+    try {
+      renderTool({ argsText: 'completed\necho hi', result: 'hi' });
+      expect(screen.getByTestId('shell-output-block').textContent).toContain('$ echo hi\nhi');
+    } finally {
+      printing.isPrinting = false;
+    }
+  });
+
   it('renders the command without a bash header or outer box', () => {
     const { container } = renderTool({
       argsText: 'completed\necho hi',

@@ -7,7 +7,7 @@
  */
 
 export type SettingsGroupId =
-  | 'notifications' | 'sessions' | 'remotes' | 'plugins' | 'auto-approve' | 'sharing' | 'platforms'
+  | 'notifications' | 'sessions' | 'conversation' | 'remotes' | 'plugins' | 'auto-approve' | 'sharing' | 'platforms'
   | 'webhooks' | 'templates' | 'link-previews' | 'maintenance' | 'provider-accounts' | 'behaviour' | 'app' | 'account' | 'idle-projects'
   /** Per-project settings page; not part of the global Settings search. */
   | 'project';
@@ -29,6 +29,12 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'compact-tool-calls': {
+    group: 'conversation', title: 'Compact tool calls',
+    description: 'Show only shell commands until you expand their output. Off by default. Saved for this browser.',
+    example: 'Keep test logs hidden while reading a conversation, then click Show full output to inspect them.',
+    keywords: 'bash terminal collapse toolcalls',
+  },
   'app-icon-badge': {
     group: 'notifications', title: 'App icon badge',
     description: 'Choose which unread items contribute to the installed app icon count. These settings apply to every device connected to this ocman instance, including background push. Reading or archiving items removes their count.',

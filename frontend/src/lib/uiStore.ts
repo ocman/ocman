@@ -66,6 +66,8 @@ export type UiStore = {
   // OpenCode's TUI /details toggle). Persisted so it survives reload.
   showToolDetails: boolean;
   toggleToolDetails: () => void;
+  compactToolCalls: boolean;
+  setCompactToolCalls: (enabled: boolean) => void;
 
   // Display-only toggle for assistant reasoning/thinking blocks in the
   // thread view (the `/thinking` command, #290). Does NOT enable or
@@ -256,6 +258,8 @@ export const useUiStore = create<UiStore>()(
 
       showToolDetails: true,
       toggleToolDetails: () => set((s) => ({ showToolDetails: !s.showToolDetails })),
+      compactToolCalls: false,
+      setCompactToolCalls: (enabled) => set({ compactToolCalls: enabled }),
 
       showReasoning: true,
       setShowReasoning: (enabled) => set({ showReasoning: enabled }),

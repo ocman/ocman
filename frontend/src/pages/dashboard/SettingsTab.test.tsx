@@ -24,6 +24,7 @@ vi.mock('../../components/MaintenanceSettings', () => ({ MaintenanceSettings: ()
 vi.mock('./SettingsSections', () => ({
   NotificationsSection: () => null,
   SessionsSection: () => null,
+  ConversationSection: () => null,
 }));
 vi.mock('../../components/PreviewProviderSettings', () => ({ PreviewProviderSettings: () => null }));
 vi.mock('../../components/PreviewAppSettings', () => ({ PreviewAppSettings: () => null }));
@@ -116,7 +117,7 @@ describe('SettingsTab actions', () => {
   it('lists feature groups in their fixed slot among the core groups', () => {
     render(<SettingsTab />);
     const groups = screen.getAllByRole('button').map((b) => b.textContent).filter((label) => label !== 'Install' && label !== 'Sign out');
-    expect(groups).toEqual(['Notifications', 'Sessions', 'Remotes', 'Plugins', 'Platforms', 'Idle projects', 'Auto-approve', 'Sharing', 'Webhooks',
+    expect(groups).toEqual(['Notifications', 'Sessions', 'Remotes', 'Plugins', 'Conversation', 'Platforms', 'Idle projects', 'Auto-approve', 'Sharing', 'Webhooks',
       'PR & Issue templates', 'Link previews', 'Maintenance', 'Provider accounts', 'App', 'Account']);
   });
   it('keeps always-mounted feature sections mounted while hidden', () => {
