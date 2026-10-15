@@ -31,7 +31,7 @@ for (const width of [1280, 390]) {
     const explore = page.getByRole('dialog', { name: 'Explore', exact: true });
     await explore.getByRole('treeitem', { name: 'README.md', exact: true }).click();
     await expect(explore.getByRole('treeitem', { name: 'README.md', exact: true })).toHaveCSS('border-radius', '0px');
-    await expect(explore.getByTestId('file-browser-content').getByText('README.md', { exact: true })).toBeVisible();
+    await expect(explore.getByTestId('file-browser-content').getByRole('heading', { name: 'Shared controls', level: 1 })).toBeVisible();
     for (const name of ['file-browser-sidebar', 'file-browser-content']) {
       const bounds = await explore.getByTestId(name).boundingBox();
       expect(bounds!.width).toBeGreaterThan(240);
