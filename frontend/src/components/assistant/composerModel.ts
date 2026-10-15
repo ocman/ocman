@@ -1,4 +1,5 @@
 import type { SessionModelEntry } from '../../lib/api';
+import { qualifyModelRef } from '../../lib/modelRef';
 
 export interface ModelDescription {
   /** Human-readable label for the model button ('' when no model). */
@@ -12,7 +13,11 @@ export interface ModelDescription {
 /** Derive the composer's model-button facts from the rich entry list. */
 export function describeModel(effectiveModel: string, modelEntries: SessionModelEntry[] | undefined): ModelDescription {
   if (!effectiveModel) return { label: '', unavailable: false, reasoningOptions: [] };
-  const match = modelEntries?.find((e) => e.provider && `${e.provider}/${e.model}` === effectiveModel);
+  // A new conversation lists several platforms' models and selects a
+  // platform-qualified reference; a session's own picks are plain.
+  const ref = (e: SessionModelEntry) => `${e.provider}/${e.model}`;
+  const match = modelEntries?.find((e) => e.provider && qualifyModelRef(e.platform, ref(e)) === effectiveModel)
+    ?? modelEntries?.find((e) => e.provider && ref(e) === effectiveModel);
   const slash = effectiveModel.indexOf('/');
   return {
     // Prefer the human-readable `modelName` (e.g. "Claude Opus 4.7"),

@@ -16,4 +16,13 @@ describe('describeModel', () => {
     expect(describeModel('bare', undefined).label).toBe('bare');
     expect(describeModel('a/unknown', [{ provider: 'a', model: 'unknown' }]).unavailable).toBe(false);
   });
+
+  it('matches platform-qualified references from a new conversation', () => {
+    const mixed = [
+      { provider: 'anthropic', model: 'opus', isAvailable: true, reasoning: ['low'] },
+      { platform: 'claudecode', provider: 'anthropic', model: 'opus', modelName: 'Opus', isAvailable: true, reasoning: ['low', 'max'] },
+    ] as SessionModelEntry[];
+    expect(describeModel('claudecode:anthropic/opus', mixed)).toEqual({ label: 'Opus', unavailable: false, reasoningOptions: ['low', 'max'] });
+    expect(describeModel('anthropic/opus', mixed).reasoningOptions).toEqual(['low']);
+  });
 });
