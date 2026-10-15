@@ -27,6 +27,7 @@ import { MarkdownText, ZoomableGraphicModal } from './assistant/MarkdownText';
 import { LocalCommand } from './assistant/LocalCommand';
 import { parseLocalCommand } from '../lib/localCommand';
 import { parseTaskNotification } from '../lib/taskNotification';
+import { parseSkillInstructions } from '../lib/skillInstructions';
 import { TaskNotification } from './assistant/TaskNotification';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { ModelLabel } from './ModelLogo';
@@ -112,11 +113,12 @@ const SkillCall: FC<{ name: string; instructions: string }> = ({ name, instructi
     <>
       <button
         type="button"
-        className="oc-skill-called"
+        className="oc-read-line oc-skill-called"
+        aria-label={`/${name}`}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <i className="bi bi-magic" aria-hidden="true" /> /{name}
+        <span className="oc-read-arrow" aria-hidden="true">→</span> Skill "{name}"
       </button>
       {open && <div className="oc-skill-called-body">{instructions}</div>}
     </>
@@ -129,20 +131,12 @@ const UserTextPart: FC<{ text: string }> = ({ text }) => {
   const localCommand = parseLocalCommand(text);
   if (localCommand) return <LocalCommand entry={localCommand} />;
   if (!text.trim()) return null;
-  // Claude places the directory before the skill body rather than in a footer.
-  const skillHeader = /^Base directory for this skill: [^\r\n]+[/\\]([^/\\\r\n]+)\r?\n\r?\n/.exec(text);
-  if (skillHeader) return <SkillCall name={skillHeader[1]} instructions={text} />;
-  // Slash-command skills arrive as plain user text with this generated footer.
-  const skill = /^Base directory for this skill: [^\r\n]+[/\\]([^/\\\r\n]+)\r?\nRelative paths in this skill [^\r\n]*are relative to this base directory\./m.exec(text);
+  const skill = parseSkillInstructions(text);
   if (skill) {
-    const end = skill.index + skill[0].length;
-    // Render as `/skill rest of the prompt`: the command is a clickable
-    // disclosure, the arguments stay inline after it.
-    const rest = text.slice(end).replace(/^\s+/, '');
     return (
       <>
-        <SkillCall name={skill[1]} instructions={text.slice(0, end)} />
-        {rest && <> <UserTextPart text={rest} /></>}
+        <SkillCall name={skill.name} instructions={skill.instructions} />
+        {skill.rest && <> <UserTextPart text={skill.rest} /></>}
       </>
     );
   }
@@ -199,17 +193,18 @@ const UserMessage: FC = () => {
   // A failed send is worth showing even when its body is empty — the banner
   // itself carries the action the user needs.
   if (!hasContent && !failed) return null;
+  const systemNotification = !failed && content.every((p) => p.type === 'text' && (parseTaskNotification(p.text) || parseSkillInstructions(p.text)?.rest === ''));
 
   return (
     <>
       {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
     <MessagePrimitive.Root
-      className={`oc-msg oc-msg-user${localCommand && !failed ? ' oc-msg-local-command' : ''}${failed ? ' oc-msg-failed' : ''}`}
+      className={`oc-msg ${systemNotification ? 'oc-msg-system' : 'oc-msg-user'}${localCommand && !failed ? ' oc-msg-local-command' : ''}${failed ? ' oc-msg-failed' : ''}`}
       data-message-id={id}
-      style={borderStyle}
+      style={systemNotification ? undefined : borderStyle}
     >
-      <MessageBookmarkButton messageId={id} />
+      {!systemNotification && <MessageBookmarkButton messageId={id} />}
       <div className="oc-msg-body">
         <MessagePrimitive.Content components={USER_PART_COMPONENTS} />
       </div>

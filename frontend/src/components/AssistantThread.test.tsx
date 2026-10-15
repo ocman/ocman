@@ -194,6 +194,29 @@ describe('Claude task notifications', () => {
 <usage><subagent_tokens>86431</subagent_tokens><tool_uses>24</tool_uses><duration_ms>170733</duration_ms></usage>
 </task-notification>`;
 
+  it.each([1, 2])('renders %i notification parts as system entries without a user bubble', (count) => {
+    threadState.renderUser = true;
+    message.metadata.custom = { agent: 'build' };
+    message.content = Array.from({ length: count }, () => ({ type: 'text', text: notification }));
+    render(<AssistantThread onToggleMessageBookmark={vi.fn()} />);
+    const tasks = screen.getAllByLabelText('Task notification');
+    expect(tasks).toHaveLength(count);
+    for (const task of tasks) {
+      const root = task.closest('[data-message-id]');
+      expect(root).not.toHaveClass('oc-msg-user');
+      expect(root).toHaveClass('oc-msg-system');
+      expect(root).not.toHaveAttribute('style');
+    }
+    expect(screen.queryByRole('button', { name: 'Bookmark message' })).toBeNull();
+  });
+
+  it('keeps user content alongside a notification in a user message', () => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: 'Please inspect this task' }, { type: 'text', text: notification }];
+    render(<AssistantThread />);
+    expect(screen.getByText('Please inspect this task').closest('[data-message-id]')).toHaveClass('oc-msg-user');
+  });
+
   it('renders a task summary and Markdown result instead of raw XML', async () => {
     threadState.renderUser = true;
     message.content = [{ type: 'text', text: notification }];
@@ -271,6 +294,9 @@ describe('AssistantThread slash-command skills', () => {
     render(<AssistantThread />);
 
     const toggle = screen.getByRole('button', { name: '/devtoys' });
+    expect(toggle).toHaveTextContent('→ Skill "devtoys"');
+    expect(toggle).toHaveClass('oc-read-line');
+    expect(toggle.closest('[data-message-id]')).not.toHaveClass('oc-msg-user');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText(/Use the CLI directly/)).not.toBeInTheDocument();
     await user.click(toggle);
@@ -301,6 +327,7 @@ describe('AssistantThread slash-command skills', () => {
     expect(body()).toBeNull();
     // The arguments stay inline next to the command, not inside the toggle.
     expect(screen.getByText('Review PR 42')).toBeInTheDocument();
+    expect(toggle.closest('[data-message-id]')).toHaveClass('oc-msg-user');
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(body()?.textContent).toContain(instructions);
@@ -322,6 +349,7 @@ describe('AssistantThread slash-command skills', () => {
     message.content = [{ type: 'text', text: instructions.replaceAll('\n', '\r\n') }];
     render(<AssistantThread />);
     expect(screen.getByRole('button', { name: '/review-pr' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: '/review-pr' }).closest('[data-message-id]')).not.toHaveClass('oc-msg-user');
   });
 
   it('does not collapse skill text quoted by the assistant', () => {
