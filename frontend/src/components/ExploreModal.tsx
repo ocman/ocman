@@ -8,6 +8,7 @@ import { FileBrowserModal, FILE_TREE_SELECTION_CSS } from './FileBrowserModal';
 import { CheckboxField } from './CheckboxField';
 import { EmptyState } from './EmptyState';
 import { LoadingState } from './LoadingState';
+import { MarkdownContent } from './assistant/MarkdownText';
 import { FILE_OPTIONS } from './diffOptions';
 import styles from './ExploreModal.module.css';
 
@@ -60,7 +61,9 @@ function FileBody({ file }: { file: RepoFileContent }) {
   return (
     <>
       {file.truncated && <EmptyState>Showing the first 1 MiB of this file.</EmptyState>}
-      <File file={{ name: file.path, contents: file.content }} options={FILE_OPTIONS} />
+      {/\.(md|markdown)$/i.test(file.path)
+        ? <div className={`${styles.markdown} oc-md`}><MarkdownContent text={file.content} factoryCards={false} /></div>
+        : <File file={{ name: file.path, contents: file.content }} options={FILE_OPTIONS} />}
     </>
   );
 }

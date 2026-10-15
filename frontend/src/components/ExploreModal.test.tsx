@@ -139,3 +139,23 @@ it('does not render a truncated image', async () => {
   expect(await screen.findByText('Image exceeds the 10 MiB preview limit.')).toBeInTheDocument();
   expect(screen.queryByRole('img')).not.toBeInTheDocument();
 });
+
+it.each(['README.md', 'README.MD', 'guide.markdown'])('renders %s as Markdown', async (path) => {
+  vi.mocked(api.repoFiles).mockResolvedValue({ root: '/repo/wt', files: [path, 'notes.txt'] });
+  vi.mocked(api.repoFile).mockImplementation(async (_dir, selected) => ({
+    path: selected, content: '# Project guide\n\nSome **important** details.', size: 50, truncated: true,
+  }));
+  const user = userEvent.setup();
+  renderHeader('rem1');
+  await user.click(screen.getByRole('button', { name: 'Explore files' }));
+  await waitFor(() => expect(tree().getByRole('treeitem', { name: path })).toBeInTheDocument());
+  await user.click(tree().getByRole('treeitem', { name: path }));
+  const heading = await screen.findByRole('heading', { name: 'Project guide' });
+  expect(heading.closest('.oc-md')).toBeInTheDocument();
+  expect(screen.getByText('important').tagName).toBe('STRONG');
+  expect(screen.getByText('Showing the first 1 MiB of this file.')).toBeInTheDocument();
+
+  await user.click(tree().getByRole('treeitem', { name: 'notes.txt' }));
+  expect(await screen.findByText(/# Project guide/)).toHaveProperty('tagName', 'PRE');
+  expect(screen.queryByRole('heading', { name: 'Project guide' })).not.toBeInTheDocument();
+});
