@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"time"
 
@@ -57,16 +56,6 @@ func (s *Server) broadcastSessionChanged(sessionID string) {
 	// Runs on the caller's goroutine (joined event watchers), bounded by the
 	// server lifetime so shutdown cancels its reads.
 	s.replyToConversation(s.lifetime(), "opencode", sessionID)
-}
-
-// lifetime is the server's run context, or Background before Start.
-func (s *Server) lifetime() context.Context {
-	s.lifetimeMu.Lock()
-	defer s.lifetimeMu.Unlock()
-	if s.lifetimeCtx == nil {
-		return context.Background()
-	}
-	return s.lifetimeCtx
 }
 
 func (s *Server) broadcastSessionStatus(sessionID string, status db.SessionStatus) {
