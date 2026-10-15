@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -105,9 +106,10 @@ func (m *Module) handleWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 	// Shutdown cancels the request but never closes a hijacked socket; an
 	// idle terminal would otherwise block in Recv and hold the server's
-	// handler join open.
-	stopClose := context.AfterFunc(r.Context(), func() { _ = conn.Close() })
-	defer stopClose()
+	// handler join open. Expiring reads unblocks it and still lets the
+	// close frame below go out; the deferred Close releases the socket.
+	stopReads := context.AfterFunc(r.Context(), func() { _ = conn.SetReadDeadline(time.Now()) })
+	defer stopReads()
 
 	err = host.TermAttach(r.Context(), hostsvc.TermAttachRequest{
 		Dir: dir, Window: windowName, Readonly: q.Get("readonly") == "1",
