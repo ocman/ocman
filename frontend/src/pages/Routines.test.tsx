@@ -64,6 +64,19 @@ describe('Routines', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(`routine=${nextID}&view=settings`);
     expect(screen.getByRole('alert')).toHaveTextContent('Background refresh unavailable');
   });
+  it.each(['pending', 'failed'] as const)('opens New routine while the inbox list is %s', async (state) => {
+    vi.mocked(api.webhookInboxes.list).mockImplementation(() => state === 'pending'
+      ? new Promise(() => {}) : Promise.reject(new Error('Inboxes unavailable')));
+    const user = userEvent.setup();
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'New routine' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New routine' });
+    expect(within(dialog).getByLabelText('Name')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'New routine' })).not.toBeInTheDocument();
+    if (state === 'failed') expect(await screen.findByRole('alert')).toHaveTextContent('Inboxes unavailable');
+  });
+
   it('keeps a subscription when a direct settings link loads before its inboxes', async () => {
     let releaseInboxes!: (inboxes: WebhookInbox[]) => void;
     vi.mocked(api.webhookInboxes.list).mockReturnValueOnce(new Promise((resolve) => { releaseInboxes = resolve; }));
