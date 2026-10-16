@@ -9,6 +9,13 @@ owning machine, including prompts from a session's children.
 On an existing window the conversation is revealed, including when a mobile
 details panel was open. The link's owner takes precedence over cached sessions.
 
+OpenCode V2 sessions stay busy while any command owned by the session is still
+running, including background commands after the foreground turn finishes.
+Done means the foreground execution and its commands have finished. Permission
+and question requests remain available while work runs. A long-lived command
+started by the session keeps it busy until that command stops; unrelated
+terminals do not affect its status.
+
 ## App icon count
 
 On supported installed PWAs, **Settings → Notifications → App icon badge** lets

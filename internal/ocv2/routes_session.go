@@ -96,16 +96,6 @@ func connectMCP(c *compat, r *http.Request, m []string) (*http.Response, error) 
 	return finish(r, http.StatusOK, true, err)
 }
 
-func getStatus(c *compat, r *http.Request, _ []string) (*http.Response, error) {
-	var resp data[map[string]any]
-	err := c.call(r.Context(), http.MethodGet, "/api/session/active", nil, nil, &resp)
-	out := map[string]any{}
-	for id := range resp.Data {
-		out[id] = map[string]any{"type": "busy"}
-	}
-	return finish(r, http.StatusOK, out, err)
-}
-
 func (c *compat) session(ctx context.Context, id string) (map[string]any, error) {
 	var resp data[map[string]any]
 	err := c.call(ctx, http.MethodGet, "/api/session/"+url.PathEscape(id), nil, nil, &resp)

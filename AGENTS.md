@@ -1046,6 +1046,12 @@ minimal and match the surrounding code.
     session is in. It is never read as "running".
   - No live view + an unfinished turn = `interrupted`: the process that
     owned the turn is gone, so it can never finish.
+  - On OpenCode v2, foreground execution alone is not completion. The
+    compatibility layer combines `/api/session/active` with session-owned
+    running shells from already-loaded locations, then follows `shell.created`,
+    `shell.exited` and `shell.deleted` alongside execution events. It emits idle
+    only after both finish. Reconnects rebuild that view; unrelated shells with
+    no session owner never hold a session busy.
   Consequently there is no `STATUS_GRACE_MS` debounce and no sticky-busy
   merge in the sidebar — the value no longer lags, so compensating for
   lag would only add staleness. The queue's idle-edge flush still trusts

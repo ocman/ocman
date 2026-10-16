@@ -46,6 +46,8 @@ type fakeV2 struct {
 func fakeServer(t *testing.T) *fakeV2 {
 	t.Helper()
 	f := &fakeV2{t: t, routes: map[string]fakeHandler{}}
+	f.json("GET /api/session/active", http.StatusOK, `{"data":{}}`)
+	f.json("GET /api/debug/location", http.StatusOK, `[]`)
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	f.URL = f.srv.URL
 	host := f.srv.Listener.Addr().String()

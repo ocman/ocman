@@ -205,7 +205,8 @@ func (r snapshotRT) RoundTrip(req *http.Request) (*http.Response, error) {
 func checkTranslator(t *testing.T, sse string, snapshot []byte) {
 	var out bytes.Buffer
 	tr := &translator{c: &compat{rt: snapshotRT{snapshot}, base: "http://x"}, ctx: context.Background(),
-		out: &out, msgs: map[string]map[string]any{}, unseeded: map[string]bool{}, snapshots: map[string]bool{}}
+		out: &out, msgs: map[string]map[string]any{}, unseeded: map[string]bool{}, snapshots: map[string]bool{},
+		activity: &activity{foreground: map[string]any{}, shells: map[string]string{}}}
 	done := make(chan any, 1)
 	go func() {
 		defer func() { done <- recover() }()

@@ -61,6 +61,10 @@ func TestTransportV2TranslatesWithBasicAuth(t *testing.T) {
 			_, _ = w.Write([]byte(`{"version":"2.0.1"}`))
 		case "/api/session/active":
 			_, _ = w.Write([]byte(`{"data":{"ses_1":{}}}`))
+		case "/api/debug/location":
+			_, _ = w.Write([]byte(`[{"directory":"/repo"}]`))
+		case "/api/shell":
+			_, _ = w.Write([]byte(`{"data":[{"id":"sh_1","status":"running","metadata":{"sessionID":"ses_2"}}]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -81,9 +85,13 @@ func TestTransportV2TranslatesWithBasicAuth(t *testing.T) {
 	if got["ses_1"]["type"] != "busy" {
 		t.Errorf("translated status = %v, want ses_1 busy", got)
 	}
+	if got["ses_2"]["type"] != "busy" {
+		t.Errorf("translated status = %v, want background ses_2 busy", got)
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(paths) != 2 || paths[0] != "/api/info" || paths[1] != "/api/session/active" {
+	if len(paths) != 4 || paths[0] != "/api/info" || paths[1] != "/api/session/active" ||
+		paths[2] != "/api/debug/location" || paths[3] != "/api/shell" {
 		t.Errorf("upstream paths = %v", paths)
 	}
 }

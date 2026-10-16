@@ -56,6 +56,12 @@ func (c *compat) stream(r *http.Request, global bool) (*http.Response, error) {
 				pw.CloseWithError(fmt.Errorf("opencode v2 event translation: %v", p))
 			}
 		}()
+		var err error
+		t.activity, err = c.activity(r.Context(), t.dir)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
 		pw.CloseWithError(t.run(resp.Body))
 	}()
 	h := http.Header{}
@@ -83,6 +89,7 @@ type translator struct {
 	// snapshots marks attempts already partly projected before step.started
 	// arrived. Their earlier retry prefix cannot be inferred from timestamps.
 	snapshots map[string]bool
+	activity  *activity
 }
 
 type v2Event struct {
@@ -159,6 +166,7 @@ func (t *translator) handle(ev v2Event) error {
 	case "server.connected":
 		return emit("server.connected", map[string]any{})
 	case "session.execution.started":
+		t.activity.foreground[sessionID] = true
 		return emit("session.status", map[string]any{"status": map[string]any{"type": "busy"}})
 	case "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted":
 		for id, m := range t.msgs {
@@ -168,14 +176,26 @@ func (t *translator) handle(ev v2Event) error {
 			}
 		}
 		clear(t.unseeded)
-		if err := emit("session.status", map[string]any{"status": map[string]any{"type": "idle"}}); err != nil {
-			return err
+		delete(t.activity.foreground, sessionID)
+		return t.emitActivity(sessionID, dir)
+	case "shell.created":
+		if owner := t.activity.addShell(obj(d, "info")); owner != "" {
+			return t.emitActivity(owner, dir)
 		}
-		return emit("session.idle", map[string]any{})
+		return nil
+	case "shell.exited", "shell.deleted":
+		id := str(d, "id")
+		owner := t.activity.shells[id]
+		delete(t.activity.shells, id)
+		if owner != "" {
+			return t.emitActivity(owner, dir)
+		}
+		return nil
 	case "session.retry.scheduled":
-		return emit("session.status", map[string]any{"status": map[string]any{
+		t.activity.foreground[sessionID] = map[string]any{
 			"type": "retry", "attempt": d["attempt"], "message": str(obj(d, "error"), "message"), "next": d["at"],
-		}})
+		}
+		return t.emitActivity(sessionID, dir)
 	case "session.created", "session.renamed", "session.permissions", "session.moved", "session.forked",
 		"session.metadata.updated", "session.agent.selected", "session.model.selected",
 		"session.revert.staged", "session.revert.cleared", "session.revert.committed":
