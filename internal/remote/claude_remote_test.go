@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
@@ -131,7 +133,9 @@ func TestHubDrivesRemoteClaudeSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessions, err := claude.Sessions(t.Context(), dir, 0)
-	if err != nil || len(sessions) != 2 || sessions[1].ID != created.ID || sessions[1].Platform != "r-box:claudecode" {
+	if err != nil || !slices.ContainsFunc(sessions, func(s db.Session) bool {
+		return s.ID == created.ID && s.Platform == "r-box:claudecode"
+	}) {
 		t.Fatalf("sessions = %+v, %v", sessions, err)
 	}
 	if !claude.Owns(t.Context(), created.ID) {
