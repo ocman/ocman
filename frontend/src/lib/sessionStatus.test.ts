@@ -130,13 +130,19 @@ describe('isSessionRunning', () => {
     expect(isSessionRunning(makeMessage('m', { role: 'assistant', finish: 'stop' }), 'busy')).toBe(true);
   });
 
-  it('returns false for a completed tool-only assistant message despite stale busy status', () => {
+  it('keeps the composer running when a message completes during a busy turn', () => {
     expect(
       isSessionRunning(
         makeMessage('m', { role: 'assistant', time: { created: 1, completed: 2 } }),
         'busy',
       ),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('does not infer running from a completed tool-only assistant message without live status', () => {
+    expect(isSessionRunning(makeMessage('m', {
+      role: 'assistant', time: { created: 1, completed: 2 },
+    }))).toBe(false);
   });
 
   it('returns true for a streaming assistant message (no finish, no error)', () => {

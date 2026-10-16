@@ -90,10 +90,10 @@ function isCompletedToolOnlyAssistant(message: Message | null): boolean {
 }
 
 /**
- * The assistant is "running" whenever the last message is from the
- * assistant with no `finish` reason and no `error` (still streaming).
+ * A live busy turn stays running across completed messages, including
+ * while delegated tasks continue. Message shape is only a fallback.
  *
- * A trailing user message does NOT count as running — it may be a
+ * Without live status, a trailing user message does NOT count as running — it may be a
  * manual tool execution (e.g. `git stash`) that doesn't trigger an
  * LLM call. This aligns with the server-side `InferSessionStatus`
  * which returns "done" for user messages. The brief gap between
@@ -107,10 +107,10 @@ export function isSessionRunning(
   awaitingAssistantResponse = false,
 ): boolean {
   if (awaitingAssistantResponse && lastMsg?.data?.role === 'user') return true;
-  // A direct !bash command is stored as an assistant envelope without a
-  // finish reason, but its completion timestamp proves no turn is active.
-  if (isCompletedToolOnlyAssistant(lastMsg)) return false;
   if (sessionStatus === 'busy') return true;
+  // A direct !bash command is stored as an assistant envelope without a
+  // finish reason; without a live busy signal, don't treat it as streaming.
+  if (isCompletedToolOnlyAssistant(lastMsg)) return false;
   if (sessionStatus === 'error' || sessionStatus === 'done' || sessionStatus === 'interrupted') return false;
   if (!lastMsg) return false;
   const data = lastMsg.data;
