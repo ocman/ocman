@@ -80,6 +80,24 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+it.each(['closed', 'error'])('reconnects the same terminal after a %s connection', (state) => {
+	render(<TerminalPane dir="/repo path" window="shell" remoteId="remote-1" readonly />);
+	const ws = FakeWebSocket.instances[0];
+	act(() => ws.onopen?.());
+	act(() => state === 'closed' ? ws.onclose?.() : ws.onerror?.());
+	fireEvent.click(screen.getByRole('button', { name: /reconnect/i }));
+	expect(screen.queryByTestId('terminal-status')).not.toBeInTheDocument();
+	expect(ws.close).toHaveBeenCalled();
+	expect(mocks.terminals[0].dispose).toHaveBeenCalled();
+	const retry = FakeWebSocket.instances[1];
+	expect(retry.url).toBe(ws.url);
+	act(() => retry.onopen?.());
+	expect(retry.send).toHaveBeenCalledWith(JSON.stringify({ type: 'resize', cols: 80, rows: 24 }));
+	expect(mocks.terminals[1].onData).not.toHaveBeenCalled();
+	act(() => retry.onclose?.());
+	expect(screen.getByRole('button', { name: /reconnect/i })).toHaveTextContent('Disconnected');
+});
+
 it('copies tmux OSC 52 text to the browser clipboard without sending clipboard reads to the host', async () => {
 	const view = render(<TerminalPane dir="/repo" remoteId="remote-1" />);
 	const term = mocks.terminals[0];

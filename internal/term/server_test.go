@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
@@ -37,6 +41,103 @@ func isolateTmux(t *testing.T) string {
 		}
 	})
 	return bin
+}
+
+func TestShellExitClosesViewer(t *testing.T) {
+	isolateTmux(t)
+	dir := t.TempDir()
+	win, err := CreateWindow(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := CreateWindow(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := newFakeTermConn()
+	t.Cleanup(func() { _ = conn.Close() })
+	done := make(chan error, 1)
+	go func() { done <- AttachLocalPTY(t.Context(), hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn) }()
+	deadline := time.After(3 * time.Second)
+	for len(conn.output()) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("viewer did not attach")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	conn.frames <- hostsvc.TermFrame{Data: []byte("exit\r")}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("exit left viewer attached to another window")
+	}
+	wins, err := Windows(t.Context(), dir)
+	if err != nil || len(wins) != 1 || wins[0].Name != other {
+		t.Fatalf("windows after exit = %v, %v; want only %s", wins, err, other)
+	}
+	assertNoViewers(t)
+}
+
+func assertNoViewers(t *testing.T) {
+	t.Helper()
+	out, err := tmux.Output(t.Context(), "-L", socketName, "list-sessions", "-F", "#{session_name}")
+	if err != nil || strings.TrimSpace(string(out)) != SessionName {
+		t.Fatalf("sessions = %q, %v; want only %s", out, err, SessionName)
+	}
+}
+
+func TestViewerCreationFailureCleansUp(t *testing.T) {
+	isolateTmux(t)
+	if _, err := CreateWindow(t.Context(), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := createViewer(t.Context(), SessionName+":missing-window"); err == nil {
+		t.Fatal("expected missing window error")
+	}
+	assertNoViewers(t)
+}
+
+func TestViewerDetachKeepsShell(t *testing.T) {
+	isolateTmux(t)
+	dir := t.TempDir()
+	win, err := CreateWindow(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		conn := newFakeTermConn()
+		t.Cleanup(func() { _ = conn.Close() })
+		done := make(chan error, 1)
+		go func() { done <- AttachLocalPTY(t.Context(), hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn) }()
+		deadline := time.After(3 * time.Second)
+		for len(conn.output()) == 0 {
+			select {
+			case <-deadline:
+				t.Fatal("viewer did not attach")
+			default:
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		_ = conn.Close()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("viewer did not detach")
+		}
+		wins, err := Windows(t.Context(), dir)
+		if err != nil || len(wins) != 1 || wins[0].Name != win {
+			t.Fatalf("windows = %v, %v", wins, err)
+		}
+		assertNoViewers(t)
+	}
 }
 
 func TestTerminalServerIsolation(t *testing.T) {

@@ -46,6 +46,21 @@ beforeEach(() => {
 });
 
 describe('SessionTerminalDock gating', () => {
+  it('closes the dock when the last shell exits without creating another', async () => {
+    vi.useFakeTimers();
+    listWindows.mockResolvedValue({ windows: [{ name: 'shell', title: 'Shell' }] });
+    const view = render(<SessionTerminalDock tmuxAvailable directory={DIR} />);
+    try {
+      await act(async () => {});
+      fireEvent.click(screen.getByTitle('Show terminal'));
+      await act(async () => {});
+      listWindows.mockResolvedValue({ windows: [] });
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(screen.queryByTestId('terminal-pane-stub')).not.toBeInTheDocument();
+      expect(screen.getByTitle('Show terminal')).toBeInTheDocument();
+      expect(createWindow).not.toHaveBeenCalled();
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
   it('allows an open-dock discovery slower than the title interval to finish', async () => {
     vi.useFakeTimers();
     let finish!: (value: { windows: TermWindow[] }) => void;

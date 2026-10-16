@@ -650,7 +650,11 @@ are computed. Sessions retain their original directories and owners.
 - `internal/term/` — in-app browser terminals: window naming/hashing,
   window management in the dedicated `ocman-term` tmux session on its own
   named server (`tmux -L ocman-term`), and
-  the PTY bridge. It runs on the owning machine behind `hostsvc.Host`; its
+  the PTY bridge. Each viewer links its target window into a temporary
+  single-window session with destroy-on-detach, so shell exit disconnects
+  that viewer instead of selecting another project's shell. The dock removes
+  exited windows on its next poll and closes when the last shell exits.
+  It runs on the owning machine behind `hostsvc.Host`; its
   HTTP routes are the `internal/termmod` module.
 - `internal/termmod/` — module: the localhost-only `/api/term/windows`
   controls and the `/api/term/ws` WebSocket bridge. It resolves the owner

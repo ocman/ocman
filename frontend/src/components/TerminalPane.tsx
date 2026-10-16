@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { copyToClipboard } from '../lib/clipboard';
 import { TerminalSkeleton } from './Skeleton';
+import { Button } from './Control';
 import '@xterm/xterm/css/xterm.css';
 import './TerminalPane.css';
 
@@ -37,6 +38,7 @@ interface TerminalPaneProps {
 export function TerminalPane({ dir, window: win, readonly = false, remoteId }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ConnState>('connecting');
+  const [attempt, setAttempt] = useState(0);
   const [pendingCopy, setPendingCopy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -172,10 +174,11 @@ export function TerminalPane({ dir, window: win, readonly = false, remoteId }: T
       clipboardSub.dispose();
       ro.disconnect();
       dataSub?.dispose();
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
       ws.close();
       term.dispose();
     };
-  }, [dir, win, readonly, remoteId]);
+  }, [dir, win, readonly, remoteId, attempt]);
 
   return (
     <div className="oc-term" data-testid="terminal-pane">
@@ -203,10 +206,13 @@ export function TerminalPane({ dir, window: win, readonly = false, remoteId }: T
         </div>
       )}
       {(state === 'closed' || state === 'error') && (
-        <div className="oc-term-status" data-testid="terminal-status">
+        <Button type="button" size="small" className="oc-term-status" data-testid="terminal-status"
+          onClick={() => { setState('connecting'); setAttempt((n) => n + 1); }}
+        >
           {state === 'closed' && 'Disconnected'}
           {state === 'error' && 'Connection failed'}
-        </div>
+          {' · Reconnect'}
+        </Button>
       )}
     </div>
   );

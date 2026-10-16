@@ -26,12 +26,9 @@ import (
 
 // SessionName is the single dedicated tmux session that hosts every
 // in-app terminal window. All terminals — across every project and
-// worktree — live as named windows inside this one session, so ocman
-// never scatters windows into the user's project sessions and never
-// leaks per-viewer grouped sessions (the previous model created an
-// ephemeral `ocman-view-<uuid>` session per WebSocket, which leaked on
-// restart). Window names encode which directory each terminal belongs
-// to; see termWindowName.
+// worktree — persist as named windows inside this session. Each viewer
+// links only its target window into a temporary session that is destroyed
+// on detach. Window names encode their directory; see WindowPrefix.
 const SessionName = "ocman-term"
 
 // socketName isolates browser terminals from the user's default tmux server.
@@ -68,17 +65,21 @@ func AttachLocalPTY(ctx context.Context, req hostsvc.TermAttachRequest, conn hos
 		windowName = win
 	}
 
-	// Attach a PTY directly to the ocman session, selecting the target
-	// window. We rely on the session's `window-size manual` (set in
-	// ensureOcmanSession) plus per-window resize-window calls below so
-	// each viewer sizes its own window independently.
+	// Link the target into a single-window viewer session, keeping the
+	// persistent window's manual sizing and shell across reconnects.
 	target := SessionName + ":" + windowName
+	viewer, cleanup, err := createViewer(ctx, target)
+	if err != nil {
+		return fmt.Errorf("creating terminal viewer: %w", err)
+	}
+	defer cleanup()
 	// The attached client is xterm.js, regardless of the server's TERM.
 	// Advertise OSC 52 so tmux sends copy-mode text to the browser.
-	args := []string{"-L", socketName, "-T", "clipboard", "attach-session", "-t", target}
+	args := []string{"-L", socketName, "-T", "clipboard", "attach-session", "-t", viewer}
 	if req.Readonly {
 		args = append(args, "-r")
 	}
+	args = append(args, ";", "set-option", "-t", viewer, "destroy-unattached", "on")
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 
 	ptmx, err := pty.Start(cmd)
@@ -104,6 +105,7 @@ func AttachLocalPTY(ctx context.Context, req hostsvc.TermAttachRequest, conn hos
 	// PTY -> conn: server output to the viewer.
 	go func() {
 		defer cancel()
+		defer conn.Close()
 		buf := make([]byte, 4096)
 		for {
 			n, readErr := ptmx.Read(buf)

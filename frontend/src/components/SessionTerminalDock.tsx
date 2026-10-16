@@ -112,7 +112,10 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
       try {
         const { windows: live } = await withDeadline(15_000, (signal) => api.term.listWindows(directory, remoteId, signal), readController.signal);
         if (cancelled || current !== request || document.hidden) return;
-        setWindows(live);
+        setWindows((previous) => {
+          if (previous.length > 0 && live.length === 0) setOpen(false);
+          return live;
+        });
         setDiscoveredGeneration(generation);
         setActive((prev) =>
           prev && live.some((w) => w.name === prev) ? prev : live[0]?.name ?? null,
