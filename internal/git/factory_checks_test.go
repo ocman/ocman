@@ -87,3 +87,34 @@ func TestFactoryDiffRedFlagsPrefersRemoteTrackingTarget(t *testing.T) {
 		t.Fatalf("flags = %v, %v", flags, err)
 	}
 }
+
+// TestFactoryDiffRedFlagsHeaderLookalikeContent pins that an added line
+// beginning with "++" (diff line "+++ …") is hunk content: it neither
+// renames the file later flags are attributed to nor hides a suppression
+// marker on that line.
+func TestFactoryDiffRedFlagsHeaderLookalikeContent(t *testing.T) {
+	ctx := t.Context()
+	repo := initTestRepo(t)
+	gitRun(t, repo, "branch", "-M", "main")
+	created, err := CreateWorktree(ctx, CreateWorktreeRequest{RepoRoot: repo, Branch: "factory/lookalike", NewBranch: true, BaseRef: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "package pkg\n++ b/evil\n++ t.Skip()\nfunc TestC(t *testing.T) { t.Skip() }\n"
+	if err := os.MkdirAll(filepath.Join(created.Path, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(created.Path, "pkg", "c_test.go"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, created.Path, "add", "-A")
+	gitRun(t, created.Path, "commit", "-m", "lookalike")
+	flags, err := FactoryDiffRedFlags(ctx, created.Path, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`pkg/c_test.go adds "++ t.Skip()"`, `pkg/c_test.go adds "func TestC(t *testing.T) { t.Skip() }"`}
+	if strings.Join(flags, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("flags = %q, want %q", flags, want)
+	}
+}

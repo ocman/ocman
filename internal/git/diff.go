@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -279,9 +280,9 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 //   - `diff --git a/<old> b/<new>`               start of a file entry
 //   - `new file mode ...` / `deleted file mode` / `rename ...`
 //   - `Binary files ... differ`                   IsBinary=true
-//   - `--- a/<path>` / `+++ b/<path>`             headers
+//   - `--- a/<path>` / `+++ b/<path>`             headers (before the first hunk)
 //   - `@@ -A,B +C,D @@ ...` hunk headers
-//   - `+...` / `-...` content lines (counted)
+//   - `+...` / `-...` content lines (counted, bounded by the hunk's B/D)
 //
 // The body for each file is the verbatim unified-diff slice between
 // successive `diff --git` markers, capped at perFileDiffCap.
@@ -329,9 +330,21 @@ func parseFileSection(section []string) DiffFile {
 	bodyByteCount := len(header) + 1
 	truncated := false
 
+	var hunk hunkTracker
 	for k := 1; k < len(section); k++ {
 		line := section[k]
 		switch {
+		case hunk.inHunk():
+			switch hunk.consume(line) {
+			case '+':
+				f.Additions++
+			case '-':
+				f.Deletions++
+			}
+		case hunk.start(line):
+		case hunk.seen:
+			// Between or after hunks only another hunk header is
+			// meaningful; file headers precede the first hunk.
 		case strings.HasPrefix(line, "new file mode "):
 			f.Status = "added"
 		case strings.HasPrefix(line, "deleted file mode "):
@@ -351,10 +364,6 @@ func parseFileSection(section []string) DiffFile {
 			f.Path = strings.TrimPrefix(line, "+++ b/")
 		case strings.HasPrefix(line, "--- a/"):
 			oldPath = strings.TrimPrefix(line, "--- a/")
-		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-			f.Additions++
-		case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-			f.Deletions++
 		}
 		// Per-file truncation. We still keep counting +/- after
 		// the cap so the totals reflect reality even when the
@@ -382,6 +391,77 @@ func parseFileSection(section []string) DiffFile {
 		f.Diff = strings.Join(bodyLines, "\n")
 	}
 	return f
+}
+
+// hunkTracker follows the bodies of unified-diff hunks by the line
+// counts in their `@@ -a,b +c,d @@` headers, so content lines are told
+// apart from file headers by position rather than prefix: deleting a
+// "--" line produces "---", adding "++ b/x" produces "+++ b/x".
+type hunkTracker struct {
+	old, new int  // body lines still expected on each side
+	seen     bool // at least one hunk header was read
+}
+
+func (h *hunkTracker) inHunk() bool { return h.old > 0 || h.new > 0 }
+
+// start reports whether line is a hunk header and, if so, begins it.
+func (h *hunkTracker) start(line string) bool {
+	rest, ok := strings.CutPrefix(line, "@@ -")
+	if !ok {
+		return false
+	}
+	ranges, _, ok := strings.Cut(rest, " @@")
+	if !ok {
+		return false
+	}
+	oldRange, newRange, ok := strings.Cut(ranges, " +")
+	if !ok {
+		return false
+	}
+	oldCount, ok1 := hunkRangeCount(oldRange)
+	newCount, ok2 := hunkRangeCount(newRange)
+	if !ok1 || !ok2 {
+		return false
+	}
+	h.old, h.new, h.seen = oldCount, newCount, true
+	return true
+}
+
+// hunkRangeCount parses the line count of a hunk range ("start[,count]");
+// git omits the count when it is 1.
+func hunkRangeCount(r string) (int, bool) {
+	start, count, hasCount := strings.Cut(r, ",")
+	if _, err := strconv.Atoi(start); err != nil {
+		return 0, false
+	}
+	if !hasCount {
+		return 1, true
+	}
+	n, err := strconv.Atoi(count)
+	return n, err == nil && n >= 0
+}
+
+// consume accounts for one hunk body line and returns its kind: '+',
+// '-', ' ' (context), or 0 for a "\ No newline" marker, which belongs to
+// neither side.
+func (h *hunkTracker) consume(line string) byte {
+	kind := byte(' ')
+	if line != "" {
+		kind = line[0]
+	}
+	switch kind {
+	case '+':
+		h.new--
+	case '-':
+		h.old--
+	case '\\':
+		return 0
+	default:
+		h.old--
+		h.new--
+		kind = ' '
+	}
+	return kind
 }
 
 // pathsFromDiffHeader extracts (oldPath, newPath) from a

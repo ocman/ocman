@@ -77,12 +77,16 @@ func FactoryDiffRedFlags(ctx context.Context, dir, target string) ([]string, err
 		return nil, fmt.Errorf("diff against %s: %w", target, err)
 	}
 	file := ""
+	var hunk hunkTracker
 	for _, line := range strings.Split(patch, "\n") {
 		switch {
+		case hunk.inHunk():
+			if hunk.consume(line) == '+' && weakenedTestPattern.MatchString(line) {
+				flags = append(flags, fmt.Sprintf("%s adds %q", file, strings.TrimSpace(strings.TrimPrefix(line, "+"))))
+			}
+		case hunk.start(line):
 		case strings.HasPrefix(line, "+++ "):
 			file = strings.TrimPrefix(strings.TrimPrefix(line, "+++ "), "b/")
-		case strings.HasPrefix(line, "+") && weakenedTestPattern.MatchString(line):
-			flags = append(flags, fmt.Sprintf("%s adds %q", file, strings.TrimSpace(strings.TrimPrefix(line, "+"))))
 		}
 	}
 	return flags, nil

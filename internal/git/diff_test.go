@@ -324,3 +324,89 @@ func TestIsLikelyBinary(t *testing.T) {
 		}
 	}
 }
+
+func TestHunkTrackerStart(t *testing.T) {
+	cases := []struct {
+		line     string
+		ok       bool
+		old, new int
+	}{
+		{"@@ -1,3 +1,2 @@ func x()", true, 3, 2},
+		{"@@ -1 +1 @@", true, 1, 1},
+		{"@@ -0,0 +1,4 @@", true, 0, 4},
+		{"@@@ -1 -1 +1 @@@", false, 0, 0},
+		{"@@ -1,3 +1,2", false, 0, 0},
+		{"@@ -1,3 @@", false, 0, 0},
+		{"@@ -x,3 +1 @@", false, 0, 0},
+		{"@@ -1,y +1 @@", false, 0, 0},
+		{"@@ -1,-2 +1 @@", false, 0, 0},
+		{"+++ b/a.txt", false, 0, 0},
+	}
+	for _, tc := range cases {
+		var h hunkTracker
+		if got := h.start(tc.line); got != tc.ok || h.old != tc.old || h.new != tc.new {
+			t.Errorf("start(%q) = %v (old %d new %d), want %v (old %d new %d)",
+				tc.line, got, h.old, h.new, tc.ok, tc.old, tc.new)
+		}
+	}
+}
+
+// TestParseUnifiedDiff_HeaderLookalikeContent pins that content lines
+// inside a hunk are classified by the hunk's line counts, not by their
+// prefix: deleting a "--" line yields "---", adding "++i;" yields
+// "+++i;", and adding "++ b/evil" yields "+++ b/evil", none of which is
+// a file header.
+func TestParseUnifiedDiff_HeaderLookalikeContent(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        string
+		path      string
+		additions int
+		deletions int
+	}{
+		{
+			name: "deleted yaml separator",
+			in: "diff --git a/a.yaml b/a.yaml\n--- a/a.yaml\n+++ b/a.yaml\n" +
+				"@@ -1,3 +1,2 @@\n a: 1\n----\n b: 2\n",
+			path: "a.yaml", deletions: 1,
+		},
+		{
+			name: "added pre-increment",
+			in: "diff --git a/a.c b/a.c\n--- a/a.c\n+++ b/a.c\n" +
+				"@@ -1 +1,2 @@\n int i;\n+++i;\n",
+			path: "a.c", additions: 1,
+		},
+		{
+			name: "added line spoofing a new-path header",
+			in: "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n" +
+				"@@ -1 +1,2 @@\n keep\n+++ b/evil\n",
+			path: "a.txt", additions: 1,
+		},
+		{
+			name: "deleted line spoofing an old-path header",
+			in: "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n" +
+				"@@ -1,2 +1 @@\n keep\n---- a/evil\n",
+			path: "a.txt", deletions: 1,
+		},
+		{
+			name: "two hunks with lookalikes and no-newline markers",
+			in: "diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n" +
+				"@@ -1,2 +1,2 @@\n----\n+++++\n title\n" +
+				"@@ -9 +9 @@\n--- sql\n\\ No newline at end of file\n+++ sql\n\\ No newline at end of file\n",
+			path: "a.md", additions: 2, deletions: 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := parseUnifiedDiff(tc.in)
+			if len(files) != 1 {
+				t.Fatalf("len(files) = %d, want 1", len(files))
+			}
+			f := files[0]
+			if f.Path != tc.path || f.Additions != tc.additions || f.Deletions != tc.deletions {
+				t.Errorf("got path=%q +%d -%d, want path=%q +%d -%d",
+					f.Path, f.Additions, f.Deletions, tc.path, tc.additions, tc.deletions)
+			}
+		})
+	}
+}
