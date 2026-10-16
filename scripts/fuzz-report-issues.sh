@@ -39,7 +39,13 @@ request() {
 	fi
 	local args=(--silent --show-error --fail-with-body --header "Authorization: token ${FORGEJO_TOKEN}" --request "$method")
 	[ -n "$data" ] && args+=(--header "Content-Type: application/json" --data "$data")
-	"${CURL:-curl}" "${args[@]}" "$url"
+	# An error body goes to stderr with the request, not on to jq.
+	local body
+	body="$("${CURL:-curl}" "${args[@]}" "$url")" || {
+		printf 'fuzz-report-issues: %s %s failed: %s\n' "$method" "$url" "$body" >&2
+		return 1
+	}
+	printf '%s\n' "$body"
 }
 
 # fenced FILE MAX: FILE's last MAX bytes in a code fence longer than any
@@ -54,7 +60,11 @@ fenced() {
 	printf '%stext\n%s\n%s\n' "$fence" "$content" "$fence"
 }
 
-label_id="$(request GET "${api}/labels?limit=100" | jq -r '[.[] | select(.name == "fuzz") | .id][0] // empty')" || label_id=""
+# The label is optional: a failed lookup files the issues unlabelled.
+label_id="$(request GET "${api}/labels?limit=100" | jq -r '[.[] | select(.name == "fuzz") | .id][0] // empty')" || {
+	echo "fuzz-report-issues: label lookup failed; opening issues without the fuzz label" >&2
+	label_id=""
+}
 
 # discovery_body DIR LOG: fuzz.sh could not list DIR's targets, so none ran.
 discovery_body() {
