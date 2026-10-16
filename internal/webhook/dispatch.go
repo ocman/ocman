@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -234,22 +236,89 @@ func predicateMatch(values []string, exists bool, p predicate, fold bool) bool {
 	if !exists {
 		return false
 	}
+	wants := p.OneOf
+	if len(p.Equals) > 0 {
+		wants = append([]json.RawMessage{p.Equals}, wants...)
+	}
 	for _, v := range values {
-		var x any
-		if len(p.Equals) > 0 {
-			_ = json.Unmarshal(p.Equals, &x)
-			if (fold && strings.EqualFold(v, fmt.Sprint(x))) || v == fmt.Sprint(x) {
-				return true
+		for _, raw := range wants {
+			var x any
+			if json.Unmarshal(raw, &x) != nil {
+				continue
 			}
-		}
-		for _, raw := range p.OneOf {
-			_ = json.Unmarshal(raw, &x)
-			if (fold && strings.EqualFold(v, fmt.Sprint(x))) || v == fmt.Sprint(x) {
+			// A header is text: only a scalar expected value can equal it.
+			text, ok := scalarText(x)
+			if ok && ((fold && strings.EqualFold(v, text)) || v == text) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// scalarText is the JSON text of a string, number or boolean ("5" for 5,
+// "100000000" for 1e8). Null, arrays and objects have no text a header or a
+// string could equal.
+func scalarText(x any) (string, bool) {
+	switch v := x.(type) {
+	case string:
+		return v, true
+	case bool:
+		return strconv.FormatBool(v), true
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	default:
+		return "", false
+	}
+}
+
+// jsonEqual compares a body value with an expected predicate value, both
+// decoded from JSON. Equal types compare by value (objects and arrays
+// deeply). The routine form stores every typed value as a string, so a
+// string also equals a scalar whose JSON text it is: "5" or "5.0" equals 5,
+// "true" equals true and "null" equals null. Composite values never equal a
+// string.
+func jsonEqual(got, want any) bool {
+	if s, ok := want.(string); ok {
+		if g, ok := got.(string); ok {
+			return g == s
+		}
+		return scalarEqualsText(got, s)
+	}
+	if s, ok := got.(string); ok {
+		return scalarEqualsText(want, s)
+	}
+	switch want.(type) {
+	case map[string]any, []any:
+		return reflect.DeepEqual(got, want)
+	}
+	// want is a number, boolean or null: comparable, and unequal to any
+	// value of another dynamic type.
+	return got == want
+}
+
+func scalarEqualsText(v any, s string) bool {
+	switch v := v.(type) {
+	case nil:
+		return s == "null"
+	case bool:
+		return s == strconv.FormatBool(v)
+	case float64:
+		n, ok := jsonNumber(s)
+		return ok && n == v
+	default:
+		return false
+	}
+}
+
+// jsonNumber parses s only when it is exactly a JSON number, without the
+// signs, prefixes, separators or spaces strconv would otherwise accept.
+func jsonNumber(s string) (float64, bool) {
+	if s == "" || (s[0] != '-' && (s[0] < '0' || s[0] > '9')) || strings.TrimSpace(s) != s || !json.Valid([]byte(s)) {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(s, 64)
+	return n, err == nil
 }
 func predicateMatchValue(value any, exists bool, p predicate) bool {
 	if p.Exists != nil {
@@ -270,15 +339,13 @@ func predicateMatchValue(value any, exists bool, p predicate) bool {
 	if p.Op == "equals" {
 		want = p.Value
 	}
+	wants := p.OneOf
 	if len(want) > 0 {
-		var x any
-		if json.Unmarshal(want, &x) == nil && fmt.Sprint(value) == fmt.Sprint(x) {
-			return true
-		}
+		wants = append([]json.RawMessage{want}, wants...)
 	}
-	for _, raw := range p.OneOf {
+	for _, raw := range wants {
 		var x any
-		if json.Unmarshal(raw, &x) == nil && fmt.Sprint(value) == fmt.Sprint(x) {
+		if json.Unmarshal(raw, &x) == nil && jsonEqual(value, x) {
 			return true
 		}
 	}

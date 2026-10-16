@@ -8,8 +8,9 @@ type Predicate = { exists?: boolean; equals?: unknown; oneOf?: unknown[]; op?: s
 // numbers), so an unedited row saves the stored predicate unchanged.
 export type FilterRow = { key: string; op: Op; value: string; stored?: { key: string; op: Op; value: string; predicate: Predicate } };
 
-// Every value is stored as a JSON string: the matcher compares fmt.Sprint of
-// both sides, so "5" still matches a numeric 5 and "true" a boolean.
+// Every value is stored as a JSON string: the matcher lets a string equal a
+// scalar's JSON text, so "5" still matches a numeric 5 and "true" a boolean
+// (arrays and objects never match a string).
 // Header names are trimmed. JSON pointers are exact: "" is the document root
 // and "/name " another property than "/name". A blank pointer is only kept
 // when it was stored that way; a new blank row is an unfinished one.

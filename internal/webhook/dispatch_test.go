@@ -77,6 +77,88 @@ func TestPointerValueFollowsRFC6901(t *testing.T) {
 	}
 }
 
+// The routine form stores every typed value as a JSON string, so a string
+// still matches the JSON text of a scalar ("5" ~ 5, "true" ~ true). Composite
+// values only match a structurally equal expected value; fmt.Sprint used to
+// let "[a b]" match ["a b"], "map[k:v]" match {"k":"v"} and "<nil>" match null,
+// and wrote 100000000 as "1e+08", so the UI's "100000000" missed it.
+func TestPredicateValueEquality(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+		ok   bool
+	}{
+		{"same string", `"push"`, `"push"`, true},
+		{"different string", `"push"`, `"Push"`, false},
+		{"ui string matches number", `5`, `"5"`, true},
+		{"ui string matches number by value", `5`, `"5.0"`, true},
+		{"ui string matches large number", `100000000`, `"100000000"`, true},
+		{"ui string matches fraction", `1.5`, `"1.5"`, true},
+		{"ui string is not a number", `1`, `"01"`, false},
+		{"ui string with spaces", `1`, `" 1"`, false},
+		{"ui string hex", `1`, `"0x1"`, false},
+		{"ui string matches bool", `true`, `"true"`, true},
+		{"ui string bool mismatch", `true`, `"false"`, false},
+		{"ui string bool case", `true`, `"True"`, false},
+		{"ui string matches null", `null`, `"null"`, true},
+		{"go nil text no longer matches null", `null`, `"<nil>"`, false},
+		{"typed bool", `false`, `false`, true},
+		{"typed bool matches string body", `"false"`, `false`, true},
+		{"typed number", `100000000`, `1e8`, true},
+		{"typed number mismatch", `2`, `1`, false},
+		{"typed null", `null`, `null`, true},
+		{"typed null vs string", `""`, `null`, false},
+		{"array text does not match array", `["a b"]`, `"[a b]"`, false},
+		{"object text does not match object", `{"k":"v"}`, `"map[k:v]"`, false},
+		{"array deep equal", `["a",1,{"k":true}]`, `["a",1,{"k":true}]`, true},
+		{"array order matters", `["a","b"]`, `["b","a"]`, false},
+		{"object deep equal", `{"a":1,"b":[2]}`, `{"b":[2],"a":1}`, true},
+		{"object mismatch", `{"a":1}`, `{"a":"1"}`, false},
+		{"array vs string", `"a"`, `["a"]`, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var value any
+			if err := json.Unmarshal([]byte(test.body), &value); err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range []predicate{
+				{Equals: json.RawMessage(test.want)},
+				{Op: "equals", Value: json.RawMessage(test.want)},
+				{OneOf: []json.RawMessage{json.RawMessage(`"unrelated"`), json.RawMessage(test.want)}},
+			} {
+				if got := predicateMatchValue(value, true, p); got != test.ok {
+					t.Fatalf("predicateMatchValue(%s, %+v) = %v, want %v", test.body, p, got, test.ok)
+				}
+			}
+		})
+	}
+}
+
+func TestHeaderPredicateValueText(t *testing.T) {
+	tests := []struct {
+		header string
+		want   string
+		ok     bool
+	}{
+		{"PUSH", `"push"`, true},
+		{"5", `5`, true},
+		{"100000000", `100000000`, true},
+		{"true", `true`, true},
+		{"[a]", `["a"]`, false},
+		{"map[k:v]", `{"k":"v"}`, false},
+		{"<nil>", `null`, false},
+	}
+	for _, test := range tests {
+		for _, p := range []predicate{{Equals: json.RawMessage(test.want)}, {OneOf: []json.RawMessage{json.RawMessage(test.want)}}} {
+			if got := predicateMatch([]string{test.header}, true, p, true); got != test.ok {
+				t.Errorf("predicateMatch(%q, %s) = %v, want %v", test.header, test.want, got, test.ok)
+			}
+		}
+	}
+}
+
 func TestMatchesInvalidJSONIsIgnored(t *testing.T) {
 	e := relay.InboxEnvelope{Body: []byte("not json")}
 	if ok, err := matches(e, state.WebhookSubscription{JSONPredicatesJSON: `{"/x":{"exists":true}}`}); err != nil || ok {
