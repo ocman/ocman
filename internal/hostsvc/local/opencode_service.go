@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	log "github.com/sirupsen/logrus"
@@ -24,9 +25,10 @@ func isService(inst *ocruntime.Instance) bool {
 // same database (two servers migrating one database lock each other out).
 //
 // handled is false when there is no usable service and the caller should
-// launch its own. A live service whose probe is inconclusive (busy, e.g.
-// migrating) is handled: it is tracked unauthorized and the probe error
-// returned, so nothing is launched next to it.
+// launch its own. Authentication rejection is handled without launching:
+// the service still owns the database. A live service whose probe is
+// inconclusive (busy, e.g. migrating) is handled: it is tracked unauthorized
+// and the probe error returned, so nothing is launched next to it.
 func (h *Host) useService(ctx context.Context, root string) (res *hostsvc.EnsureRuntimeResult, handled bool, err error) {
 	if h.deps.OpenCodeService == nil || !ocv2.InstalledV2() || root != machineRoot() {
 		return nil, false, nil
@@ -48,6 +50,8 @@ func (h *Host) useService(ctx context.Context, root string) (res *hostsvc.Ensure
 		h.authorizeInstance(root, inst)
 		log.WithFields(fields).Info("host: using OpenCode background service")
 		return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: root, Runtime: *inst}, true, nil
+	case errors.Is(probeErr, ocapi.ErrAuthentication):
+		return nil, true, fmt.Errorf("authenticating OpenCode background service; check configured OpenCode credentials against its service configuration: %w", probeErr)
 	case ambiguousProbe(probeErr):
 		h.setInstance(root, inst)
 		log.WithError(probeErr).WithFields(fields).Warn("host: OpenCode background service is busy; waiting for it")

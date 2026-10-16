@@ -19,7 +19,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gui"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/opencodeskills"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/claudecode"
@@ -261,16 +260,10 @@ func run() {
 			}
 		}
 
-		opencodePassword := startupPassword
 		useService := database != nil && sharesServiceDB(openCodeDBPath)
-		if enabledPlatforms[string(opencodeplatform.PlatformID)] && opencodePassword == "" && ocv2.InstalledV2() {
-			passwordFor := v2ServerPassword
-			if useService {
-				passwordFor = sharedV2Password
-			}
-			if opencodePassword, err = passwordFor(ctx, stateDB); err != nil {
-				fatal("Failed to configure OpenCode v2 server auth: %v", err)
-			}
+		opencodePassword, err := startupOpenCodePassword(ctx, stateDB, startupPassword, enabledPlatforms[string(opencodeplatform.PlatformID)], useService)
+		if err != nil {
+			fatal("Failed to configure OpenCode v2 server auth: %v", err)
 		}
 		opencodeAuth := ocapi.New(opencodePassword)
 

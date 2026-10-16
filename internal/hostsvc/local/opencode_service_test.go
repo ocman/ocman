@@ -138,15 +138,23 @@ func TestV2BusyServiceIsAwaitedNotDuplicated(t *testing.T) {
 	}
 }
 
-func TestV2UnusableServiceFallsBackToLaunch(t *testing.T) {
+func TestV2ServiceAuthenticationFailureNeverLaunches(t *testing.T) {
 	s := newServiceHost(t)
 	s.rt.setProbe(serviceURL, ocapi.ErrAuthentication)
-	res, err := s.ensure(t)
-	if err != nil {
-		t.Fatal(err)
+	for range 2 {
+		res, err := s.ensure(t)
+		if !errors.Is(err, ocapi.ErrAuthentication) || res != nil {
+			t.Fatalf("res=%+v err=%v; want the authentication error", res, err)
+		}
 	}
-	if !res.Launched || res.Endpoint != "http://127.0.0.1:7777" || s.rec.last() != "7777" {
-		t.Fatalf("result = %+v published=%q; want ocman's own server", res, s.rec.last())
+	if s.rt.launchCount() != 0 || s.rt.stopCount() != 0 || s.rec.last() != "" || len(s.store.rows) != 0 {
+		t.Fatalf("launches=%d stops=%d published=%q rows=%v; want no launch, stop, routing or persistence",
+			s.rt.launchCount(), s.rt.stopCount(), s.rec.last(), s.store.rows)
+	}
+	// Correcting credentials makes the same service usable on the next ensure.
+	s.rt.setProbe(serviceURL, nil)
+	if res, err := s.ensure(t); err != nil || res.Endpoint != serviceURL || s.rt.launchCount() != 0 {
+		t.Fatalf("res=%+v err=%v launches=%d; want the service after auth recovers", res, err, s.rt.launchCount())
 	}
 }
 
@@ -160,6 +168,15 @@ func TestV2NoServiceLaunchesOwnServer(t *testing.T) {
 	s.setService(&ocv2.Service{URL: serviceURL, PID: 4242, Version: "2.0.31"})
 	if res, err := s.ensure(t); err != nil || res.Endpoint != "http://127.0.0.1:7777" || s.rt.launchCount() != 1 {
 		t.Fatalf("res=%+v err=%v launches=%d; want the own server kept", res, err, s.rt.launchCount())
+	}
+}
+
+func TestV2UnreachableRegisteredServiceFallsBackToLaunch(t *testing.T) {
+	s := newServiceHost(t)
+	s.rt.setProbe(serviceURL, ocruntime.ErrProbeUnreachable)
+	res, err := s.ensure(t)
+	if err != nil || !res.Launched || res.Endpoint != "http://127.0.0.1:7777" {
+		t.Fatalf("res=%+v err=%v; want a launch for the unreachable service", res, err)
 	}
 }
 

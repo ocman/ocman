@@ -54,7 +54,7 @@ flowchart LR
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
-    Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode<br/>instances]
+    Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode instances<br/>or registered v2 service]
     Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
     Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
     ClaudeHooks[claude hook plugin<br/>terminal sessions, opt-in] -->|ocman hook → /hook| Ocman
@@ -599,8 +599,13 @@ flowchart TD
   server, with a per-session working directory. There is no process per
   worktree. The old `EnsureProjectOpencode` gRPC method remains an OpenCode
   alias for one release. Only tracked instances are reused; persisted entries
-  must pass an API identity probe after restart. External instances are never
-  adopted. The local Host probes at startup and every minute, with four concurrent
+  must pass an API identity probe after restart. The only external instance
+  adopted is OpenCode v2's registered background service, and only when reading
+  the default database. Ocman authenticates it using the service configuration's
+  password unless credentials were explicitly configured. Authentication rejection
+  returns an error without launching a competing server; a busy service is awaited.
+  The service is never persisted, stopped or restarted by ocman.
+  The local Host probes at startup and every minute, with four concurrent
   probes and a two-second deadline per instance. Inventory reads use the validated
   in-memory routing map without network probes. Definite failures revoke routing
   but retain cleanup handles; inconclusive probes preserve warm authorization.
@@ -615,7 +620,9 @@ flowchart TD
   identity, so external linked worktrees share membership and nested independent
   repositories do not. This view neither launches a server nor requires a new RPC.
   `ReloadOpencode` requires a readable, matching server-default v2
-  location directory before it calls the owning machine's v2
+  location directory for managed servers. The registered service uses its
+  registration and credentials instead, since ocman did not choose its launch
+  directory. Reload calls the owning machine's v2
   `/api/location/reload` endpoint through the same Host/gRPC seam, retaining
   the process and running turns while refreshing configuration and the owner's
   cached catalogs. Pending permission and question prompts are cancelled.
@@ -632,7 +639,9 @@ flowchart TD
   opencode is hosted; the native-tmux implementation runs headless
   `opencode serve --port N` on `tmux -L ocman-agents -f /dev/null`,
   isolated from the user's tmux server and configuration. V1 runs one server
-  per project; v2 runs one per machine, kept up by `RunMachineSupervisor`.
+  per project; v2 uses one per machine, kept up by `RunMachineSupervisor`,
+  preferring the registered service on the default database. A managed launch
+  whose health probe stays inconclusive is retained and probed again, not killed.
   The runtime uses an ocman-allocated loopback port and
   probes authenticated `GET {endpoint}/config` for health. It is where the container runtime (epic
   #375) plugs in as a second implementation.
@@ -646,9 +655,10 @@ flowchart TD
   views over `session_v2`/`session_message` all use it, so part ids agree
   everywhere. v1 servers are never probed.
 - **platforms/opencode.** Wraps the read-only DB queries (`internal/db`) plus
-  an HTTP client that attaches only to managed instances. The local Host
-  supplies the tracked runtime inventory after API identity validation;
-  external processes are never scanned or adopted. One process-wide `/global/event` stream
+  an HTTP client that attaches to managed instances or the registered v2 service.
+  The local Host supplies the tracked runtime inventory after API identity
+  validation; other external processes are never scanned or adopted.
+  One process-wide `/global/event` stream
   per instance keeps pending permission and question state in memory across
   all session directories. The same live stream captures completed bash parts
   containing Git commit summaries and stores immutable observations in

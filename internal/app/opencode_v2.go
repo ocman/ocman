@@ -14,6 +14,18 @@ import (
 
 const v2PasswordSetting = "opencode.v2_server_password"
 
+// startupOpenCodePassword keeps explicit credentials authoritative. A shared
+// service rejecting them must fail closed rather than launch another writer.
+func startupOpenCodePassword(ctx context.Context, st *state.DB, configured string, enabled, useService bool) (string, error) {
+	if !enabled || configured != "" || !ocv2.InstalledV2() {
+		return configured, nil
+	}
+	if useService {
+		return sharedV2Password(ctx, st)
+	}
+	return v2ServerPassword(ctx, st)
+}
+
 // v2ServerPassword returns the password ocman's OpenCode v2 server runs
 // with. v2 always requires one (it invents a random password otherwise,
 // which ocman could not read back), so without a configured password
@@ -56,7 +68,8 @@ func sameFile(a, b string) bool {
 // sharedV2Password picks the password for a machine that uses OpenCode's
 // background service: the service's own, so ocman can call it and a
 // server ocman launches accepts the same clients. Without one, ocman's
-// stored password is used and the service, if any, is not adopted.
+// stored password is used. A service rejecting it returns an authentication
+// error without launching a competing server.
 func sharedV2Password(ctx context.Context, st *state.DB) (string, error) {
 	pw, err := ocv2.ServicePassword()
 	if err != nil {
