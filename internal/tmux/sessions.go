@@ -2,6 +2,8 @@ package tmux
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +27,11 @@ type Session struct {
 	Name         string `json:"name"`
 	ResolvedPath string `json:"resolvedPath"`
 	Windows      int    `json:"windows"`
+	// Path is tmux's session_path: the directory the session was started
+	// in (new-session -c). Unlike ResolvedPath it is not guessed from the
+	// name, so it tells apart directories whose names collide. Empty when
+	// the lister did not report it.
+	Path string `json:"path,omitempty"`
 }
 
 // Window represents one window inside a tmux session.
@@ -149,9 +156,12 @@ func ListClients(ctx context.Context) ([]Client, error) {
 	return clients, nil
 }
 
+// sessionFormat is the list-sessions format listSessions parses.
+const sessionFormat = "#{session_name}\t#{session_windows}\t#{session_path}"
+
 // ListSessions returns all tmux sessions.
 func ListSessions(ctx context.Context) ([]Session, error) {
-	return listSessions(ctx, "list-sessions", "-F", "#{session_name}\t#{session_windows}")
+	return listSessions(ctx, "list-sessions", "-F", sessionFormat)
 }
 
 func listSessions(ctx context.Context, args ...string) ([]Session, error) {
@@ -165,9 +175,13 @@ func listSessions(ctx context.Context, args ...string) ([]Session, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 2)
+		parts := strings.SplitN(line, "\t", 3)
 		if len(parts) < 2 {
 			continue
+		}
+		path := ""
+		if len(parts) == 3 && parts[2] != "" {
+			path = filepath.Clean(parts[2])
 		}
 		windows := 0
 		for _, c := range parts[1] {
@@ -179,6 +193,7 @@ func listSessions(ctx context.Context, args ...string) ([]Session, error) {
 			Name:         parts[0],
 			ResolvedPath: ResolveSessionPath(parts[0]),
 			Windows:      windows,
+			Path:         path,
 		})
 	}
 	return sessions, nil
@@ -436,21 +451,11 @@ func LaunchOpencodeCmdEnvWith(ctx context.Context, r Runner, directory, command 
 		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
 	}
 
-	// Match by the name derived from the known directory first: tmux
-	// names are not reversible ("my_app.v2" and "my.app.v2" both become
-	// "my_app_v2"), so ResolvedPath can miss a session this launcher
-	// created and new-session would then fail as a duplicate. The
-	// ResolvedPath comparison still finds sessions named another way
-	// (e.g. an absolute path under home).
 	sessionExists := false
-	wantPath := filepath.Clean(directory)
 	if existing, err := r.ListSessions(ctx); err == nil {
-		for _, ts := range existing {
-			if ts.Name == sessionName || filepath.Clean(ts.ResolvedPath) == wantPath {
-				sessionExists = true
-				sessionName = ts.Name
-				break
-			}
+		sessionName, sessionExists, err = sessionForDirectory(existing, sessionName, filepath.Clean(directory))
+		if err != nil {
+			return "", false, err
 		}
 	}
 
@@ -468,6 +473,44 @@ func LaunchOpencodeCmdEnvWith(ctx context.Context, r Runner, directory, command 
 		}
 	}
 	return sessionName, true, nil
+}
+
+// sessionForDirectory picks the session a launch for dir uses: an existing
+// one it owns, else the name to create. tmux names are not reversible
+// ("my_app.v2" and "my.app_v2" both become "my_app_v2"), so a session is
+// matched by the name derived from dir first, then by ResolvedPath for
+// sessions named another way, and only reused when its start directory
+// (session_path) is dir. A derived name taken by another directory's session
+// is left alone: dir gets the stable "<name>-<hash>" form instead (the
+// truncated SHA-256 BackendRuntime also names its sessions by), so the two
+// projects never share a session, a runtime ID, or a kill-session target.
+// A session without a reported path keeps the name-only match.
+func sessionForDirectory(existing []Session, derived, dir string) (string, bool, error) {
+	owns := func(ts Session) bool { return ts.Path == "" || ts.Path == dir }
+	taken := false
+	for _, ts := range existing {
+		if ts.Name != derived && filepath.Clean(ts.ResolvedPath) != dir {
+			continue
+		}
+		if owns(ts) {
+			return ts.Name, true, nil
+		}
+		taken = taken || ts.Name == derived
+	}
+	if !taken {
+		return derived, false, nil
+	}
+	sum := sha256.Sum256([]byte(dir))
+	distinct := derived + "-" + hex.EncodeToString(sum[:6])
+	for _, ts := range existing {
+		if ts.Name == distinct {
+			if !owns(ts) {
+				return "", false, fmt.Errorf("tmux session %q belongs to %s, not %s", distinct, ts.Path, dir)
+			}
+			return distinct, true, nil
+		}
+	}
+	return distinct, false, nil
 }
 
 // LaunchOpencode finds or creates a tmux session named after the given

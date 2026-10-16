@@ -27,16 +27,21 @@ func serverArgs(server string, args ...string) []string {
 	return append([]string{"-L", server, "-f", "/dev/null"}, args...)
 }
 
+// exactSession is a -t target that names only the session called name. A
+// bare name falls back to a prefix match when no session has it exactly, so
+// stopping a vanished "~/repos/app" would kill "~/repos/app-<hash>".
+func exactSession(name string) string { return "=" + name }
+
 // KillManagedSession kills a session on the managed server, or on the legacy
 // server that still hosts it. The managed server's error is reported when no
 // server has the session.
 func KillManagedSession(ctx context.Context, name string) error {
-	err := runCommand(ctx, commandTimeout, managedArgs("kill-session", "-t", name)...)
+	err := runCommand(ctx, commandTimeout, managedArgs("kill-session", "-t", exactSession(name))...)
 	if err == nil {
 		return nil
 	}
 	for _, server := range legacyServers {
-		if runCommand(ctx, commandTimeout, serverArgs(server, "kill-session", "-t", name)...) == nil {
+		if runCommand(ctx, commandTimeout, serverArgs(server, "kill-session", "-t", exactSession(name))...) == nil {
 			return nil
 		}
 	}
@@ -49,7 +54,7 @@ func KillManagedSession(ctx context.Context, name string) error {
 func HasManagedSession(ctx context.Context, name string) (bool, error) {
 	var firstErr error
 	for _, server := range append([]string{ManagedServer}, legacyServers...) {
-		_, err := outputCommand(ctx, serverArgs(server, "has-session", "-t", name)...)
+		_, err := outputCommand(ctx, serverArgs(server, "has-session", "-t", exactSession(name))...)
 		if err == nil {
 			return true, nil
 		}
@@ -64,7 +69,7 @@ func HasManagedSession(ctx context.Context, name string) (bool, error) {
 // ManagedRunner controls only the dedicated headless agent server.
 var ManagedRunner = Runner{
 	ListSessions: func(ctx context.Context) ([]Session, error) {
-		return listSessions(ctx, managedArgs("list-sessions", "-F", "#{session_name}\t#{session_windows}")...)
+		return listSessions(ctx, managedArgs("list-sessions", "-F", sessionFormat)...)
 	},
 	NewSessionEnv: func(ctx context.Context, name, directory, command string, env map[string]string) error {
 		args := []string{"new-session", "-d", "-s", name, "-c", directory}

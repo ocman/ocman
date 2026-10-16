@@ -25,16 +25,17 @@ case "$command" in
     fi
     printf '%s' "$!" >"$OCMAN_FAKE_PROVIDER_PID_DIR/$name.pid"
     ;;
+  # Targets are exact ("-t =name"), as tmux.KillManagedSession sends them.
   kill-session)
     shift
-    kill "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/$1.pid")"
+    kill "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/${1#=}.pid")"
     ;;
   has-session)
     shift
-    [ -f "$OCMAN_FAKE_PROVIDER_PID_DIR/$1.pid" ] || exit 1
+    [ -f "$OCMAN_FAKE_PROVIDER_PID_DIR/${1#=}.pid" ] || exit 1
     # A container PID1 may leave the exited orphan unreaped. kill -0 still
     # succeeds for that zombie, but a real tmux session is already gone.
-    state=$(ps -o stat= -p "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/$1.pid")") || exit 1
+    state=$(ps -o stat= -p "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/${1#=}.pid")") || exit 1
     case "$state" in *Z*) exit 1 ;; esac
     ;;
   *) exit 1 ;;
