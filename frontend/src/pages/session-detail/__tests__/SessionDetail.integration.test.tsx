@@ -1793,6 +1793,20 @@ describe('SessionDetail — rate-limit notice', () => {
 });
 
 describe('SessionDetail — session warnings', () => {
+  it('keeps the composer available with an external-owner warning', async () => {
+    const sess = makeSession({ id: 'external_claude', platform: 'claudecode', status: 'done', liveConnection: true });
+    renderSessionPage({
+      sessionId: sess.id,
+      sessions: [sess],
+      detail: makeSessionDetail(sess, {
+        warnings: [{ kind: 'external-session-owner', message: 'This session may still be open in another Claude instance.' }],
+      }),
+    });
+    await flushPromises();
+    expect(await screen.findByTestId('session-warning-external-session-owner')).toHaveTextContent('another Claude instance');
+    expect(screen.getByRole('textbox')).not.toBeDisabled();
+  });
+
   it('renders and dismisses duplicate OpenCode server warnings', async () => {
     const sess = makeSession({ id: 'sess_dupes', status: 'done' });
     const detail = makeSessionDetail(sess, {

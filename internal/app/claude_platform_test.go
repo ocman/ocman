@@ -100,12 +100,12 @@ func TestClaudeOnlyStartup(t *testing.T) {
 
 // assertClaudeOnlyWorkflows checks the user-facing paths a Claude-only
 // ocman must serve: an enabled default platform, Claude projects in the
-// pickers, a read-only terminal session (send and queue refused) and no
+// pickers, a continuable terminal session and no
 // OpenCode-only probe. The caller asserts opencode never ran.
 func assertClaudeOnlyWorkflows(t *testing.T, base string, terminal platforms.SessionDetail) {
 	t.Helper()
-	if terminal.Session.LiveConnection {
-		t.Fatal("terminal-started session reports a live connection")
+	if !terminal.Session.LiveConnection {
+		t.Fatal("terminal-started session cannot be continued")
 	}
 	// Without a platform or model, a new conversation prepares on the only
 	// enabled platform.
@@ -124,17 +124,6 @@ func assertClaudeOnlyWorkflows(t *testing.T, base string, terminal platforms.Ses
 	getJSON(t, base+"/api/projects", &projects)
 	if len(projects) == 0 || projects[0].Directory != "/work/repo" {
 		t.Fatalf("projects = %+v, want the Claude project", projects)
-	}
-	for _, queue := range []bool{false, true} {
-		body, _ := json.Marshal(map[string]any{"message": "hello", "queue": queue})
-		resp, err := http.Post(base+"/api/session/"+claudeFixtureSession+"/message?platform=claudecode", "application/json", bytes.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode < 400 {
-			t.Fatalf("send to a terminal session (queue=%v) = %d, want refused", queue, resp.StatusCode)
-		}
 	}
 	var queued []json.RawMessage
 	getJSON(t, base+"/api/session/"+claudeFixtureSession+"/queue?platform=claudecode", &queued)

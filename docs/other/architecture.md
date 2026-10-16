@@ -142,11 +142,15 @@ flowchart LR
   (`internal/db/analytics_mirror.go`).
 - **Claude Code** (`-platforms claudecode`). Ocman reads the transcripts under
   `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`) into the disposable
-  `claude-index.db` beside state.db and drives the sessions it starts by
+  `claude-index.db` beside state.db and drives sessions it starts or adopts by
   spawning the user's own `claude` binary with pipes (stream-json and the
   control protocol), so every call runs under the user's own account. The
   opt-in hook plugin, installed with `claude plugin install`, reports terminal
-  sessions' status to the MCP listener with a 1 s timeout and always exits 0.
+  sessions' status and best-effort process identity to the MCP listener with a
+  1 s timeout and always exits 0. Sending to an external root session records
+  ownership and resumes its transcript through its project supervisor. Owner
+  observations are shared as advisory files under `claude-external` beside
+  state.db; they produce non-blocking session warnings, not admission locks.
   See [Claude Code](../features/claude-code.md).
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;

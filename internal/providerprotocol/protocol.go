@@ -11,12 +11,13 @@ import (
 )
 
 const (
-	// CurrentVersion 3 marks replayed lifecycle events of acknowledged
-	// turns (Event.Acknowledged).
-	CurrentVersion = 3
+	// CurrentVersion 4 supports adopting externally started Claude sessions.
+	// Older surviving supervisors must drain rather than reject the new sends.
+	CurrentVersion = 4
 	// PreviousVersion is the oldest supervisor reused after an upgrade.
 	// Version 1 (raw patterns, no reply_unrecorded) and 2 (acknowledged
-	// lifecycle replayed as new) drain and are replaced once idle.
+	// lifecycle replayed as new), and 3 (no external adoption) drain and are
+	// replaced once idle.
 	PreviousVersion = CurrentVersion
 	// ExactPatternsVersion is the first version whose prompt patterns are
 	// ExactPattern-escaped. A draining version-1 supervisor sends raw tool
@@ -50,10 +51,12 @@ type Capabilities struct {
 }
 
 // HookEvent is one CLI hook (e.g. Stop) reported for a session the backend
-// does not drive. It updates that session's status only.
+// does not drive. Optional process identity supports best-effort owner warnings.
 type HookEvent struct {
 	Event     string `json:"event"`
 	SessionID string `json:"sessionID"`
+	PID       int    `json:"pid,omitempty"`
+	Managed   bool   `json:"managed,omitempty"`
 }
 
 // Snapshot contains current v1 upserts, not deltas. Lease pins events after

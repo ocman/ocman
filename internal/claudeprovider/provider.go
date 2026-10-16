@@ -341,6 +341,7 @@ func (h *handler) detail(r *http.Request) (*platforms.SessionDetail, error) {
 	s := e.session(now)
 	h.live.overlay(&s)
 	detail.Session = &s
+	detail.Warnings = h.live.externalWarnings(id)
 	for _, t := range tree {
 		detail.SessionTree = append(detail.SessionTree, t.session(now))
 	}

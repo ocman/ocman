@@ -146,10 +146,21 @@ fail visibly, and process shutdown allows stdin EOF, then SIGTERM, then SIGKILL.
   session running until the quota resets. Usage windows remain available in
   Subscription Usage.
 
-Sessions you started in a terminal are **read-only** in ocman: you can read them,
-but the composer is disabled and ocman refuses to send to them or queue
-(Ctrl/Cmd+Enter) for them, on this machine and from a hub. Ocman cannot abort
-them or answer their prompts.
+Sessions you started in a terminal can be **continued in ocman**, including
+through a hub. Sending the next message adopts the existing conversation and
+resumes its history on the owning machine. Opening it launches nothing.
+After an upgrade, an older project supervisor drains and is replaced once idle
+before it can accept these continuation requests.
+Subagent transcripts cannot be continued as independent conversations, and
+sessions recorded under another Claude configuration remain read-only.
+
+When the optional hooks report another Claude instance, a small, dismissible
+warning appears. It does not block sending or queueing. Detection is best effort:
+ocman checks the reported process, or uses a five-minute activity hint when its
+PID cannot be identified. The warning is checked when session details refresh;
+no warning does not prove another instance is absent. Both instances can modify
+the session and its files. Ocman's Stop button and prompt controls only affect
+the instance ocman starts, not the original terminal.
 
 ## Permissions
 
@@ -190,13 +201,15 @@ Settings → Provider accounts → **Install**. Ocman then runs
 `claude plugin install ocman@ocman --scope user`; it never edits `~/.claude`
 itself. **Uninstall** runs `claude plugin uninstall` and removes the marketplace.
 
-The plugin's `SessionStart`, `Stop`, `Notification`, `PreToolUse` and
+The plugin's `SessionStart`, `SessionEnd`, `Stop`, `Notification`, `PreToolUse` and
 `PostToolUse` hooks run `ocman hook <event>`, which posts the session id to
 ocman's MCP listener (`-mcp-addr`) and gives up after one second, always exiting
-0, so Claude is never slowed down or failed when ocman is not running. The
+0, so Claude is never failed when ocman is not running. Hooks also report a
+best-effort Claude process ID for the external-instance warning. The
 install is unavailable when `-mcp-addr` is empty. The hook command holds the
 ocman binary path and listener address at install time: reinstall after moving
-either. Hooks from sessions ocman drives itself are ignored.
+either. Reinstall an older hook plugin to add `SessionEnd`. Hooks from Claude
+processes ocman starts are excluded from external-instance detection.
 
 ## Usage and subscription
 
@@ -220,7 +233,8 @@ itself. Sign-in stays with the CLI: run `claude` to log in or renew it.
 
 ## Limits
 
-- Terminal-started sessions are read-only.
+- Continuing a terminal-started session does not stop or take over its original
+  process. External-instance warnings require hooks and are best effort.
 - Sessions ocman launches run in one background supervisor per repository
   (a session on ocman's `tmux -L ocman-agents` server, shared with OpenCode), so a running turn and a pending
   permission survive an ocman restart, including a crash. A reboot ends them;

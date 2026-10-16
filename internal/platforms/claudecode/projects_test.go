@@ -278,7 +278,7 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 	eventually(t, "main checkout prompt", func() bool { return len(pending(p3, main.ID)) == 1 })
 
 	// Launched sessions read from their project supervisor; terminal
-	// sessions stay with the read-only browsing supervisor.
+	// sessions stay with the browsing supervisor until their first send.
 	ctx := t.Context()
 	if !p3.Owns(ctx, main.ID) || p3.Owns(ctx, "terminal") {
 		t.Fatal("ownership")

@@ -209,8 +209,8 @@ func (c *claudeProjects) each(fn func(*provider.Adapter)) {
 }
 
 // route picks the adapter for session id. A launched session goes to its
-// project supervisor, started when launch is set; any other session is a
-// terminal session served read-only by the browsing supervisor (nil).
+// project supervisor, started when launch is set; an unclaimed external
+// session stays on the browsing supervisor (nil) until its first mutation.
 func (c *claudeProjects) route(ctx context.Context, id string, launch bool) (*provider.Adapter, bool, error) {
 	dir, owned := claudeprovider.OwnedDirectory(c.statePath, id)
 	if owned && launch {
@@ -237,6 +237,9 @@ func (c *claudeProjects) route(ctx context.Context, id string, launch bool) (*pr
 
 func (p *claudePlatform) adapter(ctx context.Context, id string, launch bool) (*provider.Adapter, error) {
 	a, _, err := p.projects.route(ctx, id, launch)
+	if a == nil && err == nil && launch {
+		return p.externalAdapter(ctx, id)
+	}
 	if a == nil && err == nil {
 		a = p.Adapter
 	}

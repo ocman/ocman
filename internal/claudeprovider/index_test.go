@@ -312,15 +312,15 @@ func TestWatcherIndexesNewTranscript(t *testing.T) {
 	}
 }
 
-// Sessions started in a terminal are browsed, never driven (FR-4).
-func TestTerminalSessionsAreReadOnly(t *testing.T) {
+// Subagent transcripts cannot be driven as independent conversations.
+func TestUnsupportedSessionOperations(t *testing.T) {
 	idx := openSynced(t, fixture(t))
 	h := &handler{idx: idx, live: newLive(idx, Options{}, claudetest.Version)}
 	for _, c := range []struct {
 		req  *http.Request
 		code int
 	}{
-		{httptest.NewRequest(http.MethodPost, "/sessions/"+mainID+"/send", strings.NewReader("{}")), http.StatusForbidden},
+		{httptest.NewRequest(http.MethodPost, "/sessions/"+childID+"/send", strings.NewReader("{}")), http.StatusForbidden},
 		{httptest.NewRequest(http.MethodPost, "/sessions/"+mainID+"/rename", strings.NewReader(`{"Title":"x"}`)), http.StatusForbidden},
 		{httptest.NewRequest(http.MethodPost, "/sessions/missing/send", strings.NewReader("{}")), http.StatusNotFound},
 		{httptest.NewRequest(http.MethodPost, "/sessions/"+mainID+"/shell", strings.NewReader("{}")), http.StatusNotImplemented},

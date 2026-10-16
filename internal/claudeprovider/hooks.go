@@ -11,7 +11,7 @@ import (
 )
 
 // HookEvents are the Claude hooks the ocman plugin registers (AD-11).
-var HookEvents = []string{"SessionStart", "Stop", "Notification", "PreToolUse", "PostToolUse"}
+var HookEvents = []string{"SessionStart", "SessionEnd", "Stop", "Notification", "PreToolUse", "PostToolUse"}
 
 // hookBusyWindow is how long a hook's busy report stands: no hook marks a
 // killed claude, so a stale report falls back to the transcript.
@@ -29,7 +29,7 @@ func hookStatus(event string) (db.SessionStatus, bool) {
 		return db.StatusBusy, true
 	case "Notification": // a permission prompt or an idle reminder: the user is needed
 		return db.StatusWaiting, true
-	case "SessionStart", "Stop":
+	case "SessionStart", "SessionEnd", "Stop":
 		return db.StatusDone, true
 	}
 	return "", false
@@ -42,6 +42,13 @@ func (l *live) hook(req providerprotocol.HookEvent) error {
 	status, ok := hookStatus(req.Event)
 	if !ok || req.SessionID == "" {
 		return statusError{http.StatusBadRequest, fmt.Errorf("invalid hook event %q", req.Event)}
+	}
+	l.observeExternal(req)
+	if req.Event == "SessionEnd" {
+		l.mu.Lock()
+		delete(l.hooks, req.SessionID)
+		l.mu.Unlock()
+		return nil // Process exit does not establish a successful turn outcome.
 	}
 	l.mu.Lock()
 	l.syncOwnedLocked()

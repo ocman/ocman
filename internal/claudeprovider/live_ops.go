@@ -273,12 +273,9 @@ func (l *live) turn(ctx context.Context, id, text string, images []platforms.Ima
 	if err := l.usable(); err != nil {
 		return err
 	}
-	o, ok := l.ownedSession(id)
-	if !ok {
-		if e, err := l.idx.get(ctx, id); err != nil || e == nil {
-			return platforms.ErrNotFound
-		}
-		return errReadOnly
+	o, claimErr := l.claimForTurn(ctx, id)
+	if claimErr != nil {
+		return claimErr
 	}
 	if l.foreign(&o) {
 		return l.foreignError(o)

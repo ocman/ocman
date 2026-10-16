@@ -10,11 +10,12 @@ function warningTitle(kind: string): string {
   if (kind === 'duplicate_opencode_servers') {
     return 'Multiple OpenCode servers';
   }
+  if (kind === 'external-session-owner') return 'Also open in another Claude instance';
   return 'Session warning';
 }
 
-// Session warnings surface as auto-hiding toasts in the shared toast
-// viewport (bottom-right) rather than banners over the thread. Closing
+// Session warnings surface in the shared toast viewport rather than over
+// the thread. External-owner warnings stay until dismissed or cleared. Closing
 // (auto-hide, swipe, or the dismiss button) calls onDismiss, which the
 // parent persists so the same warning doesn't re-surface.
 export function SessionWarningBanner({ warning, onDismiss }: SessionWarningBannerProps) {
@@ -25,7 +26,7 @@ export function SessionWarningBanner({ warning, onDismiss }: SessionWarningBanne
       className="oc-toast-root warning"
       open
       onOpenChange={(open) => { if (!open) onDismiss(); }}
-      duration={10000}
+      duration={warning.kind === 'external-session-owner' ? Infinity : 10000}
     >
       <Toast.Description className="oc-toast-description" data-testid={`session-warning-${warning.kind}`}>
         <i className="bi bi-exclamation-triangle" aria-hidden="true" />

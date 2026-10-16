@@ -30,7 +30,9 @@ attaches). `/drain` stops new turns before an out-of-range supervisor is
 replaced. The protocol table is in `internal/providerprotocol/README.md`.
 Claude browsing runs in an **in-process** supervisor, one per machine, on
 a private temp-dir socket (`startClaudeBrowser` in `internal/platforms/claudecode/platform.go`):
-it lists every transcript and launches nothing. Sessions ocman launches
+it lists every transcript and launches nothing. External root sessions are adopted
+on their first send, with a non-blocking best-effort external-instance warning.
+Sessions ocman launches or adopts
 are driven by **one tmux-hosted supervisor per repository root**
 (`ocman provider claudecode`, hosted by `ocruntime.BackendRuntime` +
 `hostsvc/local.ProviderManager`, persisted in `managed_provider`),
@@ -959,7 +961,7 @@ minimal and match the surrounding code.
 
 - **`-platforms` flag**: comma-separated list of platforms to enable
   (default `"opencode,claudecode"`). Valid values are `opencode` and `claudecode`
-  (Claude Code via `internal/claudeprovider`; terminal sessions are read-only).
+  (Claude Code via `internal/claudeprovider`; external root sessions can be resumed).
   Only the listed adapters are registered; the OpenCode database is
   not required when `opencode` is omitted from the list.
   Settings → Platforms persists the local selection; an explicit CLI flag

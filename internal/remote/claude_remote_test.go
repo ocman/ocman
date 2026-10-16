@@ -27,8 +27,16 @@ func startClaudeRemote(t *testing.T, fixture string) (platforms.Platform, string
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	// One terminal-started transcript, so the hub sees a read-only session too.
+	// External transcripts can be continued on their owning machine.
 	if err := os.CopyFS(filepath.Join(dir, "config", "projects"), os.DirFS(filepath.Join("..", "claudeprovider", "testdata", "projects"))); err != nil {
+		t.Fatal(err)
+	}
+	transcript := filepath.Join(dir, "config", "projects", "-work-repo", "11111111-1111-4111-8111-111111111111.jsonl")
+	data, err := os.ReadFile(transcript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(transcript, bytes.ReplaceAll(data, []byte("/work/repo"), []byte(dir)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FAKE_CLAUDE_FIXTURE", fixture)
@@ -123,7 +131,7 @@ func TestHubDrivesRemoteClaudeSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessions, err := claude.Sessions(t.Context(), dir, 0)
-	if err != nil || len(sessions) != 1 || sessions[0].ID != created.ID || sessions[0].Platform != "r-box:claudecode" {
+	if err != nil || len(sessions) != 2 || sessions[1].ID != created.ID || sessions[1].Platform != "r-box:claudecode" {
 		t.Fatalf("sessions = %+v, %v", sessions, err)
 	}
 	if !claude.Owns(t.Context(), created.ID) {
@@ -143,10 +151,8 @@ func TestHubDrivesRemoteClaudeSession(t *testing.T) {
 	}
 }
 
-// A session started in a terminal on the remote stays read-only on the hub:
-// no live connection for the composer, and a read-only lifecycle so the
-// hub refuses to queue for it (FR-4).
-func TestHubSeesRemoteTerminalSessionReadOnly(t *testing.T) {
+// Continuing an external session stays on the remote, including its events.
+func TestHubContinuesRemoteTerminalSession(t *testing.T) {
 	claude, _ := startClaudeRemote(t, claudetest.Fixture("plain.jsonl"))
 	const terminal = "11111111-1111-4111-8111-111111111111"
 	var detail *platforms.SessionDetail
@@ -155,16 +161,18 @@ func TestHubSeesRemoteTerminalSessionReadOnly(t *testing.T) {
 		detail = d
 		return err == nil && d.Session != nil
 	})
-	if detail.Session.LiveConnection {
-		t.Fatalf("terminal session detail = %+v, want no live connection", detail.Session)
+	if !detail.Session.LiveConnection {
+		t.Fatalf("terminal session detail = %+v, want live connection", detail.Session)
 	}
 	lc, err := claude.(platforms.LifecycleReader).SessionLifecycle(t.Context(), terminal)
-	if err != nil || !lc.ReadOnly {
-		t.Fatalf("lifecycle = %+v, %v; want read-only", lc, err)
+	if err != nil || lc.ReadOnly {
+		t.Fatalf("lifecycle = %+v, %v; want writable", lc, err)
 	}
-	if err := claude.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: terminal, Message: "hi"}); err == nil {
-		t.Fatal("send to a terminal session succeeded")
+	events := streamEvents(t, claude, terminal)
+	if err := claude.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: terminal, Message: "hi"}); err != nil {
+		t.Fatal(err)
 	}
+	waitUntil(t, "external session reply", func() bool { return strings.Contains(events.String(), "session.idle") })
 }
 
 // A permission the remote cannot decide is shown and answered on the hub.

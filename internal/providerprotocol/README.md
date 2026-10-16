@@ -12,11 +12,14 @@ command, and persisted provider names are retained for compatibility.
 HTTP/1.1 with JSON bodies over an owner-local unix socket. Requests and responses
 use the exported DTOs in `protocol.go`; request field spelling follows those
 shared DTOs. No credentials are exchanged. The runtime owns socket permissions.
-Negotiate `/hello` before other calls. Only version 3 is accepted; an explicit
+Negotiate `/hello` before other calls. Only version 4 is accepted; an explicit
 `VersionError` signals runtime management to drain before replacing a backend.
 Version 2 publishes exact (escaped) prompt patterns, see below, and answers a
 reply the agent received but could not record with 503 `reply_unrecorded`;
-version 3 marks replayed lifecycle events of acknowledged turns. A draining
+version 3 marks replayed lifecycle events of acknowledged turns. Version 4
+supports adopting external Claude sessions and advisory owner observations;
+older supervisors are replaced once idle so new sends cannot reach the old
+read-only behavior. A draining
 version-1 supervisor sends raw tool arguments, which the adapter escapes on
 arrival, and its generic 503 may follow a delivered reply, so the adapter
 reports `ReplyOutcomes` false and the auto-approve pipeline leaves its
@@ -56,7 +59,7 @@ prompts to the user.
 | POST /drain-idle?token= | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
 | POST /resume?token= | `DrainState`, restores admission only for the matching cleanup pause |
 | GET /account | `Account` |
-| POST /hooks | `HookEvent`, status of a session started outside ocman; 204 |
+| POST /hooks | `HookEvent`, external-session status and advisory ownership; optional `pid` and `managed` identify the originating process; 204 |
 
 Optional Platform capabilities also support GET `/sessions/{id}/changes`, GET
 `/sessions/{id}/info`, and POST `/sessions/{id}/move` using the shared Platform

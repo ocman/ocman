@@ -20,6 +20,14 @@ func TestVersionNegotiation(t *testing.T) {
 	}
 }
 
+func TestPreAdoptionSupervisorsMustBeReplaced(t *testing.T) {
+	// A version-3 project supervisor refuses externally started sessions.
+	// Reusing it would leave the newly enabled composer unable to send.
+	if err := CheckVersion(3); err == nil {
+		t.Fatal("pre-adoption supervisor was accepted")
+	}
+}
+
 func TestHelloWireCapabilities(t *testing.T) {
 	var hello Hello
 	err := json.Unmarshal([]byte(`{"protocolVersion":1,"providerId":"test","cliVersion":"1.2.3","capabilities":{"composer":true,"events":true,"nativeQueue":true,"rename":true,"account":true}}`), &hello)

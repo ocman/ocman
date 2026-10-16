@@ -24,15 +24,12 @@ func (p *claudePlatform) ProxyEvents(ctx context.Context, id string, w io.Writer
 	if d := p.projects.drainingFor(ctx, id); d != nil {
 		return p.proxyDraining(ctx, id, d, w, flush)
 	}
-	a, owned, err := p.projects.route(ctx, id, false)
+	a, _, err := p.projects.route(ctx, id, false)
 	if err != nil {
 		return err
 	}
 	claudeTestHook("routed", id)
-	if a != nil || !owned {
-		if a == nil {
-			a = p.Adapter
-		}
+	if a != nil {
 		return a.ProxyEvents(ctx, id, w, flush)
 	}
 	browse, cancel := context.WithCancel(ctx)

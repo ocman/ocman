@@ -32,8 +32,7 @@ func checkCLI(version string) error {
 	return nil
 }
 
-// owned is a session ocman launched. Only these are driven; sessions started
-// in a terminal stay read-only (FR-4).
+// owned is a session ocman launched or adopted when continuing its transcript.
 type owned struct {
 	Directory   string `json:"directory"`
 	ProjectRoot string `json:"projectRoot,omitempty"`
@@ -61,7 +60,7 @@ func (l *live) foreignError(o owned) error {
 	return statusError{http.StatusForbidden, fmt.Errorf("this Claude session was started under Claude configuration %s and is unavailable under %s", o.Config, l.opts.ConfigDir)}
 }
 
-var errReadOnly = errors.New("this Claude session was started outside ocman and is read-only")
+var errReadOnly = errors.New("this Claude session cannot be continued as an independent conversation")
 
 // live is the interactive half of the provider: owned sessions, their
 // claude children and the per-session view served as snapshots.
@@ -254,9 +253,9 @@ func (l *live) overlayLocked(s *db.Session) {
 	}
 	l.overlayHookLocked(s)
 	o := l.owned[s.ID]
-	// Only sessions ocman launched under this configuration are drivable;
-	// terminal ones stay read-only (FR-4).
-	s.LiveConnection = o != nil && !l.foreign(o)
+	// Existing root transcripts can be adopted on the next send. Another
+	// configuration's managed sessions still cannot be resumed here.
+	s.LiveConnection = !l.foreign(o) && (o != nil || l.resumable(s))
 	// ocman's title (create or rename) wins over the transcript's first
 	// prompt, so a rename made before claude wrote the transcript holds.
 	if o != nil && o.Title != "" {

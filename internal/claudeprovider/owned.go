@@ -85,9 +85,8 @@ func (l *live) updateOwnedLocked(change func()) error {
 	return nil
 }
 
-// OwnedDirectory reports the directory of a session ocman launched, read
-// from statePath. ocman routes such a session to its project supervisor;
-// any other session was started in a terminal and stays read-only.
+// OwnedDirectory reports the directory of a session ocman launched or adopted,
+// read from statePath. Such sessions route to their project supervisor.
 func OwnedDirectory(statePath, id string) (string, bool) {
 	data, err := os.ReadFile(statePath)
 	if err != nil {
