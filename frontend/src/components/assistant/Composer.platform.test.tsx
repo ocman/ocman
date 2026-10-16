@@ -13,7 +13,7 @@ beforeEach(() => { caps.agentCatalog = true; });
 it.each([
   ['opencode', 'OpenCode'],
   ['claudecode', 'Claude Code'],
-  ['r-owner:claudecode', 'Claude Code'],
+  ['r-owner:claudecode', 'Claude Code (remote machine)'],
 ])('identifies %s before the agent selector even with one platform', (platform, label) => {
   render(<Composer platform={platform} isRunning={false} agentsLoaded activeAgent="build" />);
   const icon = screen.getByLabelText(label);
