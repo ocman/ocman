@@ -35,14 +35,15 @@ A recognized link renders in one of two ways:
   missing or rate limited. A private resource says to add a token under
   **Settings → Link previews**.
 - **Rich card.** Title, status, author or assignee, and last update. Cards are
-  kept in memory for a minute and dropped whenever a token or sign-in changes.
+  normally cached for a minute and dropped whenever a token or sign-in changes.
+  GitHub and Forgejo PR cards revalidate when shown and after switching sessions.
 
 A custom link rule without a provider always produces a fallback-style card
 that points at its replacement URL.
 
 GitHub and Forgejo PR cards also show CI status for the PR's head commit.
-They share the sidebar's repository-and-SHA cache, so either view can reuse a
-finished result fetched by the other. Visible cards check every 5 seconds
+They update the sidebar's repository-and-SHA cache, but revalidate completed
+checks when shown rather than trusting an older cached result. Visible cards check every 5 seconds
 until every check finishes. Rate-limited results never become final cached
 results. Empty checks are confirmed over one minute before caching. Errors
 back off from 5 to 60 seconds, retaining that delay when a card leaves and
@@ -56,10 +57,15 @@ follow the current head commit after a new push.
 PR cards also show mergeability and review approval. Drafts show as not
 mergeable; closed and merged PRs make no mergeability claim. Approval uses the
 sidebar's rules: at least one current approval and no outstanding change request.
-Both views share owner-scoped status results and in-flight requests, so opening
-a card reuses data already loaded by the sidebar, and vice versa. Missing status
-is fetched only while visible, with polling paused in hidden tabs. Refresh
+Both views share owner-scoped status results and in-flight requests. Opening
+a conversation card revalidates settled review status; the sidebar can reuse
+that result. Status is fetched only while visible, with polling paused in hidden tabs. Refresh
 rechecks mergeability and approval even when the head commit has not changed.
+
+Simultaneous conversation lookups are bundled by owner, and identical requests
+share one lookup. This bundles browser-to-ocman requests, not the forge's REST
+calls. Forgejo can fetch immediately; GitHub still applies its shared request
+budget and cached-data fallback. Both retain provider backoff and fetch limits.
 
 GitHub tokens and Apps need read-only Checks access to fetch check runs.
 Cards distinguish unavailable checks from a commit with no CI status.

@@ -18,16 +18,43 @@ vi.mock('../lib/previews', async (importOriginal) => ({
 }));
 
 function Cards({ text = 'https://github.com/a/repo/pull/1' }: { text?: string }) {
-  const { previews, providers, refreshChecks } = useProviderPreviews(text);
-  return previews.map((preview) => <ProviderPreview key={preview.id} preview={preview} providers={providers} refreshChecks={refreshChecks} />);
+  const { previews, providers, refreshChecks, refresh } = useProviderPreviews(text);
+  return previews.map((preview) => <ProviderPreview key={preview.id} preview={preview} providers={providers} refreshChecks={refreshChecks} onReappear={refresh} />);
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(resolvePreviews).mockReset();
   clearPRChecksCache();
+});
+
+it('preserves the checks retry deadline when unchanged metadata refreshes on viewport reentry', async () => {
+  vi.useFakeTimers();
+  let intersection: (entries: { isIntersecting: boolean }[]) => void = () => {};
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: typeof intersection) { intersection = callback; }
+    observe() {}
+    disconnect() {}
+  });
+  const preview: PreviewResult = { provider: 'github', kind: 'pr', id: 'a/repo#1', url: 'https://github.com/a/repo/pull/1', title: 'Change', state: 'ok', headSha: 'A' };
+  vi.mocked(resolvePreviews).mockResolvedValue([preview]);
+  vi.mocked(fetchPreviewChecks).mockRejectedValueOnce(new Error('offline'));
+  render(<Cards />);
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  await act(async () => intersection([{ isIntersecting: true }]));
+  expect(fetchPreviewChecks).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  await act(async () => intersection([{ isIntersecting: false }]));
+  await act(async () => intersection([{ isIntersecting: true }]));
+  await act(async () => vi.advanceTimersByTimeAsync(100));
+  expect(resolvePreviews).toHaveBeenCalledTimes(2);
+  expect(fetchPreviewChecks).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(3899));
+  expect(fetchPreviewChecks).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(fetchPreviewChecks).toHaveBeenCalledTimes(2);
 });
 
 it.each(['scoped', 'manual', 'aliased-link'])('keeps an overlapping scoped hint during a %s metadata refresh', async (firstRefresh) => {
@@ -116,7 +143,7 @@ it('refreshes metadata without the initial debounce and retains the card if refr
   expect(screen.queryByTestId('provider-preview-card')).toBeNull();
 });
 
-it('keeps cache bypass when same-SHA metadata arrives before refreshing checks finish', async () => {
+it('does not restart in-flight checks when same-SHA metadata finishes refreshing', async () => {
   const preview: PreviewResult = { provider: 'github', kind: 'pr', id: 'a/repo#1', url: 'https://github.com/a/repo/pull/1', title: 'Change', state: 'ok', headSha: 'A' };
   let finishMetadata!: (previews: PreviewResult[]) => void;
   vi.mocked(resolvePreviews).mockResolvedValueOnce([preview])
@@ -131,8 +158,7 @@ it('keeps cache bypass when same-SHA metadata arrives before refreshing checks f
   await waitFor(() => expect(resolvePreviews).toHaveBeenCalledTimes(2));
   const refreshingSignal = vi.mocked(fetchPreviewChecks).mock.calls[1][3]!;
   await act(async () => finishMetadata([preview]));
-  await waitFor(() => expect(fetchPreviewChecks).toHaveBeenCalledTimes(3));
-  expect(refreshingSignal.aborted).toBe(true);
+  expect(fetchPreviewChecks).toHaveBeenCalledTimes(2);
+  expect(refreshingSignal.aborted).toBe(false);
   expect(fetchPreviewChecks).toHaveBeenLastCalledWith(preview.url, 'A', 'local', expect.any(AbortSignal), true);
-  expect(screen.getByLabelText('Checks running')).toBeInTheDocument();
 });

@@ -18,7 +18,7 @@ const FallbackLink: FC<{ preview: PreviewResult }> = ({ preview }) => preview.ur
 // Forge statuses keep their old card colours.
 const STATUS_CLASS: Record<string, string> = { Open: 'open', Draft: 'open', Merged: 'merged', Closed: 'closed' };
 
-const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean; onReappear?: () => void }> = ({ preview, refreshChecks, onReappear }) => {
+const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean; onReappear?: () => void }> = ({ preview, onReappear }) => {
   const session = useContext(PreviewSessionContext);
   const statusClass = STATUS_CLASS[preview.status ?? ''];
   const cls = `gh-preview gh-preview--${statusClass ?? 'commit'}`;
@@ -35,7 +35,7 @@ const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean; onReappear
         {preview.updatedAt && <> · <RelativeTime iso={preview.updatedAt} /></>}
         {preview.stale && ' · cached'}
       </span>
-      {preview.kind === 'pr' && preview.url && <PreviewCI key={session} preview={preview} refreshChecks={refreshChecks} onReappear={onReappear} />}
+      {preview.kind === 'pr' && preview.url && <PreviewCI key={session} preview={preview} onReappear={onReappear} />}
     </span>
   </>;
   return preview.url
@@ -45,7 +45,7 @@ const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean; onReappear
     : <div className={cls} data-testid="provider-preview-card">{body}</div>;
 };
 
-function PreviewCI({ preview, refreshChecks, onReappear }: { preview: PreviewResult; refreshChecks?: boolean; onReappear?: () => void }) {
+function PreviewCI({ preview, onReappear }: { preview: PreviewResult; onReappear?: () => void }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
   useEffect(() => {
@@ -71,7 +71,7 @@ function PreviewCI({ preview, refreshChecks, onReappear }: { preview: PreviewRes
   const repo = preview.id.split('#')[0];
   const key = prChecksCacheKey(new URL(url).host, repo, sha);
   const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewChecks(url, sha, owner, signal, refresh), [url, sha, owner]);
-  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}\0${!!refreshChecks}`, visible && !!sha, loadChecks, true);
+  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible && !!sha, loadChecks, true);
   const label = checks.error ? 'Failed to load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
   return <span className="gh-preview__meta"><span ref={ref} className="gh-preview__meta" aria-label={label} data-ci-state={checks.error ? 'unknown' : checks.state}>
     <i className={`bi ${checks.error ? 'bi-exclamation-circle' : checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {label}
