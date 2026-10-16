@@ -70,7 +70,7 @@ func TestPromptNeedsUserFollowsTheApprovalDecision(t *testing.T) {
 				// to be settled by the enablement, cache or denylist gates.
 			}
 			if tc.seedSafe {
-				s.recordSafeCommandVerdict(sessionID, commandHash(tc.metadata), "Read-only test runner.")
+				s.recordSafeCommandVerdict(sessionID, permissionHash("Bash command", nil, tc.metadata), "Read-only test runner.")
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()

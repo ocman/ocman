@@ -5,25 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"strings"
 )
 
 // Safe verdicts are cached in memory by session and exact request. Unsafe
 // verdicts are always re-evaluated. Child sessions may inherit a parent's cache.
-func commandHash(metadata map[string]any) string {
-	cmd, ok := metadata["command"].(string)
-	if !ok || cmd == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte("command\x00" + cmd))
-	return hex.EncodeToString(sum[:])
-}
-
+//
+// The key covers everything the judge sees (permission, patterns and the
+// whole metadata), so a verdict is replayed only for the request it judged:
+// Claude passes the full tool input, and the same command with, say,
+// dangerouslyDisableSandbox is a different request. json.Marshal sorts map
+// keys at every depth, so the encoding is canonical.
 func permissionHash(permission string, patterns []string, metadata map[string]any) string {
-	switch strings.ToLower(permission) {
-	case "bash", "bash command":
-		return commandHash(metadata)
-	}
 	payload, err := json.Marshal(struct {
 		Permission string         `json:"permission"`
 		Patterns   []string       `json:"patterns"`

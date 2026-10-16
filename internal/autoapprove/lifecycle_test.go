@@ -75,7 +75,7 @@ func TestServiceLifecyclePersistenceFailureDoesNotBlockCachedApproval(t *testing
 	}}
 	svc := NewService(Deps{Store: store, SessionDir: func(string) (string, error) { return "/repo", nil }})
 	metadata := map[string]any{"command": "go test ./..."}
-	svc.recordSafeCommandVerdict("session", commandHash(metadata), "tests are safe")
+	svc.recordSafeCommandVerdict("session", permissionHash("Bash", nil, metadata), "tests are safe")
 	svc.Ensure("opencode", adapter, "session", "cached-store-failure", "Bash", nil, metadata)
 
 	select {
@@ -211,7 +211,7 @@ func TestServiceLifecycleCacheAndDenylist(t *testing.T) {
 	}}
 	svc := NewService(Deps{Store: store, SessionDir: func(string) (string, error) { return "/repo", nil }})
 	metadata := map[string]any{"command": "go test ./..."}
-	svc.recordSafeCommandVerdict("session", commandHash(metadata), "tests are safe")
+	svc.recordSafeCommandVerdict("session", permissionHash("Bash", nil, metadata), "tests are safe")
 	svc.Ensure("opencode", adapter, "session", "cached", "Bash", nil, metadata)
 	select {
 	case <-replied:

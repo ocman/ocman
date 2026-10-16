@@ -1034,76 +1034,32 @@ func TestEnsureAutoApproveCancellation(t *testing.T) {
 	s.releaseAutoApprove("ses-1", "perm-1")
 }
 
-// TestCommandHash verifies the per-session safe-command cache key
-// derivation. The hash must:
-//   - return a SHA-256 hex key when a Bash command is
-//     present (deterministic, identical inputs → identical hashes).
-//   - return "" when metadata is nil, empty, missing the "command"
-//     key, or the command is a non-string / empty string (no caching
-//     for non-Bash tools or malformed payloads).
-//   - differ for different command strings — even whitespace
-//     variants produce distinct hashes, matching the user's
-//     "exact command" requirement.
-func TestCommandHash(t *testing.T) {
-	// Same command → same hash.
-	h1 := commandHash(map[string]any{"command": "ls -la"})
-	h2 := commandHash(map[string]any{"command": "ls -la"})
-	if h1 == "" {
-		t.Fatalf("expected non-empty hash for valid Bash command")
+// TestPermissionHash verifies the per-session safe-verdict cache key: a
+// deterministic SHA-256 hex over everything the judge sees, so any change to
+// the permission, its patterns or any metadata field (even whitespace in the
+// command) is a different key, and an unserializable request is not cached.
+func TestPermissionHash(t *testing.T) {
+	ls := map[string]any{"command": "ls -la"}
+	h1 := permissionHash("bash", nil, ls)
+	if h1 == "" || len(h1) != 64 {
+		t.Fatalf("expected a sha256 hex key, got %q", h1)
 	}
-	if h1 != h2 {
-		t.Errorf("identical commands should hash equal; got %q vs %q", h1, h2)
+	if h2 := permissionHash("bash", nil, map[string]any{"command": "ls -la"}); h2 != h1 {
+		t.Errorf("identical requests should hash equal; got %q vs %q", h1, h2)
 	}
-	if len(h1) != 64 {
-		t.Errorf("sha256 hex should be 64 chars; got %d", len(h1))
-	}
-
-	// Different command → different hash.
-	if commandHash(map[string]any{"command": "rm -rf /"}) == h1 {
-		t.Errorf("different commands should hash differently")
-	}
-
-	// Whitespace difference → different hash (exact-command rule).
-	if commandHash(map[string]any{"command": "ls  -la"}) == h1 {
-		t.Errorf("whitespace-variant commands should hash differently (exact match required)")
-	}
-
-	// Missing key / nil / empty / wrong type → empty hash (no cache).
-	cases := []map[string]any{
-		nil,
-		{},
-		{"filePath": "/etc/passwd"}, // Edit tool, no "command"
-		{"command": ""},             // empty command string
-		{"command": 42},             // non-string command
-		{"command": nil},            // nil command
-	}
-	for i, m := range cases {
-		if got := commandHash(m); got != "" {
-			t.Errorf("case %d: expected empty hash for non-Bash/invalid metadata, got %q (input=%v)", i, got, m)
+	for name, other := range map[string]string{
+		"different command":    permissionHash("bash", nil, map[string]any{"command": "rm -rf /"}),
+		"whitespace variant":   permissionHash("bash", nil, map[string]any{"command": "ls  -la"}),
+		"extra metadata field": permissionHash("bash", nil, map[string]any{"command": "ls -la", "description": "list files"}),
+		"patterns":             permissionHash("bash", []string{"ls -la"}, ls),
+		"permission":           permissionHash("external_directory", nil, ls),
+	} {
+		if other == "" || other == h1 {
+			t.Errorf("%s: got %q, want a distinct non-empty key", name, other)
 		}
-	}
-
-	// Extra metadata keys are ignored — only "command" matters.
-	withExtras := commandHash(map[string]any{
-		"command":     "ls -la",
-		"description": "list files",
-		"cwd":         "/tmp",
-	})
-	if withExtras != h1 {
-		t.Errorf("extra metadata keys should not affect hash; got %q vs %q", withExtras, h1)
 	}
 	if got := permissionHash("external_directory", nil, map[string]any{"bad": make(chan int)}); got != "" {
 		t.Errorf("unserializable permission should not be cached; got %q", got)
-	}
-	externalMetadata := map[string]any{"command": "ls", "filepath": "/repo/a"}
-	if permissionHash("external_directory", []string{"/repo/a/*"}, externalMetadata) == commandHash(externalMetadata) {
-		t.Error("non-Bash permission with command metadata must use the full request key")
-	}
-	if permissionHash("Bash", nil, externalMetadata) != commandHash(externalMetadata) {
-		t.Error("Bash permission should retain exact-command caching")
-	}
-	if got := permissionHash("Bash", nil, map[string]any{"filepath": "/repo/a"}); got != "" {
-		t.Errorf("Bash permission without a command should not be cached; got %q", got)
 	}
 }
 
@@ -1115,16 +1071,16 @@ func TestCommandHash(t *testing.T) {
 //   - lookup before record → miss.
 //   - record then lookup → hit, returns the stored reasoning.
 //   - cache is scoped per sessionID (same hash in different session → miss).
-//   - empty hash is rejected (defensive — commandHash returns "" for
+//   - empty hash is rejected (defensive — permissionHash returns "" for
 //     non-cacheable inputs, callers must not record empty keys).
 //   - nil receiver is a no-op (defensive — matches the pattern used
 //     by recordJudged / lookupJudged).
 func TestSafeCommandCache(t *testing.T) {
 	s := &Service{}
 
-	hash := commandHash(map[string]any{"command": "git status"})
+	hash := permissionHash("bash", nil, map[string]any{"command": "git status"})
 	if hash == "" {
-		t.Fatalf("commandHash returned empty for valid command")
+		t.Fatalf("permissionHash returned empty for valid command")
 	}
 
 	// Lookup before record → miss.
@@ -1148,12 +1104,12 @@ func TestSafeCommandCache(t *testing.T) {
 	}
 
 	// Different command → miss (different hash).
-	otherHash := commandHash(map[string]any{"command": "git diff"})
+	otherHash := permissionHash("bash", nil, map[string]any{"command": "git diff"})
 	if _, ok := s.lookupSafeCommandVerdict("ses-1", otherHash); ok {
 		t.Errorf("different command should miss")
 	}
 
-	// Record on empty hash is a no-op (defensive: commandHash returns
+	// Record on empty hash is a no-op (defensive: permissionHash returns
 	// "" for non-cacheable inputs).
 	s.recordSafeCommandVerdict("ses-1", "", "should be ignored")
 	if _, ok := s.lookupSafeCommandVerdict("ses-1", ""); ok {
@@ -1241,7 +1197,7 @@ func TestAutoApproveCacheShrinksAfterOverlappingClaimsSettle(t *testing.T) {
 // hit returns unprefixed, an ancestor hit is prefixed with "inherited
 // from parent: ", and unrelated / cyclic / resolver-less cases miss.
 func TestInheritedSafeCommandVerdict(t *testing.T) {
-	hash := commandHash(map[string]any{"command": "pnpm test"})
+	hash := permissionHash("bash", nil, map[string]any{"command": "pnpm test"})
 
 	// parent chain: grandchild -> child -> parent
 	parents := map[string]string{
@@ -1347,9 +1303,9 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 
 	// Seed the safe-command cache as if the judge had previously
 	// approved this exact command in this session.
-	hash := commandHash(map[string]any{"command": command})
+	hash := permissionHash(permission, nil, map[string]any{"command": command})
 	if hash == "" {
-		t.Fatalf("test setup: commandHash returned empty")
+		t.Fatalf("test setup: permissionHash returned empty")
 	}
 	s.recordSafeCommandVerdict(sessionID, hash, origReason)
 
@@ -1488,7 +1444,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 	}
 
 	// Cache hit exists for session A only.
-	hash := commandHash(map[string]any{"command": command})
+	hash := permissionHash("Bash command", nil, map[string]any{"command": command})
 	s.recordSafeCommandVerdict("ses-A", hash, "Read-only.")
 
 	// Run for session B — different sessionID, same hash.
@@ -1514,14 +1470,62 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 	}
 }
 
+// TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentInput covers a
+// cached safe verdict being replayed for a request the judge never saw.
+// Claude passes the whole tool input as metadata, so the same command with
+// dangerouslyDisableSandbox, or with other patterns, is a different request.
+func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentInput(t *testing.T) {
+	judged := map[string]any{"command": "ls"}
+	tests := []struct {
+		name     string
+		patterns []string
+		metadata map[string]any
+	}{
+		{"extra tool input", nil, map[string]any{"command": "ls", "dangerouslyDisableSandbox": true}},
+		{"different patterns", []string{"ls /"}, map[string]any{"command": "ls"}},
+		{"nested input differs", nil, map[string]any{"command": "ls", "env": map[string]any{"A": "1"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			respondCalls := 0
+			fp := &fakePlatform{id: "claudecode", respondPermissionFn: func(platforms.RespondPermissionRequest) error {
+				respondCalls++
+				return nil
+			}}
+			s := &Service{
+				sseSessions:      make(map[string]map[*Sink]struct{}),
+				autoApprove:      make(map[string]*autoApproveStatus),
+				deps:             Deps{DefaultEnabled: true},
+				safeCommandCache: make(map[string]map[string]string),
+			}
+			// The key the judge path records after a safe verdict.
+			s.recordSafeCommandVerdict("ses", permissionHash("Bash", nil, judged), "Read-only.")
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			s.backgroundAutoApprove(ctx, "claudecode", fp, "ses", "perm", askedPermission{
+				platformID: "claudecode", permission: "Bash", patterns: tt.patterns, metadata: tt.metadata, askedAt: 1,
+			})
+			if respondCalls != 0 {
+				t.Fatalf("approved from a cached verdict for different input; RespondPermission called %d times", respondCalls)
+			}
+		})
+	}
+	// Canonical: key order does not change the key.
+	a := permissionHash("Bash", []string{"ls"}, map[string]any{"command": "ls", "env": map[string]any{"A": "1", "B": "2"}})
+	b := permissionHash("Bash", []string{"ls"}, map[string]any{"env": map[string]any{"B": "2", "A": "1"}, "command": "ls"})
+	if a == "" || a != b {
+		t.Fatalf("permissionHash is not canonical: %q vs %q", a, b)
+	}
+}
+
 // TestSafeCommandCacheConcurrent stresses the cache under heavy parallel
 // load to catch any locking bug. All goroutines write/read the same key;
 // the final state must be consistent and no goroutine may panic.
 func TestSafeCommandCacheConcurrent(t *testing.T) {
 	s := &Service{}
-	hash := commandHash(map[string]any{"command": "pnpm test"})
+	hash := permissionHash("bash", nil, map[string]any{"command": "pnpm test"})
 	if hash == "" {
-		t.Fatalf("commandHash returned empty for valid command")
+		t.Fatalf("permissionHash returned empty for valid command")
 	}
 
 	const goroutines = 100
