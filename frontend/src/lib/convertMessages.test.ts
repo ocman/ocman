@@ -881,14 +881,16 @@ describe('convertMessages', () => {
     });
   });
 
-  it('renders skill calls as __skill__ tool-calls', () => {
-    const m = makeMessage('m', { role: 'assistant' });
-    const out = convertMessages([m], [
-      makePart('m', { type: 'tool', tool: 'Skill', state: { input: { name: 'create-commit' } } } as PartData),
-    ]);
-    const items = asContentArray(out[0].content);
-    const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === '__skill__');
-    expect((tc as { argsText: string }).argsText).toBe('Skill "create-commit"');
+  it.each(['Skill', 'skill', 'mcp_Skill', 'mcp_skill'])('renders %s calls using supported skill keys', (tool) => {
+    for (const key of ['id', 'name', 'skill']) {
+      const m = makeMessage('m', { role: 'assistant' });
+      const out = convertMessages([m], [
+        makePart('m', { type: 'tool', tool, state: { input: { [key]: 'create-commit' } } } as PartData),
+      ]);
+      const items = asContentArray(out[0].content);
+      const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === '__skill__');
+      expect((tc as { argsText: string }).argsText).toBe('Skill "create-commit"');
+    }
   });
 
   it('renders task calls with subagent metadata + sub-session data', () => {

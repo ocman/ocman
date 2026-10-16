@@ -7,6 +7,7 @@ import { parseTodos } from '../../lib/todos';
 import { parseShellEnvelope } from '../../lib/shellEnvelope';
 import { TodoList } from '../TodoList';
 import { isMutedLineTool } from '../../lib/mutedTools';
+import { mcpToolLabel } from '../../lib/mcpToolLabel';
 import { useIsPrinting } from '../../lib/useIsPrinting';
 import { usePrintCollapse } from '../../lib/printCollapseContext';
 import { useUiStore } from '../../lib/uiStore';
@@ -353,7 +354,8 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   // an inline panel showing the raw args and result. Errors get a red
   // accent but stay collapsed — same compact treatment as success so
   // the conversation stays scannable.
-  const summary = parsedTitle || summarizeToolArgs(remainingArgs);
+  const mcpLabel = mcpToolLabel(toolName, detail || remainingArgs);
+  const summary = mcpLabel ? '' : parsedTitle || summarizeToolArgs(remainingArgs);
   const arrowIcon = toolStatus === 'running' ? '\u223C' : toolStatus === 'error' ? '\u2717' : '\u2192';
   const compactClass = [
     'oc-tool-compact',
@@ -366,7 +368,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   const compactLine = (
     <>
       <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>
-      <span className="oc-tool-compact-name">{toolName}</span>
+      <span className="oc-tool-compact-name">{mcpLabel || toolName}</span>
       {summary && <span className="oc-tool-compact-summary">{summary}</span>}
       {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
     </>

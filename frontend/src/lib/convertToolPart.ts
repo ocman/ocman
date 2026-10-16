@@ -173,7 +173,7 @@ function renderSpecialTool(
     case 'mcp_skill': {
       // Skill loads collapse to a single muted line — the input is just
       // the skill name and the output is the whole skill body.
-      const skillName = inp.name || inp.skill || title || 'unknown';
+      const skillName = inp.id || inp.name || inp.skill || title || 'unknown';
       return mutedLine('__skill__', `Skill "${skillName}"`, toolCallId);
     }
     case 'task':

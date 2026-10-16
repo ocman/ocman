@@ -25,6 +25,16 @@ const renderTool = (p: Partial<Props>) =>
   render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />, { wrapper: MemoryRouter });
 
 describe('ToolCallDisplay bash output', () => {
+  it('labels Code Mode MCP calls and preserves the expandable code and result', () => {
+    const code = "return await tools['chrome-devtools'].list_pages({});";
+    renderTool({ toolName: 'execute', argsText: `completed\n${JSON.stringify({ code })}`, result: 'Page list' });
+    const button = screen.getByRole('button', { name: 'MCP chrome-devtools.list_pages' });
+    expect(screen.queryByText(/code=/)).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(screen.getByText('Page list')).toBeInTheDocument();
+    expect(screen.getByText(/return await tools/)).toBeInTheDocument();
+  });
+
   afterEach(() => useUiStore.setState({ compactToolCalls: false }));
 
   it.each(['bash', 'mcp_bash'])('hides %s output in compact mode until expanded', (toolName) => {
