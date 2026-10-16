@@ -157,10 +157,10 @@ export function Composer({
     // The prompt is in flight, not a draft: drop it now so neither an unmount
     // nor a session switch mid-send parks it, and restore it only on failure.
     const key = draftKeyRef.current;
-    const text = el.value.trim();
+    const text = el.value;
     const draftVersion = key ? getDraftVersion(key) : 0;
     const previousDraft = key ? getDraft(key) : '';
-    inFlightRef.current = text;
+    inFlightRef.current = text.trim();
     if (key) clearDraftNow(key, text, draftVersion);
     sendingRef.current = true;
     setSending(true);

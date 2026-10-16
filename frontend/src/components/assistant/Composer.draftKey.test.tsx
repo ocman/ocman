@@ -55,6 +55,34 @@ it('falls back to the session id as draft key', () => {
   expect(screen.getByRole('textbox')).toHaveValue('session draft');
 });
 
+it('clears a whitespace-bearing draft submitted after remount', async () => {
+  const first = render(<Composer isRunning={false} newConversation draftKey="new" />);
+  fireEvent.input(screen.getByRole('textbox'), { target: { value: '  hello \n' } });
+  await waitFor(() => expect(getDraft('new')).toBe('  hello \n'));
+  first.unmount();
+  let resolve!: () => void;
+  const onSend = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const second = render(<Composer isRunning={false} newConversation draftKey="new" onSend={onSend} />);
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  expect(onSend).toHaveBeenCalledWith('hello', undefined, false, undefined);
+  expect(getDraft('new')).toBe('');
+  await act(async () => { resolve(); });
+  expect(screen.getByRole('textbox')).toHaveValue('');
+  second.unmount();
+  render(<Composer isRunning={false} newConversation draftKey="new" />);
+  expect(screen.getByRole('textbox')).toHaveValue('');
+  expect(await transact(['texts'], 'readonly', (tx) => tx.get('texts', 'new'))).toMatchObject({ text: '' });
+});
+
+it('restores exact draft whitespace after a failed send', async () => {
+  saveDraft('new', '  hello \n');
+  const onSend = vi.fn(async () => { throw new Error('send failed'); });
+  render(<Composer isRunning={false} newConversation draftKey="new" onSend={onSend} />);
+  await act(async () => { fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' }); });
+  expect(getDraft('new')).toBe('  hello \n');
+  expect(screen.getByRole('textbox')).toHaveValue('  hello \n');
+});
+
 // Regression: a prompt in flight must never be parked as a draft, whether the
 // composer unmounts (new conversation navigates away) or is re-pointed.
 it('does not keep a submitted prompt as a draft when the composer unmounts mid-send', () => {
