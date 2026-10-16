@@ -22,6 +22,13 @@
 set -uo pipefail
 
 FUZZTIME="${FUZZTIME:-10s}"
+# FUZZTIME can be operator input (the weekly workflow's manual fuzztime), so
+# accept only what -fuzztime takes: a Go duration or an iteration count.
+fuzztime_re='^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$|^[0-9]+x$'
+if ! [[ "$FUZZTIME" =~ $fuzztime_re ]]; then
+	echo "fuzz: FUZZTIME must be a duration (60s, 1m30s) or a count (200x), got: $FUZZTIME" >&2
+	exit 2
+fi
 out="${FUZZ_FAILURES_DIR:-fuzz-failures}"
 go="${GO:-go}"
 

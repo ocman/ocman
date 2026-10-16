@@ -80,10 +80,10 @@ repo() {
 	out="$work/.out"
 }
 
-# run: fuzz.sh in $work; sets $status.
+# run: fuzz.sh in $work, with FUZZTIME=$fuzztime (default 1s); sets $status.
 run() {
 	status=0
-	(cd "$work" && GO="$tmp/go" FUZZTIME=1s "$script") >"$out" 2>&1 || status=$?
+	(cd "$work" && GO="$tmp/go" FUZZTIME="${fuzztime:-1s}" "$script") >"$out" 2>&1 || status=$?
 }
 
 ran() { grep -qF -- "-fuzz=^$1\$ " "$FAKE/calls"; }
@@ -143,5 +143,29 @@ mkdir -p "$work"
 out="$work/.out"
 run
 [ "$status" -ne 0 ] || fail "failed package discovery exited 0"
+
+# FUZZTIME is operator input (the workflow's manual fuzztime): anything but
+# a duration or a count is rejected before a target runs, and neither the
+# script nor the Makefile ever evaluates it as shell.
+repo fuzztime internal/a:FuzzA
+for fuzztime in '1s; touch pwned #' '$(touch pwned)' '1s -run=x' '10'; do
+	: >"$FAKE/calls"
+	run
+	[ "$status" -ne 0 ] || fail "FUZZTIME '$fuzztime' was accepted"
+	! grep -q '^test -run' "$FAKE/calls" || fail "FUZZTIME '$fuzztime' still fuzzed"
+	[ ! -e "$work/pwned" ] || fail "FUZZTIME '$fuzztime' ran as shell"
+done
+for fuzztime in 1m30s 1.5s 200x; do
+	run
+	[ "$status" -eq 0 ] || fail "valid FUZZTIME '$fuzztime' exited $status"
+done
+unset fuzztime
+mkdir -p "$work/scripts"
+cp "$script" "$work/scripts/fuzz.sh"
+status=0
+GO="$tmp/go" make -s -C "$work" -f "$(dirname "$script")/../Makefile" test-fuzz \
+	FUZZTIME='1s; touch pwned #' >"$out" 2>&1 || status=$?
+[ "$status" -ne 0 ] || fail "make test-fuzz accepted a shell FUZZTIME"
+[ ! -e "$work/pwned" ] || fail "make test-fuzz ran FUZZTIME as shell"
 
 echo "fuzz.sh self-test: ok"

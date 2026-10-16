@@ -402,9 +402,12 @@ test-race: ## Run Go tests with -race
 # opt-in: `go test` only runs the seed corpus unless -fuzz is passed, so the
 # regular test suite stays fast. A failing target does not stop the run;
 # failures are listed at the end and recorded under fuzz-failures/.
+# FUZZTIME reaches the script through the environment, never the recipe's
+# shell source, and the script validates it.
 FUZZTIME ?= 10s
+export FUZZTIME
 test-fuzz: ## Run all Fuzz* targets for FUZZTIME (default 10s) each
-	FUZZTIME=$(FUZZTIME) ./scripts/fuzz.sh
+	./scripts/fuzz.sh
 
 # Print per-package coverage for internal/. Used to verify the NFR-3
 # coverage targets in spec/backend-hardening.

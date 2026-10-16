@@ -46,10 +46,12 @@ jobs:
             go-fuzz-${{ runner.os }}-${{ runner.arch }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-
+      # The manual fuzztime input reaches the script only as an environment
+      # variable, which fuzz.sh validates; it is never part of shell source.
       - name: Fuzz
         env:
           FUZZTIME: ${{ github.event.inputs.fuzztime || '60s' }}
-        run: make test-fuzz FUZZTIME="${FUZZTIME}"
+        run: ./scripts/fuzz.sh
       - name: Report failures as issues
         if: failure()
         env:
