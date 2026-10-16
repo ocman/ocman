@@ -351,6 +351,7 @@ export interface Message {
   timeCreated: number;
   data: {
     role: string;
+    synthetic?: boolean;
     finish?: string;
     summary?: boolean;
     modelID?: string;

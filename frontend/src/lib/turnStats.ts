@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import type { Message, Part, PartData } from './api';
 import { formatModelRef } from './sessionStatus';
 import { throughputSample } from './throughput';
+import { isTurnNotification } from './turnNotification';
 
 /**
  * Aggregated stats for a single "turn" — one user prompt plus all the
@@ -84,8 +85,8 @@ export type TurnStatsMap = Map<string, TurnAggregate>;
 /**
  * Compute per-turn aggregates from the flat messages + parts arrays.
  *
- * Turn boundaries are identified by user-message role transitions: a new
- * turn starts at each user message. All assistant messages between two
+ * Turn boundaries are identified by real user prompts, not injected
+ * user-role notifications. All assistant messages between two
  * consecutive user messages (or from the last user message to end of list)
  * belong to the same turn. The last assistant message in that group carries
  * the aggregated data.
@@ -110,8 +111,12 @@ export function computeTurnStats(
   // Build a quick index: messageId → count of tool parts
   const toolCountByMsg: Record<string, number> = {};
   const toolsByMsg: Record<string, PartData[]> = {};
+  const partsByMsg: Record<string, PartData[]> = {};
   for (const p of parts) {
     const data = typeof p.data === 'string' ? tryParse(p.data) : p.data;
+    if (data && typeof data === 'object' && 'type' in data) {
+      (partsByMsg[p.messageId] ??= []).push(data as PartData);
+    }
     if (data && typeof data === 'object' && 'type' in data && data.type === 'tool') {
       toolCountByMsg[p.messageId] = (toolCountByMsg[p.messageId] ?? 0) + 1;
       (toolsByMsg[p.messageId] ??= []).push(data as PartData);
@@ -128,6 +133,7 @@ export function computeTurnStats(
 
   for (const m of filtered) {
     if (m.data.role === 'user') {
+      if (isTurnNotification(m, partsByMsg[m.id] ?? [])) continue;
       current = { userMsg: m, assistantMsgs: [] };
       turns.push(current);
     } else if (m.data.role === 'assistant' && current) {
