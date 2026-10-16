@@ -18,6 +18,12 @@ function renderResult(output: string) {
 }
 
 describe('Claude Agent result details', () => {
+  it.each(['**Done**', 'x'.repeat(6000)])('unwraps v2 subagent results before truncating', (answer) => {
+    const { container } = renderResult(`<subagent sessionID="ses_child" state="completed">\n${answer}\n</subagent>`);
+    expect(container.textContent).not.toContain('<subagent');
+    expect(container.textContent).not.toContain('</subagent>');
+    expect(screen.getByRole('button', { name: 'Expand subagent task result' })).toHaveTextContent(answer.startsWith('**') ? 'Done' : 'x'.repeat(100));
+  });
   it('separates the recorded Agent footer from the Markdown answer', async () => {
     renderResult('**Done**' + footer);
     const result = screen.getByRole('button', { name: 'Expand subagent task result' });

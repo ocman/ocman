@@ -51,8 +51,14 @@ func convertTool(item map[string]any) map[string]any {
 		input = v1Input(name, input)
 	}
 	var texts []string
+	var attachments []map[string]any
 	for _, c := range arr(state, "content") {
 		item, _ := c.(map[string]any)
+		if str(item, "type") == "file" {
+			attachments = append(attachments, map[string]any{
+				"type": "file", "url": fileURL(item), "mime": str(item, "mime"), "filename": str(item, "name"),
+			})
+		}
 		if s := str(item, "text"); s != "" {
 			texts = append(texts, s)
 		}
@@ -71,6 +77,9 @@ func convertTool(item map[string]any) map[string]any {
 	}
 	if status == "completed" || status == "error" {
 		v1State["output"] = output
+	}
+	if len(attachments) > 0 {
+		v1State["attachments"] = attachments
 	}
 	if e := obj(state, "error"); e != nil {
 		v1State["error"] = str(e, "message")

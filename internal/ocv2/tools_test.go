@@ -190,3 +190,17 @@ func TestConvertToolToleratesNonObjectContent(t *testing.T) {
 		t.Fatalf("output = %v, want ok", got)
 	}
 }
+
+func TestConvertToolPreservesFileContent(t *testing.T) {
+	for _, tool := range []string{"read", "subagent", "browser_screenshot"} {
+		t.Run(tool, func(t *testing.T) {
+			item := convDecode(t, `{"type":"tool","id":"c1","state":{"status":"completed","input":{},"content":[{"type":"text","text":"Screenshot"},{"type":"file","uri":"data:image/png;base64,aGVsbG8=","mime":"image/png","name":"screen.png"}]}}`)
+			item["name"] = tool
+			state := ConvertContent(item, nil)["state"].(map[string]any)
+			convEqual(t, "attachments", state["attachments"], `[{"type":"file","url":"data:image/png;base64,aGVsbG8=","mime":"image/png","filename":"screen.png"}]`)
+			if state["output"] != "Screenshot" {
+				t.Fatalf("output = %v", state["output"])
+			}
+		})
+	}
+}

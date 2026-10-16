@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { type ToolCallMessagePartProps } from '@assistant-ui/react';
 import { parseTodos } from '../../lib/todos';
+import { parseShellEnvelope } from '../../lib/shellEnvelope';
 import { TodoList } from '../TodoList';
 import { isMutedLineTool } from '../../lib/mutedTools';
 import { useIsPrinting } from '../../lib/useIsPrinting';
@@ -98,7 +99,12 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
 
   // Extract timing data from the @time: line, if present.
   const timeInfo = parseToolTime(rawArgsText || '');
-  const argsTextWithMeta = timeInfo ? timeInfo.strippedArgs : (rawArgsText || '');
+  const shell = parseShellEnvelope(result);
+  if (shell) {
+    toolName = 'bash';
+    result = shell.output;
+  }
+  const argsTextWithMeta = shell ? `${shell.status}\n${shell.command}` : timeInfo ? timeInfo.strippedArgs : (rawArgsText || '');
   const { description: shellDescription, strippedArgs: argsTextNoDesc } = parseShellDescription(argsTextWithMeta);
   const argsLines = argsTextNoDesc.split('\n');
   const userExecutedTool = argsLines.includes('@user-executed-tool');
@@ -237,7 +243,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
 
   if (compactToolCalls && (/^(?:mcp_)?(?:bash|edit|write)$/i.test(toolName) || toolName === 'apply_patch')) {
     return <CompactToolCall toolName={toolName} args={remainingArgs} status={toolStatus} expanded={expanded} onToggle={() => setExpanded(!expanded)} timeInfo={timeInfo}>
-      <ToolCallBody {...props} toolName={toolName} argsText={rawArgsText} artifact={artifact} result={result} full />
+      <ToolCallBody {...props} toolName={toolName} argsText={shell ? argsTextWithMeta : rawArgsText} artifact={artifact} result={result} full />
     </CompactToolCall>;
   }
   const isApplyPatch = toolName === 'apply_patch';

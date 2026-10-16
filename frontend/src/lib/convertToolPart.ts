@@ -7,6 +7,7 @@
 import type { Part, PartData, FilePart, TaskSessionData } from './api';
 import { extractTaskId } from './taskId';
 import { parseAgentResult } from './taskNotification';
+import { parseSubagentEnvelope } from './subagentEnvelope';
 import { SHELL_DESC_META, type ToolApproval } from './threadHelpers';
 import { isImageMime, isSynthesizedTerminal, relativizePath, truncate } from './convertMessages';
 
@@ -190,7 +191,7 @@ function renderSpecialTool(
       if (typeof st.output === 'string' && st.output.trim()) {
         // Some platforms wrap the final output in <task_result> tags;
         // strip the OpenCode task_id line if present.
-        const parsed = parseAgentResult(st.output);
+        const parsed = parseAgentResult(parseSubagentEnvelope(st.output)?.output ?? st.output);
         taskDetails = parsed.details;
         taskOutput = truncate(parsed.text.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(), 5000);
       }

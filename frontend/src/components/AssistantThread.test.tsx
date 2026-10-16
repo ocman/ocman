@@ -99,6 +99,20 @@ import { formatFullDateTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { TurnSpeechContext } from '../lib/turnSpeech';
 
+it.each([
+  ['shell', '<shell id="sh_1" state="completed" command="echo "hello"">\nhello\n</shell>', 'hello'],
+  ['user shell', 'The following shell command was executed by the user:\n<shell id="sh_1" state="completed" command="pwd">\n/workspace\n</shell>', '/workspace'],
+  ['subagent', '<subagent sessionID="ses_child" state="completed" description="Review "changes"">\n**All clear**\n</subagent>', 'All clear'],
+])('renders v2 %s notifications without raw tags', (_name, text, result) => {
+  threadState.renderUser = true;
+  message.content = [{ type: 'text', text }];
+  const { container } = render(<AssistantThread />);
+  expect(container.textContent).toContain(result);
+  expect(container.textContent).not.toContain('<shell');
+  expect(container.textContent).not.toContain('<subagent');
+  expect(container.querySelector('.oc-msg-system')).toBeInTheDocument();
+});
+
 class StubResizeObserver {
   observe() {}
   disconnect() {}

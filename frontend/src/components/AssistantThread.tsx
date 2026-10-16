@@ -29,6 +29,8 @@ import { parseLocalCommand } from '../lib/localCommand';
 import { parseTaskNotification } from '../lib/taskNotification';
 import { parseSkillInstructions } from '../lib/skillInstructions';
 import { TaskNotification } from './assistant/TaskNotification';
+import { parseV2Notification } from '../lib/v2Notification';
+import { V2Notification } from './assistant/V2Notification';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
@@ -126,6 +128,8 @@ const SkillCall: FC<{ name: string; instructions: string }> = ({ name, instructi
 };
 
 const UserTextPart: FC<{ text: string }> = ({ text }) => {
+  const v2Notification = parseV2Notification(text);
+  if (v2Notification) return <V2Notification notification={v2Notification} />;
   const notification = parseTaskNotification(text);
   if (notification) return <TaskNotification notification={notification} />;
   const localCommand = parseLocalCommand(text);
@@ -193,7 +197,7 @@ const UserMessage: FC = () => {
   // A failed send is worth showing even when its body is empty — the banner
   // itself carries the action the user needs.
   if (!hasContent && !failed) return null;
-  const systemNotification = !failed && content.every((p) => p.type === 'text' && (parseTaskNotification(p.text) || parseSkillInstructions(p.text)?.rest === ''));
+  const systemNotification = !failed && content.every((p) => p.type === 'text' && (parseV2Notification(p.text) || parseTaskNotification(p.text) || parseSkillInstructions(p.text)?.rest === ''));
 
   return (
     <>
