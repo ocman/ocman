@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
-import { PreviewOwnerContext, fetchPreviewChecks, fetchPreviewPRStatus } from '../lib/previews';
+import { PreviewOwnerContext, PreviewSessionContext, fetchPreviewChecks, fetchPreviewPRStatus } from '../lib/previews';
 import { usePRMergeability } from '../lib/usePRMergeability';
 import { prChecksCacheKey } from '../lib/prChecksCache';
 import { CI_LABEL, usePRChecks } from '../lib/usePRChecks';
@@ -18,7 +18,8 @@ const FallbackLink: FC<{ preview: PreviewResult }> = ({ preview }) => preview.ur
 // Forge statuses keep their old card colours.
 const STATUS_CLASS: Record<string, string> = { Open: 'open', Draft: 'open', Merged: 'merged', Closed: 'closed' };
 
-const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean }> = ({ preview, refreshChecks }) => {
+const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean; onReappear?: () => void }> = ({ preview, refreshChecks, onReappear }) => {
+  const session = useContext(PreviewSessionContext);
   const statusClass = STATUS_CLASS[preview.status ?? ''];
   const cls = `gh-preview gh-preview--${statusClass ?? 'commit'}`;
   const body = <>
@@ -34,7 +35,7 @@ const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean }> = ({ pre
         {preview.updatedAt && <> · <RelativeTime iso={preview.updatedAt} /></>}
         {preview.stale && ' · cached'}
       </span>
-      {preview.kind === 'pr' && preview.url && <PreviewCI preview={preview} refreshChecks={refreshChecks} />}
+      {preview.kind === 'pr' && preview.url && <PreviewCI key={session} preview={preview} refreshChecks={refreshChecks} onReappear={onReappear} />}
     </span>
   </>;
   return preview.url
@@ -44,38 +45,45 @@ const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean }> = ({ pre
     : <div className={cls} data-testid="provider-preview-card">{body}</div>;
 };
 
-function PreviewCI({ preview, refreshChecks }: { preview: PreviewResult; refreshChecks?: boolean }) {
+function PreviewCI({ preview, refreshChecks, onReappear }: { preview: PreviewResult; refreshChecks?: boolean; onReappear?: () => void }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
   useEffect(() => {
     if (!ref.current) return;
     if (typeof IntersectionObserver === 'undefined') return;
+    let seen = false;
+    let wasVisible = false;
     const observer = new IntersectionObserver((entries) => {
       const entry = entries[entries.length - 1];
-      if (entry) setVisible(entry.isIntersecting);
+      if (entry) {
+        if (entry.isIntersecting && seen && !wasVisible) onReappear?.();
+        seen ||= entry.isIntersecting;
+        wasVisible = entry.isIntersecting;
+        setVisible(entry.isIntersecting);
+      }
     });
     observer.observe(ref.current);
     return () => observer.disconnect();
-  }, []);
+  }, [onReappear]);
   const owner = useContext(PreviewOwnerContext);
   const url = preview.url!;
   const sha = preview.headSha ?? '';
   const repo = preview.id.split('#')[0];
   const key = prChecksCacheKey(new URL(url).host, repo, sha);
   const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewChecks(url, sha, owner, signal, refresh), [url, sha, owner]);
-  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible && !!sha, loadChecks, refreshChecks);
+  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}\0${!!refreshChecks}`, visible && !!sha, loadChecks, true);
   const label = checks.error ? 'Failed to load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
   return <span className="gh-preview__meta"><span ref={ref} className="gh-preview__meta" aria-label={label} data-ci-state={checks.error ? 'unknown' : checks.state}>
     <i className={`bi ${checks.error ? 'bi-exclamation-circle' : checks.state === 'success' ? 'bi-check-circle' : checks.state === 'failure' ? 'bi-x-circle' : checks.state === 'pending' ? 'bi-hourglass-split' : 'bi-question-circle'}`} aria-hidden="true" /> {label}
-  </span><PreviewPRStatus preview={preview} owner={owner} visible={visible} refresh={refreshChecks} /></span>;
+  </span><PreviewPRStatus preview={preview} owner={owner} visible={visible} /></span>;
 }
 
-function PreviewPRStatus({ preview, owner, visible, refresh }: { preview: PreviewResult; owner: string; visible: boolean; refresh?: boolean }) {
+function PreviewPRStatus({ preview, owner, visible }: { preview: PreviewResult; owner: string; visible: boolean }) {
   const url = preview.url!;
   const loadStatus = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewPRStatus(url, owner, signal, refresh), [url, owner]);
   const status = preview.status === 'Merged' ? 'merged' : preview.status === 'Closed' ? 'closed' : preview.status === 'Draft' ? 'draft' : 'open';
   const supported = preview.provider === 'github' || preview.provider.startsWith('forgejo:');
-  const { mergeable, approved } = usePRMergeability({ host: new URL(url).host, repo: preview.id.split('#')[0], number: Number(preview.id.split('#')[1]), headSha: preview.headSha, updatedAt: preview.updatedAt ?? '', status }, '', owner, '', visible && supported, loadStatus, refresh);
+  const { mergeable, approved } = usePRMergeability({ host: new URL(url).host, repo: preview.id.split('#')[0], number: Number(preview.id.split('#')[1]), headSha: preview.headSha, updatedAt: preview.updatedAt ?? '', status }, '', owner, '', visible && supported, loadStatus, true);
   const mergeLabel = status === 'open' || status === 'draft' ? status === 'draft' || mergeable === false ? 'Not mergeable' : mergeable === true ? 'Mergeable' : undefined : undefined;
   return <span className="gh-preview__meta">
     {(mergeLabel || approved === true) && <span aria-hidden="true">·</span>}
@@ -92,8 +100,8 @@ const NOTICE: Partial<Record<PreviewResult['state'], string>> = {
 };
 
 /** One provider preview: a rich card, or a plain link saying why there is none. */
-export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewProvider[]; refreshChecks?: boolean }> = ({ preview, providers, refreshChecks }) => {
-  if (hasRichPreview(preview)) return <RichCard preview={preview} refreshChecks={refreshChecks} />;
+export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewProvider[]; refreshChecks?: boolean; onReappear?: () => void }> = ({ preview, providers, refreshChecks, onReappear }) => {
+  if (hasRichPreview(preview)) return <RichCard preview={preview} refreshChecks={refreshChecks} onReappear={onReappear} />;
   if (preview.choices?.length) return (
     <div className="gh-preview" data-testid="provider-preview-choices">
       <span className="gh-preview__icon"><i className="bi bi-files" aria-hidden="true" /></span>

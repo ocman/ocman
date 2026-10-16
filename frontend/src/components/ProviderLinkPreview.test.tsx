@@ -67,7 +67,7 @@ it('renders a rich card in place of the rule fallback and reloads after a token 
   const card = await screen.findByRole('link', { name: /ABC-1 Private title/ });
   expect(card).toHaveAttribute('href', ref.url);
   expect(screen.getAllByRole('link')).toHaveLength(1);
-  expect(resolveBodies()).toEqual([{ text: 'Fix ABC-1' }]);
+  expect(resolveBodies()).toEqual([{ text: 'Fix ABC-1', render: true }]);
 
   previews = [{ ...ref, state: 'connect' }];
   act(() => previewAuthChanged());

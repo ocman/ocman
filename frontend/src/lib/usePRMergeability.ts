@@ -33,21 +33,24 @@ export function usePRMergeability(pr: Pick<PR, 'host' | 'repo' | 'number' | 'sta
   useEffect(() => {
     if (retry.current.key !== key) retry.current = { key, failures: 0, nextPollAt: 0, stopped: false };
     const polling = retry.current;
+    if (refreshOnMount) polling.stopped = false;
     if (!visible || !documentVisible || polling.stopped) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     let release: (() => void) | undefined;
+    let initialRefresh = refreshOnMount;
     const load = async () => {
       let delay = 15_000;
       try {
-        // Only the first read after a Refresh click bypasses the server cache.
-        const refresh = generation > consumedRefresh.current;
+        // Revalidate once when shown or after Refresh; retries retain backoff.
+        const refresh = initialRefresh || generation > consumedRefresh.current;
         release?.();
         const request = acquirePRStatus(cacheKey, (signal) => fetchStatus(signal, refresh), refresh, knownMergeability);
         release = request.release;
         const value = await request.promise;
         if (controller.signal.aborted) return;
         consumedRefresh.current = generation;
+        initialRefresh = false;
         polling.failures = 0;
         polling.nextPollAt = 0;
         setResolved({ key, value });
@@ -77,7 +80,7 @@ export function usePRMergeability(pr: Pick<PR, 'host' | 'repo' | 'number' | 'sta
       release?.();
       clearTimeout(timer);
     };
-  }, [key, cacheKey, knownMergeability, visible, documentVisible, generation, fetchStatus]);
+  }, [key, cacheKey, knownMergeability, visible, documentVisible, generation, fetchStatus, refreshOnMount]);
   const value = resolved?.key === key ? resolved.value : undefined;
   return { mergeable: mergeable ?? value?.mergeable, approved: value?.approved };
 }

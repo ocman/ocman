@@ -95,7 +95,7 @@ import { useStartHandoff } from './startHandoffs';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
-import { PreviewOwnerContext } from '../../lib/previews';
+import { PreviewOwnerContext, PreviewSessionContext } from '../../lib/previews';
 import { markSessionSwitchRendered, markSessionSwitchStart } from '../../lib/perfMonitor';
 import { trackRender } from '../../lib/renderRateMonitor';
 import { PerfProfiler } from '../../components/PerfProfiler';
@@ -980,6 +980,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 fallbackRender={renderThreadBoundaryFallback}
               >
                 <PreviewOwnerContext.Provider value={session.remoteId || 'local'}>
+                <PreviewSessionContext.Provider value={session.id}>
                 <AssistantThread
                   scrollToBottomTick={sidebarScroll.sessionId === session.id ? sidebarScroll.tick : 0}
                   hasMore={hasMore}
@@ -1125,6 +1126,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                     </>
                   ) : undefined}
                 />
+                </PreviewSessionContext.Provider>
                 </PreviewOwnerContext.Provider>
               </ErrorBoundary>
               <SessionModals

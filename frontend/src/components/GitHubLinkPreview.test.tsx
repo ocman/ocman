@@ -104,11 +104,15 @@ it('refreshes the PR head before fetching fresh checks for the new commit', asyn
   fetchMock.mockImplementation((url: string, init?: { body?: string }) => {
     if (!url.startsWith('/api/previews/resolve')) return originalFetch(url);
     const body = JSON.parse(init?.body ?? '{}');
-    if (body.checksSha) {
-      const state = body.checksSha === 'def456' && body.refreshChecks ? 'failure' : 'success';
-      return Promise.resolve(jsonResponse({ previews: [{ state: 'ok', checks: { state, checks: [{ name: 'build', state }] } }] }));
-    }
-    return Promise.resolve(jsonResponse({ previews: [{ ...pr, headSha: body.refresh ? head : 'abc123' }] }));
+    const resolve = (one: typeof body) => {
+      if (one.checksSha) {
+        const state = one.checksSha === 'def456' && one.refreshChecks ? 'failure' : 'success';
+        return { previews: [{ state: 'ok', checks: { state, checks: [{ name: 'build', state }] } }] };
+      }
+      if (one.prStatus) return { previews: [{ state: 'ok', prStatus: { mergeable: true, approved: false } }] };
+      return { previews: [{ ...pr, headSha: one.refresh ? head : 'abc123' }] };
+    };
+    return Promise.resolve(jsonResponse(body.requests ? { results: body.requests.map(resolve) } : resolve(body)));
   });
   const { clearPRChecksCache } = await import('../lib/prChecksCache');
   clearPRChecksCache();
@@ -120,6 +124,6 @@ it('refreshes the PR head before fetching fresh checks for the new commit', asyn
   expect(await screen.findByLabelText('Some checks failed')).toBeInTheDocument();
   expect(resolveCalls().some(([, init]) => {
     const body = JSON.parse(init.body);
-    return body.checksSha === 'def456' && body.refreshChecks === true;
+    return (body.requests ?? [body]).some((one: typeof body) => one.checksSha === 'def456' && one.refreshChecks === true);
   })).toBe(true);
 });

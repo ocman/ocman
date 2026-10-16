@@ -49,7 +49,7 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] -->|core APIs, project merges, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>REST + SSE] -->|core APIs, batched previews, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
@@ -73,6 +73,14 @@ flowchart LR
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
+- **Conversation PR previews.** Showing a card or switching sessions revalidates
+  PR metadata, checks and review status. The browser bundles simultaneous lookups
+  by owner, deduplicates identical requests, and cancels a shared request only
+  after its last reader leaves. `/api/previews/resolve` accepts up to 32 lookups
+  per batch with independent results. Provider calls still use bounded concurrency,
+  grant budgets and backoff. GitHub also retains its credential-scoped request
+  budget; batching browser requests does not bypass GitHub's limits or turn REST
+  reads into one upstream call. Other provider metadata keeps its normal cache.
 - **Public web pages.** The hub reads Open Graph metadata on delayed markdown
   link hover and proxies preview images. Provider-specific cards take priority.
 - **Browser push services.** Opt-in device subscriptions receive encrypted Web

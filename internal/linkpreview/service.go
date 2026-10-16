@@ -106,6 +106,9 @@ func grantKey(viewerID, ownerID, provider, workspace string) string {
 }
 
 func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref) Preview {
+	if ctx.Value(prRenderRefreshKey{}) == true && ref.Kind == "pr" && (ref.Provider == "github" || strings.HasPrefix(ref.Provider, "forgejo:")) {
+		ctx = WithPreviewRefresh(ctx)
+	}
 	r, ok := s.byID[ref.Provider]
 	if !ok {
 		return Preview{Ref: ref, State: StateError}

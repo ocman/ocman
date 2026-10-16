@@ -12,6 +12,6 @@ describe('resolvePreviews', () => {
     await expect(resolvePreviews('see ABC-42', 'r 1')).resolves.toEqual([preview]);
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe('/api/previews/resolve?remoteId=r%201');
-    expect(JSON.parse(String(init?.body))).toEqual({ text: 'see ABC-42' });
+    expect(JSON.parse(String(init?.body))).toEqual({ text: 'see ABC-42', render: true });
   });
 });

@@ -15,6 +15,13 @@ import (
 
 type previewRefreshKey struct{}
 
+type prRenderRefreshKey struct{}
+
+// WithPRRenderRefresh revalidates conversation PRs, leaving other previews cached.
+func WithPRRenderRefresh(ctx context.Context) context.Context {
+	return context.WithValue(ctx, prRenderRefreshKey{}, true)
+}
+
 // WithPreviewRefresh bypasses the requested snapshot, retaining grant/rate controls.
 func WithPreviewRefresh(ctx context.Context) context.Context {
 	return context.WithValue(ctx, previewRefreshKey{}, true)

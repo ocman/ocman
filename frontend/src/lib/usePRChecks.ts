@@ -15,13 +15,11 @@ export interface ChecksState {
 export function usePRChecks(cacheKey: string, requestKey: string, visible: boolean, fetchChecks: (signal: AbortSignal, refresh: boolean) => Promise<PRChecks>, refreshOnMount = false): ChecksState {
   const [generation, setGeneration] = useState(refreshOnMount ? 1 : 0);
   const consumedRefresh = useRef(0);
-  const refreshedKey = useRef<string | undefined>(undefined);
   const retryState = useRef({ cacheKey: '', requestKey: '', generation: -1, failures: 0, emptyResponses: 0, nextPollAt: 0 });
   useEffect(() => {
     const refresh = (event: Event) => {
       const repositories = (event as CustomEvent<string[]>).detail;
       if (!repositories || repositories.some((repo) => cacheKey.startsWith(`${repo}@`))) {
-        refreshedKey.current = undefined;
         setGeneration((g) => g + 1);
       }
     };
@@ -41,7 +39,7 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
     let settled = false;
     // explicit: a Refresh click (or refreshOnMount) may bypass the server cache;
     // refresh only skips this browser's final-status cache while polling.
-    let explicit = generation > consumedRefresh.current || (refreshOnMount && refreshedKey.current !== requestKey);
+    let explicit = refreshOnMount || generation > consumedRefresh.current;
     let refresh = polling.nextPollAt > 0 || explicit;
     const schedule = (delay: number) => {
       polling.nextPollAt = Date.now() + delay;
@@ -69,7 +67,6 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
         inFlight = false;
         if (wasRefresh) {
           consumedRefresh.current = generation;
-          refreshedKey.current = requestKey;
         }
         const limited = res.rateLimit?.limited || res.rateLimit?.stale;
         if (!limited) polling.failures = 0;

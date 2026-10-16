@@ -2,9 +2,11 @@ import { createContext } from 'react';
 import { fetchJSON, postJSON } from './api';
 import type { PRChecks, PRMergeability } from './upstreamApi';
 import { UpstreamApiError } from './upstreamApi';
+import { requestPreview } from './previewRequests';
 
 /** Owner (`remoteId`) of the conversation whose links are previewed. */
 export const PreviewOwnerContext = createContext('local');
+export const PreviewSessionContext = createContext('');
 
 /** Mirrors internal/linkpreview.State. */
 export type PreviewState =
@@ -204,12 +206,11 @@ export async function removePreviewApp(id: string): Promise<PreviewApps> {
 
 /** Discovers and resolves previews in `text`; the server owns discovery and credentials. */
 export async function resolvePreviews(text: string, remoteId = 'local', signal?: AbortSignal, refresh = false, openGraph = false): Promise<PreviewResult[]> {
-  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text, ...(refresh ? { refresh: true } : {}), ...(openGraph ? { openGraph: true } : {}) }, { signal });
-  return previews;
+  return requestPreview({ text, render: true, ...(refresh ? { refresh: true } : {}), ...(openGraph ? { openGraph: true } : {}) }, remoteId, signal);
 }
 
 export async function fetchPreviewChecks(url: string, sha: string, remoteId: string, signal: AbortSignal, refresh = false): Promise<PRChecks> {
-  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, checksSha: sha, ...(refresh ? { refreshChecks: true } : {}) }, { signal });
+  const previews = await requestPreview({ text: url, checksSha: sha, ...(refresh ? { refreshChecks: true } : {}) }, remoteId, signal);
   const preview = previews[0];
   if (preview?.state !== 'ok' || preview.stale || !preview.checks) throw new Error('Checks unavailable');
   return { ...preview.checks, checks: preview.checks.checks ?? [] };
@@ -218,7 +219,7 @@ export async function fetchPreviewChecks(url: string, sha: string, remoteId: str
 const PR_STATUS_TERMINAL: Partial<Record<PreviewState, number>> = { connect: 401, expired: 401, denied: 403, not_found: 404 };
 
 export async function fetchPreviewPRStatus(url: string, remoteId: string, signal: AbortSignal, refresh = false): Promise<PRMergeability> {
-  const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, prStatus: true, ...(refresh ? { refresh: true } : {}) }, { signal });
+  const previews = await requestPreview({ text: url, prStatus: true, ...(refresh ? { refresh: true } : {}) }, remoteId, signal);
   const preview = previews[0];
   const terminalStatus = preview && PR_STATUS_TERMINAL[preview.state];
   if (terminalStatus) throw new UpstreamApiError(null, terminalStatus);

@@ -1,14 +1,16 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useDocumentVisible } from './usePanelVisible';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
-import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
+import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, PreviewSessionContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
 import type { PreviewConfig, PreviewProvider, PreviewResult } from './previews';
 
-const RESOLVE_DELAY_MS = 300;
+// The request batcher adds 20 ms, keeping the total initial delay at 300 ms.
+const RESOLVE_DELAY_MS = 280;
 
 interface Resolved {
   text: string;
   owner: string;
+  session: string;
   previews: PreviewResult[];
   providers: PreviewProvider[];
   refreshChecks: boolean;
@@ -21,13 +23,18 @@ interface Resolved {
  * which link hosts they preview, so text that cannot produce a preview is
  * never sent.
  */
-export function useProviderPreviews(text: string, openGraph = false): { previews: PreviewResult[]; providers: PreviewProvider[]; loading: boolean; refreshChecks: boolean } {
+export function useProviderPreviews(text: string, openGraph = false): { previews: PreviewResult[]; providers: PreviewProvider[]; loading: boolean; refreshChecks: boolean; refresh: () => void } {
   const visible = useDocumentVisible();
   const owner = useContext(PreviewOwnerContext);
+  const session = useContext(PreviewSessionContext);
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const [pending, setPending] = useState(false);
   const [generation, setGeneration] = useState(0);
   const refreshPending = useRef(false);
+  const refresh = useCallback(() => {
+    refreshPending.current = true;
+    setGeneration((g) => g + 1);
+  }, []);
   // Keep matching identity available to the event listener during refresh.
   const lastResolved = useRef<Resolved | null>(null);
 
@@ -36,7 +43,7 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
     const refresh = (event: Event) => {
       const repositories = (event as CustomEvent<string[]>).detail;
       const previous = lastResolved.current;
-      const known = previous?.text === text && previous.owner === owner ? previous.previews : [];
+      const known = previous?.text === text && previous.owner === owner && previous.session === session ? previous.previews : [];
       // Raw canonical links also match before the first lookup has finished.
       if (repositories && !repositories.some((repo) => text.includes(`https://${repo}/`)) && !known.some((preview) => {
         if (preview.kind !== 'pr' || !preview.url) return false;
@@ -50,7 +57,7 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
     window.addEventListener(PREVIEW_AUTH_EVENT, reset);
     window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
     return () => { window.removeEventListener(PREVIEW_AUTH_EVENT, reset); window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh); };
-  }, [text, owner]);
+  }, [text, owner, session]);
 
   useEffect(() => {
     if (!visible) return;
@@ -69,7 +76,7 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
           : await resolvePreviews(text, owner, abort.signal, refresh);
         if (!abort.signal.aborted) {
           if (refresh) refreshPending.current = false;
-          const result = { text, owner, previews, providers: config?.providers ?? [], refreshChecks: refresh };
+          const result = { text, owner, session, previews, providers: config?.providers ?? [], refreshChecks: refresh };
           lastResolved.current = result;
           setResolved(result);
         }
@@ -80,11 +87,11 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
       });
     }, refreshPending.current ? 0 : RESOLVE_DELAY_MS);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [text, owner, generation, visible, openGraph]);
+  }, [text, owner, session, generation, visible, openGraph]);
 
   // Never show results for other text or another owner while reloading.
-  const current = resolved && resolved.text === text && resolved.owner === owner ? resolved : null;
-  return { previews: current?.previews ?? [], providers: current?.providers ?? [], loading: pending && !current, refreshChecks: current?.refreshChecks ?? false };
+  const current = resolved && resolved.text === text && resolved.owner === owner && resolved.session === session ? resolved : null;
+  return { previews: current?.previews ?? [], providers: current?.providers ?? [], loading: pending && !current, refreshChecks: current?.refreshChecks ?? false, refresh };
 }
 
 export const hasRichPreview = (p: PreviewResult) => !!p.title && (p.state === 'ok' || p.stale);

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ProviderPreview } from './ProviderLinkPreview';
 import { usePRMergeability } from '../lib/usePRMergeability';
 import { cachePRChecks, clearPRChecksCache, prChecksCacheKey } from '../lib/prChecksCache';
@@ -10,10 +10,12 @@ import * as previews from '../lib/previews';
 
 const preview = { provider: 'github', kind: 'pr', id: 'o/r#42', url: 'https://github.com/o/r/pull/42', title: 'PR', state: 'ok' as const, status: 'Open', headSha: 'abc123', updatedAt: '2026-10-13T00:00:00Z' };
 const pr = { host: 'github.com', repo: 'o/r', number: 42, status: 'open', headSha: preview.headSha, updatedAt: preview.updatedAt } as PR;
+beforeEach(() => { vi.spyOn(previews, 'fetchPreviewChecks').mockResolvedValue({ state: 'success', checks: [{ name: 'build', state: 'success' }] }); });
 afterEach(() => { cleanup(); clearPRChecksCache(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-it('shows sidebar mergeability and approval without another request', async () => {
+it('revalidates sidebar mergeability and approval when a conversation card renders', async () => {
   vi.spyOn(api, 'fetchPRMergeability').mockResolvedValue({ mergeable: false, approved: true });
+  const load = vi.spyOn(previews, 'fetchPreviewPRStatus').mockResolvedValue({ mergeable: false, approved: true });
   const fetch = vi.fn();
   vi.stubGlobal('fetch', fetch);
   cachePRChecks(prChecksCacheKey(pr.host, pr.repo, pr.headSha!), { state: 'success', checks: [{ name: 'build', state: 'success' }] });
@@ -25,10 +27,12 @@ it('shows sidebar mergeability and approval without another request', async () =
   expect(screen.getByLabelText('All checks passed').parentElement).toBe(screen.getByText('Not mergeable').parentElement?.parentElement);
   expect(screen.getByLabelText('All checks passed').parentElement).toHaveClass('gh-preview__meta');
   expect(fetch).not.toHaveBeenCalled();
+  expect(load).toHaveBeenCalledWith(preview.url, 'local', expect.any(AbortSignal), true);
 });
 
-it('also shares mergeability already supplied by the sidebar PR list', async () => {
+it('revalidates mergeability already supplied by the sidebar PR list', async () => {
   vi.spyOn(api, 'fetchPRMergeability').mockResolvedValue({ mergeable: null, approved: true });
+  const load = vi.spyOn(previews, 'fetchPreviewPRStatus').mockResolvedValue({ mergeable: true, approved: true });
   const fetch = vi.fn();
   vi.stubGlobal('fetch', fetch);
   cachePRChecks(prChecksCacheKey(pr.host, pr.repo, pr.headSha!), { state: 'success', checks: [{ name: 'build', state: 'success' }] });
@@ -37,6 +41,7 @@ it('also shares mergeability already supplied by the sidebar PR list', async () 
   render(<ProviderPreview preview={preview} providers={[]} />);
   expect(await screen.findByText('Mergeable')).toBeInTheDocument();
   expect(fetch).not.toHaveBeenCalled();
+  expect(load).toHaveBeenCalledOnce();
 });
 
 it('shares an in-flight sidebar request with a visible preview', async () => {
