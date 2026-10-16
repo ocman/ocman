@@ -109,10 +109,8 @@ func FuzzEqualsPredicate(f *testing.F) {
 			return // the big.Rat reference would materialise the value
 		}
 		matched := predicateMatchValue(h, true, predicate{Equals: json.RawMessage(want)})
-		if equal := refEqual(w, h); equal && !matched {
-			t.Fatalf("equals %s did not match the equal value %s", want, have)
-		} else if matched && !equal && !scalarTextOf(w, h) && !scalarTextOf(h, w) {
-			t.Fatalf("equals %s matched the unequal value %s", want, have)
+		if expected := refEqual(w, h) || scalarTextOf(w, h) || scalarTextOf(h, w); matched != expected {
+			t.Fatalf("equals %s against %s: matched %v, want %v", want, have, matched, expected)
 		}
 
 		predicates, err := json.Marshal(map[string]map[string]json.RawMessage{"/v": {"equals": json.RawMessage(want)}})
