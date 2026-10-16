@@ -151,6 +151,44 @@ func TestEventsAssistantFlow(t *testing.T) {
 	}
 }
 
+// A step retried inside one message (or a provider reusing call ids) can
+// leave two tool items with the same call id. Tool events belong to the
+// latest one, and the streamed part must be the one history shows.
+func TestEventsDuplicateToolCallID(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	const d = `"sessionID":"s1","assistantMessageID":"msg01"`
+	f.events = []string{
+		fakeEv("session.step.started", 100, "", `{`+d+`,"agent":"build","model":{"providerID":"openai","id":"gpt"},"started":100}`),
+		fakeEv("session.tool.input.started", 101, "", `{`+d+`,"id":"call1","name":"shell"}`),
+		fakeEv("session.tool.input.started", 102, "", `{`+d+`,"id":"call1","name":"shell"}`),
+		fakeEv("session.tool.called", 103, "", `{`+d+`,"id":"call1","input":{"command":"ls"}}`),
+	}
+	evs := cmpStream(t, f.URL+"/event")
+	cmpTypeSeq(t, evs,
+		"message.updated", "message.part.updated", // step.started
+		"message.part.updated", "message.part.updated", // two input.started
+		"message.part.updated", // tool.called
+	)
+	history, _ := ConvertMessage("s1", map[string]any{
+		"id": "msg01", "type": "assistant", "agent": "build", "model": map[string]any{"providerID": "openai", "id": "gpt"},
+		"time": map[string]any{"created": 100.0},
+		"content": []any{
+			map[string]any{"type": "tool", "id": "call1", "name": "shell",
+				"state": map[string]any{"status": "streaming", "input": ""}, "time": map[string]any{"created": 101.0}},
+			map[string]any{"type": "tool", "id": "call1", "name": "shell",
+				"state": map[string]any{"status": "running", "input": map[string]any{"command": "ls"}, "metadata": map[string]any{}},
+				"time":  map[string]any{"created": 102.0, "ran": 103.0}},
+		},
+	})
+	want, _ := json.Marshal(history.Parts[2])
+	got := cmpPart(evs[4])
+	if got["id"] != PartID("msg01", 2) {
+		t.Fatalf("tool.called streamed part %v, want %s", got["id"], PartID("msg01", 2))
+	}
+	cmpJSON(t, "tool.called part", got, string(want))
+}
+
 func TestEventsSeedUnknownAssistant(t *testing.T) {
 	defer SetInstalledV2(true)()
 	f := fakeServer(t)

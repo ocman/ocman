@@ -112,18 +112,12 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 		}
 		return -1
 	}
-	tool := func() map[string]any {
+	// toolIndex finds the item a tool event updates: the latest one with
+	// its call id, since a retried step in the same message (or a provider
+	// reusing call ids) can leave an earlier item with the same id.
+	toolIndex := func() int {
 		for i := len(content) - 1; i >= 0; i-- {
-			c, _ := content[i].(map[string]any)
-			if str(c, "type") == "tool" && str(c, "id") == str(d, "id") {
-				return c
-			}
-		}
-		return nil
-	}
-	toolIndex := func(item map[string]any) int {
-		for i := range content {
-			if c, _ := content[i].(map[string]any); str(c, "id") == str(item, "id") && str(c, "type") == "tool" {
+			if c, _ := content[i].(map[string]any); str(c, "type") == "tool" && str(c, "id") == str(d, "id") {
 				return i
 			}
 		}
@@ -202,10 +196,11 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 		msg["content"] = content
 		return emitPart(len(content) - 1)
 	case "session.tool.called", "session.tool.progress", "session.tool.success", "session.tool.failed":
-		item := tool()
-		if item == nil {
+		i := toolIndex()
+		if i < 0 {
 			return nil
 		}
+		item, _ := content[i].(map[string]any)
 		state := obj(item, "state")
 		input := state["input"]
 		switch ev.Type {
@@ -225,7 +220,7 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 			item["state"] = map[string]any{"status": "error", "input": input, "error": d["error"], "content": d["content"], "metadata": d["metadata"]}
 			timeOf(item)["completed"] = ev.Created
 		}
-		return emitPart(toolIndex(item))
+		return emitPart(i)
 	}
 	return nil
 }
