@@ -153,27 +153,36 @@ test('the composer keeps focus after sending with Enter', async ({ mockedPage: p
   await expect(composer).toBeFocused();
 });
 
-test('unconfirmed user message does not appear in the thread', async ({ mockedPage: page }) => {
+test('user message appears before HTTP confirmation and stays visible afterward', async ({ mockedPage: page }) => {
   await goToLiveSession(page);
 
-  // Delay the API response to prove the thread waits for server confirmation.
+  let accept!: () => void;
+  const confirmation = new Promise<void>((resolve) => { accept = resolve; });
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
     async (route) => {
-      await new Promise((r) => setTimeout(r, 500));
+      await confirmation;
       await route.fulfill({ status: 204 });
     },
   );
 
-  await page.locator('.oc-composer-input').fill('My unconfirmed message');
+  const composer = page.getByRole('textbox');
+  await composer.fill('My unconfirmed message');
   await Promise.all([
     page.waitForRequest((request) =>
       request.url().includes(`/api/session/${MOCK_SESSION.id}/message`) && request.method() === 'POST',
     ),
-    page.locator('.oc-composer-input').press('Enter'),
+    composer.press('Enter'),
   ]);
 
-  await expect(page.getByText('My unconfirmed message', { exact: true })).toHaveCount(0);
+  try {
+    await expect(page.getByText('My unconfirmed message', { exact: true })).toBeVisible();
+    await expect(composer).toBeDisabled();
+  } finally {
+    accept();
+  }
+  await expect(composer).toBeEnabled();
+  await expect(page.getByText('My unconfirmed message', { exact: true })).toHaveCount(1);
 });
 
 test('backend failure keeps the composer locked and announces the retry', async ({ mockedPage: page }) => {
