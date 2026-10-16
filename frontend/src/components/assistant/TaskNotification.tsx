@@ -18,7 +18,7 @@ export function TaskNotification({ notification }: { notification: NonNullable<R
     <section className={`oc-tool oc-tool-task oc-task-notification ${statusClass}`} aria-label="Task notification">
       <div className="oc-tool-header">
         <span className="oc-tool-label">{summary}</span>
-        <span className={`oc-task-status ${statusClass}`}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>
+        {status && <span className={`oc-task-status ${statusClass}`}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>}
       </div>
       {result && <div className="oc-task-result oc-task-result-expanded oc-md"><MarkdownContent text={result} /></div>}
       <TaskDetails details={details} />

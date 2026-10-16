@@ -249,6 +249,7 @@ describe('Claude task notifications', () => {
     notification + notification,
     notification.replace('</result>', ''),
     '<task-notification><result>Missing summary and status</result></task-notification>',
+    '<task-notification><summary>Missing status and event</summary></task-notification>',
   ])('preserves ordinary text and incomplete notifications', (text) => {
     threadState.renderUser = true;
     message.content = [{ type: 'text', text }];
@@ -268,6 +269,22 @@ describe('Claude task notifications', () => {
     else if (status === 'running') expect(task).toHaveClass('oc-tool-running');
     else expect(task).not.toHaveClass('oc-tool-running');
     expect(screen.queryByText('Task details')).toBeNull();
+  });
+
+  it('renders Monitor events, which carry an event instead of a status', () => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: `<task-notification>
+<task-id>baqp6boor</task-id>
+<summary>Monitor event: "PR #1062 CI checks"</summary>
+<event>CI / Backend (pull_request): success</event>
+</task-notification>` }];
+    render(<AssistantThread />);
+    const task = screen.getByLabelText('Task notification');
+    expect(task.closest('[data-message-id]')).toHaveClass('oc-msg-system');
+    expect(task).toHaveTextContent('Monitor event: "PR #1062 CI checks"');
+    expect(task).toHaveTextContent('CI / Backend (pull_request): success');
+    expect(task.querySelector('.oc-task-status')).toBeNull();
+    expect(task.textContent).not.toContain('<event>');
   });
 
   it('decodes XML entities once and treats metadata as text', () => {

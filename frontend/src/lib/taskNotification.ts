@@ -32,10 +32,12 @@ export function parseTaskNotification(text: string) {
   const field = (name: string) => decode(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(metadata)?.[1]?.trim() || '');
   const summary = field('summary');
   const status = field('status');
-  if (!summary || !status) return null;
+  // Monitor events report an <event> line and no status.
+  const event = field('event');
+  if (!summary || !(status || event)) return null;
   return {
     summary, status,
-    result: decode(result?.[1]?.trim() || ''),
+    result: decode(result?.[1]?.trim() || '') || event,
     details: [
       ['Task ID', field('task-id')],
       ['Tool use ID', field('tool-use-id')],
