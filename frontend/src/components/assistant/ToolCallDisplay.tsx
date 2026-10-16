@@ -243,7 +243,8 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   }
 
   if (compactToolCalls && (/^(?:mcp_)?(?:bash|edit|write)$/i.test(toolName) || toolName === 'apply_patch')) {
-    return <CompactToolCall toolName={toolName} args={remainingArgs} description={shellDescription} status={toolStatus} expanded={expanded} onToggle={() => setExpanded(!expanded)} timeInfo={timeInfo}>
+    const projectDirectory = artifact && typeof artifact === 'object' && 'projectDirectory' in artifact && typeof artifact.projectDirectory === 'string' ? artifact.projectDirectory : '';
+    return <CompactToolCall toolName={toolName} args={remainingArgs} description={shellDescription} projectDirectory={projectDirectory} status={toolStatus} expanded={expanded} onToggle={() => setExpanded(!expanded)} timeInfo={timeInfo}>
       <ToolCallBody {...props} toolName={toolName} argsText={shell ? argsTextWithMeta : rawArgsText} artifact={artifact} result={result} full />
     </CompactToolCall>;
   }

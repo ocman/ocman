@@ -19,7 +19,7 @@ export interface ToolCallItem {
   toolCallId: string;
   toolName: string;
   argsText: string;
-  artifact?: { ocmanApprovals: ToolApproval[] };
+  artifact?: { ocmanApprovals: ToolApproval[]; projectDirectory?: string };
   result?: string;
 }
 
@@ -274,6 +274,7 @@ function genericBlock(
     toolName,
     argsText: `${toolStatus(ctx, st.status, partIdx)}${toolTimeSuffix(ctx, partIdx)}${shellUserExecutedSuffix(ctx, toolName, st.metadata)}${enc.meta}\n${enc.titleLine}${argsText}`,
     result: resultText || undefined,
+    artifact: /^(?:mcp_)?(?:edit|write|apply_patch)$/i.test(toolName) ? { ocmanApprovals: [], projectDirectory: ctx.projectDirectory } : undefined,
   };
 }
 

@@ -1,0 +1,44 @@
+.oc-tool-compact-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-tool-compact-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.oc-tool-compact-heading .oc-tool-duration {
+  flex-shrink: 0;
+}
+
+.oc-tool-compact-command .oc-shell-prompt {
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.oc-tool-compact-running .oc-tool-compact-command .oc-shell-prompt {
+  color: var(--accent);
+}
+
+.oc-tool-compact-command {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.oc-tool-compact-file {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.oc-tool-compact-file > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

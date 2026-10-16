@@ -113,6 +113,18 @@ describe('parsePart', () => {
 });
 
 describe('notice messages', () => {
+  it('preserves the project directory alongside an attached file approval', () => {
+    const messages: Message[] = [makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-file', sessionId: 's', timeCreated: 250, data: { role: 'notice' } }];
+    const parts = [
+      makePart('a1', { type: 'tool', tool: 'write', state: { status: 'completed', input: { filePath: '/repo/src/new.ts', content: 'hello' } } }, 'write1', 200),
+      makePart('ocman-notice-file', { type: 'auto-approved', approvedBy: 'ai', permission: 'edit', patterns: ['/repo/src/new.ts'], reasoning: 'Requested file.' }, 'approval', 250),
+    ];
+    const out = createConvertMessages()(messages, parts, undefined, undefined, '/repo');
+    const call = asContentArray(out[0].content).find(c => c.type === 'tool-call');
+    expect(call).toMatchObject({ artifact: { projectDirectory: '/repo', ocmanApprovals: [{ permission: 'edit' }] } });
+  });
+
   it('renders text notice parts inline', () => {
     const messages: Message[] = [{ id: 'n1', sessionId: 's', timeCreated: 1, data: { role: 'notice' } }];
     const parts = [makePart('n1', { type: 'text', text: 'connection refused' })];
@@ -334,7 +346,7 @@ describe('AI approval footnotes', () => {
     const calls = asContentArray(out[0].content).filter((item) => item.type === 'tool-call');
 
     expect(out.map((message) => message.id)).toContain('ocman-notice-p1');
-    expect(calls.every((call) => call.artifact === undefined)).toBe(true);
+    expect(calls.every((call) => !call.artifact?.ocmanApprovals.length)).toBe(true);
   });
 
   it('matches cross-cutting external_directory metadata across tool names', () => {

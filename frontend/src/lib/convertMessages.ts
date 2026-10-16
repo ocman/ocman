@@ -645,7 +645,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       const approvals = approvalsByPartId[msgPartsRaw[partIdx]?.id || ''];
       if (approvals) {
         for (let i = toolCallsBefore; i < toolCalls.length; i++) {
-          toolCalls[i].artifact = { ocmanApprovals: approvals };
+          toolCalls[i].artifact = { ...toolCalls[i].artifact, ocmanApprovals: approvals };
         }
       }
     });
