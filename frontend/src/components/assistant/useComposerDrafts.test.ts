@@ -81,6 +81,33 @@ describe('useComposerDrafts', () => {
     expect(getDraft('s1')).toBe('typed text');
   });
 
+  it.each(['hello ', '  hello\n\t', '   '])('preserves exact draft text %j through autosave and remount', (text) => {
+    const { result, unmount } = setup('s1', el);
+    el.value = text;
+    act(() => result.current.scheduleDraftSave('s1', () => el.value));
+    act(() => vi.advanceTimersByTime(300));
+    expect(el.value).toBe(text);
+    expect(getDraft('s1')).toBe(text);
+    act(() => unmount());
+    setup('s1', el);
+    expect(el.value).toBe(text);
+  });
+
+  it('preserves whitespace when flushing an unsaved draft on unmount', () => {
+    const { unmount } = setup('s1', el);
+    el.value = '  unfinished thought \n';
+    act(() => unmount());
+    expect(getDraft('s1')).toBe('  unfinished thought \n');
+  });
+
+  it('treats an added space as a local edit when storage updates', () => {
+    saveDraft('s1', 'hello');
+    setup('s1', el);
+    el.value = 'hello ';
+    act(() => saveDraft('s1', 'peer edit'));
+    expect(el.value).toBe('hello ');
+  });
+
   it('a later scheduleDraftSave cancels the earlier pending one', () => {
     const { result } = setup('s1', el);
     act(() => result.current.scheduleDraftSave('s1', () => 'first'));
@@ -147,7 +174,7 @@ describe('useComposerDrafts', () => {
   it('clears the stored draft on unmount when the textarea is empty', () => {
     saveDraft('s1', 'stale');
     const { unmount } = setup('s1', el);
-    el.value = '   ';
+    el.value = '';
     act(() => unmount());
     expect(getDraft('s1')).toBe('');
   });

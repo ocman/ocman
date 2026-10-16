@@ -57,7 +57,7 @@ export function useComposerDrafts(
     cancelPending();
     // Emptying is applied at the gesture: a delayed clear must not invalidate
     // edits other composers make to this draft after it.
-    if (!getText().trim()) {
+    if (!getText()) {
       discardDraft(sid);
       versionRef.current = getDraftVersion(sid);
       persistedRef.current = '';
@@ -68,7 +68,7 @@ export function useComposerDrafts(
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       if (version !== getDraftVersion(sid)) return;
-      const text = getText().trim();
+      const text = getText();
       if (text) {
         saveDraft(sid, text, version);
         ownSaveRef.current = { sid, text, revision: version };
@@ -90,10 +90,10 @@ export function useComposerDrafts(
       cancelPending();
       const currentVersion = versionRef.current;
       if (currentVersion !== getDraftVersion(sessionId)) return;
-      const text = el.value.trim();
+      const text = el.value;
       if (text === persistedRef.current) return;
       // eslint-disable-next-line react-hooks/exhaustive-deps -- the live in-flight prompt is wanted here
-      if (text && text === inFlightRef.current) return;
+      if (text && text.trim() === inFlightRef.current) return;
       if (text) saveDraft(sessionId, text, currentVersion);
       else discardDraft(sessionId);
     };
@@ -107,7 +107,7 @@ export function useComposerDrafts(
     if (!el || !sessionId) return;
     return subscribeDraftTexts(() => {
       const stored = getDraft(sessionId);
-      if (stored === persistedRef.current || el.value.trim() !== persistedRef.current || timerRef.current || inFlightRef.current) return;
+      if (stored === persistedRef.current || el.value !== persistedRef.current || timerRef.current || inFlightRef.current) return;
       // Synchronizing is not a user edit: no autosave, no revision change.
       syncDraftNow(sessionId);
     });
