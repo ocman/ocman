@@ -123,7 +123,7 @@ func classifyRemotes(raw []rawRemote, hosts ForgejoHostMap) []Remote {
 //
 //	https://host/owner/repo[.git]
 //	ssh://git@host/owner/repo[.git]
-//	git@host:owner/repo[.git]
+//	[user@]host:owner/repo[.git]
 //
 // Returns ok=false for shapes we don't recognise (local paths,
 // git://, file://, ...).
@@ -133,18 +133,27 @@ func parseRemoteURL(raw string) (host, repo string, ok bool) {
 		return "", "", false
 	}
 
-	// SCP-style: "git@host:owner/repo[.git]"
-	if !strings.Contains(raw, "://") && strings.Contains(raw, "@") && strings.Contains(raw, ":") {
-		atIdx := strings.Index(raw, "@")
-		colonOffset := strings.Index(raw[atIdx+1:], ":")
-		if colonOffset < 0 {
+	// SCP-style: "[user@]host:owner/repo[.git]". Split it the way git
+	// does, so ocman never attributes a remote to a host git would not
+	// contact: the host is everything before the first ':' (minus
+	// userinfo), and a '/' before that ':' makes it a local path.
+	if !strings.Contains(raw, "://") {
+		colon := strings.IndexByte(raw, ':')
+		if colon < 0 {
 			return "", "", false
 		}
-		colonIdx := atIdx + 1 + colonOffset
-		host = raw[atIdx+1 : colonIdx]
-		path := raw[colonIdx+1:]
-		repo = trimRepo(path)
-		return host, repo, host != "" && repo != ""
+		if slash := strings.IndexByte(raw, '/'); slash >= 0 && slash < colon {
+			return "", "", false
+		}
+		host = raw[:colon]
+		if at := strings.LastIndexByte(host, '@'); at >= 0 {
+			host = host[at+1:]
+		}
+		repo = trimRepo(raw[colon+1:])
+		if host == "" || repo == "" {
+			return "", "", false
+		}
+		return host, repo, true
 	}
 
 	// URL-style.

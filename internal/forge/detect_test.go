@@ -50,6 +50,35 @@ func TestClassifyRemotes_RejectsUnsafeRepositoryPaths(t *testing.T) {
 	}
 }
 
+// SCP-style remotes must be split the way git does: the host is everything
+// before the first ':' (minus userinfo), and a '/' before that ':' makes
+// the remote a local path.
+func TestParseRemoteURL_SCPStyleFollowsGit(t *testing.T) {
+	tests := []struct {
+		raw, host, repo string
+		ok              bool
+	}{
+		{"git@github.com:alice/myproj.git", "github.com", "alice/myproj", true},
+		{"github.com:alice/myproj.git", "github.com", "alice/myproj", true},
+		{"me@corp@github.com:alice/myproj", "github.com", "alice/myproj", true},
+		// git: ssh to host "a", path "b@github.com:o/r".
+		{"a:b@github.com:o/r", "", "", false},
+		// git: local paths, since a '/' precedes the first ':'.
+		{"./x@github.com:o/r", "", "", false},
+		{"/srv/git@github.com:o/r", "", "", false},
+		{"../repo", "", "", false},
+		{"git@:o/r", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			host, repo, ok := parseRemoteURL(tt.raw)
+			if host != tt.host || repo != tt.repo || ok != tt.ok {
+				t.Fatalf("parseRemoteURL(%q) = (%q, %q, %v), want (%q, %q, %v)", tt.raw, host, repo, ok, tt.host, tt.repo, tt.ok)
+			}
+		})
+	}
+}
+
 func TestClassifyRemotes_SSHGitHub(t *testing.T) {
 	in := []rawRemote{
 		{Name: "origin", URL: "git@github.com:alice/myproj.git"},
