@@ -54,6 +54,12 @@ describe('usePendingSend — basic lifecycle', () => {
     expect(result.current.pending).toBe(null);
   });
 
+  it('reuses the failed-send id on retry', () => {
+    const { result } = renderHook(() => usePendingSend(SID));
+    act(() => { result.current.begin('retry', undefined, { id: 'original' }); });
+    expect(result.current.pending?.id).toBe('original');
+  });
+
   it('fail() preserves text/images and adds an error', () => {
     const { result } = renderHook(() => usePendingSend(SID));
     act(() => {
@@ -69,6 +75,21 @@ describe('usePendingSend — basic lifecycle', () => {
 });
 
 describe('usePendingSend — server-confirmed clear', () => {
+  it('keeps the prompt visible until the server message has parts', () => {
+    const user = makeUserMessage('real', Date.now());
+    const { result, rerender } = renderHook(({ phase }) => {
+      const hook = usePendingSend(SID);
+      hook.observeMessages(phase ? [user] : [], phase === 2 ? [{ id: 'part', messageId: user.id, sessionId: SID, data: { type: 'text', text: 'hello' } }] : []);
+      return hook;
+    }, { initialProps: { phase: 0 } });
+    act(() => result.current.begin('hello'));
+    // A separate message header arrives before its content.
+    rerender({ phase: 1 });
+    expect(result.current.pending?.text).toBe('hello');
+    rerender({ phase: 2 });
+    expect(result.current.pending).toBeNull();
+  });
+
   it('clears when a new user message arrives that was not in prev messages', () => {
     const { result, rerender } = renderHook(
       ({ messages }: { messages: Message[] }) => {

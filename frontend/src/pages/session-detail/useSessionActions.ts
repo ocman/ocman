@@ -336,6 +336,7 @@ export function useSessionActions({
     // against the SAME id so the failedSends entry is keyed
     // identically.
     pending.begin(entry.text, entry.images, {
+      id: entryId,
       model: entry.model,
       agent: entry.agent,
       reasoning: entry.reasoning,

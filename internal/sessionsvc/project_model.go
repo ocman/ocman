@@ -133,6 +133,14 @@ func (s *Service) projectModels(ctx context.Context, p platforms.Platform, sessi
 			return nil, false, false
 		}
 		dir = detail.Session.Directory
+		// Reuse this read for first-input detection instead of fetching the
+		// same transcript page again before delivery.
+		if s.hooks.FirstPromptAdded != nil {
+			s.firstPrompts.LoadOrStore(firstPromptKey{p.ID(), sessionID}, &firstPrompt{
+				known: true, done: detail.TotalMessages != 0 || len(detail.Messages) != 0,
+				directory: detail.Session.Directory, title: detail.Session.Title,
+			})
+		}
 		// ponytail: unbounded per-session cache, one string per prompted
 		// session; add eviction if a process ever outlives millions.
 		s.sessionDirs.Store(sessionID, dir)

@@ -218,8 +218,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     patchSession,
   } = view;
 
-  // Tracks an in-flight send and failed-send retry state. It is never
-  // materialised into the thread; server messages are the source of truth.
+  // Display in-flight sends until the server message reaches the thread.
   const pending = usePendingSend(id);
   // A conversation just started here keeps its prompt and steps on screen
   // until the first message lands, instead of flashing an empty thread.
@@ -233,8 +232,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // update).
   const observeMessages = pending.observeMessages;
   useEffect(() => {
-    observeMessages(messages);
-  }, [messages, observeMessages]);
+    observeMessages(messages, parts);
+  }, [messages, parts, observeMessages]);
 
   const [commitSourceStatus, setCommitSourceStatus] = useState<{
     sessionId: string;
@@ -962,6 +961,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               taskLiveOutput={taskLiveOutput}
               projectDirectory={session.directory}
               failedSends={failedSends}
+              pendingSend={pending.pending}
               onRetryFailedSend={handleRetrySend}
               onDismissFailedSend={handleDismissFailedSend}
             >

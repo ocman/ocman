@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -21,6 +22,11 @@ func (p *coldQueueOwner) Session(ctx context.Context, id string, _, _ int) (*pla
 		p.t.Error("sender preparation read has no deadline")
 	}
 	p.reads++
+	// A successful model lookup now supplies first-prompt metadata too.
+	// Exercise the separate fallback read only when that lookup fails.
+	if p.blockAt == 2 && p.reads == 1 {
+		return nil, errors.New("project metadata unavailable")
+	}
 	if p.reads == p.blockAt {
 		close(p.entered)
 		select {
@@ -58,7 +64,11 @@ func TestQueueShutdownCancelsRealSenderPreparation(t *testing.T) {
 			}
 			done := make(chan struct{})
 			go func() { m.Run(ctx); close(done) }()
-			<-p.entered
+			select {
+			case <-p.entered:
+			case <-time.After(time.Second):
+				t.Fatal("sender preparation did not reach the owner read")
+			}
 			cancel()
 			defer func() { close(p.release); <-done }()
 			select {

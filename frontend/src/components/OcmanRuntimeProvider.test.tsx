@@ -33,6 +33,25 @@ afterEach(() => {
 });
 
 describe('OcmanRuntimeProvider turn lifecycle', () => {
+  it('renders pending text and images, without duplicating its failed-send entry', () => {
+    const pending = { id: 'pending', text: 'hello', images: [{ url: 'data:image/png;base64,a', mime: 'image/png' }], agent: 'plan', startedAt: 1000 };
+    const view = (error?: string) => (
+      <OcmanRuntimeProvider messages={[]} parts={[]} sessionId="s" canSend pendingSend={{ ...pending, error }}
+        failedSends={error ? [{ ...pending, failedAt: 1000, error }] : []}>
+        <div />
+      </OcmanRuntimeProvider>
+    );
+    const { rerender } = render(view());
+    expect(runtimeMessages).toEqual([expect.objectContaining({
+      id: 'pending', role: 'user',
+      content: [{ type: 'text', text: 'hello' }, { type: 'image', image: 'data:image/png;base64,a' }],
+      metadata: { custom: { agent: 'plan' } },
+    })]);
+    rerender(view('offline'));
+    expect(runtimeMessages).toHaveLength(1);
+    expect(runtimeMessages[0]).toMatchObject({ metadata: { custom: { failed: { error: 'offline' } } } });
+  });
+
   it.each<SessionStatus>(['done', 'error', 'interrupted'])('stops the conversation and timer when the session becomes %s without a finish event', (status) => {
     const messages: Message[] = [
       { id: 'u', sessionId: 's', timeCreated: 1000, data: { role: 'user' } },

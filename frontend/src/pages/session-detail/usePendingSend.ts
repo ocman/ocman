@@ -3,8 +3,8 @@
 // Architecture §"The composer / optimistic send":
 //
 //   The composer page owns a `pending` slot for in-flight and failed
-//   sends. The thread renders server messages only. The hook clears
-//   `pending` when the server acknowledges the send. No synthetic IDs.
+//   sends. The runtime renders that slot without changing server messages.
+//   The hook clears it when the server message and its parts arrive.
 //
 // Why this is simpler than the legacy `temp-*` id system:
 //
@@ -21,7 +21,7 @@
 // The page wires it into useSessionActions / the Composer.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Message } from '../../lib/api';
+import type { Message, Part } from '../../lib/api';
 
 export interface PendingSendImage {
   url: string;
@@ -51,7 +51,7 @@ export interface UsePendingSendResult {
   begin: (
     text: string,
     images?: PendingSendImage[],
-    opts?: { model?: string; agent?: string; reasoning?: string },
+    opts?: { id?: string; model?: string; agent?: string; reasoning?: string },
   ) => string;
   /** Set the failure flag on the pending entry. The bubble stays
    *  visible so the user can retry / dismiss it. */
@@ -62,7 +62,7 @@ export interface UsePendingSendResult {
   /** Hook the page's current messages list. When a new user message
    *  appears that wasn't there last frame, pending is cleared.
    *  Pure read — call from render. */
-  observeMessages: (messages: Message[]) => void;
+  observeMessages: (messages: Message[], parts?: Part[]) => void;
 }
 
 /** Crypto-strong-ish unique id. Avoids the `temp-` prefix legacy
@@ -119,7 +119,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
       if (m.data.role === 'user') baseline.add(m.id);
     }
     baselineUserIdsRef.current = baseline;
-    const id = generateId();
+    const id = opts?.id ?? generateId();
     const startedAt = Date.now();
     pendingStartedAtRef.current = startedAt;
     setPending({
@@ -144,7 +144,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     pendingStartedAtRef.current = null;
   }, []);
 
-  const observeMessages = useCallback((messages: Message[]) => {
+  const observeMessages = useCallback((messages: Message[], parts?: Part[]) => {
     lastMessagesRef.current = messages;
     const baseline = baselineUserIdsRef.current;
     if (!baseline) return;
@@ -153,7 +153,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     // optimistic bubble can step aside.
     for (const m of messages) {
       if (m.data.role !== 'user') continue;
-      if (!baseline.has(m.id)) {
+      if (!baseline.has(m.id) && (parts === undefined || parts.some((part) => part.messageId === m.id))) {
         setPending((prev) => (prev ? null : prev));
         baselineUserIdsRef.current = null;
         pendingStartedAtRef.current = null;

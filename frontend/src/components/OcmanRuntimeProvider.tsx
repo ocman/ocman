@@ -16,6 +16,7 @@ import { computeTurnStats, ModelLabelsContext, TurnStatsContext } from '../lib/t
 import { formatModelRef, isSessionRunning } from '../lib/sessionStatus';
 import { TurnSpeechContext, useTurnSpeech } from '../lib/turnSpeech';
 import { convertThreadMessage } from '../lib/threadMessageAdapter';
+import type { PendingSend } from '../pages/session-detail/usePendingSend';
 
 interface Props {
   messages: Message[];
@@ -47,6 +48,7 @@ interface Props {
   projectDirectory?: string;
   /** Sends that failed on the client and are awaiting Retry / Dismiss. */
   failedSends?: FailedSend[];
+  pendingSend?: PendingSend | null;
   onRetryFailedSend?: (id: string) => void;
   onDismissFailedSend?: (id: string) => void;
   children: React.ReactNode;
@@ -67,6 +69,7 @@ export function OcmanRuntimeProvider({
   taskLiveOutput,
   projectDirectory,
   failedSends,
+  pendingSend,
   onRetryFailedSend,
   onDismissFailedSend,
   children,
@@ -126,16 +129,26 @@ export function OcmanRuntimeProvider({
   const converted = useMemo(() => {
     const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning, reasoningNow);
     const serverIds = new Set(serverMessages.map((message) => message.id));
-    const missingFailures = (failedSends ?? []).filter((entry) => !serverIds.has(entry.id));
-    if (missingFailures.length === 0) return serverMessages;
+    const missingFailures = (failedSends ?? []).filter((entry) => !serverIds.has(entry.id) && entry.id !== pendingSend?.id);
+    if (missingFailures.length === 0 && !pendingSend) return serverMessages;
+    const optimistic: ThreadMessageLike[] = pendingSend ? [{
+      id: pendingSend.id,
+      role: 'user',
+      content: [
+        { type: 'text', text: pendingSend.text },
+        ...(pendingSend.images ?? []).map((image) => ({ type: 'image' as const, image: image.url })),
+      ],
+      createdAt: new Date(pendingSend.startedAt),
+      metadata: { custom: { agent: pendingSend.agent, ...(pendingSend.error ? { failed: { error: pendingSend.error } } : {}) } },
+    }] : [];
     return [...serverMessages, ...missingFailures.map((entry): ThreadMessageLike => ({
       id: entry.id,
       role: 'user',
       content: entry.text,
       createdAt: new Date(entry.failedAt),
       metadata: { custom: { failed: { error: entry.error, imagesDropped: !!entry.imagesDropped } } },
-    }))];
-  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, showReasoning, reasoningNow]);
+    })), ...optimistic];
+  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, pendingSend, showReasoning, reasoningNow]);
 
   const isRunning = useMemo(() => sessionStatus === undefined
     ? computeIsRunning(messages)

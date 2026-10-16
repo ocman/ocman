@@ -1142,7 +1142,7 @@ describe('SessionDetail — composer send', () => {
 // ---------------------------------------------------------------
 
 describe('SessionDetail — regression: user message appears immediately and stays', () => {
-  it('survives the SSE round-trip: real user message lands without losing the bubble', async () => {
+  it.each(['opencode', 'claudecode'])('survives the SSE round-trip on %s without waiting for the send response', async (platform) => {
     // After the user submits a prompt:
     //   1) handleSend calls pending.begin(...) — the bubble is
     //      visible immediately at the render layer.
@@ -1156,7 +1156,9 @@ describe('SessionDetail — regression: user message appears immediately and sta
     // (1) and (3) so no flicker is observed. We assert via the
     // cache mirror: the server-acked user message lands in state
     // exactly once.
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    const handle = renderSessionPage({ sessionId: 'sess_1', realAssistantThread: true, detail: makeSessionDetail(makeSession({ platform })) });
+    let accept!: () => void;
+    handle.store.sendMessage.mockReturnValueOnce(new Promise<void>((resolve) => { accept = resolve; }));
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
     act(() => handle.sse()!.open());
@@ -1181,18 +1183,25 @@ describe('SessionDetail — regression: user message appears immediately and sta
     expect(sid).toBe('sess_1');
     expect(text).toContain('hello agent');
 
+    // The prompt must be visible before any server message arrives.
+    expect(handle.result.getByText('hello agent', { selector: 'span' })).toBeVisible();
+    await act(async () => accept());
+
     // Server delivers the real user message via SSE.
     act(() => {
       handle.sse()!.emitMessage({
         type: 'message.created',
         properties: {
           info: { id: 'msg_real', sessionID: 'sess_1', role: 'user', time: { created: Date.now() } },
-          parts: [
-            { id: 'p_real', type: 'text', text: 'hello agent', messageID: 'msg_real' },
-          ],
         },
       });
     });
+    expect(handle.result.getByText('hello agent', { selector: 'span' })).toBeVisible();
+    act(() => handle.sse()!.emitMessage({
+      type: 'message.part.updated',
+      properties: { part: { id: 'p_real', type: 'text', text: 'hello agent', messageID: 'msg_real', sessionID: 'sess_1' } },
+    }));
+    await waitFor(() => expect(handle.result.getAllByText('hello agent', { selector: 'span' })).toHaveLength(1));
 
     // The cache mirror now reflects the real user message with
     // the original prompt text. No `temp-*` id has leaked into the

@@ -860,6 +860,7 @@ flowchart TD
     Shell --> Pages
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
+    Pages -->|pending prompt, before HTTP acknowledgment| Comp
     Stores --> Persistence[Browser persistence<br/>IndexedDB drafts, text + receipts]
     Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
@@ -893,6 +894,12 @@ flowchart TD
   `CopyButton` add action feedback; copying is confirmed only after success.
   `Pagination` shares previous/next controls while callers own indexing, page
   boundaries, totals, and requests.
+- **Existing-conversation sends.** `usePendingSend` records the prompt immediately.
+  `OcmanRuntimeProvider` appends its text and images to the display messages only,
+  leaving the server transcript untouched. The pending prompt stays visible until
+  the server user message has parts; failed sends retain the retry controls.
+  Backend send preparation shares its project-model session read with first-input
+  detection, avoiding a second transcript-page request after restart.
 - **New-conversation settings.** Settings → Sessions → Default agent starts at
   `build` and uses the shared searchable agent picker. Options come from agent-only
   reads of running local instances, scoped to their discovered directories and

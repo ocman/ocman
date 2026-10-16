@@ -3,6 +3,7 @@ package sessionsvc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -147,7 +148,7 @@ func TestPreparedMessageDeliversWithoutMoreOwnerReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.reads != 2 || len(p.sent) != 0 || len(events) != 0 {
+	if p.reads != 1 || len(p.sent) != 0 || len(events) != 0 {
 		t.Fatalf("preparation mutated: reads=%d sends=%v events=%v", p.reads, p.sent, events)
 	}
 	cancel()
@@ -155,10 +156,35 @@ func TestPreparedMessageDeliversWithoutMoreOwnerReads(t *testing.T) {
 	if err := send(context.WithoutCancel(ctx)); err != nil {
 		t.Fatal(err)
 	}
-	if p.reads != 2 || len(p.sent) != 1 || p.sent[0].Model != "anthropic/haiku" || p.sent[0].Agent != "plan" || p.sent[0].Reasoning != "high" || len(p.sent[0].Images) != 1 {
+	if p.reads != 1 || len(p.sent) != 1 || p.sent[0].Model != "anthropic/haiku" || p.sent[0].Agent != "plan" || p.sent[0].Reasoning != "high" || len(p.sent[0].Images) != 1 {
 		t.Fatalf("prepared delivery changed: reads=%d sends=%+v", p.reads, p.sent)
 	}
 	if len(events) != 1 || events[0].Platform != string(p.id) || events[0].Prompt != "full task" || !events[0].HasCustomTitle {
 		t.Fatal(events)
+	}
+}
+
+func TestSendPreparationSharesSessionRead(t *testing.T) {
+	for _, platform := range []platforms.ID{"opencode", "claudecode", "r-owner:claudecode"} {
+		for _, total := range []int{0, 3} {
+			t.Run(fmt.Sprintf("%s/messages=%d", platform, total), func(t *testing.T) {
+				p := &firstPromptPlatform{fakePlatform: fakePlatform{id: platform}, detail: &platforms.SessionDetail{
+					Session: &db.Session{ID: "s", Directory: "/repo"}, TotalMessages: total,
+				}}
+				events := 0
+				svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{platform: p}}, Hooks{
+					ProjectModels:    func(context.Context, string) ([]string, bool) { return []string{"anthropic/haiku"}, false },
+					FirstPromptAdded: func(context.Context, module.FirstPromptAdded) { events++ },
+				})
+				for range 2 {
+					if err := svc.SendMessage(t.Context(), string(platform), platforms.SendMessageRequest{SessionID: "s", Message: "hello"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if p.reads != 1 || len(p.sent) != 2 || events != map[bool]int{true: 1}[total == 0] {
+					t.Fatalf("reads=%d sends=%d title events=%d", p.reads, len(p.sent), events)
+				}
+			})
+		}
 	}
 }
