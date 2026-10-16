@@ -88,9 +88,10 @@ test('add a token, preview, reload and remove it', async ({ mockedPage: page }) 
   await expect(page.getByTestId('provider-preview-card')).toHaveCount(0);
 });
 
-test('PR cards show mergeability and approval with one status request', async ({ mockedPage: page }, testInfo) => {
+test('PR cards bundle checks and approval with one status lookup', async ({ mockedPage: page }, testInfo) => {
   const url = 'https://github.com/ocman/demo/pull/42';
   let statusReads = 0;
+  let statusBatches = 0;
   await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) => route.fulfill({ json: {
     session: MOCK_SESSION,
     messages: [{ id: 'a1', sessionId: MOCK_SESSION.id, timeCreated: 2000,
@@ -104,13 +105,19 @@ test('PR cards show mergeability and approval with one status request', async ({
   } }));
   await page.route('/api/previews/resolve*', (route) => {
     const req = route.request().postDataJSON();
-    if (req.prStatus) statusReads++;
-    return route.fulfill({ json: { previews: [{
-      provider: 'github', kind: 'pr', id: 'ocman/demo#42', url, title: 'Show PR status on preview cards',
-      status: 'Open', state: 'ok', headSha: 'abc123', updatedAt: '2026-10-13T00:00:00Z', meta: ['dries'],
-      ...(req.prStatus ? { prStatus: { mergeable: false, approved: true } } : {}),
-      ...(req.checksSha ? { checks: { state: 'success', checks: [{ name: 'build', state: 'success' }] } } : {}),
-    }] } });
+    type Lookup = { prStatus?: boolean; checksSha?: string };
+    const resolve = (lookup: Lookup) => {
+      if (lookup.prStatus) statusReads++;
+      return { previews: [{
+        provider: 'github', kind: 'pr', id: 'ocman/demo#42', url, title: 'Show PR status on preview cards',
+        status: 'Open', state: 'ok', headSha: 'abc123', updatedAt: '2026-10-13T00:00:00Z', meta: ['dries'],
+        ...(lookup.prStatus ? { prStatus: { mergeable: false, approved: true } } : {}),
+        ...(lookup.checksSha ? { checks: { state: 'success', checks: [{ name: 'build', state: 'success' }] } } : {}),
+      }] };
+    };
+    const requests: Lookup[] | undefined = req.requests;
+    if (requests?.some((lookup) => lookup.prStatus) && requests.some((lookup) => lookup.checksSha)) statusBatches++;
+    return route.fulfill({ json: requests ? { results: requests.map(resolve) } : resolve(req) });
   });
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const card = page.getByTestId('provider-preview-card');
@@ -118,5 +125,6 @@ test('PR cards show mergeability and approval with one status request', async ({
   await expect(card).toContainText('Not mergeable');
   await expect(card).toContainText('Approved');
   expect(statusReads).toBe(1);
+  expect(statusBatches).toBe(1);
   await card.screenshot({ path: testInfo.outputPath('pr-preview-status.png') });
 });
