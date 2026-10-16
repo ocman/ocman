@@ -154,6 +154,8 @@ describe('Claude local commands', () => {
   it.each([
     ['<command-name>/model</command-name>\n <command-message>model</command-message>\n <command-args>opus</command-args>', '/model opus', 'Local command'],
     ['<command-name>/model</command-name><command-message>model</command-message><command-args></command-args>', '/model', 'Local command'],
+    ['<command-message>review-pr</command-message>\n<command-name>/review-pr</command-name>', '/review-pr', 'Local command'],
+    ['<command-message>review-pr</command-message>\n<command-name>/review-pr</command-name>\n<command-args>1062</command-args>', '/review-pr 1062', 'Local command'],
     ['<local-command-stdout>Set model to `Opus 5.5`</local-command-stdout>', 'Set model to Opus 5.5', 'Command output'],
     ['<local-command-stderr>Unknown model</local-command-stderr>', 'Unknown model', 'Command error'],
   ])('renders %s without transcript markup', (text, expected, label) => {
@@ -171,6 +173,8 @@ describe('Claude local commands', () => {
     '<local-command-stdout>unfinished',
     '<local-command-stdout>output</local-command-stdout> extra text',
     '<command-name>/model</command-name><command-message>model</command-message><command-args></command-args> trailing',
+    '<command-name>/model</command-name>',
+    '<command-message>model</command-message><command-name>/a</command-name><command-name>/b</command-name>',
   ])('preserves ordinary text and incomplete wrappers: %s', (text) => {
     threadState.renderUser = true;
     message.content = [{ type: 'text', text }];
