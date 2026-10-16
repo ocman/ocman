@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Opens one Forgejo issue per failed fuzz target recorded by scripts/fuzz.sh.
+# Opens one Forgejo issue per failure recorded by scripts/fuzz.sh: a failed
+# fuzz target, or a package whose targets could not be listed.
 # An open issue with the same title gets a comment for the new run instead
 # of a duplicate. The "fuzz" label is applied when the repository has one.
 #
@@ -55,26 +56,46 @@ fenced() {
 
 label_id="$(request GET "${api}/labels?limit=100" | jq -r '[.[] | select(.name == "fuzz") | .id][0] // empty')" || label_id=""
 
+# discovery_body DIR LOG: fuzz.sh could not list DIR's targets, so none ran.
+discovery_body() {
+	local dir="$1" log="$2"
+	printf 'Listing the fuzz targets in `./%s` failed, so none of them ran.\n\n' "$dir"
+	printf -- '- Run: %s\n- Commit: `%s`\n\n' "$run_url" "$commit"
+	printf '### Failure\n\n'
+	fenced "$log" 6000
+	printf '\n### Reproduce\n\n```sh\ngo test -list '\''^Fuzz'\'' ./%s\n```\n' "$dir"
+}
+
+# target_body DIR TARGET LOG INPUT: TARGET failed, INPUT is its crasher or "".
+target_body() {
+	local dir="$1" target="$2" log="$3" input="$4" name
+	printf 'Fuzz target `%s` in `./%s` failed.\n\n' "$target" "$dir"
+	printf -- '- Run: %s\n- Commit: `%s`\n\n' "$run_url" "$commit"
+	printf '### Failure\n\n'
+	fenced "$log" 6000
+	if [ -n "$input" ] && [ -f "$input" ]; then
+		name="$(basename "$input")"
+		printf '\n### Crashing input\n\n`%s`:\n\n' "$input"
+		fenced "$input" 4000
+		printf '\n### Reproduce\n\nSave the input above to `%s/testdata/fuzz/%s/%s` and run:\n\n' "$dir" "$target" "$name"
+		printf '```sh\ngo test -run '\''%s/%s'\'' ./%s\n```\n\n' "$target" "$name" "$dir"
+		printf 'Commit the input with the fix so it stays a regression seed.\n'
+	else
+		printf '\n### Reproduce\n\nNo crashing input was written (a hang or a crash outside the fuzz function). Run:\n\n'
+		printf '```sh\ngo test -run='\''^$'\'' -fuzz='\''^%s$'\'' ./%s\n```\n' "$target" "$dir"
+	fi
+}
+
 while IFS=$'\t' read -r dir target log input; do
-	title="fuzz: ${dir} ${target} failed"
 	body_file="$(mktemp)"
-	{
-		printf 'Fuzz target `%s` in `./%s` failed.\n\n' "$target" "$dir"
-		printf -- '- Run: %s\n- Commit: `%s`\n\n' "$run_url" "$commit"
-		printf '### Failure\n\n'
-		fenced "$log" 6000
-		if [ -n "$input" ] && [ -f "$input" ]; then
-			name="$(basename "$input")"
-			printf '\n### Crashing input\n\n`%s`:\n\n' "$input"
-			fenced "$input" 4000
-			printf '\n### Reproduce\n\nSave the input above to `%s/testdata/fuzz/%s/%s` and run:\n\n' "$dir" "$target" "$name"
-			printf '```sh\ngo test -run '\''%s/%s'\'' ./%s\n```\n\n' "$target" "$name" "$dir"
-			printf 'Commit the input with the fix so it stays a regression seed.\n'
-		else
-			printf '\n### Reproduce\n\nNo crashing input was written (a hang or a crash outside the fuzz function). Run:\n\n'
-			printf '```sh\ngo test -run='\''^$'\'' -fuzz='\''^%s$'\'' ./%s\n```\n' "$target" "$dir"
-		fi
-	} > "$body_file"
+	# fuzz.sh records a package whose targets could not be listed as "-".
+	if [ "$target" = - ]; then
+		title="fuzz: ${dir} discovery failed"
+		discovery_body "$dir" "$log" > "$body_file"
+	else
+		title="fuzz: ${dir} ${target} failed"
+		target_body "$dir" "$target" "$log" "$input" > "$body_file"
+	fi
 
 	query="$(jq -rn --arg q "$title" '$q | @uri')"
 	existing="$(request GET "${api}/issues?state=open&type=issues&limit=50&q=${query}" |
