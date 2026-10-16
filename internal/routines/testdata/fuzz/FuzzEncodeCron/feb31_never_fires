@@ -1,0 +1,4 @@
+go test fuzz v1
+string("0 0 31 2 *")
+string("UTC")
+int64(1700000000000)
