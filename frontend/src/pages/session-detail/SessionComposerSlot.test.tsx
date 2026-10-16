@@ -48,11 +48,11 @@ describe('SessionComposerSlot', () => {
     fireEvent.click(approve);
     expect(onReply).toHaveBeenCalledTimes(1);
   });
-  it('renders permission over question over composer', () => {
+  it('keeps the composer mounted alongside pending prompts', () => {
     render(<SessionPromptSlot permission={permission} question={question} />);
     renderSlot({ pendingPrompt: true, composer });
     expect(screen.getByText('permission-prompt')).toBeInTheDocument();
-    expect(screen.queryByText('composer')).toBeNull();
+    expect(screen.getByText('composer')).toBeInTheDocument();
   });
 
   it('falls through to the question, then the composer, then nothing', () => {

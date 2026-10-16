@@ -43,14 +43,14 @@ export function SessionComposerSlot({
   const firstPending = useSessionFirstSubmission(sessionId)?.pending;
   return (
     <ErrorBoundary name="session:composer" inline resetKey={sessionId}>
-      {/* Above the prompt branches: a launch can start while a prompt is shown. */}
+      {/* Keep the composer mounted so incoming prompts cannot destroy open dialogs. */}
       <LaunchProgressCard directory={directory} remoteId={remoteId} />
-      {!pendingPrompt && composer ? (
+      {composer ? (
         <>
           <FirstSubmissionNotice sessionId={sessionId} />
           <Composer {...composer}
             platform={platformId}
-            disabled={composer.disabled || firstPending}
+            disabled={composer.disabled || pendingPrompt || firstPending}
             disabledHint={firstPending ? 'Waiting for the first submission…' : composer.disabledHint}
             onLaunchRequest={firstPending ? undefined : composer.onLaunchRequest} />
         </>
