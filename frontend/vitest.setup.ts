@@ -2,6 +2,7 @@
 // integration tests get matchers like `toBeInTheDocument`. The
 // import is a no-op under the node environment because the matchers
 // only register when `expect` is in scope, which it is for vitest.
+import './test/broadcastChannel';
 import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
