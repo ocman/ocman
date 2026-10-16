@@ -115,8 +115,9 @@ while IFS=$'\t' read -r dir target log input; do
 		request POST "${api}/issues/${existing}/comments" "$payload" > /dev/null
 		echo "fuzz-report-issues: commented on #${existing} (${title})"
 	else
-		payload="$(jq -n --arg title "$title" --rawfile body "$body_file" --arg label "$label_id" \
-			'{title: $title, body: $body} + (if $label == "" then {} else {labels: [($label | tonumber)]} end)')"
+		# Not $label: that is a keyword in jq 1.6 (Debian bookworm's jq).
+		payload="$(jq -n --arg title "$title" --rawfile body "$body_file" --arg label_id "$label_id" \
+			'{title: $title, body: $body} + (if $label_id == "" then {} else {labels: [($label_id | tonumber)]} end)')"
 		number="$(request POST "${api}/issues" "$payload" | jq -r '.number // empty')"
 		echo "fuzz-report-issues: opened #${number:-?} (${title})"
 	fi
