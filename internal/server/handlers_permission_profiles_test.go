@@ -126,13 +126,9 @@ func TestResolvedProfileReachesCreateConfigured(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
 	}
-	stored, err := pluginsmod.NewStore(srv.stateDB).ResolvePermissionProfile(ctx, "read-only")
-	if err != nil || len(stored) == 0 {
+	resolved, err := pluginsmod.NewStore(srv.stateDB).ResolvePermissionProfile(ctx, "read-only")
+	if err != nil || len(resolved) == 0 {
 		t.Fatalf("resolve: %v", err)
-	}
-	var resolved []platforms.PermissionRule
-	for _, rule := range stored {
-		resolved = append(resolved, platforms.PermissionRule(rule))
 	}
 
 	if _, err := srv.sessions.CreateConfigured(ctx, "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, resolved); err != nil {

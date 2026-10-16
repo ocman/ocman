@@ -113,9 +113,7 @@ func (m *Module) startSession(ctx context.Context, pluginID string, config plugi
 		if err != nil {
 			return "", plugins.ErrUnavailable
 		}
-		for _, rule := range resolved {
-			rules = append(rules, rule)
-		}
+		rules = resolved
 	}
 	host := m.deps.Local()
 	const platformID = "opencode"
