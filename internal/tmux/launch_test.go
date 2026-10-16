@@ -3,6 +3,7 @@ package tmux
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -213,6 +214,51 @@ func TestLaunchOpencodeInTmuxWith_MatchesDottedPathAgainstUnderscoreName(t *test
 	// dotted derivation, or tmux would mis-target / re-collide.
 	if len(f.newWindowCalls) == 1 && f.newWindowCalls[0] != underscoreName {
 		t.Errorf("NewWindow target = %q; want %q", f.newWindowCalls[0], underscoreName)
+	}
+}
+
+// TestLaunchOpencodeInTmuxWith_MatchesMixedUnderscoreDotSegment is a
+// regression test for the duplicate-session bug on a segment holding
+// both an underscore and a dot: "my_app.v2" is named "my_app_v2", which
+// ResolveSessionPath cannot reverse (it tries only "my.app.v2"). The
+// existing session must still be found, by its derived name.
+func TestLaunchOpencodeInTmuxWith_MatchesMixedUnderscoreDotSegment(t *testing.T) {
+	cases := []struct {
+		name       string
+		idempotent bool
+		launched   bool
+		newWindows int
+	}{
+		{"idempotent reuses", true, false, 0},
+		{"non-idempotent opens a window", false, true, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			dir := filepath.Join(home, "src", "my_app.v2")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			existing := SessionNameForPath(dir)
+			f := &fakeTmuxRunner{
+				// As listSessions would report it.
+				existing: []Session{{Name: existing, ResolvedPath: ResolveSessionPath(existing)}},
+			}
+			name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, tc.idempotent)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if name != existing || launched != tc.launched {
+				t.Errorf("got (%q, %v), want (%q, %v)", name, launched, existing, tc.launched)
+			}
+			if len(f.newSessionCalls) != 0 {
+				t.Errorf("NewSession calls = %v; want none (duplicate session name)", f.newSessionCalls)
+			}
+			if len(f.newWindowCalls) != tc.newWindows {
+				t.Errorf("NewWindow calls = %v; want %d", f.newWindowCalls, tc.newWindows)
+			}
+		})
 	}
 }
 

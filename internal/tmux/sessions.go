@@ -436,11 +436,17 @@ func LaunchOpencodeCmdEnvWith(ctx context.Context, r Runner, directory, command 
 		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
 	}
 
+	// Match by the name derived from the known directory first: tmux
+	// names are not reversible ("my_app.v2" and "my.app.v2" both become
+	// "my_app_v2"), so ResolvedPath can miss a session this launcher
+	// created and new-session would then fail as a duplicate. The
+	// ResolvedPath comparison still finds sessions named another way
+	// (e.g. an absolute path under home).
 	sessionExists := false
 	wantPath := filepath.Clean(directory)
 	if existing, err := r.ListSessions(ctx); err == nil {
 		for _, ts := range existing {
-			if filepath.Clean(ts.ResolvedPath) == wantPath {
+			if ts.Name == sessionName || filepath.Clean(ts.ResolvedPath) == wantPath {
 				sessionExists = true
 				sessionName = ts.Name
 				break
