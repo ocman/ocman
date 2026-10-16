@@ -218,15 +218,16 @@ func runDiff(ctx context.Context, dir string) (*Diff, error) {
 	}
 	files := parseUnifiedDiff(diffOut)
 
+	// -z: NUL-separated, verbatim names (no C-quoting, no trimming of
+	// names that begin or end with whitespace).
 	untrackedOut, _ := gitOutput(cctx, dir,
-		"ls-files", "--others", "--exclude-standard",
+		"ls-files", "-z", "--others", "--exclude-standard",
 	)
-	for _, line := range strings.Split(untrackedOut, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	for _, name := range strings.Split(untrackedOut, "\x00") {
+		if name == "" {
 			continue
 		}
-		f := buildUntrackedFile(repo, line)
+		f := buildUntrackedFile(repo, name)
 		files = append(files, f)
 	}
 
@@ -351,19 +352,23 @@ func parseFileSection(section []string) DiffFile {
 			f.Status = "deleted"
 		case strings.HasPrefix(line, "rename from "):
 			f.Status = "renamed"
-			f.OldPath = strings.TrimPrefix(line, "rename from ")
+			f.OldPath = unquoteGitPath(strings.TrimPrefix(line, "rename from "))
 		case strings.HasPrefix(line, "rename to "):
 			f.Status = "renamed"
-			f.Path = strings.TrimPrefix(line, "rename to ")
+			f.Path = unquoteGitPath(strings.TrimPrefix(line, "rename to "))
 		case strings.HasPrefix(line, "Binary files "):
 			f.IsBinary = true
-		case strings.HasPrefix(line, "+++ b/"):
-			// Trust the +++ header for the new path; corrects
-			// edge cases like spaces (git escapes them in
-			// `diff --git`).
-			f.Path = strings.TrimPrefix(line, "+++ b/")
-		case strings.HasPrefix(line, "--- a/"):
-			oldPath = strings.TrimPrefix(line, "--- a/")
+		case strings.HasPrefix(line, "+++ "):
+			// Trust the +++ header for the new path; it is
+			// unambiguous where the `diff --git` line is not
+			// (an unquoted path containing " b/").
+			if p, ok := diffHeaderPath(line[len("+++ "):], "b/"); ok {
+				f.Path = p
+			}
+		case strings.HasPrefix(line, "--- "):
+			if p, ok := diffHeaderPath(line[len("--- "):], "a/"); ok {
+				oldPath = p
+			}
 		}
 		// Per-file truncation. We still keep counting +/- after
 		// the cap so the totals reflect reality even when the
@@ -466,25 +471,64 @@ func (h *hunkTracker) consume(line string) byte {
 
 // pathsFromDiffHeader extracts (oldPath, newPath) from a
 // `diff --git a/<x> b/<y>` line. Falls back to empty strings on
-// malformed input. Spaces in paths are escaped by git as e.g.
-// `"a/with space"`; we don't try to unquote here — the +++/---
-// headers are the authoritative source for the final paths.
+// malformed input. Git leaves spaces bare but C-quotes a path holding
+// a quote, backslash, control or (with core.quotePath) non-ASCII byte,
+// e.g. `"a/caf\303\251.txt"`; either side may be quoted independently.
 func pathsFromDiffHeader(header string) (string, string) {
-	const prefix = "diff --git "
-	if !strings.HasPrefix(header, prefix) {
+	rest, ok := strings.CutPrefix(header, "diff --git ")
+	if !ok {
 		return "", ""
 	}
-	rest := strings.TrimPrefix(header, prefix)
-	// Naive split on " b/": works for most cases. Edge cases
-	// (paths containing literal " b/") are rare enough to live
-	// with for v1.
-	idx := strings.Index(rest, " b/")
-	if idx <= 2 {
+	var a, b string
+	if strings.HasPrefix(rest, `"`) {
+		quoted, err := strconv.QuotedPrefix(rest)
+		if err != nil {
+			return "", ""
+		}
+		a, _ = strconv.Unquote(quoted)
+		b, ok = strings.CutPrefix(rest[len(quoted):], " ")
+		if !ok {
+			return "", ""
+		}
+	} else {
+		// Unquoted old path: split before the new path's start.
+		// Paths containing a literal " b/" are ambiguous here; the
+		// +++ header corrects the new path for modified files.
+		idx := strings.Index(rest, ` "b/`)
+		if idx < 0 {
+			idx = strings.Index(rest, " b/")
+		}
+		if idx <= 2 {
+			return "", ""
+		}
+		a, b = rest[:idx], rest[idx+1:]
+	}
+	b = unquoteGitPath(b)
+	if !strings.HasPrefix(a, "a/") || !strings.HasPrefix(b, "b/") {
 		return "", ""
 	}
-	a := strings.TrimPrefix(rest[:idx], "a/")
-	b := rest[idx+len(" b/"):]
-	return a, b
+	return a[len("a/"):], b[len("b/"):]
+}
+
+// unquoteGitPath decodes a path git C-quoted (octal byte escapes plus
+// \" \\ \t \n and friends, which strconv.Unquote shares), leaving any
+// other string as is.
+func unquoteGitPath(s string) string {
+	if strings.HasPrefix(s, `"`) {
+		if u, err := strconv.Unquote(s); err == nil {
+			return u
+		}
+	}
+	return s
+}
+
+// diffHeaderPath returns the path of a `--- a/<path>` / `+++ b/<path>`
+// header value (prefix "a/" or "b/"), dropping the TAB git appends when
+// the path contains a space and decoding a C-quoted path. ok is false
+// for /dev/null and anything else without the prefix.
+func diffHeaderPath(value, prefix string) (string, bool) {
+	p := unquoteGitPath(strings.TrimSuffix(value, "\t"))
+	return strings.CutPrefix(p, prefix)
 }
 
 // buildUntrackedFile returns a DiffFile for an untracked path. We

@@ -325,6 +325,103 @@ func TestIsLikelyBinary(t *testing.T) {
 	}
 }
 
+// TestGetDiff_UnusualFilenames runs real git over names it decorates:
+// a space gets a trailing TAB on the ---/+++ headers, and non-ASCII
+// bytes and quotes are C-quoted in diff headers and ls-files output.
+func TestGetDiff_UnusualFilenames(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	// Pin git's default so a user-level core.quotePath=false cannot
+	// make the quoted cases pass vacuously.
+	gitRun(t, dir, "config", "core.quotePath", "true")
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tracked := []string{"normal.txt", "with space.txt", "café.txt", `q"uote.txt`, "supprimé.txt"}
+	for _, name := range tracked {
+		write(name, "one\n")
+	}
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-m", "names")
+	for _, name := range tracked[:4] {
+		write(name, "one\ntwo\n")
+	}
+	if err := os.Remove(filepath.Join(dir, "supprimé.txt")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"new space.txt", "nouveau é.txt", `new"q.txt`} {
+		write(name, "fresh\n")
+	}
+
+	d, err := GetDiff(context.Background(), dir, DiffOptions{Force: true})
+	if err != nil {
+		t.Fatalf("GetDiff: %v", err)
+	}
+	type entry struct {
+		status    string
+		additions int
+		deletions int
+	}
+	got := map[string]entry{}
+	for _, f := range d.Files {
+		got[f.Path] = entry{f.Status, f.Additions, f.Deletions}
+	}
+	want := map[string]entry{
+		"normal.txt":     {"modified", 1, 0},
+		"with space.txt": {"modified", 1, 0},
+		"café.txt":       {"modified", 1, 0},
+		`q"uote.txt`:     {"modified", 1, 0},
+		"supprimé.txt":   {"deleted", 0, 1},
+		"new space.txt":  {"untracked", 1, 0},
+		"nouveau é.txt":  {"untracked", 1, 0},
+		`new"q.txt`:      {"untracked", 1, 0},
+	}
+	if len(got) != len(want) {
+		t.Errorf("files = %v, want %v", got, want)
+	}
+	for path, w := range want {
+		if g, ok := got[path]; !ok || g != w {
+			t.Errorf("%q = %+v (present %v), want %+v; all files %v", path, g, ok, w, got)
+		}
+	}
+}
+
+func TestParseUnifiedDiff_QuotedRename(t *testing.T) {
+	in := `diff --git "a/caf\303\251.txt" "b/th\303\251.txt"
+similarity index 100%
+rename from "caf\303\251.txt"
+rename to "th\303\251.txt"
+`
+	files := parseUnifiedDiff(in)
+	if len(files) != 1 || files[0].Path != "thé.txt" || files[0].OldPath != "café.txt" {
+		t.Fatalf("files = %+v, want thé.txt renamed from café.txt", files)
+	}
+}
+
+func TestPathsFromDiffHeader(t *testing.T) {
+	cases := []struct {
+		header, old, new string
+	}{
+		{"diff --git a/x.txt b/x.txt", "x.txt", "x.txt"},
+		{"diff --git a/with space.txt b/with space.txt", "with space.txt", "with space.txt"},
+		{`diff --git "a/caf\303\251.txt" "b/caf\303\251.txt"`, "café.txt", "café.txt"},
+		{`diff --git a/plain.txt "b/q\"uote.txt"`, "plain.txt", `q"uote.txt`},
+		{`diff --git "a/q\"uote.txt" b/plain.txt`, `q"uote.txt`, "plain.txt"},
+		{`diff --git "a/unterminated b/x`, "", ""},
+		{"diff --git a/x.txt", "", ""},
+		{"index 123..456", "", ""},
+	}
+	for _, tc := range cases {
+		old, new := pathsFromDiffHeader(tc.header)
+		if old != tc.old || new != tc.new {
+			t.Errorf("pathsFromDiffHeader(%q) = %q, %q; want %q, %q", tc.header, old, new, tc.old, tc.new)
+		}
+	}
+}
+
 func TestHunkTrackerStart(t *testing.T) {
 	cases := []struct {
 		line     string

@@ -88,6 +88,47 @@ func TestFactoryDiffRedFlagsPrefersRemoteTrackingTarget(t *testing.T) {
 	}
 }
 
+// TestFactoryDiffRedFlagsQuotedPaths pins that flags name files git
+// C-quotes (non-ASCII bytes) or decorates (a TAB after a path with a
+// space) by their real path.
+func TestFactoryDiffRedFlagsQuotedPaths(t *testing.T) {
+	ctx := t.Context()
+	repo := initTestRepo(t)
+	gitRun(t, repo, "config", "core.quotePath", "true")
+	gitRun(t, repo, "branch", "-M", "main")
+	if err := os.MkdirAll(filepath.Join(repo, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "pkg", "é_test.go"), []byte("package pkg\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, repo, "add", ".")
+	gitRun(t, repo, "commit", "-m", "tests")
+	created, err := CreateWorktree(ctx, CreateWorktreeRequest{RepoRoot: repo, Branch: "factory/quoted", NewBranch: true, BaseRef: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, created.Path, "rm", "-q", "pkg/é_test.go")
+	if err := os.MkdirAll(filepath.Join(created.Path, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"pkg/ü_test.go", "pkg/with space_test.go"} {
+		if err := os.WriteFile(filepath.Join(created.Path, name), []byte("package pkg\n// nolint\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitRun(t, created.Path, "add", "-A")
+	gitRun(t, created.Path, "commit", "-m", "quoted")
+	flags, err := FactoryDiffRedFlags(ctx, created.Path, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"deleted test file pkg/é_test.go", `pkg/with space_test.go adds "// nolint"`, `pkg/ü_test.go adds "// nolint"`}
+	if strings.Join(flags, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("flags = %q, want %q", flags, want)
+	}
+}
+
 // TestFactoryDiffRedFlagsHeaderLookalikeContent pins that an added line
 // beginning with "++" (diff line "+++ …") is hunk content: it neither
 // renames the file later flags are attributed to nor hides a suppression

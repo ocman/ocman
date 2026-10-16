@@ -64,6 +64,7 @@ func FactoryDiffRedFlags(ctx context.Context, dir, target string) ([]string, err
 	var flags []string
 	for _, line := range strings.Split(strings.TrimSpace(names), "\n") {
 		status, file, ok := strings.Cut(line, "\t")
+		file = unquoteGitPath(file)
 		switch {
 		case !ok:
 		case status == "D" && testPathPattern.MatchString(file):
@@ -86,7 +87,7 @@ func FactoryDiffRedFlags(ctx context.Context, dir, target string) ([]string, err
 			}
 		case hunk.start(line):
 		case strings.HasPrefix(line, "+++ "):
-			file = strings.TrimPrefix(strings.TrimPrefix(line, "+++ "), "b/")
+			file, _ = diffHeaderPath(line[len("+++ "):], "b/")
 		}
 	}
 	return flags, nil
