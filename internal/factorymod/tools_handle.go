@@ -84,6 +84,18 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			return factoryToolError(err), nil
 		}
 		return toolResultJSON(gate), nil
+	case "request_checkpoint_recovery":
+		service, ok := t.svc.(interface {
+			RequestCheckpointRecovery(context.Context, string, string) (factory.RecoveryGate, error)
+		})
+		if !ok {
+			return factoryToolError(factory.ErrActionNotPermitted), nil
+		}
+		gate, err := service.RequestCheckpointRecovery(ctx, req.GetString("attempt_id", ""), req.GetString("attempt_token", ""))
+		if err != nil {
+			return factoryToolError(err), nil
+		}
+		return toolResultJSON(gate), nil
 	case "request_recovery":
 		attemptID, _ := req.RequireString("attempt_id")
 		token, _ := req.RequireString("attempt_token")

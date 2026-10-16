@@ -339,6 +339,19 @@ Ocman checks that the branch still matches that checkpoint. Missing branches,
 dirty worktrees, or unexpected commits require reconciliation rather than a
 silent reset. Checkpoints survive an ocman restart.
 
+After an explicitly authorized rebase, an implementation agent can call
+`factory` with `action: "request_checkpoint_recovery"`, `attempt_id`, and
+`attempt_token`. Ocman checks the clean, pushed branch and opens a recovery
+decision whose generated choice names the exact attempt, repository, branch,
+original checkpoint, and new SHA. The user must select that choice and resume.
+General responses such as "allow rebase" do not authorize checkpoint replacement.
+The agent then retries `complete_attempt`; normal checks still apply. Any HEAD
+change requires a fresh exact-SHA decision. Verification and delivery cannot use
+this exception. The original checkpoint remains in the frozen policy and the
+durable recovery response; successful completion atomically records the new
+checkpoint for subsequent Issues. No migration or manual `state.db` edit is
+needed. Update or restart the running ocman binary before using this action.
+
 Factory preserves session history when stopping, retrying, or cancelling work,
 including failed prompt delivery. Stopping a session aborts its running turn
 without deleting the session or its transcript.

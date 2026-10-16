@@ -104,7 +104,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	}
 	result := model.FactoryAttemptResult{SchemaVersion: 2, Summary: summary, PRURL: prURL}
 	validate := func(ctx context.Context) error {
-		head, err := s.implementation.ValidateImplementationCheckpoint(ctx, attempt.FrozenPolicy.Repository, attempt.FrozenPolicy.Branch, attempt.FrozenPolicy.CheckpointSHA)
+		head, err := s.validateAttemptCheckpoint(ctx, attempt)
 		if err != nil {
 			return err
 		}

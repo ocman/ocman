@@ -52,6 +52,16 @@ func (s factoryMCPService) RequestProject(ctx context.Context, attemptID, token,
 	return service.RequestProject(ctx, attemptID, token, project, reason)
 }
 
+func (s factoryMCPService) RequestCheckpointRecovery(ctx context.Context, attemptID, token string) (factory.RecoveryGate, error) {
+	service, ok := s.Service.(interface {
+		RequestCheckpointRecovery(context.Context, string, string) (factory.RecoveryGate, error)
+	})
+	if !ok {
+		return factory.RecoveryGate{}, factory.ErrActionNotPermitted
+	}
+	return service.RequestCheckpointRecovery(ctx, attemptID, token)
+}
+
 func (s factoryMCPService) ReopenIssue(ctx context.Context, epicID, issueID string) error {
 	reopener, ok := s.Service.(interface {
 		ReopenIssue(context.Context, string, string) error
