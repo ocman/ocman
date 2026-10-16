@@ -224,3 +224,23 @@ func reloadTestServer(root string, handler http.HandlerFunc) *httptest.Server {
 		handler(w, r)
 	}))
 }
+
+// The background service serves wherever the user first ran opencode, so
+// its location never matches ocman's machine root; reload must still reach it.
+func TestReloadOpencodeReachesBackgroundService(t *testing.T) {
+	h, _, _, _, root := v2Host(t)
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/location/reload" {
+			calls++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"directory": "/Users/someone"})
+	}))
+	defer upstream.Close()
+	h.setInstance(root, &ocruntime.Instance{Endpoint: upstream.URL, Kind: ocruntime.KindService})
+	if err := h.ReloadOpencode(t.Context()); err != nil || calls != 1 {
+		t.Fatalf("err=%v calls=%d; want the service reloaded", err, calls)
+	}
+}

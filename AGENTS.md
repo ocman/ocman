@@ -73,9 +73,17 @@ converter. On v2, `EnsureProjectOpencode` runs **one `opencode serve` per machin
 (working directory `~/.local/share/ocman/opencode-v2[-<db hash>]`, keyed by the
 effective `OPENCODE_DB` so a server writing another database is never reused). Runtime lookup
 resolves every directory to that port (`Discovery.SetMachineServer` on the
-OpenCode adapter's discovery). The server's
-password is generated once and stored in `state.db` when none is configured,
-because v2 always requires one. Ctrl/Cmd+Enter follow-ups use v2's native session
+OpenCode adapter's discovery). When ocman reads the default database
+(`app.sharesServiceDB`), it uses OpenCode's own background service instead of
+launching (`Host.useService`, `ocv2.RunningService` reading
+`~/.local/state/opencode/service.json`): two servers migrating one database lock
+each other out. Ocman uses that service's password
+(`~/.config/opencode/service.json`) and tracks the service as `ocruntime.KindService`.
+It is never persisted, stopped or restarted (`ErrServiceNotManaged`). A busy
+service is waited for, never duplicated. A failed probe re-reads the registration.
+A launched server whose probe stays inconclusive is kept, not killed and
+relaunched. Otherwise the server's password is generated once and stored in
+`state.db` when none is configured, because v2 always requires one. Ctrl/Cmd+Enter follow-ups use v2's native session
 inbox (`platforms.NativeQueue`, `delivery: "queue"`) unless ocman's own queue
 already holds messages for that session. Tests pin the version with
 `ocv2.SetInstalledV2` (a `TestMain` per package) and never run the real binary.
@@ -984,7 +992,8 @@ minimal and match the surrounding code.
   (`db.OpenAnalyticsStore`, served as `Server.analytics`).
 - **OpenCode runtime lookup** uses only the local Host's managed inventory,
   including API-validated persisted instances on restart. External instances
-  are never discovered or adopted. Cached with a 10-second TTL. `lsof` is
+  are never discovered or adopted, except OpenCode v2's registered background
+  service on the default database (see above). Cached with a 10-second TTL. `lsof` is
   used only by opt-in database maintenance and development port cleanup.
 - **Session reads go through one snapshot**
   (`internal/platforms/opencode/models_cache.go`). The full aggregate

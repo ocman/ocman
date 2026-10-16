@@ -9,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/state"
+	log "github.com/sirupsen/logrus"
 )
 
 const v2PasswordSetting = "opencode.v2_server_password"
@@ -30,6 +31,41 @@ func v2ServerPassword(ctx context.Context, st *state.DB) (string, error) {
 		return "", fmt.Errorf("storing OpenCode v2 server password: %w", err)
 	}
 	return pw, nil
+}
+
+// sharesServiceDB reports whether OpenCode's background service writes
+// the database ocman reads. The service runs on the default database, so
+// with -db or OPENCODE_DB pointing elsewhere (development isolation)
+// ocman must keep its own server.
+func sharesServiceDB(path string) bool {
+	if !ocv2.InstalledV2() || path == "" {
+		return false
+	}
+	return sameFile(path, db.DefaultDBPath())
+}
+
+func sameFile(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
+}
+
+// sharedV2Password picks the password for a machine that uses OpenCode's
+// background service: the service's own, so ocman can call it and a
+// server ocman launches accepts the same clients. Without one, ocman's
+// stored password is used and the service, if any, is not adopted.
+func sharedV2Password(ctx context.Context, st *state.DB) (string, error) {
+	pw, err := ocv2.ServicePassword()
+	if err != nil {
+		log.WithError(err).Warn("ignoring OpenCode service password; using ocman's own")
+	}
+	if pw != "" {
+		return pw, nil
+	}
+	return v2ServerPassword(ctx, st)
 }
 
 // pinOpenCodeDB makes ocman read the database the OpenCode v2 server it

@@ -230,15 +230,25 @@ OpenCode, restart ocman (it logs a warning when it notices the change).
 
 On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
 
-- **One server per machine.** Ocman starts `opencode serve` on a loopback port it picks and
-  keeps it running, relaunching it within 30 seconds if it stops. It runs in a tmux session
-  with its own working directory under `~/.local/share/ocman/opencode-v2` (one per database, so
-  a different `-db` never reuses a server writing another file). Ocman does not
-  use OpenCode's own background service (`opencode service`) or v2 servers you start
-  yourself. To use ocman's server from the TUI, run `opencode --server http://127.0.0.1:<port>`.
+- **One server per machine.** When OpenCode's own background service is running (the
+  `opencode serve --service` that `opencode` starts, registered in
+  `~/.local/state/opencode/service.json`), ocman uses it instead of starting a second server
+  on the same database. Ocman never stops or restarts that service: `/restart-opencode`
+  refuses, and a project stop only stops routing to it. While the service is busy, for
+  example migrating the database after an upgrade, ocman waits for it.
+  Otherwise ocman starts `opencode serve` on a loopback port it picks and keeps it running,
+  relaunching it within 30 seconds if it stops. It runs in a tmux session with its own working
+  directory under `~/.local/share/ocman/opencode-v2` (one per database, so a different `-db`
+  never reuses a server writing another file). A server that is still starting is never
+  killed and replaced. Ocman keeps a healthy server it started even if the service appears
+  later. To use ocman's server from the TUI, run `opencode --server http://127.0.0.1:<port>`.
+- **Only on the default database.** Ocman uses the background service only when it reads
+  OpenCode's default database. With `-db` or `OPENCODE_DB` pointing elsewhere it always runs
+  its own server.
 - **Always authenticated.** v2 requires a password. When none is configured (see below), ocman
-  generates one, stores it encrypted in `state.db`, and reuses it across restarts. This keeps
-  the server running across an ocman restart.
+  uses the background service's password from `~/.config/opencode/service.json` on the default
+  database. Otherwise it generates one, stores it encrypted in `state.db`, and reuses it across
+  restarts. This keeps the server running across an ocman restart.
 - **Native follow-up queue.** Ctrl/Cmd+Enter hands the message to v2's own session inbox, which
   delivers it when the turn ends. The composer lists these messages with ocman's own queued
   messages. You can delete them but not reorder them. If ocman's own queue already holds

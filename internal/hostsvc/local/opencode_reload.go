@@ -38,8 +38,12 @@ func (h *Host) ReloadOpencode(ctx context.Context) error {
 		auth = h.deps.OpenCodeAuth()
 	}
 	client := &http.Client{Timeout: time.Minute, Transport: auth.Transport(nil)}
-	if err := ocruntime.ProbeV2Identity(ctx, client, candidate.Endpoint, root); err != nil {
-		return fmt.Errorf("verifying managed OpenCode before reload: %w", err)
+	// The background service is identified by its registration and
+	// password, not by a launch directory ocman chose.
+	if !isService(candidate) {
+		if err := ocruntime.ProbeV2Identity(ctx, client, candidate.Endpoint, root); err != nil {
+			return fmt.Errorf("verifying managed OpenCode before reload: %w", err)
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, candidate.Endpoint+"/api/location/reload", nil)
 	if err != nil {

@@ -262,8 +262,13 @@ func run() {
 		}
 
 		opencodePassword := startupPassword
+		useService := database != nil && sharesServiceDB(openCodeDBPath)
 		if enabledPlatforms[string(opencodeplatform.PlatformID)] && opencodePassword == "" && ocv2.InstalledV2() {
-			if opencodePassword, err = v2ServerPassword(ctx, stateDB); err != nil {
+			passwordFor := v2ServerPassword
+			if useService {
+				passwordFor = sharedV2Password
+			}
+			if opencodePassword, err = passwordFor(ctx, stateDB); err != nil {
 				fatal("Failed to configure OpenCode v2 server auth: %v", err)
 			}
 		}
@@ -327,6 +332,7 @@ func run() {
 			WithRelay(resolvedRelayURL, relaySource).
 			WithMCPAddr(*mcpAddr).
 			WithOpenCodeDBPath(openCodeDBPath).
+			WithOpenCodeService(useService).
 			WithLogPath(logPath).
 			WithVersion(version).
 			WithStartupIssues(startupIssues...).

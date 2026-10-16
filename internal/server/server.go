@@ -154,6 +154,8 @@ type Server struct {
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
 	runtime      ocruntime.Runtime
 	openCodeAuth ocapi.Auth
+	// useOpenCodeService routes v2 to OpenCode's background service.
+	useOpenCodeService bool
 	// maintMod runs OpenCode database maintenance; nil without a DB path.
 	// Its gate refuses opencode launches while a job runs.
 	maintMod      *ocmaint.Module
@@ -257,6 +259,14 @@ func (s *Server) localPlatformIDs() []string {
 func (s *Server) WithOpenCodeAuth(auth ocapi.Auth) *Server {
 	s.openCodeAuth = auth
 	s.runtime = ocruntime.NewNativeRuntimeWithAuth(auth)
+	return s
+}
+
+// WithOpenCodeService lets the local host route to OpenCode v2's own
+// background service instead of launching a second server. Only for a
+// server reading the database that service writes.
+func (s *Server) WithOpenCodeService(enabled bool) *Server {
+	s.useOpenCodeService = enabled
 	return s
 }
 

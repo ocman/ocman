@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
@@ -35,14 +36,17 @@ type Deps struct {
 	Runtime                 ocruntime.Runtime
 	// BeforeReplace prepares history, BeforeStop records the stop boundary,
 	// and AfterStop confirms reconciliation.
-	BeforeReplace           func(context.Context, string, string) error
-	BeforeStop              func(context.Context, string, *ocruntime.Instance) error
-	AfterStop               func(context.Context, string) error
-	ReplacementStopped      func(context.Context, string) (bool, error)
-	ReplacementStopping     func(context.Context, string) (*ocruntime.Instance, error)
-	CancelReplacementStop   func(context.Context, string) error
-	DiscoverPort            func(string) string
-	SetMachineServer        func(string)
+	BeforeReplace         func(context.Context, string, string) error
+	BeforeStop            func(context.Context, string, *ocruntime.Instance) error
+	AfterStop             func(context.Context, string) error
+	ReplacementStopped    func(context.Context, string) (bool, error)
+	ReplacementStopping   func(context.Context, string) (*ocruntime.Instance, error)
+	CancelReplacementStop func(context.Context, string) error
+	DiscoverPort          func(string) string
+	SetMachineServer      func(string)
+	// OpenCodeService reads OpenCode v2's registered background service;
+	// nil never uses one (ocman on another database, tests).
+	OpenCodeService         func() (ocv2.Service, error)
 	ManagedStore            ManagedStore
 	OpenCodeAuth            func() ocapi.Auth
 	OpenCodeReloaded        func(port string)

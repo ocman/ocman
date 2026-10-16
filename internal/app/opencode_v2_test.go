@@ -80,3 +80,66 @@ func TestPinOpenCodeDBKeepsV1ReaderSelection(t *testing.T) {
 		t.Fatalf("v1 reader = %q, want its -db selection", got)
 	}
 }
+
+func TestSharesServiceDB(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	def := db.DefaultDBPath()
+	t.Cleanup(ocv2.SetInstalledV2(true))
+	if !sharesServiceDB(def) {
+		t.Error("default database does not share the service")
+	}
+	if sharesServiceDB(filepath.Join(home, ".dev", "branch", "opencode.db")) {
+		t.Error("an isolated database shares the user's service")
+	}
+	if sharesServiceDB("") {
+		t.Error("no database shares the service")
+	}
+	if err := os.MkdirAll(filepath.Dir(def), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(def, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "link.db")
+	if err := os.Symlink(def, link); err != nil {
+		t.Fatal(err)
+	}
+	if !sharesServiceDB(link) {
+		t.Error("a symlink to the default database does not share the service")
+	}
+	ocv2.SetInstalledV2(false)
+	if sharesServiceDB(def) {
+		t.Error("v1 shares the v2 service")
+	}
+}
+
+func TestSharedV2PasswordPrefersService(t *testing.T) {
+	t.Setenv(opencodeServerPasswordEnv, "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	st, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	stored, err := sharedV2Password(t.Context(), st)
+	if err != nil || stored == "" {
+		t.Fatalf("without a service config = %q, %v; want the stored password", stored, err)
+	}
+	cfg := ocv2.ServiceConfigPath()
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, []byte(`{"password":"service-pw"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := sharedV2Password(t.Context(), st); err != nil || got != "service-pw" {
+		t.Fatalf("with a service config = %q, %v; want the service password", got, err)
+	}
+	if err := os.WriteFile(cfg, []byte(`{`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := sharedV2Password(t.Context(), st); err != nil || got != stored {
+		t.Fatalf("with an unreadable service config = %q, %v; want the stored password", got, err)
+	}
+}

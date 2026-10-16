@@ -18,6 +18,10 @@ import (
 // KindNativeTmux is the Instance.Kind reported by the native runtime.
 const KindNativeTmux = "native-tmux"
 
+// KindService marks OpenCode v2's own background service. ocman routes
+// to it but never launched it, so it never stops or restarts it.
+const KindService = "opencode-service"
+
 // NativeRuntime hosts headless OpenCode on ocman's managed agent tmux
 // server (tmux.ManagedServer), using the caller-allocated port and loopback HTTP.
 type NativeRuntime struct {

@@ -88,7 +88,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 	if stopped, err := h.reconcileStopped(ctx, repoRoot, false); err != nil {
 		return nil, err
 	} else if stopped {
-		return h.launchAndTrack(ctx, repoRoot)
+		return h.launchOrUseService(ctx, repoRoot)
 	}
 	if inst := h.reuseCandidate(ctx, repoRoot); inst != nil {
 		// A recovered candidate remains retained until replacement actually stops it.
@@ -97,6 +97,12 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 		if probeErr == nil {
 			h.authorizeInstance(repoRoot, inst)
 			return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst}, nil
+		}
+		if isService(inst) {
+			// Never stop the shared service: re-read its registration (it
+			// may have restarted on another port) or fall back to a launch.
+			h.forgetService(repoRoot)
+			return h.launchOrUseService(ctx, repoRoot)
 		}
 		if errors.Is(probeErr, ocruntime.ErrProbeIdentityMismatch) {
 			// Retain the local cleanup handle, never authorize the rejected URL.
@@ -117,7 +123,10 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 		if err := h.stopForReplacement(ctx, repoRoot, inst); err != nil {
 			return nil, err
 		}
-		return h.launchAndTrack(ctx, repoRoot)
+		return h.launchOrUseService(ctx, repoRoot)
+	}
+	if res, handled, err := h.useService(ctx, repoRoot); handled {
+		return res, err
 	}
 	if h.deps.DiscoverPort != nil {
 		if port := h.deps.DiscoverPort(repoRoot); port != "" {
@@ -146,9 +155,12 @@ func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.Ens
 	if stopped, err := h.reconcileStopped(ctx, repoRoot, true); err != nil {
 		return nil, err
 	} else if stopped {
-		return h.launchAndTrack(ctx, repoRoot)
+		return h.launchOrUseService(ctx, repoRoot)
 	}
 	if inst := h.reuseCandidate(ctx, repoRoot); inst != nil {
+		if isService(inst) {
+			return nil, ErrServiceNotManaged
+		}
 		// Cleanup ownership is not routing authorization. Revalidate even an
 		// explicit restart so a durable rejected/recycled URL cannot reappear.
 		h.setInstance(repoRoot, inst)
@@ -175,7 +187,7 @@ func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.Ens
 			}
 		}
 	}
-	return h.launchAndTrack(ctx, repoRoot)
+	return h.launchOrUseService(ctx, repoRoot)
 }
 
 func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
@@ -196,6 +208,16 @@ func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.En
 		return nil, err
 	}
 	if probeErr := h.waitForProbe(ctx, inst); probeErr != nil {
+		if ambiguousProbe(probeErr) && ctx.Err() == nil {
+			// Slow, not dead: a first start after an upgrade migrates the
+			// database first. Killing it mid-migration and launching another
+			// would leave two servers locking each other out. Keep the handle
+			// (unauthorized) so the next ensure probes it again.
+			log.WithError(probeErr).WithField("repoRoot", repoRoot).Warn("host: launched opencode is still starting; keeping it")
+			h.setInstance(repoRoot, inst)
+			h.persistInstance(ctx, repoRoot, inst)
+			return nil, probeErr
+		}
 		log.WithError(probeErr).WithField("repoRoot", repoRoot).Error("host: launched opencode never became healthy; stopping it")
 		if err := h.runtime.Stop(context.WithoutCancel(ctx), inst); err != nil {
 			log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: stopping unhealthy managed opencode")
@@ -209,13 +231,18 @@ func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.En
 		return nil, probeErr
 	}
 	h.authorizeInstance(repoRoot, inst)
-	if h.store != nil {
-		mi := ManagedInstance{Endpoint: inst.Endpoint, Kind: inst.Kind, RuntimeID: inst.ID, PID: inst.PID, LaunchedAt: time.Now()}
-		if err := h.store.Upsert(ctx, repoRoot, mi); err != nil {
-			log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: persisting managed opencode row")
-		}
-	}
+	h.persistInstance(ctx, repoRoot, inst)
 	return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst, Launched: true}, nil
+}
+
+func (h *Host) persistInstance(ctx context.Context, repoRoot string, inst *ocruntime.Instance) {
+	if h.store == nil {
+		return
+	}
+	mi := ManagedInstance{Endpoint: inst.Endpoint, Kind: inst.Kind, RuntimeID: inst.ID, PID: inst.PID, LaunchedAt: time.Now()}
+	if err := h.store.Upsert(ctx, repoRoot, mi); err != nil {
+		log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: persisting managed opencode row")
+	}
 }
 
 func (h *Host) currentInstance(repoRoot string) *ocruntime.Instance {
@@ -308,7 +335,11 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 		if stopped, err := h.reconcileStopped(ctx, repoRoot, false); stopped || err != nil {
 			return nil, err
 		}
-		if inst := h.reuseCandidate(ctx, repoRoot); inst != nil {
+		if inst := h.reuseCandidate(ctx, repoRoot); isService(inst) {
+			// Other OpenCode clients share it: stop routing, not the process.
+			h.forgetService(repoRoot)
+			return nil, nil
+		} else if inst != nil {
 			if err := h.runtime.Stop(ctx, inst); err != nil {
 				return nil, err
 			}

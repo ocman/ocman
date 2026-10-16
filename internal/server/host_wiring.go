@@ -6,6 +6,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -30,6 +31,10 @@ func (s *Server) newLocalHost() hostsvc.Host {
 			}
 		}
 	}
+	var openCodeService func() (ocv2.Service, error)
+	if s.useOpenCodeService {
+		openCodeService = ocv2.RunningService
+	}
 	host := hostlocal.New(hostlocal.Deps{
 		DefaultPlatform: s.stateDB.DefaultPlatform,
 		Runtimes:        runtimes,
@@ -52,6 +57,7 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		CancelReplacementStop: s.cancelOpencodeReplacementStop,
 		// OpenCode v2: one server per machine, published to discovery.
 		SetMachineServer:        s.setOpenCodeMachineServer,
+		OpenCodeService:         openCodeService,
 		ManagedStore:            managedStoreOrNil(s.stateDB),
 		OpenCodeAuth:            func() ocapi.Auth { return s.openCodeAuth },
 		OpenCodeReloaded:        opencode.InvalidateCatalogsForPort,
