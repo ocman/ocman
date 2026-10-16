@@ -1,6 +1,7 @@
 package autoapprove
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -78,6 +79,7 @@ func FuzzPermissionHash(f *testing.F) {
 	f.Add("bash", "bash", "ls", "ls", `{"a":1,"b":[1,2]}`, `{"b":[1,2],"a":1.0}`)
 	f.Add("bash", "edit", "x", "x", `{}`, `{}`)
 	f.Add("bash", "bash", "ls\x00", "ls", `null`, `{}`)
+	f.Add("bash", "bash", "ls", "ls", `{"n":0}`, `{"n":-0}`)
 	f.Fuzz(func(t *testing.T, perm1, perm2, pattern1, pattern2, meta1, meta2 string) {
 		// Prompts arrive as JSON, whose decoder already replaced invalid
 		// UTF-8 with U+FFFD, as json.Marshal does here; raw invalid bytes
@@ -99,9 +101,22 @@ func FuzzPermissionHash(f *testing.F) {
 		if again := permissionHash(perm1, []string{pattern1}, m1); again != h1 {
 			t.Fatalf("non-deterministic key")
 		}
-		same := perm1 == perm2 && pattern1 == pattern2 && reflect.DeepEqual(m1, m2)
+		// The judge saw the serialized metadata, so that is what must agree.
+		// reflect.DeepEqual is too lax for the iff: it equates 0 and -0,
+		// which serialize (and so hash) differently.
+		c1, err1 := json.Marshal(m1)
+		c2, err2 := json.Marshal(m2)
+		if err1 != nil || err2 != nil {
+			t.Fatalf("decoded metadata does not serialize: %v / %v", err1, err2)
+		}
+		same := perm1 == perm2 && pattern1 == pattern2 && bytes.Equal(c1, c2)
 		if same != (h1 == h2) {
 			t.Fatalf("same request %v, same key %v: (%q, %q, %s) vs (%q, %q, %s)", same, h1 == h2, perm1, pattern1, meta1, perm2, pattern2, meta2)
+		}
+		// The safety direction, against an independent equality: a shared
+		// key never joins requests whose decoded values differ.
+		if h1 == h2 && !reflect.DeepEqual(m1, m2) {
+			t.Fatalf("different metadata %s / %s share a key", meta1, meta2)
 		}
 	})
 }
