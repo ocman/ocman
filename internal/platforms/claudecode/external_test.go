@@ -59,9 +59,13 @@ func TestContinueExternalSessionOnProjectSupervisor(t *testing.T) {
 	rec := &recorded{idles: map[string]int{}}
 	p.SetEventHandler(func(e providerprotocol.Event) { rec.mu.Lock(); rec.events = append(rec.events, e); rec.mu.Unlock() })
 	go func() { _ = p.WatchEvents(ctx) }()
-	detail, err := p.Session(ctx, id, 10, 0)
-	if err != nil || !detail.Session.LiveConnection {
-		t.Fatalf("external session unavailable: %v %v", detail, err)
+	var detail *platforms.SessionDetail
+	eventually(t, "external transcript indexed", func() bool {
+		detail, err = p.Session(ctx, id, 10, 0)
+		return err == nil && detail.Session != nil
+	})
+	if !detail.Session.LiveConnection {
+		t.Fatal("indexed external session cannot be continued")
 	}
 	if roots, _ := db.ListManagedProviders(ctx, "claudecode"); len(roots) != 0 {
 		t.Fatal("reading launched a supervisor")
