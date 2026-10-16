@@ -57,7 +57,7 @@ it('rejects old-owner responses and callbacks after switching session', async ()
   const calls = vi.mocked(api.sessionModels).mock.calls.length;
   act(() => oldRefresh());
   expect(api.sessionModels).toHaveBeenCalledTimes(calls);
-  expect(readModelCatalog('opencode', '/a')).toBeUndefined();
+  expect(readModelCatalog('opencode')).toBeUndefined();
 });
 
 it('keeps the newest refresh when responses complete out of order', async () => {
@@ -70,7 +70,7 @@ it('keeps the newest refresh when responses complete out of order', async () => 
   await waitFor(() => expect(result.current.modelOptions).toEqual(['p/fresh']));
   await act(async () => { resolveOld(catalog('old')); });
   expect(result.current.modelOptions).toEqual(['p/fresh']);
-  expect(readModelCatalog('opencode', '/a')?.map((entry) => entry.model)).toEqual(['fresh']);
+  expect(readModelCatalog('opencode')?.map((entry) => entry.model)).toEqual(['fresh']);
 });
 
 it('rolls back both different favorites when overlapping writes fail', async () => {

@@ -9,7 +9,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { useSessionCapabilities } from './useSessionCapabilities';
 import { api } from '../../lib/api';
 import {
-  clearModelCatalogCache, mergeWithCatalog, readModelCatalog, readModelShortlist, writeModelCatalog,
+  clearModelCatalogCache, mergeWithCatalog, readModelCatalog, writeModelCatalog,
 } from '../../lib/modelCatalogCache';
 
 // The state object must be stable across renders: an unstable
@@ -203,23 +203,18 @@ describe('useSessionCapabilities model catalog cache', () => {
     ]);
   });
 
-  it('seeds a new worktree with only global pins and unknown availability', () => {
+  it('shares one catalog per platform across directories', () => {
     clearModelCatalogCache();
-    writeModelCatalog('opencode', '/proj', [...live.models, { provider: 'gone', model: 'y', recentRank: 2 }]);
-    expect(readModelCatalog('opencode', '/proj/.worktrees/x')).toBeUndefined();
-    expect(readModelShortlist('opencode')).toEqual([
-      { ...live.models[0], isSessionDefault: false, isProviderDefault: false, isAvailable: true, reasoning: undefined },
-      { provider: 'gone', model: 'y', recentRank: 2, isSessionDefault: false, isProviderDefault: false, isAvailable: true },
-    ]);
-    expect(readModelShortlist('opencode')?.[0]).not.toHaveProperty('reasoning', ['high']);
-    expect(readModelShortlist('other')).toBeUndefined();
+    writeModelCatalog('opencode', [{ provider: 'old', model: 'x' }]);
+    writeModelCatalog('opencode', live.models);
+    expect(readModelCatalog('opencode')?.map((e) => e.provider)).toEqual(['anthropic', 'openai']);
+    expect(readModelCatalog('other')).toBeUndefined();
   });
 
   it('reads the pinned list back from storage after a reload', () => {
     clearModelCatalogCache();
-    writeModelCatalog('opencode', '/proj', live.models);
+    writeModelCatalog('opencode', live.models);
     clearModelCatalogCache(true);
-    expect(readModelCatalog('opencode', '/proj')).toEqual([live.models[0]]);
-    expect(readModelShortlist('opencode')?.map((e) => e.model)).toEqual(['opus']);
+    expect(readModelCatalog('opencode')).toEqual([live.models[0]]);
   });
 });
