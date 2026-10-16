@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"encoding/json"
+	"unicode/utf8"
 
 	log "github.com/sirupsen/logrus"
 
@@ -10,11 +11,26 @@ import (
 
 const maxOutputLen = 200000
 
+// truncateUTF8 cuts s to at most n bytes without splitting a multi-byte
+// character: a rune straddling the limit is dropped whole. It backs off at
+// most utf8.UTFMax-1 bytes, so input that is already invalid is still cut.
+func truncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for i := n; i > n-utf8.UTFMax && i > 0; i-- {
+		if utf8.RuneStart(s[i]) {
+			return s[:i]
+		}
+	}
+	return s[:n]
+}
+
 // truncatePartOutput limits the size of tool call outputs and large text
 // in a part to prevent massive responses.
 func truncatePartOutput(part map[string]interface{}) {
 	if text, ok := part["text"].(string); ok && len(text) > maxOutputLen {
-		part["text"] = text[:maxOutputLen] + "\n... (truncated)"
+		part["text"] = truncateUTF8(text, maxOutputLen) + "\n... (truncated)"
 	}
 
 	state, ok := part["state"].(map[string]interface{})
@@ -22,11 +38,11 @@ func truncatePartOutput(part map[string]interface{}) {
 		return
 	}
 	if output, ok := state["output"].(string); ok && len(output) > maxOutputLen {
-		state["output"] = output[:maxOutputLen] + "\n... (truncated)"
+		state["output"] = truncateUTF8(output, maxOutputLen) + "\n... (truncated)"
 	}
 	if meta, ok := state["metadata"].(map[string]interface{}); ok {
 		if output, ok := meta["output"].(string); ok && len(output) > maxOutputLen {
-			meta["output"] = output[:maxOutputLen] + "\n... (truncated)"
+			meta["output"] = truncateUTF8(output, maxOutputLen) + "\n... (truncated)"
 		}
 	}
 }

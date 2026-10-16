@@ -2,7 +2,9 @@ package opencode
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // --- truncatePartOutput tests ---
@@ -73,6 +75,66 @@ func TestTruncatePartOutput_MetadataOutput(t *testing.T) {
 	output := meta["output"].(string)
 	if len(output) > maxOutputLen+50 {
 		t.Errorf("state.metadata.output should be truncated, got len=%d", len(output))
+	}
+}
+
+// Truncation must cut on a rune boundary: a multi-byte character
+// straddling the limit is dropped whole, never split into invalid UTF-8.
+func TestTruncateKeepsValidUTF8(t *testing.T) {
+	straddle := func(limit int) string { return strings.Repeat("a", limit-1) + "é" + "tail" }
+	tests := []struct {
+		name     string
+		truncate func(string) string
+		prefix   string
+	}{
+		{"part text", func(s string) string {
+			p := map[string]interface{}{"text": s}
+			truncatePartOutput(p)
+			return p["text"].(string)
+		}, strings.Repeat("a", maxOutputLen-1)},
+		{"state output", func(s string) string {
+			p := map[string]interface{}{"state": map[string]interface{}{"output": s}}
+			truncatePartOutput(p)
+			return p["state"].(map[string]interface{})["output"].(string)
+		}, strings.Repeat("a", maxOutputLen-1)},
+		{"metadata output", func(s string) string {
+			p := map[string]interface{}{"state": map[string]interface{}{"metadata": map[string]interface{}{"output": s}}}
+			truncatePartOutput(p)
+			return p["state"].(map[string]interface{})["metadata"].(map[string]interface{})["output"].(string)
+		}, strings.Repeat("a", maxOutputLen-1)},
+		{"snapshot", truncateSnapshot, strings.Repeat("a", maxSnapshotLen-1)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.truncate(straddle(len(tt.prefix) + 1))
+			if !utf8.ValidString(got) {
+				t.Fatalf("truncated string is not valid UTF-8 (ends %q)", got[len(tt.prefix)-2:len(tt.prefix)+2])
+			}
+			if !strings.HasPrefix(got, tt.prefix) || strings.Contains(got, "é") {
+				t.Fatalf("truncated string should keep the ASCII prefix and drop the straddling rune")
+			}
+		})
+	}
+}
+
+func TestTruncateUTF8(t *testing.T) {
+	tests := []struct {
+		name, in string
+		n        int
+		want     string
+	}{
+		{"short", "abc", 5, "abc"},
+		{"ascii", "abcdef", 3, "abc"},
+		{"rune at limit", "ab€", 2, "ab"},
+		{"straddling rune", "a€b", 2, "a"},
+		{"invalid continuation run", "a\x80\x80\x80\x80\x80", 5, "a\x80\x80\x80\x80"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := truncateUTF8(tt.in, tt.n); got != tt.want {
+				t.Errorf("truncateUTF8(%q, %d) = %q, want %q", tt.in, tt.n, got, tt.want)
+			}
+		})
 	}
 }
 

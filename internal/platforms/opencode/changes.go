@@ -460,5 +460,5 @@ func truncateSnapshot(s string) string {
 	if len(s) <= maxSnapshotLen {
 		return s
 	}
-	return s[:maxSnapshotLen] + truncationSuffix
+	return truncateUTF8(s, maxSnapshotLen) + truncationSuffix
 }
