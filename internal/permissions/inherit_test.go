@@ -220,6 +220,56 @@ func TestBuildInheritedRulesWithLive_MergeOrder(t *testing.T) {
 	}
 }
 
+// The cap must never drop live rules: a parent with a full approval budget
+// and a live deny (or YOLO posture) would otherwise launch a child without
+// it. Approvals give way instead, keeping the newest, and live stays last.
+func TestBuildInheritedRulesWithLive_CapKeepsLiveRules(t *testing.T) {
+	pats := make([]string, 0, maxInheritedPatterns)
+	for i := 0; i < maxInheritedPatterns; i++ {
+		pats = append(pats, "src/"+itoa(i)+".go")
+	}
+	rows := []state.ApprovedPermission{ap("edit", pats...)}
+	tests := []struct {
+		name string
+		live []platforms.PermissionRule
+		ask  string
+		want bool
+	}{
+		{"live deny survives", []platforms.PermissionRule{{Permission: "edit", Pattern: "*", Action: "deny"}}, "src/1.go", false},
+		{"live yolo survives", []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}, "anything", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules, count, err := BuildInheritedRulesWithLive(t.Context(), fakeLister{rows: rows}, fakeLiveReader{rules: tt.live}, "opencode", "ses-parent")
+			if err != nil {
+				t.Fatalf("BuildInheritedRulesWithLive: %v", err)
+			}
+			if count != len(rules) || len(rules) != maxInheritedPatterns {
+				t.Fatalf("count/len = %d/%d, want %d", count, len(rules), maxInheritedPatterns)
+			}
+			if !equalRules(rules[len(rules)-len(tt.live):], tt.live) {
+				t.Fatalf("live rules are not last: tail = %+v", rules[len(rules)-len(tt.live):])
+			}
+			// The newest approval is kept; the oldest gives way.
+			if last := rules[len(rules)-len(tt.live)-1]; last.Pattern != pats[len(pats)-1] {
+				t.Fatalf("newest approval dropped: last approval = %+v", last)
+			}
+			if got := Allows(rules, "edit", []string{tt.ask}); got != tt.want {
+				t.Fatalf("Allows(edit %s) = %v, want %v", tt.ask, got, tt.want)
+			}
+		})
+	}
+	// A live ruleset at or above the cap is kept whole; no approvals fit.
+	live := make([]platforms.PermissionRule, maxInheritedPatterns+1)
+	for i := range live {
+		live[i] = platforms.PermissionRule{Permission: "read", Pattern: itoa(i), Action: "allow"}
+	}
+	rules, _, err := BuildInheritedRulesWithLive(t.Context(), fakeLister{rows: rows}, fakeLiveReader{rules: live}, "opencode", "ses-parent")
+	if err != nil || !equalRules(rules, live) {
+		t.Fatalf("oversized live ruleset: err=%v, %d rules, want the %d live rules", err, len(rules), len(live))
+	}
+}
+
 // A live-reader error is soft: fall back to approval-only rules.
 func TestBuildInheritedRulesWithLive_LiveErrorFallsBack(t *testing.T) {
 	rules, count, err := BuildInheritedRulesWithLive(t.Context(),

@@ -112,16 +112,19 @@ func BuildInheritedRulesWithLive(ctx context.Context, lister ApprovalLister, rea
 	if len(live) == 0 {
 		return approved, len(approved), nil
 	}
+	// The cap bounds the approvals only. Live rules are the parent's actual
+	// posture (a deny, or YOLO) and must never be cut; the newest approvals
+	// are kept, and live stays last so last-match-wins still favours it.
+	if budget := max(maxInheritedPatterns-len(live), 0); len(approved) > budget {
+		log.WithFields(log.Fields{
+			"count": len(approved) + len(live),
+			"cap":   maxInheritedPatterns,
+		}).Warn("permissions: merged inherited ruleset exceeds cap, dropping the oldest approvals")
+		approved = approved[len(approved)-budget:]
+	}
 	merged := make([]platforms.PermissionRule, 0, len(approved)+len(live))
 	merged = append(merged, approved...)
 	merged = append(merged, live...)
-	if len(merged) > maxInheritedPatterns {
-		log.WithFields(log.Fields{
-			"count": len(merged),
-			"cap":   maxInheritedPatterns,
-		}).Warn("permissions: merged inherited ruleset exceeds cap, truncating")
-		merged = merged[:maxInheritedPatterns]
-	}
 	return merged, len(merged), nil
 }
 
