@@ -984,6 +984,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 <AssistantThread
                   scrollToBottomTick={sidebarScroll.sessionId === session.id ? sidebarScroll.tick : 0}
                   hasMore={hasMore}
+                  oldestMessageId={messages[0]?.id}
                   loadingMore={loadingMore}
                   onLoadMore={loadMore}
                   bookmarkedMessageIds={bookmarkedMessageIds}

@@ -16,6 +16,11 @@ new activity restores an archived session to the sidebar: **Session halts**
 is the default and waits for done, waiting, error, or interrupted status;
 **Any activity** restores it even while it is running.
 
+Conversations open with recent messages. While the oldest loaded message is
+visible, ocman automatically fetches earlier history until it leaves the
+viewport or the first message is reached. This also works when hidden tool
+messages leave too little content to scroll.
+
 The clock button beside a conversation's archive button snoozes it for 30 minutes,
 one hour, three hours, until tomorrow at 9:00 AM, or until next Monday at 9:00 AM.
 **Custom...** opens a date-and-time picker. Calendar times use your browser's local

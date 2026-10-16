@@ -19,6 +19,7 @@ import { hardenMessageLinks } from '../lib/linkHardener';
 import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool } from '../lib/mutedTools';
 import { useStickyBottom } from '../lib/useStickyBottom';
+import { useHistoryPagination } from '../lib/useHistoryPagination';
 import { trackRender } from '../lib/renderRateMonitor';
 import { useUiStore } from '../lib/uiStore';
 import type { FC } from 'react';
@@ -540,6 +541,7 @@ const THREAD_MESSAGE_COMPONENTS = { UserMessage, AssistantMessage };
 
 export function AssistantThread({
   hasMore,
+  oldestMessageId,
   loadingMore,
   onLoadMore,
   composer,
@@ -553,6 +555,7 @@ export function AssistantThread({
   scrollToToolCall,
 }: {
   hasMore?: boolean;
+  oldestMessageId?: string;
   loadingMore?: boolean;
   onLoadMore?: () => void;
   composer?: React.ReactNode;
@@ -618,19 +621,7 @@ export function AssistantThread({
     isJumpingRef.current = false;
   }, [hasMore, loadingMore]);
 
-  // Auto-load older messages when scrolled near the top of the viewport.
-  // Attaches a passive scroll listener to the viewport element.
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      if (el.scrollTop < 200 && hasMoreRef.current && !loadingMoreRef.current) {
-        onLoadMoreRef.current?.();
-      }
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
+  const historyStartRef = useHistoryPagination(viewportRef, { oldestMessageId, hasMore, loadingMore, onLoadMore });
 
   // Preserve scroll position when older messages are prepended
   const prevScrollHeightRef = useRef(0);
@@ -858,6 +849,7 @@ export function AssistantThread({
               <span className="oc-spinner" /> Loading older messages...
             </div>
           )}
+          <div ref={historyStartRef} aria-hidden="true" />
           {empty || <ThreadPrimitive.Empty>
             <div className="oc-empty">No messages yet.</div>
           </ThreadPrimitive.Empty>}

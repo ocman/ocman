@@ -453,6 +453,22 @@ describe('AssistantThread attached images', () => {
 });
 
 describe('AssistantThread pagination', () => {
+  it('loads earlier history without scrolling when the oldest message is visible', () => {
+    const onLoadMore = vi.fn();
+    vi.stubGlobal('IntersectionObserver', class {
+      callback: IntersectionObserverCallback;
+      constructor(callback: IntersectionObserverCallback) { this.callback = callback; }
+      observe(target: Element) {
+        this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+      disconnect() {}
+    });
+
+    render(<AssistantThread hasMore onLoadMore={onLoadMore} />);
+
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
   it('does not load older messages when a thread first mounts at its tail', () => {
     const onLoadMore = vi.fn();
 
