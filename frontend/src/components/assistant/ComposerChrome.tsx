@@ -77,6 +77,7 @@ export function ComposerFooter({
           <>
             <span
               className="oc-bar-dots"
+              data-testid="running-dots"
               style={effectiveAgent && agentsLoaded
                 ? { '--oc-dot-color': agentColor(effectiveAgent, agents) } as Record<string, string>
                 : undefined}

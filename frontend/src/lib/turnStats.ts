@@ -177,16 +177,13 @@ export function computeTurnStats(
     const tps =
       totalTpsDenominator > 0 ? totalTpsNumerator / totalTpsDenominator : null;
 
-    // The last turn stays live while the session is running, even if its
-    // trailing message reports `finish: "tool-calls"` (an intermediate
-    // tool step). A completion timestamp, error, or non-running session ends
-    // it. Earlier turns are live only when their trailing message is incomplete.
+    // The latest turn follows the composer's running state. A completed
+    // message can be an intermediate step while the session is still busy.
+    // Without a running state, fall back to the trailing message's lifecycle.
     const isCompleted = lastAsst.data.time?.completed !== undefined;
-    const isLive = lastAsst.data.error || isCompleted
-      ? false
-      : isLastTurn
-        ? isRunning ?? !lastAsst.data.finish
-        : !lastAsst.data.finish;
+    const isLive = isLastTurn && isRunning !== undefined
+      ? isRunning
+      : !lastAsst.data.error && !isCompleted && !lastAsst.data.finish;
 
     // Wall-clock end: when the turn's final reply completed. Measured from
     // the user message, so tool time between calls is included. Falls back

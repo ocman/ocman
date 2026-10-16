@@ -122,13 +122,13 @@ describe('computeTurnStats — live across tool steps (read/bash flicker)', () =
     expect(map.get('a2')?.isLive).toBe(true);
   });
 
-  it('ends the turn on an error even while the session is running', () => {
+  it.each([true, false, undefined])('uses running=%s for an errored message, falling back to settled without live state', (isRunning) => {
     const messages = [
       makeMessage('u', { role: 'user' }, 1),
       makeMessage('a', { role: 'assistant', error: { name: 'BoomError' } } as Parameters<typeof makeMessage>[1], 2),
     ];
-    const stats = computeTurnStats(messages, [], true).get('a');
-    expect(stats?.isLive).toBe(false);
+    const stats = computeTurnStats(messages, [], isRunning).get('a');
+    expect(stats?.isLive).toBe(isRunning ?? false);
   });
 });
 

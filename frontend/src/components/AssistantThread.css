@@ -1142,7 +1142,7 @@
   width: 6px;
   height: 6px;
   border-radius: 0;
-  background: var(--oc-dot-color);
+  background: var(--oc-dot-color, var(--peach));
   opacity: 0.3;
   transform: scale(0.8);
   animation: oc-bounce 1.4s ease-in-out infinite;

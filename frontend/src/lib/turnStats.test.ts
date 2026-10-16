@@ -78,6 +78,16 @@ describe('computeTurnStats — model', () => {
 });
 
 describe('computeTurnStats — completion', () => {
+  it.each([true, false])('follows running=%s after an intermediate message completes', (isRunning) => {
+    const messages = [
+      makeMessage('u', { role: 'user' }, 1),
+      makeMessage('a', { role: 'assistant', finish: 'tool-calls', time: { created: 2, completed: 3 } }, 2),
+    ];
+    const stats = computeTurnStats(messages, [], isRunning).get('a')!;
+    expect(stats.isLive).toBe(isRunning);
+    expect(stats.wallClockMs).toBe(isRunning ? null : 2);
+  });
+
   it('does not keep a completed tool-only assistant message live', () => {
     const messages = [
       makeMessage('u', { role: 'user' }, 1),

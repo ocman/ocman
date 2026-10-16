@@ -45,3 +45,39 @@ for (const [platform, label, agentSelection] of [['opencode', 'OpenCode', true],
     await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeInViewport();
   });
 }
+
+test('Claude running dots remain visible and animate without an agent colour', async ({ mockedPage: page }) => {
+  let status = 'busy';
+  await page.route('/api/capabilities', (route) => route.fulfill({ json: {
+    hosts: [], platforms: [{ id: 'claudecode', displayName: 'Claude Code', available: true,
+      capabilities: { composer: true, agentCatalog: false, modelCatalog: true } }],
+  } }));
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) => route.fulfill({ json: {
+    session: { ...mockSessionWithLiveConnection(), platform: 'claudecode', status },
+    messages: [
+      { id: 'u', sessionId: MOCK_SESSION.id, timeCreated: 1000, data: { role: 'user' } },
+      { id: 'a', sessionId: MOCK_SESSION.id, timeCreated: 2000,
+        data: { role: 'assistant', finish: 'tool-calls', time: { created: 2000, completed: 3000 } } },
+    ],
+    parts: [{ id: 'text', sessionId: MOCK_SESSION.id, messageId: 'a', data: { type: 'text', text: 'Working on it' } }],
+    totalMessages: 2,
+  } }));
+  await page.goto(`/session/${MOCK_SESSION.id}?platform=claudecode`);
+  await expect(page.getByText('Esc to interrupt', { exact: true })).toBeVisible();
+  const metadataDot = page.getByTitle('Turn in progress', { exact: true });
+  await expect(metadataDot).toBeVisible();
+  await expect(metadataDot).toHaveCSS('animation-name', 'oc-turn-pulse');
+  const dots = page.getByTestId('running-dots').locator('span');
+  await expect(dots).toHaveCount(5);
+  for (const dot of await dots.all()) {
+    await expect(dot).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(dot).toHaveCSS('animation-name', 'oc-bounce');
+    await expect(dot).toHaveCSS('animation-play-state', 'running');
+  }
+  status = 'done';
+  await page.reload();
+  await expect(page.getByText('Working on it', { exact: true })).toBeVisible();
+  await expect(page.getByText('Esc to interrupt', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('running-dots')).toHaveCount(0);
+  await expect(metadataDot).toHaveCount(0);
+});
