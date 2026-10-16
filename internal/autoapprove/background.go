@@ -73,7 +73,9 @@ func (s *Service) Ensure(
 	go func() {
 		defer s.jobs.Done()
 		defer s.releaseAutoApprove(sessionID, permissionID)
-		// A panic here would kill ocman. Recovering fails closed: no
+		// A panic here would kill ocman. judgePermission already turns a
+		// judge panic into a failed evaluation the user is told about; this
+		// is the backstop for the rest of the pipeline, failing closed: no
 		// reply is sent, so the prompt stays pending for the user.
 		runWithRecover("auto-approve judge", func() {
 			s.backgroundAutoApprove(

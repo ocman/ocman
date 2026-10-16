@@ -66,8 +66,9 @@ func TestPromptNeedsUserFollowsTheApprovalDecision(t *testing.T) {
 					DefaultEnabled:  tc.enabled,
 					PromptNeedsUser: recorder.deps(),
 				},
-				// judge=nil: reaching the LLM panics, so every case here has
-				// to be settled by the enablement, cache or denylist gates.
+				// judge=nil: reaching the LLM fails the evaluation (and reports
+				// needs-user), so every case here has to be settled by the
+				// enablement, cache or denylist gates.
 			}
 			if tc.seedSafe {
 				s.recordSafeCommandVerdict(sessionID, permissionHash("Bash command", nil, tc.metadata), "Read-only test runner.")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -122,5 +123,56 @@ func TestSafeCommandCachePrecedesBackendSelection(t *testing.T) {
 	s.backgroundAutoApprove(t.Context(), "other", adapter, "session", "different", asked)
 	if selections != 2 || backend.calls != 2 || replies != 3 {
 		t.Fatalf("selections=%d, backend calls=%d, replies=%d", selections, backend.calls, replies)
+	}
+}
+
+type panickingJudge struct{}
+
+func (panickingJudge) JudgeWithCallback(context.Context, string, string, []string, map[string]any, []PromptSection, func(string)) JudgeResult {
+	panic("malformed judge reply")
+}
+
+// A panicking judge made no safety assessment, so it is a failed evaluation
+// like an unreachable backend. Recovering only around the whole goroutine
+// skipped the lifecycle completion and the unsafe-verdict path: the status
+// was dropped, a connected browser stayed "checking", and the prompt was
+// never reported as needing the user.
+func TestPanickingJudgeLeavesThePromptForTheUser(t *testing.T) {
+	var mu sync.Mutex
+	var needs []string
+	store := &lifecycleStore{}
+	s := NewService(Deps{
+		Store:          store,
+		DefaultEnabled: true,
+		SessionDir:     func(string) (string, error) { return "/project", nil },
+		SelectJudge:    func(platforms.ID, string) Judge { return panickingJudge{} },
+		PromptNeedsUser: func(platformID, sessionID, kind, requestID string) {
+			mu.Lock()
+			needs = append(needs, platformID+"|"+sessionID+"|"+kind+"|"+requestID)
+			mu.Unlock()
+		},
+	})
+	var sink strings.Builder
+	s.RegisterSink("session", &sink, nil)
+	s.Ensure("other", &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
+		t.Error("a panicking judge must leave the permission unanswered")
+		return nil
+	}}, "session", "permission", "bash", []string{"ls"}, map[string]any{"command": "ls"})
+	s.jobs.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(needs) != 1 || needs[0] != "other|session|permission|permission" {
+		t.Fatalf("needs-user = %v", needs)
+	}
+	if verdict, ok := s.lookupJudged("session", "permission"); !ok || verdict != verdictUnsafe {
+		t.Fatalf("verdict = %q, %v; want the failure recorded", verdict, ok)
+	}
+	if !strings.Contains(sink.String(), "event: ocman.permission.flagged") {
+		t.Fatalf("sink never left the checking state: %s", sink.String())
+	}
+	row := store.waitFor(t, "permission", func(row state.PermissionLifecycle) bool { return row.JudgeCompletedAt > 0 })
+	if row.EvaluationResult != state.PermissionEvaluationError || row.Resolution != "" {
+		t.Fatalf("lifecycle = %+v; want an evaluation error, unresolved", row)
 	}
 }

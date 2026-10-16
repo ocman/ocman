@@ -2,6 +2,9 @@ package autoapprove
 
 import (
 	"context"
+	"runtime/debug"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -33,5 +36,22 @@ func (s *Service) judgePermission(ctx context.Context, platformID platforms.ID, 
 	if backend == nil {
 		return JudgeResult{Verdict: verdictNeedsUser, Reasoning: "No auto-approve judge backend is available; please review this permission."}
 	}
-	return backend.JudgeWithCallback(ctx, directory, permission, patterns, metadata, sections, onSessionCreated)
+	return evaluateJudge(func() JudgeResult {
+		return backend.JudgeWithCallback(ctx, directory, permission, patterns, metadata, sections, onSessionCreated)
+	})
+}
+
+// evaluateJudge runs one backend call. A backend that panics (a malformed
+// reply tripping a parser, say) made no safety assessment, so its result is
+// the failed evaluation an unreachable backend reports: the caller completes
+// the lifecycle and hands the prompt to the user, instead of the job dying
+// with the browser still "checking" and no needs-user report.
+func evaluateJudge(call func() JudgeResult) (result JudgeResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.WithFields(log.Fields{"panic": r, "stack": string(debug.Stack())}).Error("auto-approve judge panicked")
+			result = JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true, Reasoning: "The auto-approve judge failed; please review this permission."}
+		}
+	}()
+	return call()
 }
