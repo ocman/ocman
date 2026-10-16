@@ -119,8 +119,8 @@ func TestPredicateValueEquality(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var value any
-			if err := json.Unmarshal([]byte(test.body), &value); err != nil {
+			value, err := decodeJSON([]byte(test.body))
+			if err != nil {
 				t.Fatal(err)
 			}
 			for _, p := range []predicate{
@@ -133,6 +133,79 @@ func TestPredicateValueEquality(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Numbers compare by exact decimal value. Decoding through float64 rounded
+// 9007199254740993 to ...992 and 0.1000000000000000000001 to 0.1, so distinct
+// values matched, and 1e400 (beyond float64) made the whole body unreadable.
+func TestPredicateNumbersCompareExactly(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+		ok   bool
+	}{
+		{"adjacent large integers", `9007199254740992`, `9007199254740993`, false},
+		{"adjacent large integers as text", `9007199254740992`, `"9007199254740993"`, false},
+		{"large integer as text", `9007199254740993`, `"9007199254740993"`, true},
+		{"high precision decimal", `0.1000000000000000000001`, `0.1`, false},
+		{"high precision decimal as text", `0.1000000000000000000001`, `"0.1"`, false},
+		{"high precision decimal equal", `0.1000000000000000000001`, `"0.1000000000000000000001"`, true},
+		{"same value other spelling", `5`, `5.0`, true},
+		{"exponent spelling", `5`, `5e0`, true},
+		{"negative exponent spelling", `5`, `"50e-1"`, true},
+		{"negative zero", `-0`, `0`, true},
+		{"sign matters", `-5`, `5`, false},
+		{"beyond float64", `1e400`, `"1e400"`, true},
+		{"beyond float64 mismatch", `1e400`, `1e401`, false},
+		{"huge exponent", `1e1000000000`, `"10e999999999"`, true},
+		{"array of large integers", `[9007199254740992]`, `[9007199254740993]`, false},
+		{"array numbers by value", `[5]`, `[5.0]`, true},
+		{"object numbers by value", `{"n":9007199254740993}`, `{"n":9007199254740993}`, true},
+		{"object large integer mismatch", `{"n":9007199254740992}`, `{"n":9007199254740993}`, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			e := relay.InboxEnvelope{Body: []byte(`{"v":` + test.body + `}`)}
+			sub := state.WebhookSubscription{JSONPredicatesJSON: `{"/v":{"equals":` + test.want + `}}`}
+			if ok, err := matches(e, sub); err != nil || ok != test.ok {
+				t.Fatalf("matches(%s, %s) = %v, %v, want %v", test.body, test.want, ok, err, test.ok)
+			}
+		})
+	}
+}
+
+func TestDecodeJSONRejectsTrailingData(t *testing.T) {
+	for _, raw := range []string{`{"v":1} x`, `1 2`, ``} {
+		if _, err := decodeJSON([]byte(raw)); err == nil {
+			t.Errorf("decodeJSON(%q) accepted", raw)
+		}
+	}
+	if v, err := decodeJSON([]byte(" 12345678901234567890 \n")); err != nil || v != json.Number("12345678901234567890") {
+		t.Fatalf("decodeJSON = %#v, %v", v, err)
+	}
+}
+
+func TestHeaderPredicateNumbersCompareExactly(t *testing.T) {
+	tests := []struct {
+		header string
+		want   string
+		ok     bool
+	}{
+		{"9007199254740992", `9007199254740993`, false},
+		{"9007199254740993", `9007199254740993`, true},
+		{"0.1", `0.1000000000000000000001`, false},
+		{"5.0", `5`, true},
+		{"5", `"5"`, true},
+		{"05", `5`, false},
+	}
+	for _, test := range tests {
+		e := relay.InboxEnvelope{Body: []byte(`{}`), Request: relay.InboxRequest{Header: http.Header{"X-N": {test.header}}}}
+		sub := state.WebhookSubscription{HeaderPredicatesJSON: `{"x-n":{"equals":` + test.want + `}}`}
+		if ok, err := matches(e, sub); err != nil || ok != test.ok {
+			t.Errorf("header %q vs %s = %v, %v, want %v", test.header, test.want, ok, err, test.ok)
+		}
 	}
 }
 

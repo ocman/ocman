@@ -1,14 +1,16 @@
 package webhook
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math/big"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -202,9 +204,9 @@ func matches(e relay.InboxEnvelope, sub state.WebhookSubscription) (bool, error)
 			return false, nil
 		}
 	}
-	var body any
 	if sub.JSONPredicatesJSON != "" && sub.JSONPredicatesJSON != "{}" {
-		if err := json.Unmarshal(e.Body, &body); err != nil {
+		body, err := decodeJSON(e.Body)
+		if err != nil {
 			return false, nil
 		}
 		var pointers map[string]predicate
@@ -242,13 +244,8 @@ func predicateMatch(values []string, exists bool, p predicate, fold bool) bool {
 	}
 	for _, v := range values {
 		for _, raw := range wants {
-			var x any
-			if json.Unmarshal(raw, &x) != nil {
-				continue
-			}
-			// A header is text: only a scalar expected value can equal it.
-			text, ok := scalarText(x)
-			if ok && ((fold && strings.EqualFold(v, text)) || v == text) {
+			x, err := decodeJSON(raw)
+			if err == nil && headerEquals(v, x, fold) {
 				return true
 			}
 		}
@@ -256,28 +253,46 @@ func predicateMatch(values []string, exists bool, p predicate, fold bool) bool {
 	return false
 }
 
-// scalarText is the JSON text of a string, number or boolean ("5" for 5,
-// "100000000" for 1e8). Null, arrays and objects have no text a header or a
-// string could equal.
-func scalarText(x any) (string, bool) {
-	switch v := x.(type) {
+// headerEquals compares a header's text with an expected predicate value. A
+// header is text: only a scalar expected value can equal it. Strings and
+// booleans compare as text; a number matches a header that is exactly a JSON
+// number with the same decimal value, the rule a string body value follows.
+func headerEquals(v string, want any, fold bool) bool {
+	var text string
+	switch w := want.(type) {
 	case string:
-		return v, true
+		text = w
 	case bool:
-		return strconv.FormatBool(v), true
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64), true
+		text = strconv.FormatBool(w)
+	case json.Number:
+		return scalarEqualsText(w, v)
 	default:
-		return "", false
+		return false
 	}
+	return v == text || (fold && strings.EqualFold(v, text))
+}
+
+// decodeJSON decodes one JSON value, keeping numbers as their exact text
+// (json.Number) so no comparison is made through a rounded float64.
+func decodeJSON(raw []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("unexpected data after JSON value")
+	}
+	return v, nil
 }
 
 // jsonEqual compares a body value with an expected predicate value, both
-// decoded from JSON. Equal types compare by value (objects and arrays
-// deeply). The routine form stores every typed value as a string, so a
-// string also equals a scalar whose JSON text it is: "5" or "5.0" equals 5,
-// "true" equals true and "null" equals null. Composite values never equal a
-// string.
+// decoded by decodeJSON. Equal types compare by value (objects and arrays
+// deeply, numbers by exact decimal value). The routine form stores every
+// typed value as a string, so a string also equals a scalar whose JSON text
+// it is: "5" or "5.0" equals 5, "true" equals true and "null" equals null.
+// Composite values never equal a string.
 func jsonEqual(got, want any) bool {
 	if s, ok := want.(string); ok {
 		if g, ok := got.(string); ok {
@@ -288,13 +303,44 @@ func jsonEqual(got, want any) bool {
 	if s, ok := got.(string); ok {
 		return scalarEqualsText(want, s)
 	}
-	switch want.(type) {
-	case map[string]any, []any:
-		return reflect.DeepEqual(got, want)
+	return sameJSON(got, want)
+}
+
+// sameJSON is strictly typed structural equality, with numbers compared by
+// exact decimal value so 5 and 5.0 are equal but 2^53 and 2^53+1 are not.
+func sameJSON(got, want any) bool {
+	switch w := want.(type) {
+	case json.Number:
+		g, ok := got.(json.Number)
+		return ok && scalarEqualsText(w, g.String())
+	case []any:
+		g, ok := got.([]any)
+		if !ok || len(g) != len(w) {
+			return false
+		}
+		for i := range w {
+			if !sameJSON(g[i], w[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		g, ok := got.(map[string]any)
+		if !ok || len(g) != len(w) {
+			return false
+		}
+		for k, wv := range w {
+			gv, ok := g[k]
+			if !ok || !sameJSON(gv, wv) {
+				return false
+			}
+		}
+		return true
+	default:
+		// A string, boolean or null: comparable, and unequal to any value of
+		// another dynamic type.
+		return got == want
 	}
-	// want is a number, boolean or null: comparable, and unequal to any
-	// value of another dynamic type.
-	return got == want
 }
 
 func scalarEqualsText(v any, s string) bool {
@@ -303,23 +349,46 @@ func scalarEqualsText(v any, s string) bool {
 		return s == "null"
 	case bool:
 		return s == strconv.FormatBool(v)
-	case float64:
-		n, ok := jsonNumber(s)
-		return ok && n == v
+	case json.Number:
+		want, ok := canonicalNumber(s)
+		if !ok {
+			return false
+		}
+		got, ok := canonicalNumber(v.String())
+		return ok && got == want
 	default:
 		return false
 	}
 }
 
-// jsonNumber parses s only when it is exactly a JSON number, without the
-// signs, prefixes, separators or spaces strconv would otherwise accept.
-func jsonNumber(s string) (float64, bool) {
+// canonicalNumber reduces s, only when it is exactly a JSON number (without
+// the signs, prefixes, separators or spaces strconv would otherwise accept),
+// to its sign, significant digits and exponent. Two spellings of one decimal
+// value ("5", "5.0", "50e-1") share a key and distinct values never do. The
+// value itself is never materialised, so a huge exponent costs nothing.
+func canonicalNumber(s string) (string, bool) {
 	if s == "" || (s[0] != '-' && (s[0] < '0' || s[0] > '9')) || strings.TrimSpace(s) != s || !json.Valid([]byte(s)) {
-		return 0, false
+		return "", false
 	}
-	n, err := strconv.ParseFloat(s, 64)
-	return n, err == nil
+	sign := ""
+	if rest, ok := strings.CutPrefix(s, "-"); ok {
+		sign, s = "-", rest
+	}
+	mantissa, expText, _ := strings.Cut(strings.ToLower(s), "e")
+	whole, frac, _ := strings.Cut(mantissa, ".")
+	digits := strings.TrimLeft(whole+frac, "0")
+	if digits == "" {
+		return "0", true // -0 equals 0
+	}
+	exp := new(big.Int)
+	if expText != "" {
+		exp.SetString(expText, 10) // json.Valid checked its digits
+	}
+	significant := strings.TrimRight(digits, "0")
+	exp.Add(exp, big.NewInt(int64(len(digits)-len(significant)-len(frac))))
+	return sign + significant + "e" + exp.String(), true
 }
+
 func predicateMatchValue(value any, exists bool, p predicate) bool {
 	if p.Exists != nil {
 		if exists != *p.Exists {
@@ -344,8 +413,7 @@ func predicateMatchValue(value any, exists bool, p predicate) bool {
 		wants = append([]json.RawMessage{want}, wants...)
 	}
 	for _, raw := range wants {
-		var x any
-		if json.Unmarshal(raw, &x) == nil && jsonEqual(value, x) {
+		if x, err := decodeJSON(raw); err == nil && jsonEqual(value, x) {
 			return true
 		}
 	}
