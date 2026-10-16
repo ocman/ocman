@@ -398,17 +398,13 @@ install-e2e-browsers: ## Install Playwright browser binaries
 test-race: ## Run Go tests with -race
 	go test -race ./internal/...
 
-# Run every Fuzz* target across internal/ for a short time budget. Fuzzing
-# is opt-in: `go test` skips fuzz targets unless -fuzz is passed, so the
-# regular test suite stays fast.
-test-fuzz: ## Run all Fuzz* targets for 10s each
-	@for pkg in $$(go list ./internal/...); do \
-		fuzzfns=$$(go test -list 'Fuzz.*' $$pkg 2>/dev/null | grep '^Fuzz' || true); \
-		for fn in $$fuzzfns; do \
-			echo "==> $$pkg $$fn"; \
-			go test -run='^$$' -fuzz=$$fn -fuzztime=10s $$pkg || exit 1; \
-		done; \
-	done
+# Run every Fuzz* target across internal/ for FUZZTIME each. Fuzzing is
+# opt-in: `go test` only runs the seed corpus unless -fuzz is passed, so the
+# regular test suite stays fast. A failing target does not stop the run;
+# failures are listed at the end and recorded under fuzz-failures/.
+FUZZTIME ?= 10s
+test-fuzz: ## Run all Fuzz* targets for FUZZTIME (default 10s) each
+	FUZZTIME=$(FUZZTIME) ./scripts/fuzz.sh
 
 # Print per-package coverage for internal/. Used to verify the NFR-3
 # coverage targets in spec/backend-hardening.

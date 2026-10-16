@@ -1,0 +1,66 @@
+name: Fuzz
+
+# Runs every Go fuzz target for longer than a developer would locally. Each
+# failing target gets a Forgejo issue (or a comment on the open one) with
+# the crashing input and repro steps; the inputs are also uploaded.
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: Fuzzing time per target (go test -fuzztime)
+        default: 60s
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: [ubuntu-latest, amd64]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      # Setup and caching mirror the CI backend job. The fuzz targets need
+      # no frontend build: internal/webui/static keeps a committed
+      # robots.txt, so the embed compiles without assets.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install zstd and jq
+        run: apt-get update && apt-get install -y zstd jq
+      # Restores the CI build cache; Go's fuzz cache (the corpus each run
+      # grows) lives under ~/.cache/go-build/fuzz and is saved with it.
+      - name: Cache Go build and module cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-fuzz-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-fuzz-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
+            go-fuzz-${{ runner.os }}-${{ runner.arch }}-
+            go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-${{ runner.arch }}-
+      - name: Fuzz
+        env:
+          FUZZTIME: ${{ github.event.inputs.fuzztime || '60s' }}
+        run: make test-fuzz FUZZTIME="${FUZZTIME}"
+      - name: Report failures as issues
+        if: failure()
+        env:
+          FORGEJO_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+          FORGEJO_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: ./scripts/fuzz-report-issues.sh
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: fuzz-failures
+          path: fuzz-failures/
+          retention-days: 30
