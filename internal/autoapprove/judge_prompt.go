@@ -121,10 +121,14 @@ func extractTextFromParts(msg map[string]interface{}) string {
 // Never infer a verdict from keywords in prose: an invalid reply fails closed.
 func parseJudgeResponse(text string) (judgeVerdict, string, bool) {
 	jsonText := strings.TrimSpace(text)
-	if strings.HasPrefix(jsonText, "```") {
-		if end := strings.LastIndex(jsonText, "```"); end > 3 {
-			jsonText = strings.TrimSpace(jsonText[strings.Index(jsonText, "\n")+1 : end])
+	if inner, ok := strings.CutPrefix(jsonText, "```"); ok {
+		// Keep only the fenced body. The info string ("json") needs no
+		// stripping, with or without a newline: the object scan below
+		// starts at the first '{'.
+		if end := strings.LastIndex(inner, "```"); end >= 0 {
+			inner = inner[:end]
 		}
+		jsonText = strings.TrimSpace(inner)
 	}
 	if start := strings.IndexByte(jsonText, '{'); start >= 0 {
 		jsonText = jsonText[start:]

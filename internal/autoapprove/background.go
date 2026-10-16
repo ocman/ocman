@@ -73,14 +73,18 @@ func (s *Service) Ensure(
 	go func() {
 		defer s.jobs.Done()
 		defer s.releaseAutoApprove(sessionID, permissionID)
-		s.backgroundAutoApprove(
-			ctx,
-			platformID,
-			adapter,
-			sessionID,
-			permissionID,
-			asked,
-		)
+		// A panic here would kill ocman. Recovering fails closed: no
+		// reply is sent, so the prompt stays pending for the user.
+		runWithRecover("auto-approve judge", func() {
+			s.backgroundAutoApprove(
+				ctx,
+				platformID,
+				adapter,
+				sessionID,
+				permissionID,
+				asked,
+			)
+		})
 	}()
 }
 
