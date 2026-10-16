@@ -100,8 +100,23 @@ and author-only GitHub PR filters.
 Conditions combine header and RFC 6901 JSON Pointer predicates with AND.
 They support only `equals`, `is one of`, `exists`, and `is missing`; scripts
 and regular expressions are not evaluated. With no conditions, every delivery
-runs the routine. A matching delivery sends the routine prompt unchanged,
-followed by this fixed untrusted-data envelope:
+runs the routine.
+
+Values compare by JSON type. Strings, booleans and `null` must be equal;
+numbers compare by exact decimal value, so `5`, `5.0` and `5e0` are equal
+while `9007199254740992` and `9007199254740993` are not. Arrays and objects
+compare element by element under the same rules. A string, which is how the
+routine form stores every value, also equals a number, boolean or `null`
+whose JSON text it is (`"5"` and `"5.0"` match `5`, `"true"` matches `true`),
+but `"01"` or `" 5"` match nothing, and an array or object never equals a
+string. Header values are text: they match strings and booleans
+case-insensitively and numbers by the same exact value. Pointers follow
+RFC 6901 strictly: an array index is `0` or a number without a leading zero
+(`/items/01` and `/items/-` match nothing), and `~` must be followed by `0`
+or `1`.
+
+A matching delivery sends the routine prompt unchanged, followed by this
+fixed untrusted-data envelope:
 
 ```json
 {
@@ -187,7 +202,11 @@ Scheduled runs use the same session behavior as manual runs.
   saved as an absolute instant.
 - **Cron** uses a standard five-field cron expression plus an IANA timezone,
   such as `0 9 * * 1-5` with `Europe/Brussels`. Ocman calculates each next
-  occurrence in that timezone after the previous run settles.
+  occurrence in that timezone after the previous run settles. An expression
+  with no occurrence in the next five years, such as `0 0 31 2 *`
+  (February 31), is rejected when saved. Routines saved with such an
+  expression before this check are not repaired and never run; edit their
+  schedule to fix them.
 
 The scheduler checks due routines every five seconds. Disable a routine to
 stop automatic runs without deleting it. Webhook delivery polling is
