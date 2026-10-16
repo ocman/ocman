@@ -262,6 +262,7 @@ const AssistantMessage: FC = () => {
       return isMutedTool((p as { toolName: string }).toolName);
     }
   );
+  const onlyTools = content.every((p) => p.type === 'tool-call' || (p.type === 'text' && !p.text.trim()));
 
   if (onlyMuted) {
     return (
@@ -280,7 +281,7 @@ const AssistantMessage: FC = () => {
     <>
       {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
-      <MessagePrimitive.Root className="oc-msg oc-msg-assistant" data-message-id={messageId}>
+      <MessagePrimitive.Root className={`oc-msg oc-msg-assistant${onlyTools ? ' oc-msg-tools' : ''}`} data-message-id={messageId}>
         <div className="oc-msg-body oc-md">
           <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
         </div>

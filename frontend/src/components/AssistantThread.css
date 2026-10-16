@@ -187,8 +187,11 @@
 }
 .oc-msg-muted {
   padding: 0;
-  margin: -5px 0;
+  margin: 0;
 }
+/* Consecutive compact tools share one rhythm, even across message boundaries. */
+:is(.oc-msg-muted, .oc-msg-tools:not(:has(.oc-tool))) + :is(.oc-msg-muted, .oc-msg-tools:not(:has(.oc-tool))) { margin-top: -12px; }
+.oc-tool-source { display: flow-root; }
 
 .oc-timeline-marker {
   position: relative;
@@ -878,7 +881,7 @@
   font-size: 11px;
   color: var(--overlay0);
   padding: 0;
-  margin: -1px 0;
+  margin: 0;
   line-height: 1.4;
 }
 .oc-read-arrow {
@@ -892,7 +895,7 @@
    with read/grep/glob lines instead of taking up a full card. The
    line is clickable to reveal args + output below it. */
 .oc-tool-compact {
-  margin: -1px 0;
+  margin: 0;
 }
 .oc-tool-compact-line,
 .oc-tool-compact-line.oc-button {

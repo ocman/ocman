@@ -132,6 +132,20 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe('tool-only message spacing', () => {
+  it.each(['__skill__', 'bash', 'some_mcp_tool'])('marks %s messages for compact spacing', (toolName) => {
+    message.content = [{ type: 'tool-call', toolName, toolCallId: 'call-1', argsText: 'completed\necho hello', result: 'Done' }];
+    const { container } = render(<AssistantThread />);
+    expect(container.querySelector('[data-message-id="assistant-1"]')).toHaveClass('oc-msg-tools');
+  });
+
+  it('keeps normal spacing for prose mixed with tools', () => {
+    message.content.push({ type: 'tool-call', toolName: '__skill__', toolCallId: 'call-1', argsText: 'Skill "example"' });
+    const { container } = render(<AssistantThread />);
+    expect(container.querySelector('[data-message-id="assistant-1"]')).not.toHaveClass('oc-msg-tools');
+  });
+});
+
 describe('turn actions', () => {
   it('groups speaker and bookmark at the turn end and switches the speaker to stop', async () => {
     const toggle = vi.fn();

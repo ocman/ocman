@@ -32,12 +32,12 @@ describe('ToolCallDisplay bash output', () => {
     renderTool({ toolName, argsText: 'completed\n@desc:Run tests\npnpm test', result: 'passed' });
 
     expect(screen.queryByTestId('shell-output-block')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /\$ pnpm test/ })).toHaveClass('oc-tool-compact-line');
+    expect(screen.getByRole('button', { name: 'Bash: Run tests' })).toHaveClass('oc-tool-compact-line');
     expect(screen.queryByText('passed')).not.toBeInTheDocument();
     expect(screen.queryByText('# Run tests')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /\$ pnpm test/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bash: Run tests' }));
     expect(screen.getByTestId('shell-output-block')).toHaveTextContent('passed');
-    fireEvent.click(screen.getByRole('button', { name: /\$ pnpm test/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bash: Run tests' }));
     expect(screen.queryByTestId('shell-output-block')).not.toBeInTheDocument();
   });
 
