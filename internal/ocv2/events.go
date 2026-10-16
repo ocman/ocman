@@ -43,11 +43,21 @@ func (c *compat) stream(r *http.Request, global bool) (*http.Response, error) {
 		resp.Request = r
 		return resp, nil
 	}
+	dir := ""
+	if !global {
+		dir = requestDirectory(r)
+	}
+	// Finish ownership bootstrap before exposing stream headers. The headless
+	// watcher starts its separate status seed only after Do returns; letting
+	// it overtake this snapshot can lose an exiting shell's owner forever.
+	activity, err := c.activity(r.Context(), dir)
+	if err != nil {
+		resp.Body.Close()
+		return finish(r, 0, nil, err)
+	}
 	pr, pw := io.Pipe()
 	t := &translator{c: c, ctx: r.Context(), global: global, out: pw, msgs: map[string]map[string]any{}, unseeded: map[string]bool{}, snapshots: map[string]bool{}}
-	if !global {
-		t.dir = requestDirectory(r)
-	}
+	t.dir, t.activity = dir, activity
 	go func() {
 		defer resp.Body.Close()
 		defer func() {
@@ -56,12 +66,6 @@ func (c *compat) stream(r *http.Request, global bool) (*http.Response, error) {
 				pw.CloseWithError(fmt.Errorf("opencode v2 event translation: %v", p))
 			}
 		}()
-		var err error
-		t.activity, err = c.activity(r.Context(), t.dir)
-		if err != nil {
-			pw.CloseWithError(err)
-			return
-		}
 		pw.CloseWithError(t.run(resp.Body))
 	}()
 	h := http.Header{}

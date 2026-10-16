@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -158,8 +157,8 @@ func TestActivitySnapshotErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer resp.Body.Close()
-			if _, err := io.ReadAll(resp.Body); err == nil {
-				t.Fatal("stream accepted an incomplete activity snapshot")
+			if resp.StatusCode != http.StatusBadGateway {
+				t.Fatalf("stream accepted an incomplete activity snapshot: HTTP %d", resp.StatusCode)
 			}
 		})
 	}

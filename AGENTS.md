@@ -1052,6 +1052,9 @@ minimal and match the surrounding code.
     `shell.exited` and `shell.deleted` alongside execution events. It emits idle
     only after both finish. Reconnects rebuild that view; unrelated shells with
     no session owner never hold a session busy.
+    Stream ownership bootstrap completes before returning headers, so the
+    headless watcher's later status seed cannot overtake it and lose an exiting
+    shell's final idle edge. Buffered lifecycle events are replayed afterward.
   Consequently there is no `STATUS_GRACE_MS` debounce and no sticky-busy
   merge in the sidebar — the value no longer lags, so compensating for
   lag would only add staleness. The queue's idle-edge flush still trusts
