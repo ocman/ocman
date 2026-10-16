@@ -211,6 +211,55 @@ describe('useSessionCapabilities model catalog cache', () => {
     expect(readModelCatalog('other')).toBeUndefined();
   });
 
+  it.each([false, true])('does not borrow provider metadata from another directory with availability %s', async (isAvailable) => {
+    clearModelCatalogCache();
+    const catalogA = { ...live, models: live.models.map((e) => ({ ...e, isAvailable })) };
+    vi.mocked(api.sessionModels).mockResolvedValueOnce(catalogA);
+    const first = render('a', '/a');
+    await waitFor(() => expect(first.result.current.modelEntries).toEqual(catalogA.models));
+    first.unmount();
+    let resolve!: (v: unknown) => void;
+    vi.mocked(api.sessionModels).mockReturnValueOnce(new Promise((r) => { resolve = r; }) as never);
+    const second = render('b', '/b');
+    const check = () => {
+      expect(second.result.current.modelOptions).toContain('anthropic/opus');
+      const opus = second.result.current.modelEntries.find((e) => e.model === 'opus');
+      expect(opus?.isAvailable).toBe(true);
+      expect(opus?.isProviderDefault).toBeUndefined();
+      expect(opus?.reasoning).toBeUndefined();
+    };
+    check();
+    await act(async () => { resolve({ hasProviders: false, models: [{ provider: 'anthropic', model: 'opus' }] }); });
+    check();
+  });
+
+  it('replaces borrowed metadata with the current directory catalog and strips it on a move', async () => {
+    clearModelCatalogCache();
+    writeModelCatalog('opencode', live.models.map((e) => ({ ...e, isAvailable: false })), '/a');
+    vi.mocked(api.sessionModels).mockResolvedValueOnce(live);
+    const { result, rerender } = renderHook(({ directory }) => useSessionCapabilities({
+      id: 'moving', platform: 'opencode', liveConnection: true, directory, sessionLoaded: true,
+    }), { initialProps: { directory: '/b' } });
+    await waitFor(() => expect(result.current.modelEntries).toEqual(live.models));
+    vi.mocked(api.sessionModels).mockRejectedValueOnce(new Error('offline'));
+    rerender({ directory: '/a' });
+    await act(async () => {});
+    expect(result.current.modelEntries[0]).toMatchObject({ provider: 'anthropic', isAvailable: true });
+    expect(result.current.modelEntries[0].reasoning).toBeUndefined();
+    expect(result.current.modelEntries[0].isProviderDefault).toBeUndefined();
+  });
+
+  it('does not restore another directory metadata from storage after a reload', () => {
+    clearModelCatalogCache();
+    writeModelCatalog('opencode', live.models, '/a');
+    clearModelCatalogCache(true);
+    expect(readModelCatalog('opencode', '/a')).toEqual([live.models[0]]);
+    const borrowed = readModelCatalog('opencode', '/b')![0];
+    expect(borrowed).toMatchObject({ provider: 'anthropic', model: 'opus', isFavorite: true, isAvailable: true });
+    expect(borrowed.reasoning).toBeUndefined();
+    expect(borrowed.isProviderDefault).toBeUndefined();
+  });
+
   it('reads the pinned list back from storage after a reload', () => {
     clearModelCatalogCache();
     writeModelCatalog('opencode', live.models);

@@ -6,13 +6,14 @@ import type { SessionModelEntry } from './api';
 // live instance refreshes it for all of them.
 // Memory keeps the full catalog; localStorage keeps only favorites, recents
 // and the session default so a reload still has the short list.
-// v3 keys by platform only (v2 was per directory and went stale).
-const KEY = 'ocman.modelCatalog.v3';
+// v4 records the source directory so scoped metadata never crosses projects.
+const KEY = 'ocman.modelCatalog.v4';
 const MAX_PLATFORMS = 30;
 
-type Stored = Record<string, SessionModelEntry[]>;
+type Catalog = { directory?: string; entries: SessionModelEntry[] };
+type Stored = Record<string, Catalog>;
 
-const memory = new Map<string, SessionModelEntry[]>();
+const memory = new Map<string, Catalog>();
 
 const modelKey = (e: SessionModelEntry) => `${e.provider}/${e.model}`;
 const isPinned = (e: SessionModelEntry) => !!e.isFavorite || !!e.isSessionDefault || (e.recentRank ?? 0) > 0;
@@ -30,10 +31,16 @@ function load(): Stored {
   }
 }
 
-/** The platform's last live catalog. */
-export function readModelCatalog(platform: string | undefined): SessionModelEntry[] | undefined {
+/** The platform's last live catalog, with scoped details only for its source directory. */
+export function readModelCatalog(platform: string | undefined, directory?: string): SessionModelEntry[] | undefined {
   if (!platform) return undefined;
-  return memory.get(platform) ?? load()[platform];
+  const catalog = memory.get(platform) ?? load()[platform];
+  if (!catalog) return undefined;
+  if (catalog.directory === directory) return catalog.entries;
+  // Only identities, display names and global pins can cross directories.
+  return catalog.entries.map(({ provider, model, providerName, modelName, isFavorite, recentRank }) => ({
+    provider, model, providerName, modelName, isFavorite, recentRank, isAvailable: true,
+  }));
 }
 
 /** Fresh entries from a response without provider data, completed with the
@@ -58,14 +65,14 @@ export function mergeWithCatalog(fresh: SessionModelEntry[], cached: SessionMode
   return [...head, ...tail];
 }
 
-export function writeModelCatalog(platform: string | undefined, entries: SessionModelEntry[]) {
+export function writeModelCatalog(platform: string | undefined, entries: SessionModelEntry[], directory?: string) {
   if (!platform || entries.length === 0) return;
   memory.delete(platform);
-  memory.set(platform, entries);
+  memory.set(platform, { directory, entries });
   if (memory.size > MAX_PLATFORMS) memory.delete(memory.keys().next().value!);
   const stored = load();
   delete stored[platform];
-  stored[platform] = entries.filter(isPinned);
+  stored[platform] = { directory, entries: entries.filter(isPinned) };
   const keys = Object.keys(stored);
   for (const k of keys.slice(0, Math.max(0, keys.length - MAX_PLATFORMS))) delete stored[k];
   try {

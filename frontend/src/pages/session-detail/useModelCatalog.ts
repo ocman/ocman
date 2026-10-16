@@ -39,25 +39,26 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
   // the fetch replaces it.
   useEffect(() => {
     if (!sessionLoaded) return;
-    const cached = readModelCatalog(platform);
+    const cached = readModelCatalog(platform, directory);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (cached) applyModels(cached);
-  }, [sessionLoaded, platform, applyModels]);
+  }, [sessionLoaded, platform, directory, applyModels]);
 
   // Only a response with the live provider catalog says which models are
   // available. Without it, complete the response from the platform's last
-  // live catalog; failing that, show it without flagging every model as
+  // live catalog, using provider details only from the same directory.
+  // Failing that, show it without flagging every model as
   // unavailable, which put a warning on the model of a running session.
   const receiveModels = useCallback((resp: SessionModelsResponse) => {
     const entries = resp.models || [];
     if (resp.hasProviders) {
-      writeModelCatalog(platform, entries);
+      writeModelCatalog(platform, entries, directory);
       applyModels(entries);
       return;
     }
-    const cached = readModelCatalog(platform);
+    const cached = readModelCatalog(platform, directory);
     applyModels(cached ? mergeWithCatalog(entries, cached) : availabilityUnknown(entries));
-  }, [platform, applyModels]);
+  }, [platform, directory, applyModels]);
 
   const refreshModels = useCallback((signal?: AbortSignal) => {
     if (!id || activeScope.current !== scope) return;
@@ -68,7 +69,7 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
     }).catch(() => {
       if (!isCurrent()) return;
       // Fallback: the cached catalog, else the historical-only list.
-      const cached = readModelCatalog(platform);
+      const cached = readModelCatalog(platform, directory);
       if (cached) {
         seedModels(cached);
         return;
@@ -81,7 +82,7 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
         })
         .catch(() => { /* keep existing data on failure */ });
     });
-  }, [id, platform, getModels, receiveModels, seedModels, scope]);
+  }, [id, platform, directory, getModels, receiveModels, seedModels, scope]);
 
   // Toggle a favorite model. Optimistic flip in the picker first,
   // then re-fetch for authoritative ordering. On error revert.
