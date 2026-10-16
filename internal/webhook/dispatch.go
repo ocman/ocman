@@ -294,17 +294,19 @@ func pointerValue(root any, pointer string) (any, bool) {
 	}
 	cur := root
 	for _, part := range strings.Split(pointer[1:], "/") {
-		part = strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")
+		part, ok := unescapePointerToken(part)
+		if !ok {
+			return nil, false
+		}
 		switch v := cur.(type) {
 		case map[string]any:
-			var ok bool
 			cur, ok = v[part]
 			if !ok {
 				return nil, false
 			}
 		case []any:
-			var i int
-			if _, err := fmt.Sscan(part, &i); err != nil || i < 0 || i >= len(v) {
+			i, ok := pointerIndex(part)
+			if !ok || i >= len(v) {
 				return nil, false
 			}
 			cur = v[i]
@@ -313,6 +315,54 @@ func pointerValue(root any, pointer string) (any, bool) {
 		}
 	}
 	return cur, true
+}
+
+// unescapePointerToken decodes one RFC 6901 reference token: "~1" is "/" and
+// "~0" is "~", decoded in that order so "~01" stays "~1". Any other "~" is an
+// invalid escape and the pointer matches nothing.
+func unescapePointerToken(token string) (string, bool) {
+	if !strings.Contains(token, "~") {
+		return token, true
+	}
+	var b strings.Builder
+	for i := 0; i < len(token); i++ {
+		if token[i] != '~' {
+			b.WriteByte(token[i])
+			continue
+		}
+		if i+1 >= len(token) {
+			return "", false
+		}
+		switch token[i+1] {
+		case '0':
+			b.WriteByte('~')
+		case '1':
+			b.WriteByte('/')
+		default:
+			return "", false
+		}
+		i++
+	}
+	return b.String(), true
+}
+
+// pointerIndex parses an RFC 6901 array index: "0" or a decimal without a
+// leading zero, sign, spaces or separators. "-" (past the end) never exists.
+func pointerIndex(token string) (int, bool) {
+	if token == "" || (len(token) > 1 && token[0] == '0') {
+		return 0, false
+	}
+	n := 0
+	for _, c := range token {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+		if n > 1<<31 {
+			return 0, false // beyond any decodable array
+		}
+	}
+	return n, true
 }
 
 // Redeliver replays a logged delivery as a fresh one: a new delivery ID, so

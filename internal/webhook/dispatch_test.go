@@ -31,6 +31,52 @@ func TestMatchesHeaderAndJSONPointerPredicates(t *testing.T) {
 	}
 }
 
+// RFC 6901: an array index is "0" or a decimal without leading zeros, and
+// "~1" is unescaped before "~0". fmt.Sscan used to accept "01", "+1", "0x1",
+// "1abc", "1_0" and " 1".
+func TestPointerValueFollowsRFC6901(t *testing.T) {
+	var doc any
+	if err := json.Unmarshal([]byte(`{"items":["a","b","c","d","e","f","g","h","i","j","k"],"a/b":1,"m~n":2,"m~2n":6,"m~":7,"~1":3,"":4,"x":{"":5}}`), &doc); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		pointer string
+		want    any
+		ok      bool
+	}{
+		{"/items/0", "a", true},
+		{"/items/1", "b", true},
+		{"/items/10", "k", true},
+		{"/items/01", nil, false},
+		{"/items/00", nil, false},
+		{"/items/+1", nil, false},
+		{"/items/-1", nil, false},
+		{"/items/-", nil, false},
+		{"/items/0x1", nil, false},
+		{"/items/1abc", nil, false},
+		{"/items/1_0", nil, false},
+		{"/items/ 1", nil, false},
+		{"/items/1 ", nil, false},
+		{"/items/", nil, false},
+		{"/items/11", nil, false},
+		{"/items/99999999999999999999", nil, false},
+		{"/a~1b", float64(1), true},
+		{"/m~0n", float64(2), true},
+		{"/~01", float64(3), true},
+		{"/m~2n", nil, false},
+		{"/m~", nil, false},
+		{"/", float64(4), true},
+		{"/x/", float64(5), true},
+		{"items", nil, false},
+	}
+	for _, test := range tests {
+		got, ok := pointerValue(doc, test.pointer)
+		if ok != test.ok || (ok && got != test.want) {
+			t.Errorf("pointerValue(%q) = %v, %v; want %v, %v", test.pointer, got, ok, test.want, test.ok)
+		}
+	}
+}
+
 func TestMatchesInvalidJSONIsIgnored(t *testing.T) {
 	e := relay.InboxEnvelope{Body: []byte("not json")}
 	if ok, err := matches(e, state.WebhookSubscription{JSONPredicatesJSON: `{"/x":{"exists":true}}`}); err != nil || ok {
