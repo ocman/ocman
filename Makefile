@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -425,7 +425,7 @@ coverage-check: ## Compare coverage/*.json against $(BASELINE_DIR)
 	./scripts/coverage-ratchet.sh "$(BASELINE_DIR)" $(SUITE)
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers lint-settings-rows lint-css-tokens
+lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers lint-settings-rows lint-css-tokens lint-fuzz-scripts
 
 lint-backend:
 	go vet ./...
@@ -465,6 +465,13 @@ lint-settings-rows:
 lint-css-tokens:
 	./scripts/check_css_tokens_test.sh
 	./scripts/check-css-tokens.sh
+
+# Self-tests for the weekly fuzz job's scripts, against fake go and curl
+# binaries: a run that fuzzes nothing must fail, and failures must reach
+# the issue tracker. Needs jq.
+lint-fuzz-scripts:
+	./scripts/fuzz_test.sh
+	./scripts/fuzz_report_issues_test.sh
 
 # Refresh the Go DTO snapshot (frontend/src/lib/contracts/go-dtos.json) that
 # the frontend's hand-written API types are checked against. The Go test

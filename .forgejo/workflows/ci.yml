@@ -39,9 +39,10 @@ jobs:
         working-directory: frontend
         run: pnpm exec tsc -b
       # The guard scripts all scan with ripgrep, which the runner image
-      # does not ship. They were passing vacuously on exit 127.
-      - name: Install ripgrep
-        run: apt-get update && apt-get install -y ripgrep
+      # does not ship. They were passing vacuously on exit 127. The fuzz
+      # script self-tests need jq.
+      - name: Install ripgrep and jq
+        run: apt-get update && apt-get install -y ripgrep jq
       - name: Platform-branching guard
         run: ./scripts/check-platform-branching.sh
       - name: Settings-row guard
@@ -54,6 +55,10 @@ jobs:
         run: |
           ./scripts/check_css_tokens_test.sh
           ./scripts/check-css-tokens.sh
+      - name: Fuzz script self-tests
+        run: |
+          ./scripts/fuzz_test.sh
+          ./scripts/fuzz_report_issues_test.sh
       - name: Test with coverage
         run: make coverage SUITE=frontend
       - name: Fetch coverage baseline
