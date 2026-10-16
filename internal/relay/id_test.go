@@ -76,6 +76,10 @@ func TestSplitID_Rejects(t *testing.T) {
 		{"non base64url random", strings.Repeat("!", 22)},
 		{"traversal", "../../etc-passwd"},
 		{"slash injection", "20260813-aa/bb"},
+		// The base64 decoder skips CR/LF, so these have the right encoded
+		// length but decode to fewer than idRandomBytes bytes.
+		{"carriage returns", "20260813-AAAAAAAAAAAAAAAA\r\r\r\r\r\r"},
+		{"newlines", "20260813-AAAAAAAAAAAAAAAAAAAA\n\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

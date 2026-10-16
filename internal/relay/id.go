@@ -46,10 +46,9 @@ func splitID(id string) (date, random string, ok bool) {
 	if _, err := time.Parse(dateLayout, date); err != nil {
 		return "", "", false
 	}
-	if len(random) != base64.RawURLEncoding.EncodedLen(idRandomBytes) {
-		return "", "", false
-	}
-	if _, err := base64.RawURLEncoding.DecodeString(random); err != nil {
+	// validRandomString checks the decoded length too: the decoder skips
+	// CR/LF, so an encoded-length check alone admits them into storage keys.
+	if !validRandomString(random, idRandomBytes) {
 		return "", "", false
 	}
 	return date, random, true
