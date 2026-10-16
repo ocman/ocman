@@ -2,6 +2,7 @@ package routines
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,9 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 	if !input.KeepSchedule {
 		var err error
 		if config, due, err = encodeSchedule(input.Schedule, now); err != nil {
+			if errors.Is(err, errCronNeverFires) {
+				return state.Routine{}, fmt.Errorf("invalid schedule: %w", err)
+			}
 			return state.Routine{}, fmt.Errorf("invalid schedule: %w", ErrValidation)
 		}
 	}
@@ -72,6 +76,12 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 		PermissionRulesJSON:        string(rulesJSON),
 	}, nil
 }
+
+// errCronNeverFires rejects an expression that parses but matches no real
+// date, such as February 31. The cron library's next-occurrence search is
+// bounded (five years) and answers the zero time when it finds none; saving
+// that would leave a routine that is never due.
+var errCronNeverFires = fmt.Errorf("cron expression never fires (it matches no date within five years): %w", ErrValidation)
 
 func encodeSchedule(schedule Schedule, now time.Time) (string, int64, error) {
 	switch schedule.Kind {
@@ -108,11 +118,15 @@ func encodeSchedule(schedule Schedule, now time.Time) (string, int64, error) {
 		if err != nil {
 			return "", 0, err
 		}
+		next := parsed.Next(now.In(location))
+		if next.IsZero() {
+			return "", 0, errCronNeverFires
+		}
 		config, _ := json.Marshal(struct {
 			Cron     string `json:"cron"`
 			Timezone string `json:"timezone"`
 		}{schedule.Cron, zone})
-		return string(config), parsed.Next(now.In(location)).UnixMilli(), nil
+		return string(config), next.UnixMilli(), nil
 	default:
 		return "", 0, ErrValidation
 	}
