@@ -37,7 +37,7 @@
 
 .platform-icon { display: inline-flex; align-items: center; vertical-align: middle; }
 .platform-icon-separator { margin: 0 6px; opacity: 0.5; }
-.platform-icon-remote { margin-right: 4px; color: var(--text-dim); }
+.platform-icon-remote { position: relative; top: -2px; margin-right: 6px; color: var(--text-dim); }
 .platform-icon img { position: relative; top: -2px; filter: grayscale(1); opacity: 0.55; }
 .platform-icon:hover img,
 .platform-icon:focus-visible img { filter: none; opacity: 1; }
