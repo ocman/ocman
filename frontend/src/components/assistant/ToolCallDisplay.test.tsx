@@ -31,20 +31,22 @@ describe('ToolCallDisplay bash output', () => {
     useUiStore.setState({ compactToolCalls: true });
     renderTool({ toolName, argsText: 'completed\n@desc:Run tests\npnpm test', result: 'passed' });
 
-    expect(screen.getByTestId('shell-output-block')).toHaveTextContent('$ pnpm test');
-    expect(screen.getByTestId('shell-output-block')).not.toHaveTextContent('passed');
+    expect(screen.queryByTestId('shell-output-block')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /\$ pnpm test/ })).toHaveClass('oc-tool-compact-line');
+    expect(screen.queryByText('passed')).not.toBeInTheDocument();
     expect(screen.queryByText('# Run tests')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Show full output' }));
+    fireEvent.click(screen.getByRole('button', { name: /\$ pnpm test/ }));
     expect(screen.getByTestId('shell-output-block')).toHaveTextContent('passed');
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse output' }));
-    expect(screen.getByTestId('shell-output-block')).not.toHaveTextContent('passed');
+    fireEvent.click(screen.getByRole('button', { name: /\$ pnpm test/ }));
+    expect(screen.queryByTestId('shell-output-block')).not.toBeInTheDocument();
   });
 
-  it('does not offer an output toggle for an empty compact command', () => {
+  it('shows a running compact command as a muted item without a shell block', () => {
     useUiStore.setState({ compactToolCalls: true });
     renderTool({ argsText: 'running\nsleep 10' });
-    expect(screen.getByTestId('bash-spinner')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /\$ sleep 10/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTitle('Running')).toBeInTheDocument();
+    expect(screen.queryByTestId('shell-output-block')).not.toBeInTheDocument();
   });
 
   it('expands compact output for printing', () => {

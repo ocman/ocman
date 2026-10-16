@@ -894,7 +894,8 @@
 .oc-tool-compact {
   margin: -1px 0;
 }
-.oc-tool-compact-line {
+.oc-tool-compact-line,
+.oc-tool-compact-line.oc-button {
   display: flex;
   align-items: flex-start;
   gap: 6px;
@@ -914,6 +915,14 @@
 }
 .oc-tool-compact-line:hover {
   color: var(--text);
+}
+.oc-tool-compact-line.oc-button {
+  height: auto;
+  justify-content: flex-start;
+  border-radius: 0;
+}
+.oc-tool-compact-line.oc-button:hover:not(:disabled) {
+  background: none;
 }
 .oc-tool-compact-line .oc-read-arrow {
   color: var(--surface2);

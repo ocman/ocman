@@ -31,6 +31,7 @@ import { FactoryMarkerCard } from '../FactoryMarkerCard';
 import { factoryCardFromToolResult } from '../factoryCards';
 import { AnsiText, AnsweredQuestionBlock, BashPrompt, ToolDuration } from './toolRenderers';
 import { LazyInlineDiff } from './LazyInlineDiff';
+import { CompactToolCall } from './CompactToolCall';
 import { parseDiffPayload, renderOutput, renderPatch, shellOutputIsLong, shellOutputPreview, toolOutputPreview } from './toolOutputFormat';
 /**
  * Tool-call renderer. Validated Ocman approval artifacts render below the
@@ -77,9 +78,9 @@ function toolApprovals(artifact: unknown): ToolApproval[] {
   });
 }
 
-const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, artifact, result }) => {
-  const [expandedState, setExpanded] = useState(false);
-  const compactToolCalls = useUiStore((s) => s.compactToolCalls);
+const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolName, argsText: rawArgsText, artifact, result, full = false, ...props }) => {
+  const [expandedState, setExpanded] = useState(full);
+  const compactToolCalls = useUiStore((s) => s.compactToolCalls) && !full;
   // While printing / saving to PDF, force every block open so the
   // exported transcript is complete. CSS lifts the max-height caps
   // (see the @media print block in tokens.css); this additionally
@@ -234,6 +235,11 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
     );
   }
 
+  if (compactToolCalls && (/^(?:mcp_)?(?:bash|edit|write)$/i.test(toolName) || toolName === 'apply_patch')) {
+    return <CompactToolCall toolName={toolName} args={remainingArgs} status={toolStatus} expanded={expanded} onToggle={() => setExpanded(!expanded)} timeInfo={timeInfo}>
+      <ToolCallBody {...props} toolName={toolName} argsText={rawArgsText} artifact={artifact} result={result} full />
+    </CompactToolCall>;
+  }
   const isApplyPatch = toolName === 'apply_patch';
   if (isApplyPatch) {
     const patchSource = remainingArgs.trim();
@@ -300,12 +306,12 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
     // The command is whatever is left after the status/meta lines, kept
     // verbatim — multi-line commands (heredocs) render as typed.
     const command = remainingArgs.trim();
-    const description = compactToolCalls && !expanded ? undefined : shellDescription;
+    const description = shellDescription;
     const bashOutput = outputDisplay;
     const bashIsLong = shellOutputIsLong(bashOutput);
     const forcePrintCollapse = isPrinting && printCollapse;
-    const bashExpanded = expanded || (!compactToolCalls && !bashIsLong);
-    const bashOutputDisplay = bashExpanded ? bashOutput : compactToolCalls ? '' : shellOutputPreview(bashOutput);
+    const bashExpanded = expanded || !bashIsLong;
+    const bashOutputDisplay = bashExpanded ? bashOutput : shellOutputPreview(bashOutput);
     const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
       <div className={`oc-tool oc-tool-shell ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
@@ -313,7 +319,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
             <pre className="oc-shell-block" data-testid="shell-output-block">
 {description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <span className="oc-shell-cmd" dangerouslySetInnerHTML={{ __html: highlightDiffCode(command, 'bash') }} />{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
-              {(compactToolCalls ? !!bashOutput : bashIsLong) && (
+              {bashIsLong && (
                 <button
                   type="button"
                   className="oc-tool-expand oc-shell-output-toggle"
