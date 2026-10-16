@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
 
 var yoloRules = []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}
@@ -65,6 +66,42 @@ func TestApplySessionRules(t *testing.T) {
 			// A second sweep, or the asked-event path, must not answer twice.
 			if svc.ApplySessionRules(t.Context(), "opencode", fp, tt.sessionID, "perm", "bash", []string{"rm -rf build"}, nil) || rec.count() != 1 {
 				t.Fatalf("prompt answered twice: %d replies", rec.count())
+			}
+		})
+	}
+}
+
+// TestApplySessionRulesExactPatterns covers provider (Claude) grants, which
+// are stored escaped: an "Allow always" for `cat *` is `cat \*` and must not
+// read as OpenCode's `cat /*`, while OpenCode rules keep their own semantics.
+func TestApplySessionRulesExactPatterns(t *testing.T) {
+	exact := providerprotocol.ExactPattern
+	parents := map[string]string{"child": "parent"}
+	tests := []struct {
+		name    string
+		exact   bool
+		rule    string
+		pattern string
+		want    bool
+	}{
+		{"exact star grant does not glob", true, exact("cat *"), exact("cat /etc/shadow"), false},
+		{"exact question grant does not glob", true, exact("rm foo?"), exact("rm foo/x"), false},
+		{"exact star grant allows its own call", true, exact("cat *"), exact("cat *"), true},
+		{"provider glob rule still globs", true, "git *", exact("git status"), true},
+		{"provider escaped backslash is literal", true, exact(`printf '\*'`), exact(`printf '\*'`), true},
+		{"opencode backslash still reads as slash", false, `cat \*`, "cat /etc/shadow", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &replyRecorder{}
+			rules := map[string][]platforms.PermissionRule{"parent": {{Permission: "bash", Pattern: tt.rule, Action: "allow"}}}
+			fp := &fakePlatform{id: "claudecode", rules: rules, exactPatterns: tt.exact, respondPermissionFn: rec.record}
+			svc := NewService(Deps{ParentSessionID: func(_ context.Context, id string) (string, bool) {
+				p, ok := parents[id]
+				return p, ok
+			}})
+			if got := svc.ApplySessionRules(t.Context(), "claudecode", fp, "child", "perm", "bash", []string{tt.pattern}, nil); got != tt.want {
+				t.Fatalf("ApplySessionRules(rule %q, pattern %q) = %v, want %v", tt.rule, tt.pattern, got, tt.want)
 			}
 		})
 	}

@@ -114,10 +114,17 @@ func (a *Adapter) Close() {
 	}
 	a.client.CloseIdleConnections()
 }
-func (a *Adapter) ID() platforms.ID                     { return platforms.ID(a.hello.PlatformID) }
-func (a *Adapter) DisplayName() string                  { return a.hello.PlatformID }
-func (a *Adapter) Capabilities() platforms.Capabilities { return a.hello.Capabilities.Capabilities }
-func (a *Adapter) Hello() providerprotocol.Hello        { return a.hello }
+func (a *Adapter) ID() platforms.ID    { return platforms.ID(a.hello.PlatformID) }
+func (a *Adapter) DisplayName() string { return a.hello.PlatformID }
+
+// Capabilities always reports ExactPatterns: every provider's patterns and
+// rules use providerprotocol's escapes, the semantics Rules.Decide applies.
+func (a *Adapter) Capabilities() platforms.Capabilities {
+	caps := a.hello.Capabilities.Capabilities
+	caps.ExactPatterns = true
+	return caps
+}
+func (a *Adapter) Hello() providerprotocol.Hello { return a.hello }
 
 // ReplyOutcomes is false for a (draining) supervisor that predates
 // CodeReplyUnrecorded: its generic 503 may follow a delivered reply.

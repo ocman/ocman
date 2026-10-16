@@ -45,6 +45,27 @@ func TestHelloWireCapabilities(t *testing.T) {
 	}
 }
 
+func TestMatchPattern(t *testing.T) {
+	for _, tt := range []struct {
+		pattern, s string
+		want       bool
+	}{
+		{`a \*`, "a *", true},
+		{`a \*`, "a", false}, // an escaped trailing star stays literal
+		{`a\b`, `a\b`, true}, // a lone backslash is literal
+		{`cat \*`, "cat /etc/shadow", false},
+		{`rm foo\?`, "rm foo/x", false},
+		{"git *", "git", true},
+		{"git *", "git status", true},
+		{"", "anything", true},
+		{"?", "ab", false},
+	} {
+		if got := MatchPattern(tt.pattern, tt.s); got != tt.want {
+			t.Errorf("MatchPattern(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+		}
+	}
+}
+
 func TestExactPatternRoundTrip(t *testing.T) {
 	for in, want := range map[string]string{
 		"echo *":           `echo \*`,

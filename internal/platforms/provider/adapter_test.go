@@ -129,6 +129,10 @@ func TestSessionContract(t *testing.T) {
 	if a.ID() != "fake" || a.DisplayName() != "fake" || !a.Available(t.Context()) || a.Hello().CLIVersion != "test-only" {
 		t.Fatal("handshake")
 	}
+	// Provider rules are escaped (ExactPattern) whatever the hello says.
+	if !a.Capabilities().ExactPatterns {
+		t.Fatal("provider capabilities must report ExactPatterns")
+	}
 	if a.Owns(t.Context(), "s") {
 		t.Fatal("ownership before observation")
 	}

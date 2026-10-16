@@ -309,9 +309,6 @@ func TestExactPatternsDoNotGlob(t *testing.T) {
 			}
 		}
 	}
-	if !wildcard(`a \*`, "a *") || wildcard(`a \*`, "a") || !wildcard(`a\b`, `a\b`) {
-		t.Error("escaped trailing star must stay literal; a lone backslash is literal")
-	}
 }
 
 // An Allow-always saved before its reply grants nothing until the outcome

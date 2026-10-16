@@ -1,6 +1,9 @@
 package providerprotocol
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // Permission patterns use OpenCode's wildcard syntax (* and ?) plus one
 // escape: a backslash before *, ? or another backslash makes that character
@@ -22,6 +25,35 @@ func ExactPattern(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+// MatchPattern is OpenCode's Wildcard.match with the escape above: * and ?
+// glob, and a trailing " *" also matches the bare command. An empty pattern
+// (flat permissions) matches all. A backslash escapes *, ? and itself, so an
+// ExactPattern rule never globs.
+func MatchPattern(pattern, s string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+	var parts []string
+	for i := 0; i < len(pattern); i++ {
+		switch c := pattern[i]; {
+		case c == '\\' && i+1 < len(pattern) && strings.IndexByte(`*?\`, pattern[i+1]) >= 0:
+			i++
+			parts = append(parts, regexp.QuoteMeta(pattern[i:i+1]))
+		case c == '*':
+			parts = append(parts, ".*")
+		case c == '?':
+			parts = append(parts, ".")
+		default:
+			parts = append(parts, regexp.QuoteMeta(pattern[i:i+1]))
+		}
+	}
+	if n := len(parts); n >= 2 && parts[n-1] == ".*" && parts[n-2] == " " {
+		parts = append(parts[:n-2], "( .*)?")
+	}
+	ok, _ := regexp.MatchString("^(?s:"+strings.Join(parts, "")+")$", s)
+	return ok
 }
 
 // PatternValue is the literal value an exact pattern stands for: the

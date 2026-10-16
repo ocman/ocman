@@ -124,6 +124,11 @@ type Capabilities struct {
 	// SetPermissionRules). Frontend gates the session permission-mode
 	// lock on this flag.
 	PermissionRules bool `json:"permissionRules"`
+	// ExactPatterns reports that the platform's permission patterns and
+	// rules use providerprotocol's escapes (a backslash makes *, ? or
+	// itself literal), so an exact "Allow always" grant never globs.
+	// Without it rules follow OpenCode, where a backslash reads as "/".
+	ExactPatterns bool `json:"exactPatterns,omitempty"`
 
 	// Revert reports whether /undo and /redo (Platform revert/unrevert)
 	// work; the composer hides them otherwise (FR-8).

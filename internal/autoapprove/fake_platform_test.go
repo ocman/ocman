@@ -24,6 +24,8 @@ type fakePlatform struct {
 	// detail is the transcript Session serves; nil reports not found.
 	detail *platforms.SessionDetail
 	rules  map[string][]platforms.PermissionRule
+	// exactPatterns reports Capabilities.ExactPatterns (provider escapes).
+	exactPatterns bool
 }
 
 func (f *fakePlatform) Session(context.Context, string, int, int) (*platforms.SessionDetail, error) {
@@ -34,7 +36,7 @@ func (f *fakePlatform) Session(context.Context, string, int, int) (*platforms.Se
 }
 
 func (f *fakePlatform) Capabilities() platforms.Capabilities {
-	return platforms.Capabilities{PermissionRules: f.rules != nil}
+	return platforms.Capabilities{PermissionRules: f.rules != nil, ExactPatterns: f.exactPatterns}
 }
 
 func (f *fakePlatform) PermissionRules(_ context.Context, sessionID string) ([]platforms.PermissionRule, error) {

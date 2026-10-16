@@ -4,7 +4,36 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
+
+func TestAllowsExact(t *testing.T) {
+	exact := providerprotocol.ExactPattern
+	rule := func(pattern, action string) platforms.PermissionRule {
+		return platforms.PermissionRule{Permission: "bash", Pattern: pattern, Action: action}
+	}
+	tests := []struct {
+		name     string
+		rules    []platforms.PermissionRule
+		patterns []string
+		want     bool
+	}{
+		{"escaped star grant is exact", []platforms.PermissionRule{rule(exact("cat *"), "allow")}, []string{exact("cat /etc/shadow")}, false},
+		{"escaped star grant allows itself", []platforms.PermissionRule{rule(exact("cat *"), "allow")}, []string{exact("cat *")}, true},
+		{"escaped question grant is exact", []platforms.PermissionRule{rule(exact("rm foo?"), "allow")}, []string{exact("rm foo/x")}, false},
+		{"glob rule globs", []platforms.PermissionRule{rule("git *", "allow")}, []string{exact("git status"), "git"}, true},
+		{"empty rule pattern matches all", []platforms.PermissionRule{rule("", "allow")}, []string{exact("ls")}, true},
+		{"last match wins", []platforms.PermissionRule{rule("*", "allow"), rule("rm *", "deny")}, []string{exact("rm x")}, false},
+		{"no rules asks", nil, []string{"ls"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AllowsExact(tt.rules, "bash", tt.patterns); got != tt.want {
+				t.Fatalf("AllowsExact = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestAllows(t *testing.T) {
 	yolo := []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}

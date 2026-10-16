@@ -108,6 +108,10 @@
         "omitempty": false
       },
       {
+        "name": "exactPatterns",
+        "omitempty": true
+      },
+      {
         "name": "fileChanges",
         "omitempty": false
       },

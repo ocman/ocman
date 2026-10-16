@@ -8,9 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -206,7 +204,7 @@ func (r *Rules) Decide(prompt platforms.LivePrompt) string {
 		value := providerprotocol.PatternValue(pattern)
 		action := "ask"
 		for _, rule := range rules {
-			if wildcard(rule.Permission, permission) && wildcard(rule.Pattern, value) {
+			if providerprotocol.MatchPattern(rule.Permission, permission) && providerprotocol.MatchPattern(rule.Pattern, value) {
 				action = rule.Action
 			}
 		}
@@ -232,35 +230,6 @@ func promptStrings(v any) []string {
 		}
 	}
 	return out
-}
-
-// wildcard is OpenCode's Wildcard.match: * and ? glob, and a trailing " *"
-// also matches the bare command. An empty pattern (flat permissions) matches
-// all. A backslash escapes *, ? and itself (providerprotocol.ExactPattern),
-// so an exact approval never globs.
-func wildcard(pattern, s string) bool {
-	if pattern == "" || pattern == "*" {
-		return true
-	}
-	var parts []string
-	for i := 0; i < len(pattern); i++ {
-		switch c := pattern[i]; {
-		case c == '\\' && i+1 < len(pattern) && strings.IndexByte(`*?\`, pattern[i+1]) >= 0:
-			i++
-			parts = append(parts, regexp.QuoteMeta(pattern[i:i+1]))
-		case c == '*':
-			parts = append(parts, ".*")
-		case c == '?':
-			parts = append(parts, ".")
-		default:
-			parts = append(parts, regexp.QuoteMeta(pattern[i:i+1]))
-		}
-	}
-	if n := len(parts); n >= 2 && parts[n-1] == ".*" && parts[n-2] == " " {
-		parts = append(parts[:n-2], "( .*)?")
-	}
-	ok, _ := regexp.MatchString("^(?s:"+strings.Join(parts, "")+")$", s)
-	return ok
 }
 
 // SetRules makes the adapter answer rule-decided prompts itself and serve
