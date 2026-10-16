@@ -142,7 +142,8 @@ func parseInt64Param(r *http.Request, name string, fallback int64) int64 {
 }
 
 // sortAndLimitSessions sorts a combined multi-platform session slice by
-// recency (bucketed into 5-minute windows) and truncates to at most limit entries.
+// recency (bucketed into 5-minute windows) and truncates to at most limit
+// entries. A negative limit truncates nothing; callers validate user input.
 func sortAndLimitSessions(sessions []db.Session, limit int) []db.Session {
 	const bucketMs = 5 * 60 * 1000
 	sort.SliceStable(sessions, func(i, j int) bool {
@@ -155,7 +156,7 @@ func sortAndLimitSessions(sessions []db.Session, limit int) []db.Session {
 		}
 		return sessions[i].Title < sessions[j].Title
 	})
-	if len(sessions) > limit {
+	if limit >= 0 && len(sessions) > limit {
 		return sessions[:limit]
 	}
 	return sessions

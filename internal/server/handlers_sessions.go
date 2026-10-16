@@ -22,6 +22,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("dir")
 	since := parseInt64Param(r, "since", 0)
 	limit := parseIntParam(r, "limit", 500)
+	if limit < 0 {
+		limit = 500
+	}
 
 	ctx := r.Context()
 	// Concurrent, non-blocking fan-out across local + remote adapters.

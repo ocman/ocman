@@ -43,6 +43,9 @@ type notifyPrompt struct {
 func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	since := parseInt64Param(r, "since", 0)
 	limit := parseIntParam(r, "limit", 500)
+	if limit < 0 {
+		limit = 500
+	}
 	var out []notifyEntry
 	var err error
 	if r.URL.Query().Get("includeDone") == "1" {

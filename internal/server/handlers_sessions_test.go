@@ -315,6 +315,44 @@ func TestHandleSessions_LimitParameterRespected(t *testing.T) {
 	}
 }
 
+// A negative limit is invalid input: it must fall back to the default
+// instead of panicking on a negative slice bound.
+func TestHandleSessions_NegativeLimitFallsBackToDefault(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	var sessions []db.Session
+	for i := 0; i < 3; i++ {
+		sessions = append(sessions, mkSession("fake", fmt.Sprintf("s%d", i), "t", int64(1000+i*1000)))
+	}
+	reg.Register(&fakePlatform{id: "fake", sessions: sessions})
+
+	tests := []struct {
+		name     string
+		path     string
+		handle   func(http.ResponseWriter, *http.Request)
+		wantRows int // -1 skips the row count (notify filters by state)
+	}{
+		{"list", "/api/sessions?limit=-1", srv.handleSessions, 3},
+		{"notify", "/api/sessions/notify?limit=-1", srv.handleSessionsNotify, -1},
+		{"notify includeDone", "/api/sessions/notify?includeDone=1&limit=-1", srv.handleSessionsNotify, -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			tt.handle(rr, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
+			}
+			if tt.wantRows >= 0 {
+				var got []db.Session
+				mustUnmarshal(t, rr.Body.Bytes(), &got)
+				if len(got) != tt.wantRows {
+					t.Fatalf("got %d sessions, want %d", len(got), tt.wantRows)
+				}
+			}
+		})
+	}
+}
+
 func TestHandleSessions_SinceParameterIsForwardedToAdapter(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	var seenSince int64
