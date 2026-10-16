@@ -56,6 +56,42 @@ func TestRenderPrompt_NilVarsTreatsAllAsUnknown(t *testing.T) {
 	}
 }
 
+// Placeholder text inside a substituted value (an attacker-controlled PR
+// title or body) must stay literal: substitution is a single pass.
+func TestRenderPrompt_ValuesAreNotReexpanded(t *testing.T) {
+	tests := []struct {
+		name, tmpl string
+		vars       map[string]string
+		want       string
+	}{
+		{
+			name: "title and body contain placeholders",
+			tmpl: "Handle {title}\n\n{body}",
+			vars: map[string]string{"title": "{body}", "body": "see {url}", "url": "https://example.com/pr/1"},
+			want: "Handle {body}\n\nsee {url}",
+		},
+		{
+			name: "value contains its own placeholder",
+			tmpl: "{title}",
+			vars: map[string]string{"title": "{title}{title}"},
+			want: "{title}{title}",
+		},
+		{
+			name: "value contains an unprovided placeholder",
+			tmpl: "{body} {branch}",
+			vars: map[string]string{"body": "{branch}"},
+			want: "{branch} {branch}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RenderPrompt(tt.tmpl, tt.vars); got != tt.want {
+				t.Errorf("RenderPrompt = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderPrompt_AllSupportedKeys(t *testing.T) {
 	// Document the full set of supported placeholders. If this list
 	// grows, add the new key here and to template.go's renderer.

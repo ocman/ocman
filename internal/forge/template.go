@@ -33,20 +33,18 @@ var SupportedPlaceholders = []string{
 //   - Only keys in SupportedPlaceholders are recognised; passing an
 //     unsupported key in vars has no effect.
 //
-// The implementation is a fixed loop over the known keys rather than
-// a regex sweep so the cost is O(len(template) * |placeholders|),
-// not O(len(template)^2). For prompt-sized strings the difference
-// is academic; this just keeps the rule "supported keys only" easy
-// to reason about.
+//   - Substitution is a single pass over the template: placeholder
+//     text inside a value (e.g. a PR title of `{body}`) is never
+//     expanded again.
 func RenderPrompt(tmpl string, vars map[string]string) string {
-	out := tmpl
+	pairs := make([]string, 0, 2*len(SupportedPlaceholders))
 	for _, key := range SupportedPlaceholders {
 		val, ok := vars[key]
 		if !ok {
 			// Not provided: leave the literal `{key}` in place.
 			continue
 		}
-		out = strings.ReplaceAll(out, "{"+key+"}", val)
+		pairs = append(pairs, "{"+key+"}", val)
 	}
-	return out
+	return strings.NewReplacer(pairs...).Replace(tmpl)
 }
