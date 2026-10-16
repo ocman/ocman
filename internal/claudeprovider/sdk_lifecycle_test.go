@@ -213,6 +213,13 @@ func TestSDKContinuationSpoolFailureStopsChild(t *testing.T) {
 	id := h.create(t)
 	h.send(t, id, "first")
 	waitFor(t, "initial result", func() bool { _, _, n := h.events.get(id); return n == 1 })
+	// The watcher acknowledges asynchronously after observing idle. Let its
+	// atomic prune finish before replacing the spool with the outage sentinel,
+	// otherwise the prune's rename can silently restore a writable file.
+	waitFor(t, "initial result acknowledged", func() bool {
+		info, err := os.Stat(h.spoolPath(id))
+		return err == nil && info.Size() == 0
+	})
 	restore := h.spoolDown(t, id)
 	if err := os.WriteFile(gate, nil, 0o600); err != nil {
 		t.Fatal(err)
