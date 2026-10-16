@@ -976,3 +976,17 @@ func TestNativeClosureAndRemovedIssueAccessors(t *testing.T) {
 		t.Fatalf("ListRemovedIssues = %#v, %v", issues, err)
 	}
 }
+
+// An invalid Formula id is a client error: it must carry ErrInvalidFormula
+// so the HTTP layer answers 400 instead of 500.
+func TestSaveFormulaRejectsInvalidIDAsInvalidFormula(t *testing.T) {
+	for _, id := range []string{"", "team", "custom/", "custom/Team", "builtin/plan"} {
+		t.Run(id, func(t *testing.T) {
+			store := &nativeStoreFake{}
+			_, err := NewNative(store).SaveFormula(context.Background(), FormulaSaveRequest{ID: id})
+			if !errors.Is(err, ErrInvalidFormula) || !strings.Contains(err.Error(), "custom/<stable-name>") || len(store.formulas) != 0 {
+				t.Fatalf("SaveFormula(%q) = %v; formulas = %#v", id, err, store.formulas)
+			}
+		})
+	}
+}

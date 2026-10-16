@@ -82,7 +82,7 @@ func (s *NativeService) PreviewFormula(ctx context.Context, source, id string) (
 }
 func (s *NativeService) SaveFormula(ctx context.Context, req FormulaSaveRequest) (NativeFormulaView, error) {
 	if !customFormulaID.MatchString(req.ID) {
-		return NativeFormulaView{}, errors.New("formula id must be custom/<stable-name>")
+		return NativeFormulaView{}, fmt.Errorf("%w: formula id must be custom/<stable-name>", ErrInvalidFormula)
 	}
 	definition, err := compileNativeFormula(req.Source)
 	if err != nil {
