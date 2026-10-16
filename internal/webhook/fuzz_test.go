@@ -97,14 +97,16 @@ func FuzzEqualsPredicate(f *testing.F) {
 	f.Add(`null`, `"null"`)
 	f.Add(`"9007199254740993"`, `9007199254740992`)
 	f.Add(`0.1`, `0.1000000000000000000001`)
+	// \u0065 is "e": the exponent is only visible once decoded.
+	f.Add(`"0\u006599999999999999999999"`, `0`)
 	f.Fuzz(func(t *testing.T, want, have string) {
-		if hugeExponent(want) || hugeExponent(have) {
-			return // the big.Rat reference would materialise the value
-		}
 		w, errW := decodeJSON([]byte(want))
 		h, errH := decodeJSON([]byte(have))
 		if errW != nil || errH != nil {
 			return
+		}
+		if !boundedExponents(w) || !boundedExponents(h) {
+			return // the big.Rat reference would materialise the value
 		}
 		matched := predicateMatchValue(h, true, predicate{Equals: json.RawMessage(want)})
 		if equal := refEqual(w, h); equal && !matched {
@@ -134,10 +136,33 @@ func FuzzEqualsPredicate(f *testing.F) {
 	})
 }
 
-// hugeExponent reports whether s contains an exponent too long for the
-// big.Rat reference to expand cheaply.
-func hugeExponent(s string) bool {
-	return regexp.MustCompile(`[eE][+-]?[0-9]{4,}`).MatchString(s)
+var hugeExponentRE = regexp.MustCompile(`[eE][+-]?[0-9]{4,}`)
+
+// boundedExponents reports whether every number in the decoded value v has
+// an exponent short enough for the big.Rat reference to expand cheaply. It
+// checks decoded values, not raw text, because a JSON escape can spell an
+// exponent ("0\u00659999" is "0e9999"), and it checks strings too, since
+// scalarTextOf parses a string as a number. Object keys are never parsed.
+func boundedExponents(v any) bool {
+	switch v := v.(type) {
+	case json.Number:
+		return !hugeExponentRE.MatchString(v.String())
+	case string:
+		return !hugeExponentRE.MatchString(v)
+	case []any:
+		for _, e := range v {
+			if !boundedExponents(e) {
+				return false
+			}
+		}
+	case map[string]any:
+		for _, e := range v {
+			if !boundedExponents(e) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // refEqual is strictly typed JSON equality over decodeJSON values, with
@@ -146,7 +171,12 @@ func refEqual(a, b any) bool {
 	switch a := a.(type) {
 	case json.Number:
 		b, ok := b.(json.Number)
-		return ok && refNumber(a.String()).Cmp(refNumber(b.String())) == 0
+		if !ok {
+			return false
+		}
+		x, okA := refNumber(a.String())
+		y, okB := refNumber(b.String())
+		return okA && okB && x.Cmp(y) == 0
 	case []any:
 		b, ok := b.([]any)
 		if !ok || len(a) != len(b) {
@@ -174,12 +204,12 @@ func refEqual(a, b any) bool {
 	}
 }
 
-func refNumber(s string) *big.Rat {
-	r, ok := new(big.Rat).SetString(s)
-	if !ok {
-		panic("decodeJSON produced an invalid number: " + s)
-	}
-	return r
+// refNumber parses a decoded JSON number exactly. It fails, rather than
+// panicking, for one big.Rat cannot represent (an exponent beyond int64);
+// the fuzz body skips those inputs through boundedExponents first, so a
+// failure here never decides a comparison the oracle relies on.
+func refNumber(s string) (*big.Rat, bool) {
+	return new(big.Rat).SetString(s)
 }
 
 // scalarTextOf reports whether s is a string that is exactly the JSON text
