@@ -85,6 +85,7 @@ export function useFailedSendRehydrate({
     if (!ghost) return;
     rehydratedRef.current.add(ghost.id);
     pending.begin(ghost.text, ghost.images, {
+      id: ghost.id,
       model: ghost.model,
       agent: ghost.agent,
       reasoning: ghost.reasoning,

@@ -1142,6 +1142,34 @@ describe('SessionDetail — composer send', () => {
 // ---------------------------------------------------------------
 
 describe('SessionDetail — regression: user message appears immediately and stays', () => {
+  it.each([false, true])('restores one failed bubble with a working retry when returning=%s', async (returning) => {
+    const sessionId = 'restored-failure';
+    const images = [{ url: 'data:image/png;base64,YQ==', mime: 'image/png' }];
+    clearFailedSends(sessionId);
+    recordFailedSend(sessionId, {
+      id: 'saved-failure', text: 'retry my saved prompt', images,
+      model: 'p/m', agent: 'plan', reasoning: 'high', error: 'offline', failedAt: Date.now(),
+    });
+    try {
+      const handle = renderSessionPage({ sessionId: returning ? 'other' : sessionId, realAssistantThread: true,
+        detail: makeSessionDetail(makeSession({ id: sessionId })) });
+      await flushPromises();
+      if (returning) {
+        act(() => handle.navigate(`/session/${sessionId}`));
+        await flushPromises();
+      }
+      await waitFor(() => expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1));
+      expect(screen.getAllByText('retry my saved prompt', { selector: 'span' })).toHaveLength(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(handle.store.sendMessage).toHaveBeenCalledWith(
+        sessionId, 'retry my saved prompt', images, 'p/m', 'plan', 'high', 'opencode',
+      ));
+      expect(screen.getAllByText('retry my saved prompt', { selector: 'span' })).toHaveLength(1);
+    } finally {
+      clearFailedSends(sessionId);
+    }
+  });
+
   it.each(['opencode', 'claudecode'])('survives the SSE round-trip on %s without waiting for the send response', async (platform) => {
     // After the user submits a prompt:
     //   1) handleSend calls pending.begin(...) — the bubble is

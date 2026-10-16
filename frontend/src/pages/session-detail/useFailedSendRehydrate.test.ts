@@ -40,7 +40,7 @@ describe('useFailedSendRehydrate', () => {
     const o = opts();
     const { result, rerender } = renderHook((p: UseFailedSendRehydrateOptions) => useFailedSendRehydrate(p), { initialProps: o });
     expect(result.current.failedSends.map((e) => e.id)).toEqual(['f1']);
-    expect(o.pending.begin).toHaveBeenCalledWith('hello', undefined, { model: 'p/m', agent: undefined, reasoning: undefined });
+    expect(o.pending.begin).toHaveBeenCalledWith('hello', undefined, { id: 'f1', model: 'p/m', agent: undefined, reasoning: undefined });
     expect(o.pending.fail).toHaveBeenCalledWith('boom');
 
     rerender({ ...o, messages: [] });
