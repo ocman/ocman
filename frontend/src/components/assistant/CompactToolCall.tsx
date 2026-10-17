@@ -31,7 +31,7 @@ function compactFilePaths(name: string, args: string, projectDirectory: string):
 }
 
 function compactSummary(name: string, args: string, paths: string[], description?: string) {
-  if (name === 'bash') return description?.trim() ? `Bash: ${description.trim()}` : `$ ${args.trim()}`;
+  if (name === 'bash') return description?.trim() ? `Bash: ${description.trim()}` : args.trim();
   const action = name === 'write' ? 'Writing' : 'Patching';
   return paths.length ? `${action} ${paths.length} ${paths.length === 1 ? 'file' : 'files'}` : `${action} files`;
 }
@@ -54,10 +54,12 @@ export function CompactToolCall({ toolName, args, description, projectDirectory 
   return (
     <div className={className}>
       <Button variant="ghost" type="button" className="oc-tool-compact-line" aria-expanded={expanded} onClick={onToggle}>
-        <span className="oc-read-arrow" aria-hidden="true" title={describedShell && running ? undefined : statusTitle}>{failed ? '\u2717' : running && !describedShell ? '\u223C' : '\u2192'}</span>
+        <span className="oc-read-arrow" aria-hidden="true" title={name === 'bash' && running ? undefined : statusTitle}>{failed ? '\u2717' : running && name !== 'bash' ? '\u223C' : '\u2192'}</span>
         <span className="oc-tool-compact-content">
           <span className="oc-tool-compact-heading">
-            <span className={`oc-tool-compact-summary${name === 'bash' && !describedShell ? ' oc-tool-compact-command-preview' : ''}`}>{summary}</span>
+            {name === 'bash' && !describedShell
+              ? <span className="oc-tool-compact-summary oc-tool-compact-command"><BashPrompt running={running} /> <span className="oc-tool-compact-command-preview">{summary}</span></span>
+              : <span className="oc-tool-compact-summary">{summary}</span>}
             {timeInfo && <>{' '}<ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={running} /></>}
           </span>
           {describedShell && <span className="oc-tool-compact-command"><span aria-hidden="true">└</span><BashPrompt running={running} /> <span className="oc-tool-compact-command-preview">{args.trim()}</span></span>}

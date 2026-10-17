@@ -46,6 +46,28 @@ describe('compact shell descriptions', () => {
     expect(screen.getByRole('button', { name: '$ pnpm test' })).toHaveTextContent('→$ pnpm test');
   });
 
+  it('keeps multiline command text separate from its prompt', () => {
+    useUiStore.setState({ compactToolCalls: true });
+    const command = 'echo first\n  echo indented\necho last';
+    render(<ToolCallDisplay {...({ toolName: 'bash', argsText: `completed\n${command}` } as Props)} />);
+    const preview = screen.getByText(command, { exact: true, normalizer: text => text });
+    expect(preview).toHaveClass('oc-tool-compact-command-preview');
+    expect(preview.previousElementSibling).toHaveTextContent('$');
+  });
+
+  it.each(['running', 'pending'])('replaces the undescribed shell prompt with a spinner while %s', status => {
+    vi.useFakeTimers();
+    useUiStore.setState({ compactToolCalls: true });
+    const { rerender } = render(<ToolCallDisplay {...({ toolName: 'bash', argsText: `${status}\npnpm test` } as Props)} />);
+    expect(screen.getByTestId('bash-spinner')).toHaveTextContent('⣾');
+    expect(screen.getByRole('button')).not.toHaveTextContent('$');
+    act(() => vi.advanceTimersByTime(80));
+    expect(screen.getByTestId('bash-spinner')).toHaveTextContent('⣽');
+    rerender(<ToolCallDisplay {...({ toolName: 'bash', argsText: 'completed\npnpm test' } as Props)} />);
+    expect(screen.queryByTestId('bash-spinner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveTextContent('$ pnpm test');
+  });
+
   it('updates the description indicator as shell status changes', () => {
     useUiStore.setState({ compactToolCalls: true });
     const props = { toolName: 'bash', argsText: 'running\n@desc:Run tests\npnpm test' } as Props;

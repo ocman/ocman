@@ -29,7 +29,8 @@ test('compact tool rows keep the same rhythm within and across messages', async 
   await expect(viewport.getByText('Read /example.ts', { exact: true })).toBeVisible();
   const positions = [];
   for (const label of labels) {
-    positions.push((await viewport.getByText(label, { exact: true }).boundingBox())!.y);
+    const element = label.startsWith('$ ') ? viewport.getByRole('button', { name: label }) : viewport.getByText(label, { exact: true });
+    positions.push((await element.boundingBox())!.y);
   }
   const withinMessage = positions[2] - positions[1];
   for (let i = 1; i < positions.length; i++) {

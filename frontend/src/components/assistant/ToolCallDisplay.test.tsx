@@ -69,7 +69,8 @@ describe('ToolCallDisplay bash output', () => {
   it('shows a running compact command as a muted item without a shell block', () => {
     useUiStore.setState({ compactToolCalls: true });
     renderTool({ argsText: 'running\nsleep 10' });
-    expect(screen.getByRole('button', { name: /\$ sleep 10/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: /sleep 10/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('bash-spinner')).toBeVisible();
     expect(screen.getByTitle('Running')).toBeInTheDocument();
     expect(screen.queryByTestId('shell-output-block')).not.toBeInTheDocument();
   });
