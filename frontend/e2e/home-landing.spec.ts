@@ -5,6 +5,8 @@ for (const width of [390, 640, 641, 1280]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto(`/session/${MOCK_SESSION_2.id}`);
     await expect(page.getByTestId('session-layout')).toBeVisible();
+    // The layout mounts before the session read and opened-session bookkeeping.
+    await expect(page.getByTestId('header-breadcrumb')).toContainText(MOCK_SESSION_2.title);
     await page.goto('/');
     await expect(page).toHaveURL(width <= 640 ? '/sessions' : `/session/${MOCK_SESSION_2.id}`);
     if (width <= 640) {
