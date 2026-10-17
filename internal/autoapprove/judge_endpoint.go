@@ -172,9 +172,14 @@ func parseTypeSafeVerdict(body []byte, threshold float64) JudgeResult {
 	if math.Abs(sum-1) > 0.001 {
 		return endpointFailure("Invalid reviewer probability distribution.")
 	}
+	scores := &judgeScores{
+		Choice: answer.Choice, Safe: *answer.Probabilities["safe"],
+		Unsafe: *answer.Probabilities["unsafe"], Uncertain: *answer.Probabilities["uncertain"],
+		Threshold: threshold,
+	}
 	if answer.Choice == "safe" && *selected >= threshold {
-		return JudgeResult{Verdict: verdictSafe, Reasoning: fmt.Sprintf("Reviewer classified the request as safe (probability %.4f).", *selected)}
+		return JudgeResult{Verdict: verdictSafe, scores: scores, Reasoning: fmt.Sprintf("Reviewer classified the request as safe (probability %.4f).", *selected)}
 	}
 	label := map[string]string{"safe": "yes", "unsafe": "no", "uncertain": "uncertain"}[answer.Choice]
-	return JudgeResult{Verdict: verdictUnsafe, Reasoning: fmt.Sprintf("Reviewer did not auto-approve (answer: %s, confidence: %.2f%%, required safe confidence: %.2f%%). Human review required.", label, *selected*100, threshold*100)}
+	return JudgeResult{Verdict: verdictUnsafe, scores: scores, Reasoning: fmt.Sprintf("Reviewer did not auto-approve (answer: %s, confidence: %.2f%%, required safe confidence: %.2f%%). Human review required.", label, *selected*100, threshold*100)}
 }

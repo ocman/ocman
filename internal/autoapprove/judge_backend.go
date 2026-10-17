@@ -3,6 +3,7 @@ package autoapprove
 import (
 	"context"
 	"runtime/debug"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -18,7 +19,10 @@ type Judge interface {
 const verdictNeedsUser judgeVerdict = "needs-user"
 
 // judgePermission selects a backend for each permission, after the cache gates.
-func (s *Service) judgePermission(ctx context.Context, platformID platforms.ID, directory, permission string, patterns []string, metadata map[string]any, sections []PromptSection, onSessionCreated func(string)) JudgeResult {
+func (s *Service) judgePermission(ctx context.Context, platformID platforms.ID, directory, permission string, patterns []string, metadata map[string]any, sections []PromptSection, onSessionCreated func(string)) (result JudgeResult) {
+	start := time.Now()
+	backendName := "unavailable"
+	defer func() { recordJudgeMetrics(ctx, backendName, time.Since(start), result) }()
 	var backend Judge
 	config, err := LoadJudgeEndpoint(ctx, s.deps.Store)
 	if err != nil {
@@ -35,6 +39,17 @@ func (s *Service) judgePermission(ctx context.Context, platformID platforms.ID, 
 	}
 	if backend == nil {
 		return JudgeResult{Verdict: verdictNeedsUser, Reasoning: "No auto-approve judge backend is available; please review this permission."}
+	}
+	switch backend.(type) {
+	case *PermissionJudge:
+		backendName = "opencode"
+	case ClaudeJudge, *ClaudeJudge:
+		backendName = "claudecode"
+	default:
+		backendName = "custom"
+	}
+	if config.Format != "" {
+		backendName = config.Format
 	}
 	return evaluateJudge(func() JudgeResult {
 		return backend.JudgeWithCallback(ctx, directory, permission, patterns, metadata, sections, onSessionCreated)

@@ -87,7 +87,8 @@ type JudgeResult struct {
 	// Only used by the in-flight callback. Completed judge sessions are deleted.
 	SessionID  string
 	Reasoning  string
-	cacheScope string // Configuration actually used, even if settings change mid-call.
+	cacheScope string       // Configuration actually used, even if settings change mid-call.
+	scores     *judgeScores // Present only for validated TypeSafe probability distributions.
 }
 
 func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, permission string, patterns []string, metadata map[string]any, customSections []PromptSection, onSessionCreated func(judgeSessionID string)) (result JudgeResult) {

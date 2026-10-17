@@ -377,6 +377,24 @@ every 30 seconds even when no ocman page is visible. The scanner stays off when
 telemetry export is disabled. Collection counts new assistant messages after ocman starts;
 existing message history is not imported into these counters.
 
+Permission judge evaluations emit these metrics after the safe-command cache gates:
+
+| Metric | Meaning |
+| --- | --- |
+| `ocman.judge.calls` | Evaluation count, including failed evaluations and unavailable backends. |
+| `ocman.judge.duration` | Evaluation duration in seconds. |
+| `ocman.judge.probability` | SystemOne/TypeSafe probability histogram for each `answer`: `safe`, `unsafe`, `uncertain`. |
+| `ocman.judge.safe_threshold` | Configured safe probability threshold, recorded per validated SystemOne/TypeSafe response. |
+
+All have bounded `backend` and `outcome` labels. Outcomes are `approved`,
+`not_approved`, `error`, and `needs_user`. Probability and threshold histograms
+also carry the reviewer's `choice`; probabilities additionally carry `answer`.
+Scores and thresholds range from 0 to 1, not percentages. Invalid responses emit
+an error outcome without scores. Cache hits do not count as judge calls.
+Commands, prompts, paths, session IDs and credentials are never metric labels.
+These aggregates help inspect confidence distributions, but do not establish
+accuracy without separately reviewing decisions against known safe/unsafe examples.
+
 Logrus logs are exported in batches using the same endpoint and transport, while
 console logging stays enabled. Export respects the configured log level and
 includes structured fields and the service resource. Logs with an active span
