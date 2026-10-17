@@ -84,7 +84,8 @@ export function usePromptSync({
   //   2. sidebarHasPerm / sidebarHasQuestion from the /api/sessions poll
   //      — catches prompts that arrive while the SSE stream is open but
   //      the permission.asked event was somehow missed.
-  const sidebarCurrentSession = recentSessions.find((s) => s.id === id);
+  const ownerPlatform = session?.platform;
+  const sidebarCurrentSession = recentSessions.find((s) => s.id === id && (!ownerPlatform || s.platform === ownerPlatform));
   const sidebarHasPerm = sidebarCurrentSession?.pendingPermission ?? false;
   const sidebarHasQuestion = sidebarCurrentSession?.pendingQuestion ?? false;
   const restHasPerm = session?.pendingPermission ?? false;
@@ -97,7 +98,7 @@ export function usePromptSync({
   const recoveredPermissions = useRef<string | null>(null);
   const recoveredQuestions = useRef<string | null>(null);
   useEffect(() => {
-    if (!id) return;
+    if (!id || session?.id !== id || !ownerPlatform) return;
     const discover = permissionKey !== null && recoveredPermissions.current !== permissionKey;
     if (!permissionKey || pendingPermission !== null) recoveredPermissions.current = permissionKey;
     // These fetches outlive a navigation. Without the flag, a response
@@ -105,7 +106,7 @@ export function usePromptSync({
     // prompt into B and disables B's composer behind a phantom dialog.
     let cancelled = false;
     if ((discover || restHasPerm || sidebarHasPerm) && pendingPermission === null) {
-      Promise.all(promptSessionIds.map((sessionId) => listPermissions(sessionId)))
+      Promise.all(promptSessionIds.map((sessionId) => listPermissions(sessionId, ownerPlatform)))
         .then((permissionLists) => {
           if (cancelled) return;
           recoveredPermissions.current = permissionKey;
@@ -120,18 +121,18 @@ export function usePromptSync({
         .catch(() => { /* a later connection or prompt flag change retries */ });
     }
     return () => { cancelled = true; };
-  }, [id, permissionKey, restHasPerm, sidebarHasPerm, pendingPermission,
+  }, [id, session?.id, ownerPlatform, permissionKey, restHasPerm, sidebarHasPerm, pendingPermission,
     listPermissions, promptSessionIds, setPermissionError, setPendingPermission]);
 
   // Independent lifetimes keep a permission update from cancelling question
   // recovery, and vice versa. Successful reads do not repeat after a reply.
   useEffect(() => {
-    if (!id) return;
+    if (!id || session?.id !== id || !ownerPlatform) return;
     const discover = liveKey !== null && recoveredQuestions.current !== liveKey;
     if (!liveKey || pendingQuestion !== null) recoveredQuestions.current = liveKey;
     let cancelled = false;
     if ((discover || restHasQuestion || sidebarHasQuestion) && pendingQuestion === null) {
-      listQuestions(id)
+      listQuestions(id, ownerPlatform)
         .then((questions) => {
           if (cancelled) return;
           recoveredQuestions.current = liveKey;
@@ -146,7 +147,7 @@ export function usePromptSync({
         .catch(() => { /* a later connection or prompt flag change retries */ });
     }
     return () => { cancelled = true; };
-  }, [id, liveKey, restHasQuestion, sidebarHasQuestion, pendingQuestion,
+  }, [id, session?.id, ownerPlatform, liveKey, restHasQuestion, sidebarHasQuestion, pendingQuestion,
     listQuestions, setPendingQuestion]);
 
   // Poll-driven dismissal fallback. When a question is answered
@@ -163,11 +164,11 @@ export function usePromptSync({
   // than an empty list) avoids dismissing a freshly-asked follow-up.
   const pendingQuestionRequestId = pendingQuestion?.requestId ?? null;
   useEffect(() => {
-    if (!id || !pendingQuestionRequestId || !portAvailable || pushPrompts) return;
+    if (!id || !ownerPlatform || !pendingQuestionRequestId || !portAvailable || pushPrompts) return;
     let cancelled = false;
 
     const check = () => {
-      listQuestions(id)
+      listQuestions(id, ownerPlatform)
         .then((questions) => {
           if (cancelled) return;
           const stillPending = questions.some((request) => questionFromRequest(request)?.requestId === pendingQuestionRequestId);
@@ -188,7 +189,7 @@ export function usePromptSync({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [id, pendingQuestionRequestId, portAvailable, pushPrompts, listQuestions, clearPrompt]);
+  }, [id, ownerPlatform, pendingQuestionRequestId, portAvailable, pushPrompts, listQuestions, clearPrompt]);
 
   // Same fallback for permissions. A reply that lands while the stream
   // is down (sleep, judge auto-approval, another tab) is never replayed,
@@ -199,7 +200,6 @@ export function usePromptSync({
   const pendingPermissionId = pendingPermission?.permissionId ?? null;
   const pendingPermissionSessionId = pendingPermission?.sessionId || id;
   // Descendants run on the viewed session's owner.
-  const ownerPlatform = session?.platform;
   useEffect(() => {
     if (!pendingPermissionSessionId || !pendingPermissionId || !ownerPlatform || !portAvailable || pushPrompts) return;
     let cancelled = false;

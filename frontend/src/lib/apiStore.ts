@@ -100,10 +100,10 @@ type ApiStore = {
   pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string, platform?: string, queue?: boolean) => Promise<void>;
-  listPermissions: (sessionId: string) => Promise<PermissionRequest[]>;
+  listPermissions: (sessionId: string, platform?: string) => Promise<PermissionRequest[]>;
   refreshPermissions: (sessionId: string, platform: string) => Promise<PermissionRequest[]>;
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
-  listQuestions: (sessionId: string) => Promise<QuestionRequest[]>;
+  listQuestions: (sessionId: string, platform?: string) => Promise<QuestionRequest[]>;
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (sessionId: string, requestId: string) => Promise<void>;
   getAutoApprove: (sessionId: string) => Promise<{ enabled: boolean; overridden: boolean }>;
@@ -282,10 +282,10 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       throw error;
     });
   },
-  listPermissions: (sessionId) => api.listPermissions(sessionId),
+  listPermissions: (sessionId, platform) => api.listPermissions(sessionId, platform),
   refreshPermissions: (sessionId, platform) => api.refreshPermissions(sessionId, platform),
   respondPermission: (sessionId, permissionId, reply) => api.respondPermission(sessionId, permissionId, reply),
-  listQuestions: (sessionId) => api.listQuestions(sessionId),
+  listQuestions: (sessionId, platform) => api.listQuestions(sessionId, platform),
   respondQuestion: (sessionId, requestId, answers) => api.respondQuestion(sessionId, requestId, answers),
   rejectQuestion: (sessionId, requestId) => api.rejectQuestion(sessionId, requestId),
   getAutoApprove: (sessionId) => api.getAutoApprove(sessionId),
@@ -312,4 +312,3 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   transcribe: (audio) => api.transcribe(audio),
   getSystemStats: (signal) => api.systemStats(signal),
 }));
-

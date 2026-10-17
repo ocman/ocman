@@ -36,7 +36,10 @@ for (const width of [390, 1280]) {
           } },
         ],
       } }));
-      await page.route(`/api/session/${session.id}/${kind === 'question' ? 'questions' : 'permissions'}`, route => route.fulfill({ json: [request] }));
+      await page.route(`/api/session/${session.id}/${kind === 'question' ? 'questions' : 'permissions'}?*`, route => {
+        expect(new URL(route.request().url()).searchParams.get('platform')).toBe(session.platform);
+        return route.fulfill({ json: [request] });
+      });
       const endpoint = `/api/session/${session.id}/${kind === 'question' ? 'questions/pending-question' : 'permissions/pending-permission'}`;
       await page.route(endpoint, route => route.fulfill({ json: { ok: true } }));
       await page.goto(`/session/${MOCK_SESSION.id}`);

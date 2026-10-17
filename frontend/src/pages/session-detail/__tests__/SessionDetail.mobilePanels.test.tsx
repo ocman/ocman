@@ -250,9 +250,13 @@ describe('SessionDetail — phone overlay panels', () => {
 
     fireEvent.click(toggle);
     expect(screen.getByTestId('session-layout').className).toContain('mobile-sidebar-open');
-    expect(screen.queryByRole('button', { name: 'Close session list' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close session list' })).toBeInTheDocument();
     expect(screen.queryByTestId('mobile-sessions-toggle')).not.toBeInTheDocument();
     expect(titleSlot).toHaveTextContent('Sessions');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close session list' }));
+    expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open');
+    fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open');

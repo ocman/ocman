@@ -928,7 +928,7 @@ describe('SessionDetail — permission prompt', () => {
     // listPermissions is called once the sidebar reflects the
     // pending-permission flag for the active session.
     await waitFor(() => {
-      expect(listPermissionsSpy).toHaveBeenCalledWith('sess_1');
+      expect(listPermissionsSpy).toHaveBeenCalledWith('sess_1', sessionWithPerm.platform);
     });
     await waitFor(() => {
       expect(handle.result.container.textContent).toContain('Run shell command');
@@ -979,9 +979,9 @@ describe('SessionDetail — permission prompt', () => {
     });
 
     await flushPromises(8);
-    expect(listPermissionsSpy).toHaveBeenCalledWith(parent.id);
-    await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(childId));
-    await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(grandchild.id));
+    await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(parent.id, parent.platform));
+    await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(childId, parent.platform));
+    await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(grandchild.id, parent.platform));
     await waitFor(() => expect(handle.result.container.textContent).toContain('Run shell command'));
   });
 

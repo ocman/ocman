@@ -61,6 +61,11 @@ export function MobileHeaderControls({
         )}
       </HeaderPortal>}
       <HeaderPortal>
+        {!phone && mobilePanel === 'sidebar' && (
+          <IconButton variant="ghost" className="mobile-panel-toggle"
+            label="Close session list" icon="bi-x-lg" aria-expanded="true"
+            onClick={toggleMobileSidebar} />
+        )}
         {mobilePanel !== 'sidebar' && (
           <IconButton
             variant="ghost"

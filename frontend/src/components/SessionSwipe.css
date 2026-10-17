@@ -51,3 +51,16 @@
     background: var(--bg-card);
   }
 }
+
+/* A narrow window can still have a mouse or pen. Those users cannot swipe. */
+@media (width <= 640px) and (any-pointer: fine) {
+  .session-swipe-row .session-swipe-actions { opacity: 1; pointer-events: auto; }
+  .session-sidebar-item.session-swipe-row .session-sidebar-actions > :not(.session-sidebar-pin-btn) {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .phone-session-table > tbody > .session-swipe-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .phone-session-table > tbody > .session-swipe-row > .session-action-cell { position: static; }
+  .session-sidebar-item.session-swipe-row.flat .session-sidebar-meta { position: static; }
+}

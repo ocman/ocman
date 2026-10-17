@@ -7,8 +7,8 @@ import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 
 const patchRecentSession = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/sessionsCache', () => ({ patchSessionLists: patchRecentSession }));
-const listPermissions = vi.fn<(sid?: string) => Promise<unknown[]>>(async () => []);
-const listQuestions = vi.fn(async (): Promise<unknown[]> => []);
+const listPermissions = vi.fn<(sid?: string, platform?: string) => Promise<unknown[]>>(async () => []);
+const listQuestions = vi.fn<(sid?: string, platform?: string) => Promise<unknown[]>>(async () => []);
 const refreshPermissions = vi.fn<(sid?: string) => Promise<unknown[]>>(async () => []);
 
 vi.mock('../../lib/apiStore', () => ({
@@ -65,6 +65,28 @@ describe('usePromptSync', () => {
     expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { pendingPermission: false, pendingQuestion: true }, 'r-box:opencode');
   });
 
+  it('discovers prompts only on the viewed owner when session IDs collide', async () => {
+    listPermissions.mockImplementation(async (_id, platform) => [{ ...rawPermission, id: `perm-${platform}` }]);
+    listQuestions.mockImplementation(async (_id, platform) => [{ ...rawQuestion, id: `question-${platform}` }]);
+    const o = opts({ promptSessionIds: ['sess-1'] });
+    const { rerender } = renderHook(value => usePromptSync(value), { initialProps: o });
+    await waitFor(() => expect(o.setPendingPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionId: 'perm-r-box:opencode' }), ['sess-1']));
+    expect(o.setPendingQuestion).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'question-r-box:opencode' }));
+    rerender({ ...o, session: { id: 'sess-1', platform: 'r-other:opencode' } as Session });
+    await waitFor(() => expect(o.setPendingQuestion).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'question-r-other:opencode' })));
+    expect(listPermissions).toHaveBeenLastCalledWith('sess-1', 'r-other:opencode');
+    expect(listQuestions).toHaveBeenLastCalledWith('sess-1', 'r-other:opencode');
+  });
+
+  it('waits for the loaded owner even when sidebar flags already report prompts', () => {
+    renderHook(() => usePromptSync(opts({ session: null, recentSessions: [
+      { id: 'sess-1', platform: 'opencode', pendingPermission: true, pendingQuestion: true } as Session,
+    ] })));
+    expect(listPermissions).not.toHaveBeenCalled();
+    expect(listQuestions).not.toHaveBeenCalled();
+  });
+
   it('recovers a live question without REST or sidebar prompt flags', async () => {
     listQuestions.mockResolvedValue([rawQuestion]);
     const o = opts();
@@ -95,12 +117,15 @@ describe('usePromptSync', () => {
     expect(o.setPendingQuestion).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'q-1' }));
   });
 
-  it('ignores recovery responses after navigating to another session', async () => {
+  it.each([
+    { id: 'next', platform: 'r-box:opencode' },
+    { id: 'sess-1', platform: 'r-other:opencode' },
+  ])('ignores recovery responses after changing session identity to %j', async (next) => {
     let finish!: (value: unknown[]) => void;
     listQuestions.mockReturnValueOnce(new Promise(resolve => { finish = resolve; })).mockResolvedValue([]);
     const o = opts();
     const { rerender } = renderHook((value) => usePromptSync(value), { initialProps: o });
-    rerender({ ...o, id: 'next', session: { id: 'next', platform: 'r-box:opencode' } as Session, promptSessionIds: ['next'] });
+    rerender({ ...o, id: next.id, session: next as Session, promptSessionIds: [next.id] });
     await act(async () => { finish([rawQuestion]); });
     expect(o.setPendingQuestion).not.toHaveBeenCalled();
   });
@@ -117,7 +142,7 @@ describe('usePromptSync', () => {
 
   it('fetches a permission across the session tree when REST says one is pending', async () => {
     listPermissions.mockImplementation(async (sid?: string) => (sid === 'child-1' ? [rawPermission] : []));
-    const o = opts({ session: { id: 'sess-1', pendingPermission: true } as Session });
+    const o = opts({ session: { id: 'sess-1', platform: 'r-box:opencode', pendingPermission: true } as Session });
     renderHook(() => usePromptSync(o));
     await waitFor(() => expect(o.setPendingPermission).toHaveBeenCalled());
     expect(listPermissions).toHaveBeenCalledTimes(2);
@@ -128,7 +153,7 @@ describe('usePromptSync', () => {
 
   it('fetches and stores a question when the sidebar row flags one', async () => {
     listQuestions.mockResolvedValue([rawQuestion]);
-    const o = opts({ recentSessions: [{ id: 'sess-1', pendingQuestion: true } as Session] });
+    const o = opts({ recentSessions: [{ id: 'sess-1', platform: 'r-box:opencode', pendingQuestion: true } as Session] });
     renderHook(() => usePromptSync(o));
     await waitFor(() => expect(o.setPendingQuestion).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'q-1' })));
     expect(loadPendingQuestion('sess-1')?.requestId).toBe('q-1');

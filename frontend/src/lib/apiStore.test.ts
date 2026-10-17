@@ -4,6 +4,17 @@ import { api, type SessionDetail, type Session } from './api';
 import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebarSessions } from './sessionsCache';
 import { queryClient } from './queryClient';
 
+it('forwards compound prompt owners through the store to both API helpers', async () => {
+  const permissions = vi.spyOn(api, 'listPermissions').mockResolvedValue([]);
+  const questions = vi.spyOn(api, 'listQuestions').mockResolvedValue([]);
+  try {
+    await useApiStore.getState().listPermissions('shared-id', 'r-box:opencode');
+    await useApiStore.getState().listQuestions('shared-id', 'r-box:opencode');
+    expect(permissions).toHaveBeenCalledWith('shared-id', 'r-box:opencode');
+    expect(questions).toHaveBeenCalledWith('shared-id', 'r-box:opencode');
+  } finally { permissions.mockRestore(); questions.mockRestore(); }
+});
+
 it('scopes lifecycle patches to the owning platform', () => {
   const local = makeSessionDetail('same').session;
   const remote = { ...local, platform: 'r-A:opencode' };

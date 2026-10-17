@@ -129,7 +129,7 @@ export const sessionApi = {
     }
     return readJSON<{ path: string; name: string; mime: string; size: number }>(resp);
   },
-  listPermissions: (sessionId: string) => fetchJSON<PermissionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
+  listPermissions: (sessionId: string, platform?: string) => fetchJSON<PermissionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions${queryString({ platform })}`),
   // Owner-pinned live read; absence means resolved.
   refreshPermissions: (sessionId: string, platform: string) =>
     fetchJSON<PermissionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions${queryString({ refresh: 1, platform })}`),
@@ -138,7 +138,7 @@ export const sessionApi = {
   getPermissionRules: (sessionId: string) => fetchJSON<{ rules: PermissionRule[] }>(`/api/session/${encodeURIComponent(sessionId)}/permission-rules`),
   setPermissionRules: (sessionId: string, rules: PermissionRule[]) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/permission-rules`, { rules }, { method: 'PUT', parseJSON: false }),
-  listQuestions: (sessionId: string) => fetchJSON<QuestionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/questions`),
+  listQuestions: (sessionId: string, platform?: string) => fetchJSON<QuestionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/questions${queryString({ platform })}`),
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}`, { answers }, { parseJSON: false }),
   rejectQuestion: (sessionId: string, requestId: string) =>
