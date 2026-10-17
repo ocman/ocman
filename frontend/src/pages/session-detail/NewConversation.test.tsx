@@ -43,6 +43,7 @@ vi.mock('../../lib/uiStore', () => ({
   }),
 }));
 vi.mock('../../lib/useCapabilities', () => ({
+  useCapabilities: () => ({ platforms: [{ id: 'r-machine:opencode', displayName: 'OpenCode' }] }),
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => mocks.caps,
   useMachinePlatforms: (remoteId: string) => ['opencode', 'claudecode'].map((base) => ({ id: remoteId === 'local' ? base : `r-${remoteId}:${base}` })),
@@ -575,7 +576,7 @@ describe('NewConversation', () => {
       }
     });
     // Parallel steps render together, in a fixed order.
-    expect(screen.getByTestId('start-step-opencode')).toHaveTextContent('Starting OpenCode');
+    expect(screen.getByTestId('start-step-opencode')).toHaveTextContent('Launching OpenCode');
     expect(screen.getByTestId('start-step-worktree')).toHaveTextContent('Worktree ready');
     expect(screen.queryByTestId('start-step-session')).not.toBeInTheDocument();
     await act(async () => { finish({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/wt', firstMessageSent: true }); await sent; });

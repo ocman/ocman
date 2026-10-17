@@ -369,8 +369,8 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
     // to the bottom with the thread's padding.
     <div className="oc-thread" data-testid="new-conversation">
       <div className="oc-thread-viewport">
-        {pending?.key === routeKey && <StartProgress prompt={pending.text} images={pending.images} steps={pending.steps} />}
-        {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
+        {pending?.key === routeKey && <StartProgress platform={platform} prompt={pending.text} images={pending.images} steps={pending.steps} />}
+        {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress platform={platform} prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
       </div>
       <div className="oc-viewport-footer" data-testid="conversation-composer">
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}

@@ -992,7 +992,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   scrollToMessageId={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.id : null}
                   scrollToMessageTick={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.tick : 0}
                   scrollToToolCall={commitSourceJump?.sessionId === session.id && commitSourceJump.platformId === session.platform ? commitSourceJump : null}
-                  empty={startHandoff && <StartProgress prompt={startHandoff.prompt} images={startHandoff.images} steps={startHandoff.steps} />}
+                  empty={startHandoff && <StartProgress platform={session.platform} prompt={startHandoff.prompt} images={startHandoff.images} steps={startHandoff.steps} />}
                   composer={(
                     <>
                     <div className="oc-composer-notices" data-testid="composer-notices" tabIndex={0} role="region" aria-label="Conversation status">
