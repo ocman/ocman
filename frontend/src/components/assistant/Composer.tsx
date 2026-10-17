@@ -108,6 +108,7 @@ export function Composer({
   const pickers = useComposerPickers({
     inputRef, sessionIdRef: draftKeyRef, scheduleDraftSave, models, agents, agentOptions, agentSelection,
     onModelChange, onAgentChange, onRefreshModels,
+    onTextChange: (text) => syncInputRef.current(text),
   });
   const { openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker } = pickers;
   useImperativeHandle(composerRef, () => ({ openModelPicker, openAgentPicker }), [openModelPicker, openAgentPicker]);

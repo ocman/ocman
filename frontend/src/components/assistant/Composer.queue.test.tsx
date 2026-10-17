@@ -180,12 +180,14 @@ describe('Composer input', () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(new Response(JSON.stringify(
       String(url).includes('routines') ? [{ id: 'routine-1', name: 'Review', prompt: 'Review this diff' }] : { platforms: [], hosts: [] },
     ), { status: 200, headers: { 'Content-Type': 'application/json' } }))));
-    render(<Composer isRunning={false} onSend={onSend} />);
+    render(<Composer isRunning onSend={onSend} />);
     const input = screen.getByRole('textbox');
     fireEvent.input(input, { target: { value: '/routines' } });
     fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
     fireEvent.click(await screen.findByText('Review'));
     expect(input).toHaveValue('Review this diff');
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument();
     expect(onSend).not.toHaveBeenCalled();
   });
 

@@ -13,6 +13,7 @@ export interface UseComposerPickersOptions {
   onModelChange?: (model: string) => void;
   onAgentChange?: (agent: string) => void;
   onRefreshModels?: () => void;
+  onTextChange?: (text: string) => void;
 }
 
 /**
@@ -31,6 +32,7 @@ export function useComposerPickers({
   onModelChange,
   onAgentChange,
   onRefreshModels,
+  onTextChange,
 }: UseComposerPickersOptions) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
@@ -118,10 +120,11 @@ export function useComposerPickers({
     const el = inputRef.current;
     if (!el) return;
     el.value = text;
+    onTextChange?.(text);
     el.focus();
     const sid = sessionIdRef.current;
     if (sid) scheduleDraftSave(sid, () => el.value);
-  }, [inputRef, sessionIdRef, scheduleDraftSave]);
+  }, [inputRef, sessionIdRef, scheduleDraftSave, onTextChange]);
 
   // On skill select: prefill `/<skill> ` into the composer — do not send.
   // Matches OpenCode's DialogSkill, which inserts the command for the user
