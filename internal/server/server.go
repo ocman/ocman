@@ -200,7 +200,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		addr:         addr,
 		registry:     registry,
 		auth:         auth,
-		integrations: newForgeClients(),
+		integrations: discoverForgeClients(),
 		startTime:    time.Now(),
 		broadcastHub: newBroadcastHub(),
 		activity:     newClientActivityPolicy(time.Now),

@@ -111,3 +111,30 @@ func TestTeaLogins_ResolvesXDGConfig(t *testing.T) {
 		t.Fatalf("expected 2 logins, got %d", len(logins))
 	}
 }
+
+func TestNewRegistry(t *testing.T) {
+	t.Run("without tea logins", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		t.Setenv("HOME", t.TempDir())
+		if logins, err := TeaLogins(); logins != nil || err != nil {
+			t.Fatalf("TeaLogins = %v, %v", logins, err)
+		}
+		if hosts := NewRegistry().Hosts(); len(hosts) != 0 {
+			t.Fatalf("hosts = %v", hosts)
+		}
+	})
+	t.Run("sorted hosts from tea logins", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "tea"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "tea", "config.yml"), []byte(teaSample), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("XDG_CONFIG_HOME", dir)
+		t.Setenv("HOME", t.TempDir())
+		if hosts := NewRegistry().Hosts(); len(hosts) != 2 || hosts[0] != "code.example.com" || hosts[1] != "codeberg.org" {
+			t.Fatalf("hosts = %v", hosts)
+		}
+	})
+}

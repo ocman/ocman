@@ -14,6 +14,11 @@ type forgeClients struct {
 	Forgejo *forgejo.Registry
 }
 
+// discoverForgeClients reads this machine's forge credentials when a Server
+// is built. Tests replace it so they never read the developer's gh token or
+// tea logins.
+var discoverForgeClients = newForgeClients
+
 func newForgeClients() *forgeClients {
 	return &forgeClients{
 		GitHub:  github.New(),
