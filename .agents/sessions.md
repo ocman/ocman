@@ -124,8 +124,8 @@ Plain Enter sends immediately, including mid-turn. Ctrl/Cmd+Enter explicitly
 queues. Never derive the `queue` flag from inferred status.
 
 - With `queue: false`, call shared `sendNow` without touching the held queue.
-  V2 uses `platforms.NativeQueue`, `delivery: "queue"`, unless ocman's queue
-  already holds messages for that session.
+- With `queue: true` on v2, use `platforms.NativeQueue`, `delivery: "queue"`,
+  unless ocman's queue already holds messages for that session.
 - `queuesvc` owns the queue domain; `queuemod` owns routes, native coordination,
   idle dispatch, sweep recovery, quota/model fallthrough and settings. Keep
   tables and cooldown persistence in `internal/state`.
