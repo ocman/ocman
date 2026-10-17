@@ -95,6 +95,7 @@ func testServer(t *testing.T) *Server {
 	// session per run (the temp dir is cleaned up, the session isn't).
 	// Override before the host router is built lazily on first use.
 	srv.runtime = fakeRuntime{}
+	ownTestServer(t, srv)
 	return srv
 }
 
