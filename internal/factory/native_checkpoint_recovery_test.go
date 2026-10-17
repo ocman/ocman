@@ -148,3 +148,76 @@ func TestRequestCheckpointRecoveryFailsClosed(t *testing.T) {
 		})
 	}
 }
+
+func rebasedDeliveryFixture(t *testing.T) (*NativeService, *state.DB, *rebasedCheckpointLauncher, ImplementationSessionRequest) {
+	t.Helper()
+	db, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	l := &rebasedCheckpointLauncher{head: strings.Repeat("b", 40)}
+	l.checkpointSHA = strings.Repeat("a", 40)
+	s := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, l)
+	ep := createPouredWorkEpic(t, s, "Rebased delivery")
+	proposal, err := s.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: ep.ID, Manifest: ProposalManifest{EpicID: ep.ID, MolID: pouredIssueID(t, s, ep.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+		{Key: "only", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DecidePlanGate(t.Context(), ep.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Materialize(t.Context(), ep.ID, pouredIssueID(t, s, ep.ID, "materialization")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteAttempt(t.Context(), l.calls[0].AttemptID, l.calls[0].AgentToken, "only", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	delivery := l.calls[len(l.calls)-1]
+	if !delivery.Delivery {
+		t.Fatalf("delivery was not dispatched: %#v", delivery)
+	}
+	l.rebased = true
+	return s, db, l, delivery
+}
+
+func TestRebasedDeliveryCheckpoint(t *testing.T) {
+	const prURL = "https://forge.example/pr/1"
+	for _, scenario := range []string{"unapproved", "exact approval", "force-complete"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, db, l, run := rebasedDeliveryFixture(t)
+			var gate RecoveryGate
+			var err error
+			switch scenario {
+			case "exact approval":
+				gate, err = s.RequestCheckpointRecovery(t.Context(), run.AttemptID, run.AgentToken)
+			case "force-complete":
+				gate, err = s.CreateRecoveryGate(t.Context(), run.AttemptID, run.AgentToken, "Merged", "PR merged after rebase", []string{"Force-complete the delivery attempt using merged PR #1"})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(gate.Choices) == 1 {
+				if _, err := s.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", gate.Choices[0]); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = s.CompleteAttempt(t.Context(), run.AttemptID, run.AgentToken, "delivered", prURL)
+			if (err == nil) != (scenario != "unapproved") {
+				t.Fatalf("delivery completion error = %v", err)
+			}
+			saved, _, readErr := db.GetFactoryAttempt(t.Context(), run.AttemptID)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if scenario != "unapproved" && (saved.Result == nil || saved.Result.CommitSHA != l.head) {
+				t.Fatalf("rebased delivery was not recorded: %+v", saved)
+			}
+		})
+	}
+}

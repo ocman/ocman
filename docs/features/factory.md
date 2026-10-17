@@ -333,21 +333,24 @@ branch, and calls `factory` with `action: "complete_attempt"`, `attempt_id`,
 `attempt_token`, and `summary`. It omits `pr_url`.
 
 Ocman checks that the worktree is clean, that its HEAD matches its upstream, and
-that it includes the previously accepted commit. The successful Attempt stores
+that it includes the previously accepted commit. A rebase that kept that work
+also passes: every accepted commit since the old fork point must have a
+patch-equivalent commit in HEAD. The successful Attempt stores
 the branch, target branch, and commit SHA. Before launching the next Issue,
 Ocman checks that the branch still matches that checkpoint. Missing branches,
 dirty worktrees, or unexpected commits require reconciliation rather than a
 silent reset. Checkpoints survive an ocman restart.
 
-After an explicitly authorized rebase, an implementation agent can call
+When a rebase changed the accepted commits (conflict resolution, squashing),
+an implementation or delivery agent can call
 `factory` with `action: "request_checkpoint_recovery"`, `attempt_id`, and
 `attempt_token`. Ocman checks the clean, pushed branch and opens a recovery
 decision whose generated choice names the exact attempt, repository, branch,
 original checkpoint, and new SHA. The user must select that choice and resume.
 General responses such as "allow rebase" do not authorize checkpoint replacement.
 The agent then retries `complete_attempt`; normal checks still apply. Any HEAD
-change requires a fresh exact-SHA decision. Verification and delivery cannot use
-this exception. The original checkpoint remains in the frozen policy and the
+change requires a fresh exact-SHA decision. Verification cannot use this exception;
+delivery still needs its normal pull request checks. The original checkpoint remains in the frozen policy and the
 durable recovery response; successful completion atomically records the new
 checkpoint for subsequent Issues. No migration or manual `state.db` edit is
 needed. Update or restart the running ocman binary before using this action.
@@ -535,7 +538,8 @@ If a PR is merged before Factory records Delivery, the agent must request
 recovery. Factory accepts that merged PR only after a human resumes the same
 Attempt with `Force-complete the delivery attempt using merged PR #<number>`.
 The PR number and target branch must match, and the assigned worktree must
-still be clean at its pushed checkpoint.
+still be clean and pushed. A rebase before the merge does not block it: the
+merged PR, not ancestry of the last implementation checkpoint, is the authority.
 
 Delivery uses the same recovery gates, launch retries, and Reopen control as
 implementation. A Delivery failure does not reopen completed implementation

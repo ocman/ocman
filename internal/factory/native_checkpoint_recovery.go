@@ -16,8 +16,13 @@ func checkpointRebaseApproval(attempt model.FactoryAttempt, head string) string 
 
 func (s *NativeService) validateAttemptCheckpoint(ctx context.Context, attempt model.FactoryAttempt) (string, error) {
 	p := attempt.FrozenPolicy
+	if p.ForceComplete {
+		// The merged pull request is the authority for a force-completed
+		// delivery; its pre-merge rebase cannot contain the old checkpoint.
+		return s.implementation.ValidateImplementationCheckpoint(ctx, p.Repository, p.Branch, "")
+	}
 	head, err := s.implementation.ValidateImplementationCheckpoint(ctx, p.Repository, p.Branch, p.CheckpointSHA)
-	if err == nil || err.Error() != "factory handoff does not include the accepted checkpoint" || p.CheckpointSHA == "" || p.Delivery {
+	if err == nil || err.Error() != "factory handoff does not include the accepted checkpoint" || p.CheckpointSHA == "" {
 		return head, err
 	}
 	store, ok := s.store.(nativeAttemptCompletionStore)
@@ -62,7 +67,7 @@ func (s *NativeService) RequestCheckpointRecovery(ctx context.Context, attemptID
 		return RecoveryGate{}, err
 	}
 	p := attempt.FrozenPolicy
-	if !found || p.CheckpointSHA == "" || p.Branch == "" || p.Delivery {
+	if !found || p.CheckpointSHA == "" || p.Branch == "" {
 		return RecoveryGate{}, fmt.Errorf("%w: attempt has no recoverable implementation checkpoint", ErrInvalidRequest)
 	}
 	if step, err := s.verificationStep(ctx, attempt); err != nil || step != nil {

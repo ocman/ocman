@@ -107,9 +107,30 @@ func ValidateFactoryCheckpoint(ctx context.Context, repoRoot, branch, checkpoint
 		return "", err
 	}
 	if checkpoint != "" {
-		if _, err := gitexec.Output(ctx, repoRoot, "merge-base", "--is-ancestor", checkpoint, head); err != nil {
+		if _, err := gitexec.Output(ctx, repoRoot, "merge-base", "--is-ancestor", checkpoint, head); err != nil && !rebasedCheckpoint(ctx, repoRoot, checkpoint, head) {
 			return "", errors.New("factory handoff does not include the accepted checkpoint")
 		}
 	}
 	return head, nil
+}
+
+// rebasedCheckpoint accepts a rebase that kept the accepted work: every commit
+// between the old fork point and the checkpoint has a patch-equivalent commit
+// in head. Conflict-resolved, squashed or dropped commits fail closed.
+func rebasedCheckpoint(ctx context.Context, repoRoot, checkpoint, head string) bool {
+	base, err := gitexec.Output(ctx, repoRoot, "merge-base", checkpoint, head)
+	if err != nil {
+		return false
+	}
+	out, err := gitexec.Output(ctx, repoRoot, "cherry", head, checkpoint, strings.TrimSpace(base))
+	if err != nil {
+		return false
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "- ") {
+			return false
+		}
+	}
+	return lines[0] != ""
 }

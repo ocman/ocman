@@ -153,3 +153,58 @@ func TestFactoryWorkspaceLocalNamespaceName(t *testing.T) {
 		t.Fatalf("local namespace target = %s/%s, %v", target, base, err)
 	}
 }
+
+func TestFactoryCheckpointAcceptsPatchEquivalentRebase(t *testing.T) {
+	ctx := t.Context()
+	repo := initTestRepo(t)
+	gitRun(t, repo, "branch", "-M", "main")
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	gitRun(t, repo, "init", "--bare", remote)
+	gitRun(t, repo, "remote", "add", "origin", remote)
+	gitRun(t, repo, "push", "-u", "origin", "main")
+	created, err := CreateWorktree(ctx, CreateWorktreeRequest{RepoRoot: repo, Branch: "factory/rebase", NewBranch: true, BaseRef: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(dir, name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		gitRun(t, dir, "add", name)
+		gitRun(t, dir, "commit", "-m", "test: "+name)
+	}
+	commit(created.Path, "first.txt", "first")
+	commit(created.Path, "second.txt", "second")
+	gitRun(t, created.Path, "push", "-u", "origin", created.Branch)
+	checkpoint, err := ValidateFactoryCheckpoint(ctx, repo, created.Branch, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(repo, "main.txt", "main")
+	gitRun(t, created.Path, "rebase", "main")
+	gitRun(t, created.Path, "push", "--force", "origin", created.Branch)
+	rebased, err := ValidateFactoryCheckpoint(ctx, repo, created.Branch, checkpoint)
+	if err != nil || rebased == checkpoint {
+		t.Fatalf("rebased checkpoint = %q, %v", rebased, err)
+	}
+
+	for name, rewrite := range map[string]func(){
+		"changed patch": func() {
+			commit(created.Path, "second.txt", "resolved differently")
+			gitRun(t, created.Path, "reset", "--soft", "HEAD~2")
+			gitRun(t, created.Path, "commit", "-m", "test: squashed")
+		},
+		"dropped commit": func() { gitRun(t, created.Path, "reset", "--hard", "HEAD~1") },
+		"discarded work": func() { gitRun(t, created.Path, "reset", "--hard", "main") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			gitRun(t, created.Path, "reset", "--hard", rebased)
+			rewrite()
+			gitRun(t, created.Path, "push", "--force", "origin", created.Branch)
+			if _, err := ValidateFactoryCheckpoint(ctx, repo, created.Branch, checkpoint); err == nil || err.Error() != "factory handoff does not include the accepted checkpoint" {
+				t.Fatalf("rewritten checkpoint error = %v", err)
+			}
+		})
+	}
+}
