@@ -940,8 +940,6 @@ cd frontend && pnpm lint            # ESLint
 cd frontend && pnpm exec tsc -b     # TypeScript typecheck
 ./scripts/check-platform-branching.sh  # AD-12a: no `platform === '...'`
 ./scripts/check-settings-rows.sh       # no hand-rolled settings-row markup
-./scripts/fuzz_test.sh                 # fuzz.sh self-test (fake go)
-./scripts/fuzz_report_issues_test.sh   # fuzz-report-issues.sh self-test (fake curl)
 make coverage SUITE=frontend        # vitest with coverage
 make coverage-check SUITE=frontend  # coverage ratchet vs the gh-pages baseline
 
@@ -955,6 +953,10 @@ make coverage-check SUITE=go        # coverage ratchet
 # Other jobs
 pnpm exec vite build && pnpm test:e2e   # Playwright e2e (chromium) against the built bundle
 ```
+
+The weekly `.forgejo/workflows/fuzz.yml` workflow runs `scripts/fuzz_test.sh`
+and `scripts/fuzz_report_issues_test.sh` before fuzzing. These script self-tests
+use fake Go and curl commands and do not run in regular CI.
 
 Locally, `make test` and `make lint` cover the same ground.
 `make lint` runs `go vet`, `golangci-lint run`, `tsc -b`, `pnpm lint`,

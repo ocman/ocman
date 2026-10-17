@@ -46,6 +46,10 @@ jobs:
             go-fuzz-${{ runner.os }}-${{ runner.arch }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-
+      - name: Fuzz script self-tests
+        run: |
+          ./scripts/fuzz_test.sh
+          ./scripts/fuzz_report_issues_test.sh
       # The manual fuzztime input reaches the script only as an environment
       # variable, which fuzz.sh validates; it is never part of shell source.
       - name: Fuzz
