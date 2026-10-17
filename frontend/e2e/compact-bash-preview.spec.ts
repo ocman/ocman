@@ -23,7 +23,7 @@ for (const { label, command, description, status } of [
     } }));
     await page.goto(`/session/${MOCK_SESSION.id}`);
     const viewport = page.getByTestId('conversation-viewport');
-    const preview = viewport.getByText(description ? command : `$ ${command}`, { exact: true });
+    const preview = viewport.getByText(command, { exact: true });
     await expect(preview).toBeVisible();
     for (const width of [260, 500]) {
       // Exercise wrapping at both narrow and wider conversation widths.
@@ -48,6 +48,6 @@ for (const { label, command, description, status } of [
     expect(await full.textContent()).toContain(command);
     await row.click();
     await expect(full).not.toBeVisible();
-    expect(await preview.textContent()).toBe(description ? command : `$ ${command}`);
+    expect(await preview.textContent()).toBe(command);
   });
 }
