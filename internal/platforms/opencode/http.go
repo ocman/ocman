@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -171,19 +168,6 @@ func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
 		return nil, errFetchFailed
 	}
 	return body, nil
-}
-
-// logFetchFailure logs a tolerated upstream fetch failure. A cancelled
-// caller context (browser navigated away, aborted poll, closed SSE) is
-// not an upstream problem, so it logs at DEBUG; everything else is a
-// real failure and stays at WARN.
-func logFetchFailure(err error, fields log.Fields, msg string) {
-	entry := log.WithFields(fields).WithField("error", err)
-	if errors.Is(err, context.Canceled) {
-		entry.Debug(msg)
-		return
-	}
-	entry.Warn(msg)
 }
 
 // postJSON performs a POST with a JSON body. Returns nil on 2xx,

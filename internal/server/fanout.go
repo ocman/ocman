@@ -42,8 +42,43 @@ func isRemotePlatformID(id string) bool {
 // remotePlatform adapter). remember is called for each adapter's result
 // (may be nil) so the registry's reverse-lookup cache stays warm.
 func (s *Server) fanOutSessions(ctx context.Context, dir string, since int64, remember func(platforms.ID, []db.Session)) []db.Session {
-	all, _ := s.fanOutSessionsResult(ctx, dir, since, remember)
+	all, err := s.fanOutSessionsResult(ctx, dir, since, remember)
+	if err != nil {
+		logSessionListFailures(err)
+	}
 	return all
+}
+
+type sessionListFailure struct {
+	platform platforms.ID
+	err      error
+}
+
+func (e *sessionListFailure) Error() string {
+	return fmt.Sprintf("listing %s sessions: %v", e.platform, e.err)
+}
+
+func (e *sessionListFailure) Unwrap() error { return e.err }
+
+// Result callers report their own errors. Only the best-effort dashboard
+// wrapper logs here, otherwise push observation reports the same failure twice.
+func logSessionListFailures(err error) {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, failure := range joined.Unwrap() {
+			logSessionListFailures(failure)
+		}
+		return
+	}
+	var failure *sessionListFailure
+	if !errors.As(err, &failure) {
+		return // Unavailable adapters and stale snapshots were never warnings.
+	}
+	entry := log.WithError(failure.err).WithField("platform", failure.platform)
+	if errors.Is(failure.err, context.Canceled) {
+		entry.Debug("listing sessions from platform")
+		return
+	}
+	entry.Warn("listing sessions from platform")
 }
 
 // The dashboard tolerates partial results. Push observation must reject them
@@ -77,9 +112,7 @@ func (s *Server) fanOutSessionsResult(ctx context.Context, dir string, since int
 
 			sessions, err := adapter.Sessions(callCtx, dir, since)
 			if err != nil {
-				results[i].err = fmt.Errorf("listing %s sessions: %w", adapter.ID(), err)
-				log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
-					Warn("listing sessions from platform")
+				results[i].err = &sessionListFailure{platform: adapter.ID(), err: err}
 				return
 			}
 			results[i] = result{id: adapter.ID(), sessions: sessions}

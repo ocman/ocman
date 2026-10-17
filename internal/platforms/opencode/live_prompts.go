@@ -155,6 +155,7 @@ func (a *Adapter) ClearPromptsForPort(port string) {
 	}
 	a.rt.forgetSessionsForPort(port)
 	catalogCache.invalidatePort(port)
+	fetchFailureLogs.invalidatePort(port)
 	sessionCache.invalidatePort(port)
 	a.prompts.mu.Lock()
 	a.prompts.portGen[port]++

@@ -662,6 +662,7 @@ func ResetCaches() {
 	// The HTTP caches and the v2 dialect cache stay process-wide (keyed by
 	// port); a reload must not serve the previous backend's answers.
 	catalogCache.reset()
+	fetchFailureLogs.reset()
 	sessionCache.reset()
 	ocv2.ResetHostCache()
 }
