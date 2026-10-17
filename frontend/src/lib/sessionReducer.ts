@@ -160,6 +160,8 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
       // server state is now authoritative.
       return {
         ...action.view,
+        // REST has no task ledger and must not erase a newer live observation.
+        backgroundTaskCount: state.sessionId === action.view.sessionId ? state.backgroundTaskCount : 0,
         _deltaOwnedFields: action.view._deltaOwnedFields,
         _refetchRequested: false,
         // Monotonic, so fences taken before the replacement stay comparable.

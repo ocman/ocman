@@ -93,6 +93,12 @@ for `message.updated`, `message.part.updated`, `message.part.delta`,
 `limited` with `resetsAt` in Unix milliseconds. Interrupted prompts are removed
 by a replied event with a cancelled reason.
 
+Backends may also publish `ocman.session.background` with
+`{sessionID, count}`. This is an absolute nonnegative count of tracked background
+tasks, not a delta. A leased browser snapshot includes the current count, zero
+included; `session.idle` clears it. Older clients can ignore this informational
+event without changing turn lifecycle or queue ordering.
+
 A permission prompt's `patterns` and `always` use OpenCode's wildcard syntax
 plus one escape (`ExactPattern`, `PatternValue` in `pattern.go`): a backslash
 before `*`, `?` or `\` makes it literal. A backend publishes a call's

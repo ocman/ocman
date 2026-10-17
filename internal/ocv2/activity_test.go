@@ -116,7 +116,7 @@ func TestBackgroundShellReconnect(t *testing.T) {
 		fakeEv("shell.exited", 2, "/repo", `{"id":"sh_1","status":"exited"}`),
 	}
 	evs := cmpStream(t, f.URL+"/event")
-	cmpTypeSeq(t, evs, "session.status", "session.status", "session.idle")
+	cmpTypeSeq(t, evs, "session.status", "ocman.session.background", "session.status", "session.idle")
 	cmpJSON(t, "still busy", obj(evs[0], "properties"), `{"sessionID":"s1","status":{"type":"busy"}}`)
 	f.one("GET /api/shell") // duplicate locations were not fetched twice
 }
@@ -138,7 +138,7 @@ func TestActivityDirectoryScope(t *testing.T) {
 		fakeEv("shell.exited", 1, "/other", `{"id":"sh_other","status":"exited"}`),
 		fakeEv("shell.exited", 2, "/repo", `{"id":"sh_1","status":"exited"}`),
 	}
-	cmpTypeSeq(t, cmpStream(t, f.URL+"/event?directory=/repo/"), "session.status", "session.idle")
+	cmpTypeSeq(t, cmpStream(t, f.URL+"/event?directory=/repo/"), "ocman.session.background", "session.status", "session.idle")
 }
 
 func TestActivitySnapshotErrors(t *testing.T) {

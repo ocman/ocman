@@ -168,7 +168,7 @@ func (t *translator) handle(ev v2Event) error {
 	emit := func(typ string, props map[string]any) error { return t.emit(sessionID, dir, typ, props) }
 	switch ev.Type {
 	case "server.connected":
-		return emit("server.connected", map[string]any{})
+		return emit("server.connected", map[string]any{"backgroundTasks": t.activity.backgroundCounts()})
 	case "session.execution.started":
 		t.activity.foreground[sessionID] = true
 		return emit("session.status", map[string]any{"status": map[string]any{"type": "busy"}})
@@ -184,6 +184,9 @@ func (t *translator) handle(ev v2Event) error {
 		return t.emitActivity(sessionID, dir)
 	case "shell.created":
 		if owner := t.activity.addShell(obj(d, "info")); owner != "" {
+			if err := t.emitBackgroundCount(owner, dir); err != nil {
+				return err
+			}
 			return t.emitActivity(owner, dir)
 		}
 		return nil
@@ -192,6 +195,9 @@ func (t *translator) handle(ev v2Event) error {
 		owner := t.activity.shells[id]
 		delete(t.activity.shells, id)
 		if owner != "" {
+			if err := t.emitBackgroundCount(owner, dir); err != nil {
+				return err
+			}
 			return t.emitActivity(owner, dir)
 		}
 		return nil

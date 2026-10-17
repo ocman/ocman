@@ -33,6 +33,7 @@ import { SessionTerminalDock } from '../../components/SessionTerminalDock';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
 import './ComposerNotices.css';
+import { BackgroundTasksNotice } from './BackgroundTasksNotice';
 import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
@@ -1002,6 +1003,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   composer={(
                     <>
                     <div className="oc-composer-notices" data-testid="composer-notices" tabIndex={0} role="region" aria-label="Conversation status">
+                      <BackgroundTasksNotice count={view.backgroundTaskCount ?? 0} />
                       {session.status === 'limited' && <StatusBadge status={session.status} resetsAt={session.resetsAt} />}
                       <SessionSyncIndicator
                         refreshing={view.refreshing}

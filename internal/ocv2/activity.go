@@ -15,6 +15,20 @@ type activity struct {
 	shells     map[string]string // shell ID -> session ID
 }
 
+func (a *activity) backgroundCounts() map[string]int {
+	counts := map[string]int{}
+	for _, owner := range a.shells {
+		counts[owner]++
+	}
+	return counts
+}
+
+func (t *translator) emitBackgroundCount(sessionID, dir string) error {
+	return t.emit(sessionID, dir, "ocman.session.background", map[string]any{
+		"count": t.activity.backgroundCounts()[sessionID],
+	})
+}
+
 func (a *activity) busy(sessionID string) bool {
 	if _, ok := a.foreground[sessionID]; ok {
 		return true

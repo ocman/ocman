@@ -897,6 +897,7 @@ flowchart TD
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
     Hub -->|ocman.settings.changed: clear settings cache| Stores
+    Hub -->|background task snapshots + count changes| Stores
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
@@ -913,6 +914,12 @@ flowchart TD
   with no runtime discovery. Backend plugins remain separate and reach the UI
   only through plugin panes and palette actions. The command palette and the
   session right-panel tabs still keep their own lists.
+- **Background task notice.** OpenCode v2's session-owned running shells and
+  managed Claude Code's tracked background tasks publish absolute counts through
+  `ocman.session.background`. The composer shows the count only above zero.
+  OpenCode restores counts in `server.connected.backgroundTasks`; Claude includes
+  the count in its leased session snapshot. REST refreshes preserve live counts,
+  and the idle edge clears them. Counts are not inferred from transcript tools.
 - **Shared controls.** `Control` provides buttons, button groups, text inputs,
   textareas, search inputs, and selects with native form semantics and shared
   focus, disabled, and invalid styles. `IconButton`, `RefreshButton`, and

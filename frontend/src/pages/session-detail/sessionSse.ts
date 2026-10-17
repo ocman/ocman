@@ -51,7 +51,7 @@ const NAMED_CHANNELS = [
   'question', 'question.asked', 'question.replied', 'question.rejected',
   'approval', 'tool', 'error', 'ocman.permission.pending', 'ocman.permission.checking',
   'ocman.permission.flagged', 'ocman.permission.auto-approved', 'ocman.permission.approved',
-  'ocman.session.changed',
+  'ocman.session.changed', 'ocman.session.background', 'server.connected',
 ];
 
 function sessionActivity(event: SseEvent, sessionId: string) {

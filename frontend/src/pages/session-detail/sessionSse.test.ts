@@ -8,6 +8,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('delivers named background snapshots and live counts through the same reducer', () => {
+  let view = initialSessionView('s');
+  const stream = createSessionSse({
+    sessionId: 's', dispatch: (action) => { view = reduceBatchedSessionView(view, action); },
+    reconcile: vi.fn(async () => true), dirty: vi.fn(),
+  });
+  const listeners = new Map<string, EventListener>();
+  const source = { onmessage: null, addEventListener: (name: string, listener: EventListener) => listeners.set(name, listener) } as unknown as EventSource;
+  stream.attach(source);
+  listeners.get('server.connected')!(new MessageEvent('server.connected', {
+    data: JSON.stringify({ backgroundTasks: { s: 2 } }),
+  }));
+  stream.flush();
+  expect(view.backgroundTaskCount).toBe(2);
+  listeners.get('ocman.session.background')!(new MessageEvent('ocman.session.background', {
+    data: JSON.stringify({ sessionID: 's', count: 1 }),
+  }));
+  stream.flush();
+  expect(view.backgroundTaskCount).toBe(1);
+  stream.dispose();
+});
+
 it('dispatches one reducer action for a burst, rather than relying on React render batching', () => {
   vi.useFakeTimers();
   vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);

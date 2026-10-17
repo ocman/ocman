@@ -230,6 +230,11 @@ func (l *live) snapshot(id string) []providerprotocol.Event {
 	// A settled turn's idle edge precedes the snapshot's cursor: a browser
 	// that read busy before it ended learns the turn is over from here.
 	p := l.procs[id]
+	count := 0
+	if p != nil && p.busy {
+		count = len(p.tasks)
+	}
+	events = append(events, backgroundCountEvent(id, count))
 	if ok && (s.Status == db.StatusDone || s.Status == db.StatusError) && len(l.waits[id]) == 0 && (p == nil || !p.busy) {
 		props, _ := json.Marshal(map[string]any{"sessionID": id})
 		events = append(events, providerprotocol.Event{Type: "session.idle", Properties: props})

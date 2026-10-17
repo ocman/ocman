@@ -2,6 +2,7 @@
 // Permission and question prompts are in sessionPromptReducer.ts.
 
 import type { Message, Part } from './api';
+import { backgroundSnapshotCount, reduceBackgroundTaskCount } from './sessionBackgroundTasks';
 import type { SessionMetadata, SessionView, SseEvent } from './sessionViewTypes';
 import { answeredQuestionRequestId, extractMessageFromEvent, isSessionStatusIdle } from './sseHelpers';
 import { applyDelta, STREAMING_FIELDS, upsertMessage, upsertSnapshotPart } from './sessionViewParts';
@@ -53,6 +54,10 @@ function retryNotice(raw: unknown): SessionMetadata['notice'] | null {
 export function reduceSseEvent(state: SessionView, event: SseEvent): SessionView {
   const props = event.properties || {};
   switch (event.type) {
+    case 'server.connected':
+      return reduceBackgroundTaskCount(state, backgroundSnapshotCount(props.backgroundTasks, state.sessionId));
+    case 'ocman.session.background':
+      return reduceBackgroundTaskCount(state, props.count);
     case 'message.created':
     case 'message.updated':
       return reduceMessageSnapshot(state, event);
@@ -302,6 +307,7 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
       ...(notice ? { notice } : clearRetryNotice ? { notice: undefined } : {}),
     } : state.session,
     _refetchRequested: refetch || state._refetchRequested,
+    ...(refetch ? { backgroundTaskCount: 0 } : {}),
     _statusFresh: true,
     _statusRevision: (state._statusRevision ?? 0) + 1,
   };
@@ -315,6 +321,7 @@ function reduceSessionIdle(state: SessionView): SessionView {
   return {
     ...state,
     session: nextSession,
+    backgroundTaskCount: 0,
     _refetchRequested: true,
     _statusFresh: true,
     _statusRevision: (state._statusRevision ?? 0) + 1,

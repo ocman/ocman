@@ -29,6 +29,7 @@ func (l *live) sdkSystem(p *proc, raw []byte) {
 		return
 	}
 	l.mu.Lock()
+	previousCount := len(p.tasks)
 	wake := false
 	switch event.Subtype {
 	case "session_state_changed":
@@ -53,7 +54,11 @@ func (l *live) sdkSystem(p *proc, raw []byte) {
 		}
 	}
 	l.armRunCeilingLocked(p)
+	count := len(p.tasks)
 	l.mu.Unlock()
+	if count != previousCount {
+		l.publishBackgroundCount(p, count)
+	}
 	if wake {
 		l.resumeRun(p)
 	}

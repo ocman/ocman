@@ -49,7 +49,7 @@ func TestEventsLifecycle(t *testing.T) {
 	}
 	evs := cmpStream(t, f.URL+"/event")
 	cmpJSON(t, "events", evs, `[
-		{"type":"server.connected","properties":{}},
+		{"type":"server.connected","properties":{"backgroundTasks":{}}},
 		{"type":"server.heartbeat","properties":{}},
 		{"type":"session.status","properties":{"sessionID":"s1","status":{"type":"busy"}}},
 		{"type":"session.status","properties":{"sessionID":"s1","status":{"type":"retry","attempt":2,"message":"rate limited","next":12345}}},
