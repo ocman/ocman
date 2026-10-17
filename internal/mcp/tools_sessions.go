@@ -65,12 +65,6 @@ func sessionServerTools(tools *sessionTools) []server.ServerTool {
 		mcplib.WithBoolean("content"), mcplib.WithNumber("since_days")), Handler: tools.handle}}
 }
 
-func addSessionTools(s *server.MCPServer, tools *sessionTools) {
-	for _, tool := range sessionServerTools(tools) {
-		s.AddTool(tool.Tool, tool.Handler)
-	}
-}
-
 func (t *sessionTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	action, err := req.RequireString("action")
 	if err != nil {

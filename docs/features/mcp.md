@@ -70,6 +70,13 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 
 ## Tools
 
+Every tool accepts an optional `intent` string explaining what the agent wants
+to achieve, for example `"intent": "Find the session that reported the build failure"`.
+Ocman shows it beside the tool name in the conversation. It does not change
+the operation, permissions, or confirmation requirements. Omit it to keep the
+usual argument summary. Code Mode calls also show intents supplied as literal
+strings in `tools.ocman` calls; computed values are not evaluated for display.
+
 | Tool | Description |
 |------|-------------|
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially on a shared branch; `complete_attempt` records a verified clean, pushed commit checkpoint without `pr_url`. A separate final delivery Issue creates or reuses the review-ready PR and completes with `pr_url`. |

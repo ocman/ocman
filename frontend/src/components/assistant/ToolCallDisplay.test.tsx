@@ -25,6 +25,21 @@ const renderTool = (p: Partial<Props>) =>
   render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />, { wrapper: MemoryRouter });
 
 describe('ToolCallDisplay bash output', () => {
+  it.each(['running', 'completed', 'error'])('shows direct ocman intent while %s and preserves raw details', (status) => {
+    renderTool({ toolName: 'ocman_sessions', argsText: `${status}\n{"action":"list","intent":"Find the failing session"}`, result: 'Session list' });
+    const button = screen.getByRole('button', { name: 'ocman_sessions Find the failing session' });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(button);
+    expect(screen.getByText(/"action":"list"/)).toBeInTheDocument();
+    expect(screen.getByText('Session list')).toBeInTheDocument();
+  });
+
+  it('shows literal intent in Code Mode calls', () => {
+    const code = 'return tools.ocman.sessions({action: "list", intent: "Find the failing session"});';
+    renderTool({ toolName: 'execute', argsText: `running\n${JSON.stringify({ code })}` });
+    expect(screen.getByRole('button', { name: 'MCP ocman.sessions Find the failing session' })).toBeInTheDocument();
+  });
+
   it('labels Code Mode MCP calls and preserves the expandable code and result', () => {
     const code = "return await tools['chrome-devtools'].list_pages({});";
     renderTool({ toolName: 'execute', argsText: `completed\n${JSON.stringify({ code })}`, result: 'Page list' });
@@ -504,6 +519,11 @@ describe('ToolCallDisplay artifact card', () => {
     renderTool({ toolName: 'ocman_artifacts', argsText: 'completed\n{"action":"create"}', result: output });
     expect(screen.getByTestId('artifact-tool-card')).toHaveTextContent('2 items');
     expect(screen.getByRole('link', { name: 'Build [report]' })).toHaveAttribute('href', '/artifacts/art%201');
+  });
+
+  it('keeps intent visible when the result becomes an artifact card', () => {
+    renderTool({ toolName: 'ocman_artifacts', argsText: 'completed\n{"action":"create","intent":"Share the build report"}', result: output });
+    expect(screen.getByTestId('artifact-tool-card')).toHaveTextContent('Share the build report');
   });
 
   it('falls back to the generic renderer while running, for other actions, or bad output', () => {

@@ -8,6 +8,7 @@ import { parseShellEnvelope } from '../../lib/shellEnvelope';
 import { TodoList } from '../TodoList';
 import { isMutedLineTool } from '../../lib/mutedTools';
 import { mcpToolLabel } from '../../lib/mcpToolLabel';
+import { mcpToolIntent } from '../../lib/mcpToolIntent';
 import { useIsPrinting } from '../../lib/useIsPrinting';
 import { usePrintCollapse } from '../../lib/printCollapseContext';
 import { useUiStore } from '../../lib/uiStore';
@@ -168,7 +169,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   const toolStatus = lines[0] || 'running';
   const remainingArgs = lines.slice(1).join('\n');
   const createdArtifact = toolStatus === 'completed' ? parseCreatedArtifact(toolName, result) : null;
-  if (createdArtifact) return <ArtifactToolCard artifact={createdArtifact} />;
+  if (createdArtifact) return <ArtifactToolCard artifact={createdArtifact} intent={mcpToolIntent(toolName, remainingArgs)} />;
 
   // Show tool calls that have content, are completed, or are actively running.
   // Only hide if there's truly nothing to show (no args, no result, no
@@ -356,7 +357,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   // accent but stay collapsed — same compact treatment as success so
   // the conversation stays scannable.
   const mcpLabel = mcpToolLabel(toolName, detail || remainingArgs);
-  const summary = mcpLabel ? '' : parsedTitle || summarizeToolArgs(remainingArgs);
+  const summary = mcpToolIntent(toolName, detail || remainingArgs) || (mcpLabel ? '' : parsedTitle || summarizeToolArgs(remainingArgs));
   const arrowIcon = toolStatus === 'running' ? '\u223C' : toolStatus === 'error' ? '\u2717' : '\u2192';
   const compactClass = [
     'oc-tool-compact',
@@ -370,7 +371,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
     <>
       <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>
       <span className="oc-tool-compact-name">{mcpLabel || toolName}</span>
-      {summary && <span className="oc-tool-compact-summary">{summary}</span>}
+      {summary && <>{' '}<span className="oc-tool-compact-summary">{summary}</span></>}
       {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
     </>
   );

@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"context"
+	"maps"
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
@@ -38,11 +40,7 @@ func New(deps Deps) *Server {
 		mcpserver.WithToolCapabilities(false),
 	)
 
-	addFileTools(s, &fileTools{sign: deps.SignFile})
-
-	s.AddTools(deps.Tools...)
-	addSessionTools(s, &sessionTools{svc: deps.SessionService})
-	s.AddTools(modelServerTools(deps)...)
+	s.AddTools(ServerTools(deps)...)
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
@@ -67,5 +65,11 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	tools = append(tools, deps.Tools...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	tools = append(tools, modelServerTools(deps)...)
+	for i := range tools {
+		tools[i].Tool.InputSchema.Properties = maps.Clone(tools[i].Tool.InputSchema.Properties)
+		mcplib.WithString("intent", mcplib.Description(
+			"Optional short explanation of what you want to achieve with this call. Shown in the conversation; does not change the operation.",
+		))(&tools[i].Tool)
+	}
 	return tools
 }

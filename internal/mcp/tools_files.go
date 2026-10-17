@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // FileSigner mints a browser-reachable URL for an absolute path. The
@@ -40,11 +39,6 @@ func embedFileTool() mcplib.Tool {
 			mcplib.Description("Optional link/alt text. Defaults to the file name."),
 		),
 	)
-}
-
-// addFileTools registers the asset-embedding tools on the MCP server.
-func addFileTools(s *server.MCPServer, t *fileTools) {
-	s.AddTool(embedFileTool(), t.handleEmbedFile)
 }
 
 // handleEmbedFile handles the embed_file tool call.

@@ -68,6 +68,22 @@ func TestHandlerNegotiatesProtocolVersion(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("tools/list status = %d, body = %s", rec.Code, rec.Body.String())
 		}
+		var listed struct {
+			Result struct {
+				Tools []mcplib.Tool `json:"tools"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+			t.Fatal(err)
+		}
+		if len(listed.Result.Tools) == 0 {
+			t.Fatal("no tools advertised")
+		}
+		for _, tool := range listed.Result.Tools {
+			if _, ok := tool.InputSchema.Properties["intent"]; !ok {
+				t.Errorf("%s missing intent", tool.Name)
+			}
+		}
 	})
 
 	for _, version := range mcplib.LegacyProtocolVersions() {
