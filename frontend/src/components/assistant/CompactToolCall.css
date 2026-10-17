@@ -30,6 +30,16 @@
   overflow-wrap: anywhere;
 }
 
+.oc-tool-compact-command-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .oc-tool-compact-file {
   display: flex;
   gap: 6px;
