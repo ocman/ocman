@@ -90,3 +90,16 @@ test('choosing another session replaces the drawer without racing a history pop'
   await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
   await expect(page.getByTestId('session-sidebar')).toBeHidden();
 });
+
+test('choosing the active session dismisses its drawer without duplicating history', async ({ mockedPage: page }) => {
+  await installPhoneReviewRoutes(page);
+  await page.goto('/sessions');
+  await page.getByRole('link', { name: /Fix the login bug/ }).first().click();
+  await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  await page.getByRole('button', { name: 'Open session list' }).click();
+  await page.getByTestId('session-sidebar').getByRole('button', { name: /Fix the login bug/ }).click();
+  await expect(page.getByTestId('session-sidebar')).toBeHidden();
+  await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  await page.goBack();
+  await expect(page).toHaveURL(/\/sessions$/);
+});

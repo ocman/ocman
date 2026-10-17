@@ -173,10 +173,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // (command palette, auto-redirect, closed-session reopen).
   const navigateFromSidebar = useCallback((nextId: string) => {
     const phoneOverlay = mobilePanel !== null && phone;
+    if (phoneOverlay && nextId === id) return closeMobilePanel();
     if (!phoneOverlay) closeMobilePanel();
     setSidebarScroll((previous) => ({ sessionId: nextId, tick: previous.tick + 1 }));
     navigateToSession(nextId, phoneOverlay);
-  }, [closeMobilePanel, navigateToSession, mobilePanel, phone]);
+  }, [closeMobilePanel, navigateToSession, mobilePanel, phone, id]);
 
   // The new SSE pipeline. Owns the EventSource, the reducer, the
   // initial fetch + reload + loadMore, the cache mirror, and the

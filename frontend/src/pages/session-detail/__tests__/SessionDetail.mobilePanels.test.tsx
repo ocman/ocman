@@ -45,6 +45,21 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it('dismisses the phone drawer when its active session is selected', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const current = makeSession({ id: 'phone-active-review', title: 'Active conversation' });
+    const page = renderSessionPage({ sessionId: current.id, detail: makeSessionDetail(current), sessions: [current] });
+    try {
+      const input = await screen.findByRole('textbox');
+      fireEvent.input(input, { target: { value: 'Keep my draft' } });
+      fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
+      expect(screen.getByTestId('session-layout').className).toContain('mobile-sidebar-open');
+      fireEvent.click(within(screen.getByTestId('session-sidebar')).getByRole('button', { name: /Active conversation/ }));
+      await waitFor(() => expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open'));
+      expect(screen.getByRole('textbox')).toHaveValue('Keep my draft');
+    } finally { page.result.unmount(); vi.unstubAllGlobals(); }
+  });
+
   it('reveals the conversation when a notification targets the session already open', async () => {
     vi.stubGlobal('innerWidth', 390);
     const page = renderSessionPage({ sessionId: 'sess_1' });
