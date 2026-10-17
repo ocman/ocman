@@ -339,18 +339,22 @@ func noiseSkip(path string) bool {
 //
 // SSE and the debug-log sink are skipped (see noiseSkip).
 func withRequestTiming(next http.Handler) http.Handler {
+	return withRequestTimingClock(next, time.Now)
+}
+
+func withRequestTimingClock(next http.Handler, now func() time.Time) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if noiseSkip(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		start := time.Now()
+		start := now()
 		collector := srvtiming.NewCollector()
 		r = r.WithContext(srvtiming.WithCollector(r.Context(), collector))
 		rec := &statusRecorder{ResponseWriter: w, timings: collector}
 		next.ServeHTTP(rec, r)
-		dur := time.Since(start)
+		dur := now().Sub(start)
 
 		fields := log.Fields{
 			"method":      r.Method,

@@ -72,11 +72,13 @@ func TestWithRequestTiming_LogsAtDebugForSlowRequests(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 	defer log.SetLevel(prev)
 
-	// Wrap handler that sleeps just over the threshold. We use
-	// slowRequestThreshold + a small margin so the test is robust
-	// against scheduling jitter without becoming flaky-slow.
-	sleep := slowRequestThreshold + 50*time.Millisecond
-	h := withRequestTiming(ringHandler(sleep, http.StatusOK))
+	// Advance the injected clock across the real production threshold instead
+	// of spending five wall-clock seconds in the handler.
+	now := time.Now()
+	h := withRequestTimingClock(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		now = now.Add(slowRequestThreshold + 50*time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}), func() time.Time { return now })
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
