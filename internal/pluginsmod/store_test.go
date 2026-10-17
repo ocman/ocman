@@ -10,7 +10,7 @@ import (
 
 func openPluginStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t), Schema)
+	db, err := state.Open(statetest.Path(t, Schema), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

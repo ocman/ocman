@@ -22,7 +22,7 @@ import (
 
 func fixture(t *testing.T) *Module {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t), Schema)
+	db, err := state.Open(statetest.Path(t, Schema), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

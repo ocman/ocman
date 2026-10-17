@@ -34,7 +34,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t), Schema)
+	db, err := state.Open(statetest.Path(t, Schema), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestRescanPlugins(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t), Schema)
+	db, err := state.Open(statetest.Path(t, Schema), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}
