@@ -98,6 +98,8 @@ func (m *Module) consumePluginEvents(ctx context.Context, id string, p *plugins.
 	events, requests := p.Events(), p.Requests()
 	for events != nil || requests != nil {
 		select {
+		case <-ctx.Done():
+			return
 		case event, ok := <-events:
 			if !ok {
 				events = nil

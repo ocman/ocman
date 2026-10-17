@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/plugins"
 )
 
 // Named permission profiles (Settings area): user-managed reusable rule sets
@@ -114,8 +115,8 @@ func readPermissionProfile(w http.ResponseWriter, r *http.Request) (PermissionPr
 		return PermissionProfile{}, false
 	}
 	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+	if !plugins.ValidPermissionProfileName(name) {
+		http.Error(w, "name must be 1-128 UTF-8 bytes without control characters", http.StatusBadRequest)
 		return PermissionProfile{}, false
 	}
 	if err := validatePermissionRules(req.Rules); err != nil {

@@ -361,6 +361,14 @@ Failures return a correlated `result.error` category, including `not_found` for
 a missing or deleted permission profile. The title includes the plugin ID and
 the caller's operation ID. Run requests are never automatically replayed.
 
+The host durably reserves `(pluginId, operationId)` before creating a session.
+Retries with identical parameters and the same approved project return the
+original result, including failures. Reusing the key with different parameters
+or a different project returns `conflict`. A simultaneous retry, or a receipt
+left pending by a crash during creation, returns `unavailable` without starting
+another session. Pending receipts need operator investigation, not a new ID
+and a blind retry, because creation may already have happened.
+
 The parameters are closed: `prompt` plus `agent`, `model` and
 `permissionProfile` selections passed through to the session, and an optional
 `subpath`. There is no directory parameter. The directory is always the

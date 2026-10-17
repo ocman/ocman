@@ -85,6 +85,9 @@ type Module struct {
 	recovered   bool
 	discovery   []pluginDiscoveryFailure
 	ctx         context.Context // processes run under it; nil once stopped
+	workerCtx   context.Context
+	stopWorkers context.CancelFunc
+	stopping    bool
 	processes   map[string]*plugins.Process
 	stderr      map[string]string
 	actionsOnce sync.Once
@@ -153,9 +156,13 @@ func (m *Module) Routes(r module.Router) {
 // it; until then (and after Stop) no process is started.
 func (m *Module) Bind(ctx context.Context) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopWorkers != nil {
+		m.stopWorkers()
+	}
 	m.ctx = ctx
-	m.mu.Unlock()
-	m.workers.Bind(ctx)
+	m.workerCtx, m.stopWorkers = context.WithCancel(ctx)
+	m.workers.Bind(m.workerCtx)
 }
 
 // Start binds ctx and runs discovery, starting approved processes. A
@@ -179,7 +186,21 @@ func (m *Module) Run(ctx context.Context) {
 	wg.Go(func() { m.runSessionDeliveryPump(ctx) })
 	wg.Go(func() { m.runSessionReplyReconciliation(ctx) })
 	wg.Wait()
+	m.mu.Lock()
+	m.stopping = true
+	if m.stopWorkers != nil {
+		m.stopWorkers()
+	}
+	m.mu.Unlock()
 	m.workers.Close()
+	// Initialize before closing even when no request was seen. Late consumers
+	// can only obtain these closed workers, never start a new dispatcher.
+	m.sessionOnce.Do(m.buildSessions)
+	m.sessionJobs.Close()
+	m.sessionDeliveries.Close()
+	m.conversationOnce.Do(m.buildConversations)
+	m.conversationJobs.Close()
+	m.conversationDeliveries.Close()
 }
 
 // Stop unbinds the lifetime context and stops every process.
@@ -187,6 +208,7 @@ func (m *Module) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ctx = nil
+	m.stopping = true
 	m.stopPluginProcessesLocked()
 }
 
@@ -200,8 +222,10 @@ func (m *Module) Subscribe(b *module.Bus) {
 				m.ReplyToConversation(ctx, e.Platform, e.SessionID)
 			})
 		})
-		go runWithRecover("plugin-session-completion", func() {
-			m.ReplyToSession(context.Background(), e.Platform, e.SessionID)
+		m.workers.Go(func(ctx context.Context) {
+			runWithRecover("plugin-session-completion", func() {
+				m.ReplyToSession(ctx, e.Platform, e.SessionID)
+			})
 		})
 	})
 }

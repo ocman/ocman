@@ -68,7 +68,7 @@ func TestSchemaUpgrades(t *testing.T) {
 					(SELECT max(version) FROM module_schema_version WHERE module = 'plugins')`).Scan(&profiles, &ledger); err != nil {
 					t.Fatal(err)
 				}
-				if want := min(legacy, 1); profiles != want || ledger != 1 {
+				if want := min(legacy, 1); profiles != want || ledger != len(Schema.Migrations) {
 					t.Fatalf("profiles = %d (want %d), ledger = %d", profiles, want, ledger)
 				}
 				_ = db.Close()

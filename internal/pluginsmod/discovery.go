@@ -153,8 +153,9 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 		m.processes[id] = process
 		// Events and inbound requests must be drained or the supervisor fails. The
 		// context is captured here, under mu, because Stop clears m.ctx.
-		eventCtx := context.WithoutCancel(m.ctx)
-		go runWithRecover("plugin-events", func() { m.consumePluginEvents(eventCtx, id, process) })
+		m.workers.Go(func(eventCtx context.Context) {
+			runWithRecover("plugin-events", func() { m.consumePluginEvents(eventCtx, id, process) })
+		})
 	}
 	return nil
 }

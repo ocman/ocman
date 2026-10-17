@@ -143,7 +143,7 @@ func (d Description) validateConversation() error {
 		if s.Key != ConversationProjectSetting {
 			continue
 		}
-		if s.Type != "string" || !s.Required || s.Secret {
+		if s.Type != "string" || !s.Required || s.Secret || s.List {
 			return ErrInvalidMessage
 		}
 		return nil

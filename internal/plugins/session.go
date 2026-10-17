@@ -76,11 +76,14 @@ func (p SessionRunParams) Validate() error {
 		return ErrInvalidMessage
 	}
 	if (p.Agent != "" && !validText(p.Agent)) || (p.Model != "" && !validText(p.Model)) ||
-		(p.PermissionProfile != "" && !validText(p.PermissionProfile)) {
+		(p.PermissionProfile != "" && !ValidPermissionProfileName(p.PermissionProfile)) {
 		return ErrInvalidMessage
 	}
 	return nil
 }
+
+// ValidPermissionProfileName is shared by profile mutations and run consumers.
+func ValidPermissionProfileName(name string) bool { return validText(name) }
 
 func (c SessionCompleted) Validate() error {
 	if !validText(c.SessionID) || !conversationText(c.Text) {

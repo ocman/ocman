@@ -17,7 +17,7 @@ func (s *Server) projectDirectory() func(context.Context, string) (string, error
 }
 
 // liveCatalog is the directory catalog of the first available local
-// adapter, or nil when its instance does not answer live (the historical
+// adapter answering live, or nil when no instance answers live (the historical
 // LiveConnection=false fallback is not a live catalog).
 func (s *Server) liveCatalog(ctx context.Context, directory string) *platforms.DirectoryCatalog {
 	if s.registry == nil {
@@ -29,7 +29,7 @@ func (s *Server) liveCatalog(ctx context.Context, directory string) *platforms.D
 		}
 		catalog, err := p.DirectoryCatalog(ctx, platforms.DirectoryCatalogRequest{Directory: directory})
 		if err != nil || catalog == nil || !catalog.LiveConnection {
-			return nil
+			continue
 		}
 		return catalog
 	}

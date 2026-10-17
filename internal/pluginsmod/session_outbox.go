@@ -134,19 +134,30 @@ func (m *Module) pumpSessionOutbox(ctx context.Context) {
 	if m.store == nil {
 		return
 	}
-	claimed, err := m.plugins.ClaimPluginSessionCompletions(ctx, sessionDeliveryBatch)
-	if err != nil {
-		log.WithError(err).Warn("claiming session completions for delivery")
-		return
-	}
 	allowed := map[string]bool{}
-	for _, completion := range claimed {
-		id := completion.PluginID
-		if _, asked := allowed[id]; !asked {
-			allowed[id] = m.sessionDeliveryAllowed(ctx, id)
+	var after int64
+	for admitted := 0; admitted < sessionDeliveryBatch && ctx.Err() == nil; {
+		claimed, err := m.plugins.sessionCompletionPage(ctx, after, sessionDeliveryBatch)
+		if err != nil {
+			log.WithError(err).Warn("claiming session completions for delivery")
+			return
 		}
-		if allowed[id] && m.beginSessionDelivery(completion.ID) {
-			m.sessionDeliveryWorker().Enqueue(completion)
+		for _, completion := range claimed {
+			after = completion.ID
+			id := completion.PluginID
+			if _, asked := allowed[id]; !asked {
+				allowed[id] = m.sessionDeliveryAllowed(ctx, id)
+			}
+			if allowed[id] && m.beginSessionDelivery(completion.ID) {
+				m.sessionDeliveryWorker().Enqueue(completion)
+				admitted++
+				if admitted == sessionDeliveryBatch {
+					return
+				}
+			}
+		}
+		if len(claimed) < sessionDeliveryBatch {
+			return
 		}
 	}
 }
@@ -159,7 +170,7 @@ func (m *Module) pumpSessionOutbox(ctx context.Context) {
 func (m *Module) sessionDeliveryAllowed(ctx context.Context, pluginID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.store == nil {
+	if m.store == nil || m.stopping {
 		return false
 	}
 	return m.store.WithPluginConversation(ctx, pluginID,
@@ -187,8 +198,8 @@ func (m *Module) endSessionDelivery(id int64) {
 
 // kickSessionOutbox pumps without waiting for the next tick.
 func (m *Module) kickSessionOutbox() {
-	go runWithRecover("plugin-session-pump", func() {
-		m.pumpSessionOutbox(context.Background())
+	m.workers.Go(func(ctx context.Context) {
+		runWithRecover("plugin-session-pump", func() { m.pumpSessionOutbox(ctx) })
 	})
 }
 
@@ -223,7 +234,16 @@ func (m *Module) runSessionDeliveryPump(ctx context.Context) {
 // and the plugin recognizes the repeat by the stable operation id.
 func (m *Module) DeliverSessionCompletion(completion PluginSessionCompletion) {
 	defer m.endSessionDelivery(completion.ID)
-	ctx := context.Background()
+	m.mu.Lock()
+	ctx := m.workerCtx
+	m.mu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.deliverSessionCompletion(ctx, completion)
+}
+
+func (m *Module) deliverSessionCompletion(ctx context.Context, completion PluginSessionCompletion) {
 	fields := log.Fields{"plugin_id": completion.PluginID, "delivery_id": completion.ID, "attempts": completion.Attempts}
 	current, err := m.plugins.PluginSessionCompletionCurrent(ctx, completion.ID, completion.Attempts)
 	if err != nil {
@@ -234,14 +254,17 @@ func (m *Module) DeliverSessionCompletion(completion PluginSessionCompletion) {
 	}
 	err = m.SessionBroker().Completed(ctx, completion.PluginID, sessionOutboxOperation(completion.ID),
 		plugins.SessionCompleted{SessionID: completion.SessionID, Text: completion.Text})
+	// Settle an admitted attempt durably even if shutdown cancelled the call.
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	if err == nil {
-		if ack := m.plugins.AckPluginSessionCompletion(ctx, completion.ID); ack != nil {
+		if ack := m.plugins.AckPluginSessionCompletion(writeCtx, completion.ID); ack != nil {
 			log.WithError(ack).WithFields(fields).Warn("acknowledging a delivered session completion")
 		}
 		m.kickSessionOutbox()
 		return
 	}
-	dead, failErr := m.plugins.FailPluginSessionCompletion(ctx, completion.ID,
+	dead, failErr := m.plugins.FailPluginSessionCompletion(writeCtx, completion.ID,
 		conversationFailureReason(err), sessionRetryDelay(completion.Attempts), sessionMaxAttempts)
 	if failErr != nil {
 		log.WithError(failErr).WithFields(fields).Warn("recording a failed session completion")

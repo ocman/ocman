@@ -27,7 +27,7 @@ type ActionDescriptor struct {
 // transcript text, or arbitrary selected content. Route is a core route name.
 // Directory is the sole exception: the executing host resolves it from
 // ProjectID only after the context.project.path grant passes, so caller-supplied
-// contexts must never carry it (Validate rejects it).
+// requests must never carry it (ActionRequest.Validate rejects it).
 type ActionContext struct {
 	OwnerID   string            `json:"ownerId,omitempty"`
 	ProjectID string            `json:"projectId,omitempty"`
@@ -124,9 +124,6 @@ func (c ActionContext) Validate() error {
 			return ErrInvalidMessage
 		}
 	}
-	if c.Directory != "" {
-		return ErrInvalidMessage
-	}
 	if (c.Route != "" && !coreRoute(c.Route)) || len(c.Selection) > 100 {
 		return ErrInvalidMessage
 	}
@@ -139,6 +136,9 @@ func (c ActionContext) Validate() error {
 }
 
 func (r ActionRequest) Validate() error {
+	if r.Context.Directory != "" {
+		return ErrInvalidMessage
+	}
 	if r.OwnerID != "" && !actionID.MatchString(r.OwnerID) {
 		return ErrInvalidMessage
 	}

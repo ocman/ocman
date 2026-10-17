@@ -547,6 +547,12 @@ in each direction; a host `completed` call may use the same ID as a plugin
 session title. After CreateConfigured and Enqueue, ocman returns a correlated
 `{sessionId}` result or a safe error category. Runs are never automatically replayed.
 
+`plugin_session_run` durably reserves `(pluginId, operationId)` before creation.
+An identical retry under the same approved project returns the stored session
+ID or safe error. Changed parameters or project return `conflict`. A concurrent
+retry or crash-left pending receipt returns `unavailable`, never another session.
+Pending receipts require investigation because creation may already have happened.
+
 ```json
 {"type":"call","call":{"id":"1","operationId":"rename-1","capability":"session",
  "version":{"major":1,"minor":0},"method":"run","deadlineUnixMs":1791500000000,"params":{

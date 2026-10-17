@@ -170,16 +170,20 @@ func (d *Store) AppendPluginSessionCompletion(ctx context.Context, pluginID, pla
 // may not overtake an earlier one in the same session, and a head that is dead
 // or waiting out its backoff holds only its own session.
 func (d *Store) ClaimPluginSessionCompletions(ctx context.Context, limit int) ([]PluginSessionCompletion, error) {
+	return d.sessionCompletionPage(ctx, 0, limit)
+}
+
+func (d *Store) sessionCompletionPage(ctx context.Context, after int64, limit int) ([]PluginSessionCompletion, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 	rows, err := d.db.QueryContext(ctx, `SELECT id,plugin_id,platform_id,session_id,text,attempts
 		FROM plugin_session_outbox o
-		WHERE o.status='pending' AND o.next_attempt_at<=?
+		WHERE o.status='pending' AND o.next_attempt_at<=? AND o.id>?
 		  AND o.id=(SELECT MIN(h.id) FROM plugin_session_outbox h
 			WHERE h.plugin_id=o.plugin_id AND h.platform_id=o.platform_id
 			  AND h.session_id=o.session_id AND h.status IN ('pending','dead'))
-		ORDER BY o.id LIMIT ?`, time.Now().UnixMilli(), limit)
+		ORDER BY o.id LIMIT ?`, time.Now().UnixMilli(), after, limit)
 	if err != nil {
 		return nil, state.ErrPluginState
 	}

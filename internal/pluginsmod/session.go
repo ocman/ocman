@@ -42,7 +42,7 @@ func (m *Module) buildSessions() {
 		func(ctx context.Context, id string, use func(plugins.Description, []string, plugins.SessionConfig) error) error {
 			m.mu.Lock()
 			defer m.mu.Unlock()
-			if m.store == nil {
+			if m.store == nil || m.stopping {
 				return plugins.ErrUnavailable
 			}
 			return m.store.WithPluginConversation(ctx, id, func(d plugins.Description, grants []string, cfg plugins.ConversationConfig) error {
@@ -94,6 +94,33 @@ func sessionDirectory(project, subpath string) (string, bool) {
 }
 
 func (m *Module) startSession(ctx context.Context, pluginID string, config plugins.SessionConfig, params plugins.SessionRunParams, directory, operationID string) (string, error) {
+	type result struct {
+		id  string
+		err error
+	}
+	done := make(chan result, 1)
+	if !m.workers.Go(func(lifetime context.Context) {
+		callCtx, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(lifetime, cancel)
+		defer stop()
+		defer cancel()
+		if lifetime.Err() != nil {
+			cancel()
+		}
+		id, err := m.startSessionRun(callCtx, pluginID, config, params, directory, operationID)
+		done <- result{id, err}
+	}) {
+		return "", plugins.ErrUnavailable
+	}
+	select {
+	case r := <-done:
+		return r.id, r.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (m *Module) startSessionRun(ctx context.Context, pluginID string, config plugins.SessionConfig, params plugins.SessionRunParams, directory, operationID string) (sessionID string, runErr error) {
 	dir, ok := sessionDirectory(config.Project, params.Subpath)
 	if !ok {
 		return "", &plugins.WireError{Category: plugins.ErrorPermissionDenied}
@@ -101,6 +128,18 @@ func (m *Module) startSession(ctx context.Context, pluginID string, config plugi
 	if m.store == nil {
 		return "", plugins.ErrUnavailable
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	id, claimed, err := m.plugins.reserveSessionRun(ctx, pluginID, operationID, config.Project, params)
+	if err != nil || !claimed {
+		return id, err
+	}
+	defer func() {
+		if err := m.plugins.finishSessionRun(ctx, pluginID, operationID, sessionID, runErr); err != nil {
+			sessionID, runErr = "", err
+		}
+	}()
 	if err := m.plugins.PluginSessionBacklogFull(ctx, pluginID); err != nil {
 		return "", plugins.ErrUnavailable
 	}

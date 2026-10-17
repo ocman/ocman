@@ -1246,10 +1246,12 @@ sequenceDiagram
     T->>B: Deadline-bound unary request
     B->>D: Read enabled installation, grant and scalar project
     B->>B: Reject traversal and resolved symlink escape
+    B->>D: Reserve plugin and operation ID, or return stored result
     B->>D: Resolve exact named profile rules
     B->>S: CreateConfigured with pinned rules
     B->>D: Link session to plugin
     B->>S: Enqueue prompt with exact agent/model
+    B->>D: Persist run result
     B-->>P: Result on caller request ID, sessionId or safe error
     S->>D: Completed assistant turn, idempotent outbox append
     O->>D: Claim due head per session
@@ -1261,6 +1263,9 @@ sequenceDiagram
 - `internal/pluginsmod/session.go` handles admission and the immediate
   result. The supervisor keeps separate request-ID sequences in each direction;
   IDs can overlap without confusing a run reply with a completed-turn reply.
+  `session_runs.go` reserves each plugin's operation ID durably before creation
+  and keeps its result across reloads. Conflicting payloads are rejected; pending
+  receipts never start another session after an uncertain crash.
 - Named permission profiles live in owner state. CreateConfigured applies their
   exact rules before the queue receives the plugin's prompt. Unknown or deleted
   names return `not_found` to the caller without creating a session.
