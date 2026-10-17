@@ -84,7 +84,7 @@ jobs:
     # the job container. The image matches the runners' ubuntu-latest label.
     container:
       image: node:20-bookworm
-      options: --tmpfs /ramtmp:rw,exec,nosuid,size=3g,mode=1777
+      options: --tmpfs /tmp/ram:rw,exec,nosuid,size=3g,mode=1777
     env:
       TERM: xterm-256color
     steps:
@@ -161,14 +161,14 @@ jobs:
         with:
           version: v2.11.4
       - name: Require RAM-backed test TMPDIR
-        run: ./scripts/ci-require-ram-tmpdir.sh /ramtmp
+        run: ./scripts/ci-require-ram-tmpdir.sh /tmp/ram
       - name: Test root package
         env:
-          TMPDIR: /ramtmp
+          TMPDIR: /tmp/ram
         run: go test .
       - name: Test internal packages with coverage
         env:
-          TMPDIR: /ramtmp
+          TMPDIR: /tmp/ram
         run: make coverage SUITE=go
       - name: Fetch coverage baseline
         run: ./scripts/coverage-fetch-baseline.sh baseline
@@ -179,7 +179,7 @@ jobs:
       # Re-measure once before failing: a real regression reproduces.
       - name: Check coverage ratchet
         env:
-          TMPDIR: /ramtmp
+          TMPDIR: /tmp/ram
         run: |
           if make coverage-check BASELINE_DIR=baseline SUITE=go; then
             exit 0

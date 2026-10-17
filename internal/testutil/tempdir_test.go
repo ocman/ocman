@@ -10,7 +10,7 @@ import (
 func TestShortTempRoot(t *testing.T) {
 	for _, tc := range []struct{ tmp, want string }{
 		{"/tmp", "/tmp"},
-		{"/ramtmp/", "/ramtmp"},
+		{"/tmp/ram/", "/tmp/ram"},
 		{"/private/tmp", "/private/tmp"},
 		{"/var/folders/fw/6n6_9w296qx5qpg6brcjxfmr0000gn/T/", "/tmp"},
 	} {
