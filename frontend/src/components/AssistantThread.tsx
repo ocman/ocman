@@ -199,13 +199,15 @@ const UserMessage: FC = () => {
   // itself carries the action the user needs.
   if (!hasContent && !failed) return null;
   const systemNotification = !failed && content.every((p) => p.type === 'text' && (parseV2Notification(p.text) || parseTaskNotification(p.text) || parseSkillInstructions(p.text)?.rest === ''));
+  const onlyTools = systemNotification && content.every((p) => p.type === 'text' &&
+    (parseV2Notification(p.text)?.kind === 'shell' || parseSkillInstructions(p.text)?.rest === ''));
 
   return (
     <>
       {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
     <MessagePrimitive.Root
-      className={`oc-msg ${systemNotification ? 'oc-msg-system' : 'oc-msg-user'}${localCommand && !failed ? ' oc-msg-local-command' : ''}${failed ? ' oc-msg-failed' : ''}`}
+      className={`oc-msg ${systemNotification ? 'oc-msg-system' : 'oc-msg-user'}${onlyTools ? ' oc-msg-tools' : ''}${localCommand && !failed ? ' oc-msg-local-command' : ''}${failed ? ' oc-msg-failed' : ''}`}
       data-message-id={id}
       style={systemNotification ? undefined : borderStyle}
     >

@@ -103,7 +103,7 @@ it.each([
   ['shell', '<shell id="sh_1" state="completed" command="echo "hello"">\nhello\n</shell>', 'hello'],
   ['user shell', 'The following shell command was executed by the user:\n<shell id="sh_1" state="completed" command="pwd">\n/workspace\n</shell>', '/workspace'],
   ['subagent', '<subagent sessionID="ses_child" state="completed" description="Review "changes"">\n**All clear**\n</subagent>', 'All clear'],
-])('renders v2 %s notifications without raw tags', (_name, text, result) => {
+])('renders v2 %s notifications without raw tags', (name, text, result) => {
   threadState.renderUser = true;
   message.content = [{ type: 'text', text }];
   const { container } = render(<AssistantThread />);
@@ -111,6 +111,7 @@ it.each([
   expect(container.textContent).not.toContain('<shell');
   expect(container.textContent).not.toContain('<subagent');
   expect(container.querySelector('.oc-msg-system')).toBeInTheDocument();
+  expect(container.querySelector('.oc-msg-system')?.classList.contains('oc-msg-tools')).toBe(name !== 'subagent');
 });
 
 class StubResizeObserver {
@@ -237,6 +238,7 @@ describe('Claude task notifications', () => {
       const root = task.closest('[data-message-id]');
       expect(root).not.toHaveClass('oc-msg-user');
       expect(root).toHaveClass('oc-msg-system');
+      expect(root).not.toHaveClass('oc-msg-tools');
       expect(root).not.toHaveAttribute('style');
     }
     expect(screen.queryByRole('button', { name: 'Bookmark message' })).toBeNull();
@@ -346,6 +348,7 @@ describe('AssistantThread slash-command skills', () => {
     expect(toggle).toHaveTextContent('→ Skill "devtoys"');
     expect(toggle).toHaveClass('oc-read-line');
     expect(toggle.closest('[data-message-id]')).not.toHaveClass('oc-msg-user');
+    expect(toggle.closest('[data-message-id]')).toHaveClass('oc-msg-tools');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText(/Use the CLI directly/)).not.toBeInTheDocument();
     await user.click(toggle);

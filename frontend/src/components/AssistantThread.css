@@ -182,7 +182,8 @@
   color: var(--text);
 }
 
-.oc-msg-assistant {
+.oc-msg-assistant,
+.oc-msg-tools {
   padding: 0;
 }
 .oc-msg-muted {
