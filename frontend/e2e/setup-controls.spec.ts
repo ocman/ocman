@@ -19,6 +19,6 @@ for (const width of [1280, 390]) {
     healthy = true;
     await page.getByRole('button', { name: 'Re-check', exact: true }).click();
     await expect(page.getByTestId('setup-panel')).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Include archived', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: width <= 640 ? 'Filter sessions' : 'Include archived', exact: true })).toBeVisible();
   });
 }

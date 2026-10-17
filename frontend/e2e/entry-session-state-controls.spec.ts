@@ -16,9 +16,13 @@ for (const width of [1280, 390]) {
     await page.goto('/');
     const entryError = page.getByRole('alert').filter({ hasText: 'Could not load sessions' });
     await expect(entryError).toBeVisible();
-    await expect(page).toHaveURL('/');
+    await expect(page).toHaveURL(width <= 640 ? '/sessions' : '/');
     listFailed = false;
     await entryError.getByRole('button', { name: 'Retry', exact: true }).click();
+    if (width <= 640) {
+      await expect(page).toHaveURL('/sessions');
+      await page.getByRole('link', { name: /Fix the login bug/ }).click();
+    }
     await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
     const sessionError = page.getByTestId('error-banner');
     await expect(sessionError.getByRole('alert')).toContainText('Could not load this session');
@@ -26,6 +30,7 @@ for (const width of [1280, 390]) {
     sessionFailed = false;
     await sessionError.getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(sessionError).toBeHidden();
+    if (width <= 640) await page.getByRole('button', { name: 'Open session details' }).click();
     await expect(page.getByRole('button', { name: 'Session actions' })).toBeVisible();
     await page.goto('/session/new');
     await expect(page.getByTestId('empty-detail')).toContainText('No session open.');

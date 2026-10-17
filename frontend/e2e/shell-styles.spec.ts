@@ -49,7 +49,7 @@ test('shell keeps desktop, mobile and native navigation geometry', async ({ mock
   await page.screenshot({ path: testInfo.outputPath('desktop-collapsed.png') });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(header).toHaveCSS('padding-left', '20px');
+  await expect(header).toHaveCSS('padding-left', '16px');
   await expect(sidebar).toBeHidden();
   const phoneNav = page.getByRole('navigation', { name: 'Phone navigation' });
   await expect(phoneNav).toBeVisible();

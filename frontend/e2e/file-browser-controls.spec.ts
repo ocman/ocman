@@ -27,7 +27,8 @@ for (const width of [1280, 390]) {
       ],
     } }));
     await page.goto(`/session/${MOCK_SESSION.id}`);
-    await page.getByRole('button', { name: 'Explore files' }).click();
+    if (width <= 640) await page.getByRole('button', { name: 'Open session details' }).click();
+    await page.getByRole('button', { name: width <= 640 ? 'Explore project files' : 'Explore files' }).click();
     const explore = page.getByRole('dialog', { name: 'Explore', exact: true });
     await explore.getByRole('treeitem', { name: 'README.md', exact: true }).click();
     await expect(explore.getByRole('treeitem', { name: 'README.md', exact: true })).toHaveCSS('border-radius', '0px');
@@ -45,7 +46,6 @@ for (const width of [1280, 390]) {
     await explore.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(explore).toBeHidden();
 
-    if (width === 390) await page.getByRole('button', { name: 'Open session details' }).click();
     const tab = page.getByRole('tab', { name: 'Working tree', exact: true });
     if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
     await page.getByRole('button', { name: 'Fullscreen', exact: true }).filter({ visible: true }).last().click();

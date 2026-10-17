@@ -35,6 +35,8 @@ test('usage and project defaults share a compact popover shell', async ({ mocked
   await expect(project).toHaveCSS('padding', '10px');
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(project).not.toBeVisible();
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  await page.getByRole('button', { name: 'Open session details' }).click();
   await projectTrigger.click();
   await expect(page.getByRole('combobox', { name: 'Default model' })).toBeVisible();
   const box = await project.boundingBox();

@@ -64,12 +64,15 @@ for (const width of [1280, 390]) {
     await page.getByRole('button', { name: 'Open session', exact: true }).first().click();
     await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
     await expect(page.getByTestId('session-layout')).toBeVisible();
-    await expect(page.getByRole('banner')).toHaveCSS('height', width <= 640 ? '100px' : '44px');
+    await expect(page.getByRole('banner')).toHaveCSS('height', width <= 640 ? '56px' : '44px');
     const heading = page.getByText('Waiting on your answer', { exact: true });
     await expect(heading).toBeVisible();
     const headerBox = (await page.getByRole('banner').boundingBox())!;
     expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
-    await page.getByRole('button', { name: 'Session actions' }).click();
+    if (width <= 640) await page.getByRole('button', { name: 'Open session details' }).click();
+    // The notification floats over the phone's details toolbar. Open the
+    // modal by keyboard so the notice remains available to dismiss afterward.
+    await page.getByRole('button', { name: 'Session actions' }).press('Enter');
     await page.getByRole('menuitem', { name: 'Share link…' }).press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Public share link' });
     await expect(dialog).toBeVisible();

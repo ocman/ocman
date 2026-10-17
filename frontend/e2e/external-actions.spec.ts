@@ -18,6 +18,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /tmux|VS Code/ })).toHaveCount(0);
     await page.goto(`/session/${MOCK_SESSION.id}`);
+    if (width <= 640) await page.getByRole('button', { name: 'Open session details' }).click();
     await page.getByRole('button', { name: 'Session actions' }).click();
     await expect(page.getByRole('menuitem', { name: 'New session', exact: true })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /Switch tmux|Open in VS Code/ })).toHaveCount(0);
