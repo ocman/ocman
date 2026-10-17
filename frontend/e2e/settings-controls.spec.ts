@@ -48,6 +48,6 @@ test('custom permission reviewer saves both API formats without revealing its ke
   expect(submitted).not.toHaveProperty('apiKey');
   await page.screenshot({ path: test.info().outputPath('custom-reviewer-desktop.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Phone navigation' })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('custom-reviewer-mobile.png'), fullPage: true, animations: 'disabled' });
 });

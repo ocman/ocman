@@ -12,7 +12,7 @@ for (const width of [1280, 390]) {
     await expect(alert).toBeVisible();
     const retry = alert.getByRole('button', { name: 'Retry', exact: true });
     await expect(retry).toHaveCSS('font-size', '12px');
-    await expect(retry).toHaveCSS('height', '28px');
+    await expect(retry).toHaveCSS('height', width <= 640 ? '44px' : '28px');
     const bounds = await alert.boundingBox();
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     expect(await alert.evaluate(el => el.scrollWidth)).toBeLessThanOrEqual(await alert.evaluate(el => el.clientWidth));

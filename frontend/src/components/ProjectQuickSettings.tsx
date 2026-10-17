@@ -20,7 +20,9 @@ export function ProjectQuickSettings({ directory, remoteId = 'local', children, 
       aria-label={triggerLabel} disabled={disabled} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={(event) => {
         const anchor = event.currentTarget.getBoundingClientRect();
-        setPosition({ top: anchor.bottom + 8, left: Math.max(12, Math.min(anchor.left, window.innerWidth - 352)) });
+        // Reserve the popover's 560px maximum height plus viewport gutters on phones.
+        const top = window.innerWidth <= 640 ? Math.min(anchor.bottom + 8, Math.max(12, window.innerHeight - 560 - 24)) : anchor.bottom + 8;
+        setPosition({ top, left: Math.max(12, Math.min(anchor.left, window.innerWidth - 352)) });
         setOpen(!open);
       }}>{children}</Button>
     <Popover open={open} onClose={() => setOpen(false)} triggerRef={trigger} id={id} label="Project quick settings" className="project-quick-settings-popover" style={position}>

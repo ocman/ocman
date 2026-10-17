@@ -8,3 +8,7 @@
 .project-quick-settings-popover .oc-search-select,
 .project-quick-settings-popover .oc-field { width: 100%; }
 .project-quick-settings-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+@media (width <= 640px) {
+  .project-quick-settings-popover { box-sizing: border-box; }
+}

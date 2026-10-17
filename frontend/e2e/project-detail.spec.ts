@@ -39,7 +39,12 @@ for (const width of [1280, 390]) {
     await dialog.getByRole('combobox', { name: 'Default model', exact: true }).click();
     await expect(dialog.getByRole('option', { name: 'historical/model' })).toBeVisible();
     await dialog.getByRole('option', { name: 'OpenAI / GPT-5', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    const save = dialog.getByRole('button', { name: 'Save', exact: true });
+    await save.scrollIntoViewIfNeeded();
+    const saveBox = (await save.boundingBox())!;
+    expect(saveBox.x + saveBox.width).toBeLessThanOrEqual(width);
+    expect(saveBox.y + saveBox.height).toBeLessThanOrEqual(844);
+    await save.click();
     await expect(dialog).toBeHidden();
     await expect(table.getByRole('row', { name: /Default model/ })).toContainText('openai/gpt-5');
     expect(writes).toHaveLength(1);

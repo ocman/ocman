@@ -93,6 +93,11 @@ test('header stays compact on desktop and gives phone filters room for touch', a
   await page.getByRole('button', { name: 'Back to messages' }).click();
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
+    // Wait for the media-query subscription before sampling several boxes:
+    // mounting phone tabs changes the header height between desktop and phone.
+    const navigation = page.getByRole('navigation', { name: 'Phone navigation' });
+    if (width <= 640) await expect(navigation).toBeVisible();
+    else await expect(navigation).toHaveCount(0);
     const search = await page.getByRole('searchbox', { name: 'Search inbox' }).boundingBox();
     const status = await page.getByRole('radiogroup', { name: 'Message status' }).boundingBox();
     const types = await page.getByRole('radiogroup', { name: 'Message type' }).boundingBox();
@@ -104,9 +109,9 @@ test('header stays compact on desktop and gives phone filters room for touch', a
     } else {
       expect(search!.height).toBeGreaterThanOrEqual(44);
       expect(actions!.height).toBeGreaterThanOrEqual(44);
-      if (status!.y > search!.y) expect(status!.y - search!.y - search!.height).toBeGreaterThanOrEqual(8);
+      if (status!.y >= search!.y + search!.height) expect(status!.y - search!.y - search!.height).toBeGreaterThanOrEqual(8);
       else expect(status!.x - search!.x - search!.width).toBeGreaterThanOrEqual(8);
-      if (actions!.y > types!.y) expect(actions!.y - types!.y - types!.height).toBeGreaterThanOrEqual(8);
+      if (actions!.y >= types!.y + types!.height) expect(actions!.y - types!.y - types!.height).toBeGreaterThanOrEqual(8);
       else expect(actions!.x - types!.x - types!.width).toBeGreaterThanOrEqual(8);
     }
     expect(types!.y).toBeGreaterThan(search!.y);

@@ -129,6 +129,17 @@ it.each([10, 1000])('keeps the popover in the viewport when its header anchor is
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 
+it.each([[390, 844, 260], [320, 568, 12]])('keeps phone Save controls in the viewport at %sx%s', async (width, height, top) => {
+  vi.stubGlobal('innerWidth', width);
+  vi.stubGlobal('innerHeight', height);
+  try {
+    render(<ProjectQuickSettings directory="/repo">repo</ProjectQuickSettings>);
+    vi.spyOn(screen.getByRole('button', { name: 'Project quick settings' }), 'getBoundingClientRect').mockReturnValue({ left: 16, bottom: 700 } as DOMRect);
+    await open();
+    expect(screen.getByRole('dialog')).toHaveStyle({ top: `${top}px` });
+  } finally { vi.unstubAllGlobals(); }
+});
+
 it.each([true, false])('keeps a reopened form and its edits when an earlier dismissed save completes: success=%s', async (success) => {
   let finish!: () => void;
   vi.mocked(postJSON).mockReturnValueOnce(new Promise((resolve, reject) => {

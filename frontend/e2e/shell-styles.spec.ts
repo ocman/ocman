@@ -49,13 +49,14 @@ test('shell keeps desktop, mobile and native navigation geometry', async ({ mock
   await page.screenshot({ path: testInfo.outputPath('desktop-collapsed.png') });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(header).toHaveCSS('padding-left', '12px');
-  await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
-  await expect(sidebar).toHaveCSS('width', '220px');
-  await expect(sidebar).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
-  await page.screenshot({ path: testInfo.outputPath('mobile-open.png') });
-  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Projects', exact: true }).click();
-  await expect(sidebar).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -220, 0)');
+  await expect(header).toHaveCSS('padding-left', '20px');
+  await expect(sidebar).toBeHidden();
+  const phoneNav = page.getByRole('navigation', { name: 'Phone navigation' });
+  await expect(phoneNav).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('mobile-tabs.png') });
+  await phoneNav.getByRole('link', { name: 'Projects', exact: true }).click();
+  await expect(page).toHaveURL('/projects');
+  await expect(sidebar).toBeHidden();
 
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.evaluate(() => document.body.classList.add('wails-app'));

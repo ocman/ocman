@@ -17,3 +17,7 @@
 @keyframes slide-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(20px); } }
 @keyframes slide-out-x { from { transform: translateX(var(--radix-toast-swipe-end-x)); } to { transform: translateX(calc(100% + 20px)); } }
 @media (prefers-reduced-motion: reduce) { .toast[data-state], .toast[data-swipe] { animation: none; transition: none; } }
+
+@media (width <= 640px) {
+  :global(body:has(.session-layout)) .viewport { top: 112px; }
+}
