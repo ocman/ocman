@@ -100,9 +100,22 @@ if [ "$MODE" = "prod-watch" ]; then
 	logs="$logs tmp/frontend-watch.log"
 fi
 
-# Background tail streams the logs to the terminal.
+# Watch the owner as well as tail. A forced stop cannot run stop(), and an
+# orphan tail would otherwise keep printing the next run's shared log files.
+stream_logs() {
+	local owner=$1 reader
+	shift
+	tail -n +1 -F "$@" &
+	reader=$!
+	trap 'kill "$reader" 2>/dev/null; wait "$reader" 2>/dev/null' EXIT
+	trap 'exit 0' INT TERM
+	while kill -0 "$owner" 2>/dev/null && kill -0 "$reader" 2>/dev/null; do
+		sleep 1
+	done
+	exit 0
+}
 # shellcheck disable=SC2086
-tail -n +1 -F $logs &
+stream_logs "$$" $logs &
 pids="$pids $!"
 
 # Foreground blocker: poll until a job dies (or Ctrl+C interrupts the sleep and

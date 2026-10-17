@@ -293,7 +293,11 @@ clean:
 	rm -rf ocman tmp internal/webui/static/assets
 
 # Run both Go and frontend test suites
-test: test-backend test-frontend
+test: test-backend test-frontend test-dev-scripts
+
+.PHONY: test-dev-scripts
+test-dev-scripts: ## Test dev log streaming and shutdown without launching ocman
+	python3 scripts/dev_test.py
 
 # Run all major suites in parallel and fail fast on the first failing one.
 #
