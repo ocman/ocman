@@ -15,6 +15,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func eventually(t *testing.T, what string, ok func() bool) {
@@ -36,16 +37,10 @@ func TestDashboardKillRestartComposition(t *testing.T) {
 	if runOcmanChild() {
 		return
 	}
-	dir, err := os.MkdirTemp("/tmp", "kr-") // short: unix socket path limit
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testutil.ShortTempDir(t, "kr-") // short: unix socket path limit
 	bin, pids := filepath.Join(dir, "bin"), filepath.Join(dir, "pids")
 	claudetest.InstallFakeTmux(t, bin, pids)
-	if err := os.Rename(claudetest.Binary(t), filepath.Join(bin, "claude")); err != nil {
-		t.Fatal(err)
-	}
+	claudetest.InstallBinary(t, filepath.Join(bin, "claude"))
 	project := filepath.Join(dir, "project")
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)

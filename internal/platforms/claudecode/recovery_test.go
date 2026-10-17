@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // recoveryEnv is a short data directory with the fake tmux and claude on
@@ -28,22 +29,17 @@ type recoveryEnv struct {
 
 func newRecoveryEnv(t *testing.T) *recoveryEnv {
 	t.Helper()
-	data, err := os.MkdirTemp("/tmp", "rv-") // short: unix socket path limit
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(data) })
+	data := testutil.ShortTempDir(t, "rv-") // short: unix socket path limit
 	e := &recoveryEnv{data: data, bin: filepath.Join(data, "bin"), repo: filepath.Join(data, "repo")}
 	installFakeTmux(t, e.bin, filepath.Join(data, "pids"))
-	if err := os.Rename(claudetest.Binary(t), filepath.Join(e.bin, "claude")); err != nil {
-		t.Fatal(err)
-	}
+	claudetest.InstallBinary(t, filepath.Join(e.bin, "claude"))
 	for _, cmd := range [][]string{{"init", e.repo}, {"-C", e.repo, "-c", "user.name=T", "-c", "user.email=t@example.invalid", "commit", "--allow-empty", "-m", "x"}} {
 		if out, err := gitexec.Command(t.Context(), cmd...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", cmd, err, out)
 		}
 	}
 	e.repo = canonical(t, e.repo)
+	var err error
 	if e.state, err = state.Open(filepath.Join(data, "state.db")); err != nil {
 		t.Fatal(err)
 	}

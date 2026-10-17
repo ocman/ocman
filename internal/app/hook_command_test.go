@@ -82,9 +82,7 @@ func TestClaudeHookPlugin(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(claudetest.Binary(t), filepath.Join(bin, "claude")); err != nil {
-		t.Fatal(err)
-	}
+	claudetest.InstallBinary(t, filepath.Join(bin, "claude"))
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

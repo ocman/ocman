@@ -13,19 +13,14 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestContinueExternalSessionOnProjectSupervisor(t *testing.T) {
-	data, err := os.MkdirTemp("/tmp", "ce-") // provider socket suffix exceeds macOS's limit under $TMPDIR
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(data) })
+	data := testutil.ShortTempDir(t, "ce-") // short: unix socket path limit
 	bin := filepath.Join(data, "bin")
 	installFakeTmux(t, bin, filepath.Join(data, "pids"))
-	if err := os.Rename(claudetest.Binary(t), filepath.Join(bin, "claude")); err != nil {
-		t.Fatal(err)
-	}
+	claudetest.InstallBinary(t, filepath.Join(bin, "claude"))
 	config, repo := filepath.Join(data, "config"), filepath.Join(data, "repo")
 	if err := os.MkdirAll(repo, 0o700); err != nil {
 		t.Fatal(err)

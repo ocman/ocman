@@ -21,6 +21,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 const claudeFixtureSession = "11111111-1111-4111-8111-111111111111"
@@ -313,16 +314,10 @@ func TestClaudeComposerStart(t *testing.T) {
 		return
 	}
 	// Short: the project supervisor's unix socket lives under HOME.
-	dir, err := os.MkdirTemp("/tmp", "cc-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testutil.ShortTempDir(t, "cc-") // short: unix socket path limit
 	bin := filepath.Join(dir, "bin")
 	claudetest.InstallFakeTmux(t, bin, filepath.Join(dir, "pids"))
-	if err := os.Rename(claudetest.Binary(t), filepath.Join(bin, "claude")); err != nil {
-		t.Fatal(err)
-	}
+	claudetest.InstallBinary(t, filepath.Join(bin, "claude"))
 	project := filepath.Join(dir, "project")
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)

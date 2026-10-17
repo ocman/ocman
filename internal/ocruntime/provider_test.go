@@ -13,6 +13,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/providersupervisor/providertest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestProviderLaunchAndStop(t *testing.T) {
@@ -134,11 +135,7 @@ func TestProviderProbeVersionsAndMalformedResponses(t *testing.T) {
 // The launch configuration is part of the instance id: a supervisor
 // launched with another one is not current.
 func TestProviderIdentity(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "id-") // short: unix socket path limit
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testutil.ShortTempDir(t, "id-") // short: unix socket path limit
 	r := NewBackendRuntime("fake", "/fake", dir)
 	r.launch = func(context.Context, string, []string) error { return nil }
 	if !r.Current(&Instance{ID: "fake-old-name"}) {

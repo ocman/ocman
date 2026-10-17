@@ -50,12 +50,19 @@ func InstallFakeTmux(t testing.TB, bin, pids string) {
 	})
 }
 
-// Binary returns a caller-owned fake as "claude", so it can be moved onto
-// PATH. The executable is built and warmed once per test binary (macOS
+// Binary returns a caller-owned fake as "claude" in the test's temp dir. The executable is built and warmed once per test binary (macOS
 // first-exec latency must not consume the production version-probe or
 // readiness deadline) and hard-linked into the caller's temp dir.
 // Packages using Binary must call Run from TestMain to remove the shared build.
 func Binary(t testing.TB) string {
+	t.Helper()
+	return InstallBinary(t, filepath.Join(t.TempDir(), "claude"))
+}
+
+// InstallBinary places the fake CLI at binary and returns it. The path may be
+// on another filesystem than the shared build (a RAM-backed TMPDIR beside a
+// disk /tmp), where a hard link or rename would fail.
+func InstallBinary(t testing.TB, binary string) string {
 	t.Helper()
 	fakeOnce.Do(func() {
 		dir, err := os.MkdirTemp("", "fakeclaude")
@@ -80,7 +87,6 @@ func Binary(t testing.TB) string {
 	if fakeErr != nil {
 		t.Fatal(fakeErr)
 	}
-	binary := filepath.Join(t.TempDir(), "claude")
 	if err := os.Link(fakeShared, binary); err != nil { // cross-device: copy
 		data, rerr := os.ReadFile(fakeShared)
 		if rerr != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // installFakeTmux puts the test-only tmux on bin and kills every provider it
@@ -135,16 +136,10 @@ func canonical(t *testing.T, path string) string {
 // checkout session shares that supervisor with its own cwd, and a dead
 // supervisor is relaunched on the next send.
 func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
-	data, err := os.MkdirTemp("/tmp", "cr-") // short: unix socket path limit
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(data) })
+	data := testutil.ShortTempDir(t, "cr-") // short: unix socket path limit
 	bin := filepath.Join(data, "bin")
 	installFakeTmux(t, bin, filepath.Join(data, "pids"))
-	if err := os.Rename(claudetest.Binary(t), filepath.Join(bin, "claude")); err != nil {
-		t.Fatal(err)
-	}
+	claudetest.InstallBinary(t, filepath.Join(bin, "claude"))
 	if err := os.MkdirAll(filepath.Join(data, "config", "projects"), 0o700); err != nil {
 		t.Fatal(err)
 	}

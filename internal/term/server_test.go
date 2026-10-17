@@ -22,11 +22,7 @@ func isolateTmux(t *testing.T) string {
 	if err != nil {
 		t.Skip("tmux not available")
 	}
-	dir, err := os.MkdirTemp("/tmp", "ocman-term-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testutil.ShortTempDir(t, "ocman-term-") // short: unix socket path limit
 	t.Setenv("TMUX_TMPDIR", dir)
 	t.Setenv("TMUX", "")
 	t.Setenv("TERM", "xterm-256color")

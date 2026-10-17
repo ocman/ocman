@@ -2,11 +2,12 @@ package tmux
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // TestDefaultTmuxRunner_NewWindowRunsCommandLiterally is a regression
@@ -35,11 +36,7 @@ func TestDefaultTmuxRunner_NewWindowRunsCommandLiterally(t *testing.T) {
 		t.Skip("tmux not on PATH")
 	}
 	// Keep sockets short enough for macOS and away from the user's servers.
-	dir, err := os.MkdirTemp("/tmp", "ocman-tmux-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testutil.ShortTempDir(t, "ocman-tmux-") // short: unix socket path limit
 	t.Setenv("TMUX_TMPDIR", dir)
 	t.Setenv("TMUX", "")
 	t.Setenv("SHELL", "/bin/sh")
