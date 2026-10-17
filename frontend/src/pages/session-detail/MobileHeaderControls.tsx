@@ -56,7 +56,7 @@ export function MobileHeaderControls({
             aria-expanded="true"
             onClick={toggleMobileSidebar}
           >
-            Done
+            Back to chat
           </button>
         )}
         {mobilePanel !== 'sidebar' && (

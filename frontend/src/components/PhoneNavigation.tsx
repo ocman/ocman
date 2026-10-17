@@ -22,11 +22,13 @@ const moreItems = [
   { to: '/settings', label: 'Settings', icon: 'bi-gear' },
 ];
 
-/** Mounted only on phones. Conversations retain their full-height workspace. */
+/** Conversations stay full-height, but their session list exposes global navigation. */
 export function PhoneNavigation({ unreadTotal }: { unreadTotal: number }) {
   const phone = useIsPhone();
   const location = useLocation();
-  if (!phone || location.pathname.startsWith('/session/')) return null;
+  const [panel] = usePhoneOverlay<'sidebar' | 'details'>('conversation-panel');
+  const [navigation] = usePhoneOverlay<'more'>('navigation');
+  if (!phone || (location.pathname.startsWith('/session/') && panel !== 'sidebar' && navigation !== 'more')) return null;
   return <PhoneTabs key={location.pathname + location.search} unreadTotal={unreadTotal} />;
 }
 
@@ -35,12 +37,13 @@ function PhoneTabs({ unreadTotal }: { unreadTotal: number }) {
   const [overlay, setOverlay] = usePhoneOverlay<'more'>('navigation');
   const moreOpen = overlay === 'more';
   const inProjects = pathname.startsWith('/project/');
-  const inPrimary = tabs.some(({ to }) => pathname === to) || inProjects;
+  const inSessions = pathname.startsWith('/session/');
+  const inPrimary = tabs.some(({ to }) => pathname === to) || inProjects || inSessions;
 
   return <>
     <nav className="phone-tab-bar" aria-label="Phone navigation">
       {tabs.map(({ to, label, icon }) => {
-        const active = pathname === to || (to === '/projects' && inProjects);
+        const active = pathname === to || (to === '/projects' && inProjects) || (to === '/sessions' && inSessions);
         return <Link key={to} to={to} className={active ? 'active' : ''}
           aria-current={active ? 'page' : undefined}
           aria-label={to === '/inbox' && unreadTotal ? `Inbox, ${unreadTotal} unread messages` : label}>

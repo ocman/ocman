@@ -3,6 +3,32 @@ import { installPhoneReviewRoutes } from './phone-review-fixtures';
 
 test.use({ viewport: { width: 390, height: 844 } });
 
+test('session list drawer exposes bottom navigation without covering its footer', async ({ mockedPage: page }) => {
+  await installPhoneReviewRoutes(page);
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  const nav = page.getByRole('navigation', { name: 'Phone navigation' });
+  await expect(nav).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open session list' }).click();
+  await expect(page.getByRole('button', { name: 'Close session list' })).toHaveText('Back to chat');
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Explore files' })).toBeHidden();
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Project quick settings' })).toBeHidden();
+  await expect(nav).toBeVisible();
+  const sidebar = await page.getByTestId('session-sidebar').boundingBox();
+  const tabs = await nav.boundingBox();
+  expect(sidebar!.y + sidebar!.height).toBeLessThanOrEqual(tabs!.y + 1);
+  await nav.getByRole('button', { name: 'More', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'More destinations' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByTestId('session-sidebar')).toBeVisible();
+  await expect(nav).toBeVisible();
+  await page.getByRole('button', { name: 'Close session list' }).click();
+  await expect(nav).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open session list' }).click();
+  await nav.getByRole('link', { name: 'Projects', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+});
+
 test('browser back dismisses More before leaving the page', async ({ mockedPage: page }) => {
   await page.goto('/projects');
   await page.getByRole('navigation', { name: 'Phone navigation' }).getByRole('link', { name: 'Sessions', exact: true }).click();

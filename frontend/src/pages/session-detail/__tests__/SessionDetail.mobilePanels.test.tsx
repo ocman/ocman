@@ -249,7 +249,7 @@ describe('SessionDetail — phone overlay panels', () => {
     fireEvent.click(toggle);
     expect(screen.getByTestId('session-layout').className).toContain('mobile-sidebar-open');
     expect(screen.getByTestId('mobile-sessions-toggle')).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByTestId('mobile-sessions-toggle')).toHaveTextContent('Done');
+    expect(screen.getByTestId('mobile-sessions-toggle')).toHaveTextContent('Back to chat');
     expect(titleSlot).toHaveTextContent('Sessions');
 
     fireEvent.keyDown(window, { key: 'Escape' });

@@ -1,6 +1,6 @@
 /* Desktop chrome is deliberately untouched. This entire shell is phone-only. */
 @media (width <= 640px) {
-  .app-shell:has(.phone-tab-bar) .container {
+  .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .container {
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 
@@ -8,7 +8,7 @@
   .app-shell:has(.phone-tab-bar) > .main-nav-backdrop,
   .app-shell:has(.phone-tab-bar) .mobile-nav-toggle { display: none; }
 
-  .app-shell:has(.phone-tab-bar) .app-header {
+  .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .app-header {
     height: auto;
     min-height: 86px;
     padding: 20px 20px 14px;
@@ -16,15 +16,19 @@
     border-bottom: 0;
   }
 
-  .app-shell:has(.phone-tab-bar) .app-header h1 {
+  .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .app-header h1 {
     margin: 0;
     font-size: 30px;
     letter-spacing: -1px;
     color: var(--text);
   }
 
-  .app-shell:has(.phone-tab-bar) .app-header h1 .header-breadcrumb { font-weight: 650; }
-  .app-shell:has(.phone-tab-bar) .page-content { padding: 8px 16px 20px; }
+  .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .app-header h1 .header-breadcrumb { font-weight: 650; }
+  .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .page-content { padding: 8px 16px 20px; }
+
+  .app-shell:has(.phone-tab-bar) .session-layout.mobile-sidebar-open > .session-sidebar {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
 
   .phone-tab-bar {
     position: fixed;

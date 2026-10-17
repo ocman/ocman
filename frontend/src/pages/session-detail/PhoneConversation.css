@@ -6,6 +6,10 @@
   .app-shell:has(.session-layout) .header-right { width: 100%; max-width: none; gap: 12px; }
   .app-shell:has(.session-layout) .header-project { max-width: calc(100% - 168px); margin-right: auto; }
   .app-shell:has(.session-layout) .header-actions { gap: 8px; }
+  .app-shell:has(.mobile-sidebar-open) { --header-height: 56px; }
+  .app-shell:has(.mobile-sidebar-open) .app-header { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 44px; }
+  .app-shell:has(.mobile-sidebar-open) .header-right { width: auto; }
+  .app-shell:has(.mobile-sidebar-open) .header-right > :not(.header-actions) { display: none; }
   .session-layout .oc-viewport-footer {
     padding-left: max(8px, env(safe-area-inset-left, 0px));
     padding-right: max(8px, env(safe-area-inset-right, 0px));

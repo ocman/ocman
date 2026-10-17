@@ -6,21 +6,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhoneNavigation } from './PhoneNavigation';
 
 let phone: boolean;
-let change: () => void;
+let listeners: Set<() => void>;
+const change = () => listeners.forEach(listener => listener());
 const removeEventListener = vi.fn();
 
 beforeEach(() => {
   phone = true;
+  listeners = new Set();
   vi.stubGlobal('matchMedia', vi.fn(() => ({
     matches: phone,
-    addEventListener: (_: string, listener: () => void) => { change = listener; },
-    removeEventListener,
+    addEventListener: (_: string, listener: () => void) => { listeners.add(listener); },
+    removeEventListener: (_: string, listener: () => void) => { listeners.delete(listener); removeEventListener(); },
   })));
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function mount(path = '/sessions', unreadTotal = 0) {
-  return render(<MemoryRouter initialEntries={[path]}>
+function mount(path = '/sessions', unreadTotal = 0, state?: object) {
+  return render(<MemoryRouter initialEntries={[state ? { pathname: path, state } : path]}>
     <PhoneNavigation unreadTotal={unreadTotal} />
     <Routes><Route path="*" element={<div>Current page</div>} /></Routes>
   </MemoryRouter>);
@@ -49,6 +51,27 @@ describe('phone navigation', () => {
 
   it.each(['/session/ses-1', '/session/new'])('leaves %s full-height without a tab bar', path => {
     mount(path);
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+  });
+
+  it.each(['/session/ses-1', '/session/new'])('exposes navigation in the %s session list', path => {
+    mount(path, 0, { phoneOverlay: { name: 'conversation-panel', value: 'sidebar', scope: path } });
+    expect(screen.getByRole('link', { name: 'Sessions' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'More' })).not.toHaveClass('active');
+  });
+
+  it('keeps navigation mounted while More is open from a conversation', () => {
+    const path = '/session/ses-1';
+    mount(path, 0, { phoneOverlay: { name: 'navigation', value: 'more', scope: path } });
+    expect(screen.getByRole('dialog', { name: 'More destinations' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More' })).toHaveClass('active');
+  });
+
+  it.each([
+    { name: 'conversation-panel', value: 'details', scope: '/session/ses-1' },
+    { name: 'conversation-panel', value: 'sidebar', scope: '/session/other' },
+  ])('keeps conversation navigation hidden for %j', phoneOverlay => {
+    mount('/session/ses-1', 0, { phoneOverlay });
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 
