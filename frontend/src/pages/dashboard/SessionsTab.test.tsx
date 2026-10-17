@@ -173,6 +173,14 @@ describe('session status filters', () => {
     expect(value.setTimeRange).toHaveBeenCalledWith(168);
   });
 
+  it('lets phone users widen a retained short time range from the filter popover', () => {
+    const { value } = mount({ timeRange: 12 });
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    expect(screen.getByRole('radio', { name: '12h' })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: '7d' }));
+    expect(value.setTimeRange).toHaveBeenCalledWith(168);
+  });
+
   it('honours desktop saved preferences on mobile', () => {
     localStorage.setItem('ocman:sidebar-filter:routines', 'true');
     localStorage.setItem('ocman:sidebar-filter:children', 'false');

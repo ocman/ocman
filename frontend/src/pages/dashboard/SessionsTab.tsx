@@ -60,6 +60,7 @@ export function SessionsTab() {
       {phone ? <PhoneSessionsToolbar projects={projects} dirScope={dirScope} setDirScope={setDirScope}
         search={search} setSearch={setSearch} onNewSession={openProjectSessionPalette}
         filtersActive={SESSION_FILTER_FIELDS.some(([key]) => filters[key] !== SESSION_FILTER_DEFAULTS[key])}>
+        <TimeRangeControl value={timeRange} onChange={setTimeRange} />
         <SessionFilterControls value={filters} onChange={(key, checked) => ({
           alwaysShowPrompts: setAlwaysShowPrompts,
           showArchived: (value: boolean) => { setArchivedPreference(value); setShowArchived(value); },

@@ -67,3 +67,22 @@ test('project options opened from the icon fit the phone and preserve scope sele
   await expect(project).toHaveClass(/oc-button--accent/);
   await expect(project).toBeFocused();
 });
+
+test('phone filters can widen a retained time range and fetch older sessions', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const older = { ...MOCK_SESSION_2, timeUpdated: Date.now() - 48 * 3600_000 };
+  await page.route('/api/sessions*', route => {
+    const since = Number(new URL(route.request().url()).searchParams.get('since'));
+    return route.fulfill({ json: since > older.timeUpdated ? [MOCK_SESSION] : [MOCK_SESSION, older] });
+  });
+  await page.goto('/sessions?t=12');
+  await expect(page.getByRole('link', { name: /Fix the login bug/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Refactor auth module/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Filter sessions' }).click();
+  const range = page.getByRole('radiogroup', { name: 'Time range' });
+  await expect(range.getByRole('radio', { name: '12h' })).toBeChecked();
+  await range.getByRole('radio', { name: '7d' }).click();
+  await expect(range.getByRole('radio', { name: '7d' })).toBeChecked();
+  await expect(page).toHaveURL(/t=168/);
+  await expect(page.getByRole('link', { name: /Refactor auth module/ })).toBeVisible();
+});

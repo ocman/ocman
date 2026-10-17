@@ -43,7 +43,7 @@ test.describe('native phone shell', () => {
     await installPhoneReviewRoutes(page);
     await page.goto('/sessions');
     await page.getByRole('button', { name: 'Filter sessions' }).click();
-    const labels = page.getByRole('dialog', { name: 'Session filters' }).locator('label');
+    const labels = page.getByRole('dialog', { name: 'Session filters' }).locator('label').filter({ has: page.getByRole('checkbox') });
     const a = await labels.nth(0).boundingBox();
     const b = await labels.nth(1).boundingBox();
     expect(a!.height).toBeGreaterThanOrEqual(44);

@@ -1,4 +1,4 @@
-import { test, expect, MOCK_SESSION, type Page } from './fixtures';
+import { test, expect, MOCK_SESSION, MOCK_SESSION_2, type Page } from './fixtures';
 import type { Locator } from '@playwright/test';
 
 async function swipe(page: Page, row: Locator, distance: number) {
@@ -16,6 +16,34 @@ async function swipe(page: Page, row: Locator, distance: number) {
 
 test.describe('phone session actions', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  test('keeps Pin and Unpin touch-accessible without navigating away', async ({ mockedPage: page }) => {
+    const pins: Record<string, unknown>[] = [];
+    let pinned = false;
+    await page.route('/api/sessions*', route => route.fulfill({ json: [MOCK_SESSION, { ...MOCK_SESSION_2, pinned }] }));
+    await page.route('/api/session/pin', route => {
+      const request = route.request().postDataJSON();
+      pins.push(request);
+      pinned = request.pinned;
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto(`/session/${MOCK_SESSION.id}`);
+    await page.getByRole('button', { name: 'Open session details' }).click();
+    await page.getByRole('button', { name: 'Open session list' }).click();
+    const sidebar = page.getByTestId('session-sidebar');
+    const row = sidebar.getByRole('button', { name: /Refactor auth module/ });
+    const pin = row.getByRole('button', { name: 'Pin session', exact: true });
+    await expect(pin).toBeVisible();
+    expect((await pin.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const url = page.url();
+    await pin.tap();
+    await expect.poll(() => pins.length).toBe(1);
+    const unpin = sidebar.getByRole('button', { name: 'Unpin session', exact: true });
+    await expect(unpin).toBeVisible();
+    await unpin.tap();
+    await expect.poll(() => pins.length).toBe(2);
+    expect(pins.map(request => request.pinned)).toEqual([true, false]);
+    await expect(page).toHaveURL(url);
+  });
   for (const view of ['page', 'drawer'] as const) {
     test(`${view} swipes right to archive and left to choose a snooze duration`, async ({ mockedPage: page, browserName }) => {
       test.skip(browserName !== 'chromium', 'Native touch gestures use Chromium CDP.');

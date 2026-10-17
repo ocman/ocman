@@ -24,11 +24,24 @@
     background: var(--bg-hover);
     color: var(--text);
   }
-  .session-swipe-row .session-swipe-actions,
-  .session-sidebar-item.session-swipe-row .session-sidebar-actions { opacity: 0; pointer-events: none; }
-  .session-sidebar-item.session-swipe-row .session-sidebar-actions { display: flex; }
+  .session-swipe-row .session-swipe-actions { opacity: 0; pointer-events: none; }
+  .session-sidebar-item.session-swipe-row .session-sidebar-meta .session-sidebar-actions { display: flex; visibility: visible; }
+  .session-sidebar-item.session-swipe-row .session-sidebar-pin-btn { width: 44px; min-width: 44px; height: 44px; }
+  /* Pin has no swipe equivalent. Keep it visible while swipe-only actions
+     stay keyboard-reachable without reserving extra touch controls. */
+  .session-sidebar-item.session-swipe-row .session-sidebar-actions > :not(.session-sidebar-pin-btn) {
+    position: absolute;
+    right: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
   .session-swipe-row .session-swipe-actions:has(:focus-visible),
   .session-sidebar-item.session-swipe-row .session-sidebar-actions:has(:focus-visible) { opacity: 1; pointer-events: auto; }
+  .session-sidebar-item.session-swipe-row .session-sidebar-actions:has(:focus-visible) > :not(.session-sidebar-pin-btn) {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+  }
   .phone-session-table > tbody > .session-swipe-row { grid-template-columns: minmax(0, 1fr); }
   .phone-session-table > tbody > .session-swipe-row > .session-action-cell {
     position: absolute;
