@@ -81,9 +81,12 @@ test('Sessions navigation is active by default', async ({ mockedPage: page }) =>
 
 test('clicking Projects navigates to /projects', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.getByRole('link', { name: 'Projects' }).click();
+  const projects = page.getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('link', { name: 'Projects', exact: true });
+  await projects.click();
   await expect(page).toHaveURL('/projects');
-  await expect(page.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();
+  await expect(page.getByRole('table').getByRole('link', { name: /myapp/ })).toBeVisible();
+  await expect(projects).toHaveAttribute('aria-current', 'page');
 });
 
 test('clicking Analytics opens its overview', async ({ mockedPage: page }) => {
