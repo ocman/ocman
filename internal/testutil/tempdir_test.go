@@ -21,12 +21,12 @@ func TestShortTempRoot(t *testing.T) {
 }
 
 func TestShortTempDirHonoursShortTMPDIR(t *testing.T) {
-	root := t.TempDir()
+	// Check the inherited root, including CI's short RAM-backed TMPDIR.
+	// A nested t.TempDir is long even when its parent root is short.
+	root := filepath.Clean(os.TempDir())
 	if len(root) > maxShortTempRoot {
-		// Exercise the fallback instead: the root is too long to use.
+		// Long roots, such as macOS's per-user TMPDIR, fall back to /tmp.
 		root = "/tmp"
-	} else {
-		t.Setenv("TMPDIR", root)
 	}
 	var dir string
 	t.Run("create", func(t *testing.T) {
