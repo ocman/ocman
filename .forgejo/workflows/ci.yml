@@ -75,6 +75,16 @@ jobs:
   backend:
     name: Backend
     runs-on: [ubuntu-latest, amd64]
+    # Test temp files go to a RAM-backed tmpfs. On the runner's overlay disk
+    # each fsync took ~23 ms, and SQLite-heavy packages ran 7-20x slower
+    # (internal/platforms/opencode 370s vs 25s; internal/server hit the
+    # 10-minute go test timeout). Docker mounts --tmpfs noexec by default;
+    # tests execute fake CLIs from TMPDIR. A full coverage run peaked at
+    # ~600 MB; the size caps a runaway test, and the mount is discarded with
+    # the job container. The image matches the runners' ubuntu-latest label.
+    container:
+      image: node:20-bookworm
+      options: --tmpfs /ramtmp:rw,exec,nosuid,size=3g,mode=1777
     env:
       TERM: xterm-256color
     steps:
@@ -150,9 +160,15 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
+      - name: Require RAM-backed test TMPDIR
+        run: ./scripts/ci-require-ram-tmpdir.sh /ramtmp
       - name: Test root package
+        env:
+          TMPDIR: /ramtmp
         run: go test .
       - name: Test internal packages with coverage
+        env:
+          TMPDIR: /ramtmp
         run: make coverage SUITE=go
       - name: Fetch coverage baseline
         run: ./scripts/coverage-fetch-baseline.sh baseline
@@ -162,6 +178,8 @@ jobs:
       # -1.7% with every per-package number within 0.1% of a passing run.
       # Re-measure once before failing: a real regression reproduces.
       - name: Check coverage ratchet
+        env:
+          TMPDIR: /ramtmp
         run: |
           if make coverage-check BASELINE_DIR=baseline SUITE=go; then
             exit 0
