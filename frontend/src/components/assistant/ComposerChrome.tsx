@@ -198,6 +198,7 @@ interface ComposerToolbarProps {
   isRunning: boolean;
   onAbort?: () => void;
   sending: boolean;
+  hasContent: boolean;
   submit: (queue: boolean) => void;
 }
 
@@ -207,7 +208,7 @@ export function ComposerToolbar({
   modelButtonLabel, effectiveModel, hasReasoning, openReasoningPicker,
   selectedReasoning, permissionControl, onLaunchRequest, launching, fileInputRef,
   addFiles, micError, clearMicError,
-  isRunning, onAbort, sending, submit, selectorsLoading, platform, agentSelection = true,
+  isRunning, onAbort, sending, hasContent, submit, selectorsLoading, platform, agentSelection = true,
 }: ComposerToolbarProps) {
   return (
     <div className="oc-composer-bar">
@@ -267,7 +268,7 @@ export function ComposerToolbar({
             <button type="button" className="oc-mic-error-dismiss" onClick={clearMicError} aria-label="Dismiss">×</button>
           </span>
         )}
-        {isRunning ? (
+        {isRunning && !hasContent && !sending ? (
           <button type="button" className="oc-bar-send oc-bar-send-stop" onClick={onAbort} title="Stop generation (Esc)" aria-label="Stop generation">
             <svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
           </button>

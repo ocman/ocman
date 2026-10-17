@@ -42,6 +42,7 @@ export function Composer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
+  const [hasText, setHasText] = useState(false);
   const [switchingMachine, setSwitchingMachine] = useState(false);
   const sendingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -115,6 +116,7 @@ export function Composer({
     const el = inputRef.current;
     if (!el) return;
     el.value = '';
+    syncInputRef.current('');
     slash.close();
     const key = draftKeyRef.current;
     if (key) clearDraftNow(key);
@@ -130,6 +132,7 @@ export function Composer({
     if (cmd.name === 'routines') { clearComposerInput(); openRoutinePicker(''); return; }
     if (cmd.name === 'variants') { clearComposerInput(); pickers.reasoning.setOpen(true); return; }
     el.value = '/' + cmd.name + ' ';
+    syncInputRef.current(el.value);
     el.focus();
     slash.close();
   }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker, pickers, slash]);
@@ -183,7 +186,7 @@ export function Composer({
         if (key && text) saveDraft(key, text, draftVersion, previousDraft);
         if (mountedRef.current && key && draftKeyRef.current === key) syncDraftNow(key);
         // Back on the initiating key with an empty box: show the failed prompt again.
-        if (mountedRef.current && draftKeyRef.current === key && !el.value.trim()) el.value = text;
+        if (mountedRef.current && draftKeyRef.current === key && !el.value.trim()) { el.value = text; syncInputRef.current(text); }
         if (!retryBackend || !(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
         retries += 1;
         const delaySeconds = 2 ** (retries - 1);
@@ -261,10 +264,12 @@ export function Composer({
   };
 
   const syncInput = (text: string) => {
+    setHasText(text.length > 0);
     setIsBashMode(text.startsWith('!') && !!shellExec);
     slash.syncToInput(text);
   };
   useLayoutEffect(() => { syncInputRef.current = syncInput; });
+  useLayoutEffect(() => { syncInputRef.current(inputRef.current?.value ?? ''); }, [draftKey]);
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     syncInput(el.value);
@@ -358,7 +363,7 @@ export function Composer({
             hasReasoning={hasReasoning} openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}
             selectedReasoning={selectedReasoning} permissionControl={permissionControl} onLaunchRequest={onLaunchRequest}
             launching={launching} fileInputRef={fileInputRef} addFiles={(selectedFiles) => { void attachments.addFiles(selectedFiles); }}
-            micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} onAbort={onAbort} sending={sending} submit={submit} />
+            micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} hasContent={hasText || images.length > 0 || files.length > 0 || attachments.pending > 0} onAbort={onAbort} sending={sending} submit={submit} />
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}
           machineControl={newConversation && directory && onMachineChange && (<>

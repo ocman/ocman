@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer, type ComposerHandle } from './Composer';
 import { api, BackendUnavailableError } from '../../lib/api';
+import { saveDraft } from '../../lib/composerDraft';
 
 vi.mock('../../lib/useCapabilities', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../lib/useCapabilities')>(),
@@ -48,6 +49,50 @@ describe('Composer queue', () => {
 });
 
 describe('Composer input', () => {
+  it('shows send for a restored draft and stop after switching to an empty session', () => {
+    saveDraft('running-draft', 'saved follow up');
+    const { rerender } = render(<Composer sessionId="running-draft" isRunning />);
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument();
+    rerender(<Composer sessionId="running-empty" isRunning />);
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
+  });
+
+  it('switches from stop to send while typing during a running turn', async () => {
+    const onSend = vi.fn();
+    const onAbort = vi.fn();
+    render(<Composer isRunning onSend={onSend} onAbort={onAbort} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }));
+    expect(onAbort).toHaveBeenCalledOnce();
+    const input = screen.getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'follow up' } });
+    expect(screen.queryByRole('button', { name: 'Stop generation' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await act(async () => {});
+    expect(onSend.mock.calls[0][0]).toBe('follow up');
+    expect(onSend.mock.calls[0][2]).toBe(false);
+    expect(onAbort).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
+  });
+
+  it('restores stop when the typed message is deleted', () => {
+    render(<Composer isRunning />);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'draft' } });
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument();
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
+  });
+
+  it.each(['image', 'file'])('shows send for a %s-only draft while running', (kind) => {
+    render(<Composer isRunning initialAttachments={{
+      images: kind === 'image' ? [{ url: 'data:image/png;base64,abc', mime: 'image/png' }] : [],
+      files: kind === 'file' ? [{ path: '/tmp/notes.txt', name: 'notes.txt', mime: 'text/plain' }] : [],
+    }} />);
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop generation' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: kind === 'image' ? 'Remove image attachment 1' : 'Remove attached file notes.txt, attachment 1' }));
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
+  });
+
   it('does not replay a queued send when REST reports uncertain native admission', async () => {
     vi.useFakeTimers();
     // The remote accepted the prompt but its response was lost. REST
