@@ -3,6 +3,7 @@ package claudecode
 import (
 	"flag"
 	"io"
+	"os"
 
 	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 )
@@ -10,9 +11,13 @@ import (
 // RunHookCommand handles `ocman hook [--addr A] <event>`, run by the ocman
 // Claude plugin's hooks. It always succeeds: a hook must never fail or
 // block Claude, whether or not ocman is running (FR-6).
+// Outside an ocman-managed process it returns without reading stdin or posting.
 func RunHookCommand(args []string, stdin io.Reader) bool {
 	if len(args) == 0 || args[0] != "hook" {
 		return false
+	}
+	if os.Getenv("OCMAN_MANAGED") != "1" {
+		return true
 	}
 	flags := flag.NewFlagSet("hook", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

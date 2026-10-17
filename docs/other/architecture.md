@@ -57,7 +57,7 @@ flowchart LR
     Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode instances<br/>or registered v2 service]
     Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
     Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
-    ClaudeHooks[claude hook plugin<br/>terminal sessions, opt-in] -->|ocman hook → /hook| Ocman
+    ClaudeHooks[claude hook plugin<br/>ocman-launched processes only] -->|ocman hook → /hook| Ocman
     Ocman -->|exec| Shell[git / tmux<br/>host tools]
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
@@ -145,9 +145,10 @@ flowchart LR
   `claude-index.db` beside state.db and drives sessions it starts or adopts by
   spawning the user's own `claude` binary with pipes (stream-json and the
   control protocol), so every call runs under the user's own account. The
-  opt-in hook plugin, installed with `claude plugin install`, reports terminal
-  sessions' status and best-effort process identity to the MCP listener with a
-  1 s timeout and always exits 0. Sending to an external root session records
+  hook plugin, installed with `claude plugin install`, checks the injected
+  `OCMAN_MANAGED=1` marker before executing ocman. Standalone Claude
+  sessions skip hooks; managed hooks have a 1 s timeout and always exit 0.
+  Sending to an external root session records
   ownership and resumes its transcript through its project supervisor. Owner
   observations are shared as advisory files under `claude-external` beside
   state.db; they produce non-blocking session warnings, not admission locks.
@@ -498,8 +499,7 @@ flowchart TD
   controls. `internal/claudecli` supplies the shared Agent SDK environment to
   sessions and helpers. Their status follows Claude's session-state and delegated
   task events, so a result cannot end a run with background agent work outstanding;
-  terminal sessions use hook events when the
-  plugin is installed, else the transcript tail settled by
+  terminal sessions use the transcript tail settled by
   `db.SettleSessionStatus`.
 - **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
   handshake and stream-order validation, executable discovery, and description

@@ -23,8 +23,8 @@ const (
 
 // WritePlugin lays out a local marketplace in dir holding ocman's plugin
 // and returns the plugin's directory. Launched sessions load it with
-// --plugin-dir; the user may install it at user scope for live status of
-// terminal sessions. hook is the command prefix each hook runs with its
+// --plugin-dir; the user may also install it at user scope. Hooks only run
+// in managed processes. hook is the command prefix each hook runs with its
 // event name appended; empty writes no hooks.
 func WritePlugin(dir string, skills map[string][]byte, hook string) (string, error) {
 	plugin := filepath.Join(dir, "ocman")
@@ -65,7 +65,9 @@ func hooksJSON(hook string) []byte {
 	}
 	all := map[string][]matcher{}
 	for _, event := range HookEvents {
-		m := matcher{Hooks: []command{{Type: "command", Command: hook + " " + event, Timeout: 5}}}
+		// Check before executing ocman, whose installed path may no longer exist.
+		cmd := `if [ "${OCMAN_MANAGED:-}" = "1" ]; then ` + hook + " " + event + "; fi"
+		m := matcher{Hooks: []command{{Type: "command", Command: cmd, Timeout: 5}}}
 		if strings.HasSuffix(event, "ToolUse") {
 			m.Matcher = "*"
 		}

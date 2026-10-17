@@ -205,7 +205,7 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, mcp)...)
 	cmd.Dir = o.Directory
 	cmd.Env = claudecli.Environment(l.opts.ConfigEnv, o.Directory)
-	cmd.Env = append(cmd.Env, "OCMAN_CLAUDE_MANAGED=1")
+	cmd.Env = append(cmd.Env, "OCMAN_MANAGED=1")
 	p := &proc{id: id, model: model, effort: effort, mcp: mcp, cmd: cmd, busy: true, pending: map[string]bool{}, conv: &Converter{SessionID: id},
 		children: map[string]*Converter{}, tasks: map[string]bool{}, controls: map[string]chan controlResult{}, dir: o.Directory, stderr: &tail{}, done: make(chan struct{})}
 	cmd.Stderr = p.stderr

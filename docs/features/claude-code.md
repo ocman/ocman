@@ -191,12 +191,15 @@ When no OpenCode instance is reachable, the auto-approve judge runs
 `claude -p --model haiku --no-session-persistence --strict-mcp-config` with no
 tools. An OpenCode-only ocman never uses Claude for judging.
 
-## Live status for terminal sessions (opt-in)
+## Claude hook plugin
 
-Without the hooks, a terminal session's status comes from its transcript alone,
-which cannot tell a running turn from an abandoned one: a transcript that ends
-mid-turn reads as interrupted, however recently it was written. To see real busy/idle status, accept the toast or use
-Settings → Provider accounts → **Install**. Ocman then runs
+Terminal sessions get their status from their transcripts. A transcript that ends
+mid-turn reads as interrupted, however recently it was written. Hooks only run
+for Claude processes launched by ocman, which sets `OCMAN_MANAGED=1`.
+Standalone Claude sessions skip the hooks without contacting ocman or executing
+its binary, even if ocman is stopped or its installed binary has moved.
+
+To install the plugin, use Settings → Provider accounts → **Install**. Ocman runs
 `claude plugin marketplace add ~/.local/share/ocman/claude-marketplace` and
 `claude plugin install ocman@ocman --scope user`; it never edits `~/.claude`
 itself. **Uninstall** runs `claude plugin uninstall` and removes the marketplace.
@@ -208,7 +211,7 @@ ocman's MCP listener (`-mcp-addr`) and gives up after one second, always exiting
 best-effort Claude process ID for the external-instance warning. The
 install is unavailable when `-mcp-addr` is empty. The hook command holds the
 ocman binary path and listener address at install time: reinstall after moving
-either. Reinstall an older hook plugin to add `SessionEnd`. Hooks from Claude
+either. Reinstall an older hook plugin to add the environment guard. Hooks from Claude
 processes ocman starts are excluded from external-instance detection.
 
 ## Usage and subscription

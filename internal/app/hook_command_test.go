@@ -20,6 +20,7 @@ import (
 // TestHookCommandExitsZeroWhenOcmanIsDown runs `ocman hook` as a process
 // against a listener that never answers, with stdin left open.
 func TestHookCommandExitsZeroWhenOcmanIsDown(t *testing.T) {
+	t.Setenv("OCMAN_MANAGED", "1")
 	if addr := os.Getenv("OCMAN_TEST_HOOK_ADDR"); addr != "" {
 		os.Args = []string{"ocman", "hook", "--addr", addr, "Stop"}
 		Run("dev", skillCatalog)
@@ -53,6 +54,7 @@ func TestHookCommandExitsZeroWhenOcmanIsDown(t *testing.T) {
 }
 
 func TestRunHookCommandArgs(t *testing.T) {
+	t.Setenv("OCMAN_MANAGED", "1")
 	if claudecode.RunHookCommand([]string{"serve"}, strings.NewReader("")) || claudecode.RunHookCommand(nil, nil) {
 		t.Fatal("non-hook args handled")
 	}
@@ -63,8 +65,9 @@ func TestRunHookCommandArgs(t *testing.T) {
 }
 
 // TestClaudeHookPlugin installs the hook plugin through Settings' API with
-// the fake CLI, then drives a terminal session's status with `ocman hook`.
+// the fake CLI, then checks that terminal hooks do not change status.
 func TestClaudeHookPlugin(t *testing.T) {
+	t.Setenv("OCMAN_MANAGED", "")
 	if runOcmanChild() {
 		return
 	}
@@ -131,9 +134,8 @@ func TestClaudeHookPlugin(t *testing.T) {
 		}
 	}
 	hook("Stop")
-	waitStatus(db.StatusDone)
 	hook("PreToolUse")
-	waitStatus(db.StatusBusy)
+	waitStatus(db.StatusInterrupted)
 
 	resp, err = http.Post(base+"/api/hook-plugin/uninstall", "application/json", nil)
 	if err != nil {

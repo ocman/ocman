@@ -116,7 +116,7 @@ func TestWritePluginHooks(t *testing.T) {
 	if err := json.Unmarshal(data, &hooks); err != nil || len(hooks.Hooks) != len(HookEvents) {
 		t.Fatalf("hooks = %s, %v", data, err)
 	}
-	if h := hooks.Hooks["PreToolUse"][0]; h.Matcher != "*" || h.Hooks[0].Command != `"/bin/ocman" hook --addr 127.0.0.1:1 PreToolUse` {
+	if h := hooks.Hooks["PreToolUse"][0]; h.Matcher != "*" || h.Hooks[0].Command != `if [ "${OCMAN_MANAGED:-}" = "1" ]; then "/bin/ocman" hook --addr 127.0.0.1:1 PreToolUse; fi` {
 		t.Fatalf("PreToolUse = %+v", h)
 	}
 	if _, err := WritePlugin(dir, nil, ""); err != nil {

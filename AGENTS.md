@@ -524,7 +524,8 @@ are computed. Sessions retain their original directories and owners.
   `provider.Rules` store (`claude-rules.json`), then the autoapprove pipeline
   (`HandleProviderEvent`, started by `Server.watchProviderPrompts`) and the user;
   without OpenCode the judge is `autoapprove.ClaudeJudge`. Terminal-started
-  sessions get live status from the opt-in hook plugin (FR-6): `ocman hook
+  sessions use transcript status. The hook plugin checks `OCMAN_MANAGED=1`
+  before executing ocman, so standalone Claude skips it. `ocman hook
   <event>` posts to `/hook` on the MCP listener (1 s, always exit 0), the
   server forwards it as provider `POST /hooks`, and hooks for sessions ocman
   drives are ignored. Install/uninstall run `claude plugin …`. Tests

@@ -27,7 +27,7 @@ func RunHook(addr, event string, stdin io.Reader, timeout time.Duration) {
 		id := hookSessionID(json.NewDecoder(stdin))
 		if id != "" {
 			body, _ := json.Marshal(providerprotocol.HookEvent{Event: event, SessionID: id,
-				PID: hookClaudePID(ctx), Managed: os.Getenv("OCMAN_CLAUDE_MANAGED") == "1"})
+				PID: hookClaudePID(ctx), Managed: os.Getenv("OCMAN_MANAGED") == "1"})
 			if req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/hook", bytes.NewReader(body)); err == nil {
 				req.Header.Set("Content-Type", "application/json")
 				if resp, err := http.DefaultClient.Do(req); err == nil {
