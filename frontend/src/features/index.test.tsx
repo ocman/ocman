@@ -35,7 +35,7 @@ describe('feature registry', () => {
 
   it('only registers settings groups the search catalog can reveal', () => {
     const groups = new Set(Object.values(SETTINGS).map((s) => s.group));
-    for (const section of featureSettings) expect(groups, section.id).toContain(section.id);
+    for (const section of featureSettings) expect(groups, section.id).toContain(section.category);
   });
 
   it.each([

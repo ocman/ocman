@@ -26,6 +26,7 @@ describe('HookPluginSettings', () => {
     setHookPlugin.mockResolvedValueOnce({ available: true, installed: true });
     renderWith(<HookPluginSettings />);
     fireEvent.click(await screen.findByRole('button', { name: 'Install' }));
+    expect(screen.getByRole('heading', { name: 'Hooks', level: 3 })).toBeVisible();
     expect(await screen.findByRole('button', { name: 'Uninstall' })).toBeInTheDocument();
     expect(setHookPlugin).toHaveBeenCalledWith(true);
 

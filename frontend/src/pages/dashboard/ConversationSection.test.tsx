@@ -13,8 +13,8 @@ it('registers a searchable Conversation section', () => {
   expect(featureSettings.find((group) => group.id === 'conversation')).toMatchObject({
     label: 'Conversation', Section: ConversationSection,
   });
-  expect(searchSettings('compact', { conversation: 'Conversation' })).toContainEqual(
-    expect.objectContaining({ id: 'compact-tool-calls', group: 'conversation' }),
+  expect(searchSettings('compact', { sessions: 'Sessions' })).toContainEqual(
+    expect.objectContaining({ id: 'compact-tool-calls', group: 'sessions' }),
   );
 });
 

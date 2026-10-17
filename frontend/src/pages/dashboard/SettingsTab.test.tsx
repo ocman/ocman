@@ -9,6 +9,8 @@ const logout = vi.fn();
 const promptInstall = vi.fn();
 const ios = vi.hoisted(() => ({ value: false }));
 const openCode = vi.hoisted(() => ({ value: true }));
+const device = vi.hoisted(() => ({ canInstall: true, installed: false }));
+const account = vi.hoisted(() => ({ required: true }));
 vi.mock('../../lib/useCapabilities', () => ({ useLocalOpenCode: () => openCode.value }));
 vi.mock('../../lib/externalLinks', async (orig) => ({
   ...(await orig<typeof import('../../lib/externalLinks')>()),
@@ -20,7 +22,15 @@ vi.mock('../../components/upstream/PromptTemplateSettings', () => ({ PromptTempl
 vi.mock('../../components/RemoteSettings', () => ({ RemoteSettings: () => null }));
 vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => <p>Sharing controls</p> }));
 vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
-vi.mock('../../components/MaintenanceSettings', () => ({ MaintenanceSettings: () => <p>Database maintenance</p> }));
+vi.mock('../../components/MaintenanceSettings', () => ({ MaintenanceSettings: () => <p>Database controls</p> }));
+vi.mock('../../components/WebhookRelaySettings', () => ({ WebhookRelaySettings: () => null }));
+vi.mock('./ProviderAccountSettings', () => ({ ProviderAccountSettings: () => null }));
+vi.mock('../../components/HookPluginSettings', () => ({ HookPluginSettings: () => null }));
+vi.mock('../../components/PlatformSettings', () => ({ PlatformSettings: () => null }));
+vi.mock('../../components/IdleProjectSettings', () => ({ IdleProjectSettings: () => null }));
+vi.mock('../../components/SpeechSettings', () => ({ SpeechSettings: () => null }));
+vi.mock('../../components/DefaultAgentSetting', () => ({ DefaultAgentSetting: () => null }));
+vi.mock('./SessionAgentSettings', () => ({ ModelFallbackSettings: () => null, WorktreePermissionSettings: () => null }));
 vi.mock('./SettingsSections', () => ({
   NotificationsSection: () => null,
   SessionsSection: () => null,
@@ -32,7 +42,7 @@ vi.mock('../../components/LinkPreviewSettings', () => ({ LinkPreviewSettings: ()
 vi.mock('./AutoApproveSection', () => ({ AutoApproveSection: () => null }));
 vi.mock('../../lib/authStore', () => ({
   useAuthStore: (selector: (state: { authRequired: boolean; logout: typeof logout }) => unknown) =>
-    selector({ authRequired: true, logout }),
+    selector({ authRequired: account.required, logout }),
 }));
 vi.mock('../../lib/uiStore', () => ({
   useUiStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
@@ -47,7 +57,7 @@ vi.mock('../../lib/apiStore', () => ({
   }),
 }));
 vi.mock('../../lib/usePwaInstall', () => ({
-  usePwaInstall: () => ({ canInstall: true, installed: false, promptInstall }),
+  usePwaInstall: () => ({ ...device, promptInstall }),
 }));
 
 function render(ui: ReactElement, url = '/settings') {
@@ -56,13 +66,26 @@ function render(ui: ReactElement, url = '/settings') {
 }
 
 describe('SettingsTab actions', () => {
+  it('groups settings into six categories with visible sections', () => {
+    render(<SettingsTab />);
+    const navigation = screen.getByRole('navigation', { name: 'Settings groups' });
+    expect([...navigation.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'System',
+    ]);
+    expect(screen.getByRole('heading', { name: 'Notifications', level: 3 })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'This device', level: 3 })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
+    for (const name of ['Remotes', 'Plugins', 'Link previews', 'Public sharing', 'Webhooks']) {
+      expect(screen.getByRole('heading', { name, level: 3 })).toBeVisible();
+    }
+  });
   it('restores the selected group and search from the URL after remounting', () => {
     const { router, unmount } = render(<SettingsTab />, '/settings?dir=project');
-    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space & diffs' } });
     const url = `/settings${router.state.location.search}`;
     const params = new URLSearchParams(router.state.location.search);
-    expect(params.get('tab')).toBe('plugins');
+    expect(params.get('tab')).toBe('connections');
     expect(params.get('q')).toBe('disk space & diffs');
     expect(params.get('dir')).toBe('project');
     unmount();
@@ -74,16 +97,16 @@ describe('SettingsTab actions', () => {
 
   it('clears the URL search when selecting a group or a search result', () => {
     const { router } = render(<SettingsTab />, '/settings?tab=plugins&q=disk+space&dir=project');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'sharing' } });
-    expect(router.state.location.search).toBe('?tab=sharing&dir=project');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'connections' } });
+    expect(router.state.location.search).toBe('?tab=connections&dir=project');
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
     fireEvent.click(screen.getByRole('button', { name: /Remove old diffs/ }));
-    expect(router.state.location.search).toBe('?tab=maintenance&dir=project');
+    expect(router.state.location.search).toBe('?tab=system&dir=project');
   });
 
   it.each(['unknown', 'behaviour'])('falls back to the first visible group for tab=%s', (tab) => {
     render(<SettingsTab />, `/settings?tab=${tab}`);
-    expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('notifications');
+    expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('app');
   });
 
   it('follows URL navigation and replaces history while editing search', async () => {
@@ -91,7 +114,7 @@ describe('SettingsTab actions', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
     expect(router.state.historyAction).toBe('REPLACE');
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: '' } });
-    expect(router.state.location.search).toBe('?tab=plugins');
+    expect(router.state.location.search).toBe('?tab=connections');
     await act(() => router.navigate('/settings?tab=sharing&q=custom'));
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('custom');
     await act(() => router.navigate(-1));
@@ -102,47 +125,48 @@ describe('SettingsTab actions', () => {
   it('selects a group from the compact navigation and clears the search view', () => {
     render(<SettingsTab />);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'plugins' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'connections' } });
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
     expect(screen.getByText('Plugin management')).toBeVisible();
-    expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('plugins');
+    expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('connections');
   });
   it('opens plugin management from the Settings navigation', () => {
     render(<SettingsTab />);
     expect(screen.queryByText('Plugin management')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
     expect(screen.getByRole('heading', { name: 'Plugins' })).toBeVisible();
     expect(screen.getByText('Plugin management')).toBeVisible();
   });
-  it('lists feature groups in their fixed slot among the core groups', () => {
+  it('lists only categories rather than individual feature sections', () => {
     render(<SettingsTab />);
     const groups = screen.getAllByRole('button').map((b) => b.textContent).filter((label) => label !== 'Install' && label !== 'Sign out');
-    expect(groups).toEqual(['Notifications', 'Sessions', 'Remotes', 'Plugins', 'Conversation', 'Platforms', 'Idle projects', 'Auto-approve', 'Sharing', 'Webhooks',
-      'PR & Issue templates', 'Link previews', 'Maintenance', 'Provider accounts', 'App', 'Account']);
+    expect(groups).toEqual(['App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'System']);
   });
   it('keeps always-mounted feature sections mounted while hidden', () => {
     render(<SettingsTab />);
     expect(screen.getByText('Sharing controls')).not.toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Sharing' }));
-    expect(screen.getByRole('heading', { name: 'Sharing' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
+    expect(screen.getByRole('heading', { name: 'Public sharing' })).toBeVisible();
     expect(screen.getByText('Sharing controls')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sessions' }));
     expect(screen.getByText('Sharing controls')).not.toBeVisible();
   });
   it('hides the OpenCode maintenance group without OpenCode', () => {
     openCode.value = false;
     try {
       render(<SettingsTab />);
-      expect(screen.queryByRole('button', { name: 'Maintenance' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'System' }));
+      expect(screen.queryByRole('heading', { name: 'Database maintenance' })).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Resource management' })).toBeVisible();
     } finally {
       openCode.value = true;
     }
   });
   it('mounts maintenance only when its group is opened', () => {
     render(<SettingsTab />);
-    expect(screen.queryByText('Database maintenance')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Maintenance' }));
-    expect(screen.getByText('Database maintenance')).toBeVisible();
+    expect(screen.queryByText('Database controls')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'System' }));
+    expect(screen.getByText('Database controls')).toBeVisible();
   });
   beforeEach(() => {
     logout.mockReset();
@@ -154,7 +178,7 @@ describe('SettingsTab actions', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
     fireEvent.click(screen.getByRole('button', { name: /Remove old diffs/ }));
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
-    expect(screen.getByText('Database maintenance')).toBeVisible();
+    expect(screen.getByText('Database controls')).toBeVisible();
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'nothing-like-this' } });
     expect(screen.getByRole('status')).toHaveTextContent('No settings match');
@@ -187,13 +211,11 @@ describe('SettingsTab actions', () => {
   it('keeps install and sign-out actions working inside setting rows', () => {
     render(<SettingsTab />);
 
-    expect(screen.getByRole('button', { name: 'App' })).toHaveClass('oc-button');
-    fireEvent.click(screen.getByRole('button', { name: 'App' }));
+    expect(screen.getByRole('button', { name: 'App & notifications' })).toHaveClass('oc-button');
     expect(screen.getByRole('button', { name: 'Install' })).toHaveClass('oc-button');
     fireEvent.click(screen.getByRole('button', { name: 'Install' }));
     expect(promptInstall).toHaveBeenCalledOnce();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
     expect(screen.getByRole('button', { name: 'Sign out' })).toHaveClass('oc-button');
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(logout).toHaveBeenCalledOnce();
@@ -207,7 +229,6 @@ describe('SettingsTab actions', () => {
 
     ios.value = true;
     render(<SettingsTab />);
-    fireEvent.click(screen.getByRole('button', { name: 'Behaviour' }));
     const toggle = screen.getByRole('checkbox', { name: 'Open external links in Chrome' });
     expect(toggle).not.toBeChecked();
     fireEvent.click(toggle);
@@ -215,5 +236,40 @@ describe('SettingsTab actions', () => {
     expect(localStorage.getItem('ocman:open-links-in-chrome')).toBe('1');
     ios.value = false;
     localStorage.clear();
+  });
+
+  it.each([
+    ['notifications', 'app'], ['behaviour', 'app'], ['account', 'app'],
+    ['conversation', 'sessions'], ['templates', 'sessions'],
+    ['platforms', 'agents'], ['provider-accounts', 'agents'],
+    ['auto-approve', 'permissions'], ['remotes', 'connections'], ['plugins', 'connections'],
+    ['sharing', 'connections'], ['webhooks', 'connections'], ['link-previews', 'connections'],
+    ['maintenance', 'system'], ['idle-projects', 'system'],
+  ])('keeps the legacy %s link opening %s', (tab, category) => {
+    render(<SettingsTab />, `/settings?tab=${tab}`);
+    expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue(category);
+  });
+
+  it('hides empty device and account sections', () => {
+    device.canInstall = false;
+    account.required = false;
+    try {
+      render(<SettingsTab />);
+      expect(screen.queryByRole('heading', { name: 'This device' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Account' })).not.toBeInTheDocument();
+    } finally {
+      device.canInstall = true;
+      account.required = true;
+    }
+  });
+
+  it('shows the installed state without offering another installation', () => {
+    device.installed = true;
+    try {
+      render(<SettingsTab />);
+      expect(screen.getByRole('button', { name: 'Installed' })).toBeDisabled();
+    } finally {
+      device.installed = false;
+    }
   });
 });

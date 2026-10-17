@@ -7,8 +7,7 @@
  */
 
 export type SettingsGroupId =
-  | 'notifications' | 'sessions' | 'conversation' | 'remotes' | 'plugins' | 'auto-approve' | 'sharing' | 'platforms'
-  | 'webhooks' | 'templates' | 'link-previews' | 'maintenance' | 'provider-accounts' | 'behaviour' | 'app' | 'account' | 'idle-projects'
+  | 'app' | 'sessions' | 'agents' | 'permissions' | 'connections' | 'system'
   /** Per-project settings page; not part of the global Settings search. */
   | 'project';
 
@@ -30,19 +29,19 @@ export type SettingEntry = {
 
 export const SETTINGS = {
   'compact-tool-calls': {
-    group: 'conversation', title: 'Compact tool calls',
+    group: 'sessions', title: 'Compact tool calls',
     description: 'Show only shell commands until you expand their output. Off by default. Saved for this browser.',
     example: 'Keep test logs hidden while reading a conversation, then click Show full output to inspect them.',
     keywords: 'bash terminal collapse toolcalls',
   },
   'app-icon-badge': {
-    group: 'notifications', title: 'App icon badge',
+    group: 'app', title: 'App icon badge',
     description: 'Choose which unread items contribute to the installed app icon count. These settings apply to every device connected to this ocman instance, including background push. Reading or archiving items removes their count.',
     example: 'Include unread sessions and Primary Inbox messages, but disable Factory and Routines messages. Permission and choice prompts count once per session, never again as Inbox permission items.',
     keywords: 'badge count ipad ios unread primary factory routines permissions choices',
   },
   'enabled-platforms': {
-    group: 'platforms', title: 'Enabled platforms',
+    group: 'agents', title: 'Enabled platforms',
     description: 'Choose the coding platforms enabled on this machine. Changes reload the backend after active turns, prompts and queued messages finish, without restarting the app. An explicit -platforms CLI flag overrides these choices. Configure remotes on their own Settings page.',
     example: 'Enable Claude Code in the desktop app without changing launch arguments. Keep at least one platform enabled.',
     keywords: 'opencode claude code desktop backend',
@@ -55,14 +54,14 @@ export const SETTINGS = {
     keywords: 'whisper microphone voice speech dictation',
   },
   'idle-project-timeout': {
-    group: 'idle-projects',
+    group: 'system',
     title: 'Stop idle project instances after',
     description: 'Minutes of inactivity after all normal sessions are archived. 0 means Never (the default). Running sessions, pending prompts, queued messages, and active routines or Factory work keep the instance alive. Routines wake stopped projects automatically. Applies to Claude supervisors on this machine; OpenCode is excluded. Configure remote instances on their own Settings page.',
     example: '30 stops an idle Claude supervisor after half an hour, keeping its sessions and worktrees.',
     keywords: 'cull cleanup timeout tmux supervisor resources',
   },
   'reviewer-endpoint': {
-    group: 'auto-approve',
+    group: 'permissions',
     title: 'Reviewer endpoint',
     description: 'Use the existing OpenCode reviewer, or send permission requests directly to your own compatible API. You manage hosting and billing. Keys are stored on this ocman instance and never returned to the browser. Changing the URL clears the saved key unless you enter a replacement.',
     example: 'Choose OpenAI-compatible with http://127.0.0.1:8080/v1/chat/completions, or TypeSafe-compatible with https://api.typesafe.ai/v1/systemone. Enter the full POST URL.',
@@ -76,7 +75,7 @@ export const SETTINGS = {
     keywords: 'new session option alt t role',
   },
   'system-notifications': {
-    group: 'notifications',
+    group: 'app',
     title: 'System notifications',
     description: 'Show OS notifications when a session finishes or needs your input, including while the app is closed on devices with Web Push enabled. Enable separately on each device.',
     example: 'A long refactor finishes while you are in another app: a "Session done" notification appears, and clicking it opens the session.',
@@ -84,7 +83,7 @@ export const SETTINGS = {
     requires: 'Shown only in browsers that support notifications.',
   },
   'bell-sound': {
-    group: 'notifications',
+    group: 'app',
     title: 'Bell sound',
     description: 'Play a bell sound when the app is not in focus and a session finishes or asks a question.',
     example: 'You are reading docs in another tab when the agent asks which branch to use: the bell rings so you know to switch back.',
@@ -135,7 +134,7 @@ export const SETTINGS = {
     requires: 'Shown only in browsers that support speech playback.',
   },
   'worktree-inherit-permissions': {
-    group: 'sessions',
+    group: 'permissions',
     title: 'Worktree sessions inherit parent permissions',
     description: 'When you split a session into a worktree, seed the new session with the permissions you already approved with "Allow always" in the parent, so it does not re-prompt for them.',
     example: 'You allowed "go test ./..." always in the parent; the /wt child runs it without asking again.',
@@ -164,42 +163,42 @@ export const SETTINGS = {
     keywords: 'unarchive resurface halt activity done error',
   },
   'model-fallthrough-patience': {
-    group: 'sessions',
+    group: 'agents',
     title: 'Model fallthrough patience',
     description: 'Minimum time a provider that ran out of quota is skipped before the project model list tries it again.',
     example: 'At 15 min, a provider that hit its rate limit is left alone for at least 15 minutes, even if it reports an earlier reset.',
     keywords: 'quota rate limit provider fallback',
   },
   'model-fallthrough-cooldown': {
-    group: 'sessions',
+    group: 'agents',
     title: 'Model fallthrough cooldown',
     description: 'How long a provider is skipped when it reports no reset time.',
     example: 'At 60 min, a provider that returns "quota exceeded" without a reset time is skipped for an hour.',
     keywords: 'quota rate limit provider fallback',
   },
   'remotes': {
-    group: 'remotes',
+    group: 'connections',
     title: 'Attached remotes',
     description: 'Attach other ocman instances to manage their sessions from here. Copy a remote\'s access token from its own Settings page (run it with -remote-listen) and paste it below.',
     example: 'On the build box run "ocman -remote-listen :8230", copy its token, then add "buildbox.lan:8230" here.',
     keywords: 'machine host grpc token multi-remote',
   },
   'plugin-owner': {
-    group: 'plugins',
+    group: 'connections',
     title: 'Plugin owner',
     description: 'Plugins and their data belong to the selected machine.',
     example: 'Select "buildbox" to manage the plugins installed on that remote rather than on this machine.',
     keywords: 'machine remote',
   },
   'plugin-discovery': {
-    group: 'plugins',
+    group: 'connections',
     title: 'Discovery',
     description: 'Rescan the selected owner\'s plugin directory for new or changed executables.',
     example: 'After "make install-plugin PLUGIN=slack", click Rescan plugins to list the Slack plugin.',
     keywords: 'rescan refresh health install',
   },
   'plugin-undelivered-replies': {
-    group: 'plugins',
+    group: 'connections',
     title: 'Undelivered replies',
     description: 'Completed replies are stored before they are sent, so a disconnect or a restart retries them instead of losing them.',
     example: 'Slack was unreachable for a minute: "2 waiting · 1 retrying" until the replies are posted.',
@@ -207,7 +206,7 @@ export const SETTINGS = {
     requires: 'Shown only for an installed conversation plugin, such as Slack.',
   },
   'plugin-backlog-limits': {
-    group: 'plugins',
+    group: 'connections',
     title: 'Backlog limits',
     description: 'At either limit, new conversation work pauses instead of replies being dropped.',
     example: '"40 of 500 replies · 12 of 1024 KiB" means there is plenty of room left.',
@@ -215,7 +214,7 @@ export const SETTINGS = {
     requires: 'Shown only for an installed conversation plugin, such as Slack.',
   },
   'plugin-dead-letters': {
-    group: 'plugins',
+    group: 'connections',
     title: 'Replies awaiting a decision',
     description: 'These exhausted their retries. Later replies in the same conversation wait until each one is retried or discarded.',
     example: 'A reply to a deleted Slack thread failed 6 times; discard it so the conversation continues.',
@@ -223,21 +222,21 @@ export const SETTINGS = {
     requires: 'Shown only when a conversation plugin has replies that exhausted their retries.',
   },
   'auto-approve-default': {
-    group: 'auto-approve',
+    group: 'permissions',
     title: 'Enable by default',
     description: 'Automatically start the AI permission reviewer for every new session. You can also enable or disable it per session from the permission prompt.',
     example: 'Turn it on so a new session\'s "npm test" prompt is judged and approved without you clicking Allow.',
     keywords: 'judge permission reviewer',
   },
   'human-review-window': {
-    group: 'auto-approve',
+    group: 'permissions',
     title: 'Human review window',
     description: 'How long to wait after a permission prompt appears before the AI reviewer starts. Gives you time to approve or reject manually.',
     example: 'At 10 s you have ten seconds to answer a prompt yourself before the reviewer decides.',
     keywords: 'delay judge seconds',
   },
   'reviewer-model': {
-    group: 'auto-approve',
+    group: 'permissions',
     title: 'Reviewer model',
     description: 'The model that judges permission prompts. A fast, cheap model is usually the right pick.',
     example: 'Pick "anthropic/claude-haiku" for quick, low-cost decisions.',
@@ -245,56 +244,56 @@ export const SETTINGS = {
     requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'reviewer-prompt-sections': {
-    group: 'auto-approve',
+    group: 'permissions',
     title: 'Reviewer prompt sections',
     description: 'Extra rules appended to the AI reviewer\'s prompt. Each section appears as a named block the model reads before deciding. Use this to allow or deny specific patterns your team knows are safe.',
     example: 'Title "Terraform", content "terraform plan is safe; never approve terraform apply or destroy."',
     keywords: 'judge rules policy allow deny',
   },
   'public-sharing': {
-    group: 'sharing',
+    group: 'connections',
     title: 'Allow public sharing',
     description: 'Let sessions be shared via public, read-only links. When off, no new share links can be created; existing links keep working until revoked below.',
     example: 'Turn it on, then use Share on a session to send a read-only link to a colleague.',
     keywords: 'share link public',
   },
   'share-relay': {
-    group: 'sharing',
+    group: 'connections',
     title: 'Share relay',
     description: 'The relay that stores encrypted shared conversations so links open from another machine. Set with -relay-url or OCMAN_RELAY_URL; restart ocman to change it.',
     example: 'Start ocman with "-relay-url https://relay.example.com" to share across machines.',
     keywords: 'relay url OCMAN_RELAY_URL',
   },
   'shared-sessions': {
-    group: 'sharing',
+    group: 'connections',
     title: 'Shared sessions',
     description: 'Every active public share link. Open the session to inspect it, or revoke a link to make it stop working immediately.',
     example: 'Revoke the link you posted in a public channel by mistake; it stops working at once.',
     keywords: 'revoke links',
   },
   'webhook-relay': {
-    group: 'webhooks',
+    group: 'connections',
     title: 'Webhook relay',
     description: 'Relay that receives provider webhooks for new inboxes. Leave empty to use the share relay. Existing inboxes keep their relay.',
     example: 'Set https://relay.example.com so GitHub can deliver to an inbox while ocman runs behind a firewall.',
     keywords: 'webhook inbox relay url',
   },
   'webhook-enrollment-token': {
-    group: 'webhooks',
+    group: 'connections',
     title: 'Enrollment token',
     description: 'Authorizes inbox registration on the relay. Stored on this machine and never shown again.',
     example: 'Paste the token your relay operator gave you, then create a webhook inbox.',
     keywords: 'webhook relay token secret',
   },
   'launch-prompt-templates': {
-    group: 'templates',
+    group: 'sessions',
     title: 'Launch prompt templates',
     description: 'The prompt sent to a new agent session when you click "Handle this PR/Issue" in the sidebar. Edit the templates below; placeholders are substituted at launch time.',
     example: '"Review PR #{{number}}: {{title}}. Read the diff and leave comments." becomes a concrete prompt for the PR you picked.',
     keywords: 'pull request issue forge github forgejo placeholder',
   },
   'custom-link-rules': {
-    group: 'link-previews',
+    group: 'connections',
     tab: 'rules',
     title: 'Custom link rules',
     description: 'Create link cards for ticket IDs and other text patterns. Use $& for the whole match or $1 for the first capture group.',
@@ -302,7 +301,7 @@ export const SETTINGS = {
     keywords: 'regex pattern ticket jira',
   },
   'preview-redirect-uri': {
-    group: 'link-previews',
+    group: 'connections',
     tab: 'apps',
     title: 'Redirect URI',
     description: 'Register this exact URL with every provider sign-in app.',
@@ -310,7 +309,7 @@ export const SETTINGS = {
     keywords: 'oauth callback',
   },
   'preview-sign-in-app': {
-    group: 'link-previews',
+    group: 'connections',
     tab: 'apps',
     title: 'Add a sign-in app',
     description: 'Register an OAuth app for providers without personal tokens, such as Slack and Jira. Saved apps override the environment.',
@@ -318,7 +317,7 @@ export const SETTINGS = {
     keywords: 'oauth client slack jira',
   },
   'preview-add-host': {
-    group: 'link-previews',
+    group: 'connections',
     tab: 'accounts',
     title: 'Add a host',
     description: 'Preview a self-hosted Forgejo or GitLab with a personal token.',
@@ -327,7 +326,7 @@ export const SETTINGS = {
     requires: 'Shown only when a provider supports self-hosted instances.',
   },
   'opencode-database': {
-    group: 'maintenance',
+    group: 'system',
     title: 'OpenCode database',
     description: 'Where OpenCode\'s database lives and how large it is.',
     example: '~/.local/share/opencode/opencode.db · 12.4 GB',
@@ -335,7 +334,7 @@ export const SETTINGS = {
     requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'remove-old-diffs': {
-    group: 'maintenance',
+    group: 'system',
     title: 'Remove old diffs',
     description: 'Remove the per-message file patches of old sessions and compact the database. ocman stops its managed opencode instances while it runs, and keeps the removed patches in a dump so they can be restored.',
     example: 'A 12 GB database shrinks to 3 GB after removing diffs from sessions older than 30 days.',
@@ -343,7 +342,7 @@ export const SETTINGS = {
     requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'removed-diffs': {
-    group: 'maintenance',
+    group: 'system',
     title: 'Removed diffs',
     description: 'The dump of patches removed by the cleanup. Restore puts them back; deleting the dump makes the cleanup permanent.',
     example: 'Restore if OpenCode\'s per-turn changes view is missing a diff you need.',
@@ -351,7 +350,7 @@ export const SETTINGS = {
     requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'open-links-in-chrome': {
-    group: 'behaviour',
+    group: 'app',
     title: 'Open external links in Chrome',
     description: 'Requires Google Chrome to be installed. Links will fail to open if it isn\'t.',
     example: 'Installed on an iPad Home Screen, tapping a GitHub link opens it in Chrome instead of Safari.',
@@ -364,13 +363,15 @@ export const SETTINGS = {
     description: 'Install ocman as a standalone app with its own window and dock icon. The web version keeps working in any browser tab.',
     example: 'After installing, launch ocman from the dock and it opens in its own window.',
     keywords: 'pwa desktop dock',
+    requires: 'Shown when this browser can install ocman or it is already installed.',
   },
   'sign-out': {
-    group: 'account',
+    group: 'app',
     title: 'Sign out',
     description: 'Sign out of the current session.',
     example: 'Sign out on a shared computer before you leave.',
     keywords: 'logout sign out password',
+    requires: 'Shown only when this ocman instance requires authentication.',
   },
   'project-add-model': {
     group: 'project',

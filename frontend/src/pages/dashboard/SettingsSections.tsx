@@ -8,9 +8,7 @@ import { useState, useEffect } from 'react';
 import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
-import { api, type ModelFallthroughSettings } from '../../lib/api';
-import { SpeechSettings } from '../../components/SpeechSettings';
-import { DefaultAgentSetting } from '../../components/DefaultAgentSetting';
+import { api } from '../../lib/api';
 import { enablePush, disablePush, pushSupported, pushSubscribed } from '../../lib/pushNotifications';
 import { Button } from '../../components/Control';
 import { AppBadgeSettings } from '../../components/AppBadgeSettings';
@@ -124,7 +122,11 @@ export function ConversationSection() {
   const compactToolCalls = useUiStore((s) => s.compactToolCalls);
   const setCompactToolCalls = useUiStore((s) => s.setCompactToolCalls);
   const save = useSettingSave();
+  const showMessageMetadata = useUiStore((s) => s.showMessageMetadata);
+  const setShowMessageMetadata = useUiStore((s) => s.setShowMessageMetadata);
+  const messageMetadataSave = useSettingSave();
   return (
+    <>
     <SettingRow setting="compact-tool-calls">
       <SettingToggle
         ariaLabel="Compact tool calls"
@@ -133,6 +135,11 @@ export function ConversationSection() {
         onSave={setCompactToolCalls}
       />
     </SettingRow>
+    <SettingRow setting="message-metadata">
+      <SettingToggle ariaLabel="Show metadata between message sections" checked={showMessageMetadata}
+        save={messageMetadataSave} onSave={setShowMessageMetadata} />
+    </SettingRow>
+    </>
   );
 }
 
@@ -141,26 +148,14 @@ export function SessionsSection() {
   const setDashboardTimeRangeDefault = useUiStore((s) => s.setDashboardTimeRangeDefault);
   const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
   const setSidebarRecentHours = useUiStore((s) => s.setSidebarRecentHours);
-  const showMessageMetadata = useUiStore((s) => s.showMessageMetadata);
-  const setShowMessageMetadata = useUiStore((s) => s.setShowMessageMetadata);
   const timeRangeSave = useSettingSave();
   const recentSave = useSettingSave();
-  const messageMetadataSave = useSettingSave();
-
-  // Worktree inherit-permissions is a server-side setting (#101), so it
-  // is loaded/saved directly via the API rather than through uiStore.
-  const [inheritPerms, setInheritPerms] = useState(true);
-  const inheritPermsSave = useSettingSave();
   const [autoArchive, setAutoArchive] = useState({ enabled: true, ttlDays: 7 });
   const [autoArchiveLoaded, setAutoArchiveLoaded] = useState(false);
   const autoArchiveToggleSave = useSettingSave();
   const autoArchiveTTLSave = useSettingSave();
   useEffect(() => {
     const ctrl = new AbortController();
-    api
-      .getWorktreeInheritPermissions(ctrl.signal)
-      .then(({ enabled }) => setInheritPerms(enabled))
-      .catch(() => { /* best-effort; keep default on */ });
     api
       .getAutoArchiveSettings(ctrl.signal)
       .then(setAutoArchive)
@@ -170,16 +165,6 @@ export function SessionsSection() {
       });
     return () => ctrl.abort();
   }, []);
-
-  const handleInheritToggle = async (want: boolean) => {
-    setInheritPerms(want); // optimistic
-    try {
-      await api.setWorktreeInheritPermissions(want);
-    } catch (err) {
-      setInheritPerms(!want); // revert
-      throw err; // let SettingToggle surface the failure indicator
-    }
-  };
 
   const autoArchiveSaving = autoArchiveToggleSave.state === 'saving' || autoArchiveTTLSave.state === 'saving';
 
@@ -196,7 +181,6 @@ export function SessionsSection() {
 
   return (
     <>
-      <DefaultAgentSetting />
       <SettingRow setting="start-screen-time-range">
         <SettingNumber
           ariaLabel="Start screen time range in days"
@@ -219,24 +203,6 @@ export function SessionsSection() {
           parse={(raw) => raw * 24}
           save={recentSave}
           onSave={(next) => setSidebarRecentHours(next)}
-        />
-      </SettingRow>
-      <SettingRow setting="message-metadata">
-        <SettingToggle
-          ariaLabel="Show metadata between message sections"
-          checked={showMessageMetadata}
-          save={messageMetadataSave}
-          onSave={(next) => setShowMessageMetadata(next)}
-        />
-      </SettingRow>
-      <SpeechSettings />
-      <SettingRow setting="worktree-inherit-permissions">
-        <SettingToggle
-          testId="worktree-inherit-toggle"
-          ariaLabel="Worktree sessions inherit parent permissions"
-          checked={inheritPerms}
-          save={inheritPermsSave}
-          onSave={(next) => handleInheritToggle(next)}
         />
       </SettingRow>
       <SettingRow setting="auto-archive">
@@ -262,7 +228,6 @@ export function SessionsSection() {
           />
         </SettingRow>
       )}
-      <ModelFallthroughSettings />
       <ArchiveResurfaceSetting />
     </>
   );
@@ -299,53 +264,5 @@ function ArchiveResurfaceSetting() {
         }}
       />
     </SettingRow>
-  );
-}
-
-function ModelFallthroughSettings() {
-  const [times, setTimes] = useState<ModelFallthroughSettings | null>(null);
-  const patienceSave = useSettingSave();
-  const fallbackSave = useSettingSave();
-  useEffect(() => {
-    const ctrl = new AbortController();
-    api.getModelFallthroughSettings(ctrl.signal).then(setTimes).catch(() => { /* best-effort; rows stay hidden */ });
-    return () => ctrl.abort();
-  }, []);
-  if (!times) return null;
-  const save = async (next: ModelFallthroughSettings) => {
-    const previous = times;
-    setTimes(next);
-    try {
-      await api.setModelFallthroughSettings(next);
-    } catch (err) {
-      setTimes(previous);
-      throw err;
-    }
-  };
-  return (
-    <>
-      <SettingRow setting="model-fallthrough-patience">
-        <SettingNumber
-          ariaLabel="Model fallthrough patience in minutes"
-          unit="min"
-          min={1}
-          max={1440}
-          value={times.patienceMinutes}
-          save={patienceSave}
-          onSave={(patienceMinutes) => save({ ...times, patienceMinutes })}
-        />
-      </SettingRow>
-      <SettingRow setting="model-fallthrough-cooldown">
-        <SettingNumber
-          ariaLabel="Model fallthrough cooldown in minutes"
-          unit="min"
-          min={1}
-          max={1440}
-          value={times.fallbackMinutes}
-          save={fallbackSave}
-          onSave={(fallbackMinutes) => save({ ...times, fallbackMinutes })}
-        />
-      </SettingRow>
-    </>
   );
 }

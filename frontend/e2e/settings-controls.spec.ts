@@ -30,7 +30,7 @@ test('custom permission reviewer saves both API formats without revealing its ke
     await route.fulfill({ json: settings });
   });
   await page.goto('/settings');
-  await page.getByRole('navigation', { name: 'Settings groups' }).getByRole('button', { name: 'Auto-approve', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Settings groups' }).getByRole('button', { name: 'Permissions', exact: true }).click();
   await page.getByLabel('Reviewer API').selectOption('openai');
   await page.getByLabel('Endpoint URL').fill('http://127.0.0.1:8080/v1/chat/completions');
   await page.getByLabel('Model ID', { exact: true }).fill('local-reviewer');

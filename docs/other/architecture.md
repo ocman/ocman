@@ -877,7 +877,7 @@ the owning project's PR/Issue pane.
 
 ```mermaid
 flowchart TD
-    Shell[App routes, MainNav, routeTitle, Settings] -->|iterate| Features[features/<br/>static registry]
+    Shell[App routes, MainNav, routeTitle, Settings] -->|routes, navigation, settings sections by category| Features[features/<br/>static registry]
     Features --> Pages
     Shell --> Pages
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
@@ -904,8 +904,11 @@ flowchart TD
 - **Feature registry.** `src/features/index.tsx` is a static list in which
   Factory, routines and artifacts contribute their routes, with layout tier and
   header titles, plus their main-nav link. Plugins, auto-approve, sharing and
-  webhooks contribute Settings groups, each mounted either always or only while
-  active. `App`'s routes, `MainNav`, `routeTitle` and `SettingsTab` iterate it at
+  webhooks contribute Settings sections alongside the core sections. Each declares
+  its category and stays mounted either always or only while its category is active.
+  Settings has six categories with visible section headings; legacy tab links map
+  to their new category, and search opens the category before revealing the row.
+  `App`'s routes, `MainNav`, `routeTitle` and `SettingsTab` iterate the registry at
   fixed slots between their core entries. Everything is still imported eagerly,
   with no runtime discovery. Backend plugins remain separate and reach the UI
   only through plugin panes and palette actions. The command palette and the

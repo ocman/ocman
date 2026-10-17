@@ -15,7 +15,12 @@ vi.hoisted(() => {
   });
 });
 
-import { SessionsSection } from './SettingsSections';
+import { SessionsSection as HistorySection, ConversationSection } from './SettingsSections';
+import { WorktreePermissionSettings, ModelFallbackSettings } from './SessionAgentSettings';
+
+function SessionsSection() {
+  return <><HistorySection /><ConversationSection /><WorktreePermissionSettings /><ModelFallbackSettings /></>;
+}
 import { useUiStore } from '../../lib/uiStore';
 
 // Mock the server-backed settings so these rows load and save known values.

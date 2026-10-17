@@ -63,7 +63,7 @@ test('settings sidebar switches the visible group', async ({ mockedPage: page })
   await expect(page.getByText('Human review window', { exact: true })).toBeHidden();
 
   // Selecting the Auto-approve sidebar item reveals it and hides Notifications.
-  await page.getByRole('button', { name: 'Auto-approve' }).click();
+  await page.getByRole('button', { name: 'Permissions', exact: true }).click();
   await expect(page.getByText('Human review window', { exact: true })).toBeVisible();
   await expect(page.getByText('Bell sound', { exact: true })).toBeHidden();
 });

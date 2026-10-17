@@ -3,9 +3,27 @@ title: Configuration
 weight: 3
 ---
 
+## Settings categories
+
+Settings uses six categories. Each page has named sections rather than another
+layer of tabs or collapsible panels.
+
+| Category | Sections |
+| --- | --- |
+| App & notifications | Notifications, This device, Account |
+| Sessions | New sessions, Conversation, Voice, History & archiving |
+| Agents & models | Platforms, Provider accounts, Hooks, Model fallback |
+| Permissions | Auto-approve, AI reviewer, Worktrees |
+| Connections & sharing | Remotes, Plugins, Link previews, Public sharing, Webhooks |
+| System | Resource management, Database maintenance |
+
+Device, account, hooks and database sections appear only when applicable. Search
+opens the matching category and scrolls to the setting. Existing links to the old
+categories still open the corresponding new category.
+
 ## Custom permission reviewer
 
-Settings → Auto-approve → **Reviewer endpoint** lets you use a self-hosted
+Settings → Permissions → AI reviewer → **Reviewer endpoint** lets you use a self-hosted
 model or a provider API directly. Ocman does not install models or manage their
 servers. Choose an API format, enter its complete POST URL, supply a model ID,
 and optionally enter a Bearer API key. The URL is reached from the ocman backend,

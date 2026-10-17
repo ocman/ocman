@@ -12,6 +12,7 @@ import { useLocalOpenCode } from '../../lib/useCapabilities';
 import { Button } from '../../components/Control';
 import { ReviewerPromptSectionEditor, type PromptSection } from './ReviewerPromptSectionEditor';
 import { JudgeEndpointSettings } from './JudgeEndpointSettings';
+import { SettingsSection } from '../../components/SettingsSection';
 import styles from './AutoApproveSection.module.css';
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,7 @@ export function AutoApproveSection() {
 
   return (
     <>
+      <SettingsSection title="Auto-approve">
       <SettingRow setting="auto-approve-default">
         <SettingToggle
           ariaLabel="Enable auto-approve by default"
@@ -97,6 +99,8 @@ export function AutoApproveSection() {
           }}
         />
       </SettingRow>
+      </SettingsSection>
+      <SettingsSection title="AI reviewer">
       <JudgeEndpointSettings />
       {openCode && <SettingRow setting="reviewer-model" desc="Model used when Reviewer API is OpenCode. Custom endpoints use their own model ID.">
         <SettingSelect
@@ -147,6 +151,7 @@ export function AutoApproveSection() {
           </Button>
         </div>
       </SettingRow>
+      </SettingsSection>
     </>
   );
 }

@@ -63,7 +63,7 @@ test('add a token, preview, reload and remove it', async ({ mockedPage: page }) 
   await expect(page.getByTestId('provider-preview-card')).toHaveCount(0);
 
   await page.goto('/settings');
-  await page.getByRole('button', { name: 'Link previews' }).click();
+  await page.getByRole('button', { name: 'Connections & sharing' }).click();
   await page.getByRole('button', { name: 'Add token for Tracker' }).click();
   await expect(page.getByText('Create a read-only token.')).toBeVisible();
   await page.getByLabel('Tracker token').fill('tok-1');
@@ -79,7 +79,7 @@ test('add a token, preview, reload and remove it', async ({ mockedPage: page }) 
   await expect(page.getByTestId('provider-preview-card')).toContainText('Launch plan');
 
   await page.goto('/settings');
-  await page.getByRole('button', { name: 'Link previews' }).click();
+  await page.getByRole('button', { name: 'Connections & sharing' }).click();
   await page.getByRole('button', { name: 'Remove Tracker Acme' }).click();
   await expect(page.getByText('alice · Acme')).toHaveCount(0);
 

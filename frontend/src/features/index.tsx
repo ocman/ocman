@@ -20,7 +20,14 @@ import { SharingSettings } from '../components/SharingSettings';
 import { WebhookRelaySettings } from '../components/WebhookRelaySettings';
 import { IdleProjectSettings } from '../components/IdleProjectSettings';
 import { PlatformSettings } from '../components/PlatformSettings';
-import { ConversationSection } from '../pages/dashboard/SettingsSections';
+import { ConversationSection, NotificationsSection, SessionsSection } from '../pages/dashboard/SettingsSections';
+import { AccountSettings, DeviceSettings, LinkPreviewSection, NewSessionSettings, RemoteSection } from '../pages/dashboard/CoreSettingsSections';
+import type { RevealRequest } from '../lib/useRevealSetting';
+import { ProviderAccountSettings } from '../pages/dashboard/ProviderAccountSettings';
+import { ModelFallbackSettings, WorktreePermissionSettings } from '../pages/dashboard/SessionAgentSettings';
+import { SpeechSettings } from '../components/SpeechSettings';
+import { HookPluginSettings } from '../components/HookPluginSettings';
+import { MaintenanceSettings } from '../components/MaintenanceSettings';
 
 // Factory pages pull in the epic graph (@xyflow, dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
@@ -52,7 +59,16 @@ export interface Feature {
    * `always` sections stay mounted (hidden) while Settings is open, so
    * unsaved edits survive switching groups; `active` ones mount on demand.
    */
-  settings?: { id: SettingsGroupId; label: string; mount: 'always' | 'active'; Section: ComponentType };
+  settings?: {
+    id: string;
+    category: SettingsGroupId;
+    label: string;
+    mount: 'always' | 'active';
+    Section: ComponentType<{ target?: RevealRequest | null }>;
+    visible?: 'device' | 'account' | 'maintenance';
+    /** Sections with conditional or multiple headings render their own frame. */
+    ownSections?: boolean;
+  };
 }
 
 export const FEATURES: Feature[] = [
@@ -85,13 +101,26 @@ export const FEATURES: Feature[] = [
     titlePrefix: { prefix: '/artifacts/', title: 'Artifacts' },
     nav: { to: '/artifacts', label: 'Artifacts', icon: 'bi-box-seam' },
   },
-  { id: 'plugins', settings: { id: 'plugins', label: 'Plugins', mount: 'active', Section: PluginSettings } },
-  { id: 'conversation', settings: { id: 'conversation', label: 'Conversation', mount: 'active', Section: ConversationSection } },
-  { id: 'platforms', settings: { id: 'platforms', label: 'Platforms', mount: 'active', Section: PlatformSettings } },
-  { id: 'idle-projects', settings: { id: 'idle-projects', label: 'Idle projects', mount: 'active', Section: IdleProjectSettings } },
-  { id: 'auto-approve', settings: { id: 'auto-approve', label: 'Auto-approve', mount: 'always', Section: AutoApproveSection } },
-  { id: 'sharing', settings: { id: 'sharing', label: 'Sharing', mount: 'always', Section: SharingSettings } },
-  { id: 'webhooks', settings: { id: 'webhooks', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },
+  { id: 'notifications', settings: { id: 'notifications', category: 'app', label: 'Notifications', mount: 'always', Section: NotificationsSection } },
+  { id: 'device', settings: { id: 'device', category: 'app', label: 'This device', mount: 'always', Section: DeviceSettings, visible: 'device' } },
+  { id: 'account', settings: { id: 'account', category: 'app', label: 'Account', mount: 'always', Section: AccountSettings, visible: 'account' } },
+  { id: 'new-sessions', settings: { id: 'new-sessions', category: 'sessions', label: 'New sessions', mount: 'always', Section: NewSessionSettings } },
+  { id: 'conversation', settings: { id: 'conversation', category: 'sessions', label: 'Conversation', mount: 'active', Section: ConversationSection } },
+  { id: 'voice', settings: { id: 'voice', category: 'sessions', label: 'Voice', mount: 'active', Section: SpeechSettings } },
+  { id: 'session-history', settings: { id: 'session-history', category: 'sessions', label: 'History & archiving', mount: 'always', Section: SessionsSection } },
+  { id: 'platforms', settings: { id: 'platforms', category: 'agents', label: 'Platforms', mount: 'active', Section: PlatformSettings } },
+  { id: 'provider-accounts', settings: { id: 'provider-accounts', category: 'agents', label: 'Provider accounts', mount: 'active', Section: ProviderAccountSettings } },
+  { id: 'hooks', settings: { id: 'hooks', category: 'agents', label: 'Hooks', mount: 'active', Section: HookPluginSettings, ownSections: true } },
+  { id: 'model-fallback', settings: { id: 'model-fallback', category: 'agents', label: 'Model fallback', mount: 'active', Section: ModelFallbackSettings } },
+  { id: 'auto-approve', settings: { id: 'auto-approve', category: 'permissions', label: 'Auto-approve', mount: 'always', Section: AutoApproveSection, ownSections: true } },
+  { id: 'worktrees', settings: { id: 'worktrees', category: 'permissions', label: 'Worktrees', mount: 'active', Section: WorktreePermissionSettings } },
+  { id: 'remotes', settings: { id: 'remotes', category: 'connections', label: 'Remotes', mount: 'always', Section: RemoteSection } },
+  { id: 'plugins', settings: { id: 'plugins', category: 'connections', label: 'Plugins', mount: 'active', Section: PluginSettings } },
+  { id: 'link-previews', settings: { id: 'link-previews', category: 'connections', label: 'Link previews', mount: 'active', Section: LinkPreviewSection } },
+  { id: 'sharing', settings: { id: 'sharing', category: 'connections', label: 'Public sharing', mount: 'always', Section: SharingSettings } },
+  { id: 'webhooks', settings: { id: 'webhooks', category: 'connections', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },
+  { id: 'idle-projects', settings: { id: 'idle-projects', category: 'system', label: 'Resource management', mount: 'active', Section: IdleProjectSettings } },
+  { id: 'maintenance', settings: { id: 'maintenance', category: 'system', label: 'Database maintenance', mount: 'active', Section: MaintenanceSettings, visible: 'maintenance' } },
 ];
 
 export const featureRoutes = (layout: FeatureRoute['layout']) =>
