@@ -173,7 +173,7 @@ func installRoutedAction(t *testing.T, s *Server, scope plugins.Scope, label str
 	}
 	hello, _ := json.Marshal(plugins.Envelope{Type: plugins.TypeHello, Hello: &plugins.Hello{Mode: "$1", Token: "$OCMAN_PLUGIN_TOKEN", Description: &d}})
 	result := fmt.Sprintf(`{"type":"result","result":{"id":"$n","value":{"results":[{"kind":"notice","text":%q},{"kind":"artifact","label":"report.txt","data":"aGk="}]}}}`, label)
-	script := "#!/bin/sh\n/bin/cat <<EOF\n" + string(hello) + "\nEOF\nif [ \"$1\" = serve ]; then\nread -r ack\nn=0\nwhile IFS= read -r call; do\nn=$((n + 1))\nprintf '%s\\n' \"$call\" >> calls\n/bin/cat <<EOF\n" + result + "\nEOF\ndone\nfi\n"
+	script := "#!/bin/sh\n/bin/cat <<EOF\n" + string(hello) + "\nEOF\nif [ \"$1\" = serve ]; then\nread -r ack\nn=0\nwhile IFS= read -r call; do\ncase \"$call\" in *'\"type\":\"shutdown\"'*) exit 0;; esac\nn=$((n + 1))\nprintf '%s\\n' \"$call\" >> calls\n/bin/cat <<EOF\n" + result + "\nEOF\ndone\nfi\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ocman-plugin-test")
 	testutil.WriteScript(t, path, script)
