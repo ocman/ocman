@@ -4,6 +4,7 @@ import { throughputSample } from './throughput';
 import type { FailedSend } from './failedSends';
 import { messageModelRef } from './turnStats';
 import { formatSeconds } from './format';
+import { isInjectedInstruction } from './injectedInstructions';
 import type { ToolApproval } from './threadHelpers';
 import {
   convertToolPart,
@@ -471,7 +472,9 @@ export function createConvertMessages(): ConvertMessagesFn {
     const { approvalsByPartId, inlinedNotices } = indexApprovals(messages, parts, partsByMsg);
     const hasApprovals = inlinedNotices.size > 0;
 
-    const filtered = messages.filter(
+    const filtered = messages.filter((m) => !(m.data?.role === 'user'
+      && partsByMsg[m.id]?.length
+      && partsByMsg[m.id].every((p) => isInjectedInstruction(parsePart(p))))).filter(
       (m) => m.data?.role === 'user' || m.data?.role === 'assistant'
         || (m.data?.role === 'notice' && !inlinedNotices.has(m.id)),
     );
@@ -582,6 +585,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     };
 
     msgParts.forEach((pd, partIdx) => {
+      if (role === 'user' && isInjectedInstruction(pd)) return;
       // Skip non-renderable lifecycle parts
       if (pd.type === 'step-start' || pd.type === 'step-finish' || pd.type === 'snapshot') return;
 
