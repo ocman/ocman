@@ -65,7 +65,7 @@ export const SETTINGS = {
     title: 'Reviewer endpoint',
     description: 'Use the existing OpenCode reviewer, or send permission requests directly to your own compatible API. You manage hosting and billing. Keys are stored on this ocman instance and never returned to the browser. Changing the URL clears the saved key unless you enter a replacement.',
     example: 'Choose OpenAI-compatible with http://127.0.0.1:8080/v1/chat/completions, or TypeSafe-compatible with https://api.typesafe.ai/v1/systemone. Enter the full POST URL.',
-    keywords: 'judge self-hosted local Jev API key provider model probability',
+    keywords: 'auto-approve judge self-hosted local Jev API key provider model probability',
   },
   'default-agent': {
     group: 'sessions',
@@ -226,21 +226,21 @@ export const SETTINGS = {
     title: 'Enable by default',
     description: 'Automatically start the AI permission reviewer for every new session. You can also enable or disable it per session from the permission prompt.',
     example: 'Turn it on so a new session\'s "npm test" prompt is judged and approved without you clicking Allow.',
-    keywords: 'judge permission reviewer',
+    keywords: 'auto-approve judge permission reviewer',
   },
   'human-review-window': {
     group: 'permissions',
     title: 'Human review window',
     description: 'How long to wait after a permission prompt appears before the AI reviewer starts. Gives you time to approve or reject manually.',
     example: 'At 10 s you have ten seconds to answer a prompt yourself before the reviewer decides.',
-    keywords: 'delay judge seconds',
+    keywords: 'auto-approve delay judge seconds',
   },
   'reviewer-model': {
     group: 'permissions',
     title: 'Reviewer model',
     description: 'The model that judges permission prompts. A fast, cheap model is usually the right pick.',
     example: 'Pick "anthropic/claude-haiku" for quick, low-cost decisions.',
-    keywords: 'judge llm',
+    keywords: 'auto-approve judge llm',
     requires: 'Shown only when the OpenCode platform is enabled on this machine.',
   },
   'reviewer-prompt-sections': {
@@ -248,7 +248,7 @@ export const SETTINGS = {
     title: 'Reviewer prompt sections',
     description: 'Extra rules appended to the AI reviewer\'s prompt. Each section appears as a named block the model reads before deciding. Use this to allow or deny specific patterns your team knows are safe.',
     example: 'Title "Terraform", content "terraform plan is safe; never approve terraform apply or destroy."',
-    keywords: 'judge rules policy allow deny',
+    keywords: 'auto-approve judge rules policy allow deny',
   },
   'public-sharing': {
     group: 'connections',

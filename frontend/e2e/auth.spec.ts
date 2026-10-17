@@ -121,15 +121,9 @@ test.describe('auth required', () => {
       }),
     );
 
-    // Sign out button lives in the Settings tab, not the global header.
-    // It sits in the "Account" group, which the settings sidebar reveals
-    // only after the matching nav item is selected.
+    // Account is a section of the default App & notifications category.
     await page.goto('/settings');
-    // authRequired loads async from /api/auth/me; wait for the Account
-    // sidebar item to appear (and settle) before selecting it.
-    const accountNav = page.getByRole('button', { name: 'Account', exact: true });
-    await expect(accountNav).toBeVisible();
-    await accountNav.click();
+    await expect(page.getByRole('heading', { name: 'Account', level: 3 })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
   });
 
@@ -149,11 +143,7 @@ test.describe('auth required', () => {
     await page.goto('/settings');
     await expect(page.getByRole('link', { name: 'Settings', current: 'page' })).toBeVisible();
 
-    // Sign out lives in the "Account" settings group — select it first.
-    // Wait for the async-loaded Account nav item to settle before clicking.
-    const accountNav = page.getByRole('button', { name: 'Account', exact: true });
-    await expect(accountNav).toBeVisible();
-    await accountNav.click();
+    await expect(page.getByRole('heading', { name: 'Account', level: 3 })).toBeVisible();
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page.getByRole('form', { name: 'Sign in' })).toBeVisible({ timeout: 5_000 });
   });

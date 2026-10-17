@@ -27,6 +27,7 @@ describe('searchSettings', () => {
     expect(ids('haiku')).toEqual(['reviewer-model']);
     expect(ids('tts')).toContain('read-aloud');
     expect(ids('permissions')).toEqual(expect.arrayContaining(['reviewer-model', 'human-review-window', 'worktree-inherit-permissions']));
+    expect(ids('auto-approve')).toEqual(expect.arrayContaining(['reviewer-model', 'human-review-window']));
     expect(ids('bell zzz')).toEqual([]);
     expect(ids('   ')).toEqual([]);
   });
