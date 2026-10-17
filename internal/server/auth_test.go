@@ -6,11 +6,33 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+var testPasswordHashes sync.Map // plaintext -> []byte
+
+// testPasswordHash returns a minimum-cost bcrypt hash, cached per password.
+// Login verification reads the cost from the hash, so tests exercise the
+// production comparison without paying HashPassword's cost on every fixture.
+// TestHashPasswordUsesProductionCost pins the production cost.
+func testPasswordHash(t testing.TB, password string) []byte {
+	t.Helper()
+	if hash, ok := testPasswordHashes.Load(password); ok {
+		return hash.([]byte)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	actual, _ := testPasswordHashes.LoadOrStore(password, hash)
+	return actual.([]byte)
+}
 
 // newTestAuth builds an Auth with the given plaintext password and a
 // deterministic HMAC key so tests can exercise cookie signing without
@@ -22,11 +44,7 @@ func newTestAuth(t *testing.T, password string, opts ...testAuthOption) *Auth {
 		HMACKey:   []byte("deterministic-test-key-of-32-ch!"),
 		CookieTTL: time.Hour,
 	}
-	hash, err := HashPassword(password)
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	cfg.PasswordHash = hash
+	cfg.PasswordHash = testPasswordHash(t, password)
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -48,6 +66,32 @@ func withTrustLocalhost() testAuthOption {
 
 // --- NewAuth construction ---
 
+func TestHashPasswordUsesProductionCost(t *testing.T) {
+	hash, err := HashPassword("hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cost, err := bcrypt.Cost(hash); err != nil || cost != bcryptCost || cost < 12 {
+		t.Fatalf("bcrypt cost = %d, %v; want production cost %d", cost, err, bcryptCost)
+	}
+	if bcrypt.CompareHashAndPassword(hash, []byte("hunter2")) != nil {
+		t.Fatal("production hash does not verify its password")
+	}
+}
+
+func TestTestPasswordHashVerifiesOnlyItsPassword(t *testing.T) {
+	hash := testPasswordHash(t, "hunter2")
+	if bcrypt.CompareHashAndPassword(hash, []byte("hunter2")) != nil {
+		t.Fatal("test hash does not verify its password")
+	}
+	if bcrypt.CompareHashAndPassword(hash, []byte("wrong")) == nil {
+		t.Fatal("test hash accepted the wrong password")
+	}
+	if other := testPasswordHash(t, "other"); bcrypt.CompareHashAndPassword(other, []byte("hunter2")) == nil {
+		t.Fatal("cached hashes leaked between passwords")
+	}
+}
+
 func TestNewAuth_DisabledWhenNoHash(t *testing.T) {
 	a, err := NewAuth(AuthConfig{})
 	if err != nil {
@@ -59,7 +103,7 @@ func TestNewAuth_DisabledWhenNoHash(t *testing.T) {
 }
 
 func TestNewAuth_ShortKeyRejected(t *testing.T) {
-	hash, _ := HashPassword("hunter2")
+	hash := testPasswordHash(t, "hunter2")
 	_, err := NewAuth(AuthConfig{PasswordHash: hash, HMACKey: []byte("tiny")})
 	if err == nil {
 		t.Error("expected error for short hmac key")
@@ -95,7 +139,7 @@ func TestTrustsLocalhost_NilSafe(t *testing.T) {
 }
 
 func TestNewAuth_DefaultsTTL(t *testing.T) {
-	hash, _ := HashPassword("hunter2")
+	hash := testPasswordHash(t, "hunter2")
 	a, err := NewAuth(AuthConfig{
 		PasswordHash: hash,
 		HMACKey:      []byte("deterministic-test-key-of-32-ch!"),
@@ -166,7 +210,7 @@ func TestCookie_RejectsMalformed(t *testing.T) {
 }
 
 func TestCookie_RejectsWrongKey(t *testing.T) {
-	hash, _ := HashPassword("hunter2")
+	hash := testPasswordHash(t, "hunter2")
 	a1, _ := NewAuth(AuthConfig{
 		PasswordHash: hash,
 		HMACKey:      []byte("key-one-thirty-two-bytes-long!!!"),
