@@ -5,6 +5,7 @@ import { useUiStore } from '../lib/uiStore';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
 import { featureNav } from '../features';
+import { PhoneNavigation } from './PhoneNavigation';
 import './MainNav.css';
 
 // activePrefix: sub-pages living outside the link's own path (singular routes, sibling tabs).
@@ -111,6 +112,7 @@ export function MainNav({
         aria-label="Close navigation"
         onClick={onMobileClose}
       />
+      <PhoneNavigation unreadTotal={inbox.data?.unreadTotal ?? 0} />
     </>
   );
 }

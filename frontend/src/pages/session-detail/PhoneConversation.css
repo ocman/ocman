@@ -1,0 +1,30 @@
+/* Direction A keeps the existing conversation and delivery logic, only restyling phones. */
+@media (width <= 640px) {
+  .app-shell:has(.session-layout) { --header-height: 100px; }
+  .app-shell:has(.session-layout) .app-header { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px 44px; gap: 8px; padding: 2px 12px; }
+  .app-shell:has(.session-layout) .app-header h1 { width: 100%; margin: 0; font-size: 16px; }
+  .app-shell:has(.session-layout) .header-right { width: 100%; max-width: none; gap: 12px; }
+  .app-shell:has(.session-layout) .header-project { max-width: calc(100% - 168px); margin-right: auto; }
+  .app-shell:has(.session-layout) .header-actions { gap: 8px; }
+  .session-layout .oc-viewport-footer {
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+  }
+  .session-layout .oc-composer-wrap {
+    padding: 8px 0 max(10px, env(safe-area-inset-bottom, 0px));
+    background: transparent;
+  }
+
+  .session-layout .oc-composer { border: 1px solid var(--border); border-radius: 0; }
+  .session-layout .oc-composer-input { font-size: 16px; }
+  .session-layout .oc-composer-bar { padding: 6px 10px; gap: 8px; flex-wrap: wrap; row-gap: 12px; }
+  .session-layout .oc-composer-bar-left { flex: 1; }
+  .session-layout .oc-composer-bar-right { margin-left: auto; }
+  .session-layout .oc-bar-send { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; }
+  .session-layout .oc-bar-action { min-width: 44px; min-height: 44px; border-radius: 0; }
+  .session-layout .oc-bar-select { min-height: 44px; }
+  .session-layout .oc-bar-search.oc-search-select > button { min-width: 44px; min-height: 44px; }
+  .session-layout .oc-permission-box { border-radius: 0; }
+  .session-layout .oc-permission-actions { flex-wrap: wrap; gap: 12px; }
+  .session-layout .oc-permission-btn { min-height: 44px; }
+}

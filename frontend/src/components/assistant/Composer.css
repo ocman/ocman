@@ -232,14 +232,16 @@
   50% { opacity: 0.4; }
 }
 
-/* Composer bar action buttons (+attach, mic) */
+/* Attachment action: a small paperclip without an oversized outlined box. */
 .oc-bar-action {
   background: none;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 0;
   color: var(--text-dim);
-  font-size: 13px;
-  padding: 2px 8px;
+  font-size: 16px;
+  padding: 0;
+  width: 28px;
+  height: 28px;
   cursor: pointer;
   line-height: 1.4;
   transition: color 0.15s, border-color 0.15s;

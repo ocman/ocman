@@ -1,1 +1,8 @@
 .page { display: flex; gap: 32px; max-width: 880px; }
+
+@media (width <= 640px) {
+  .page { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 16px; width: 100%; overflow-wrap: anywhere; }
+  .page > h1, .page > p { margin: 0; }
+  .page > h1 { display: none; }
+  .page > label { display: grid; gap: 8px; min-width: 0; }
+}

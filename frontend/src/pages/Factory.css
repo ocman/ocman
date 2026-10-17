@@ -149,7 +149,9 @@ a.factory-cell:hover { color: var(--accent); }
 
 @media (max-width: 640px) {
   .factory-page { gap: 16px; }
-  .factory-page nav a { padding-inline: 12px; }
+  .factory-page > nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(44px, auto); min-height: 96px; gap: 8px; overflow: visible; }
+  .factory-page > nav a { display: flex; justify-content: center; align-items: center; min-height: 44px; padding: 8px 4px; font-size: 12px; white-space: normal; text-align: center; }
+  .factory-page > nav .factory-how-to-link { margin-left: 0; }
   .factory-page > form, .factory-page > section { padding: 14px; }
 	.factory-how-to { gap: 24px; }
 	.factory-how-to-intro { padding: 20px; }

@@ -1,0 +1,46 @@
+/* Phone ergonomics shared by every page. Desktop controls retain their density. */
+@media (width <= 640px) {
+  /* Horizontal containment also disables browser back/forward swipes. Keep it native. */
+  .app-shell .factory-page { overscroll-behavior-x: auto; }
+  :is(.app-shell, [role="dialog"]) button { min-width: 44px; min-height: 44px; }
+  /* WebKit's native menu controls ignore min-height; give single selects an explicit height. */
+  :is(.app-shell, [role="dialog"]) select:not([multiple]) { height: 44px; }
+  /* Keep the native picker, but don't let Safari paint a rounded system field. */
+  body :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"][aria-modal="true"]) select:not([multiple]) {
+    appearance: none;
+    border-radius: 0;
+    padding-right: 36px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--subtext0) 50%), linear-gradient(135deg, var(--subtext0) 50%, transparent 50%);
+    background-position: calc(100% - 18px) center, calc(100% - 13px) center;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+  }
+  :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"]) .oc-button {
+    min-height: 44px;
+    border-radius: 0;
+    white-space: normal;
+  }
+
+  :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"]) .oc-icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"]) :is(.oc-field, select, textarea, input:not([type="checkbox"], [type="radio"], [type="hidden"])) {
+    min-height: 44px;
+    max-width: 100%;
+    border-radius: 0;
+    font-size: 16px;
+  }
+
+  :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"]) .oc-button-group { gap: 12px; }
+  :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"]) .oc-segmented-control { gap: 8px; flex-wrap: wrap; }
+  :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"]) .oc-segmented-option { margin-left: 0; }
+  :is(.app-shell .page-content, .app-shell .inbox-page, [role="dialog"]) .oc-segmented-option .oc-button { min-width: 44px; }
+
+  .app-shell .page-content .nav-tabs { gap: 8px; }
+  .app-shell .page-content .nav-tab { display: inline-flex; align-items: center; min-height: 44px; }
+  [role="dialog"] { border-radius: 0; }
+  .app-shell .oc-tabs-list { gap: 8px; flex-wrap: wrap; }
+  .app-shell .page-content .factory-page label > :is(select, textarea, input:not([type="checkbox"])) { min-height: 44px; font-size: 16px; }
+}

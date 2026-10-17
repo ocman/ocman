@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project, Session } from '../lib/api';
 
@@ -19,7 +19,13 @@ vi.mock('../lib/useCapabilities', () => ({
   useMultiHost: () => true,
 }));
 
-import { GroupedSessionTable } from './SessionTable';
+import { GroupedSessionTable, SessionTable } from './SessionTable';
+
+function HistoryControls() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <><output aria-label="Current path">{location.pathname}</output><button onClick={() => navigate(-1)}>Back</button></>;
+}
 
 function makeSession(over: Partial<Session>): Session {
   return {
@@ -52,6 +58,20 @@ function renderGrouped(props: Partial<React.ComponentProps<typeof GroupedSession
 
 describe('GroupedSessionTable project archive', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it.each([false, true])('a session title adds only one history entry, grouped=%s', (grouped) => {
+    const sessions = [makeSession({})];
+    render(<MemoryRouter initialEntries={['/sessions']}>
+      <HistoryControls />
+      {grouped
+        ? <GroupedSessionTable sessions={sessions} collapsedProjects={new Set()} toggleCollapsedProject={() => {}} />
+        : <SessionTable sessions={sessions} showProject={false} />}
+    </MemoryRouter>);
+    fireEvent.click(screen.getByRole('link', { name: /Work/ }));
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/session/ses_1');
+    fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/sessions');
+  });
 
   it('renders an "Add session" placeholder for a known project with no sessions', () => {
     const onAddSession = vi.fn();
@@ -173,6 +193,6 @@ describe('GroupedSessionTable project archive', () => {
       makeSession({ id: 's1', remoteId: 'r1', remoteName: 'Laptop', directory: '/src/foo' }),
     ];
     renderGrouped({ sessions });
-    expect(screen.getByText('Laptop')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Laptop/ })).toHaveTextContent('Laptop');
   });
 });

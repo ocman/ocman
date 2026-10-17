@@ -55,6 +55,13 @@ function renderTab(ctx: Partial<DashboardCtx>) {
 }
 
 describe('ProjectsTab', () => {
+  it.each([undefined, 'remote box'])('keeps the project link keyboard-accessible and owner-qualified for %s', (remoteId) => {
+    renderTab({ projects: [makeProject({ directory: '/repo/source', remoteId })] });
+    const link = screen.getByRole('link', { name: /source/ });
+    expect(link).toHaveAttribute('href', `/project/%2Frepo%2Fsource${remoteId ? '?remoteId=remote%20box' : ''}`);
+    fireEvent.click(link);
+  });
+
   it('disables target selection when no other projects are available', () => {
     renderTab({ projects: [makeProject({ directory: '/source' })] });
     fireEvent.click(screen.getByRole('button', { name: 'Merge /source' }));

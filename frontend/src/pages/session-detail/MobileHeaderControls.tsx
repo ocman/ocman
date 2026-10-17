@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UseMobilePanelResult } from './useMobilePanel';
+import './PhoneConversation.css';
 
 /** Mounts session controls into a slot owned by the top-level header. */
 export function HeaderPortal({

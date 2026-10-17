@@ -99,9 +99,10 @@ it('locks machine selection until dictation delivers its final result', async ()
   const recognition = fakeSpeechRecognition();
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
-  render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="dictation-test" onMachineChange={vi.fn()} />);
+  render(<WithShortcuts isRunning={false} newConversation directory="/local/project" sessionId="dictation-test" onMachineChange={vi.fn()} />);
   const machine = await screen.findByRole('combobox', { name: 'Session machine' });
-  await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
+  expect(screen.queryByTitle('Record voice message')).not.toBeInTheDocument();
+  await act(async () => fireEvent.keyDown(screen.getByRole('textbox'), { code: 'KeyD', altKey: true }));
   expect(machine).toBeDisabled();
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop recording' })));
   // The final result arrives after stop(); switching before it would drop it.
@@ -118,9 +119,9 @@ it('locks machine selection while microphone access is pending', async () => {
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: () => new Promise((resolve) => { grant = resolve; }) } });
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
-  render(<Composer isRunning={false} newConversation whisperAvailable directory="/local/project" sessionId="acquire-test" onMachineChange={vi.fn()} />);
+  render(<WithShortcuts isRunning={false} newConversation whisperAvailable directory="/local/project" sessionId="acquire-test" onMachineChange={vi.fn()} />);
   const machine = await screen.findByRole('combobox', { name: 'Session machine' });
-  await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
+  await act(async () => fireEvent.keyDown(screen.getByRole('textbox'), { code: 'KeyD', altKey: true }));
   expect(machine).toBeDisabled();
   const node = { connect: vi.fn(), disconnect: vi.fn(), onaudioprocess: null };
   vi.stubGlobal('AudioContext', function Ctx() {
@@ -145,9 +146,9 @@ it('locks machine selection until a transcription lands', async () => {
   vi.spyOn(api, 'transcribe').mockReturnValue(new Promise((resolve) => { finish = resolve; }));
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
-  render(<Composer isRunning={false} newConversation whisperAvailable directory="/local/project" sessionId="whisper-test" onMachineChange={vi.fn()} />);
+  render(<WithShortcuts isRunning={false} newConversation whisperAvailable directory="/local/project" sessionId="whisper-test" onMachineChange={vi.fn()} />);
   const machine = await screen.findByRole('combobox', { name: 'Session machine' });
-  await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
+  await act(async () => fireEvent.keyDown(screen.getByRole('textbox'), { code: 'KeyD', altKey: true }));
   // Enough samples that the WAV is non-empty and gets transcribed.
   (node.onaudioprocess as unknown as (e: unknown) => void)({ inputBuffer: { getChannelData: () => new Float32Array(1600) } });
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop recording' })));
@@ -182,7 +183,7 @@ it('does not start dictation while switching machines', async () => {
   let complete!: () => void;
   render(<WithShortcuts isRunning={false} newConversation directory="/local/project" sessionId="switch-mic-test" onMachineChange={() => new Promise<void>((resolve) => { complete = resolve; })} />);
   await pickMachine('Build box');
-  await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
+  expect(screen.queryByTitle('Record voice message')).not.toBeInTheDocument();
   fireEvent.keyDown(screen.getByRole('textbox'), { code: 'KeyD', altKey: true });
   expect(recognition.start).not.toHaveBeenCalled();
   await act(async () => complete());
@@ -207,7 +208,7 @@ it('does not start a second dictation while a transcription is pending', async (
   (node.onaudioprocess as unknown as (e: unknown) => void)({ inputBuffer: { getChannelData: () => new Float32Array(1600) } });
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop recording' })));
   await act(async () => fireEvent.keyDown(input, { code: 'KeyD', altKey: true }));
-  await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
+  expect(screen.queryByTitle('Record voice message')).not.toBeInTheDocument();
   expect(getUserMedia).toHaveBeenCalledTimes(1);
   await act(async () => finish('first take'));
   expect(machine).not.toBeDisabled();

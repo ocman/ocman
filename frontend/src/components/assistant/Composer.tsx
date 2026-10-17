@@ -136,7 +136,7 @@ export function Composer({
 
   // Switching machines captures the draft once, so no new dictation may start mid-switch.
   const audioDisabled = disabled || switchingMachine;
-  const { isRecording, isBusy: audioBusy, micError, setMicError, micRef, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled: audioDisabled, inputRef });
+  const { isRecording, isBusy: audioBusy, micError, setMicError, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled: audioDisabled, inputRef });
   // Attachments are bound to the current target, so they block switching it.
   const selectorDisabled = sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0;
   const clearAfterSubmit = (submittedText?: string, submittedRevision?: number) => {
@@ -358,7 +358,6 @@ export function Composer({
             hasReasoning={hasReasoning} openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}
             selectedReasoning={selectedReasoning} permissionControl={permissionControl} onLaunchRequest={onLaunchRequest}
             launching={launching} fileInputRef={fileInputRef} addFiles={(selectedFiles) => { void attachments.addFiles(selectedFiles); }}
-            isDictationSupported={isDictationSupported} micRef={micRef} handleMicClick={() => { void handleMicClick(); }}
             micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} onAbort={onAbort} sending={sending} submit={submit} />
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}

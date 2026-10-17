@@ -116,15 +116,14 @@ test('Home returns to the last opened active session', async ({ mockedPage: page
 test.describe('phone navigation', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('opens from the header and closes after navigation', async ({ mockedPage: page }) => {
+  test('keeps primary navigation within thumb reach', async ({ mockedPage: page }) => {
     await page.goto('/sessions');
-    await page.getByRole('button', { name: 'Open navigation' }).click();
-    await expect(page.getByRole('button', { name: 'Close navigation' }).first()).toBeVisible();
-
-    await page.getByRole('link', { name: 'Projects' }).click();
+    const nav = page.getByRole('navigation', { name: 'Phone navigation' });
+    await expect(nav).toBeVisible();
+    await nav.getByRole('link', { name: 'Projects' }).click();
 
     await expect(page).toHaveURL('/projects');
-    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
   });
 });
 

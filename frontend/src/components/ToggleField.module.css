@@ -8,3 +8,7 @@
 .toggle:has(.input:disabled) { opacity: .5; cursor: not-allowed; }
 .input:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { .track, .track::after { transition: none; } }
+
+@media (width <= 640px) {
+  .toggle { min-width: 44px; min-height: 44px; justify-content: center; }
+}

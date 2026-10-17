@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useUiStore } from '../../lib/uiStore';
 import { useLocation } from 'react-router-dom';
+import { useIsPhone } from '../../lib/useIsPhone';
+import { usePhoneOverlay } from '../../lib/usePhoneOverlay';
 
 export type MobilePanel = 'sidebar' | 'details' | null;
 
@@ -16,14 +18,23 @@ export interface UseMobilePanelResult {
  * viewports <=768px the sidebar and right panel are hidden by default
  * and open as full-screen overlays via header toggles; the classes this
  * state drives are inert on wider viewports (see the @media block in
- * SessionDetail.css). Escape closes; any route change closes.
+ * SessionDetail.css). Escape closes; route changes close the local state.
+ * At phone widths the panel is a same-URL history entry, so native Back closes
+ * it before leaving the conversation and Forward can reopen it.
  */
 export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
   const { pathname, search, key } = useLocation();
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
+  const phone = useIsPhone();
+  const [phonePanel, setPhonePanel] = usePhoneOverlay<'sidebar' | 'details'>('conversation-panel');
+  const [localPanel, setLocalPanel] = useState<MobilePanel>(null);
+  const mobilePanel = phone ? phonePanel : localPanel;
+  const setMobilePanel = useCallback((panel: MobilePanel) => {
+    if (phone) setPhonePanel(panel);
+    else setLocalPanel(panel);
+  }, [phone, setPhonePanel]);
   const toggleMobileSidebar = useCallback(() => {
-    setMobilePanel((p) => (p === 'sidebar' ? null : 'sidebar'));
-  }, []);
+    setMobilePanel(mobilePanel === 'sidebar' ? null : 'sidebar');
+  }, [mobilePanel, setMobilePanel]);
   const toggleMobileDetails = useCallback(() => {
     // Seeding happens OUTSIDE the setState updater: updaters must be
     // pure (StrictMode double-invokes them), so the store mutation
@@ -39,8 +50,10 @@ export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
       if (ui.changesSidebarOpenTabs.length === 0) ui.toggleChangesSidebarTab('info');
     }
     setMobilePanel(opening ? 'details' : null);
-  }, [mobilePanel]);
-  const closeMobilePanel = useCallback(() => setMobilePanel(null), []);
+  }, [mobilePanel, setMobilePanel]);
+  const setPanelRef = useRef(setMobilePanel);
+  useLayoutEffect(() => { setPanelRef.current = setMobilePanel; }, [setMobilePanel]);
+  const closeMobilePanel = useCallback(() => setPanelRef.current(null), []);
   useEffect(() => {
     if (!mobilePanel) return;
     const onKey = (e: KeyboardEvent) => {
@@ -48,10 +61,10 @@ export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mobilePanel]);
+  }, [mobilePanel, setMobilePanel]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- closing a phone overlay in response to navigation, including draft-to-draft query changes.
-    setMobilePanel(null);
+    setLocalPanel(null);
   }, [id, pathname, search, key]);
   return { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel };
 }

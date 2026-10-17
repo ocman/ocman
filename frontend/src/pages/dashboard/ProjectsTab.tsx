@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { formatNumber, fuzzyMatch, relativeTime } from '../../lib/format';
 import { ProjectLabel } from '../../components/ProjectLabel';
 import { usePageTitle } from '../../lib/headerContext';
@@ -15,6 +15,7 @@ import { InlineAlert } from '../../components/InlineAlert';
 import { IconButton } from '../../components/IconButton';
 import type { Project } from '../../lib/api';
 import { MergeProjectModal } from './MergeProjectModal';
+import '../../components/PhoneTables.css';
 
 // ---------------------------------------------------------------------------
 // Projects tab
@@ -77,7 +78,7 @@ export function ProjectsTab() {
         actionTitle="Start a session in a project directory"
         onAction={openProjectPalette}
       />
-    <DataTable>
+    <DataTable className="phone-project-table">
       <thead>
         <tr>
           <th>Project</th>
@@ -109,12 +110,15 @@ export function ProjectsTab() {
             }
           >
             <td>
+              <Link className="phone-project-link" to={`/project/${encodeURIComponent(p.directory)}${p.remoteId ? `?remoteId=${encodeURIComponent(p.remoteId)}` : ''}`} onClick={event => event.stopPropagation()}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <ProjectLabel path={p.directory} style={{ color: 'var(--accent)', fontWeight: 500 }} />
                 {p.remoteName ? (
                   <span className="oc-cmd-badge" title={`On remote ${p.remoteName}`}>{p.remoteName}</span>
                 ) : null}
               </div>
+              <span className="phone-project-meta">{p.sessionCount} sessions · {relativeTime(p.lastUsed)}</span>
+              </Link>
             </td>
             <td>{p.sessionCount}</td>
             <td>{p.messageCount}</td>

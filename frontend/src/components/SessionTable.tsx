@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import './SessionTable.css';
+import './PhoneTables.css';
+import { PhoneSessionMeta } from './PhoneSessionMeta';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Session, GitInfo, Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
@@ -264,7 +266,7 @@ export function GroupedSessionTable({
 
   if (groups.length === 0) {
     return (
-      <DataTable>
+      <DataTable className="phone-session-table">
         <tbody>
           <tr>
             <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
@@ -358,7 +360,7 @@ export function GroupedSessionTable({
                 </div>
               )
             ) : !collapsed && (
-              <DataTable>
+              <DataTable className="phone-session-table">
                 <thead>
                   <tr>
                     <th>Session</th>
@@ -381,7 +383,7 @@ export function GroupedSessionTable({
                           {/* The row-wide onClick is mouse-only; this link is
                               the keyboard/AT path into the session (and makes
                               the row middle-clickable). */}
-                          <Link className="session-row-link" to={`/session/${s.id}`}>
+                          <Link className="session-row-link" to={`/session/${s.id}`} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               {depth > 0 && (
                                 <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
@@ -390,6 +392,7 @@ export function GroupedSessionTable({
                               <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
                               <UnreadBadge session={s} />
                             </div>
+                            <PhoneSessionMeta session={s} />
                             <div className="mono">
                               {s.id}
                             </div>
@@ -449,7 +452,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
 
   if (!visibleSessions.length) {
     return (
-      <DataTable>
+      <DataTable className="phone-session-table">
         <tbody>
           <tr>
             <td colSpan={colCount} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
@@ -462,7 +465,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
   }
 
   return (
-    <DataTable>
+    <DataTable className="phone-session-table">
       <thead>
         <tr>
           <th>Session</th>
@@ -483,7 +486,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
               onClick={() => navigate(`/session/${s.id}`)}
             >
               <td>
-                <Link className="session-row-link" to={`/session/${s.id}`}>
+                <Link className="session-row-link" to={`/session/${s.id}`} onClick={e => e.stopPropagation()}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {depth > 0 && (
                       <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
@@ -492,6 +495,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
                     <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
                     <UnreadBadge session={s} />
                   </div>
+                  <PhoneSessionMeta session={s} />
                   <div className="mono">
                     {s.id}
                   </div>

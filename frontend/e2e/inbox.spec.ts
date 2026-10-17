@@ -72,7 +72,7 @@ test('Alt+I opens the inbox and is listed in keyboard shortcut help', async ({ m
   await expect(page.getByText('Open inbox', { exact: true })).toBeVisible();
 });
 
-test('compact two-row header searches and archives messages from the actions dropdown', async ({ mockedPage: page }) => {
+test('header stays compact on desktop and gives phone filters room for touch', async ({ mockedPage: page }) => {
   let archived = false;
   await page.route('**/api/inbox**', (route) => {
     const url = new URL(route.request().url());
@@ -97,10 +97,19 @@ test('compact two-row header searches and archives messages from the actions dro
     const status = await page.getByRole('radiogroup', { name: 'Message status' }).boundingBox();
     const types = await page.getByRole('radiogroup', { name: 'Message type' }).boundingBox();
     const actions = await page.getByLabel('Inbox actions').boundingBox();
-    expect(search!.y).toBe(status!.y);
-    expect(types!.y).toBe(actions!.y);
+    if (width > 640) {
+      expect(search!.y).toBe(status!.y);
+      expect(types!.y).toBe(actions!.y);
+      expect(types!.y - search!.y).toBeLessThanOrEqual(40);
+    } else {
+      expect(search!.height).toBeGreaterThanOrEqual(44);
+      expect(actions!.height).toBeGreaterThanOrEqual(44);
+      if (status!.y > search!.y) expect(status!.y - search!.y - search!.height).toBeGreaterThanOrEqual(8);
+      else expect(status!.x - search!.x - search!.width).toBeGreaterThanOrEqual(8);
+      if (actions!.y > types!.y) expect(actions!.y - types!.y - types!.height).toBeGreaterThanOrEqual(8);
+      else expect(actions!.x - types!.x - types!.width).toBeGreaterThanOrEqual(8);
+    }
     expect(types!.y).toBeGreaterThan(search!.y);
-    expect(types!.y - search!.y).toBeLessThanOrEqual(40);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.getByRole('searchbox', { name: 'Search inbox' }).fill('bldfn');

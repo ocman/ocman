@@ -9,6 +9,8 @@ import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
 import { Button, ButtonGroup } from '../../components/Control';
+import { SegmentedControl } from '../../components/SegmentedControl';
+import { useIsPhone } from '../../lib/useIsPhone';
 import styles from './SessionsTab.module.css';
 
 // ---------------------------------------------------------------------------
@@ -20,10 +22,13 @@ export function SessionsTab() {
   const { sessions, projects, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
   const [search, setSearch] = useState('');
+  const phone = useIsPhone();
+  const [phoneFilter, setPhoneFilter] = useState('all');
 
   const q = search.trim();
   const filteredSessions = sessions
     .filter((s) => matchesScope(s.directory, dirScope))
+    .filter((s) => !phone || phoneFilter === 'all' || (phoneFilter === 'running' ? s.status === 'busy' : s.pendingPermission || s.pendingQuestion || s.status === 'waiting'))
     .filter((s) => !q || fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`));
 
   return (
@@ -51,6 +56,8 @@ export function SessionsTab() {
           onClick={() => setShowArchived(!showArchived)}
         >Include archived</Button>
       </ButtonGroup>
+      <div className="phone-session-filters"><SegmentedControl label="Session status" value={phoneFilter} onChange={setPhoneFilter}
+        options={[{ value: 'all', label: 'All' }, { value: 'running', label: 'Running' }, { value: 'waiting', label: 'Waiting' }]} /></div>
       <SessionTable
         sessions={filteredSessions}
         showProject

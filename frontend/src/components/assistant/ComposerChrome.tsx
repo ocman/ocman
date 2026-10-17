@@ -193,9 +193,6 @@ interface ComposerToolbarProps {
   launching?: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   addFiles: (files: File[]) => void;
-  isDictationSupported: boolean;
-  micRef: React.RefObject<HTMLButtonElement | null>;
-  handleMicClick: () => void;
   micError: string | null;
   clearMicError: () => void;
   isRunning: boolean;
@@ -209,7 +206,7 @@ export function ComposerToolbar({
   agents, openAgentPicker, hasModels, modelUnavailable, openModelPicker,
   modelButtonLabel, effectiveModel, hasReasoning, openReasoningPicker,
   selectedReasoning, permissionControl, onLaunchRequest, launching, fileInputRef,
-  addFiles, isDictationSupported, micRef, handleMicClick, micError, clearMicError,
+  addFiles, micError, clearMicError,
   isRunning, onAbort, sending, submit, selectorsLoading, platform, agentSelection = true,
 }: ComposerToolbarProps) {
   return (
@@ -259,16 +256,11 @@ export function ComposerToolbar({
         )}
       </div>
       <div className="oc-composer-bar-right">
-        <button className="oc-bar-action" onClick={() => fileInputRef.current?.click()} disabled={uiDisabled} title="Attach file">+</button>
+        <button type="button" className="oc-bar-action" onClick={() => fileInputRef.current?.click()} disabled={uiDisabled} title="Attach file" aria-label="Attach file"><i className="bi bi-paperclip" aria-hidden="true" /></button>
         <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={(event) => {
           addFiles(Array.from(event.target.files || []));
           event.target.value = '';
         }} />
-        {isDictationSupported && (
-          <button ref={micRef} className="oc-bar-action" onClick={handleMicClick} disabled={disabled} title="Record voice message">
-            <i className="bi bi-mic-fill oc-mic-icon" aria-hidden="true" />
-          </button>
-        )}
         {micError && (
           <span className="oc-mic-error" role="alert">
             {micError}

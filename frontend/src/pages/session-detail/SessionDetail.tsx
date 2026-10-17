@@ -78,6 +78,7 @@ import { SessionActionsMenu } from './SessionActionsMenu';
 import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useMobilePanel } from './useMobilePanel';
+import { useIsPhone } from '../../lib/useIsPhone';
 import { SessionModals, type MessageJumpHistory } from './SessionModals';
 import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
 import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
@@ -153,14 +154,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // forces React Router's location update to commit immediately so
   // the SSE lifecycle (keyed off the route id) tears down before
   // any further work races the click.
-  const navigateToSession = useCallback((nextId: string) => {
+  const navigateToSession = useCallback((nextId: string, replace = false) => {
     markSessionSwitchStart(nextId, !!useApiStore.getState().getCachedSession(nextId));
     flushSync(() => {
-      navigate(`/session/${nextId}`);
+      navigate(`/session/${nextId}`, { replace });
     });
   }, [navigate]);
 
   const { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel } = useMobilePanel(id);
+  const phone = useIsPhone();
   useEffect(() => { if (searchParams.has('notification')) closeMobilePanel(); }, [searchParams, closeMobilePanel]);
   const sidebarVisible = usePanelVisible(mobilePanel === 'sidebar');
   const detailsVisible = usePanelOpen(mobilePanel === 'details');
@@ -170,10 +172,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // useMobilePanel's id-keyed effect covers every other navigation source
   // (command palette, auto-redirect, closed-session reopen).
   const navigateFromSidebar = useCallback((nextId: string) => {
-    closeMobilePanel();
+    const phoneOverlay = mobilePanel !== null && phone;
+    if (!phoneOverlay) closeMobilePanel();
     setSidebarScroll((previous) => ({ sessionId: nextId, tick: previous.tick + 1 }));
-    navigateToSession(nextId);
-  }, [closeMobilePanel, navigateToSession]);
+    navigateToSession(nextId, phoneOverlay);
+  }, [closeMobilePanel, navigateToSession, mobilePanel, phone]);
 
   // The new SSE pipeline. Owns the EventSource, the reducer, the
   // initial fetch + reload + loadMore, the cache mirror, and the

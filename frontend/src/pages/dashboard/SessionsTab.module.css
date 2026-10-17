@@ -1,1 +1,5 @@
 .filters { margin-bottom: 12px; }
+
+@media (width <= 640px) {
+  .filters .oc-button { min-height: 44px; }
+}

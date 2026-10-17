@@ -17,3 +17,14 @@
 .picker { max-width: 260px; }
 .textInput { display: flex; align-items: center; gap: 6px; flex: 0 1 320px; min-width: 0; }
 .text { flex: 1; min-width: 0; font-family: var(--font-conversation-mono); }
+
+@media (width <= 640px) {
+  .row { gap: 12px; }
+  .row:has(.textInput, .selectInput, > form) { flex-direction: column; align-items: stretch; }
+  .textInput { flex: none; width: 100%; gap: 12px; }
+  .selectInput { width: 100%; gap: 12px; }
+  .picker { width: 100%; max-width: 100%; }
+  .row > form { display: flex; flex-wrap: wrap; gap: 12px; min-width: 0; }
+  .row > form > input { flex: 1; width: 0; }
+  .example summary { display: flex; align-items: center; min-height: 44px; }
+}

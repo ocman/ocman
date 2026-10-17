@@ -124,6 +124,33 @@ Permission modes are **Plan only**, which denies edits and shell commands;
 confirmation. The saved mode applies before the first prompt in new checkout
 and worktree conversations. Existing conversations keep their current permissions.
 
+## Phone layout
+
+At widths of 640px and below, **Sessions**, **Projects**, **Inbox**, and **More**
+sit in a bottom tab bar. More opens a sheet containing the other destinations,
+including Factory, Routines, Artifacts, Usage, and Settings. Conversations hide
+the tab bar to leave room for the composer and retain their session-list and
+details controls in the header.
+
+Session and project lists use compact, touch-sized rows on phones. Phone layouts
+keep the app's square-edged controls. Controls use 44px
+minimum touch targets, with space between separate actions rather than tightly
+joined icon buttons.
+
+The browser's native back gesture works with navigation history. On phones,
+Back first closes the More sheet or the conversation's session-list or details
+panel. Closing these controls explicitly consumes that same history entry.
+There is no custom edge-swipe handler competing with the browser gesture.
+The send button stays round and is capped at 44px on phones. The composer uses
+8px side gutters without an extra background panel. Attachments use a paperclip
+on phones and desktop; the dictation toolbar button is removed. Keyboard
+dictation remains available with Alt+D.
+
+Desktop and tablet widths above 640px keep their tables and existing navigation. The Sessions
+page also offers **All**, **Running**, and **Waiting** phone filters. Waiting
+includes pending permissions and questions; these filters do not affect desktop
+results when the window is resized. Inbox uses a list-to-reader layout on phones.
+
 ## Worktrees and parallel work
 
 `/wt` creates a git worktree under `<repo-parent>/.worktrees/<repo>/<slug>/`

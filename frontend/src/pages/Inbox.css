@@ -74,3 +74,29 @@
   .inbox-reader-toolbar > .inbox-meta { display: none; }
   .inbox-letter { --inbox-letter-padding: 20px; }
 }
+
+@media (width <= 640px) {
+  .inbox-filters { padding: 8px 16px 16px; border-bottom: 0; }
+  .inbox-filter-row { flex-wrap: wrap; gap: 12px; }
+  .inbox-filter-row .oc-field { min-height: 44px; border-radius: 0; background: var(--bg-card); font-size: 16px; }
+  .inbox-filter-row .oc-segmented-control { max-width: 100%; overflow-x: auto; }
+  .inbox-filter-row .oc-segmented-option .oc-button { min-height: 44px; }
+  .inbox-action-menu > summary { width: 44px; min-height: 44px; border-radius: 0; }
+  .inbox-list { padding: 0 16px 16px; }
+  .inbox-message { padding-left: 8px; border: 1px solid var(--border); background: var(--bg-card); margin-bottom: 12px; }
+  .inbox-select { display: grid; place-items: center; min-width: 44px; min-height: 52px; padding: 0; }
+  .inbox-message-open { min-height: 84px; padding: 16px 8px; }
+  .inbox-message-actions { position: static; opacity: 1; pointer-events: auto; flex-direction: column; gap: 8px; margin: 8px; }
+  .inbox-message-actions .oc-icon-button { width: 44px; height: 44px; }
+  .inbox-message-actions.pinned .inbox-message-archive { display: inline-flex; }
+  .inbox-message:hover .inbox-headline .inbox-meta { display: flex; }
+  .inbox-headline { flex-wrap: wrap; gap: 4px; }
+  .inbox-subject { flex-basis: 100%; white-space: normal; line-height: 1.5; }
+  .inbox-preview, .inbox-meta { color: var(--subtext0); }
+  .inbox-reader { background: var(--bg); }
+  .inbox-reader-toolbar .oc-button { min-height: 44px; border-radius: 0; }
+  .inbox-permission-actions .oc-permission-box { max-height: none; border-radius: 0; }
+  .inbox-permission-actions .oc-permission-actions { flex-wrap: wrap; gap: 8px; }
+  .inbox-permission-actions .oc-permission-btn { flex: 1; min-height: 44px; border-radius: 0; border: 1px solid var(--border); }
+  .inbox-permission-actions .oc-permission-keys { display: none; }
+}

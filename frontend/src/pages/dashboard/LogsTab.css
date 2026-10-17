@@ -2,3 +2,8 @@
 .metrics-log-tabs { margin-bottom: 0; border-bottom: none; }
 .metrics-log-range { color: var(--text-dim); font-size: 12px; font-weight: 400; }
 .metrics-table-wrap { overflow-x: auto; }
+
+@media (width <= 640px) {
+  .metrics-log-header { flex-wrap: wrap; align-items: stretch; gap: 12px; }
+  .metrics-log-tabs { flex: 1 1 100%; min-width: 0; max-width: 100%; flex-wrap: wrap; }
+}

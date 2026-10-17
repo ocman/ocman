@@ -2,3 +2,12 @@
 .search { flex: 1; min-width: 160px; align-self: flex-end; }
 .action { align-self: flex-end; }
 @media (max-width: 640px) { .action { align-self: flex-start; } }
+
+@media (width <= 640px) {
+  .toolbar { align-items: center; gap: 10px; margin-bottom: 16px; }
+  .toolbar > :first-child { flex: 1; min-width: 0; }
+  .toolbar > :first-child button { min-height: 44px; border-radius: 0; }
+  .search { order: 3; flex-basis: 100%; min-height: 44px; border-radius: 0; background: var(--bg-card); font-size: 16px; }
+  .action { align-self: center; min-width: 44px; min-height: 44px; border-radius: 0; padding: 10px; font-size: 0; }
+  .action > i { font-size: 18px; }
+}

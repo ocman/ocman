@@ -70,7 +70,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
         <span id="header-mobile-title-slot" className="header-mobile-title-slot" />
         <span className="header-breadcrumb" data-testid="header-breadcrumb">{breadcrumb}</span>
       </h1>
-      <div className="header-right">
+      <div className="header-right" data-testid="header-actions-row">
         {projectDir && <ProjectMachinePill remoteId={projectOwner} />}
         {exploreDir && (
           <IconButton icon="bi-folder2-open" label="Explore files" variant="ghost" size="compact" onClick={() => setExploring(true)} />

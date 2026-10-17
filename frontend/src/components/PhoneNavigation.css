@@ -1,0 +1,117 @@
+/* Desktop chrome is deliberately untouched. This entire shell is phone-only. */
+@media (width <= 640px) {
+  .app-shell:has(.phone-tab-bar) .container {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-shell:has(.phone-tab-bar) > .main-nav,
+  .app-shell:has(.phone-tab-bar) > .main-nav-backdrop,
+  .app-shell:has(.phone-tab-bar) .mobile-nav-toggle { display: none; }
+
+  .app-shell:has(.phone-tab-bar) .app-header {
+    height: auto;
+    min-height: 86px;
+    padding: 20px 20px 14px;
+    align-items: end;
+    border-bottom: 0;
+  }
+
+  .app-shell:has(.phone-tab-bar) .app-header h1 {
+    margin: 0;
+    font-size: 30px;
+    letter-spacing: -1px;
+    color: var(--text);
+  }
+
+  .app-shell:has(.phone-tab-bar) .app-header h1 .header-breadcrumb { font-weight: 650; }
+  .app-shell:has(.phone-tab-bar) .page-content { padding: 8px 16px 20px; }
+
+  .phone-tab-bar {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 250;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding: 6px max(8px, env(safe-area-inset-left, 0px)) calc(6px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--mantle);
+  }
+
+  .phone-tab-bar > a,
+  .phone-tab-bar > .oc-button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    min-height: 50px;
+    padding: 4px;
+    border: 0;
+    border-radius: 0;
+    color: var(--subtext0);
+    background: transparent;
+    font-size: 11px;
+    line-height: 1.2;
+    text-decoration: none;
+  }
+
+  .phone-tab-bar > a.active,
+  .phone-tab-bar > .oc-button.active { color: var(--accent); }
+  .phone-tab-bar > a > i,
+  .phone-tab-bar > .oc-button > i { font-size: 21px; }
+  .phone-tab-bar > a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .phone-tab-badge {
+    position: absolute;
+    top: 0;
+    left: calc(50% + 5px);
+    min-width: 17px;
+    padding: 2px 4px;
+    border: 2px solid var(--mantle);
+    border-radius: 20px;
+    background: var(--peach);
+    color: var(--crust);
+    font-size: 9px;
+    line-height: 1.2;
+  }
+
+  .phone-more-sheet .oc-modal-backdrop { align-items: end; padding: 0; }
+  .phone-more-sheet .oc-modal {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 64px);
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+    overflow-y: auto;
+  }
+
+  .phone-more-sheet .oc-modal::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: -8px auto 16px;
+    border-radius: 0;
+    background: var(--surface2);
+  }
+
+  .phone-more-sheet nav { overflow: hidden; background: var(--bg); }
+  .phone-more-sheet nav a {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 52px;
+    padding: 12px 16px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 15px;
+  }
+
+  .phone-more-sheet nav a + a { border-top: 1px solid var(--border); }
+  .phone-more-sheet nav a > i:first-child { color: var(--accent); }
+  .phone-more-sheet nav a > i:last-child { margin-left: auto; color: var(--text-dim); font-size: 12px; }
+  .phone-more-sheet nav a.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+}

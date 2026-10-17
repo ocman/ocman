@@ -3,6 +3,12 @@
 .factory-issue-page nav a { flex: 0 0 auto; padding: 10px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--text-dim); font-size: 14px; font-weight: 500; text-decoration: none; }
 .factory-issue-page nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
 .factory-issue-page nav .factory-how-to-link { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+
+@media (width <= 640px) {
+  .factory-issue-page > nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; min-height: 96px; }
+  .factory-issue-page > nav a { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 4px; font-size: 12px; text-align: center; }
+  .factory-issue-page > nav .factory-how-to-link { margin-left: 0; }
+}
 .factory-issue-toolbar { display: flex; align-items: end; gap: 12px; }
 .factory-issue-toolbar label { display: grid; gap: 6px; color: var(--text-dim); font-size: 12px; font-weight: 600; }
 .factory-ticket-table-wrap { overflow-x: auto; border: 1px solid var(--border); background: var(--bg-card); }

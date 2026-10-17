@@ -63,7 +63,7 @@ for (const width of [1280, 390]) {
     notice = { kind: 'rate_limit', message: 'Provider quota exceeded. '.repeat(30), retryAt: 0, attempt: 2 };
     await page.reload();
     await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
-    expect((await notices.boundingBox())!.height).toBeLessThanOrEqual(32);
+    expect((await notices.boundingBox())!.height).toBeLessThanOrEqual(width <= 640 ? 52 : 32);
     const text = notices.getByTestId('rate-limit-banner').locator('span[title]').first();
     expect(await text.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
     await expect(text).toHaveCSS('text-overflow', 'ellipsis');
@@ -1714,10 +1714,10 @@ test.describe('phone viewport', () => {
       await expect(project).toBeVisible();
       await expect(project).toHaveAttribute('title', directory);
       const heading = await page.getByRole('heading', { level: 1 }).boundingBox();
-      const actions = await page.locator('.header-right').boundingBox();
+      const actions = await page.getByTestId('header-actions-row').boundingBox();
       expect(heading).not.toBeNull();
       expect(actions).not.toBeNull();
-      expect(heading!.x + heading!.width).toBeLessThanOrEqual(actions!.x);
+      expect(actions!.y - heading!.y - heading!.height).toBeGreaterThanOrEqual(8);
       const projectBox = await project.boundingBox();
       expect(projectBox!.x + projectBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
     });
