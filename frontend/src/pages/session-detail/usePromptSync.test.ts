@@ -52,6 +52,9 @@ function opts(over: Partial<UsePromptSyncOptions> = {}): UsePromptSyncOptions {
 describe('usePromptSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listPermissions.mockReset().mockResolvedValue([]);
+    listQuestions.mockReset().mockResolvedValue([]);
+    refreshPermissions.mockReset().mockResolvedValue([]);
     sessionStorage.clear();
   });
   afterEach(() => vi.useRealTimers());
@@ -60,6 +63,56 @@ describe('usePromptSync', () => {
     renderHook(() => usePromptSync(opts({ pendingQuestion: pendingQ })));
     // Owner-qualified: another machine's session with this id keeps its badge.
     expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { pendingPermission: false, pendingQuestion: true }, 'r-box:opencode');
+  });
+
+  it('recovers a live question without REST or sidebar prompt flags', async () => {
+    listQuestions.mockResolvedValue([rawQuestion]);
+    const o = opts();
+    const { rerender } = renderHook((value) => usePromptSync(value), { initialProps: o });
+    await waitFor(() => expect(o.setPendingQuestion).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'q-1' })));
+    expect(loadPendingQuestion('sess-1')?.requestId).toBe('q-1');
+    rerender({ ...o, pendingQuestion: pendingQ });
+    rerender({ ...o, pendingQuestion: null });
+    // A stale server list must not reopen the question immediately after replying.
+    expect(listQuestions).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers permissions across the active session tree without loading the sidebar', async () => {
+    listPermissions.mockImplementation(async (id) => id === 'child-1' ? [{ ...rawPermission, sessionID: 'child-1' }] : []);
+    const o = opts();
+    renderHook(() => usePromptSync(o));
+    await waitFor(() => expect(o.setPendingPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionId: 'perm-1', sessionId: 'child-1' }), ['sess-1', 'child-1']));
+  });
+
+  it('does not cancel question recovery when an unrelated permission arrives', async () => {
+    let finish!: (value: unknown[]) => void;
+    listQuestions.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const o = opts();
+    const { rerender } = renderHook((value) => usePromptSync(value), { initialProps: o });
+    rerender({ ...o, pendingPermission: { permissionId: 'perm-1', permission: 'bash', patterns: [], sessionId: 'sess-1', askedAt: 0 } });
+    await act(async () => { finish([rawQuestion]); });
+    expect(o.setPendingQuestion).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'q-1' }));
+  });
+
+  it('ignores recovery responses after navigating to another session', async () => {
+    let finish!: (value: unknown[]) => void;
+    listQuestions.mockReturnValueOnce(new Promise(resolve => { finish = resolve; })).mockResolvedValue([]);
+    const o = opts();
+    const { rerender } = renderHook((value) => usePromptSync(value), { initialProps: o });
+    rerender({ ...o, id: 'next', session: { id: 'next', platform: 'r-box:opencode' } as Session, promptSessionIds: ['next'] });
+    await act(async () => { finish([rawQuestion]); });
+    expect(o.setPendingQuestion).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { portAvailable: false },
+    { session: null },
+    { session: { id: 'previous', platform: 'opencode' } as Session },
+  ])('does not bootstrap prompts before the requested session is live: %j', async (overrides) => {
+    renderHook(() => usePromptSync(opts(overrides)));
+    expect(listQuestions).not.toHaveBeenCalled();
+    expect(listPermissions).not.toHaveBeenCalled();
   });
 
   it('fetches a permission across the session tree when REST says one is pending', async () => {

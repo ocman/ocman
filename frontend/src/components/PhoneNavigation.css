@@ -10,15 +10,16 @@
 
   .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .app-header {
     height: auto;
-    min-height: 86px;
-    padding: 20px 20px 14px;
-    align-items: end;
+    min-height: 60px;
+    padding: 8px 16px;
+    align-items: center;
     border-bottom: 0;
   }
 
   .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .app-header h1 {
     margin: 0;
     font-size: 30px;
+    line-height: 1.2;
     letter-spacing: -1px;
     color: var(--text);
   }

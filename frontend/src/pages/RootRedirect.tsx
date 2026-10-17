@@ -2,8 +2,14 @@ import { Navigate } from 'react-router-dom';
 import { InlineAlert } from '../components/InlineAlert';
 import { useSessions } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
+import { useIsPhone } from '../lib/useIsPhone';
 
 export function RootRedirect() {
+  const phone = useIsPhone();
+  return phone ? <Navigate to="/sessions" replace /> : <RestoreDesktopSession />;
+}
+
+function RestoreDesktopSession() {
   const sessionsQ = useSessions();
   const lastOpenedSessionId = useUiStore((s) => s.lastOpenedSessionId);
   if (sessionsQ.isLoading) return null;

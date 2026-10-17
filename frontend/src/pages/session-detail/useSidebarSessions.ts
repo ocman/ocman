@@ -9,6 +9,8 @@ import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
 import { useSidebarFilter } from './useSidebarFilter';
+import { SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
+import { useIsPhone } from '../../lib/useIsPhone';
 import { flushSync } from 'react-dom';
 import { withDeadline } from '../../lib/coalescedRefresh';
 import { useSidebarEvents } from './useSidebarEvents';
@@ -50,6 +52,7 @@ export interface UseSidebarSessionsResult {
   recentSessionsRef: MutableRefObject<Session[]>;
   loadingRecentSessions: boolean;
   archivingSessionIds: Set<string>;
+  archiveError: string | null;
   showArchivedRecent: boolean;
   setShowArchivedRecent: Dispatch<SetStateAction<boolean>>;
   /** Ref-mirror of `showArchivedRecent` for the polling closure. */
@@ -93,6 +96,7 @@ export function useSidebarSessions({
   abortSignalRef,
   navigate,
 }: UseSidebarSessionsOptions): UseSidebarSessionsResult {
+  const phone = useIsPhone();
   const enabledRef = useRef(enabled);
   useLayoutEffect(() => { enabledRef.current = enabled; }, [enabled]);
   useActivityScope(enabled ? 'sessions' : undefined);
@@ -113,7 +117,8 @@ export function useSidebarSessions({
 
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
-  const [showArchivedRecent, setShowArchivedRecent] = useSidebarFilter('archived', false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [showArchivedRecent, setShowArchivedRecent] = useSidebarFilter('archived', SESSION_FILTER_DEFAULTS.showArchived);
 
   const archiveTimeoutsRef = useRef<Record<string, number>>({});
   const showArchivedRecentRef = useRef(showArchivedRecent);
@@ -286,8 +291,9 @@ export function useSidebarSessions({
     const nextSession = isCurrent
       ? pickNextSessionAfterArchive(sidebarNavigableSessions(recentSessions), target, sidebarView)
       : undefined;
+    setArchiveError(null);
     setArchivingSessionIds((prev) => new Set(prev).add(target.id));
-    archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
+    const runArchive = () => {
       archiveSession(target.platform, target.id, target.timeUpdated, true)
         .then(() => {
           // Remember the just-closed session so it can be reopened via the
@@ -308,6 +314,7 @@ export function useSidebarSessions({
         })
         .catch((err) => {
           remoteLog.error('Failed to archive session', err);
+          setArchiveError('Could not archive session. Please try again.');
         })
         .finally(() => {
           setArchivingSessionIds((prev) => {
@@ -317,8 +324,10 @@ export function useSidebarSessions({
           });
           delete archiveTimeoutsRef.current[target.id];
         });
-    }, ARCHIVE_ANIMATION_MS);
-  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, sidebarView]);
+    };
+    if (phone) runArchive();
+    else archiveTimeoutsRef.current[target.id] = window.setTimeout(runArchive, ARCHIVE_ANIMATION_MS);
+  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, sidebarView, phone]);
 
   const handlePinSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();
@@ -363,6 +372,7 @@ export function useSidebarSessions({
     recentSessionsRef,
     loadingRecentSessions,
     archivingSessionIds,
+    archiveError,
     showArchivedRecent,
     setShowArchivedRecent,
     showArchivedRecentRef,

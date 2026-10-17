@@ -1,0 +1,5 @@
+.session-filter-options { display: grid; gap: 6px; }
+.session-filter-options > label { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12px; cursor: pointer; }
+@media (width <= 640px) {
+  .session-filter-options > label { min-height: 44px; }
+}

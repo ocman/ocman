@@ -9,7 +9,9 @@ import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
 import { ModalFooter } from './ModalFooter';
 
-export function SnoozeButton({ session, disabled = false }: { session: Session; disabled?: boolean }) {
+export function SnoozeButton({ session, disabled = false, open, onOpenChange, onBusyChange }: {
+  session: Session; disabled?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void; onBusyChange?: (busy: boolean) => void;
+}) {
   const [custom, setCustom] = useState(false);
   const [value, setValue] = useState('');
   const [valid, setValid] = useState(false);
@@ -18,6 +20,7 @@ export function SnoozeButton({ session, disabled = false }: { session: Session; 
   const until = new Date(value).getTime();
   async function snooze(deadline: number) {
     setBusy(true);
+    onBusyChange?.(true);
     setError('');
     try {
       await api.snoozeSession(session.platform, session.id, deadline);
@@ -28,10 +31,11 @@ export function SnoozeButton({ session, disabled = false }: { session: Session; 
       setCustom(true);
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   }
   return <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key !== 'Escape') event.stopPropagation(); }}>
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <IconButton icon="bi-clock" label="Snooze conversation" variant="ghost" disabled={disabled || busy} />
       </DropdownMenuTrigger>

@@ -1,15 +1,22 @@
 /* Direction A keeps the existing conversation and delivery logic, only restyling phones. */
 @media (width <= 640px) {
-  .app-shell:has(.session-layout) { --header-height: 100px; }
-  .app-shell:has(.session-layout) .app-header { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px 44px; gap: 8px; padding: 2px 12px; }
+  .app-shell:has(.session-layout) { --header-height: 56px; }
+  .app-shell:has(.session-layout) .app-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 44px; gap: 8px; padding: 6px 12px; }
   .app-shell:has(.session-layout) .app-header h1 { width: 100%; margin: 0; font-size: 16px; }
-  .app-shell:has(.session-layout) .header-right { width: 100%; max-width: none; gap: 12px; }
-  .app-shell:has(.session-layout) .header-project { max-width: calc(100% - 168px); margin-right: auto; }
+  .app-shell:has(.session-layout) .header-right { width: auto; max-width: none; }
+  .app-shell:has(.session-layout) .header-right > :not(.header-actions),
+  .app-shell:has(.session-layout) .header-breadcrumb .platform-icon,
+  .app-shell:has(.session-layout) .mobile-sessions-back-label { display: none; }
+  .app-shell:has(.session-layout) .mobile-sessions-back { width: 44px; height: 44px; padding: 0; }
   .app-shell:has(.session-layout) .header-actions { gap: 8px; }
+  .mobile-sessions-back { text-decoration: none; }
   .app-shell:has(.mobile-sidebar-open) { --header-height: 56px; }
   .app-shell:has(.mobile-sidebar-open) .app-header { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 44px; }
   .app-shell:has(.mobile-sidebar-open) .header-right { width: auto; }
   .app-shell:has(.mobile-sidebar-open) .header-right > :not(.header-actions) { display: none; }
+  .phone-session-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .phone-session-project { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; margin-right: auto; overflow: hidden; }
+  #phone-session-tools-slot { display: flex; gap: 8px; }
   .session-layout .oc-viewport-footer {
     padding-left: max(8px, env(safe-area-inset-left, 0px));
     padding-right: max(8px, env(safe-area-inset-right, 0px));
@@ -21,6 +28,8 @@
 
   .session-layout .oc-composer { border: 1px solid var(--border); border-radius: 0; }
   .session-layout .oc-composer-input { font-size: 16px; }
+  .session-layout .oc-stop-hint,
+  .session-layout .oc-keybind-hint { display: none; }
   .session-layout .oc-composer-bar { padding: 6px 10px; gap: 8px; flex-wrap: wrap; row-gap: 12px; }
   .session-layout .oc-composer-bar-left { flex: 1; }
   .session-layout .oc-composer-bar-right { margin-left: auto; }
@@ -31,4 +40,8 @@
   .session-layout .oc-permission-box { border-radius: 0; }
   .session-layout .oc-permission-actions { flex-wrap: wrap; gap: 12px; }
   .session-layout .oc-permission-btn { min-height: 44px; }
+}
+
+@media (width > 640px) {
+  .phone-session-tools { display: none; }
 }

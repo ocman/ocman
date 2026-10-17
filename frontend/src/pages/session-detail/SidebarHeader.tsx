@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useClickOutside } from '../../lib/useClickOutside';
 import { ArchiveFilterIcon } from './SidebarIcons';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
+import { SessionFilterControls } from '../../components/SessionFilterControls';
 import type { SidebarProjectGroup } from './SessionSidebar';
 import './SidebarHeader.css';
 
@@ -103,49 +104,13 @@ export function SidebarHeader({
         {filtersOpen && (
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
             <ProjectScopePicker projects={projects} value={projectFilter} onChange={setProjectFilter} label="Project" scopePrefix="scope:" />
-            <label title="Keep sessions awaiting permission or an answer visible regardless of filters">
-              <input type="checkbox" checked={alwaysShowPrompts} onChange={(event) => setAlwaysShowPrompts(event.target.checked)} />
-              <span>Always show prompts</span>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={showArchivedRecent}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setShowArchivedRecent(() => checked);
-                }}
-              />
-              <span>Show archived</span>
-            </label>
-            <label>
-              <input type="checkbox" checked={showSnoozed} onChange={(event) => setShowSnoozed(event.target.checked)} />
-              <span>Show snoozed</span>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={showChildren}
-                onChange={(event) => setShowChildren(event.target.checked)}
-              />
-              <span>Show children</span>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={showFactory}
-                onChange={(event) => setShowFactory(event.target.checked)}
-              />
-              <span>Show factory</span>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={showRoutines}
-                onChange={(event) => setShowRoutines(event.target.checked)}
-              />
-              <span>Show routines</span>
-            </label>
+            <SessionFilterControls value={{ alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines }}
+              onChange={(key, checked) => ({
+                alwaysShowPrompts: setAlwaysShowPrompts,
+                showArchived: (value: boolean) => setShowArchivedRecent(() => value),
+                showSnoozed: setShowSnoozed, showChildren: setShowChildren,
+                showFactory: setShowFactory, showRoutines: setShowRoutines,
+              })[key](checked)} />
           </div>
         )}
       </div>

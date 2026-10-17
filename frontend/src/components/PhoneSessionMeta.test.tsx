@@ -12,9 +12,9 @@ describe('phone session context', () => {
   it.each([
     ['busy', 'Working'], ['waiting', 'Waiting'], ['done', 'Completed'],
     ['error', 'Error'], ['interrupted', 'Interrupted'], ['limited', 'Rate limited'],
-  ] as const)('labels %s', (status, expected) => {
+  ] as const)('does not repeat the %s status icon in text', (status, expected) => {
     const { container } = render(<PhoneSessionMeta session={{ ...session, status }} />);
-    expect(screen.getByText(expected)).toBeInTheDocument();
+    expect(screen.queryByText(expected)).not.toBeInTheDocument();
     expect(screen.getByText('ocman')).toBeInTheDocument();
     expect(container.querySelector('time')).toHaveAttribute('datetime', new Date(session.timeUpdated).toISOString());
   });

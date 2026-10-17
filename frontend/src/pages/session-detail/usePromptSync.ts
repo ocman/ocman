@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Part, Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import type { PendingPermission } from '../../lib/sseHelpers';
@@ -89,16 +89,26 @@ export function usePromptSync({
   const sidebarHasQuestion = sidebarCurrentSession?.pendingQuestion ?? false;
   const restHasPerm = session?.pendingPermission ?? false;
   const restHasQuestion = session?.pendingQuestion ?? false;
+  // Mobile leaves the sidebar unloaded. Recover prompts directly once this
+  // conversation is live, even when historical REST rows carry no prompt flags.
+  const liveKey = id && session?.id === id && session.platform && portAvailable
+    ? JSON.stringify([session.platform, id]) : null;
+  const permissionKey = liveKey ? JSON.stringify([liveKey, promptSessionIds]) : null;
+  const recoveredPermissions = useRef<string | null>(null);
+  const recoveredQuestions = useRef<string | null>(null);
   useEffect(() => {
     if (!id) return;
+    const discover = permissionKey !== null && recoveredPermissions.current !== permissionKey;
+    if (!permissionKey || pendingPermission !== null) recoveredPermissions.current = permissionKey;
     // These fetches outlive a navigation. Without the flag, a response
     // that lands after the user moved from session A to B injects A's
     // prompt into B and disables B's composer behind a phantom dialog.
     let cancelled = false;
-    if ((restHasPerm || sidebarHasPerm) && pendingPermission === null) {
+    if ((discover || restHasPerm || sidebarHasPerm) && pendingPermission === null) {
       Promise.all(promptSessionIds.map((sessionId) => listPermissions(sessionId)))
         .then((permissionLists) => {
           if (cancelled) return;
+          recoveredPermissions.current = permissionKey;
           for (const request of permissionLists.flat()) {
             const perm = permissionFromRequest(request);
             if (!perm) continue;
@@ -107,12 +117,24 @@ export function usePromptSync({
             break;
           }
         })
-        .catch(() => { /* sidebar will retry */ });
+        .catch(() => { /* a later connection or prompt flag change retries */ });
     }
-    if ((restHasQuestion || sidebarHasQuestion) && pendingQuestion === null) {
+    return () => { cancelled = true; };
+  }, [id, permissionKey, restHasPerm, sidebarHasPerm, pendingPermission,
+    listPermissions, promptSessionIds, setPermissionError, setPendingPermission]);
+
+  // Independent lifetimes keep a permission update from cancelling question
+  // recovery, and vice versa. Successful reads do not repeat after a reply.
+  useEffect(() => {
+    if (!id) return;
+    const discover = liveKey !== null && recoveredQuestions.current !== liveKey;
+    if (!liveKey || pendingQuestion !== null) recoveredQuestions.current = liveKey;
+    let cancelled = false;
+    if ((discover || restHasQuestion || sidebarHasQuestion) && pendingQuestion === null) {
       listQuestions(id)
         .then((questions) => {
           if (cancelled) return;
+          recoveredQuestions.current = liveKey;
           for (const request of questions) {
             const question = questionFromRequest(request);
             if (!question) continue;
@@ -121,13 +143,11 @@ export function usePromptSync({
             break;
           }
         })
-        .catch(() => { /* sidebar will retry */ });
+        .catch(() => { /* a later connection or prompt flag change retries */ });
     }
     return () => { cancelled = true; };
-  }, [id, restHasPerm, restHasQuestion, sidebarHasPerm, sidebarHasQuestion,
-    pendingPermission, pendingQuestion,
-    listPermissions, listQuestions, promptSessionIds, setPermissionError, setPendingPermission,
-    setPendingQuestion]);
+  }, [id, liveKey, restHasQuestion, sidebarHasQuestion, pendingQuestion,
+    listQuestions, setPendingQuestion]);
 
   // Poll-driven dismissal fallback. When a question is answered
   // outside ocman (e.g. directly in the OpenCode CLI), OpenCode does

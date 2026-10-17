@@ -42,14 +42,13 @@ test.describe('native phone shell', () => {
   test('separates filter and row action targets for fingers', async ({ mockedPage: page }) => {
     await installPhoneReviewRoutes(page);
     await page.goto('/sessions');
-    for (const group of ['Time range', 'Session status']) {
-      const choices = page.getByRole('radiogroup', { name: group }).getByRole('radio');
-      const a = await choices.nth(0).boundingBox();
-      const b = await choices.nth(1).boundingBox();
-      expect(a!.height).toBeGreaterThanOrEqual(44);
-      expect(a!.width).toBeGreaterThanOrEqual(44);
-      expect(b!.x - a!.x - a!.width).toBeGreaterThanOrEqual(8);
-    }
+    await page.getByRole('button', { name: 'Filter sessions' }).click();
+    const labels = page.getByRole('dialog', { name: 'Session filters' }).locator('label');
+    const a = await labels.nth(0).boundingBox();
+    const b = await labels.nth(1).boundingBox();
+    expect(a!.height).toBeGreaterThanOrEqual(44);
+    expect(a!.width).toBeGreaterThanOrEqual(44);
+    expect(b!.y - a!.y - a!.height).toBeGreaterThanOrEqual(6);
     await page.goto('/inbox');
     const pin = page.getByRole('button', { name: 'Pin message', exact: true });
     const archive = page.getByRole('button', { name: 'Archive', exact: true });
@@ -103,19 +102,20 @@ test.describe('native phone shell', () => {
     await expect(nav).toHaveCount(0);
   });
 
-  test('filters sessions only on phones and clears the effect on desktop', async ({ mockedPage: page }) => {
+  test('uses shared child filters on phones and keeps the desktop dashboard unchanged', async ({ mockedPage: page }) => {
     await page.route('/api/sessions*', route => route.fulfill({ json: [
       { ...MOCK_SESSION, status: 'busy' },
-      { ...MOCK_SESSION_2, status: 'waiting', pendingPermission: true },
+      { ...MOCK_SESSION_2, status: 'waiting', parentId: MOCK_SESSION.id },
     ] }));
     await page.goto('/sessions');
-    const filters = page.getByRole('radiogroup', { name: 'Session status' });
-    await filters.getByRole('radio', { name: 'Running', exact: true }).check();
+    await page.getByRole('button', { name: 'Filter sessions' }).click();
+    const filters = page.getByRole('dialog', { name: 'Session filters' });
+    await filters.getByRole('checkbox', { name: 'Show children', exact: true }).uncheck();
     await expect(page.getByRole('link', { name: /Fix the login bug/ })).toBeVisible();
     await expect(page.getByRole('link', { name: /Refactor auth module/ })).toHaveCount(0);
-    await filters.getByRole('radio', { name: 'Waiting', exact: true }).check();
+    await filters.getByRole('checkbox', { name: 'Show children', exact: true }).check();
     await expect(page.getByRole('link', { name: /Refactor auth module/ })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Fix the login bug/ })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /Fix the login bug/ })).toBeVisible();
     await page.setViewportSize({ width: 1024, height: 900 });
     await expect(filters).toBeHidden();
     await expect(page.getByRole('link', { name: /Fix the login bug/ })).toBeVisible();
@@ -129,11 +129,14 @@ test.describe('native phone shell', () => {
     const contentBox = await content.boundingBox();
     const navBox = await nav.boundingBox();
     expect(contentBox!.y + contentBox!.height).toBeLessThanOrEqual(navBox!.y + 1);
+    // Phone rows use swipes. The action remains available to keyboard users.
     const archive = page.getByRole('button', { name: 'Archive session', exact: true }).first();
+    await archive.focus();
+    await expect(archive).toBeFocused();
     const box = await archive.boundingBox();
     expect(box!.height).toBeGreaterThanOrEqual(44);
     expect(box!.width).toBeGreaterThanOrEqual(44);
-    await archive.click();
+    await archive.press('Enter');
     await expect(page).toHaveURL('/sessions');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });

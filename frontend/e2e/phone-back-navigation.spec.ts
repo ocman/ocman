@@ -3,13 +3,27 @@ import { installPhoneReviewRoutes } from './phone-review-fixtures';
 
 test.use({ viewport: { width: 390, height: 844 } });
 
+test('conversation back and navigation Sessions open the same page', async ({ mockedPage: page }) => {
+  await page.goto('/sessions');
+  const destination = await page.getByRole('navigation', { name: 'Phone navigation' })
+    .getByRole('link', { name: 'Sessions', exact: true }).getAttribute('href');
+  await page.getByRole('link', { name: /Fix the login bug/ }).first().click();
+  const back = page.getByRole('link', { name: 'Back to sessions', exact: true });
+  await expect(back).toHaveAttribute('href', destination!);
+  await back.click();
+  await expect(page).toHaveURL(/\/sessions$/);
+  await expect(page.getByRole('searchbox', { name: 'Search sessions' })).toBeVisible();
+  await expect(page.getByTestId('session-sidebar')).toHaveCount(0);
+});
+
 test('session list drawer exposes bottom navigation without covering its footer', async ({ mockedPage: page }) => {
   await installPhoneReviewRoutes(page);
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const nav = page.getByRole('navigation', { name: 'Phone navigation' });
   await expect(nav).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open session details' }).click();
   await page.getByRole('button', { name: 'Open session list' }).click();
-  await expect(page.getByRole('button', { name: 'Close session list' })).toHaveText('Back to chat');
+  await expect(page.getByRole('button', { name: 'Close session list' })).toHaveCount(0);
   await expect(page.getByRole('banner').getByRole('button', { name: 'Explore files' })).toBeHidden();
   await expect(page.getByRole('banner').getByRole('button', { name: 'Project quick settings' })).toBeHidden();
   await expect(nav).toBeVisible();
@@ -22,8 +36,9 @@ test('session list drawer exposes bottom navigation without covering its footer'
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByTestId('session-sidebar')).toBeVisible();
   await expect(nav).toBeVisible();
-  await page.getByRole('button', { name: 'Close session list' }).click();
+  await page.getByTestId('session-sidebar').getByRole('button', { name: /Fix the login bug/ }).click();
   await expect(nav).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open session details' }).click();
   await page.getByRole('button', { name: 'Open session list' }).click();
   await nav.getByRole('link', { name: 'Projects', exact: true }).click();
   await expect(page).toHaveURL(/\/projects$/);
@@ -88,11 +103,12 @@ test('back closes a conversation panel without losing the conversation or draft'
   await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}`));
   await page.getByTestId('conversation-composer').getByRole('textbox').fill('Keep this draft');
   await expect(page.getByRole('button', { name: /^(Send message|Stop generation)$/ })).toHaveCSS('border-radius', '50%');
+  await page.getByRole('button', { name: 'Open session details' }).click();
   await page.getByRole('button', { name: 'Open session list' }).click();
-  await expect(page.getByRole('button', { name: 'Close session list' })).toBeVisible();
+  await expect(page.getByTestId('session-sidebar')).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}`));
-  await expect(page.getByRole('button', { name: 'Open session list' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open session details' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Close session list' })).toHaveCount(0);
   await expect(page.getByTestId('conversation-composer').getByRole('textbox')).toHaveValue('Keep this draft');
   await page.goBack();
@@ -108,6 +124,7 @@ test('Factory does not suppress native horizontal history gestures', async ({ mo
 test('choosing another session replaces the drawer without racing a history pop', async ({ mockedPage: page }) => {
   await installPhoneReviewRoutes(page);
   await page.goto(`/session/${MOCK_SESSION.id}`);
+  await page.getByRole('button', { name: 'Open session details' }).click();
   await page.getByRole('button', { name: 'Open session list' }).click();
   await page.getByTestId('session-sidebar').getByRole('button', { name: /Refactor auth module/ }).click();
   await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION_2.id}$`));
@@ -122,6 +139,7 @@ test('choosing the active session dismisses its drawer without duplicating histo
   await page.goto('/sessions');
   await page.getByRole('link', { name: /Fix the login bug/ }).first().click();
   await expect(page).toHaveURL(new RegExp(`/session/${MOCK_SESSION.id}$`));
+  await page.getByRole('button', { name: 'Open session details' }).click();
   await page.getByRole('button', { name: 'Open session list' }).click();
   await page.getByTestId('session-sidebar').getByRole('button', { name: /Fix the login bug/ }).click();
   await expect(page.getByTestId('session-sidebar')).toBeHidden();

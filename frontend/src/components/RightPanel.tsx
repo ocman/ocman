@@ -11,6 +11,8 @@ import { pluginPaneTab, usePluginPanes } from '../lib/pluginPanes';
 import { Pane } from './RightPanelPane';
 import { trackRender } from '../lib/renderRateMonitor';
 import { Button } from './Control';
+import { PhoneSessionTools } from './PhoneSessionTools';
+import { useIsPhone } from '../lib/useIsPhone';
 import { EmptyState } from './EmptyState';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 import { TAB_ICONS, TAB_LABELS, mergeVisibleTabOrder, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
@@ -37,6 +39,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 interface RightPanelProps {
   visible?: boolean;
+  onCloseMobilePanel?: () => void;
   sessionId: string;
   platformId: string | undefined;
   directory: string | undefined;
@@ -78,6 +81,7 @@ interface RightPanelProps {
 // DEFAULT_TAB_ORDER + a render branch is enough.
 export function RightPanel({
   visible = true,
+  onCloseMobilePanel,
   sessionId,
   platformId,
   directory,
@@ -91,6 +95,7 @@ export function RightPanel({
   commitSourceStatus,
 }: RightPanelProps) {
   trackRender('RightPanel');
+  const phone = useIsPhone();
   const documentVisible = useDocumentVisible();
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);
   const sizes = useUiStore((s) => s.changesSidebarTabSizes);
@@ -127,10 +132,19 @@ export function RightPanel({
   // strip so dragging an icon visually moves the corresponding pane
   // alongside it.
   const orderedOpenTabs = useMemo(
-    () => stripOrder.filter((t) => openTabs.includes(t)),
-    [stripOrder, openTabs],
+    () => {
+      const tabs = stripOrder.filter((t) => openTabs.includes(t));
+      return phone ? tabs.slice(0, 1) : tabs;
+    },
+    [stripOrder, openTabs, phone],
   );
-  const collapsed = orderedOpenTabs.length === 0 && !pluginPanesResult.isError;
+  const collapsed = !phone && orderedOpenTabs.length === 0 && !pluginPanesResult.isError;
+  const handleToggleTab = (tab: ChangesSidebarTab) => {
+    if (!phone) { toggleTab(tab); return; }
+    const closing = orderedOpenTabs.includes(tab);
+    useUiStore.getState().setChangesSidebarOpenTabs(closing ? [] : [tab]);
+    if (closing) onCloseMobilePanel?.();
+  };
 
   // Normalise the size fractions so they sum to 1 across the ordered
   // open tabs. Tabs without a stored size get an even share of
@@ -205,9 +219,10 @@ export function RightPanel({
               tab={t}
               label={tabLabels[t]}
               active={orderedOpenTabs.includes(t)}
-              onToggle={() => toggleTab(t)}
+              onToggle={() => handleToggleTab(t)}
             />
           ))}
+          <div id="phone-terminal-slot" />
         </div>
       </SortableContext>
       <DragOverlay dropAnimation={null}>
@@ -239,6 +254,7 @@ export function RightPanel({
     >
       <ChangesSidebarResizer />
       <div className="oc-changes-sidebar-content">
+        {phone && <PhoneSessionTools key={sessionId} session={session} />}
         {pluginPanesResult.isError && (
           <EmptyState role="alert">
             Could not load plugin panes.

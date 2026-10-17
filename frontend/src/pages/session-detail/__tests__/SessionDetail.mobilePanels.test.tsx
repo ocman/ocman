@@ -52,6 +52,7 @@ describe('SessionDetail — phone overlay panels', () => {
     try {
       const input = await screen.findByRole('textbox');
       fireEvent.input(input, { target: { value: 'Keep my draft' } });
+      fireEvent.click(screen.getByTestId('mobile-details-toggle'));
       fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
       expect(screen.getByTestId('session-layout').className).toContain('mobile-sidebar-open');
       fireEvent.click(within(screen.getByTestId('session-sidebar')).getByRole('button', { name: /Active conversation/ }));
@@ -244,25 +245,26 @@ describe('SessionDetail — phone overlay panels', () => {
     const toggle = screen.getByTestId('mobile-sessions-toggle');
     expect(layout.className).not.toContain('mobile-sidebar-open');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(toggle).toHaveTextContent('Sessions');
+    expect(toggle).toHaveAccessibleName('Open session list');
+    expect(within(navigationSlot).getByRole('link', { name: 'Back to sessions' })).toHaveAttribute('href', '/sessions');
 
     fireEvent.click(toggle);
     expect(screen.getByTestId('session-layout').className).toContain('mobile-sidebar-open');
-    expect(screen.getByTestId('mobile-sessions-toggle')).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByTestId('mobile-sessions-toggle')).toHaveTextContent('Back to chat');
+    expect(screen.queryByRole('button', { name: 'Close session list' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('mobile-sessions-toggle')).not.toBeInTheDocument();
     expect(titleSlot).toHaveTextContent('Sessions');
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open');
   });
 
-  it('clicking the same toggle again closes the drawer', async () => {
+  it('selecting the current session closes the drawer without a Back to chat button', async () => {
     renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
 
     fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
     expect(screen.getByTestId('session-layout').className).toContain('mobile-sidebar-open');
-    fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
+    fireEvent.click(within(screen.getByTestId('session-sidebar')).getByRole('button', { name: /Test session/ }));
     expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open');
   });
 

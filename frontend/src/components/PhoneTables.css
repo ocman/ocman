@@ -8,6 +8,8 @@
   .phone-session-table,
   .phone-project-table {
     display: block;
+    /* Keep the full list height so the page scrolls instead of clipping rows. */
+    flex-shrink: 0;
     overflow: hidden;
     border-collapse: separate;
     border-spacing: 0;

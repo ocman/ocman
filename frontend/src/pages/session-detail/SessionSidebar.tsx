@@ -29,7 +29,8 @@ import { SidebarProjectGroup as ProjectGroup } from './SidebarProjectGroup';
 import { SidebarSessionRow } from './SidebarSessionRow';
 import { useSidebarReorder } from './useSidebarReorder';
 import { SidebarHeader } from './SidebarHeader';
-import { useSidebarFilter } from './useSidebarFilter';
+import { useSessionListFilters } from '../../lib/useSessionListFilters';
+import { hiddenSessionOrigins, matchesSessionListFilters } from '../../lib/sessionListFilters';
 import { useSidebarProjectFilter } from './useSidebarProjectFilter';
 import { TmuxClientPopover } from '../../components/TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
@@ -40,6 +41,8 @@ import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import type { ConversationDraft } from '../../lib/newConversationDrafts';
 import { useSidebarDraftGroups } from './useSidebarDraftGroups';
 import { hasPendingPrompt } from '../../lib/sessionVisibility';
+import { useIsPhone } from '../../lib/useIsPhone';
+import { InlineAlert } from '../../components/InlineAlert';
 
 export interface SidebarProjectGroup {
   key?: string;
@@ -75,6 +78,7 @@ export interface SessionSidebarProps {
   /** Persist a new drag-and-drop order of the project groups (directories). */
   onReorderProjects: (orderedDirectories: string[]) => void;
   archivingSessionIds: Set<string>;
+  archiveError?: string | null;
   collapsedProjectSet: Set<string>;
   toggleCollapsedProject: (dir: string) => void;
   siblingGitInfos: Record<string, GitInfo>;
@@ -106,6 +110,7 @@ export function SessionSidebar({
   sidebarProjectGroups: allProjectGroups,
   onReorderProjects,
   archivingSessionIds,
+  archiveError,
   collapsedProjectSet,
   toggleCollapsedProject,
   siblingGitInfos,
@@ -124,43 +129,20 @@ export function SessionSidebar({
   onArchiveProject,
 }: SessionSidebarProps) {
   trackRender('SessionSidebar');
+  const phone = useIsPhone();
   const [searchQuery, setSearchQuery] = useState('');
   const draftGroups = useSidebarDraftGroups(allProjectGroups, searchQuery);
-  const [alwaysShowPrompts, setAlwaysShowPrompts] = useSidebarFilter('prompts', true);
+  const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
+    showRoutines, setShowRoutines, showSnoozed, setShowSnoozed } = useSessionListFilters();
   const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, draftGroups, alwaysShowPrompts);
   const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
-  const [showChildren, setShowChildren] = useSidebarFilter('children', true);
-  const [showFactory, setShowFactory] = useSidebarFilter('factory', false);
-  const [showRoutines, setShowRoutines] = useSidebarFilter('routines', false);
-  const [showSnoozed, setShowSnoozed] = useSidebarFilter('snoozed', false);
   const draftSessionIds = useDraftSessionIds();
   // Sessions hidden by the Factory/routine filters, including descendants.
-  const hiddenSessions = useMemo(() => {
-    const all = [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)];
-    const keys = new Set<string>();
-    for (const session of all) {
-      if ((!showFactory && session.factoryAttemptId) || (!showRoutines && session.routineId)) {
-        keys.add(`${session.platform}\0${session.id}`);
-      }
-    }
-    const children = new Map<string, string[]>();
-    for (const session of all) {
-      if (!session.parentId) continue;
-      const parent = `${session.platform}\0${session.parentId}`;
-      const siblings = children.get(parent) ?? [];
-      siblings.push(`${session.platform}\0${session.id}`);
-      children.set(parent, siblings);
-    }
-    // Set iteration visits added descendants too; membership checks stop cycles.
-    for (const key of keys) {
-      for (const child of children.get(key) ?? []) {
-        if (!keys.has(child)) keys.add(child);
-      }
-    }
-    return keys;
-  }, [recentSessions, sidebarProjectGroups, showFactory, showRoutines]);
+  const hiddenSessions = useMemo(() => hiddenSessionOrigins(
+    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)], showFactory, showRoutines,
+  ), [recentSessions, sidebarProjectGroups, showFactory, showRoutines]);
 
   // Reveal the selection on navigation or initial load. Live activity must
   // not repeatedly pull the user away from a manually scrolled position.
@@ -184,7 +166,7 @@ export function SessionSidebar({
   }, [activeId, sidebarView, loadingRecentSessions]);
 
   // Share live status, archive and navigation across every session view.
-  const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => (
+  const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => phone && archivingSessionIds.has(sib.id) ? null : (
     <SidebarSessionRow
       key={sib.id}
       session={sib}
@@ -210,15 +192,12 @@ export function SessionSidebar({
     return sidebarProjectGroups.flatMap((group) => {
       const projectMatches = !!query && fuzzyMatch(query, group.directory);
       const sessions = group.sessions.filter((session) =>
-        (!session.snoozedUntil || showSnoozed) && (session.id === activeId || session.pinned || alwaysShowPrompts && hasPendingPrompt(session) ||
-        !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
-        (session.snoozedUntil ? showSnoozed : showArchivedRecent || !session.archived) &&
-        (showChildren || !session.parentId) &&
-        (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]))),
+        matchesSessionListFilters(session, { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines },
+          hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
       );
       return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
     });
-  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed]);
+  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed, showFactory, showRoutines]);
 
   const filteredPinnedSessions = useMemo(() => {
     return recentSessions
@@ -233,12 +212,10 @@ export function SessionSidebar({
     const query = searchQuery.trim();
     return recentSessions.filter((session) =>
       !session.pinned &&
-      (!session.snoozedUntil || showSnoozed) && (session.id === activeId || alwaysShowPrompts && hasPendingPrompt(session) || !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
-      (session.snoozedUntil ? showSnoozed : showArchivedRecent || !session.archived) &&
-      (showChildren || !session.parentId) &&
-      (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]))),
+      matchesSessionListFilters(session, { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines },
+        hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
     );
-  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed]);
+  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed, showFactory, showRoutines]);
 
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.
@@ -371,6 +348,7 @@ export function SessionSidebar({
         setSidebarView={setSidebarView}
         onNewSession={onNewSession}
       />
+      {archiveError && <InlineAlert>{archiveError}</InlineAlert>}
       {pendingTmuxSession && pickerPos && (
         <TmuxClientPopover pickerRef={pickerRef} pos={pickerPos} clients={tmux.clients} onSelect={onClientSelect} />
       )}

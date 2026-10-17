@@ -37,6 +37,7 @@ test('sidebar project options remain clickable over the conversation', async ({ 
 test('sidebar project menu stays inside the phone viewport', async ({ mockedPage: page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/session/${MOCK_SESSION.id}`);
+  await page.getByRole('button', { name: 'Open session details' }).click();
   await page.getByRole('button', { name: 'Open session list', exact: true }).click();
   await page.getByRole('button', { name: 'Filter sessions', exact: true }).click();
   await page.getByRole('combobox', { name: 'Project', exact: true }).click();

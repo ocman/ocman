@@ -6,6 +6,8 @@ import { api } from '../lib/api';
 import { remoteLog } from '../lib/remoteLog';
 import { withDeadline } from '../lib/coalescedRefresh';
 import './SessionTerminalDock.css';
+import { useIsPhone } from '../lib/useIsPhone';
+import { PhoneTerminalAccess } from './PhoneTerminalAccess';
 
 // xterm loads with the first open terminal.
 const TerminalPane = lazyComponent(() => import('./TerminalPane').then((m) => m.TerminalPane), 'Loading terminal…');
@@ -69,8 +71,15 @@ function readStoredHeight(): number {
  * Windows are rediscovered from tmux on open, so reloading restores the
  * terminals that are still running.
  */
-export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: SessionTerminalDockProps) {
-  const [open, setOpen] = useState(false);
+export function SessionTerminalDock(props: SessionTerminalDockProps) {
+  const phone = useIsPhone();
+  if (!phone) return <TerminalDock {...props} />;
+  if (!props.tmuxAvailable || !props.directory) return null;
+  return <PhoneTerminalAccess><TerminalDock {...props} fullscreen /></PhoneTerminalAccess>;
+}
+
+function TerminalDock({ tmuxAvailable, directory, remoteId, fullscreen = false }: SessionTerminalDockProps & { fullscreen?: boolean }) {
+  const [open, setOpen] = useState(fullscreen);
   const [height, setHeight] = useState(readStoredHeight);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
@@ -252,7 +261,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
 
   return (
     <div className="oc-term-dock" data-testid="terminal-dock">
-      {open && (
+      {open && !fullscreen && (
         <div
           className="oc-term-dock-resizer"
           role="separator"
@@ -267,7 +276,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
           Sits above the terminal pane when open; collapses to just this
           row when closed. */}
       <div className="oc-term-dock-strip" role="tablist" aria-label="Terminals">
-        <button
+        {!fullscreen && <button
           type="button"
           className={`oc-term-dock-tab${open ? ' active' : ''}`}
           onClick={() => setOpen((v) => !v)}
@@ -275,7 +284,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
         >
           <i className="bi bi-terminal" aria-hidden="true" />
           <span>Terminal</span>
-        </button>
+        </button>}
         {windows.map((win) => (
           <div
             key={win.name}
@@ -314,8 +323,8 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
           <i className="bi bi-plus" aria-hidden="true" />
         </button>
       </div>
-      {open && (
-        <div className="oc-term-dock-panel" style={{ height }}>
+      {(open || fullscreen) && (
+        <div className="oc-term-dock-panel" style={fullscreen ? undefined : { height }}>
           {active && directory ? (
             <ErrorBoundary
               name="terminal:pane"

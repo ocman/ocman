@@ -1710,14 +1710,15 @@ test.describe('phone viewport', () => {
       await page.goto(SESSION_URL);
 
       await expect(page.getByRole('heading', { level: 1 }).getByText(MOCK_SESSION.title)).toBeVisible();
-      const project = page.getByRole('button', { name: 'Project quick settings' });
+      await page.getByRole('button', { name: 'Open session details' }).click();
+      const project = page.getByRole('group', { name: 'Session tools' }).getByRole('button', { name: 'Project quick settings' });
       await expect(project).toBeVisible();
       await expect(project).toHaveAttribute('title', directory);
       const heading = await page.getByRole('heading', { level: 1 }).boundingBox();
       const actions = await page.getByTestId('header-actions-row').boundingBox();
       expect(heading).not.toBeNull();
       expect(actions).not.toBeNull();
-      expect(actions!.y - heading!.y - heading!.height).toBeGreaterThanOrEqual(8);
+      expect(Math.abs(actions!.y - heading!.y)).toBeLessThanOrEqual(4);
       const projectBox = await project.boundingBox();
       expect(projectBox!.x + projectBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
     });
@@ -1725,6 +1726,7 @@ test.describe('phone viewport', () => {
 
   test('sessions drawer opens, selects a session, and auto-closes', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);
+    await page.getByRole('button', { name: 'Open session details' }).click();
     await page.getByRole('button', { name: 'Open session list' }).click();
     await expect(page.getByTestId('session-sidebar')).toBeVisible();
     await expect(page.getByRole('heading').getByText('Sessions')).toBeVisible();
@@ -1734,12 +1736,11 @@ test.describe('phone viewport', () => {
     await expect(page.getByTestId('session-sidebar')).toBeHidden();
   });
 
-  test('main navigation remains usable over the sessions drawer', async ({ mockedPage: page }) => {
+  test('phone navigation remains usable over the sessions drawer', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);
+    await page.getByRole('button', { name: 'Open session details' }).click();
     await page.getByRole('button', { name: 'Open session list' }).click();
-    await page.getByRole('button', { name: 'Open navigation' }).click();
-
-    await page.getByRole('link', { name: 'Projects' }).click();
+    await page.getByRole('navigation', { name: 'Phone navigation' }).getByRole('link', { name: 'Projects' }).click();
     await expect(page).toHaveURL('/projects');
   });
 
@@ -1756,14 +1757,15 @@ test.describe('phone viewport', () => {
     await expect(page.getByRole('complementary', { name: /Changes/ })).toBeHidden();
   });
 
-  test('toggle button closes its own panel again', async ({ mockedPage: page }) => {
+  test('selecting the active session closes the list without a return button', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);
+    await page.getByRole('button', { name: 'Open session details' }).click();
     const toggle = page.getByTestId('mobile-sessions-toggle');
-    await expect(toggle).toHaveText('Sessions');
+    await expect(toggle).toHaveAccessibleName('Open session list');
     await toggle.click();
     await expect(page.getByTestId('session-sidebar')).toBeVisible();
-    await expect(page.getByTestId('mobile-sessions-toggle')).toHaveText('Done');
-    await page.getByTestId('mobile-sessions-toggle').click();
+    await expect(page.getByRole('button', { name: 'Close session list' })).toHaveCount(0);
+    await page.getByTestId('session-sidebar').getByRole('button', { name: /Fix the login bug/ }).click();
     await expect(page.getByTestId('session-sidebar')).toBeHidden();
   });
 });

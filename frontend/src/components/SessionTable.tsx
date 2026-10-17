@@ -1,12 +1,8 @@
 import { useMemo, useState } from 'react';
 import './SessionTable.css';
 import './PhoneTables.css';
-import { PhoneSessionMeta } from './PhoneSessionMeta';
-import { Link, useNavigate } from 'react-router-dom';
-import type { Session, GitInfo, Project } from '../lib/api';
+import type { Session, Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
-import { cleanTitle, formatDuration, relativeTime } from '../lib/format';
-import { isTerminalStatus } from '../lib/sessionStatus';
 import { StatusBadge } from './StatusBadge';
 import { HostBadge } from './HostBadge';
 import { ProjectLabel } from './ProjectLabel';
@@ -17,74 +13,19 @@ import { DataTable, DataTableGroupHeader } from './DataTable';
 import { projectIdentityIndex } from '../lib/projectIdentity';
 import { rollupGroupStatus } from '../lib/sidebarHelpers';
 import { remoteLog } from '../lib/remoteLog';
-import { ArchiveButton } from './ArchiveButton';
-
-/**
- * UnreadBadge renders a small "N new" pill on a session row when
- * the session has unread messages and is not currently active.
- * Returns null otherwise so it stays out of the layout entirely.
- *
- * Matches the "blue = new since last view" vocabulary used by the
- * status dot (see StatusBadge.css).
- */
-export function UnreadBadge({ session }: { session: Session }) {
-  if (!session.unreadCount || session.seen) return null;
-  const label = session.unreadCount > 99 ? '99+' : String(session.unreadCount);
-  return (
-    <span
-      className="session-unread-badge"
-      data-testid="session-unread-badge"
-      title={`${session.unreadCount} new message${session.unreadCount === 1 ? '' : 's'} since you last viewed this session`}
-    >
-      {label}
-    </span>
-  );
-}
-
-export function ShortPath({ path }: { path: string }) {
-  const parts = (path || '').split('/').filter(Boolean);
-  const last = parts.pop() || '';
-  const prefix = parts.length > 0 ? parts.slice(-1).join('/') + '/' : '';
-  return <><span className="short-path-prefix">{prefix}</span><span className="short-path-last">{last}</span></>;
-}
-
-export function GitStatusLine({ info, icon }: { info?: GitInfo | null; icon?: 'branch' | 'worktree' }) {
-  if (!info || !info.branch) return null;
-  const dirtyCls = info.dirty ? ' git-status-dirty' : '';
-  const iconCls = icon === 'worktree' ? 'bi bi-diagram-2' : 'bi bi-git';
-  return (
-    <span className={`git-status${dirtyCls}`}>
-      <i className={`${iconCls} git-status-icon`} aria-hidden="true" />
-      <span className="git-status-branch" title={`Current branch: ${info.branch}`}>
-        {info.branch}
-      </span>
-      {info.ahead > 0 && (
-        <span
-          className="git-status-ahead"
-          title={`${info.ahead} commit${info.ahead === 1 ? '' : 's'} ahead of upstream (not yet pushed)`}
-        >&uarr;{info.ahead}</span>
-      )}
-      {info.behind > 0 && (
-        <span
-          className="git-status-behind"
-          title={`${info.behind} commit${info.behind === 1 ? '' : 's'} behind upstream (not yet pulled)`}
-        >&darr;{info.behind}</span>
-      )}
-      {info.dirty && (
-        <span
-          className="git-status-mark"
-          title="Working tree has uncommitted changes"
-        >*</span>
-      )}
-    </span>
-  );
-}
+import { SessionTableRow } from './SessionTableRow';
+import { useSessionTableArchive } from './useSessionTableArchive';
+import { useIsPhone } from '../lib/useIsPhone';
+import { InlineAlert } from './InlineAlert';
+export { UnreadBadge, ShortPath, GitStatusLine } from './SessionTableDetails';
 
 interface Props {
   sessions: Session[];
   showProject: boolean;
   loading?: boolean;
   includeArchived?: boolean;
+  /** The caller already applied the shared archive/snooze/pending-prompt rules. */
+  prefiltered?: boolean;
 }
 
 interface GroupedProps {
@@ -140,33 +81,13 @@ export function GroupedSessionTable({
   onAddSession,
   showEmptyProjects = true,
 }: GroupedProps) {
-  const navigate = useNavigate();
-  const archiveSession = useApiStore((state) => state.archiveSession);
+  const phone = useIsPhone();
+  const { archivingSessionIds, locallyArchivedSessionIds, archiveError, handleArchiveSession } = useSessionTableArchive();
   const archiveProject = useApiStore((state) => state.archiveProject);
-  const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
-  const [locallyArchivedSessionIds, setLocallyArchivedSessionIds] = useState<Set<string>>(new Set());
   // Optimistic project archive overlay so the UI reacts before the next
   // /api/projects refetch lands. Maps folded root -> archived?.
   const [localProjectArchived, setLocalProjectArchived] = useState<Map<string, boolean>>(new Map());
   const identity = useMemo(() => projectIdentityIndex(projects ?? []), [projects]);
-
-  const handleArchiveSession = async (e: React.MouseEvent, session: Session) => {
-    e.stopPropagation();
-    if (archivingSessionIds.has(session.id)) return;
-    setArchivingSessionIds(prev => new Set(prev).add(session.id));
-    try {
-      await archiveSession(session.platform, session.id, session.timeUpdated, true);
-      setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
-    } catch (err) {
-      remoteLog.error('Failed to archive session', err);
-    } finally {
-      setArchivingSessionIds(prev => {
-        const next = new Set(prev);
-        next.delete(session.id);
-        return next;
-      });
-    }
-  };
 
   const handleArchiveProject = async (directory: string, archived: boolean, remoteId?: string) => {
     const key = identity(directory, remoteId).key;
@@ -202,6 +123,7 @@ export function GroupedSessionTable({
 
   const groups = useMemo(() => {
     const visible = (includeArchived ? sessions : filterVisibleSessions(sessions))
+      .filter(s => !phone || !archivingSessionIds.has(s.id))
       .filter(s => includeArchived || !locallyArchivedSessionIds.has(s.id));
 
     const buckets = new Map<string, Session[]>();
@@ -258,7 +180,7 @@ export function GroupedSessionTable({
       // Hide archived projects' session groups unless showing archived.
       .filter(g => includeArchived || !archivedRoots.has(g.key))
       .sort((a, b) => b.lastUpdated - a.lastUpdated);
-  }, [sessions, includeArchived, locallyArchivedSessionIds, projects, archivedRoots, showEmptyProjects, identity]);
+  }, [sessions, includeArchived, locallyArchivedSessionIds, projects, archivedRoots, showEmptyProjects, identity, phone, archivingSessionIds]);
 
   if (loading) {
     return <SessionTableSkeleton rows={5} showProject={false} />;
@@ -280,6 +202,7 @@ export function GroupedSessionTable({
 
   return (
     <>
+      {archiveError && <InlineAlert>{archiveError}</InlineAlert>}
       {groups.map(group => {
         const collapsed = collapsedProjects.has(group.key);
         const agg = group.aggregate;
@@ -370,43 +293,9 @@ export function GroupedSessionTable({
                   </tr>
                 </thead>
                 <tbody>
-                  {nestSessions(group.sessions).map(({ session: s, depth }) => {
-                    const seenLatest = isTerminalStatus(s.status) && s.seen;
-                    const pending = s.pendingPermission || s.pendingQuestion;
-                    return (
-                      <tr
-                        key={s.id}
-                        className={`${s.liveConnection ? '' : 'no-port'}${depth > 0 ? ' session-row-child' : ''}`}
-                        onClick={() => navigate(`/session/${s.id}`)}
-                      >
-                        <td>
-                          {/* The row-wide onClick is mouse-only; this link is
-                              the keyboard/AT path into the session (and makes
-                              the row middle-clickable). */}
-                          <Link className="session-row-link" to={`/session/${s.id}`} onClick={e => e.stopPropagation()}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {depth > 0 && (
-                                <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
-                              )}
-                              <StatusBadge status={s.status} resetsAt={s.resetsAt} compact seen={seenLatest} pending={pending} />
-                              <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
-                              <UnreadBadge session={s} />
-                            </div>
-                            <PhoneSessionMeta session={s} />
-                            <div className="mono">
-                              {s.id}
-                            </div>
-                          </Link>
-                        </td>
-                        <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
-                        <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
-                        <td className="session-action-cell">
-                          <ArchiveButton iconSize={14} label="Archive session" title="Archive session (reappears on new activity)"
-                            onClick={(e) => { void handleArchiveSession(e, s); }} disabled={archivingSessionIds.has(s.id)} />
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {nestSessions(group.sessions).map(({ session, depth }) => <SessionTableRow
+                    key={session.id} session={session} depth={depth} archiving={archivingSessionIds.has(session.id)}
+                    onArchive={(event, row) => { void handleArchiveSession(event, row); }} />)}
                 </tbody>
               </DataTable>
             )}
@@ -417,37 +306,17 @@ export function GroupedSessionTable({
   );
 }
 
-export function SessionTable({ sessions, showProject, loading, includeArchived }: Props) {
-  const navigate = useNavigate();
-  const archiveSession = useApiStore((state) => state.archiveSession);
-  const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
-  const [locallyArchivedSessionIds, setLocallyArchivedSessionIds] = useState<Set<string>>(new Set());
-
-  const handleArchiveSession = async (e: React.MouseEvent, session: Session) => {
-    e.stopPropagation();
-    if (archivingSessionIds.has(session.id)) return;
-
-    setArchivingSessionIds(prev => new Set(prev).add(session.id));
-    try {
-      await archiveSession(session.platform, session.id, session.timeUpdated, true);
-      setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
-    } catch (err) {
-      remoteLog.error('Failed to archive session', err);
-    } finally {
-      setArchivingSessionIds(prev => {
-        const next = new Set(prev);
-        next.delete(session.id);
-        return next;
-      });
-    }
-  };
+export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered }: Props) {
+  const phone = useIsPhone();
+  const { archivingSessionIds, locallyArchivedSessionIds, archiveError, handleArchiveSession } = useSessionTableArchive();
 
   if (loading) {
     return <SessionTableSkeleton rows={5} showProject={showProject} />;
   }
 
   const colCount = showProject ? 5 : 4;
-  const visibleSessions = (includeArchived ? sessions : filterVisibleSessions(sessions))
+  const visibleSessions = (includeArchived || prefiltered ? sessions : filterVisibleSessions(sessions))
+    .filter(session => !phone || !archivingSessionIds.has(session.id))
     .filter(session => includeArchived || !locallyArchivedSessionIds.has(session.id));
 
   if (!visibleSessions.length) {
@@ -465,6 +334,8 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
   }
 
   return (
+    <>
+    {archiveError && <InlineAlert>{archiveError}</InlineAlert>}
     <DataTable className="phone-session-table">
       <thead>
         <tr>
@@ -476,58 +347,11 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
         </tr>
       </thead>
       <tbody>
-        {nestSessions(visibleSessions).map(({ session: s, depth }) => {
-          const seenLatest = isTerminalStatus(s.status) && s.seen;
-          const pending = s.pendingPermission || s.pendingQuestion;
-          return (
-            <tr
-              key={s.id}
-              className={`${s.liveConnection ? '' : 'no-port'}${depth > 0 ? ' session-row-child' : ''}`}
-              onClick={() => navigate(`/session/${s.id}`)}
-            >
-              <td>
-                <Link className="session-row-link" to={`/session/${s.id}`} onClick={e => e.stopPropagation()}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {depth > 0 && (
-                      <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
-                    )}
-                    <StatusBadge status={s.status} resetsAt={s.resetsAt} compact seen={seenLatest} pending={pending} />
-                    <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
-                    <UnreadBadge session={s} />
-                  </div>
-                  <PhoneSessionMeta session={s} />
-                  <div className="mono">
-                    {s.id}
-                  </div>
-                </Link>
-              </td>
-              {showProject && (
-                 <td className="mono">
-                   {/*
-                     Git status was previously rendered here, populated
-                     by the backend's /api/sessions handler running
-                     `git status` per directory on every dashboard
-                     poll. That fork-fan-out caused multi-second
-                     pauses across unrelated handlers (see
-                     docs/other/profiling.md), and dashboard branch
-                     indicators aren't worth that cost. Branch info
-                     still appears in SessionDetail's right-hand
-                     sidebar and in the sibling-sessions list there;
-                     both fetch it via /api/git/info on demand.
-                   */}
-                   <ShortPath path={s.directory} />
-                  </td>
-              )}
-              <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
-              <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
-              <td className="session-action-cell">
-                <ArchiveButton iconSize={14} label="Archive session" title="Archive session (reappears on new activity)"
-                  onClick={(e) => handleArchiveSession(e, s)} disabled={archivingSessionIds.has(s.id)} />
-              </td>
-            </tr>
-          );
-        })}
+        {nestSessions(visibleSessions).map(({ session, depth }) => <SessionTableRow
+          key={session.id} session={session} depth={depth} showProject={showProject}
+          archiving={archivingSessionIds.has(session.id)} onArchive={(event, row) => { void handleArchiveSession(event, row); }} />)}
       </tbody>
     </DataTable>
+    </>
   );
 }

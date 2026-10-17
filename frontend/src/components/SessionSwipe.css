@@ -1,0 +1,40 @@
+/* Desktop rows and their hover actions are deliberately unchanged. */
+@media (width <= 640px) {
+  .session-swipe-row { position: relative; touch-action: pan-y pinch-zoom; overflow: hidden; }
+  .session-swipe-row > * { translate: var(--session-swipe-offset, 0px) 0; }
+  .session-swipe-row[data-swipe-direction] { user-select: none; }
+  .session-swipe-row::after {
+    content: attr(data-swipe-label);
+    position: absolute;
+    inset: 0 auto 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: max(0px, var(--session-swipe-offset, 0px));
+    overflow: hidden;
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 12px;
+    font-weight: 600;
+    pointer-events: none;
+  }
+  .session-swipe-row[data-swipe-direction='left']::after {
+    inset: 0 0 0 auto;
+    width: calc(-1 * var(--session-swipe-offset));
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .session-swipe-row .session-swipe-actions,
+  .session-sidebar-item.session-swipe-row .session-sidebar-actions { opacity: 0; pointer-events: none; }
+  .session-sidebar-item.session-swipe-row .session-sidebar-actions { display: flex; }
+  .session-swipe-row .session-swipe-actions:has(:focus-visible),
+  .session-sidebar-item.session-swipe-row .session-sidebar-actions:has(:focus-visible) { opacity: 1; pointer-events: auto; }
+  .phone-session-table > tbody > .session-swipe-row { grid-template-columns: minmax(0, 1fr); }
+  .phone-session-table > tbody > .session-swipe-row > .session-action-cell {
+    position: absolute;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+    background: var(--bg-card);
+  }
+}

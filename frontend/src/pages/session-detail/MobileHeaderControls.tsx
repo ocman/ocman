@@ -1,5 +1,8 @@
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
+import { IconButton } from '../../components/IconButton';
+import { useIsPhone } from '../../lib/useIsPhone';
 import type { UseMobilePanelResult } from './useMobilePanel';
 import './PhoneConversation.css';
 
@@ -26,50 +29,48 @@ export function MobileHeaderControls({
   toggleMobileSidebar,
   toggleMobileDetails,
 }: Omit<UseMobilePanelResult, 'closeMobilePanel'>) {
+  const phone = useIsPhone();
   return (
     <>
       <HeaderPortal slot="header-navigation-slot">
         {mobilePanel !== 'sidebar' && (
-          <button
-            type="button"
+          <Link
+            to="/sessions"
             className="mobile-sessions-back"
-            data-testid="mobile-sessions-toggle"
-            aria-label="Open session list"
-            aria-expanded="false"
-            onClick={toggleMobileSidebar}
+            aria-label="Back to sessions"
           >
             <i className="bi bi-chevron-left" aria-hidden="true" />
-            <span>Sessions</span>
-          </button>
+            <span className="mobile-sessions-back-label">Sessions</span>
+          </Link>
         )}
       </HeaderPortal>
       <HeaderPortal slot="header-mobile-title-slot">
         {mobilePanel === 'sidebar' && <span>Sessions</span>}
       </HeaderPortal>
-      <HeaderPortal>
-        {mobilePanel === 'sidebar' && (
-          <button
-            type="button"
-            className="mobile-sessions-done"
-            data-testid="mobile-sessions-toggle"
-            aria-label="Close session list"
-            aria-expanded="true"
-            onClick={toggleMobileSidebar}
-          >
-            Back to chat
-          </button>
-        )}
+      {(!phone || mobilePanel === 'details') && <HeaderPortal key={mobilePanel} slot={phone ? 'phone-session-tools-slot' : 'header-actions-slot'}>
         {mobilePanel !== 'sidebar' && (
-          <button
-            type="button"
+          <IconButton
+            variant="ghost"
+            className="mobile-panel-toggle"
+            data-testid="mobile-sessions-toggle"
+            label="Open session list"
+            icon="bi-list-ul"
+            aria-expanded="false"
+            onClick={toggleMobileSidebar}
+          />
+        )}
+      </HeaderPortal>}
+      <HeaderPortal>
+        {mobilePanel !== 'sidebar' && (
+          <IconButton
+            variant="ghost"
             className="mobile-panel-toggle"
             data-testid="mobile-details-toggle"
-            aria-label={mobilePanel === 'details' ? 'Close session details' : 'Open session details'}
+            label={mobilePanel === 'details' ? 'Close session details' : 'Open session details'}
+            icon={mobilePanel === 'details' ? 'bi-x-lg' : 'bi-layout-sidebar-reverse'}
             aria-expanded={mobilePanel === 'details'}
             onClick={toggleMobileDetails}
-          >
-            <i className={`bi ${mobilePanel === 'details' ? 'bi-x-lg' : 'bi-layout-sidebar-reverse'}`} aria-hidden="true" />
-          </button>
+          />
         )}
       </HeaderPortal>
     </>

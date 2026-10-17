@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project, Session } from '../lib/api';
+import { useIsPhone } from '../lib/useIsPhone';
+
+vi.mock('../lib/useIsPhone', () => ({ useIsPhone: vi.fn(() => false) }));
 
 const mocks = vi.hoisted(() => ({
   apiState: {
@@ -57,7 +60,22 @@ function renderGrouped(props: Partial<React.ComponentProps<typeof GroupedSession
 }
 
 describe('GroupedSessionTable project archive', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); vi.mocked(useIsPhone).mockReturnValue(false); });
+
+  it.each([false, true])('hides a phone row before the archive response and restores it on failure, grouped=%s', async (grouped) => {
+    vi.mocked(useIsPhone).mockReturnValue(true);
+    let fail!: (error: Error) => void;
+    mocks.apiState.archiveSession.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    const sessions = [makeSession({})];
+    render(<MemoryRouter>{grouped
+      ? <GroupedSessionTable sessions={sessions} collapsedProjects={new Set()} toggleCollapsedProject={() => {}} />
+      : <SessionTable sessions={sessions} showProject={false} />}</MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive session' }));
+    expect(screen.queryByRole('link', { name: /Work/ })).not.toBeInTheDocument();
+    await act(async () => { fail(new Error('Archive unavailable')); });
+    expect(screen.getByRole('link', { name: /Work/ })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not archive session');
+  });
 
   it.each([false, true])('a session title adds only one history entry, grouped=%s', (grouped) => {
     const sessions = [makeSession({})];

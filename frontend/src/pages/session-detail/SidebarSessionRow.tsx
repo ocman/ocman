@@ -1,4 +1,4 @@
-import type React from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { GitInfo, Session } from '../../lib/api';
 import { cleanTitle, relativeTime } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
@@ -10,6 +10,8 @@ import { ArchiveButton } from '../../components/ArchiveButton';
 import { SnoozeButton } from '../../components/SnoozeButton';
 import { useHoverPrefetch } from './sessionPrefetch';
 import { SidebarRow } from './SidebarRow';
+import { useSessionSwipe } from '../../lib/useSessionSwipe';
+import '../../components/SessionSwipe.css';
 
 export interface SidebarSessionRowProps {
   session: Session;
@@ -50,6 +52,10 @@ export function SidebarSessionRow({
   onPinSession,
 }: SidebarSessionRowProps) {
   const flat = requestedFlat && depth === 0;
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [snoozing, setSnoozing] = useState(false);
+  const swipe = useSessionSwipe({ disabled: archiving || snoozeOpen || snoozing,
+    onArchive: event => onArchiveSession(event, sib), onSnooze: () => setSnoozeOpen(true) });
   // For the currently-viewed session we trust the SSE-derived status
   // over the last poll (OpenCode's DB can lag SSE by several seconds;
   // using the poll value here would leave the sidebar pulse running
@@ -75,13 +81,15 @@ export function SidebarSessionRow({
   );
   return (
     <SidebarRow
+      {...swipe}
+      aria-busy={archiving || snoozing}
       data-perf="session-row"
       data-session-key={`${inGroup ? 'group' : 'recent'}:${sib.platform}:${sib.id}`}
       active={active}
       archiving={archiving}
       inGroup={inGroup}
       flat={flat}
-      className={depth > 0 ? 'session-sidebar-item-child' : ''}
+      className={`session-swipe-row${depth > 0 ? ' session-sidebar-item-child' : ''}`}
       {...(active ? {} : prefetch)}
       onClick={() => {
         if (debugMode) {
@@ -118,7 +126,7 @@ export function SidebarSessionRow({
       {depth > 0 && (
         <span
           className="session-child-branch"
-          style={{ '--depth': depth } as React.CSSProperties}
+          style={{ '--depth': depth } as CSSProperties}
           aria-hidden="true"
         >
           &#9492;&#9472;
@@ -163,7 +171,7 @@ export function SidebarSessionRow({
           </span>
         )}
         <span className="session-sidebar-actions">
-          <SnoozeButton session={sib} disabled={archiving} />
+          <SnoozeButton session={sib} disabled={archiving} open={snoozeOpen} onOpenChange={setSnoozeOpen} onBusyChange={setSnoozing} />
           <button
             type="button"
             className={`session-pin-btn session-sidebar-pin-btn${sib.pinned ? ' pinned' : ''}`}

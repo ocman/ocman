@@ -30,6 +30,19 @@ describe('snooze deadlines', () => {
 });
 
 describe('SnoozeButton', () => {
+  it('opens the duration picker from a swipe and reports pending delivery', async () => {
+    let finish!: (value: { ok: boolean }) => void;
+    vi.mocked(api.snoozeSession).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const onOpenChange = vi.fn();
+    const onBusyChange = vi.fn();
+    render(<SnoozeButton session={session} open onOpenChange={onOpenChange} onBusyChange={onBusyChange} />);
+    await userEvent.click(screen.getByRole('menuitem', { name: 'In 1 hour' }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onBusyChange).toHaveBeenCalledWith(true);
+    await act(async () => { finish({ ok: true }); });
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
   function setup() {
     const click = vi.fn();
     render(<MemoryRouter><div onClick={click}><SnoozeButton session={session} /></div></MemoryRouter>);

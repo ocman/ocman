@@ -45,6 +45,13 @@ function Location() {
 describe('session rows are keyboard reachable', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('preserves prefiltered archived prompts and snoozed rows without breaking archive actions', async () => {
+    render(<MemoryRouter><SessionTable prefiltered sessions={[makeSession({ archived: true, pendingQuestion: true })]} showProject={false} /></MemoryRouter>);
+    expect(screen.getByRole('link', { name: /Fix the login bug/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Archive session' }));
+    expect(screen.queryByRole('link', { name: /Fix the login bug/ })).not.toBeInTheDocument();
+  });
+
   it('exposes the flat table row as a link and opens it with Enter', async () => {
     const user = userEvent.setup();
     render(

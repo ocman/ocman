@@ -5,15 +5,36 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { useSessions } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { RootRedirect } from './RootRedirect';
+import { useIsPhone } from '../lib/useIsPhone';
 
 vi.mock('../lib/queries', () => ({ useSessions: vi.fn() }));
+vi.mock('../lib/useIsPhone', () => ({ useIsPhone: vi.fn(() => false) }));
 function LocationMarker() { return <div data-testid="location">{useLocation().pathname}</div>; }
 function renderRootRedirect() {
-  render(<MemoryRouter initialEntries={['/']}><Routes><Route path="/" element={<RootRedirect />} /><Route path="/session/:id" element={<LocationMarker />} /></Routes></MemoryRouter>);
+  render(<MemoryRouter initialEntries={['/']}><Routes><Route path="/" element={<RootRedirect />} /><Route path="/session/:id" element={<LocationMarker />} /><Route path="/sessions" element={<LocationMarker />} /></Routes></MemoryRouter>);
 }
 
 describe('RootRedirect', () => {
-  beforeEach(() => { useUiStore.setState({ lastOpenedSessionId: undefined }); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useIsPhone).mockReturnValue(false);
+    useUiStore.setState({ lastOpenedSessionId: undefined });
+  });
+
+  it.each([
+    { isLoading: false, data: [{ id: 'opened', timeUpdated: 100 }] },
+    { isLoading: false, data: [] },
+    { isLoading: true },
+    { isLoading: false, isError: true, error: new Error('Offline') },
+  ])('opens the mobile session list without waiting for session restoration: %j', async (query) => {
+    vi.mocked(useIsPhone).mockReturnValue(true);
+    vi.mocked(useSessions).mockReturnValue(query as never);
+    useUiStore.setState({ lastOpenedSessionId: 'opened' });
+    renderRootRedirect();
+    expect(await screen.findByTestId('location')).toHaveTextContent('/sessions');
+    expect(useSessions).not.toHaveBeenCalled();
+    expect(useUiStore.getState().lastOpenedSessionId).toBe('opened');
+  });
 
   it('prefers the most recently opened active session', async () => {
     useUiStore.setState({ lastOpenedSessionId: 'opened' });

@@ -916,6 +916,28 @@ describe('useSidebarSessions project collapse', () => {
 });
 
 describe('useSidebarSessions archive navigation', () => {
+  it('starts a phone archive immediately and restores pending state with a visible error on failure', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    let fail!: (error: Error) => void;
+    const archiveSession = vi.fn().mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
+    const target = { id: 'target', platform: 'opencode', timeUpdated: 1 } as Session;
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [target]);
+    useApiStore.setState({ archiveSession });
+    const view = renderHook(() => useSidebarSessions({
+      id: 'current', sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    try {
+      act(() => view.result.current.handleArchiveSession({ stopPropagation: vi.fn() } as never, target));
+      expect(archiveSession).toHaveBeenCalledExactlyOnceWith('opencode', 'target', 1, true);
+      expect(view.result.current.archivingSessionIds.has('target')).toBe(true);
+      await act(async () => { fail(new Error('Offline')); });
+      expect(view.result.current.archivingSessionIds.size).toBe(0);
+      expect(view.result.current.recentSessions).toContainEqual(target);
+      expect(view.result.current.archiveError).toMatch(/Could not archive session/);
+    } finally { view.unmount(); vi.unstubAllGlobals(); }
+  });
+
   it('retains a pinned session after archiving and reloading with archived hidden', async () => {
     vi.useFakeTimers();
     const pinned = { id: 'pin', platform: 'opencode', pinned: true, archived: false,

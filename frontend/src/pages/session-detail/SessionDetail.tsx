@@ -386,6 +386,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     loadRecentSessions,
     loadingRecentSessions,
     archivingSessionIds,
+    archiveError,
     showArchivedRecent,
     setShowArchivedRecent,
     showArchivedRecentRef,
@@ -896,6 +897,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           sidebarProjectGroups={sidebarProjectGroups}
           onReorderProjects={handleReorderProjects}
           archivingSessionIds={archivingSessionIds}
+          archiveError={archiveError}
           collapsedProjectSet={collapsedProjectSet}
           toggleCollapsedProject={toggleCollapsedProject}
           siblingGitInfos={siblingGitInfos}
@@ -917,7 +919,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         />
         </PerfProfiler>
         <div className="session-main" data-testid="session-main">
-          {session && mobilePanel !== 'sidebar' && <HeaderPortal>
+          {session && mobilePanel !== 'sidebar' && (!phone || mobilePanel === 'details') && <HeaderPortal key={mobilePanel} slot={phone ? 'phone-session-tools-slot' : 'header-actions-slot'}>
             <SessionActionsMenu
               sessionId={session.id}
               tmuxAvailable={tmux.available}
@@ -1175,6 +1177,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           <PerfProfiler id="RightPanel">
           <RightPanel
             visible={detailsVisible}
+            onCloseMobilePanel={closeMobilePanel}
             sessionId={id}
             platformId={session?.platform}
             directory={session?.directory}

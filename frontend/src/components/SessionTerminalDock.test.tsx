@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import type { TermWindow } from '../lib/api';
 
 // Mock the heavy TerminalPane (xterm + WebSocket) so the dock can be
@@ -46,6 +47,34 @@ beforeEach(() => {
 });
 
 describe('SessionTerminalDock gating', () => {
+  it('does not discover shells on phones until the terminal is opened from details', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const slot = document.createElement('div');
+    slot.id = 'phone-terminal-slot';
+    document.body.appendChild(slot);
+    listWindows.mockResolvedValue({ windows: [{ name: 'existing', title: 'Shell' }] });
+    const view = render(<MemoryRouter><SessionTerminalDock tmuxAvailable directory={DIR} /></MemoryRouter>);
+    try {
+      expect(listWindows).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('terminal-dock')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Open terminal' }));
+      expect(await screen.findByTestId('terminal-pane-stub')).toHaveAttribute('data-window', 'existing');
+      expect(screen.queryByRole('separator', { name: 'Resize terminal' })).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Hide terminal')).not.toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Shell' })).toHaveAttribute('aria-selected', 'true');
+    } finally { view.unmount(); slot.remove(); vi.unstubAllGlobals(); }
+  });
+
+  it('does not offer a phone terminal without tmux or a directory', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    const view = render(<SessionTerminalDock tmuxAvailable={false} directory={DIR} />);
+    try {
+      view.rerender(<SessionTerminalDock tmuxAvailable directory={undefined} />);
+      expect(screen.queryByTestId('terminal-dock')).not.toBeInTheDocument();
+      expect(listWindows).not.toHaveBeenCalled();
+    } finally { view.unmount(); vi.unstubAllGlobals(); }
+  });
+
   it('closes the dock when the last shell exits without creating another', async () => {
     vi.useFakeTimers();
     listWindows.mockResolvedValue({ windows: [{ name: 'shell', title: 'Shell' }] });
