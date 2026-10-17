@@ -97,7 +97,7 @@ func TestStopSnapshotContinuousAdvanceFailsBeforeStop(t *testing.T) {
 func TestStoppingCrashRecoversOriginalRuntimeAndAbortEvidence(t *testing.T) {
 	srv, raw := newInterruptionRawServer(t)
 	defer raw.Close()
-	path := filepath.Join(t.TempDir(), "crash-state.db")
+	path := testStateAt(t, filepath.Join(t.TempDir(), "crash-state.db"))
 	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)

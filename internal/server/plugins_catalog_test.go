@@ -13,7 +13,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // writeLaunchCatalogPlugin writes a serve plugin that dumps its fd-3 payload
@@ -39,7 +38,7 @@ func TestPluginLaunchCatalog(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

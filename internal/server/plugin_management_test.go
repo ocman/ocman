@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/pluginsmod"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
@@ -28,14 +29,26 @@ type pluginManagementTest struct {
 
 func newPluginManagementTest(t *testing.T) *pluginManagementTest {
 	t.Helper()
+	return newPluginManagementTestWithTimeout(t, 0)
+}
+
+func newPluginManagementTestWithTimeout(t *testing.T, readyTimeout time.Duration) *pluginManagementTest {
+	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := bindPlugins(&Server{stateDB: db, auth: newTestAuth(t, "password")}, context.Background())
+	s := &Server{stateDB: db, auth: newTestAuth(t, "password")}
+	if readyTimeout > 0 {
+		s.pluginsMod.set(pluginsmod.NewModule(pluginsmod.Deps{
+			Store: db, ReadyTimeout: readyTimeout,
+			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+		}))
+	}
+	bindPlugins(s, context.Background())
 	t.Cleanup(s.stopPluginProcesses)
 	d := plugins.Description{ID: "org.example.management", Name: "Management", Version: "1", Protocol: plugins.Version{Major: 1}, Scope: plugins.ScopeOwner, MaxConcurrency: 1,
 		Capabilities:    []plugins.Capability{plugins.ActionCapability},

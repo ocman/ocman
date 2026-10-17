@@ -8,7 +8,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestRecoveryHooksResolveCurrentServerDependencies(t *testing.T) {
@@ -17,7 +16,7 @@ func TestRecoveryHooksResolveCurrentServerDependencies(t *testing.T) {
 	// server. Their service must resolve the database and adapter on invocation.
 	record, confirm := srv.recordOpencodeReplacement, srv.confirmOpencodeReplacement
 	original := srv.stateDB
-	store, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	store, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

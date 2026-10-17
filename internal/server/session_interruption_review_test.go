@@ -115,7 +115,7 @@ func TestReplacementReviewAbortDuringStopAndRecovery(t *testing.T) {
 		t.Run(fmt.Sprintf("recovery=%t", recovery), func(t *testing.T) {
 			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
-			path := filepath.Join(t.TempDir(), "replacement-state.db")
+			path := testStateAt(t, filepath.Join(t.TempDir(), "replacement-state.db"))
 			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)

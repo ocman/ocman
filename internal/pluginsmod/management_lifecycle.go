@@ -9,8 +9,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// Include scheduling slack beyond the supervisor's handshake deadline.
-const pluginManagementReadyTimeout = plugins.ReadyTimeout + 5*time.Second
+// Include proportional scheduling slack beyond the supervisor's handshake
+// deadline. Defaults remain 15s for the handshake and 20s for management.
+func (m *Module) managementReadyTimeout() time.Duration {
+	ready := m.deps.ReadyTimeout
+	if ready <= 0 {
+		ready = plugins.ReadyTimeout
+	}
+	return ready + ready/3
+}
 
 func (m *Module) stopOnePluginLocked(id string) {
 	if process := m.processes[id]; process != nil {
@@ -40,7 +47,7 @@ func (m *Module) restartPluginLocked(ctx context.Context, id string) error {
 	}
 	// ponytail: readiness polling uses the supervisor's existing synchronized
 	// health; add notifications only if management traffic warrants them.
-	deadline := time.NewTimer(pluginManagementReadyTimeout)
+	deadline := time.NewTimer(m.managementReadyTimeout())
 	defer deadline.Stop()
 	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
@@ -93,7 +100,7 @@ func (m *Module) activatePluginConfigurationLocked(ctx context.Context, p state.
 	}
 	// Rollback must complete even if the HTTP request was cancelled. Allow
 	// shutdown and database work as well as a full replacement handshake.
-	recovery, cancel := context.WithTimeout(context.Background(), 2*pluginManagementReadyTimeout)
+	recovery, cancel := context.WithTimeout(context.Background(), 2*m.managementReadyTimeout())
 	defer cancel()
 	m.stopOnePluginLocked(id)
 	if rollback := m.store.RollbackPluginConfiguration(recovery, id); rollback != nil {

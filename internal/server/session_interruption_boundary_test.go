@@ -138,7 +138,7 @@ func TestStopBoundaryRevalidationFailurePreventsPartialEvidence(t *testing.T) {
 func TestStopBoundaryAdvancingAbortRecovery(t *testing.T) {
 	srv, raw := newInterruptionRawServer(t)
 	defer raw.Close()
-	path := filepath.Join(t.TempDir(), "boundary-state.db")
+	path := testStateAt(t, filepath.Join(t.TempDir(), "boundary-state.db"))
 	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)

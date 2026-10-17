@@ -24,7 +24,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
@@ -51,7 +50,7 @@ type stateRow struct {
 // state.db. Tests register a fakePlatform via the returned registry.
 func newSessionsTestServer(t *testing.T) (*Server, *platforms.Registry) {
 	t.Helper()
-	stDB, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	stDB, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatalf("state.Open: %v", err)
 	}

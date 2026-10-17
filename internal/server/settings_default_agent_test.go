@@ -120,9 +120,21 @@ func TestKnownAgentOptionsStopsAfterStalledCatalog(t *testing.T) {
 	}
 }
 
+// shortenDefaultAgentTargetTimeout keeps stalled-target tests from waiting
+// out the production per-target budget.
+func shortenDefaultAgentTargetTimeout(t *testing.T) {
+	previous := defaultAgentTargetTimeout
+	if previous != 4*time.Second {
+		t.Fatalf("defaultAgentTargetTimeout = %v, want 4s", previous)
+	}
+	t.Cleanup(func() { defaultAgentTargetTimeout = previous })
+	defaultAgentTargetTimeout = 100 * time.Millisecond
+}
+
 func TestKnownAgentOptionsIncludesHealthyCatalogBesideStalledTarget(t *testing.T) {
 	ports, catalog := defaultAgentPorts, defaultAgentCatalog
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	shortenDefaultAgentTargetTimeout(t)
 	defaultAgentPorts = func(context.Context) map[string]string {
 		return map[string]string{"/healthy": "1001", "/stalled": "1002"}
 	}
@@ -153,6 +165,7 @@ func TestKnownAgentOptionsIncludesHealthyCatalogBesideStalledTarget(t *testing.T
 func TestKnownAgentOptionsReadsHealthyTargetBeyondStalledBatch(t *testing.T) {
 	ports, catalog := defaultAgentPorts, defaultAgentCatalog
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
+	shortenDefaultAgentTargetTimeout(t)
 	defaultAgentPorts = func(context.Context) map[string]string {
 		targets := map[string]string{"/z-healthy": "healthy"}
 		for i := range 8 {

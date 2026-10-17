@@ -35,10 +35,12 @@ type Health struct {
 }
 
 type LaunchConfig struct {
-	Candidate Discovery
-	DataDir   string
-	Supported []Capability
-	OnHealth  func(Health)
+	// ReadyTimeout overrides the handshake budget. Zero uses ReadyTimeout.
+	ReadyTimeout time.Duration
+	Candidate    Discovery
+	DataDir      string
+	Supported    []Capability
+	OnHealth     func(Health)
 	// Configuration is JSON delivered on inherited fd 3, never argv or env.
 	Configuration json.RawMessage
 }
@@ -85,7 +87,11 @@ type Process struct {
 }
 
 func StartProcess(ctx context.Context, config LaunchConfig) (*Process, error) {
-	return startProcess(ctx, config, defaultProcessPolicy)
+	policy := defaultProcessPolicy
+	if config.ReadyTimeout > 0 {
+		policy.ready = config.ReadyTimeout
+	}
+	return startProcess(ctx, config, policy)
 }
 
 func startProcess(ctx context.Context, config LaunchConfig, policy processPolicy) (*Process, error) {

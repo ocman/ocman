@@ -16,7 +16,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
@@ -45,7 +44,7 @@ case "$*" in
 esac
 `
 	testutil.WriteScript(t, bd, script)
-	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

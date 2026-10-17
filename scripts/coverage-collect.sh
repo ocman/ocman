@@ -66,8 +66,10 @@ collect_go() {
 		echo "coverage-collect: only ${count} testable Go packages found, expected at least ${MIN_GO_TEST_PACKAGES}; refusing to report an under-measured total" >&2
 		exit 1
 	fi
+	# internal/server runs ~250s locally but 420-515s instrumented on a loaded
+	# runner, so go test's 10m default timeout fails whole runs.
 	# shellcheck disable=SC2086 # word splitting is the point
-	go test $pkgs -count=1 -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
+	go test $pkgs -count=1 -timeout 20m -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
 	# Drop generated files (e.g. *.pb.go) from the profile; the mode
 	# header line (first line) is preserved.
 	grep -vE '\.pb\.go:' coverage/go.raw.out > coverage/go.out

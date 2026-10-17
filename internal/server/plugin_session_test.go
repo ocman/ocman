@@ -26,7 +26,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
 )
 
@@ -148,7 +147,7 @@ func newSessionFixture(t *testing.T) *sessionFixture {
 	t.Helper()
 	pluginDir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", pluginDir)
-	statePath := statetest.Path(t)
+	statePath := testStatePath(t)
 	stateDB, err := state.Open(statePath, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)

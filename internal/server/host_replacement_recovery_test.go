@@ -84,7 +84,7 @@ func TestProductionHostRecoversStoppedReplacementWithoutRuntimeRow(t *testing.T)
 			t.Setenv("OPENCODE_DB", "")
 			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
-			path := filepath.Join(t.TempDir(), "recovery-state.db")
+			path := testStateAt(t, filepath.Join(t.TempDir(), "recovery-state.db"))
 			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)

@@ -9,13 +9,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // The session-changed reply recovery runs under the server lifetime, so a
 // stopped server does no more conversation work.
 func TestBroadcastSessionChangedReplyUsesServerLifetime(t *testing.T) {
-	stateDB, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	stateDB, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,7 +20,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // Ensure the sql import is used (needed for the sqlite3 driver side-effect
@@ -83,7 +82,7 @@ func testServer(t *testing.T) *Server {
 	t.Cleanup(func() { database.Close() })
 
 	// State database
-	stateDB, err := state.Open(statetest.At(t, tmpDir+"/state.db"), ModuleSchemas()...)
+	stateDB, err := state.Open(testStateAt(t, tmpDir+"/state.db"), ModuleSchemas()...)
 	if err != nil {
 		t.Fatalf("opening state db: %v", err)
 	}
@@ -1453,7 +1452,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	stateDB, err := state.Open(statetest.At(t, tmpDir+"/state.db"), ModuleSchemas()...)
+	stateDB, err := state.Open(testStateAt(t, tmpDir+"/state.db"), ModuleSchemas()...)
 	if err != nil {
 		setupDB.Close()
 		t.Fatalf("opening state db: %v", err)

@@ -21,7 +21,6 @@ import (
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // TestDualPlatformKeepsOpenCodeListing is NFR-1's evidence that enabling
@@ -103,7 +102,7 @@ func seedOpenCodeSessions(t *testing.T, path string, n int) *db.DB {
 
 func latencyServer(t *testing.T, dir, name string, database *db.DB) *Server {
 	t.Helper()
-	stateDB, err := state.Open(statetest.At(t, filepath.Join(dir, name+"-state.db")), ModuleSchemas()...)
+	stateDB, err := state.Open(testStateAt(t, filepath.Join(dir, name+"-state.db")), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

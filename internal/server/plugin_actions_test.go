@@ -14,14 +14,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestPluginActionEndpoints(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +217,7 @@ func TestPluginActionEndpoints(t *testing.T) {
 func TestPluginActionProjectPathGrant(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	sdb, err := state.Open(statetest.Path(t), ModuleSchemas()...)
+	sdb, err := state.Open(testStatePath(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,10 @@ import (
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
+// autoArchivePlatformTimeout bounds one platform's inactive-session read so a
+// slow remote cannot starve local maintenance; a variable for tests.
+var autoArchivePlatformTimeout = 10 * time.Second
+
 // autoArchiveTickFn is the per-tick body of runAutoArchiveLoop, lifted
 // to a package-level variable so tests can inject a panicking
 // implementation (FR-11) and assert the loop survives.
@@ -86,7 +90,7 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 		if !adapter.Available(ctx) {
 			continue
 		}
-		rpcCtx, cancelRPC := context.WithTimeout(ctx, 10*time.Second)
+		rpcCtx, cancelRPC := context.WithTimeout(ctx, autoArchivePlatformTimeout)
 		sessions, err := adapter.SessionsInactiveBefore(rpcCtx, cutoff)
 		cancelRPC()
 		if err != nil {

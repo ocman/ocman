@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -41,6 +42,9 @@ type Remotes interface {
 // Deps is what the composition root supplies. Functions are read at call
 // time so options applied after the server is built still take effect.
 type Deps struct {
+	// ReadyTimeout overrides the process handshake budget. Management adds
+	// proportional scheduling slack. Zero keeps the production default.
+	ReadyTimeout time.Duration
 	// Store holds registrations, grants, receipts and the outbox; nil leaves
 	// plugins unavailable.
 	Store *state.DB

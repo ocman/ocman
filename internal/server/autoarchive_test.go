@@ -45,9 +45,15 @@ func TestArchiveRemoteTimeoutDoesNotStarveLocalMaintenance(t *testing.T) {
 	if err := os.Chtimes(file, old, old); err != nil {
 		t.Fatal(err)
 	}
+	if autoArchivePlatformTimeout != 10*time.Second {
+		t.Fatalf("autoArchivePlatformTimeout = %v, want 10s", autoArchivePlatformTimeout)
+	}
+	previous := autoArchivePlatformTimeout
+	t.Cleanup(func() { autoArchivePlatformTimeout = previous })
+	autoArchivePlatformTimeout = 100 * time.Millisecond
 	autoArchiveTickFn(t.Context(), srv)
-	if remote.budget <= 0 || remote.budget > 10*time.Second {
-		t.Errorf("remote RPC budget=%v, want <=10s", remote.budget)
+	if remote.budget <= 0 || remote.budget > autoArchivePlatformTimeout {
+		t.Errorf("remote RPC budget=%v, want <=%v", remote.budget, autoArchivePlatformTimeout)
 	}
 	archived, err := srv.stateDB.ArchivedProjects(t.Context())
 	if err != nil {

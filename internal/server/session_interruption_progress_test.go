@@ -56,7 +56,7 @@ func TestConfirmationDrainsAllPagesWithoutCountCutoff(t *testing.T) {
 
 func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
-	path := filepath.Join(t.TempDir(), "membership-progress.db")
+	path := testStateAt(t, filepath.Join(t.TempDir(), "membership-progress.db"))
 	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cancellation", true: "deadline"}[deadline], func(t *testing.T) {
 			srv, reg := newInterruptionTestServer(t)
-			path := filepath.Join(t.TempDir(), "progress-state.db")
+			path := testStateAt(t, filepath.Join(t.TempDir(), "progress-state.db"))
 			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)

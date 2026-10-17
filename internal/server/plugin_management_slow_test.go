@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
@@ -12,7 +13,9 @@ import (
 // The marker delays only valid serve handshakes, not discovery or bad config.
 func slowPluginManagementFixture(t *testing.T) *pluginManagementTest {
 	t.Helper()
-	f := newPluginManagementTest(t)
+	// Scale all readiness budgets and fake delays by 10, preserving the
+	// slow-start/rollback relationships without production-length sleeps.
+	f := newPluginManagementTestWithTimeout(t, 1500*time.Millisecond)
 	path := filepath.Join(f.dir, "ocman-plugin-management")
 	script, err := os.ReadFile(path)
 	if err != nil {
@@ -39,7 +42,7 @@ func delayPluginManagementStart(t *testing.T, f *pluginManagementTest, seconds s
 
 func TestPluginManagementToleratesSlowStart(t *testing.T) {
 	f := slowPluginManagementFixture(t)
-	delayPluginManagementStart(t, f, "6")
+	delayPluginManagementStart(t, f, "0.6")
 	base := "/" + f.description.ID
 	f.call(t, "POST", base+"/enable", f.approval(t), 200)
 	for _, action := range []string{"restart", "retry", "grants", "configuration"} {
@@ -61,7 +64,7 @@ func TestPluginManagementToleratesSlowRollback(t *testing.T) {
 	f := slowPluginManagementFixture(t)
 	base := "/" + f.description.ID
 	f.call(t, "POST", base+"/enable", f.approval(t), 200)
-	delayPluginManagementStart(t, f, "12")
+	delayPluginManagementStart(t, f, "1.2")
 	f.call(t, "POST", base+"/configuration", `{"values":{"mode":"bad"},"secrets":{"token":"candidate"}}`, 503)
 	p, err := f.s.stateDB.GetPlugin(t.Context(), f.description.ID)
 	if err != nil || string(p.Configuration.Values["mode"]) != `"good"` || p.Health.Status != "ready" {

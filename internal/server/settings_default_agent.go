@@ -24,6 +24,10 @@ var defaultAgentCatalog = opencode.AgentNames
 var defaultAgentPorts func(context.Context) map[string]string
 var defaultAgentPort func(context.Context, string) string
 
+// defaultAgentTargetTimeout bounds one target's catalog read inside the
+// overall lookup budget; a variable so tests need not wait it out.
+var defaultAgentTargetTimeout = 4 * time.Second
+
 func knownAgentOptions(ctx context.Context, disc *opencode.Discovery, directories []string) []string {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -58,7 +62,7 @@ func knownAgentOptions(ctx context.Context, disc *opencode.Discovery, directorie
 				if ctx.Err() != nil {
 					return
 				}
-				targetCtx, cancelTarget := context.WithTimeout(ctx, 4*time.Second)
+				targetCtx, cancelTarget := context.WithTimeout(ctx, defaultAgentTargetTimeout)
 				agents := defaultAgentCatalog(targetCtx, targets[directory], directory)
 				cancelTarget()
 				mu.Lock()
