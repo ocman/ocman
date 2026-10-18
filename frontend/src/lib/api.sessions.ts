@@ -5,6 +5,8 @@ import type { AgentInfo, NewSessionTarget, PrepareSessionResponse, StartSessionR
   SharedConversation, PermissionRequest, QuestionRequest } from './api.types';
 
 export const sessionApi = {
+  stopBackgroundTask: (sessionId: string, taskId: string, platform: string) =>
+    postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/background/${encodeURIComponent(taskId)}/stop${queryString({ platform })}`, undefined, { parseJSON: false }),
   runningSessionCount: (signal?: AbortSignal) =>
     fetchJSON<{ count: number }>('/api/sessions?view=running-count', signal),
   sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) =>

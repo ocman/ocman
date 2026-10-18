@@ -69,11 +69,12 @@ type SessionWarning struct {
 // OpenCode's /agent endpoint with its "build"/"plan"/subagent roles.
 // Platforms with no such concept report false.
 type Capabilities struct {
-	Composer          bool `json:"composer"`
-	RespondPermission bool `json:"respondPermission"`
-	RespondQuestion   bool `json:"respondQuestion"`
-	Abort             bool `json:"abort"`
-	Compact           bool `json:"compact"`
+	Composer           bool `json:"composer"`
+	RespondPermission  bool `json:"respondPermission"`
+	RespondQuestion    bool `json:"respondQuestion"`
+	Abort              bool `json:"abort"`
+	BackgroundTaskStop bool `json:"backgroundTaskStop"`
+	Compact            bool `json:"compact"`
 	// Fork reports whether the adapter can branch a session into a new
 	// child session (Platform.ForkSession). Surfaced as caps.fork.
 	Fork bool `json:"fork"`

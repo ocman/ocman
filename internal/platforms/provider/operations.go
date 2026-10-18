@@ -82,6 +82,9 @@ func (a *Adapter) RejectQuestion(ctx context.Context, req platforms.RejectQuesti
 	return err
 }
 func (a *Adapter) Abort(ctx context.Context, req platforms.AbortRequest) error {
+	if req.TaskID != "" && !a.Capabilities().BackgroundTaskStop {
+		return platforms.ErrUnsupported
+	}
 	return a.call(ctx, a.Capabilities().Abort, "POST", sessionPath(req.SessionID, "/abort"), req, nil)
 }
 func (a *Adapter) RenameSession(ctx context.Context, req platforms.RenameSessionRequest) error {

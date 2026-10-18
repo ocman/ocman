@@ -162,6 +162,7 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
         ...action.view,
         // REST has no task ledger and must not erase a newer live observation.
         backgroundTaskCount: state.sessionId === action.view.sessionId ? state.backgroundTaskCount : 0,
+        backgroundTasks: state.sessionId === action.view.sessionId ? state.backgroundTasks : [],
         _deltaOwnedFields: action.view._deltaOwnedFields,
         _refetchRequested: false,
         // Monotonic, so fences taken before the replacement stay comparable.

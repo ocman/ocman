@@ -50,6 +50,7 @@ type proc struct {
 	initialized    bool            // under controlMu
 	state          string          // Claude's session_state_changed; empty on older CLIs
 	tasks          map[string]bool // delegated agents/workflows that can owe another turn
+	taskDetails    map[string]string
 	deferredResult []byte
 	deferredGen    uint64
 	runCeiling     *time.Timer

@@ -18,6 +18,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -119,25 +120,26 @@ func (a *Adapter) Available(context.Context) bool {
 // feature ocman exposes today.
 func (a *Adapter) Capabilities() platforms.Capabilities {
 	return platforms.Capabilities{
-		Composer:          true,
-		RespondPermission: true,
-		RespondQuestion:   true,
-		Abort:             true,
-		Compact:           true,
-		Fork:              true,
-		ForkAtMessage:     true,
-		Move:              true,
-		Events:            true,
-		AgentCatalog:      true,
-		ModelCatalog:      true,
-		SlashCommands:     true,
-		ShellExec:         true,
-		FileChanges:       true,
-		SessionInfo:       true,
-		AutoApprove:       true,
-		PermissionRules:   true,
-		Revert:            true,
-		RuntimeRestart:    true,
+		Composer:           true,
+		RespondPermission:  true,
+		RespondQuestion:    true,
+		Abort:              true,
+		BackgroundTaskStop: ocv2.InstalledV2(),
+		Compact:            true,
+		Fork:               true,
+		ForkAtMessage:      true,
+		Move:               true,
+		Events:             true,
+		AgentCatalog:       true,
+		ModelCatalog:       true,
+		SlashCommands:      true,
+		ShellExec:          true,
+		FileChanges:        true,
+		SessionInfo:        true,
+		AutoApprove:        true,
+		PermissionRules:    true,
+		Revert:             true,
+		RuntimeRestart:     true,
 		// ocman launches and manages the OpenCode instance for each
 		// project itself (EnsureProjectOpencode), so no live connection
 		// means the managed instance isn't running yet.

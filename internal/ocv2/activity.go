@@ -13,6 +13,7 @@ import (
 type activity struct {
 	foreground map[string]any
 	shells     map[string]string // shell ID -> session ID
+	commands   map[string]string
 }
 
 func (a *activity) backgroundCounts() map[string]int {
@@ -26,6 +27,7 @@ func (a *activity) backgroundCounts() map[string]int {
 func (t *translator) emitBackgroundCount(sessionID, dir string) error {
 	return t.emit(sessionID, dir, "ocman.session.background", map[string]any{
 		"count": t.activity.backgroundCounts()[sessionID],
+		"tasks": t.activity.backgroundDetails()[sessionID],
 	})
 }
 
@@ -47,6 +49,10 @@ func (a *activity) addShell(info map[string]any) string {
 		return ""
 	}
 	a.shells[id] = owner
+	if a.commands == nil {
+		a.commands = map[string]string{}
+	}
+	a.commands[id] = str(info, "command")
 	return owner
 }
 

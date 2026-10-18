@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { initialSessionView, reduceSessionView } from './sessionReducer';
 
 describe('background task counts', () => {
+  it('replaces live task details even when the count is unchanged, validates rows and clears old details', () => {
+    const tasks = [{ id: 'one', description: 'pnpm test' }];
+    let view = reduceSessionView(initialSessionView('s1'), { type: 'sse', event: {
+      type: 'ocman.session.background', properties: { sessionID: 's1', count: 1, tasks: [...tasks, null, {}, tasks[0]] },
+    } });
+    expect(view.backgroundTasks).toEqual(tasks);
+    for (const mode of ['replace', 'reconcile'] as const) {
+      expect(reduceSessionView(view, { type: 'load', view: initialSessionView('s1'), mode }).backgroundTasks).toEqual(tasks);
+    }
+    expect(reduceSessionView(view, { type: 'load', view: initialSessionView('s2') }).backgroundTasks).toEqual([]);
+    view = reduceSessionView(view, { type: 'sse', event: { type: 'server.connected', properties: {
+      backgroundTasks: { s1: 1 }, backgroundTaskDetails: { s1: [{ id: 'two', description: 'go test' }] },
+    } } });
+    expect(view.backgroundTasks).toEqual([{ id: 'two', description: 'go test' }]);
+    expect(reduceSessionView(view, { type: 'sse', event: { type: 'session.idle' } }).backgroundTasks).toEqual([]);
+    expect(reduceSessionView(view, event(1)).backgroundTasks).toEqual([]);
+  });
   const event = (count: unknown, sessionID = 's1') => ({
     type: 'sse' as const,
     event: { type: 'ocman.session.background', properties: { sessionID, count } },

@@ -17,11 +17,12 @@ import (
 // An interrupt kills them, so one that never ends is ended by Stop.
 func (l *live) sdkSystem(p *proc, raw []byte) {
 	var event struct {
-		Subtype  string `json:"subtype"`
-		State    string `json:"state"`
-		TaskID   string `json:"task_id"`
-		TaskType string `json:"task_type"`
-		Patch    struct {
+		Subtype     string `json:"subtype"`
+		State       string `json:"state"`
+		TaskID      string `json:"task_id"`
+		TaskType    string `json:"task_type"`
+		Description string `json:"description"`
+		Patch       struct {
 			Status string `json:"status"`
 		} `json:"patch"`
 	}
@@ -44,6 +45,10 @@ func (l *live) sdkSystem(p *proc, raw []byte) {
 				p.tasks = map[string]bool{}
 			}
 			p.tasks[event.TaskID] = true
+			if p.taskDetails == nil {
+				p.taskDetails = map[string]string{}
+			}
+			p.taskDetails[event.TaskID] = event.Description
 		}
 	case "task_notification":
 		delete(p.tasks, event.TaskID)
@@ -55,6 +60,11 @@ func (l *live) sdkSystem(p *proc, raw []byte) {
 	}
 	l.armRunCeilingLocked(p)
 	count := len(p.tasks)
+	for id := range p.taskDetails {
+		if !p.tasks[id] {
+			delete(p.taskDetails, id)
+		}
+	}
 	l.mu.Unlock()
 	if count != previousCount {
 		l.publishBackgroundCount(p, count)

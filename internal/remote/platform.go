@@ -301,6 +301,9 @@ func (p *remotePlatform) CancelNativeQueued(ctx context.Context, req platforms.C
 }
 
 func (p *remotePlatform) Abort(ctx context.Context, req platforms.AbortRequest) error {
+	if req.TaskID != "" && !p.Capabilities().BackgroundTaskStop {
+		return platforms.ErrUnsupported
+	}
 	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
 		_, err := c.Abort(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
 		return err

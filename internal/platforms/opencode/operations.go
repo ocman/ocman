@@ -597,6 +597,9 @@ func (a *Adapter) RejectQuestion(ctx context.Context, req platforms.RejectQuesti
 
 // Abort cancels the in-flight response for a session.
 func (a *Adapter) Abort(ctx context.Context, req platforms.AbortRequest) error {
+	if req.TaskID != "" {
+		return a.stopBackgroundTask(ctx, req)
+	}
 	port, _, err := a.resolvePort(req.SessionID)
 	if err != nil {
 		return err

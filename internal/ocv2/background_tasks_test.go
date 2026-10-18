@@ -53,5 +53,51 @@ func TestBackgroundTaskReconnectSnapshot(t *testing.T) {
 	f.json("GET /api/shell", http.StatusOK, `{"data":[{"id":"one","status":"running","metadata":{"sessionID":"s1"}},{"id":"two","status":"running","metadata":{"sessionID":"s1"}},{"id":"unowned","status":"running"}]}`)
 	f.events = []string{fakeEv("server.connected", 1, "", `{}`)}
 	events := cmpStream(t, f.URL+"/event")
-	cmpJSON(t, "snapshot", obj(events[0], "properties"), `{"backgroundTasks":{"s1":2}}`)
+	cmpJSON(t, "snapshot", obj(events[0], "properties"), `{"backgroundTasks":{"s1":2},"backgroundTaskDetails":{"s1":[{"id":"one","description":""},{"id":"two","description":""}]}}`)
+}
+
+func TestStopBackgroundTaskOwnership(t *testing.T) {
+	defer SetInstalledV2(true)()
+	for _, tc := range []struct {
+		name, owner, status string
+		want                int
+	}{
+		{"owned", "s1", "running", http.StatusNoContent},
+		{"other session", "s2", "running", http.StatusNotFound},
+		{"unowned", "", "running", http.StatusNotFound},
+		{"exited", "s1", "exited", http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := fakeServer(t)
+			f.on("GET /api/shell", func(call fakeCall) (int, any) {
+				if call.Query.Get("location[directory]") != "/repo" {
+					t.Fatal(call.Query)
+				}
+				return 200, map[string]any{"data": []any{map[string]any{"id": "one", "status": tc.status, "metadata": map[string]any{"sessionID": tc.owner}}}}
+			})
+			f.json("DELETE /api/shell/one", http.StatusNoContent, "")
+			status, _ := cmpDo(t, "POST", f.URL+"/session/s1/background/one/stop?directory=/repo", nil, "")
+			if status != tc.want {
+				t.Fatalf("status=%d", status)
+			}
+			deletes := f.find("DELETE /api/shell/one")
+			if tc.want == http.StatusNoContent {
+				if len(deletes) != 1 || deletes[0].Query.Get("location[directory]") != "/repo" {
+					t.Fatal(deletes)
+				}
+			} else if len(deletes) != 0 {
+				t.Fatal("stopped another session's task")
+			}
+		})
+	}
+}
+
+func TestStopBackgroundTaskUpstreamFailure(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("GET /api/shell", http.StatusServiceUnavailable, `{}`)
+	status, _ := cmpDo(t, "POST", f.URL+"/session/s1/background/one/stop", nil, "")
+	if status != http.StatusServiceUnavailable {
+		t.Fatal(status)
+	}
 }

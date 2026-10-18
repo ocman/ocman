@@ -106,7 +106,7 @@ func newSupervisor(ctx context.Context, opts Options, spool string) (*providersu
 			CLIVersion:      version,
 			Capabilities: providerprotocol.Capabilities{Rename: true, Account: true, Hooks: true, Capabilities: platforms.Capabilities{
 				// AgentCatalog stays false: the running Claude process cannot switch its main agent.
-				Composer: true, Abort: true, Compact: true, Fork: true, Events: true, SlashCommands: true, ModelCatalog: true,
+				Composer: true, Abort: true, BackgroundTaskStop: true, Compact: true, Fork: true, Events: true, SlashCommands: true, ModelCatalog: true,
 				RespondPermission: true, RespondQuestion: true, PermissionRules: true,
 				// ocman's judge decides Claude prompts too (FR-5); no revert (FR-8).
 				AutoApprove: true, PushPrompts: true, AutoTitle: true}},

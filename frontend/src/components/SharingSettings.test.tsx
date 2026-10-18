@@ -67,7 +67,7 @@ describe('SharingSettings', () => {
     seed(true, [], { relayUrl: 'http://localhost:8231', relaySource: 'flag' });
     renderUI();
     const value = await screen.findByTestId('sharing-relay-url');
-    expect(value).toHaveTextContent('http://localhost:8231');
+    await waitFor(() => expect(value).toHaveTextContent('http://localhost:8231'));
     expect(screen.getByText(/-relay-url flag/)).toBeInTheDocument();
   });
 
@@ -75,7 +75,7 @@ describe('SharingSettings', () => {
     seed(true, [], { relayUrl: 'https://share.example.com', relaySource: 'env' });
     renderUI();
     const value = await screen.findByTestId('sharing-relay-url');
-    expect(value).toHaveTextContent('https://share.example.com');
+    await waitFor(() => expect(value).toHaveTextContent('https://share.example.com'));
     expect(screen.getByText(/OCMAN_RELAY_URL environment variable/)).toBeInTheDocument();
   });
 

@@ -184,6 +184,9 @@ func (s *Service) Abort(ctx context.Context, platformID string, req platforms.Ab
 	if err != nil {
 		return err
 	}
+	if req.TaskID != "" && !p.Capabilities().BackgroundTaskStop {
+		return platforms.ErrUnsupported
+	}
 	return p.Abort(ctx, req)
 }
 

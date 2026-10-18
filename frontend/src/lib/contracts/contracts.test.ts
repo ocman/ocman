@@ -34,7 +34,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   Message: flags<Message>()({ id: false, sessionId: false, timeCreated: false, data: false }),
   Part: flags<Part>()({ id: false, messageId: false, sessionId: false, timeCreated: true, data: false }),
   PlatformCapabilities: flags<PlatformCapabilities>()({
-    composer: false, respondPermission: false, respondQuestion: false, abort: false, compact: false, fork: false,
+    composer: false, respondPermission: false, respondQuestion: false, abort: false, backgroundTaskStop: true, compact: false, fork: false,
     forkAtMessage: true, move: false, events: false, agentCatalog: false, modelCatalog: false, slashCommands: false,
     shellExec: false, fileChanges: false, sessionInfo: false, liveConnectionHint: true, autoApprove: false,
     permissionRules: false, exactPatterns: true, revert: true, runtimeRestart: true, pushPrompts: true, autoTitle: true,

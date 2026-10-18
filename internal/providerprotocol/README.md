@@ -37,7 +37,7 @@ prompts to the user.
 | POST /sessions/{id}/rename | `RenameSessionRequest` |
 | POST /sessions/{id}/auto-title | `RenameSessionRequest`, only changes an owned session with no custom title; requires `autoTitle` |
 | POST /sessions/{id}/compact | `CompactRequest` |
-| POST /sessions/{id}/abort | `AbortRequest` |
+| POST /sessions/{id}/abort | `AbortRequest`, optional `TaskID` stops only that background task and requires `backgroundTaskStop` |
 | POST /sessions/{id}/send | `SendMessageRequest` |
 | POST /sessions/{id}/hold | `SendMessageRequest`, Delivery="queue" |
 | GET /sessions/{id}/held | `[]NativeQueuedMessage`, oldest first |

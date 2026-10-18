@@ -28,6 +28,7 @@ export interface SessionView {
   session: SessionMetadata | null;
   /** Live background work reported by the backend, never inferred from messages. */
   backgroundTaskCount?: number;
+  backgroundTasks?: import('./sessionBackgroundTasks').BackgroundTask[];
   /** False for cached metadata until REST or a status-bearing live event confirms it. */
   _statusFresh?: boolean;
   /** Bumped by every live status observation. A refetch started at an older

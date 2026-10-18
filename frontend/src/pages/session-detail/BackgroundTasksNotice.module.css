@@ -1,0 +1,7 @@
+.content { width: min(348px, calc(100vw - 48px)); max-height: min(420px, 60vh); overflow-y: auto; padding: 12px; }
+.title { margin: 0 0 12px; font-size: 13px; color: var(--text); }
+.tasks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.task { display: flex; align-items: center; gap: 12px; }
+.description { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-conversation-mono); color: var(--text); font-size: 12px; }
+.content p { margin: 8px 0 0; font-size: 12px; color: var(--text-dim); }
+.content [role="alert"] { color: var(--danger); }

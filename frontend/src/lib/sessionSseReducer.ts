@@ -55,9 +55,10 @@ export function reduceSseEvent(state: SessionView, event: SseEvent): SessionView
   const props = event.properties || {};
   switch (event.type) {
     case 'server.connected':
-      return reduceBackgroundTaskCount(state, backgroundSnapshotCount(props.backgroundTasks, state.sessionId));
+      return reduceBackgroundTaskCount(state, backgroundSnapshotCount(props.backgroundTasks, state.sessionId),
+        (props.backgroundTaskDetails as Record<string, unknown> | undefined)?.[state.sessionId]);
     case 'ocman.session.background':
-      return reduceBackgroundTaskCount(state, props.count);
+      return reduceBackgroundTaskCount(state, props.count, props.tasks);
     case 'message.created':
     case 'message.updated':
       return reduceMessageSnapshot(state, event);
@@ -307,7 +308,7 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
       ...(notice ? { notice } : clearRetryNotice ? { notice: undefined } : {}),
     } : state.session,
     _refetchRequested: refetch || state._refetchRequested,
-    ...(refetch ? { backgroundTaskCount: 0 } : {}),
+    ...(refetch ? { backgroundTaskCount: 0, backgroundTasks: [] } : {}),
     _statusFresh: true,
     _statusRevision: (state._statusRevision ?? 0) + 1,
   };
@@ -322,6 +323,7 @@ function reduceSessionIdle(state: SessionView): SessionView {
     ...state,
     session: nextSession,
     backgroundTaskCount: 0,
+    backgroundTasks: [],
     _refetchRequested: true,
     _statusFresh: true,
     _statusRevision: (state._statusRevision ?? 0) + 1,

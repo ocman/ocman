@@ -897,7 +897,8 @@ flowchart TD
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
     Hub -->|ocman.settings.changed: clear settings cache| Stores
-    Hub -->|background task snapshots + count changes| Stores
+    Hub -->|background task counts + task detail snapshots| Stores
+    Comp -->|capability-gated individual task stop| API
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
@@ -916,10 +917,20 @@ flowchart TD
   session right-panel tabs still keep their own lists.
 - **Background task notice.** OpenCode v2's session-owned running shells and
   managed Claude Code's tracked background tasks publish absolute counts through
-  `ocman.session.background`. The composer shows the count only above zero.
+  `ocman.session.background`, including live task IDs and descriptions. The
+  composer shows the count only above zero. Hover, focus or click opens the
+  shared popover with individual Stop buttons gated by `backgroundTaskStop`.
   OpenCode restores counts in `server.connected.backgroundTasks`; Claude includes
   the count in its leased session snapshot. REST refreshes preserve live counts,
-  and the idle edge clears them. Counts are not inferred from transcript tools.
+  and the idle edge clears them. OpenCode also restores descriptions through
+  `server.connected.backgroundTaskDetails`. Counts are not inferred from transcript tools.
+  Task stops go through sessionlifecycle and sessionsvc as task-scoped Abort
+  requests, preserving the compound platform owner over gRPC. Every adapter
+  boundary rejects task stops without the capability, including older backends.
+  OpenCode verifies shell ownership before deleting that shell; Claude verifies
+  the live task ledger before sending the SDK `stop_task` control request.
+  Neither falls back to aborting the whole session, and completion events remain
+  authoritative for removing rows.
 - **Shared controls.** `Control` provides buttons, button groups, text inputs,
   textareas, search inputs, and selects with native form semantics and shared
   focus, disabled, and invalid styles. `IconButton`, `RefreshButton`, and

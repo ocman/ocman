@@ -125,6 +125,8 @@ type RejectQuestionRequest struct {
 // AbortRequest aborts an in-flight session response.
 type AbortRequest struct {
 	SessionID string
+	// TaskID limits cancellation to one background task. Never fall back to aborting the session.
+	TaskID string `json:",omitempty"`
 }
 
 // DisposeSessionRequest permanently removes a session that must not remain usable.

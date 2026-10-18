@@ -73,6 +73,7 @@ func (m *Module) Routes(r module.Router) {
 		{"POST /api/session/{id}/command", m.HandleSessionCommand},
 		{"POST /api/session/{id}/shell", m.HandleSessionShell},
 		{"POST /api/session/{id}/abort", m.HandleSessionAbort},
+		{"POST /api/session/{id}/background/{taskID}/stop", m.HandleBackgroundTaskStop},
 		{"POST /api/session/{id}/revert", m.HandleSessionRevert},
 		{"POST /api/session/{id}/unrevert", m.HandleSessionUnrevert},
 		{"POST /api/session/{id}/compact", m.HandleSessionCompact},

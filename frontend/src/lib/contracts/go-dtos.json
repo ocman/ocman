@@ -96,6 +96,10 @@
         "omitempty": false
       },
       {
+        "name": "backgroundTaskStop",
+        "omitempty": false
+      },
+      {
         "name": "compact",
         "omitempty": false
       },
