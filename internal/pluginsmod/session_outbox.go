@@ -93,7 +93,11 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 	}
 	// The message ID keys the append, so a repeated idle edge for the same
 	// completed turn adds no second delivery.
-	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, sessionID+":"+messageID, text)
+	usage := completedUsage(detail.Messages, messageID)
+	if detail.TotalMessages > len(detail.Messages) {
+		usage = nil
+	}
+	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, sessionID+":"+messageID, text, usage)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": pluginID, "session_id": sessionID}).
 			Error("recording completed session turn for delivery")
@@ -253,7 +257,7 @@ func (m *Module) deliverSessionCompletion(ctx context.Context, completion Plugin
 		return
 	}
 	err = m.SessionBroker().Completed(ctx, completion.PluginID, sessionOutboxOperation(completion.ID),
-		plugins.SessionCompleted{SessionID: completion.SessionID, Text: completion.Text})
+		plugins.SessionCompleted{SessionID: completion.SessionID, Text: completion.Text, Usage: completion.Usage})
 	// Settle an admitted attempt durably even if shutdown cancelled the call.
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()

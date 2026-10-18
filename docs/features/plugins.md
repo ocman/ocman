@@ -342,6 +342,22 @@ address on your behalf — the value only shapes the links it writes.
 
 ## Authoring session.v1
 
+The session 1.1 extension supports project-scoped model work without a required
+global project setting. Declare `ProjectSessionCapability` and request both
+`session.run` and `session.project`. The latter explicitly permits runs in this
+owner's registered projects. Supply an opaque `projectId`; only the executing
+owner resolves it, and unknown or remote-only projects fail closed. Empty model
+and agent selections use ocman's defaults and existing provider authentication.
+Plugins need no separate provider keys.
+
+Set `noTools: true` for model-only prompts. Ocman pins all tools to deny before
+queueing, regardless of a selected permission profile. Completed replies include
+observed token counts and cost when available, durably retained with the reply.
+Absent usage means unknown, not a zero-dollar call. Consumers enforcing dollar
+budgets must stop rather than assume unknown usage was free.
+
+The original session 1.0 contract remains supported:
+
 Advertise capability `{"name":"session","version":{"major":1,"minor":0}}`. A
 session plugin must use execution scope `owner`, request the `session.run`
 grant, and declare a required, non-secret scalar string `project` setting

@@ -56,6 +56,7 @@ func (m *Module) buildSessions() {
 			}
 			return p.Call(ctx, call)
 		})
+	m.sessionBroker.ResolveProject = m.deps.ProjectDirectory
 	m.sessionJobs = worker.NewKeyed(m.runSessionJob, func(j sessionJob) string { return j.pluginID })
 	m.sessionDeliveries = worker.NewKeyed(func(c PluginSessionCompletion) {
 		runWithRecover("plugin-session-delivery", func() { m.DeliverSessionCompletion(c) })
@@ -153,6 +154,9 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 			return "", plugins.ErrUnavailable
 		}
 		rules = resolved
+	}
+	if params.NoTools {
+		rules = []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "deny"}}
 	}
 	host := m.deps.Local()
 	const platformID = "opencode"

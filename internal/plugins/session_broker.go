@@ -39,9 +39,10 @@ type SessionStart func(ctx context.Context, pluginID string, config SessionConfi
 // only way a completed turn reaches a plugin. It holds no state: a run either
 // authorizes into the configured project or is denied.
 type SessionBroker struct {
-	authorize SessionAuthorization
-	start     SessionStart
-	call      ActionCall
+	ResolveProject func(context.Context, string) (string, error)
+	authorize      SessionAuthorization
+	start          SessionStart
+	call           ActionCall
 }
 
 func NewSessionBroker(authorize SessionAuthorization, start SessionStart, call ActionCall) *SessionBroker {
@@ -59,6 +60,9 @@ func SessionAllowed(d Description, grants []string) error {
 	if !slices.Contains(grants, SessionRunGrant) {
 		return &WireError{Category: ErrorPermissionDenied}
 	}
+	if projectSessionDeclared(d) && slices.Contains(d.RequestedGrants, SessionProjectGrant) && !slices.Contains(grants, SessionProjectGrant) {
+		return &WireError{Category: ErrorPermissionDenied}
+	}
 	return nil
 }
 
@@ -72,7 +76,7 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if err := ctx.Err(); err != nil {
 		return SessionRunResult{}, err
 	}
-	if call.Capability != SessionCapability.Name || call.Version != SessionCapability.Version || call.Method != SessionRunMethod {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > 1 || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
@@ -88,6 +92,11 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	var directory string
 	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, admitted SessionConfig) error {
 		if err := SessionAllowed(d, grants); err != nil {
+			return err
+		}
+		var err error
+		admitted, err = b.project(ctx, d, grants, admitted, params, call.Version)
+		if err != nil {
 			return err
 		}
 		if admitted.Project == "" {
@@ -132,8 +141,12 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 			return err
 		}
 		deadline, _ := ctx.Deadline()
+		version := SessionCapability.Version
+		if projectSessionDeclared(d) {
+			version = ProjectSessionCapability.Version
+		}
 		replies, err = b.call(ctx, pluginID, Call{
-			OperationID: operationID, Capability: SessionCapability.Name, Version: SessionCapability.Version,
+			OperationID: operationID, Capability: SessionCapability.Name, Version: version,
 			Method: SessionCompletedMethod, DeadlineUnixMS: deadline.UnixMilli(), Params: params,
 		})
 		return err

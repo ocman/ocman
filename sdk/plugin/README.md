@@ -70,6 +70,14 @@ See
 
 ## Conformance tests for external plugins
 
+For project-scoped model work, declare `ProjectSessionCapability`, request
+`SessionRunGrant` and `SessionProjectGrant`, and use `RunWithRequests`.
+`NewSessionRun` selects session 1.1 when `ProjectID` or `NoTools` is set.
+The owner resolves the project ID; no global project setting or provider keys
+are needed. Empty model/agent selections use the host defaults. `NoTools` pins
+all-tools-denied rules before queueing. Handle `SessionCompleted.Usage` as
+optional observed consumption, never assume absent metadata means zero cost.
+
 Import `github.com/NoUseFreak/ocman/sdk/plugin/conformance` from a Go test package.
 The executable being tested can be written in any language. Supply deterministic,
 side-effect-free calls through `conformance.Cases`:

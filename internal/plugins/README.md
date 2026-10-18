@@ -597,6 +597,28 @@ runs visibly instead of dropping owed completions. The `(platformId, sessionId)`
 delivery. Permission prompts remain in ocman and are never exposed to the
 plugin.
 
+### session 1.1 project-scoped extension
+
+Hosts also negotiate `session` 1.1. A plugin declaring
+`ProjectSessionCapability` and requesting both `session.run` and
+`session.project` does not need a global `project` setting. The additional grant
+explicitly permits sessions in this owner's registered projects. A run supplies
+an opaque `projectId`; the executing owner resolves it through its local project
+database, never through the hub, a caller directory, or remote fallback. Unknown
+projects, absent resolvers and revoked grants fail closed. Existing session 1.0
+plugins retain their one configured project and require no changes.
+
+`noTools: true` pins an all-tools-denied permission rule before queueing the
+prompt. It overrides any selected profile, rather than allowing that profile to
+widen model-only work. Empty agent/model selections preserve host defaults.
+
+Completed replies optionally contain `usage` with `promptTokens`,
+`completionTokens` and `costUsd`. Counts include reported cache and reasoning
+tokens. Missing usage means unknown consumption, not free inference. The
+metadata is stored atomically with the completion in the durable outbox and
+retained unchanged across retries and restarts. Plugins with dollar limits must
+not infer a zero charge from absent metadata.
+
 ## pane.v1
 
 The `pane` capability, major 1 minor 0, contributes read-only project trees to

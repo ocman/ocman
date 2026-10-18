@@ -3,10 +3,12 @@ package pluginsmod
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -53,13 +55,14 @@ func migratePluginSession(tx *sql.Tx) error {
 // acknowledgment. Group is its ordering group: completions for one session are
 // strictly ordered by Sequence, and unrelated sessions never block each other.
 type PluginSessionCompletion struct {
-	ID         int64  `json:"id"`
-	Sequence   int64  `json:"sequence"`
-	PluginID   string `json:"pluginId"`
-	PlatformID string `json:"platformId"`
-	SessionID  string `json:"sessionId"`
-	Text       string `json:"text"`
-	Attempts   int    `json:"attempts"`
+	Usage      *plugins.SessionUsage `json:"usage,omitempty"`
+	ID         int64                 `json:"id"`
+	Sequence   int64                 `json:"sequence"`
+	PluginID   string                `json:"pluginId"`
+	PlatformID string                `json:"platformId"`
+	SessionID  string                `json:"sessionId"`
+	Text       string                `json:"text"`
+	Attempts   int                   `json:"attempts"`
 }
 
 // Group keys the ordering group: one started session.
@@ -139,15 +142,23 @@ func (d *Store) HasPluginSessionCompletion(ctx context.Context, pluginID, operat
 // repeated idle edge for the same turn appends nothing and returns 0, which is
 // what keeps a duplicate out of a plugin. An append over the caps is still
 // accepted, because refusing a turn that already ran would lose it.
-func (d *Store) AppendPluginSessionCompletion(ctx context.Context, pluginID, platformID, sessionID, operationID, text string) (int64, error) {
+func (d *Store) AppendPluginSessionCompletion(ctx context.Context, pluginID, platformID, sessionID, operationID, text string, usage ...*plugins.SessionUsage) (int64, error) {
 	if pluginID == "" || platformID == "" || sessionID == "" || operationID == "" || text == "" {
 		return 0, state.ErrPluginInvalid
 	}
 	now := time.Now().UnixMilli()
+	var metadata any
+	if len(usage) > 0 && usage[0] != nil {
+		if usage[0].Validate() != nil {
+			return 0, state.ErrPluginInvalid
+		}
+		encoded, _ := json.Marshal(usage[0])
+		metadata = string(encoded)
+	}
 	result, err := d.db.ExecContext(ctx, `INSERT INTO plugin_session_outbox
-		(plugin_id,platform_id,session_id,operation_id,text,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
-		pluginID, platformID, sessionID, operationID, text, now, now)
+		(plugin_id,platform_id,session_id,operation_id,text,created_at,updated_at,usage_json)
+		VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+		pluginID, platformID, sessionID, operationID, text, now, now, metadata)
 	if err != nil {
 		return 0, state.ErrPluginState
 	}
@@ -177,7 +188,7 @@ func (d *Store) sessionCompletionPage(ctx context.Context, after int64, limit in
 	if limit <= 0 {
 		return nil, nil
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT id,plugin_id,platform_id,session_id,text,attempts
+	rows, err := d.db.QueryContext(ctx, `SELECT id,plugin_id,platform_id,session_id,text,attempts,usage_json
 		FROM plugin_session_outbox o
 		WHERE o.status='pending' AND o.next_attempt_at<=? AND o.id>?
 		  AND o.id=(SELECT MIN(h.id) FROM plugin_session_outbox h
@@ -191,7 +202,11 @@ func (d *Store) sessionCompletionPage(ctx context.Context, after int64, limit in
 	var claimed []PluginSessionCompletion
 	for rows.Next() {
 		var item PluginSessionCompletion
-		if err := rows.Scan(&item.ID, &item.PluginID, &item.PlatformID, &item.SessionID, &item.Text, &item.Attempts); err != nil {
+		var metadata sql.NullString
+		if err := rows.Scan(&item.ID, &item.PluginID, &item.PlatformID, &item.SessionID, &item.Text, &item.Attempts, &metadata); err != nil {
+			return nil, state.ErrPluginState
+		}
+		if metadata.Valid && json.Unmarshal([]byte(metadata.String), &item.Usage) != nil {
 			return nil, state.ErrPluginState
 		}
 		item.Sequence = item.ID

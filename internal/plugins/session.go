@@ -18,6 +18,11 @@ import (
 // approved project is the only one session.v1 can reach.
 var SessionCapability = Capability{Name: "session", Version: Version{Major: 1}}
 
+// ProjectSessionCapability adds owner-local project selection and usage replies.
+var ProjectSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 1}}
+
+const SessionProjectGrant = "session.project"
+
 const (
 	// SessionRunMethod routes the plugin-initiated run request. It is the
 	// plugin-to-host call method.
@@ -45,6 +50,8 @@ const (
 // subpath of the approved project. There is no directory parameter: the
 // approved project is always the base, and a subpath can only reach inside it.
 type SessionRunParams struct {
+	ProjectID         string `json:"projectId,omitempty"`
+	NoTools           bool   `json:"noTools,omitempty"`
 	Prompt            string `json:"prompt"`
 	Agent             string `json:"agent,omitempty"`
 	Model             string `json:"model,omitempty"`
@@ -61,14 +68,18 @@ type SessionRunResult struct {
 // SessionCompleted is one completed assistant turn, text only in v1, keyed by
 // the session it came from.
 type SessionCompleted struct {
-	SessionID string `json:"sessionId"`
-	Text      string `json:"text"`
+	SessionID string        `json:"sessionId"`
+	Text      string        `json:"text"`
+	Usage     *SessionUsage `json:"usage,omitempty"`
 }
 
 // Validate requires a real prompt and host-passable selections. The prompt
 // allows newlines and tabs, unlike validText, because prompts are multi-line;
 // other control characters are rejected, as in conversation.v1.
 func (p SessionRunParams) Validate() error {
+	if p.ProjectID != "" && !actionID.MatchString(p.ProjectID) {
+		return ErrInvalidMessage
+	}
 	if p.Prompt == "" || len(p.Prompt) > SessionMaxPromptBytes || !utf8.ValidString(p.Prompt) || strings.TrimSpace(p.Prompt) == "" ||
 		strings.ContainsFunc(p.Prompt, func(r rune) bool {
 			return r != '\n' && r != '\r' && r != '\t' && (r < 0x20 || r == 0x7f)
@@ -86,7 +97,7 @@ func (p SessionRunParams) Validate() error {
 func ValidPermissionProfileName(name string) bool { return validText(name) }
 
 func (c SessionCompleted) Validate() error {
-	if !validText(c.SessionID) || !conversationText(c.Text) {
+	if !validText(c.SessionID) || !conversationText(c.Text) || c.Usage != nil && c.Usage.Validate() != nil {
 		return ErrInvalidMessage
 	}
 	return nil
@@ -129,6 +140,9 @@ func (d Description) validateSession() error {
 	}
 	if !slices.Contains(d.RequestedGrants, SessionRunGrant) {
 		return ErrInvalidMessage
+	}
+	if projectSessionDeclared(d) && slices.Contains(d.RequestedGrants, SessionProjectGrant) {
+		return nil
 	}
 	for _, s := range d.Settings {
 		if s.Key != SessionProjectSetting {

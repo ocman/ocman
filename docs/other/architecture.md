@@ -1247,22 +1247,24 @@ sequenceDiagram
     participant S as Session service and queue
     participant D as Owner state.db
     participant O as Completion pump
+    participant R as Owner project registry
 
     U->>D: Permission-profile CRUD through core HTTP API
     P->>T: Call session/run, caller request ID and operation ID
     T->>B: Deadline-bound unary request
-    B->>D: Read enabled installation, grant and scalar project
+    B->>D: Read enabled installation, grants and optional scalar project
+    B->>R: Session 1.1 projectId, resolve owner-local root after session.project grant
     B->>B: Reject traversal and resolved symlink escape
     B->>D: Reserve plugin and operation ID, or return stored result
-    B->>D: Resolve exact named profile rules
+    B->>D: Resolve named profile rules, or pin all-tools-denied for noTools
     B->>S: CreateConfigured with pinned rules
     B->>D: Link session to plugin
     B->>S: Enqueue prompt with exact agent/model
     B->>D: Persist run result
     B-->>P: Result on caller request ID, sessionId or safe error
-    S->>D: Completed assistant turn, idempotent outbox append
+    S->>D: Completed assistant text and observed usage, idempotent outbox append
     O->>D: Claim due head per session
-    O->>P: Call session/completed, stable sess-out row ID
+    O->>P: Call session/completed with usage, stable sess-out row ID
     P-->>O: Empty object acknowledgement
     O->>D: Mark done, or retain and schedule retry
 ```
@@ -1276,10 +1278,18 @@ sequenceDiagram
 - Named permission profiles live in owner state. CreateConfigured applies their
   exact rules before the queue receives the plugin's prompt. Unknown or deleted
   names return `not_found` to the caller without creating a session.
+- Session 1.1 can resolve an opaque owner-local project ID with the additional
+  `session.project` grant instead of requiring a global project setting. It does
+  not infer ownership from directories or fall back to another machine.
+  `noTools` overrides profile rules with an all-tools-denied rule before prompt
+  admission. Blank agent/model values preserve host defaults.
 - `internal/pluginsmod/session_outbox.go` records and pumps completions. The durable
   mapping and AUTOINCREMENT outbox ID survive reopen. Pending deliveries replay
   after a crash, including one after the consumer's effect but before host ack.
   Consumers must durably deduplicate the stable operation ID.
+- Observed tokens and cost are stored with the completion in the same outbox
+  insert. Missing usage remains unknown across retries; it is never synthesized
+  as free inference. A new append-only module migration adds the metadata column.
 - Only an empty JSON object acknowledges completion. Revocation pauses delivery
   without consuming attempts. Six failures retain a dead letter and block that
   session. Session retry/discard controls are still missing, so operator recovery

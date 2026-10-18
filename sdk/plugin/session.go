@@ -14,10 +14,12 @@ type (
 	SessionRunParams = plugins.SessionRunParams
 	SessionRunResult = plugins.SessionRunResult
 	SessionCompleted = plugins.SessionCompleted
+	SessionUsage     = plugins.SessionUsage
 )
 
 const (
 	SessionRunGrant        = plugins.SessionRunGrant
+	SessionProjectGrant    = plugins.SessionProjectGrant
 	SessionProjectSetting  = plugins.SessionProjectSetting
 	SessionRunMethod       = plugins.SessionRunMethod
 	SessionCompletedMethod = plugins.SessionCompletedMethod
@@ -25,6 +27,8 @@ const (
 
 // SessionCapability is session.v1.
 var SessionCapability = plugins.SessionCapability
+
+var ProjectSessionCapability = plugins.ProjectSessionCapability
 
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps
@@ -41,6 +45,9 @@ func NewSessionRun(operationID string, params SessionRunParams) (Call, error) {
 	}
 	call := Call{ID: 1, OperationID: operationID, Capability: SessionCapability.Name, Version: SessionCapability.Version,
 		Method: SessionRunMethod, DeadlineUnixMS: time.Now().Add(plugins.SessionRunTimeout).UnixMilli(), Params: data}
+	if params.ProjectID != "" || params.NoTools {
+		call.Version = ProjectSessionCapability.Version
+	}
 	if err := (Envelope{Type: TypeCall, Call: &call}).Validate(); err != nil {
 		return Call{}, err
 	}
