@@ -12,7 +12,7 @@ import (
 	"github.com/NoUseFreak/ocman/sdk/plugin"
 )
 
-func requestConnection(t *testing.T, limit int, negotiated bool) (*plugin.Encoder, *plugin.Decoder, chan plugin.Request, <-chan error) {
+func requestConnection(t *testing.T, limit int, negotiated bool, versions ...plugin.Version) (*plugin.Encoder, *plugin.Decoder, chan plugin.Request, <-chan error) {
 	t.Helper()
 	host, child := net.Pipe()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -22,6 +22,9 @@ func requestConnection(t *testing.T, limit int, negotiated bool) (*plugin.Encode
 	d.Scope = plugin.ScopeOwner
 	d.MaxConcurrency = limit
 	d.Capabilities = []plugin.Capability{plugin.SessionCapability}
+	if len(versions) > 0 {
+		d.Capabilities[0].Version = versions[0]
+	}
 	d.Actions = nil
 	d.RequestedGrants = []string{plugin.SessionRunGrant}
 	d.Settings = []plugin.Setting{{Key: "project", Label: "Project", Type: "string", Required: true}}
@@ -36,6 +39,9 @@ func requestConnection(t *testing.T, limit int, negotiated bool) (*plugin.Encode
 		t.Fatal(err)
 	}
 	supported := d.Capabilities
+	if len(versions) > 1 {
+		supported = []plugin.Capability{{Name: "session", Version: versions[1]}}
+	}
 	if !negotiated {
 		supported = nil
 	}
@@ -47,6 +53,63 @@ func requestConnection(t *testing.T, limit int, negotiated bool) (*plugin.Encode
 		t.Fatal(err)
 	}
 	return enc, dec, requests, done
+}
+
+func TestPromptOnlySessionRunUsesNegotiatedVersion(t *testing.T) {
+	enc, dec, requests, done := requestConnection(t, 2, true, plugin.ProjectSessionCapability.Version)
+	call, err := plugin.NewSessionRun("prompt-only", plugin.SessionRunParams{Prompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies := make(chan plugin.Result, 1)
+	requests <- plugin.Request{Call: call, Replies: replies}
+	message, err := dec.Decode()
+	if err != nil || message.Call == nil || message.Call.Version != plugin.ProjectSessionCapability.Version {
+		t.Fatalf("negotiated 1.1 request: %+v %v", message, err)
+	}
+	if err := enc.Encode(plugin.Envelope{Type: plugin.TypeResult, Result: &plugin.Result{ID: message.Call.ID, Value: json.RawMessage(`{"sessionId":"session"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	<-replies
+	if err := enc.Encode(plugin.Envelope{Type: plugin.TypeShutdown, Shutdown: &plugin.Shutdown{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnsupportedSessionFieldsDoNotTerminateStream(t *testing.T) {
+	enc, dec, requests, done := requestConnection(t, 2, true, plugin.ProjectSessionCapability.Version, plugin.SessionCapability.Version)
+	call, err := plugin.NewSessionRun("unsupported", plugin.SessionRunParams{Prompt: "go", NoTools: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies := make(chan plugin.Result, 1)
+	requests <- plugin.Request{Call: call, Replies: replies}
+	result := <-replies
+	if result.Error == nil || result.Error.Category != plugin.ErrorInvalidArgument {
+		t.Fatalf("extension not rejected locally: %+v", result)
+	}
+	call, err = plugin.NewSessionRun("legacy", plugin.SessionRunParams{Prompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests <- plugin.Request{Call: call, Replies: replies}
+	message, err := dec.Decode()
+	if err != nil || message.Call == nil || message.Call.Version != plugin.SessionCapability.Version {
+		t.Fatalf("legacy stream closed after rejected extension: %+v %v", message, err)
+	}
+	if err := enc.Encode(plugin.Envelope{Type: plugin.TypeResult, Result: &plugin.Result{ID: message.Call.ID, Value: json.RawMessage(`{"sessionId":"legacy-session"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	<-replies
+	if err := enc.Encode(plugin.Envelope{Type: plugin.TypeShutdown, Shutdown: &plugin.Shutdown{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSessionRequestsIndependentDirections(t *testing.T) {

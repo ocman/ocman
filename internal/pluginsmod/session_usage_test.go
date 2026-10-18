@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 )
 
@@ -22,6 +23,43 @@ func TestCompletedUsage(t *testing.T) {
 		messages[0].Data = json.RawMessage(raw)
 		if completedUsage(messages, "assistant") != nil {
 			t.Fatal("unavailable usage reported as zero")
+		}
+	}
+}
+
+func TestUnavailableCostIsNeverReportedAsZero(t *testing.T) {
+	for _, raw := range []string{
+		`{"role":"assistant","tokens":{"input":12,"output":8}}`,
+		`{"role":"assistant","cost":null,"tokens":{"input":12,"output":8}}`,
+	} {
+		if u := completedUsage([]db.Message{{ID: "reply", Data: json.RawMessage(raw)}}, "reply"); u != nil {
+			t.Fatalf("unknown cost reported as observed zero: %+v", u)
+		}
+	}
+	raw := json.RawMessage(`{"role":"assistant","cost":0,"tokens":{"input":12,"output":8}}`)
+	if u := completedUsage([]db.Message{{ID: "reply", Data: raw}}, "reply"); u == nil || u.CostUSD != 0 {
+		t.Fatal("explicit zero cost lost availability")
+	}
+}
+
+func TestV2UnavailableUsageSurvivesConversion(t *testing.T) {
+	for _, metadata := range []string{`"tokens":{"input":12,"output":8}`, `"cost":null,"tokens":{"input":12}`, `"cost":0.5`, `"cost":0.5,"tokens":null`} {
+		var source map[string]any
+		if err := json.Unmarshal([]byte(`{"id":"reply","type":"assistant","time":{"created":1},`+metadata+`}`), &source); err != nil {
+			t.Fatal(err)
+		}
+		converted, ok := ocv2.ConvertMessage("session", source)
+		if !ok {
+			t.Fatal("invalid fixture")
+		}
+		raw, _ := json.Marshal(converted.Info)
+		var decoded db.MessageData
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		raw, _ = json.Marshal(decoded)
+		if u := completedUsage([]db.Message{{ID: "reply", Data: raw}}, "reply"); u != nil {
+			t.Fatalf("v2 synthesized free usage: %+v", u)
 		}
 	}
 }

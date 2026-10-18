@@ -19,17 +19,18 @@ type Message struct {
 // different concept from Session.Platform, which identifies the coding
 // tool that produced the session.
 type MessageData struct {
-	Role       string          `json:"role"`
-	Agent      string          `json:"agent"` // composer-agent role (OpenCode: "build", "plan", subagent name)
-	Mode       string          `json:"mode"`
-	ModelID    string          `json:"modelID"`
-	ProviderID string          `json:"providerID"`
-	Cost       float64         `json:"cost"`
-	Tokens     *TokenInfo      `json:"tokens"`
-	Time       *TimeInfo       `json:"time"`
-	Model      *ModelRef       `json:"model"`
-	Finish     string          `json:"finish"`
-	Error      json.RawMessage `json:"error"`
+	Role           string          `json:"role"`
+	Agent          string          `json:"agent"` // composer-agent role (OpenCode: "build", "plan", subagent name)
+	Mode           string          `json:"mode"`
+	ModelID        string          `json:"modelID"`
+	ProviderID     string          `json:"providerID"`
+	Cost           float64         `json:"cost"`
+	UsageAvailable *bool           `json:"usageAvailable,omitempty"`
+	Tokens         *TokenInfo      `json:"tokens"`
+	Time           *TimeInfo       `json:"time"`
+	Model          *ModelRef       `json:"model"`
+	Finish         string          `json:"finish"`
+	Error          json.RawMessage `json:"error"`
 }
 
 // TokenInfo holds token usage details for a message.

@@ -19,7 +19,8 @@ func migratePluginSessionUsage(tx *sql.Tx) error {
 func completedUsage(messages []db.Message, id string) *plugins.SessionUsage {
 	type messageData struct {
 		db.MessageData
-		ParentID string `json:"parentID"`
+		ParentID string   `json:"parentID"`
+		Cost     *float64 `json:"cost"`
 	}
 	var selected messageData
 	found := false
@@ -29,7 +30,7 @@ func completedUsage(messages []db.Message, id string) *plugins.SessionUsage {
 			break
 		}
 	}
-	if !found || selected.Role != "assistant" || selected.Tokens == nil {
+	if !found || selected.Role != "assistant" || selected.Tokens == nil || selected.Cost == nil || selected.UsageAvailable != nil && !*selected.UsageAvailable {
 		return nil
 	}
 	u := new(plugins.SessionUsage)
@@ -41,7 +42,7 @@ func completedUsage(messages []db.Message, id string) *plugins.SessionUsage {
 		if message.ID != id && (selected.ParentID == "" || data.ParentID != selected.ParentID || data.Role != "assistant") {
 			continue
 		}
-		if data.Tokens == nil {
+		if data.Tokens == nil || data.Cost == nil || data.UsageAvailable != nil && !*data.UsageAvailable {
 			return nil
 		}
 		prompt, completion := []int64{data.Tokens.Input}, []int64{data.Tokens.Output, data.Tokens.Reasoning}
@@ -58,8 +59,8 @@ func completedUsage(messages []db.Message, id string) *plugins.SessionUsage {
 		if !pok || !cok {
 			return nil
 		}
-		u.PromptTokens, u.CompletionTokens, u.CostUSD = p, c, u.CostUSD+data.Cost
-		if u.Validate() != nil || data.Cost < 0 {
+		u.PromptTokens, u.CompletionTokens, u.CostUSD = p, c, u.CostUSD+*data.Cost
+		if u.Validate() != nil || *data.Cost < 0 {
 			return nil
 		}
 	}

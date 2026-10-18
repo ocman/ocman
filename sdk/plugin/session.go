@@ -33,8 +33,8 @@ var ProjectSessionCapability = plugins.ProjectSessionCapability
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps
 // an unvalidated payload from reaching the wire and failing the whole stream.
-// The plugin never names a directory: the approved project is the only base a
-// run can reach, and a subpath may only reach inside it.
+// The plugin never names a directory. Call.Version marks the minimum needed by
+// these parameters; RunWithRequests selects the negotiated version at admission.
 func NewSessionRun(operationID string, params SessionRunParams) (Call, error) {
 	if err := params.Validate(); err != nil {
 		return Call{}, err

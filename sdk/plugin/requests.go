@@ -25,6 +25,16 @@ func (s *requestsState) send(r Request, stream *Stream, encoder *Encoder) error 
 	}
 	s.next++
 	r.Call.ID = s.next
+	var unsupported bool
+	r.Call, unsupported = sessionRequestVersion(r.Call, stream)
+	if unsupported {
+		select {
+		case r.Replies <- Result{ID: r.Call.ID, Error: &WireError{Category: ErrorInvalidArgument}}:
+			return nil
+		default:
+			return ErrStreamOrder
+		}
+	}
 	e := Envelope{Type: TypeCall, Call: &r.Call}
 	// Include the consumed request in shutdown settlement if admission fails.
 	s.pending[r.Call.ID] = r

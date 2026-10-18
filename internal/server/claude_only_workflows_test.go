@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -38,6 +39,25 @@ func TestClaudeMCPCreateDefaultsAndCallingSession(t *testing.T) {
 	child, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{SessionID: first.SessionID, Directory: repo, Prompt: "again"})
 	if err != nil || child.Platform != "claudecode" {
 		t.Fatalf("calling-session create = %+v, %v", child, err)
+	}
+	// Both default creates can start asynchronous branch naming. Wait for that
+	// Git work before TempDir removes the repository during test cleanup.
+	for _, created := range []internalmcp.CreatedSession{first, child} {
+		if created.Directory == repo {
+			continue
+		}
+		waitClaude(t, "default worktree naming", func() bool {
+			trees, err := srv.router().Local().ListWorktrees(t.Context(), repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, tree := range trees {
+				if tree.Path == created.Directory {
+					return !strings.HasPrefix(tree.Branch, "session-")
+				}
+			}
+			return false
+		})
 	}
 }
 

@@ -163,6 +163,9 @@ func usage(info, msg map[string]any) {
 		info["cost"] = 0.0
 	}
 	tokens := obj(msg, "tokens")
+	if msg["cost"] == nil || tokens == nil {
+		info["usageAvailable"] = false
+	}
 	if tokens == nil {
 		tokens = map[string]any{"input": 0, "output": 0, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}}
 	}

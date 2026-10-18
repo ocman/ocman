@@ -1289,7 +1289,9 @@ sequenceDiagram
   Consumers must durably deduplicate the stable operation ID.
 - Observed tokens and cost are stored with the completion in the same outbox
   insert. Missing usage remains unknown across retries; it is never synthesized
-  as free inference. A new append-only module migration adds the metadata column.
+  as free inference. The v2 compatibility converter marks synthesized UI defaults
+  as unavailable, so a display zero cannot become observed zero-dollar usage.
+  A new append-only module migration adds the metadata column.
 - Only an empty JSON object acknowledges completion. Revocation pauses delivery
   without consuming attempts. Six failures retain a dead letter and block that
   session. Session retry/discard controls are still missing, so operator recovery

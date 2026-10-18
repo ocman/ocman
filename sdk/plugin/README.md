@@ -72,7 +72,10 @@ See
 
 For project-scoped model work, declare `ProjectSessionCapability`, request
 `SessionRunGrant` and `SessionProjectGrant`, and use `RunWithRequests`.
-`NewSessionRun` selects session 1.1 when `ProjectID` or `NoTools` is set.
+`NewSessionRun` marks session 1.1 as the minimum when `ProjectID` or `NoTools`
+is set. `RunWithRequests` uses the exact negotiated wire version when admitting
+each call. If only 1.0 was negotiated, extension fields receive a local
+`invalid_argument` result without closing the stream.
 The owner resolves the project ID; no global project setting or provider keys
 are needed. Empty model/agent selections use the host defaults. `NoTools` pins
 all-tools-denied rules before queueing. Handle `SessionCompleted.Usage` as
