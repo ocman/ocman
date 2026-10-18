@@ -68,7 +68,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	for i := range tools {
 		tools[i].Tool.InputSchema.Properties = maps.Clone(tools[i].Tool.InputSchema.Properties)
 		mcplib.WithString("intent", mcplib.Description(
-			"Optional short explanation of what you want to achieve with this call. Shown in the conversation; does not change the operation.",
+			"Briefly explain what this call achieves for the user's task. Include on every call, including help and read-only calls. Shown in the conversation; does not change the operation. In Code Mode, use an inline string literal so it can be displayed. Optional for backward compatibility.",
 		))(&tools[i].Tool)
 	}
 	return tools

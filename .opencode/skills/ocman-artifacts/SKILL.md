@@ -5,8 +5,13 @@ description: Use when finding or reading project artifacts, reports, screenshots
 
 # Ocman Artifacts
 
+Include a short, goal-focused `intent` on every ocman MCP call, including help
+and read-only calls, so the user sees why you are calling the tool. In Code Mode,
+write `intent` as an inline string literal, not a variable or computed value.
+This explains the call; it does not grant permission or change the operation.
+
 Use the `artifacts` MCP tool, usually exposed as `ocman_artifacts`. Start with
-`{"action":"help"}` for current schemas, validation rules, examples, and output shapes.
+`{"action":"help","intent":"Check how to find or publish the requested artifact"}` for current schemas, validation rules, examples, and output shapes.
 
 ## Finding and reading artifacts
 
@@ -14,14 +19,14 @@ Discover published artifacts through MCP. Do not scan original folders,
 old worktrees, or ocman's blob storage to find them. Uploaded files are
 immutable copies; the original paths may have changed or disappeared.
 
-1. List the project's artifacts with `{"action":"list","directory":"/repo"}`.
+1. List the project's artifacts with `{"action":"list","intent":"Find the saved report for this project","directory":"/repo"}`.
    Use the stored absolute project root, not a worktree path. If you don't
    know it, list without `directory` and use the returned artifacts' `directory`
    fields to identify the project. Omit `platform` and
    `session_id` to include artifacts from other sessions in the project.
    Pass a nonempty `next_cursor` as `cursor` to read the next page.
 2. Read titles, descriptions, and `items` to select an artifact, then call
-   `{"action":"get","artifact_id":"..."}`. This returns metadata, not file contents.
+   `{"action":"get","intent":"Get download links for the selected report","artifact_id":"..."}`. This returns metadata, not file contents.
 3. Read files by fetching the absolute `items[].url` with an HTTP fetch tool.
    When password auth is enabled, file URLs are signed for five minutes and
    need no login cookie. Call `get` again to refresh an expired URL.
@@ -45,7 +50,7 @@ Always pass `directory` (your absolute project or worktree directory) and your
 own `platform` and `session_id`, so the artifact is attached to this project and
 session:
 
-`{"action":"create","directory":"/repo","platform":"opencode","session_id":"ses_1","title":"Coverage report","files":[{"path":"/repo/coverage.html"}]}`
+`{"action":"create","intent":"Save the coverage report for later review","directory":"/repo","platform":"opencode","session_id":"ses_1","title":"Coverage report","files":[{"path":"/repo/coverage.html"}]}`
 
 Files are `{"path":"/abs/file"}` or inline `{"name":"notes.md","content":"...","mime":"text/markdown"}`.
 Links are `{"url":"https://...","label":"..."}`.

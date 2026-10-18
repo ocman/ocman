@@ -5,7 +5,12 @@ description: Use when the user asks to inspect, search, or start ocman sessions,
 
 # Ocman Sessions
 
-Use the `sessions` MCP tool. Start with `{"action":"help"}` for current
+Include a short, goal-focused `intent` on every ocman MCP call, including help
+and read-only calls, so the user sees why you are calling the tool. In Code Mode,
+write `intent` as an inline string literal, not a variable or computed value.
+This explains the call; it does not grant permission or change the operation.
+
+Use the `sessions` MCP tool. Start with `{"action":"help","intent":"Check how to find or start the requested session"}` for current
 schemas, limits, examples, and errors. Its actions:
 
 - `list` — recent sessions, optionally scoped to a `directory`.
@@ -22,7 +27,7 @@ Use `create` only when the user asks for a separate session. Pass optional
 your own `platform` and `session_id` so the new session starts in your project
 root on your machine, or pass an absolute `directory`:
 
-`{"action":"create","prompt":"Review the open PR","model":"anthropic/claude-sonnet-4","agent":"plan","platform":"opencode","session_id":"ses_caller"}`
+`{"action":"create","intent":"Start the requested PR review in a separate session","prompt":"Review the open PR","model":"anthropic/claude-sonnet-4","agent":"plan","platform":"opencode","session_id":"ses_caller"}`
 
 It returns the new `platform` and `session_id`; follow up with `get`. The new
 session uses default permissions and runs independently of yours.

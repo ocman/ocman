@@ -70,12 +70,14 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 
 ## Tools
 
-Every tool accepts an optional `intent` string explaining what the agent wants
-to achieve, for example `"intent": "Find the session that reported the build failure"`.
+Agents should include a short, goal-focused `intent` string on every tool call,
+including help and read-only calls, for example
+`"intent": "Find the session that reported the build failure"`. The tool schemas
+and bundled skills encourage this; the API keeps the field optional for existing callers.
 Ocman shows it beside the tool name in the conversation. It does not change
 the operation, permissions, or confirmation requirements. Omit it to keep the
-usual argument summary. Code Mode calls also show intents supplied as literal
-strings in `tools.ocman` calls; computed values are not evaluated for display.
+usual argument summary. In Code Mode, supply `intent` as an inline string literal
+in `tools.ocman` calls; variables and computed values are not evaluated for display.
 
 | Tool | Description |
 |------|-------------|

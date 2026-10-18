@@ -76,7 +76,7 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 		}
 	}
 	sessionsSource := strings.ToLower(string(skills["ocman-sessions"]))
-	for _, required := range []string{"sessions", `"action":"help"`, "read-only", "task", "subagent_type", "provider/model-id", "inherits", "`list`", "`search`", "`get`", `{"action":"create","prompt"`} {
+	for _, required := range []string{"sessions", `"action":"help"`, "read-only", "task", "subagent_type", "provider/model-id", "inherits", "`list`", "`search`", "`get`", `"action":"create"`, `"prompt":`} {
 		if !strings.Contains(sessionsSource, required) {
 			t.Errorf("Sessions skill is missing %q", required)
 		}
@@ -87,7 +87,7 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 		}
 	}
 	inboxSource := strings.ToLower(string(skills["ocman-inbox"]))
-	for _, required := range []string{"inbox", `{"action":"help"}`, `{"action":"send","title"`, `{"action":"recall","item_id"`, "asynchronous", "blocked", "important failure", "routine progress", "read or archive"} {
+	for _, required := range []string{"inbox", `"action":"help"`, `"action":"send"`, `"title":`, `"action":"recall"`, `"item_id":`, "asynchronous", "blocked", "important failure", "routine progress", "read or archive"} {
 		if !strings.Contains(inboxSource, required) {
 			t.Errorf("Inbox skill is missing %q", required)
 		}
@@ -98,7 +98,7 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 		}
 	}
 	artifactsSource := strings.ToLower(string(skills["ocman-artifacts"]))
-	for _, required := range []string{"artifacts", `{"action":"help"}`, `{"action":"create","directory"`, "session_id", "screenshot", "permalink", "commit sha", "reading", `{"action":"list","directory"`, `{"action":"get","artifact_id"`, "items[].url", "original folders", "next_cursor", "origin", "metadata"} {
+	for _, required := range []string{"artifacts", `"action":"help"`, `"action":"create"`, `"directory":`, "session_id", "screenshot", "permalink", "commit sha", "reading", `"action":"list"`, `"action":"get"`, `"artifact_id":`, "items[].url", "original folders", "next_cursor", "origin", "metadata"} {
 		if !strings.Contains(artifactsSource, required) {
 			t.Errorf("Artifacts skill is missing %q", required)
 		}

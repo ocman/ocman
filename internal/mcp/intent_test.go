@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/mcp"
@@ -21,6 +22,9 @@ func TestToolsAcceptOptionalIntent(t *testing.T) {
 			property, ok := tool.Tool.InputSchema.Properties["intent"].(map[string]any)
 			if !ok || property["type"] != "string" || property["description"] == "" {
 				t.Fatalf("intent schema = %#v", property)
+			}
+			if !strings.Contains(property["description"].(string), "Include on every call") {
+				t.Errorf("intent description does not encourage use: %s", property["description"])
 			}
 			for _, required := range tool.Tool.InputSchema.Required {
 				if required == "intent" {
