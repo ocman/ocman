@@ -21,6 +21,72 @@ import {
 
 const SID = 'sess-1';
 
+describe('regression: composer notices belong to the current turn', () => {
+  it.each(['error', 'rate_limit', 'provider_overloaded', 'retry', 'model_switch', 'models_exhausted'])(
+    'clears an old %s notice when the session resumes without removing history', (kind) => {
+      const history = makeMessage('failed-turn', 1_000, { error: { name: 'APIError', data: { message: 'Old provider failure' } } });
+      const state: SessionView = {
+        ...initialSessionView(SID),
+        session: makeSession({ status: 'error', notice: { kind, message: 'Old provider failure', retryAt: 0, attempt: 1 } }),
+        messages: [history],
+      };
+      const resumed = reduceSessionView(state, { type: 'sse', event: {
+        type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } },
+      } });
+      const completed = reduceSessionView(resumed, { type: 'sse', event: {
+        type: 'session.idle', properties: { sessionID: SID },
+      } });
+      expect(resumed.session?.notice).toBeUndefined();
+      expect(completed.session?.notice).toBeUndefined();
+      expect(completed.messages).toEqual([history]);
+      expect(state.session?.notice?.kind).toBe(kind);
+    },
+  );
+
+  it('clears retry feedback on an idle edge even without a busy status event', () => {
+    const state: SessionView = {
+      ...initialSessionView(SID),
+      session: makeSession({ status: 'busy', notice: { kind: 'retry', message: 'Retrying old failure', retryAt: 5_000, attempt: 1 } }),
+    };
+    const completed = reduceSessionView(state, { type: 'sse', event: {
+      type: 'session.idle', properties: { sessionID: SID },
+    } });
+    expect(completed.session?.notice).toBeUndefined();
+  });
+
+  it.each([
+    { type: 'session.status', properties: { status: 'done' } },
+    { type: 'session.idle' },
+    { type: 'message.part.delta', properties: { messageID: 'new-turn', partID: 'text', field: 'text', delta: 'Recovered' } },
+    { type: 'message.part.updated', properties: { part: { id: 'tool', messageID: 'new-turn', type: 'tool', state: { status: 'running' } } } },
+  ])('clears stale feedback on $type', (event) => {
+    const state: SessionView = {
+      ...initialSessionView(SID),
+      session: makeSession({ notice: { kind: 'error', message: 'Old error', retryAt: 0, attempt: 0 } }),
+    };
+    const recovered = reduceSessionView(state, { type: 'sse', event });
+    expect(recovered.session?.notice).toBeUndefined();
+  });
+
+  it.each(['error', 'limited'] as const)('keeps the current notice while the session is %s', (status) => {
+    const notice = { kind: 'error', message: 'Current failure', retryAt: 0, attempt: 0 };
+    const state: SessionView = { ...initialSessionView(SID), session: makeSession({ status, notice }) };
+    const failed = reduceSessionView(state, { type: 'sse', event: { type: 'session.status', properties: { status } } });
+    expect(failed.session?.notice).toEqual(notice);
+  });
+
+  it('does not restore an old error from a snapshot requested before recovery', () => {
+    const state: SessionView = {
+      ...initialSessionView(SID),
+      session: makeSession({ status: 'error', notice: { kind: 'error', message: 'Old failure', retryAt: 0, attempt: 0 } }),
+    };
+    const resumed = reduceSessionView(state, { type: 'sse', event: { type: 'session.status', properties: { status: 'busy' } } });
+    const reconciled = reduceSessionView(resumed, { type: 'load', view: state, mode: 'reconcile', statusRevision: state._statusRevision ?? 0 });
+    expect(reconciled.session?.status).toBe('busy');
+    expect(reconciled.session?.notice).toBeUndefined();
+  });
+});
+
 function makeSession(overrides: Partial<SessionRow> = {}): SessionRow {
   return {
     id: SID,

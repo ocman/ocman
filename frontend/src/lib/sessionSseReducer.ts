@@ -194,7 +194,7 @@ function reducePartSnapshot(state: SessionView, props: Record<string, unknown>):
   const rawState = rawPart.state as Record<string, unknown> | undefined;
   const status = rawState?.status;
   if ((status === 'running' || status === 'pending') && state.session && state.session.status !== 'busy') {
-    nextSession = { ...state.session, status: 'busy' };
+    nextSession = { ...state.session, status: 'busy', notice: undefined };
   }
 
   // If this snapshot is the question tool part that backs the current
@@ -273,7 +273,7 @@ function reducePartDelta(state: SessionView, props: Record<string, unknown>): Se
   // shape, and removing it leaves the badge stale mid-turn.
   let nextSession = state.session;
   if (state.session && state.session.status !== 'busy') {
-    nextSession = { ...state.session, status: 'busy' };
+    nextSession = { ...state.session, status: 'busy', notice: undefined };
   }
 
   return {
@@ -293,7 +293,10 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
   const notice = retryNotice(props.status);
   const rawStatus = props.status && typeof props.status === 'object' ? props.status as Record<string, unknown> : props;
   const resetsAt = status === 'limited' && typeof rawStatus.resetsAt === 'number' ? rawStatus.resetsAt : 0;
-  const clearRetryNotice = !notice && ['retry', 'rate_limit', 'provider_overloaded'].includes(state.session?.notice?.kind ?? '');
+  // A resumed attempt or successful completion supersedes every old notice,
+  // not just retry feedback. The original error remains in message history.
+  const clearNotice = !notice && (status === 'busy' || status === 'done'
+    || ['retry', 'rate_limit', 'provider_overloaded'].includes(state.session?.notice?.kind ?? ''));
   // Treat `session.status` with status === idle the same as
   // session.idle — also flag a refetch so the host hook reconciles
   // any missed content.
@@ -305,7 +308,7 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
       ...state.session,
       status,
       resetsAt,
-      ...(notice ? { notice } : clearRetryNotice ? { notice: undefined } : {}),
+      ...(notice ? { notice } : clearNotice ? { notice: undefined } : {}),
     } : state.session,
     _refetchRequested: refetch || state._refetchRequested,
     ...(refetch ? { backgroundTaskCount: 0, backgroundTasks: [] } : {}),
@@ -316,8 +319,8 @@ function reduceSessionStatus(state: SessionView, props: Record<string, unknown>)
 
 function reduceSessionIdle(state: SessionView): SessionView {
   let nextSession = state.session;
-  if (state.session && state.session.status !== 'done') {
-    nextSession = { ...state.session, status: 'done', resetsAt: 0 };
+  if (state.session && (state.session.status !== 'done' || state.session.notice)) {
+    nextSession = { ...state.session, status: 'done', resetsAt: 0, notice: undefined };
   }
   return {
     ...state,
