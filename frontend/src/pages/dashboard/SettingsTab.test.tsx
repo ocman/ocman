@@ -66,16 +66,16 @@ function render(ui: ReactElement, url = '/settings') {
 }
 
 describe('SettingsTab actions', () => {
-  it('groups settings into six categories with visible sections', () => {
+  it('groups settings into seven categories with visible sections', () => {
     render(<SettingsTab />);
     const navigation = screen.getByRole('navigation', { name: 'Settings groups' });
     expect([...navigation.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-      'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'System',
+      'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'Plugins', 'System',
     ]);
     expect(screen.getByRole('heading', { name: 'Notifications', level: 3 })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'This device', level: 3 })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
-    for (const name of ['Remotes', 'Plugins', 'Link previews', 'Public sharing', 'Webhooks']) {
+    for (const name of ['Remotes', 'Link previews', 'Public sharing', 'Webhooks']) {
       expect(screen.getByRole('heading', { name, level: 3 })).toBeVisible();
     }
   });
@@ -92,7 +92,7 @@ describe('SettingsTab actions', () => {
     render(<SettingsTab />, url);
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('disk space & diffs');
     fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search settings' }), { key: 'Escape' });
-    expect(screen.getByText('Plugin management')).toBeVisible();
+    expect(screen.getByText('Sharing controls')).toBeVisible();
   });
 
   it('clears the URL search when selecting a group or a search result', () => {
@@ -114,7 +114,7 @@ describe('SettingsTab actions', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
     expect(router.state.historyAction).toBe('REPLACE');
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: '' } });
-    expect(router.state.location.search).toBe('?tab=connections');
+    expect(router.state.location.search).toBe('?tab=plugins');
     await act(() => router.navigate('/settings?tab=sharing&q=custom'));
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('custom');
     await act(() => router.navigate(-1));
@@ -127,20 +127,28 @@ describe('SettingsTab actions', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
     fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'connections' } });
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
-    expect(screen.getByText('Plugin management')).toBeVisible();
+    expect(screen.getByText('Sharing controls')).toBeVisible();
     expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('connections');
   });
   it('opens plugin management from the Settings navigation', () => {
     render(<SettingsTab />);
     expect(screen.queryByText('Plugin management')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
     expect(screen.getByRole('heading', { name: 'Plugins' })).toBeVisible();
     expect(screen.getByText('Plugin management')).toBeVisible();
+  });
+  it('opens the plugins category from discovery search results', () => {
+    const { router } = render(<SettingsTab />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Discovery' } });
+    fireEvent.click(screen.getByRole('button', { name: /Discovery/ }));
+    expect(router.state.location.search).toBe('?tab=plugins');
+    expect(screen.getByText('Plugin management')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Plugins' })).toHaveAttribute('aria-current', 'page');
   });
   it('lists only categories rather than individual feature sections', () => {
     render(<SettingsTab />);
     const groups = screen.getAllByRole('button').map((b) => b.textContent).filter((label) => label !== 'Install' && label !== 'Sign out');
-    expect(groups).toEqual(['App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'System']);
+    expect(groups).toEqual(['App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'Plugins', 'System']);
   });
   it('keeps always-mounted feature sections mounted while hidden', () => {
     render(<SettingsTab />);
@@ -242,7 +250,7 @@ describe('SettingsTab actions', () => {
     ['notifications', 'app'], ['behaviour', 'app'], ['account', 'app'],
     ['conversation', 'sessions'], ['templates', 'sessions'],
     ['platforms', 'agents'], ['provider-accounts', 'agents'],
-    ['auto-approve', 'permissions'], ['remotes', 'connections'], ['plugins', 'connections'],
+    ['auto-approve', 'permissions'], ['remotes', 'connections'], ['plugins', 'plugins'],
     ['sharing', 'connections'], ['webhooks', 'connections'], ['link-previews', 'connections'],
     ['maintenance', 'system'], ['idle-projects', 'system'],
   ])('keeps the legacy %s link opening %s', (tab, category) => {

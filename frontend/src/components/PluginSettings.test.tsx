@@ -54,6 +54,62 @@ async function open() {
 }
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 
+it('allows reviewing and restoring missing grants on an enabled plugin', async () => {
+  plugin.description.name = 'Pentest';
+  plugin.description.requestedGrants = ['context.project', 'session.run'];
+  plugin.enabled = true;
+  plugin.grants = ['context.project'];
+  renderWithQuery(<PluginSettings />);
+  await screen.findByRole('region', { name: 'Pentest plugin' });
+  click('Grant permissions');
+  expect(plugins.mutate).not.toHaveBeenCalled();
+  click('Cancel approval');
+  click('Grant permissions');
+  click('Approve grants');
+  await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', plugin.description.id, 'grants', {
+    grants: ['context.project', 'session.run'],
+  }));
+});
+
+it('separates discovery and each plugin into settings sections', async () => {
+  const second = structuredClone(plugin);
+  second.description = { ...second.description, id: 'org.example.second', name: 'Second' };
+  vi.mocked(plugins.list).mockResolvedValue([plugin, second]);
+  await open();
+  const discovery = screen.getByRole('region', { name: 'Discovery' });
+  expect(within(discovery).getByLabelText('Plugin owner')).toBeVisible();
+  expect(within(discovery).getByRole('button', { name: 'Rescan plugins' })).toBeVisible();
+  for (const name of ['Example plugin', 'Second plugin']) {
+    const section = screen.getByRole('region', { name });
+    expect(within(section).getByRole('heading', { name, level: 3 })).toBeVisible();
+    expect(within(section).getByRole('button', { name: 'Configure' })).toBeVisible();
+  }
+});
+
+it.each(['conflict', 'removed', 'approved', 'none'])('blocks grant changes when %s', async (state) => {
+  if (state === 'conflict') plugin.health.status = 'conflict';
+  if (state === 'removed') plugin.removed = true;
+  if (state === 'approved') plugin.grants = plugin.description.requestedGrants!;
+  if (state === 'none') plugin.description.requestedGrants = undefined;
+  await open();
+  expect(screen.getByRole('button', { name: 'Grant permissions' })).toBeDisabled();
+});
+
+it('grants permissions on the selected owner without enabling and sanitizes failures', async () => {
+  plugin.grants = null;
+  await open();
+  fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'remote' } });
+  await screen.findByRole('region', { name: 'Example plugin' });
+  vi.mocked(plugins.mutate).mockRejectedValue(new Error('private details'));
+  click('Grant permissions');
+  click('Approve grants');
+  await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('remote', plugin.description.id, 'grants', {
+    grants: ['context.project'],
+  }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not update grants');
+  expect(screen.queryByText(/private details/)).not.toBeInTheDocument();
+});
+
 it('uses shared controls for owner selection, lifecycle, configuration and confirmations', async () => {
   await open();
   click('Configure');
@@ -215,6 +271,27 @@ it('reads the Slack catalog on the installation platform', async () => {
   plugin.configuration.values = { mode: 'good' };
 });
 
+it('preserves saved plugin selections when the project catalog is unavailable', async () => {
+  plugin.description.id = 'org.ocman.slack';
+  plugin.description.settings = [
+    { key: 'project', type: 'string', label: 'Project directory', required: true },
+    { key: 'platform', type: 'string', label: 'Platform' },
+    { key: 'agent', type: 'string', label: 'Agent' },
+  ];
+  plugin.configuration.values = { project: '/repo', platform: 'offline-platform', agent: 'saved-agent' };
+  vi.mocked(plugins.projectCatalog).mockRejectedValue(new Error('offline'));
+  await open();
+  click('Configure');
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', 'offline-platform', expect.any(AbortSignal)));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Platform' }));
+  expect(await screen.findByRole('option', { name: 'offline-platform' })).toBeVisible();
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Platform' }), { key: 'Escape' });
+  click('Save configuration');
+  await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', plugin.description.id, 'configuration', {
+    values: { project: '/repo', platform: 'offline-platform', agent: 'saved-agent' }, secrets: {},
+  }));
+});
+
 it('does not offer the previous project catalog while a new project is pending', async () => {
   plugin.description.id = 'org.ocman.slack';
   plugin.description.settings = [
@@ -358,7 +435,7 @@ it('gates unsupported owners, clears old data on switching and ignores stale res
   fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'remote' } });
   expect(await screen.findByText('No plugins discovered.')).toBeVisible();
   await act(async () => resolve([plugin]));
-  expect(screen.queryByRole('region')).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Example plugin' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'old' } });
   expect(screen.getByRole('status')).toHaveTextContent('unavailable');
   expect(plugins.list).not.toHaveBeenCalledWith('old', expect.anything());
@@ -367,11 +444,11 @@ it('gates unsupported owners, clears old data on switching and ignores stale res
 it('handles owner disconnect and capability refresh without falling back to local', async () => {
   await open();
   fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'remote' } });
-  await screen.findByRole('region');
+  await screen.findByRole('region', { name: 'Example plugin' });
   vi.mocked(plugins.list).mockRejectedValue(new Error('offline'));
   click('Refresh health');
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plugins for this owner');
-  expect(screen.queryByRole('region')).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Example plugin' })).not.toBeInTheDocument();
   vi.mocked(api.capabilities).mockResolvedValue({ platforms: [], hosts: [host('local')] });
   click('Refresh owners');
   expect(await screen.findByText('Plugin management is unavailable on this owner.')).toBeVisible();
@@ -386,7 +463,7 @@ it('supports retrying owner and catalog failures and sanitizes mutation errors',
   click('Refresh owners');
   expect(await screen.findByText(/Could not load plugins for this owner/)).toBeVisible();
   click('Refresh health');
-  await screen.findByRole('region');
+  await screen.findByRole('region', { name: 'Example plugin' });
   vi.mocked(plugins.mutate).mockRejectedValue(new Error('sensitive error body'));
   click('Enable'); click('Approve grants and enable');
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not enable plugin');

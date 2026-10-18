@@ -6,6 +6,7 @@ export const SETTINGS_CATEGORIES = [
   { id: 'agents', label: 'Agents & models' },
   { id: 'permissions', label: 'Permissions' },
   { id: 'connections', label: 'Connections & sharing' },
+  { id: 'plugins', label: 'Plugins' },
   { id: 'system', label: 'System' },
 ] as const satisfies ReadonlyArray<{ id: SettingsGroupId; label: string }>;
 
@@ -15,7 +16,7 @@ const LEGACY_CATEGORIES: Record<string, SettingsGroupId> = {
   conversation: 'sessions', templates: 'sessions',
   platforms: 'agents', 'provider-accounts': 'agents',
   'auto-approve': 'permissions',
-  remotes: 'connections', plugins: 'connections', sharing: 'connections',
+  remotes: 'connections', sharing: 'connections',
   webhooks: 'connections', 'link-previews': 'connections',
   maintenance: 'system', 'idle-projects': 'system',
 };

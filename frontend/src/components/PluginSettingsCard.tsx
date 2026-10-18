@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { hasConversationCapability, plugins, type PluginInput, type PluginMutation, type PluginRegistration } from '../lib/plugins';
 import { SettingRow } from './SettingRow';
+import { SettingsSection } from './SettingsSection';
 import { PluginConfiguration } from './PluginConfiguration';
 import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
 import { Button, ButtonGroup } from './Control';
@@ -30,7 +31,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [review, setReview] = useState(false);
+  const [review, setReview] = useState<'enable' | 'grants' | null>(null);
   const [configure, setConfigure] = useState(false);
   const [remove, setRemove] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
@@ -42,12 +43,12 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
     setError('');
     try {
       await plugins.mutate(owner, d.id, action, input);
-      setReview(false); setConfigure(false); setRemove(false); setLogs(null);
+      setReview(null); setConfigure(false); setRemove(false); setLogs(null);
     } catch {
       // Never echo an error body that could contain submitted configuration.
       setError(action === 'configuration'
         ? 'Configuration was not activated. The server attempts to restore the last working configuration; check the current values and health below.'
-        : `Could not ${action === 'grants' ? 'revoke grants' : action} plugin. Check its health and retry.`);
+        : `Could not ${action === 'grants' ? 'update grants for' : action} plugin. Check its health and retry.`);
       if (action === 'configuration') setConfigure(false);
     } finally {
       await refresh();
@@ -64,15 +65,15 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
     finally { setBusy(false); }
   }
 
-  return <section className={styles.card} aria-label={`${d.name} plugin`}>
-    <h3 className={styles.title}>{d.name}</h3>
+  return <SettingsSection title={`${d.name} plugin`}>
     <PluginMetadata plugin={p} />
     {error && <p role="alert">{error}</p>}
     <fieldset disabled={busy} className={styles.management}>
       <legend>Manage {d.name}</legend>
       <SettingRow label="Lifecycle" block>
         <ButtonGroup label="Plugin lifecycle actions">
-          <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={() => setReview(true)}>Enable</Button>
+          <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={() => setReview('enable')}>Enable</Button>
+          <Button type="button" size="small" disabled={blocked || !d.requestedGrants?.some((grant) => !p.grants?.includes(grant))} onClick={() => setReview('grants')}>Grant permissions</Button>
           <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
           <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</Button>
           <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('restart'); }}>Restart</Button>
@@ -81,13 +82,13 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
           <Button type="button" size="small" variant="danger" disabled={p.enabled} onClick={() => setRemove(true)}>Remove data</Button>
         </ButtonGroup>
       </SettingRow>
-      {review && <SettingRow label="Review grants before enabling" block>
+      {review && <SettingRow label={review === 'enable' ? 'Review grants before enabling' : 'Review grants'} block>
         <p>This native executable runs on {owner} with {d.scope} scope. Approve checksum <code>{p.checksum}</code> and these requested grants:</p>
         <ul>{(d.requestedGrants ?? []).map((grant) => <li key={grant}>{grant}</li>)}</ul>
         {!d.requestedGrants?.length && <p>No grants requested.</p>}
         <ButtonGroup label="Plugin approval actions">
-          <Button type="button" variant="accent" onClick={() => { void mutate('enable', { approval: p.approval, grants: d.requestedGrants ?? [] }); }}>Approve grants and enable</Button>
-          <Button type="button" onClick={() => setReview(false)}>Cancel approval</Button>
+          <Button type="button" variant="accent" onClick={() => { void mutate(review, { ...(review === 'enable' ? { approval: p.approval } : {}), grants: d.requestedGrants ?? [] }); }}>{review === 'enable' ? 'Approve grants and enable' : 'Approve grants'}</Button>
+          <Button type="button" onClick={() => setReview(null)}>Cancel approval</Button>
         </ButtonGroup>
       </SettingRow>}
       {configure && <PluginConfiguration key={JSON.stringify(p.configuration)} plugin={p} save={(input) => mutate('configuration', input)} />}
@@ -104,5 +105,5 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
         {logs !== null && <pre aria-label="Recent stderr" className={styles.logs}>{logs || 'No recent stderr.'}</pre>}
       </SettingRow>
     </fieldset>
-  </section>;
+  </SettingsSection>;
 }

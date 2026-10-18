@@ -13,6 +13,10 @@ approved project and receive that session's completed turns, and
 installations in **Settings → Plugins**, selecting the plugin owner before making
 changes.
 
+Plugins has its own Settings category. **Discovery** contains the owner selector,
+rescan controls and rejected executables. Each discovered plugin has a separate
+section for its grants, configuration, health and diagnostics.
+
 ## Trust and installation
 
 **Plugins are trusted native code, including during discovery.** Rescanning runs
@@ -478,6 +482,12 @@ authentication and origin protection.
 process. It denies affected actions and cached results, but cannot recall context
 already delivered. Use **Disable** to stop execution while retaining configuration,
 grants, and private data.
+
+Use **Grant permissions**, review the checksum and requested grants, then click
+**Approve grants** to restore missing approvals without disabling the plugin.
+This also works before enablement, but does not enable a disabled plugin or
+replace its required configuration. Removed or conflicted plugins must be repaired
+and rescanned first.
 
 To uninstall, disable the plugin, remove its executable on the owner, and rescan.
 Missing registrations remain visible as removed, retaining configuration and data.

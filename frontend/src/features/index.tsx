@@ -115,7 +115,7 @@ export const FEATURES: Feature[] = [
   { id: 'auto-approve', settings: { id: 'auto-approve', category: 'permissions', label: 'Auto-approve', mount: 'always', Section: AutoApproveSection, ownSections: true } },
   { id: 'worktrees', settings: { id: 'worktrees', category: 'permissions', label: 'Worktrees', mount: 'active', Section: WorktreePermissionSettings } },
   { id: 'remotes', settings: { id: 'remotes', category: 'connections', label: 'Remotes', mount: 'always', Section: RemoteSection } },
-  { id: 'plugins', settings: { id: 'plugins', category: 'connections', label: 'Plugins', mount: 'active', Section: PluginSettings } },
+  { id: 'plugins', settings: { id: 'plugins', category: 'plugins', label: 'Plugins', mount: 'active', Section: PluginSettings, ownSections: true } },
   { id: 'link-previews', settings: { id: 'link-previews', category: 'connections', label: 'Link previews', mount: 'active', Section: LinkPreviewSection } },
   { id: 'sharing', settings: { id: 'sharing', category: 'connections', label: 'Public sharing', mount: 'always', Section: SharingSettings } },
   { id: 'webhooks', settings: { id: 'webhooks', category: 'connections', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },

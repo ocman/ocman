@@ -7,7 +7,7 @@
  */
 
 export type SettingsGroupId =
-  | 'app' | 'sessions' | 'agents' | 'permissions' | 'connections' | 'system'
+  | 'app' | 'sessions' | 'agents' | 'permissions' | 'connections' | 'plugins' | 'system'
   /** Per-project settings page; not part of the global Settings search. */
   | 'project';
 
@@ -184,14 +184,14 @@ export const SETTINGS = {
     keywords: 'machine host grpc token multi-remote',
   },
   'plugin-owner': {
-    group: 'connections',
+    group: 'plugins',
     title: 'Plugin owner',
     description: 'Plugins and their data belong to the selected machine.',
     example: 'Select "buildbox" to manage the plugins installed on that remote rather than on this machine.',
     keywords: 'machine remote',
   },
   'plugin-discovery': {
-    group: 'connections',
+    group: 'plugins',
     title: 'Discovery',
     description: 'Rescan the selected owner\'s plugin directory for new or changed executables.',
     example: 'After "make install-plugin PLUGIN=slack", click Rescan plugins to list the Slack plugin.',
