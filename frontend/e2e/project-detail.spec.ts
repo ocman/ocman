@@ -26,7 +26,7 @@ for (const width of [1280, 390]) {
     });
     await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}/settings?remoteId=B&q=login&t=0&a=1`);
     const table = page.getByRole('table', { name: 'Project settings' });
-    await expect(page.getByTitle(MOCK_PROJECT.directory)).toHaveCount(1);
+    await expect(page.getByRole('banner').getByTitle(MOCK_PROJECT.directory)).toHaveCount(1);
     await expect(page.getByRole('banner').getByLabel('Build machine', { exact: true })).toHaveCSS('border-radius', '999px');
     await expect(page.getByRole('note')).toContainText('Fallback model lists are shared by project path');
     await expect(page.getByRole('button', { name: 'Remove historical/model', exact: true })).toBeDisabled();
@@ -63,7 +63,7 @@ for (const width of [1280, 390]) {
     await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}?remoteId=local&t=0&a=1&q=login`);
     await expect(page.getByRole('tab', { name: 'Sessions', exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('button', { name: 'Project quick settings' })).toBeVisible();
-    await expect(page.getByTitle(MOCK_PROJECT.directory)).toHaveCount(1);
+    await expect(page.getByRole('banner').getByTitle(MOCK_PROJECT.directory)).toHaveCount(1);
     await expect(page.getByRole('banner').getByLabel('Local', { exact: true })).toHaveCSS('border-radius', '999px');
     await expect(page.getByRole('searchbox', { name: 'Search sessions' })).toHaveValue('login');
     await expect(page.getByRole('button', { name: 'Exclude archived' })).toHaveAttribute('aria-pressed', 'true');
