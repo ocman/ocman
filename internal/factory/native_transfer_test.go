@@ -259,13 +259,20 @@ func TestTransferCancelCannotSlipBetweenReserveAndCreate(t *testing.T) {
 	created := false
 	url, err := svc.TransferIssue(t.Context(), epic.ID, second, func(context.Context, Issue) (string, error) {
 		created = true
+		// Keep the tracker call live until Cancel has observed it. Checking
+		// after TransferIssue returns can race with valid post-transfer cleanup.
+		select {
+		case err := <-store.cancelled:
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("racing cancel = %v, want refused as live", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("racing cancel did not return while the tracker call was live")
+		}
 		return "https://forge.example/issues/2", nil
 	})
 	if err != nil || !created || url == "" {
 		t.Fatalf("transfer = %q, %v", url, err)
-	}
-	if err := <-store.cancelled; !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("racing cancel = %v, want refused as live", err)
 	}
 	if got := issueStatus(t, svc, epic.ID, second); got != "removed" {
 		t.Fatalf("transferred issue = %s", got)
