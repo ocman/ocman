@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 
-test('six settings categories contain named sections and keep legacy links working', async ({ mockedPage: page }) => {
+test('seven settings categories contain named sections and keep legacy links working', async ({ mockedPage: page }) => {
   await page.route('/api/settings/platforms', (route) => route.fulfill({ json: { enabled: ['opencode', 'claudecode'] } }));
   await page.route('/api/settings/model-fallthrough', (route) => route.fulfill({ json: { patienceMinutes: 15, fallbackMinutes: 60 } }));
   await page.route('/api/settings/judge-endpoint', (route) => route.fulfill({ json: { format: '', endpoint: '', model: '', minSafeProbability: .99, apiKeySet: false } }));
@@ -8,7 +8,7 @@ test('six settings categories contain named sections and keep legacy links worki
   await page.goto('/settings?tab=auto-approve');
   const navigation = page.getByRole('navigation', { name: 'Settings groups' });
   await expect(navigation.getByRole('button')).toHaveText([
-    'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'System',
+    'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'Plugins', 'System',
   ]);
   for (const name of ['Auto-approve', 'AI reviewer', 'Worktrees']) {
     await expect(page.getByRole('heading', { name, level: 3, exact: true })).toBeVisible();
