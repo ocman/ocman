@@ -55,6 +55,22 @@ describe('regression: composer notices belong to the current turn', () => {
   });
 
   it.each([
+    { type: 'message.part.delta', properties: { messageID: 'retry-turn', partID: 'text', field: 'text', delta: 'Recovered' } },
+    { type: 'message.part.updated', properties: { part: { id: 'tool', messageID: 'retry-turn', type: 'tool', state: { status: 'running' } } } },
+    { type: 'message.part.updated', properties: { part: { id: 'tool', messageID: 'retry-turn', type: 'tool', state: { status: 'pending' } } } },
+  ])('clears retry feedback when $type resumes an already busy session', (event) => {
+    const state: SessionView = { ...initialSessionView(SID), session: makeSession({ status: 'busy' }) };
+    const retrying = reduceSessionView(state, { type: 'sse', event: {
+      type: 'session.status', properties: { status: { type: 'retry', message: 'Provider unavailable', attempt: 1, next: 5_000 } },
+    } });
+    expect(retrying.session?.status).toBe('busy');
+    expect(retrying.session?.notice?.kind).toBe('retry');
+    const recovered = reduceSessionView(retrying, { type: 'sse', event });
+    expect(recovered.session?.status).toBe('busy');
+    expect(recovered.session?.notice).toBeUndefined();
+  });
+
+  it.each([
     { type: 'session.status', properties: { status: 'done' } },
     { type: 'session.idle' },
     { type: 'message.part.delta', properties: { messageID: 'new-turn', partID: 'text', field: 'text', delta: 'Recovered' } },

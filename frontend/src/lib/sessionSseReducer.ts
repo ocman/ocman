@@ -193,7 +193,7 @@ function reducePartSnapshot(state: SessionView, props: Record<string, unknown>):
   let nextSession = state.session;
   const rawState = rawPart.state as Record<string, unknown> | undefined;
   const status = rawState?.status;
-  if ((status === 'running' || status === 'pending') && state.session && state.session.status !== 'busy') {
+  if ((status === 'running' || status === 'pending') && state.session && (state.session.status !== 'busy' || state.session.notice)) {
     nextSession = { ...state.session, status: 'busy', notice: undefined };
   }
 
@@ -272,7 +272,7 @@ function reducePartDelta(state: SessionView, props: Record<string, unknown>): Se
   // this is a live signal, not a re-derivation from stored message
   // shape, and removing it leaves the badge stale mid-turn.
   let nextSession = state.session;
-  if (state.session && state.session.status !== 'busy') {
+  if (state.session && (state.session.status !== 'busy' || state.session.notice)) {
     nextSession = { ...state.session, status: 'busy', notice: undefined };
   }
 
