@@ -14,11 +14,17 @@ import (
 // one itself. Through the ocv2 translation that means the naming session's
 // model is never switched (no POST /api/session/{id}/model).
 func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
-	shortenReadTimeout(t)
+	// Keep the read deadline shorter than the fake model call, but long
+	// enough for ordinary HTTP reads on an instrumented, loaded runner.
+	previous := openCodeClient.Timeout
+	openCodeClient.Timeout = time.Second
+	t.Cleanup(func() { openCodeClient.Timeout = previous })
 	defer ocv2.SetInstalledV2(true)()
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/config":
+			// Configuration reads must tolerate ordinary runner scheduling latency.
+			time.Sleep(50 * time.Millisecond)
 			writeJSONBody(w, `[{"type":"document","info":{}}]`)
 		case "POST /api/session":
 			writeJSONBody(w, `{"data":{"id":"naming"}}`)
@@ -29,7 +35,7 @@ func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
 		case "GET /api/session/active":
 			writeJSONBody(w, `{"data":{}}`)
 		case "POST /api/experimental/session/naming/wait":
-			time.Sleep(80 * time.Millisecond)
+			time.Sleep(1100 * time.Millisecond)
 			writeJSONBody(w, `{}`)
 		case "POST /api/session/naming/agent", "POST /api/session/naming/model",
 			"POST /api/session/naming/interrupt", "DELETE /api/session/naming":
