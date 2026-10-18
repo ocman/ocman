@@ -1,5 +1,10 @@
 /* Desktop chrome is deliberately untouched. This entire shell is phone-only. */
 @media (width <= 640px) {
+  /* Match the browser's bottom safe-area canvas to the fixed tab bar. */
+  html:has(.phone-tab-bar),
+  body:has(.phone-tab-bar) { background: var(--mantle); }
+  .app-shell:has(.phone-tab-bar) { background: var(--bg); }
+
   .app-shell:has(.phone-tab-bar):not(:has(.session-layout)) .container {
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
