@@ -59,7 +59,9 @@
     line-height: 1.5;
   }
 
-  .phone-session-project { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .phone-session-checkout { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+  .phone-session-project-name,
+  .phone-session-branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .phone-session-meta time { margin-left: auto; }
   .phone-session-pending { color: var(--peach); }
   .phone-project-link { display: block; padding: 18px 0; min-height: 80px; }
