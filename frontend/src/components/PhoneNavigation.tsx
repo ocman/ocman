@@ -18,7 +18,7 @@ const moreItems = [
   { to: '/', label: 'Home', icon: 'bi-house' },
   ...featureNav,
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
-  { to: '/subscription-usage', label: 'Usage', icon: 'bi-speedometer2' },
+  { to: '/provider-usage', label: 'Provider usage', icon: 'bi-speedometer2' },
   { to: '/settings', label: 'Settings', icon: 'bi-gear' },
 ];
 

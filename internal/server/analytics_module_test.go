@@ -21,6 +21,8 @@ func TestAnalyticsModuleMountedBehindServerGuards(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/subscription-usage", "10.0.0.5:1234", http.StatusForbidden},
 		{http.MethodPost, "/api/subscription-usage", "127.0.0.1:1234", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/provider-usage", "10.0.0.5:1234", http.StatusForbidden},
+		{http.MethodPost, "/api/provider-usage", "127.0.0.1:1234", http.StatusMethodNotAllowed},
 		{http.MethodGet, "/api/analytics/overview", "127.0.0.1:1234", http.StatusOK},
 		{http.MethodPost, "/api/analytics/overview", "127.0.0.1:1234", http.StatusMethodNotAllowed},
 	} {

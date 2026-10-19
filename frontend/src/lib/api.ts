@@ -57,7 +57,7 @@ export const api = {
     fetchJSON<UsageDay[]>(`/api/analytics/ui-usage${queryString({ days })}`, signal),
   agentRunHours: (params: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<{ timestamp: number; minutes: number }[]>(`/api/analytics/agent-run-hours${queryString(params)}`, signal),
-  subscriptionUsage: (signal?: AbortSignal) => fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
+  subscriptionUsage: (signal?: AbortSignal) => fetchJSON<SubscriptionUsageResponse>('/api/provider-usage', signal),
   providerAccounts: (signal?: AbortSignal) => fetchJSON<{ accounts: ProviderAccount[] }>('/api/provider-accounts', signal),
   hookPlugin: (signal?: AbortSignal) => fetchJSON<HookPluginStatus>('/api/hook-plugin', signal),
   setHookPlugin: (install: boolean) => postJSON<HookPluginStatus>(`/api/hook-plugin/${install ? 'install' : 'uninstall'}`, undefined),

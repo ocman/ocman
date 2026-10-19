@@ -8,7 +8,7 @@ export const phoneReviewPages = [
   ['worktrees', `/project/${encodeURIComponent(MOCK_PROJECT.directory)}/worktrees`],
   ['project-settings', `/project/${encodeURIComponent(MOCK_PROJECT.directory)}/settings`],
   ['routines', '/routines'], ['webhook-inboxes', '/routines?tab=inboxes'], ['artifacts', '/artifacts'], ['artifact-detail', '/artifacts/mobile-review'],
-  ['usage', '/subscription-usage'], ['import-share', '/import-share'],
+  ['usage', '/provider-usage'], ['import-share', '/import-share'],
   ...['overview', 'epics', 'epics/mobile-review', 'issues', 'queue', 'configuration', 'how-to'].map(s => [`factory-${s.replaceAll('/', '-')}`, `/factory/${s}`]),
   ...['overview', 'activity', 'models', 'performance', 'permissions', 'logs'].map(s => [`analytics-${s}`, `/analytics/${s}`]),
   ...['notifications', 'sessions', 'conversation', 'remotes', 'plugins', 'platforms', 'idle-projects', 'auto-approve', 'sharing', 'webhooks', 'templates', 'link-previews', 'maintenance', 'provider-accounts'].map(s => [`settings-${s}`, `/settings?tab=${s}`]),
@@ -41,7 +41,7 @@ export async function installPhoneReviewRoutes(page: Page) {
   await page.route(/\/api\/artifacts(\?.*)?$/, r => r.fulfill({ json: { artifacts: [artifact], nextCursor: '' } }));
   await page.route('/api/artifacts/mobile-review', r => r.fulfill({ json: artifact }));
   await page.route('/api/artifacts/mobile-review/files/0', r => r.fulfill({ contentType: 'text/plain', body: 'Use square controls with room for fingers.' }));
-  await page.route('/api/subscription-usage', r => r.fulfill({ json: { providers: [{ id: 'anthropic', name: 'Anthropic', status: 'ok', plan: 'max', windows: [{ name: 'Current session', usedPercent: 35, resetsAt: new Date(now + 7200000).toISOString() }] }] } }));
+  await page.route('/api/provider-usage', r => r.fulfill({ json: { providers: [{ id: 'anthropic', name: 'Anthropic', status: 'ok', plan: 'max', windows: [{ name: 'Current session', usedPercent: 35, resetsAt: new Date(now + 7200000).toISOString() }] }] } }));
   await page.route('/api/inbox*', r => r.fulfill({ json: { items: [{ id: 'mobile-review', remoteId: 'local', title: 'Review the mobile layout', body: 'The latest changes are ready for review.', createdAt: now, readAt: 0 }], unreadTotal: 1 } }));
   await page.route(/\/api\/factory\/epics(\?.*)?$/, r => r.fulfill({ json: [epic] }));
   await page.route('/api/factory/epics/mobile-review', r => r.fulfill({ json: epic }));

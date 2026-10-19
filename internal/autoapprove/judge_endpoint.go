@@ -121,7 +121,9 @@ func judgeEndpoint(ctx context.Context, config JudgeEndpoint, permission string,
 		return endpointFailure("Could not read reviewer endpoint response.")
 	}
 	if config.Format == "typesafe" {
-		return parseTypeSafeVerdict(body, config.MinSafeProbability)
+		result := parseTypeSafeVerdict(body, config.MinSafeProbability)
+		result.usage = readTypeSafeUsage(body)
+		return result
 	}
 	var response struct {
 		Choices []struct {

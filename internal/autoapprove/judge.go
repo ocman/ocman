@@ -50,6 +50,7 @@ type PermissionJudge struct {
 	openCodePort  func(directory string) string
 	httpClient    *http.Client
 	store         judgeModelStore
+	recordUsage   func(context.Context, string, *int64, *int64) error
 	modelMu       sync.RWMutex
 	modelProvider string
 	modelID       string
@@ -89,6 +90,7 @@ type JudgeResult struct {
 	Reasoning  string
 	cacheScope string       // Configuration actually used, even if settings change mid-call.
 	scores     *judgeScores // Present only for validated TypeSafe probability distributions.
+	usage      *typeSafeUsage
 }
 
 func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, permission string, patterns []string, metadata map[string]any, customSections []PromptSection, onSessionCreated func(judgeSessionID string)) (result JudgeResult) {
@@ -107,7 +109,9 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 		if onSessionCreated != nil {
 			onSessionCreated("")
 		}
-		return judgeEndpoint(ctx, config, permission, patterns, metadata, customSections)
+		result = judgeEndpoint(ctx, config, permission, patterns, metadata, customSections)
+		j.recordTypeSafeUsage(ctx, config, result.usage)
+		return result
 	}
 	if j.openCodePort == nil {
 		return JudgeResult{Verdict: verdictNeedsUser}

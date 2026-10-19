@@ -38,7 +38,9 @@ type Deps struct {
 	Store *state.DB
 	// Version is the build version reported by /api/stats, read per request.
 	Version func() string
-	Guards  module.Guards
+	// TypeSafeConfigured reports a keyed, hosted reviewer at request time.
+	TypeSafeConfigured func(context.Context) (bool, error)
+	Guards             module.Guards
 }
 
 // Module owns the analytics routes, their caches and refresh workers.
@@ -83,6 +85,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("/api/analytics/agent-run-hours", get(m.handleAgentRunHours))
 	r.Handle("/api/ui-usage", post(m.handleUIUsage))
 	r.Handle("/api/subscription-usage", method(http.MethodGet, m.deps.Guards.Localhost(m.handleSubscriptionUsage)))
+	r.Handle("/api/provider-usage", method(http.MethodGet, m.deps.Guards.Localhost(m.handleSubscriptionUsage)))
 	r.Handle("/api/metrics", get(m.handleMetrics))
 	r.Handle("/api/metrics/performance", get(m.handleMetricsPerformance))
 	r.Handle("/api/metric-logs", get(m.handleMetricLogs))

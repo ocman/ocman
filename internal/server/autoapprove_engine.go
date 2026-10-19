@@ -97,6 +97,7 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 	if s.stateDB != nil {
 		deps.Store = s.stateDB
 		deps.CommitStore = s.stateDB
+		deps.RecordTypeSafeUsage = s.analyticsModule().RecordTypeSafeUsage
 	}
 	// Without a reachable OpenCode instance, a platform's own judge decides (AD-8).
 	if s.registry != nil {

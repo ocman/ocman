@@ -81,7 +81,7 @@ describe('phone navigation', () => {
     const more = screen.getByRole('button', { name: 'More' });
     await user.click(more);
     const dialog = screen.getByRole('dialog', { name: 'More destinations' });
-    for (const label of ['Factory', 'Routines', 'Artifacts', 'Analytics', 'Usage', 'Settings', 'Home']) {
+    for (const label of ['Factory', 'Routines', 'Artifacts', 'Analytics', 'Provider usage', 'Settings', 'Home']) {
       expect(within(dialog).getByRole('link', { name: label })).toBeInTheDocument();
     }
     await user.keyboard('{Escape}');

@@ -378,6 +378,7 @@ export function AppRoutes() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/sessions" element={<SessionsTab />} />
           <Route path="/subscription-usage" element={<SubscriptionUsage />} />
+          <Route path="/provider-usage" element={<SubscriptionUsage />} />
           <Route path="/projects" element={<ProjectsTab />} />
           <Route path="/analytics/:section?" element={<AnalyticsTab />} />
           <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />

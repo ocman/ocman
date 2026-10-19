@@ -776,6 +776,7 @@ export interface SubscriptionProviderUsage {
   plan?: string;
   status: SubscriptionProviderStatus;
   windows: SubscriptionUsageWindow[];
+  spend?: import('./api.providerUsage').ProviderSpend;
 }
 
 export interface SubscriptionUsageResponse {

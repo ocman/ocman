@@ -52,7 +52,7 @@ flowchart LR
     Browser[Browser SPA<br/>REST + SSE] -->|core APIs, batched previews, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
-    Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
+    Ocman -->|read/write SQLite<br/>Inbox, state + provider cost ledger| StateDB[(state.db)]
     Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
     Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode instances<br/>or registered v2 service]
     Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
@@ -153,9 +153,17 @@ flowchart LR
   observations are shared as advisory files under `claude-external` beside
   state.db; they produce non-blocking session warnings, not admission locks.
   See [Claude Code](../features/claude-code.md).
-- **Provider usage APIs.** The subscription usage page reads OpenCode's local
-  OAuth credentials server-side and returns only normalized quota windows;
-  provider tokens and account identifiers never reach the browser.
+- **Provider usage.** `/provider-usage` reads OpenCode's local OAuth credentials
+  server-side for normalized quota windows. `/api/provider-usage` also reads
+  the analytics-owned `provider_usage` ledger in state.db. The server injects
+  a recorder into auto-approve so keyed requests to TypeSafe's hosted System
+  One API retain only model, timestamp, token counts and estimated USD. The
+  page shows a rolling seven-day local estimate at the documented Jev 1.13/1.14
+  input price, not account-wide billing. Unknown prices or missing counts stay
+  unpriced, not zero. Other apps and pre-update requests cannot be backfilled.
+  Old records expire on the next recorded request. Provider tokens and account
+  identifiers never reach the browser. The old subscription-usage routes remain
+  aliases for existing clients and bookmarks.
 - **Custom reviewer APIs.** `internal/autoapprove` can send permission judgments
   directly to a user-configured OpenAI-compatible chat-completions or
   TypeSafe-compatible System One endpoint instead of a temporary OpenCode
@@ -339,7 +347,7 @@ flowchart TD
   Factory launches (`module.Launcher`) once the MCP listener is up, because
   its sessions verify their ocman MCP connection, and closes (`module.Closer`)
   after the HTTP and MCP listeners stop. Analytics (`internal/analytics`) owns
-  the Stats/Usage endpoints, UI-usage recording, subscription usage, and the
+  the Stats/Usage endpoints, UI-usage recording, provider usage and its cost ledger, and the
   database-size sampler, stats gauges and LLM-turn scanner, all joined in its
   `Run`. It reads OpenCode only through `internal/db`; the analytics mirror,
   session snapshot, client-activity demand leases, `/api/system/stats` and the

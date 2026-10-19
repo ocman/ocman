@@ -73,6 +73,8 @@ type Deps struct {
 	// CommitStore persists live terminal observations independently of judge
 	// enablement. It is normally the same state DB as Store.
 	CommitStore CommitStore
+	// RecordTypeSafeUsage persists hosted reviewer token counts, never credentials.
+	RecordTypeSafeUsage func(context.Context, string, *int64, *int64) error
 
 	// SessionDir resolves a session ID to its working directory (used
 	// for OpenCode port discovery). May be nil when no session DB is
@@ -216,6 +218,7 @@ type Service struct {
 func NewService(deps Deps) *Service {
 	judge := newPermissionJudge(deps.OpenCodeAuth)
 	judge.store = deps.Store
+	judge.recordUsage = deps.RecordTypeSafeUsage
 	svc := &Service{
 		deps:             deps,
 		judge:            judge,

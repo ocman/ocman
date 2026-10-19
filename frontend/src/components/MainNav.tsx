@@ -86,19 +86,19 @@ export function MainNav({
             <button
               ref={usageTrigger}
               type="button"
-              className={usageOpen || location.pathname === '/subscription-usage' ? 'main-nav-usage active' : 'main-nav-usage'}
-              aria-label="Usage"
+              className={usageOpen || ['/provider-usage', '/subscription-usage'].includes(location.pathname) ? 'main-nav-usage active' : 'main-nav-usage'}
+              aria-label="Provider usage"
               aria-expanded={usageOpen}
               aria-haspopup="dialog"
               aria-controls="subscription-usage-popover"
-              title={collapsed ? 'Usage' : undefined}
+              title={collapsed ? 'Provider usage' : undefined}
               onClick={() => setUsageOpen((open) => !open)}
             >
               <i className="bi bi-speedometer2" aria-hidden="true" />
-              <span>Usage</span>
+              <span>Provider usage</span>
             </button>
             <Popover open={usageOpen} onClose={() => setUsageOpen(false)} triggerRef={usageTrigger}
-              id="subscription-usage-popover" label="Subscription usage"
+              id="subscription-usage-popover" label="Provider usage"
               className={`subscription-usage-popover${collapsed ? ' subscription-usage-popover--collapsed' : ''}`}>
               <SubscriptionUsageContent compact />
             </Popover>

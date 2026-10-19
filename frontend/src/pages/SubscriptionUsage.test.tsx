@@ -9,6 +9,22 @@ vi.mock('../lib/queries', () => ({ useSubscriptionUsage: vi.fn() }));
 describe('SubscriptionUsage', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  it('shows provider usage with a scoped seven-day cost estimate', () => {
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      data: { providers: [{ id: 'typesafe', name: 'TypeSafe', status: 'ok', windows: [], spend: {
+        estimatedUSD: 0.0042, inputTokens: 100000, outputTokens: 20, requests: 2,
+        unpricedRequests: 1, periodStart: '2026-10-12T12:00:00Z', periodEnd: '2026-10-19T12:00:00Z',
+      } }] },
+    } as never);
+    render(<SubscriptionUsage />);
+    expect(screen.getByRole('heading', { name: 'Provider usage' })).toBeInTheDocument();
+    expect(screen.getByText('$0.0042')).toBeInTheDocument();
+    expect(screen.getByText('Estimated cost · last 7 days')).toBeInTheDocument();
+    expect(screen.getByText(/Recorded by this ocman instance only/)).toBeInTheDocument();
+    expect(screen.getByText(/1 request could not be priced/)).toBeInTheDocument();
+    expect(screen.queryByText('No quota windows reported.')).not.toBeInTheDocument();
+  });
+
   it('shows every subscription and quota window', () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({
       data: { providers: [
@@ -84,7 +100,7 @@ describe('SubscriptionUsage', () => {
     const refetch = vi.fn();
     const result = {
       data: { providers: [{ id: 'anthropic', name: 'Anthropic', status: 'rate_limited', windows: [] }] },
-      error: new Error('Could not load subscription usage.'),
+      error: new Error('Could not load provider usage.'),
       refetch,
       isFetching: false,
     };
@@ -92,7 +108,7 @@ describe('SubscriptionUsage', () => {
 
     const { rerender } = render(<SubscriptionUsage />);
     expect(screen.getByText('Temporarily rate limited')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Could not load subscription usage.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load provider usage.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalledOnce();
     vi.mocked(useSubscriptionUsage).mockReturnValue({ ...result, isFetching: true } as never);
@@ -100,19 +116,19 @@ describe('SubscriptionUsage', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Retry' })).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('heading', { name: 'Anthropic' })).toBeInTheDocument();
-    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading provider usage')).not.toBeInTheDocument();
   });
 
   it('shows loading and empty states', () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({ isLoading: true } as never);
     const { rerender } = render(<SubscriptionUsage />);
-    expect(screen.getByRole('status')).toHaveTextContent('Loading subscription usage');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading provider usage');
     expect(screen.getByRole('status').firstElementChild).toHaveAttribute('aria-hidden', 'true');
 
     vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
     rerender(<SubscriptionUsage />);
-    expect(screen.getByText('No OpenCode subscription credentials found.')).toBeInTheDocument();
-    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
+    expect(screen.getByText('No supported provider credentials found.')).toBeInTheDocument();
+    expect(screen.queryByText('Loading provider usage')).not.toBeInTheDocument();
   });
 
   it('keeps existing quota data visible while loading', () => {
@@ -125,7 +141,7 @@ describe('SubscriptionUsage', () => {
     } as never);
     render(<SubscriptionUsage />);
     expect(screen.getByRole('progressbar', { name: 'OpenAI 5 hours usage' })).toHaveValue(10);
-    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading provider usage')).not.toBeInTheDocument();
   });
 
   it('refreshes usage and exposes the fetching state on the shared control', () => {

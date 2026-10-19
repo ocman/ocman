@@ -25,7 +25,8 @@ describe('routeTitle', () => {
     ['/', 'Home'],
     ['/sessions', 'Sessions'],
     ['/inbox', 'Inbox'],
-    ['/subscription-usage', 'Usage'],
+    ['/subscription-usage', 'Provider usage'],
+    ['/provider-usage', 'Provider usage'],
     ['/analytics/overview', 'Analytics'],
     ['/analytics/performance', 'Analytics'],
     ['/settings', 'Settings'],
@@ -73,7 +74,7 @@ describe('MainNav', () => {
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveClass('active');
     expect(screen.getByRole('link', { name: 'Analytics' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
-    const usage = screen.getByRole('button', { name: 'Usage' });
+    const usage = screen.getByRole('button', { name: 'Provider usage' });
     const inbox = screen.getByRole('link', { name: 'Inbox' });
     // Bottom group is Inbox > Usage > Settings; Inbox carries the marker
     // class that pushes that group to the bottom of the rail.
@@ -104,10 +105,10 @@ describe('MainNav', () => {
       </MemoryRouter>,
     );
 
-    const usage = screen.getByRole('button', { name: 'Usage' });
+    const usage = screen.getByRole('button', { name: 'Provider usage' });
     await user.click(usage);
 
-    const popover = screen.getByRole('dialog', { name: 'Subscription usage' });
+    const popover = screen.getByRole('dialog', { name: 'Provider usage' });
     expect(popover).toHaveClass('oc-popover');
     expect(popover.parentElement).toBe(document.body);
     expect(popover).toHaveFocus();
@@ -115,7 +116,7 @@ describe('MainNav', () => {
     expect(usage).toHaveAttribute('aria-expanded', 'true');
 
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog', { name: 'Subscription usage' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Provider usage' })).not.toBeInTheDocument();
     expect(usage).toHaveFocus();
   });
 
@@ -151,7 +152,8 @@ describe('MainNav', () => {
     ['/analytics/overview', 'Analytics'],
     ['/analytics/logs', 'Analytics'],
     ['/inbox', 'Inbox'],
-    ['/subscription-usage', 'Usage'],
+    ['/subscription-usage', 'Provider usage'],
+    ['/provider-usage', 'Provider usage'],
     ['/settings', 'Settings'],
   ])('marks only the owning destination active on %s', (path, label) => {
     render(<MemoryRouter initialEntries={[path]}><MainNav /></MemoryRouter>);

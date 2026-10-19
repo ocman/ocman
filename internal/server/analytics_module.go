@@ -1,7 +1,10 @@
 package server
 
 import (
+	"context"
+
 	"github.com/NoUseFreak/ocman/internal/analytics"
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/module"
 )
 
@@ -14,7 +17,14 @@ func (s *Server) analyticsModule() *analytics.Module {
 			Analytics: s.analytics,
 			Store:     s.stateDB,
 			Version:   func() string { return s.version },
-			Guards:    module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+			TypeSafeConfigured: func(ctx context.Context) (bool, error) {
+				if s.stateDB == nil {
+					return false, nil
+				}
+				config, err := autoapprove.LoadJudgeEndpoint(ctx, s.stateDB)
+				return config.HostedTypeSafe(), err
+			},
+			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
 }

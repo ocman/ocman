@@ -27,7 +27,7 @@ const rows: Array<[string, () => Promise<unknown>, string, string, unknown?]> = 
   ['metrics', () => api.metrics({ days: 7, dir: '' }), 'GET', '/api/metrics/performance?days=7'],
   ['analyticsOverview', () => api.analyticsOverview(), 'GET', '/api/analytics/overview'],
   ['databaseSizes', () => api.databaseSizes(), 'GET', '/api/analytics/database-sizes'],
-  ['subscriptionUsage', () => api.subscriptionUsage(), 'GET', '/api/subscription-usage'],
+  ['subscriptionUsage', () => api.subscriptionUsage(), 'GET', '/api/provider-usage'],
   ['providerAccounts', () => api.providerAccounts(), 'GET', '/api/provider-accounts'],
   ['metricLogs', () => api.metricLogs({ kind: 'tool' as never, limit: 5 }), 'GET', '/api/metric-logs?kind=tool&limit=5'],
   ['permissionStats', () => api.permissionStats({ days: 1 }), 'GET', '/api/permission-stats?days=1'],

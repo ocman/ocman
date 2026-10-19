@@ -6,6 +6,7 @@ import { RefreshButton } from '../components/RefreshButton';
 import { InlineAlert } from '../components/InlineAlert';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
+import { ProviderSpend } from './ProviderSpend';
 import './SubscriptionUsage.css';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -23,7 +24,8 @@ function ProviderCard({ provider, compact = false }: { provider: SubscriptionPro
         {provider.plan && <span className="subscription-plan">{provider.plan.charAt(0).toUpperCase() + provider.plan.slice(1)}</span>}
       </header>
       {provider.status !== 'ok' && <p className="subscription-status">{STATUS_LABELS[provider.status] ?? 'Usage unavailable'}</p>}
-      {provider.status === 'ok' && provider.windows.length === 0 && <p className="subscription-status">No quota windows reported.</p>}
+      {provider.status === 'ok' && provider.windows.length === 0 && !provider.spend && <p className="subscription-status">No quota windows reported.</p>}
+      {provider.spend && <ProviderSpend spend={provider.spend} />}
       <div className="subscription-windows">
         {provider.windows.map((window) => (
           <div className="subscription-window" key={`${window.name}-${window.resetsAt ?? ''}`}>
@@ -60,8 +62,8 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
     <div className="subscription-content">
       <div className="subscription-page-heading">
         <div>
-          {compact ? <h2>Subscription usage</h2> : <h1>Subscription usage</h1>}
-          <p>Current limits reported for OAuth subscriptions connected to OpenCode.</p>
+          {compact ? <h2>Provider usage</h2> : <h1>Provider usage</h1>}
+          <p>Subscription limits and API cost estimates for connected providers.</p>
         </div>
         <RefreshButton size="small" variant="default" onClick={() => void usage.refetch()} loading={usage.isFetching} />
       </div>
@@ -70,8 +72,8 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
           {usage.error.message}
         </InlineAlert>
       )}
-      {usage.isLoading && !usage.data && <LoadingState>Loading subscription usage</LoadingState>}
-      {usage.data?.providers.length === 0 && <EmptyState>No OpenCode subscription credentials found.</EmptyState>}
+      {usage.isLoading && !usage.data && <LoadingState>Loading provider usage</LoadingState>}
+      {usage.data?.providers.length === 0 && <EmptyState>No supported provider credentials found.</EmptyState>}
       {usage.data && usage.data.providers.length > 0 && (
         <div className="subscription-grid">
           {usage.data.providers.map((provider) => <ProviderCard provider={provider} compact={compact} key={provider.id} />)}
@@ -82,6 +84,6 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
 }
 
 export function SubscriptionUsage() {
-  usePageTitle('Usage');
+  usePageTitle('Provider usage');
   return <div className="subscription-page"><SubscriptionUsageContent /></div>;
 }

@@ -37,6 +37,7 @@ type subscriptionProviderUsage struct {
 	Plan    string                    `json:"plan,omitempty"`
 	Status  string                    `json:"status"`
 	Windows []subscriptionUsageWindow `json:"windows"`
+	Spend   *providerSpend            `json:"spend,omitempty"`
 }
 
 type subscriptionUsageWindow struct {
@@ -103,8 +104,12 @@ func (c *subscriptionUsageCache) get(ctx context.Context, client subscriptionUsa
 
 func (m *Module) handleSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
 	usage, err := m.subscriptionCache.get(r.Context(), m.subscription)
+	if err == nil {
+		// Append local spend outside the OAuth cache so new calls appear on refresh.
+		err = m.appendTypeSafeUsage(r.Context(), &usage)
+	}
 	if err != nil {
-		httpx.ServerError(w, "failed to read subscription usage", err)
+		httpx.ServerError(w, "failed to read provider usage", err)
 		return
 	}
 	httpx.WriteJSON(w, usage)
