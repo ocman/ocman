@@ -47,12 +47,23 @@ func V1Agents(agents []any) []map[string]any {
 	return out
 }
 
-// V1Commands maps v2 Command.Info entries to the v1 /command list.
-func V1Commands(cmds []any) []map[string]any {
-	out := make([]map[string]any, 0, len(cmds))
+// V1Commands maps v2 Command.Info and Skill.Info entries to the v1
+// /command list, where skills carry source "skill" and their id. A
+// command shadows a skill of the same name, as runCommand tries it first.
+func V1Commands(cmds, skills []any) []map[string]any {
+	out := make([]map[string]any, 0, len(cmds)+len(skills))
+	names := map[string]bool{}
 	for _, c := range cmds {
 		m, _ := c.(map[string]any)
+		names[str(m, "name")] = true
 		out = append(out, map[string]any{"name": str(m, "name"), "description": str(m, "description"), "template": "", "source": "command"})
+	}
+	for _, s := range skills {
+		m, _ := s.(map[string]any)
+		if id := str(m, "id"); id != "" && !names[id] {
+			names[id] = true
+			out = append(out, map[string]any{"name": id, "description": str(m, "description"), "template": "", "source": "skill"})
+		}
 	}
 	return out
 }

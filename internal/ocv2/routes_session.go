@@ -60,9 +60,13 @@ func getAgents(c *compat, r *http.Request, _ []string) (*http.Response, error) {
 }
 
 func getCommands(c *compat, r *http.Request, _ []string) (*http.Response, error) {
-	var resp data[[]any]
-	err := c.call(r.Context(), http.MethodGet, "/api/command", location(requestDirectory(r)), nil, &resp)
-	return finish(r, http.StatusOK, V1Commands(resp.Data), err)
+	q := location(requestDirectory(r))
+	var cmds, skills data[[]any]
+	if err := c.call(r.Context(), http.MethodGet, "/api/command", q, nil, &cmds); err != nil {
+		return finish(r, 0, nil, err)
+	}
+	_ = c.call(r.Context(), http.MethodGet, "/api/skill", q, nil, &skills) // optional
+	return reply(r, http.StatusOK, V1Commands(cmds.Data, skills.Data)), nil
 }
 
 func getProviders(c *compat, r *http.Request, _ []string) (*http.Response, error) {

@@ -85,6 +85,22 @@ type upstreamError struct{ resp *http.Response }
 
 func (e *upstreamError) Error() string { return fmt.Sprintf("opencode v2: HTTP %d", e.resp.StatusCode) }
 
+// upstreamTag returns the `_tag` naming a v2 error, keeping its body
+// readable for the relay.
+func upstreamTag(err error) string {
+	var ue *upstreamError
+	if !errors.As(err, &ue) {
+		return ""
+	}
+	b, _ := io.ReadAll(ue.resp.Body)
+	ue.resp.Body = io.NopCloser(bytes.NewReader(b))
+	var v struct {
+		Tag string `json:"_tag"`
+	}
+	_ = json.Unmarshal(b, &v)
+	return v.Tag
+}
+
 // call performs one v2 request. 2xx bodies decode into out (when
 // non-nil); other statuses come back as *upstreamError.
 func (c *compat) call(ctx context.Context, method, path string, q url.Values, body, out any) error {

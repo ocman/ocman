@@ -59,12 +59,14 @@ func TestV1Agents(t *testing.T) {
 }
 
 func TestV1Commands(t *testing.T) {
-	got := V1Commands(convList(t, `[{"name":"review","description":"Review it"},{"name":"x"}]`))
+	got := V1Commands(convList(t, `[{"name":"review","description":"Review it"},{"name":"x"}]`),
+		convList(t, `[{"id":"tdd","name":"TDD","description":"Test first"},{"id":"x"},{"id":"tdd"},{"name":"no id"}]`))
 	convEqual(t, "commands", got, `[
 		{"name":"review","description":"Review it","template":"","source":"command"},
-		{"name":"x","description":"","template":"","source":"command"}
+		{"name":"x","description":"","template":"","source":"command"},
+		{"name":"tdd","description":"Test first","template":"","source":"skill"}
 	]`)
-	if got := V1Commands(nil); got == nil || len(got) != 0 {
+	if got := V1Commands(nil, nil); got == nil || len(got) != 0 {
 		t.Errorf("V1Commands(nil) = %#v, want empty non-nil", got)
 	}
 }

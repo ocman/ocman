@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 type v1Part struct {
@@ -218,5 +219,41 @@ func runCommand(c *compat, r *http.Request, m []string) (*http.Response, error) 
 	}
 	err := c.call(r.Context(), http.MethodPost, "/api/session/"+url.PathEscape(m[1])+"/command", nil,
 		map[string]any{"name": in.Command, "text": in.Arguments}, nil)
+	if upstreamTag(err) == "CommandNotFoundError" {
+		if ok, skillErr := c.runSkill(r.Context(), m[1], in.Command, in.Arguments); ok || skillErr != nil {
+			err = skillErr
+		}
+	}
 	return finish(r, http.StatusOK, map[string]any{}, err)
+}
+
+// runSkill loads skill id the way OpenCode documents, an @<id> mention
+// attached to a prompt, since v2's command route rejects skills. It
+// reports false when the session's location has no such skill.
+func (c *compat) runSkill(ctx context.Context, sessionID, id, args string) (bool, error) {
+	s, err := c.session(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	var skills data[[]any]
+	if err := c.call(ctx, http.MethodGet, "/api/skill", location(str(obj(s, "location"), "directory")), nil, &skills); err != nil {
+		return false, err
+	}
+	found := false
+	for _, sk := range skills.Data {
+		m, _ := sk.(map[string]any)
+		found = found || str(m, "id") == id
+	}
+	if !found {
+		return false, nil
+	}
+	mention := "@" + id
+	text := mention
+	if args != "" {
+		text += " " + args
+	}
+	body := map[string]any{"text": text, "skills": []any{map[string]any{
+		"id": id, "mention": map[string]any{"start": 0, "end": len(utf16.Encode([]rune(mention))), "text": mention},
+	}}}
+	return true, c.call(ctx, http.MethodPost, "/api/session/"+url.PathEscape(sessionID)+"/prompt", nil, body, nil)
 }

@@ -361,6 +361,31 @@ func TestCompatAgentsAndCommands(t *testing.T) {
 	cmpLoc(t, f.one("GET /api/command"), "/d")
 }
 
+// v2 lists skills at /api/skill, not /api/command; v1 clients read them
+// from /command with source "skill", addressed by skill id. A command
+// keeps its name when a skill shares it.
+func TestCompatCommandsIncludeSkills(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("GET /api/command", http.StatusOK, `{"data":[{"name":"review","description":"R"}]}`)
+	f.json("GET /api/skill", http.StatusOK, `{"data":[
+		{"id":"review-pr","name":"Review PR","description":"Review a PR","path":"/s/review-pr/SKILL.md","content":"x"},
+		{"id":"review","name":"review","description":"shadowed","path":"/s/review/SKILL.md","content":"x"}]}`)
+	cmpJSON(t, "commands", cmpOK(t, http.MethodGet, f.URL+"/command?directory=/d", ""), `[
+		{"name":"review","description":"R","template":"","source":"command"},
+		{"name":"review-pr","description":"Review a PR","template":"","source":"skill"}]`)
+	cmpLoc(t, f.one("GET /api/skill"), "/d")
+}
+
+func TestCompatCommandsWithoutSkills(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("GET /api/command", http.StatusOK, `{"data":[{"name":"review","description":"R"}]}`)
+	f.json("GET /api/skill", http.StatusInternalServerError, `{"_tag":"Boom"}`)
+	cmpJSON(t, "commands", cmpOK(t, http.MethodGet, f.URL+"/command", ""),
+		`[{"name":"review","description":"R","template":"","source":"command"}]`)
+}
+
 func TestCompatProviders(t *testing.T) {
 	defer SetInstalledV2(true)()
 	f := fakeServer(t)
@@ -687,6 +712,79 @@ func TestCompatShellAndCommand(t *testing.T) {
 	cmpJSON(t, "model body", f.one("POST /api/session/s1/model").Body, `{"model":{"providerID":"openai","id":"gpt","variant":"high"}}`)
 	cmpJSON(t, "command body", f.one("POST /api/session/s1/command").Body, `{"name":"review","text":"main"}`)
 	cmpKeys(t, f, "POST /api/session/s1/shell", "GET /api/session/s1", "POST /api/session/s1/model", "POST /api/session/s1/command")
+}
+
+// v2's command route rejects skills; a v1 command naming a skill loads
+// it the way OpenCode documents, an @<id> mention in a prompt.
+func TestCompatCommandRunsSkill(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"CommandNotFoundError","command":"review-pr","message":"nope"}`)
+	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","location":{"directory":"/repo"}}}`)
+	f.json("GET /api/skill", http.StatusOK, `{"data":[{"id":"review-pr","name":"Review PR","path":"/s","content":"x"}]}`)
+	f.json("POST /api/session/s1/prompt", http.StatusOK, `{"data":{"id":"msg1"}}`)
+
+	cmpJSON(t, "command", cmpOK(t, http.MethodPost, f.URL+"/session/s1/command", `{"command":"review-pr","arguments":"1118"}`), `{}`)
+	cmpLoc(t, f.one("GET /api/skill"), "/repo")
+	cmpJSON(t, "prompt body", f.one("POST /api/session/s1/prompt").Body, `{"text":"@review-pr 1118",
+		"skills":[{"id":"review-pr","mention":{"start":0,"end":10,"text":"@review-pr"}}]}`)
+
+	cmpOK(t, http.MethodPost, f.URL+"/session/s1/command", `{"command":"review-pr"}`)
+	cmpJSON(t, "bare prompt body", f.find("POST /api/session/s1/prompt")[1].Body, `{"text":"@review-pr",
+		"skills":[{"id":"review-pr","mention":{"start":0,"end":10,"text":"@review-pr"}}]}`)
+}
+
+// Mention offsets are UTF-16 code units, as in the v2 TypeScript client.
+func TestCompatCommandSkillMentionOffsets(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"CommandNotFoundError"}`)
+	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1"}}`)
+	f.json("GET /api/skill", http.StatusOK, `{"data":[{"id":"révue-🚀"}]}`)
+	f.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
+	cmpOK(t, http.MethodPost, f.URL+"/session/s1/command", `{"command":"révue-🚀"}`)
+	cmpJSON(t, "mention", obj(f.one("POST /api/session/s1/prompt").Body.(map[string]any)["skills"].([]any)[0].(map[string]any), "mention"),
+		`{"start":0,"end":9,"text":"@révue-🚀"}`)
+}
+
+func TestCompatCommandSkillLookupFails(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"CommandNotFoundError"}`)
+	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1"}}`)
+	f.json("GET /api/skill", http.StatusInternalServerError, `{"_tag":"Boom"}`)
+	status, b := cmpDo(t, http.MethodPost, f.URL+"/session/s1/command", nil, `{"command":"review-pr"}`)
+	if status != http.StatusInternalServerError || !strings.Contains(string(b), "Boom") {
+		t.Fatalf("status %d body %s", status, b)
+	}
+}
+
+func TestCompatCommandUnknownKeepsError(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	notFound := `{"_tag":"CommandNotFoundError","command":"nope","message":"Command not found: nope"}`
+	f.json("POST /api/session/s1/command", http.StatusNotFound, notFound)
+	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","location":{"directory":"/repo"}}}`)
+	f.json("GET /api/skill", http.StatusOK, `{"data":[{"id":"review-pr"}]}`)
+
+	status, b := cmpDo(t, http.MethodPost, f.URL+"/session/s1/command", nil, `{"command":"nope"}`)
+	if status != http.StatusNotFound || string(b) != notFound {
+		t.Fatalf("status %d body %s", status, b)
+	}
+	if got := f.find("POST /api/session/s1/prompt"); len(got) != 0 {
+		t.Fatalf("prompted for an unknown command: %v", got)
+	}
+}
+
+// Other failures are not mistaken for a missing command.
+func TestCompatCommandFailureSkipsSkills(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"SessionNotFoundError","sessionID":"s1","message":"gone"}`)
+	if status, _ := cmpDo(t, http.MethodPost, f.URL+"/session/s1/command", nil, `{"command":"review-pr"}`); status != http.StatusNotFound {
+		t.Fatalf("status %d", status)
+	}
+	cmpKeys(t, f, "POST /api/session/s1/command")
 }
 
 func TestCompatSessionActions(t *testing.T) {
