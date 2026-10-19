@@ -65,7 +65,7 @@ function PhoneTabs({ unreadTotal }: { unreadTotal: number }) {
             <i className={`bi ${icon}`} aria-hidden="true" /><span>{label}</span>
             <i className="bi bi-chevron-right" aria-hidden="true" />
           </NavLink>)}
-          {featureNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={() => setOverlay(null)} />)}
+          {featureNavigation.map((Navigation, index) => <Navigation key={index} replace />)}
         </nav>
       </Modal>
     </div>}

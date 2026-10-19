@@ -49,6 +49,18 @@ test('enabled plugin workspace appears in navigation and saves private target se
   await expect(page.getByText('Staging scan', { exact: true })).toBeVisible();
   expect(saved).toBe(1);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('navigation', { name: 'Phone navigation' }).getByRole('link', { name: 'Sessions', exact: true }).click();
+  await expect(page).toHaveURL(/\/sessions$/);
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('navigation', { name: 'More destinations' }).getByRole('link', { name: 'Pentest' }).click();
+  await expect(page).toHaveURL(/\/plugins\/be.nousefreak.pentest\/pentest\?ownerId=local$/);
+  await expect(page.getByRole('dialog', { name: 'More destinations' })).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/sessions$/);
+  await expect(page.getByRole('dialog', { name: 'More destinations' })).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/plugins\/be.nousefreak.pentest\/pentest\?ownerId=local$/);
+  await expect(page.getByRole('heading', { name: 'Pentest', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'More', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'More destinations' }).getByRole('link', { name: 'Pentest' })).toBeVisible();
   await page.getByRole('button', { name: 'Close more destinations' }).click();

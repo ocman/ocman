@@ -43,11 +43,12 @@ function ProjectPage({ page, directory }: { page: Page; directory: string }) {
 
 function PageEditor({ page, projectId }: { page: Page; projectId: string }) {
   const client = useQueryClient();
+  const [busy, setBusy] = useState(false);
   const queryKey = ['plugin-page-document', page.ownerId, page.pluginId, page.page.id, projectId];
   const document = useQuery({ queryKey,
-    queryFn: ({ signal }) => callPluginPage(page, projectId, 'read', undefined, signal), retry: false, gcTime: 0, refetchInterval: 10_000 });
+    queryFn: ({ signal }) => callPluginPage(page, projectId, 'read', undefined, signal), retry: false, gcTime: 0,
+    enabled: !busy, staleTime: 10_000, refetchInterval: busy ? false : 10_000 });
   const [draft, setDraft] = useState<PageDocument | null>(null);
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [action, setAction] = useState<{ label: string; request: PluginActionRequest } | null>(null);
   const actions = useQuery({ queryKey: ['plugin-page-actions', page.ownerId, page.pluginId, projectId], retry: false,
@@ -58,6 +59,7 @@ function PageEditor({ page, projectId }: { page: Page; projectId: string }) {
     setBusy(true); setMessage('');
     try {
       const saved = await callPluginPage(page, projectId, 'save', current);
+      await client.cancelQueries({ queryKey, exact: true });
       client.setQueryData(queryKey, saved);
       setDraft(null);
       setMessage('Saved.');

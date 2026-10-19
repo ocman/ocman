@@ -51,7 +51,7 @@ export interface FeatureRoute {
 }
 
 export interface Feature {
-	Navigation?: ComponentType<{ onNavigate?: () => void }>;
+  Navigation?: ComponentType<{ onNavigate?: () => void; replace?: boolean }>;
   id: string;
   routes?: FeatureRoute[];
   /** Header title for every other path under this prefix. */

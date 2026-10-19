@@ -76,8 +76,8 @@ func DecodePageDocument(raw []byte) (PageDocument, error) {
 	if !validPageFields(p.Fields, 0, &count) {
 		return p, ErrInvalidMessage
 	}
-	var values map[string]json.RawMessage
-	if json.Unmarshal(p.Values, &values) != nil || values == nil {
+	var values map[string]any
+	if json.Unmarshal(p.Values, &values) != nil || values == nil || !validPageValues(p.Fields, values) {
 		return p, ErrInvalidMessage
 	}
 	tree, _ := json.Marshal(p.Tree)
@@ -100,10 +100,41 @@ func validPageFields(fields []PageField, depth int, count *int) bool {
 		if f.Type != "list" && len(f.Fields) > 0 || f.Type == "list" && len(f.Fields) == 0 {
 			return false
 		}
-		if !validPageFields(f.Fields, depth+1, count) {
+		if f.Type == "list" && !validPageFields(f.Fields, depth+1, count) {
 			return false
 		}
 		seen[f.Key] = true
+	}
+	return true
+}
+
+func validPageValues(fields []PageField, values map[string]any) bool {
+	for _, field := range fields {
+		value, present := values[field.Key]
+		if !present {
+			continue
+		}
+		switch field.Type {
+		case "list":
+			rows, ok := value.([]any)
+			if !ok {
+				return false
+			}
+			for _, row := range rows {
+				object, ok := row.(map[string]any)
+				if !ok || !validPageValues(field.Fields, object) {
+					return false
+				}
+			}
+		case "boolean":
+			if _, ok := value.(bool); !ok {
+				return false
+			}
+		default:
+			if _, ok := value.(string); !ok {
+				return false
+			}
+		}
 	}
 	return true
 }

@@ -2,9 +2,9 @@ import { Button, CheckboxField, TextareaField, TextField } from './Control';
 import { blankPageValues, type PageField, type PageValues } from '../lib/pluginPages';
 
 export function PluginPageFields({ fields, values, onChange, prefix = '' }: {
-  fields: PageField[]; values: PageValues; onChange: (value: PageValues) => void; prefix?: string;
+  fields: PageField[] | null; values: PageValues; onChange: (value: PageValues) => void; prefix?: string;
 }) {
-  return <>{fields.map((field) => {
+  return <>{(fields ?? []).map((field) => {
     const label = `${prefix}${field.label}`;
     const value = values[field.key];
     const update = (next: PageValues[string]) => onChange({ ...values, [field.key]: next });

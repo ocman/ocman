@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -54,6 +54,32 @@ it('does not overwrite an edit or retry a failed save', async () => {
   await screen.findByText(/Save failed/);
   expect(screen.getByLabelText('Target name')).toHaveValue('unsaved');
   expect(mocks.call.mock.calls.filter((call) => call[2] === 'save')).toHaveLength(1);
+});
+
+it('renders a results-only document with null fields', async () => {
+  mocks.call.mockResolvedValue({ revision: 'r1', fields: null, values: {}, tree: { available: true, nodes: [{ id: 'result', title: 'Saved finding' }] } });
+  mount();
+  fireEvent.change(screen.getByLabelText('Project'), { target: { value: '/srv/project' } });
+  expect(await screen.findByText('Saved finding')).toBeInTheDocument();
+});
+
+it('keeps saved values and revision when an older polling read finishes late', async () => {
+  const client = mount();
+  fireEvent.change(screen.getByLabelText('Project'), { target: { value: '/srv/project' } });
+  fireEvent.change(await screen.findByLabelText('Target name'), { target: { value: 'production' } });
+  const key = ['plugin-page-document', 'machine', 'org.example.pentest', 'pentest', 'project-a'];
+  const old = client.getQueryData(key) as { revision: string; values: object };
+  let finishRead!: (value: unknown) => void;
+  mocks.call.mockImplementation((_page, _project, method) => method === 'read'
+    ? new Promise(resolve => { finishRead = resolve; })
+    : Promise.resolve({ ...old, revision: 'r2', values: { name: 'production', pass: '' } }));
+  let pendingRead!: Promise<void>;
+  act(() => { pendingRead = client.refetchQueries({ queryKey: key, exact: true }); });
+  fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }));
+  await screen.findByText('Saved.');
+  await act(async () => { finishRead(old); await pendingRead; });
+  expect(screen.getByLabelText('Target name')).toHaveValue('production');
+  expect(client.getQueryData(key)).toMatchObject({ revision: 'r2', values: { name: 'production' } });
 });
 
 it('hides unavailable plugin links and refuses a direct route', async () => {

@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhoneNavigation } from './PhoneNavigation';
 
-vi.mock('../lib/pluginPages', () => ({ usePluginPages: () => ({ pages: [] }) }));
+const plugins = vi.hoisted(() => ({ pages: [] as { ownerId: string; pluginId: string; page: { id: string; label: string } }[] }));
+vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(), usePluginPages: () => ({ pages: plugins.pages }) }));
 
 let phone: boolean;
 let listeners: Set<() => void>;
@@ -13,6 +14,7 @@ const change = () => listeners.forEach(listener => listener());
 const removeEventListener = vi.fn();
 
 beforeEach(() => {
+  plugins.pages = [];
   phone = true;
   listeners = new Set();
   vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -31,6 +33,32 @@ function mount(path = '/sessions', unreadTotal = 0, state?: object) {
 }
 
 describe('phone navigation', () => {
+  it('replaces More with a plugin destination and returns directly to the previous page', async () => {
+    plugins.pages = [{ ownerId: 'machine', pluginId: 'org.example.pentest', page: { id: 'pentest', label: 'Pentest' } }];
+    function History() {
+      const location = useLocation();
+      const navigate = useNavigate();
+      return <><output>{location.pathname + location.search}</output><button onClick={() => navigate(-1)}>Back</button><button onClick={() => navigate(1)}>Forward</button></>;
+    }
+    const router = createMemoryRouter([{ path: '*', element: <><PhoneNavigation unreadTotal={0} /><History /></> }], { initialEntries: ['/projects', '/sessions'] });
+    const navigations: string[] = [];
+    router.subscribe(state => navigations.push(state.historyAction));
+    render(<RouterProvider router={router} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    navigations.length = 0;
+    await user.click(screen.getByRole('link', { name: 'Pentest' }));
+    expect(navigations).toEqual(['REPLACE']);
+    expect(screen.getByRole('status')).toHaveTextContent('/plugins/org.example.pentest/pentest?ownerId=machine');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('status')).toHaveTextContent('/sessions');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Forward' }));
+    expect(screen.getByRole('status')).toHaveTextContent('/plugins/org.example.pentest/pentest?ownerId=machine');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('renders four destinations and marks the selected tab', () => {
     mount();
     expect(window.matchMedia).toHaveBeenCalledWith('(max-width: 640px)');

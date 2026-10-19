@@ -6,7 +6,7 @@ import type { PluginPaneTree } from './pluginPanes';
 export type PluginPage = { ownerId: string; pluginId: string; page: { id: string; label: string } };
 export type PageField = { key: string; label: string; type: 'text' | 'multiline' | 'secret' | 'boolean' | 'list'; help?: string; fields?: PageField[] };
 export type PageValues = { [key: string]: string | boolean | PageValues[] };
-export type PageDocument = { revision: string; fields: PageField[]; values: PageValues; tree: PluginPaneTree };
+export type PageDocument = { revision: string; fields: PageField[] | null; values: PageValues; tree: PluginPaneTree };
 
 export function blankPageValues(fields: PageField[]): PageValues {
   return Object.fromEntries(fields.map((f) => [f.key, f.type === 'list' ? [] : f.type === 'boolean' ? false : '']));

@@ -73,3 +73,56 @@ func TestPageDataIsBoundedAndTyped(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPageValuesMatchSchema(t *testing.T) {
+	fields := []PageField{{Key: "targets", Label: "Targets", Type: "list", Fields: []PageField{
+		{Key: "name", Label: "Name", Type: "text"},
+		{Key: "notes", Label: "Notes", Type: "multiline"},
+		{Key: "secret", Label: "Secret", Type: "secret"},
+		{Key: "enabled", Label: "Enabled", Type: "boolean"},
+		{Key: "children", Label: "Children", Type: "list", Fields: []PageField{{Key: "name", Label: "Name", Type: "text"}}},
+	}}}
+	for _, tc := range []struct {
+		values string
+		valid  bool
+	}{
+		{`{}`, true},
+		{`{"targets":[]}`, true},
+		{`{"targets":[{}]}`, true},
+		{`{"targets":[{"name":"a","notes":"b","secret":"","enabled":false,"children":[{"name":"c"}]}]}`, true},
+		{`{"targets":[null]}`, false},
+		{`{"targets":[[]]}`, false},
+		{`{"targets":["row"]}`, false},
+		{`{"targets":{}}`, false},
+		{`{"targets":null}`, false},
+		{`{"targets":[{"name":null}]}`, false},
+		{`{"targets":[{"name":true}]}`, false},
+		{`{"targets":[{"notes":42}]}`, false},
+		{`{"targets":[{"secret":{}}]}`, false},
+		{`{"targets":[{"enabled":"false"}]}`, false},
+		{`{"targets":[{"enabled":null}]}`, false},
+		{`{"targets":[{"children":[null]}]}`, false},
+	} {
+		t.Run(tc.values, func(t *testing.T) {
+			raw, _ := json.Marshal(PageDocument{Fields: fields, Values: json.RawMessage(tc.values)})
+			_, err := DecodePageDocument(raw)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, err=%v", tc.valid, err)
+			}
+		})
+	}
+}
+
+func TestPageListDepthBoundary(t *testing.T) {
+	for _, depth := range []int{4, 5} {
+		fields := []PageField{{Key: "name", Label: "Name", Type: "text"}}
+		for i := 0; i < depth; i++ {
+			fields = []PageField{{Key: "items", Label: "Items", Type: "list", Fields: fields}}
+		}
+		raw, _ := json.Marshal(PageDocument{Fields: fields, Values: json.RawMessage(`{}`)})
+		_, err := DecodePageDocument(raw)
+		if (err == nil) != (depth == 4) {
+			t.Fatalf("depth=%d, err=%v", depth, err)
+		}
+	}
+}
