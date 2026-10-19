@@ -270,6 +270,12 @@ function removeTrailingDuration(node: ReactNode, duration: string): ReactNode {
   return remove(node);
 }
 
+function containsReasoningImage(node: ReactNode): boolean {
+  return Children.toArray(node).some(child => isValidElement<{ children?: ReactNode }>(child) && (
+    child.type === 'img' || child.type === MarkdownImage || containsReasoningImage(child.props.children)
+  ));
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'blockquote'> & ExtraProps) {
   const blocks: ReactNode[] = Children.toArray(children);
@@ -281,16 +287,27 @@ function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'bloc
     return <blockquote {...props}>{children}</blockquote>;
   }
   const lastIndex = blocks.findLastIndex(child => isValidElement(child));
-  const duration = lastIndex > firstIndex
-    ? nodeText(blocks[lastIndex]).trimEnd().match(/ · \d+(?:\.\d+)?[smhd](?: \d+[smhd])?$/)?.[0]
-    : undefined;
+  const duration = nodeText(blocks[lastIndex]).trimEnd().match(/(?:^| )· \d+(?:\.\d+)?[smhd](?: \d+[smhd])?$/)?.[0];
   if (duration) blocks[lastIndex] = removeTrailingDuration(blocks[lastIndex], duration);
+  const previewBlock = blocks[firstIndex];
+  const preview = (
+    <span className="oc-reasoning-preview">
+      <span>{isValidElement<{ children?: ReactNode }>(previewBlock) ? previewBlock.props.children : null}</span>
+      {duration && <span className="oc-reasoning-duration">{` ${duration.trimStart()}`}</span>}
+    </span>
+  );
+  const body = blocks.slice(firstIndex + 1).filter(child => {
+    if (nodeText(child).trim() || containsReasoningImage(child)) return true;
+    return isValidElement(child) && child.type !== 'p' && child.type !== MarkdownParagraph;
+  });
   return (
     <blockquote className="oc-reasoning">
-      <details>
-        <summary>{first.props.children}{duration}</summary>
-        {blocks.slice(firstIndex + 1)}
-      </details>
+      {body.length > 0 ? (
+        <details>
+          <summary>{preview}</summary>
+          {body}
+        </details>
+      ) : <p>{preview}</p>}
     </blockquote>
   );
 }
