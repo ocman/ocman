@@ -338,6 +338,10 @@ func (h *handler) detail(r *http.Request) (*platforms.SessionDetail, error) {
 	}
 	now := time.Now()
 	detail := &platforms.SessionDetail{Messages: c.Messages, Parts: c.Parts, TotalMessages: total, DefaultModel: e.Model}
+	detail.ContextTokenCount, err = h.idx.contextTokens(ctx, e.ID)
+	if err != nil {
+		return nil, err
+	}
 	s := e.session(now)
 	h.live.overlay(&s)
 	detail.Session = &s
