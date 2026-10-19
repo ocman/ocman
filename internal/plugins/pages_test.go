@@ -149,3 +149,25 @@ func TestPageResultsOnlyDocumentHasEmptySchema(t *testing.T) {
 		t.Fatal("null schema row accepted")
 	}
 }
+
+// Only the schema itself is optional; its shape stays under the same strict,
+// recursive decode as the rest of the protocol.
+func TestPageSchemaStaysStrict(t *testing.T) {
+	for _, schema := range []string{
+		`[{"key":"a","label":"A","type":"text","javascript":"alert(1)"}]`,
+		`[{"Key":"a","key":"a","label":"A","type":"text"}]`,
+		`[{"key":null,"label":"A","type":"text"}]`,
+		`{"key":"a","label":"A","type":"text"}`,
+		`[{"key":"a","label":"A","type":"list","fields":{"key":"b","label":"B","type":"text"}}]`,
+		`[{"key":"a","label":"A","type":"list","fields":[{"key":"b","label":"B","type":"text","extra":1}]}]`,
+	} {
+		raw := []byte(`{"revision":"r","fields":` + schema + `,"values":{},"tree":{"available":true}}`)
+		if _, err := DecodePageDocument(raw); err == nil {
+			t.Fatalf("malformed schema accepted: %s", schema)
+		}
+	}
+	raw := []byte(`{"revision":"r","fields":[{"key":"a","label":"A","type":"list","fields":[{"key":"b","label":"B","type":"text"}]}],"values":{},"tree":{"available":true}}`)
+	if _, err := DecodePageDocument(raw); err != nil {
+		t.Fatalf("valid schema refused: %v", err)
+	}
+}

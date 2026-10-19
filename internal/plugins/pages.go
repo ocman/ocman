@@ -80,8 +80,12 @@ func DecodePageDocument(raw []byte) (PageDocument, error) {
 		return PageDocument{}, ErrInvalidMessage
 	}
 	p := PageDocument{Revision: wire.Revision, Values: wire.Values, Tree: wire.Tree}
-	if len(wire.Fields) > 0 && string(wire.Fields) != "null" && json.Unmarshal(wire.Fields, &p.Fields) != nil {
-		return PageDocument{}, ErrInvalidMessage
+	if len(wire.Fields) > 0 && string(wire.Fields) != "null" {
+		// Keep the strict recursive schema decode: only the whole schema is
+		// optional, not its shape.
+		if decodePaneJSON(wire.Fields, &p.Fields) != nil {
+			return PageDocument{}, ErrInvalidMessage
+		}
 	}
 	count := 0
 	if !validPageFields(p.Fields, 0, &count) {
