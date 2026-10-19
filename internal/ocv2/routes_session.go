@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const sid = `([^/]+)`
@@ -65,7 +67,10 @@ func getCommands(c *compat, r *http.Request, _ []string) (*http.Response, error)
 	if err := c.call(r.Context(), http.MethodGet, "/api/command", q, nil, &cmds); err != nil {
 		return finish(r, 0, nil, err)
 	}
-	_ = c.call(r.Context(), http.MethodGet, "/api/skill", q, nil, &skills) // optional
+	// Skills are optional: a failed lookup still offers the commands.
+	if err := c.call(r.Context(), http.MethodGet, "/api/skill", q, nil, &skills); err != nil && r.Context().Err() == nil {
+		log.WithError(err).WithField("directory", requestDirectory(r)).Warn("opencode v2: listing skills failed; offering commands only")
+	}
 	return reply(r, http.StatusOK, V1Commands(cmds.Data, skills.Data)), nil
 }
 

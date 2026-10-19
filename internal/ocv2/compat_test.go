@@ -15,6 +15,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 )
 
 // ---------------------------------------------------------------------
@@ -382,8 +385,16 @@ func TestCompatCommandsWithoutSkills(t *testing.T) {
 	f := fakeServer(t)
 	f.json("GET /api/command", http.StatusOK, `{"data":[{"name":"review","description":"R"}]}`)
 	f.json("GET /api/skill", http.StatusInternalServerError, `{"_tag":"Boom"}`)
-	cmpJSON(t, "commands", cmpOK(t, http.MethodGet, f.URL+"/command", ""),
+	hook := new(logtest.Hook)
+	prev := log.StandardLogger().ReplaceHooks(log.LevelHooks{})
+	log.AddHook(hook)
+	t.Cleanup(func() { log.StandardLogger().ReplaceHooks(prev) })
+	cmpJSON(t, "commands", cmpOK(t, http.MethodGet, f.URL+"/command?directory=/d", ""),
 		`[{"name":"review","description":"R","template":"","source":"command"}]`)
+	e := hook.LastEntry()
+	if e == nil || e.Level != log.WarnLevel || e.Data["directory"] != "/d" || e.Data["error"] == nil {
+		t.Fatalf("skill lookup failure not logged: %+v", e)
+	}
 }
 
 func TestCompatProviders(t *testing.T) {
