@@ -35,6 +35,11 @@ mean unchanged only when the plugin explicitly implements that behavior.
 Project actions remain grant checked and use the existing confirmation dialog.
 A workspace cannot bypass engagement consent or run a command through a form.
 
+Reads refresh in the background, polling stops while a save is outstanding, and
+a cancelled or late read cannot replace the saved document. In the phone's More
+sheet a page link replaces the overlay's history entry, so the back gesture
+returns to the page you came from instead of unwinding a second entry.
+
 ## Trust and installation
 
 **Plugins are trusted native code, including during discovery.** Rescanning runs

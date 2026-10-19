@@ -68,9 +68,20 @@ func DecodePageRequest(raw []byte) (PageRequest, error) {
 }
 
 func DecodePageDocument(raw []byte) (PageDocument, error) {
-	var p PageDocument
-	if decodePaneJSON(raw, &p) != nil || len(p.Revision) > 128 || len(p.Values) == 0 {
-		return p, ErrInvalidMessage
+	// Fields decodes as raw JSON so an absent or null schema is a valid
+	// results-only document rather than a rejected plugin response.
+	var wire struct {
+		Revision string          `json:"revision"`
+		Fields   json.RawMessage `json:"fields"`
+		Values   json.RawMessage `json:"values"`
+		Tree     PaneTree        `json:"tree"`
+	}
+	if decodePaneJSON(raw, &wire) != nil || len(wire.Revision) > 128 || len(wire.Values) == 0 {
+		return PageDocument{}, ErrInvalidMessage
+	}
+	p := PageDocument{Revision: wire.Revision, Values: wire.Values, Tree: wire.Tree}
+	if len(wire.Fields) > 0 && string(wire.Fields) != "null" && json.Unmarshal(wire.Fields, &p.Fields) != nil {
+		return PageDocument{}, ErrInvalidMessage
 	}
 	count := 0
 	if !validPageFields(p.Fields, 0, &count) {
@@ -79,6 +90,10 @@ func DecodePageDocument(raw []byte) (PageDocument, error) {
 	var values map[string]any
 	if json.Unmarshal(p.Values, &values) != nil || values == nil || !validPageValues(p.Fields, values) {
 		return p, ErrInvalidMessage
+	}
+	// The renderer maps over the schema, so a document never carries null there.
+	if p.Fields == nil {
+		p.Fields = []PageField{}
 	}
 	tree, _ := json.Marshal(p.Tree)
 	if _, err := DecodePaneTree(tree); err != nil {

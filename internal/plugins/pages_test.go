@@ -126,3 +126,26 @@ func TestPageListDepthBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestPageResultsOnlyDocumentHasEmptySchema(t *testing.T) {
+	for _, schema := range []string{`"fields":null`, `"fields":[]`, ""} {
+		parts := []string{`"revision":"r"`, `"values":{}`, `"tree":{"available":true}`}
+		if schema != "" {
+			parts = append(parts, schema)
+		}
+		doc, err := DecodePageDocument([]byte("{" + strings.Join(parts, ",") + "}"))
+		if err != nil {
+			t.Fatalf("schema %s refused: %v", schema, err)
+		}
+		if doc.Fields == nil {
+			t.Fatalf("schema %s reaches the renderer as null", schema)
+		}
+		blob, _ := json.Marshal(doc)
+		if !strings.Contains(string(blob), `"fields":[]`) {
+			t.Fatalf("schema %s serialized as %s", schema, blob)
+		}
+	}
+	if _, err := DecodePageDocument([]byte(`{"revision":"r","fields":[null],"values":{},"tree":{"available":true}}`)); err == nil {
+		t.Fatal("null schema row accepted")
+	}
+}

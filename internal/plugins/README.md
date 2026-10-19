@@ -633,8 +633,12 @@ the existing authenticated PluginOperation transport and never fall back locally
 Responses contain a revision, typed fields, values and a validated pane tree.
 Field types are text, multiline, secret, boolean and nested list. Schemas are
 bounded to 128 fields and four nested lists; existing message and JSON-depth
-limits apply. There is no markup, script, stylesheet, URL or arbitrary command
-type. Plugins validate values and own persistence. Stored secrets must never
+limits apply. Omitting `fields`, or sending null, means a results-only page and
+reaches the renderer as an empty schema. The host checks values against the
+schema: booleans are JSON booleans, text-like fields are strings, and list rows
+are objects, so null or scalar rows are refused rather than rendered. There is
+no markup, script, stylesheet, URL or arbitrary command type. Plugins validate
+values and own persistence. Stored secrets must never
 appear in responses; secret fields accept new input only. Writes are explicit
 and not automatically retried. Plugins should compare revisions and write
 atomically. Existing project actions provide consent, confirmations and downloads.

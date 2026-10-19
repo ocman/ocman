@@ -75,7 +75,8 @@ entries to expose typed project workspaces in navigation. Dispatch page calls to
 `PageHandler`. The host checks the executing owner's project identity and grants;
 the plugin receives `PageRequest` with a project ID, revision and optional values.
 Return `PageDocument` with bounded `PageField` schemas, sanitized values and a
-pane tree. Validate all saves, compare revisions and use atomic private writes.
+pane tree; return an empty slice, not null, when a page only shows results.
+Validate all saves, compare revisions and use atomic private writes.
 Never return stored passwords. Field type `secret` renders write-only password
 input, but the plugin must remove persisted secrets from response values itself.
 
