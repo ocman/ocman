@@ -8,6 +8,8 @@ import { useInbox, useSubscriptionUsage } from './lib/queries';
 import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
 
+vi.mock('./lib/pluginPages', () => ({ usePluginPages: () => ({ pages: [] }) }));
+
 vi.mock('./lib/queries', () => ({
   inboxEventRefresh: () => () => {},
   useSessions: vi.fn(),

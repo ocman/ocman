@@ -28,6 +28,8 @@ import { ModelFallbackSettings, WorktreePermissionSettings } from '../pages/dash
 import { SpeechSettings } from '../components/SpeechSettings';
 import { HookPluginSettings } from '../components/HookPluginSettings';
 import { MaintenanceSettings } from '../components/MaintenanceSettings';
+import { PluginPage } from '../pages/PluginPage';
+import { PluginPageNav } from '../components/PluginPageNav';
 
 // Factory pages pull in the epic graph (@xyflow, dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
@@ -49,6 +51,7 @@ export interface FeatureRoute {
 }
 
 export interface Feature {
+	Navigation?: ComponentType<{ onNavigate?: () => void }>;
   id: string;
   routes?: FeatureRoute[];
   /** Header title for every other path under this prefix. */
@@ -72,6 +75,7 @@ export interface Feature {
 }
 
 export const FEATURES: Feature[] = [
+  { id: 'plugin-pages', routes: [{ path: '/plugins/:pluginId/:pageId', element: <PluginPage />, layout: 'page', title: 'Plugin workspace' }], Navigation: PluginPageNav, titlePrefix: { prefix: '/plugins/', title: 'Plugin workspace' } },
   {
     id: 'factory',
     routes: [
@@ -127,6 +131,7 @@ export const featureRoutes = (layout: FeatureRoute['layout']) =>
   FEATURES.flatMap((f) => (f.routes ?? []).filter((r) => r.layout === layout));
 
 export const featureNav = FEATURES.flatMap((f) => (f.nav ? [f.nav] : []));
+export const featureNavigation = FEATURES.flatMap((f) => f.Navigation ? [f.Navigation] : []);
 
 export const featureSettings = FEATURES.flatMap((f) => (f.settings ? [f.settings] : []));
 

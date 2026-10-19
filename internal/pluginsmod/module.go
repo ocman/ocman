@@ -149,6 +149,8 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("/api/plugins/actions/invoke", post(auth(m.handlePluginActionInvoke)))
 	r.Handle("/api/plugins/actions/artifact", get(auth(m.handlePluginActionArtifact)))
 	r.Handle("/api/plugins/panes", get(auth(m.handlePluginPanes)))
+	r.Handle("/api/plugins/pages", get(auth(m.handlePluginPages)))
+	r.Handle("/api/plugins/pages/call", post(auth(m.handlePluginPage)))
 	r.Handle("/api/plugins/panes/read", get(auth(m.handlePluginPaneRead)))
 	// Profiles are Settings data (normal auth, like the other settings rows):
 	// they only take effect when an approved session.v1 plugin names one.

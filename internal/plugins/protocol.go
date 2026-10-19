@@ -69,6 +69,7 @@ type Description struct {
 	Settings        []Setting          `json:"settings,omitempty"`
 	Actions         []ActionDescriptor `json:"actions,omitempty"`
 	Panes           []PaneDescriptor   `json:"panes,omitempty"`
+	Pages           []PageDescriptor   `json:"pages,omitempty"`
 	// WantsCatalog opts the plugin into a launch-time catalog snapshot under
 	// the reserved "catalog" member of the fd-3 configuration object. It is
 	// only meaningful with the required non-secret project setting;
@@ -212,6 +213,9 @@ func (d Description) Validate() error {
 		return err
 	}
 	if err := d.validatePanes(); err != nil {
+		return err
+	}
+	if err := d.validatePages(); err != nil {
 		return err
 	}
 	if err := d.validateCatalog(); err != nil {

@@ -619,6 +619,26 @@ metadata is stored atomically with the completion in the durable outbox and
 retained unchanged across retries and restarts. Plugins with dollar limits must
 not infer a zero charge from absent metadata.
 
+## page.v1
+
+Owner-scoped plugins can declare up to eight `pages` with fixed `id` and `label`
+fields and request `page.project`. Approved enabled declarations appear in main
+navigation without invoking the executable. Page read/save calls carry only an
+opaque owner-local `projectId`, page ID, optional revision and JSON values. The
+executing owner resolves that project before admission, checks enablement and
+the page grant under the lifecycle lock, and rechecks authorization before
+returning data. No plugin-supplied path selects a project. Remote requests use
+the existing authenticated PluginOperation transport and never fall back locally.
+
+Responses contain a revision, typed fields, values and a validated pane tree.
+Field types are text, multiline, secret, boolean and nested list. Schemas are
+bounded to 128 fields and four nested lists; existing message and JSON-depth
+limits apply. There is no markup, script, stylesheet, URL or arbitrary command
+type. Plugins validate values and own persistence. Stored secrets must never
+appear in responses; secret fields accept new input only. Writes are explicit
+and not automatically retried. Plugins should compare revisions and write
+atomically. Existing project actions provide consent, confirmations and downloads.
+
 ## pane.v1
 
 The `pane` capability, major 1 minor 0, contributes read-only project trees to

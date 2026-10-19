@@ -9,13 +9,31 @@ palette and returns results rendered by ocman, `conversation.v1`, which lets
 a chat provider start an ocman session and receive its completed reply,
 `session.v1`, which lets a plugin run a turn in a session it starts in its one
 approved project and receive that session's completed turns, and
-`pane.v1`, which adds a read-only project tree to the session sidebar. Manage
+`pane.v1`, which adds a read-only project tree to the session sidebar, and
+`page.v1`, which adds typed project workspaces to navigation. Manage
 installations in **Settings → Plugins**, selecting the plugin owner before making
 changes.
 
 Plugins has its own Settings category. **Discovery** contains the owner selector,
 rescan controls and rejected executables. Each discovered plugin has a separate
 section for its grants, configuration, health and diagnostics.
+
+## Plugin workspaces
+
+Enabled owner-scoped plugins can declare `page.v1` workspaces. After approval of
+`page.project`, each page appears in the main navigation and the phone's More
+menu. The route records the owner, plugin and page identity. Select a project on
+that owner before loading or saving data. Disconnected owners fail visibly;
+requests never fall back to a different machine.
+
+The host renders bounded typed forms and read-only result trees, not plugin HTML,
+JavaScript or styles. Plugins own validation and private storage. Save calls are
+not automatically retried. Plugins should use revisions to refuse stale writes
+and must omit stored passwords from read/save responses. A blank password can
+mean unchanged only when the plugin explicitly implements that behavior.
+
+Project actions remain grant checked and use the existing confirmation dialog.
+A workspace cannot bypass engagement consent or run a command through a form.
 
 ## Trust and installation
 
@@ -544,7 +562,7 @@ manual palette check.
 ## Future work
 
 The current release supports native processes, `action.v1`,
-`conversation.v1`, `pane.v1`, and `session.v1`. The following are future work, not available plugin
+`conversation.v1`, `pane.v1`, `page.v1`, and `session.v1`. The following are future work, not available plugin
 capabilities or integrations:
 
 - Platform-provider capability.

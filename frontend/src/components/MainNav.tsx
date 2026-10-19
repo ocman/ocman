@@ -4,7 +4,7 @@ import { useInbox } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
-import { featureNav } from '../features';
+import { featureNav, featureNavigation } from '../features';
 import { PhoneNavigation } from './PhoneNavigation';
 import './MainNav.css';
 
@@ -71,6 +71,7 @@ export function MainNav({
         </button>
         <nav id="main-navigation" aria-label="Main navigation">
           {NAV_ITEMS.map((item) => navLink(item))}
+          {featureNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={onMobileClose} />)}
           <NavLink
             to="/inbox"
             aria-label={inboxLabel}

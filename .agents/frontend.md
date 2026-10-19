@@ -44,6 +44,8 @@ Choose `dashboard` or `page` layout and provide a route `title`. Settings groups
 use `mount: 'always'` to retain unsaved edits across switches or `'active'` to
 mount on demand. The registry is static and eagerly imported. Core pages stay
 in the existing core files, with titles in `lib/routeTitle.ts`. Backend plugin
-panes and palette actions are separate from this registry.
+   panes and palette actions are separate from this registry. The generic plugin
+   workspace route and dynamic navigation component register as one feature;
+   individual plugin pages come from owner-approved declarations.
 
 Read [testing.md](testing.md) for stable e2e locators and frontend coverage checks.

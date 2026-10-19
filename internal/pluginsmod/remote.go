@@ -73,6 +73,12 @@ func pluginResponse(value any, err error) remote.PluginResponse {
 func (m *Module) localPluginOperation(ctx context.Context, req remote.PluginRequest, fromRemote bool) remote.PluginResponse {
 	ctx = context.WithValue(ctx, pluginExecutionKey{}, pluginExecution{remote: fromRemote, owner: req.Action.Context.OwnerID})
 	switch req.Operation {
+	case "page-read", "page-save":
+		method := "read"
+		if req.Operation == "page-save" {
+			method = "save"
+		}
+		return pluginResponse(m.localPluginPage(ctx, req.PluginID, method, req.Input.Values["page"]))
 	case "pane-read":
 		return pluginResponse(m.readLocalPluginPane(ctx, req.Pane))
 	case "project-catalog":

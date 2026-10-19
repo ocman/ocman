@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhoneNavigation } from './PhoneNavigation';
 
+vi.mock('../lib/pluginPages', () => ({ usePluginPages: () => ({ pages: [] }) }));
+
 let phone: boolean;
 let listeners: Set<() => void>;
 const change = () => listeners.forEach(listener => listener());

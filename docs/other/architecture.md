@@ -1257,6 +1257,34 @@ See [Plugins](../features/plugins.md) for the operator and authoring guide.
 
 ## 6. Plugin session requests and completion delivery
 
+### Plugin workspace navigation and configuration
+
+```mermaid
+flowchart LR
+    Registry[Feature registry] --> Navigation[Desktop navigation and phone More]
+    Navigation --> Catalog[Owner-qualified page declarations]
+    Navigation --> Page[Host-rendered typed page]
+    Page --> API[Authenticated page API]
+    API --> Owner[Executing owner authorization and project lookup]
+    Owner --> Process[Plugin page read/save]
+    Process --> Files[Plugin-private target configuration]
+    Page --> Actions[Existing action confirmation and results]
+```
+
+- `page.v1` contributes inert field schemas and trees. The frontend registry owns
+  one generic route and dynamic navigation entry; it contains no pentest-specific
+  storage or executable plugin content.
+- The owner checks approved declarations, enablement and the `page.project`
+  grant under the lifecycle lock and resolves opaque project IDs locally.
+  Disabled, revoked and offline owners cannot silently reuse another owner's data.
+- Plugins own private storage and secret redaction. Browser drafts remain local
+  to the selected owner/project. Save is explicit and never automatically retried;
+  the pentest consumer uses revision checks and atomic mode-0600 writes.
+- Scan controls use the existing action broker, including disclosure and consent.
+  Result trees use the existing bounded tree renderer.
+
+### Managed session requests
+
 ```mermaid
 sequenceDiagram
     participant U as Settings client

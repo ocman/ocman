@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { featureNav } from '../features';
+import { featureNav, featureNavigation } from '../features';
 import { useIsPhone } from '../lib/useIsPhone';
 import { usePhoneOverlay } from '../lib/usePhoneOverlay';
 import { Button } from './Control';
@@ -65,6 +65,7 @@ function PhoneTabs({ unreadTotal }: { unreadTotal: number }) {
             <i className={`bi ${icon}`} aria-hidden="true" /><span>{label}</span>
             <i className="bi bi-chevron-right" aria-hidden="true" />
           </NavLink>)}
+          {featureNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={() => setOverlay(null)} />)}
         </nav>
       </Modal>
     </div>}
