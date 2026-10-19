@@ -13,16 +13,18 @@ import (
 // line is one transcript (or stream-json) record. Unknown fields and types
 // are ignored, never rejected: new CLI releases add both.
 type line struct {
-	Type        string `json:"type"`
-	UUID        string `json:"uuid"`
-	Cwd         string `json:"cwd"`
-	Timestamp   string `json:"timestamp"`
-	IsMeta      bool   `json:"isMeta"`
-	APIError    bool   `json:"isApiErrorMessage"`
-	AITitle     string `json:"aiTitle"`
-	CustomTitle string `json:"customTitle"`
-	Summary     string `json:"summary"`
-	Message     struct {
+	Type          string `json:"type"`
+	UUID          string `json:"uuid"`
+	Cwd           string `json:"cwd"`
+	Timestamp     string `json:"timestamp"`
+	IsMeta        bool   `json:"isMeta"`
+	TurnCompanion bool   `json:"turnCompanion"`
+	ParentUUID    string `json:"parentUuid"`
+	APIError      bool   `json:"isApiErrorMessage"`
+	AITitle       string `json:"aiTitle"`
+	CustomTitle   string `json:"customTitle"`
+	Summary       string `json:"summary"`
+	Message       struct {
 		ID         string          `json:"id"`
 		Model      string          `json:"model"`
 		StopReason string          `json:"stop_reason"`
@@ -56,16 +58,26 @@ type block struct {
 }
 
 func (l *line) blocks() []block {
+	blocks, _ := l.decodeBlocks()
+	return blocks
+}
+
+// decodeBlocks reads string or block-array content. On error the blocks that
+// did decode are still returned, for best-effort browsing.
+func (l *line) decodeBlocks() ([]block, error) {
+	if len(l.Message.Content) == 0 {
+		return nil, nil
+	}
 	var text string
 	if json.Unmarshal(l.Message.Content, &text) == nil {
 		if text == "" {
-			return nil
+			return nil, nil
 		}
-		return []block{{Type: "text", Text: text}}
+		return []block{{Type: "text", Text: text}}, nil
 	}
 	var blocks []block
-	_ = json.Unmarshal(l.Message.Content, &blocks)
-	return blocks
+	err := json.Unmarshal(l.Message.Content, &blocks)
+	return blocks, err
 }
 
 func (l *line) millis() int64 {
@@ -97,6 +109,11 @@ func classify(l *line, current string) int {
 		return startAssistant
 	case "user":
 		if l.IsMeta {
+			// Companion notes belong to the turn that produced them. Other meta
+			// records stay hidden.
+			if l.TurnCompanion {
+				return continueGroup
+			}
 			return skipLine
 		}
 		blocks := l.blocks()

@@ -154,23 +154,23 @@ func initMirror(mdb *sql.DB, source string) error {
 // sync first. A read never waits on another caller's sync: while one runs,
 // it reads the mirror as it stands. Full builds and the periodic rebuild
 // (~14s on a large database) run in the background.
-func (d *DB) analytics(ctx context.Context) *sql.DB {
+func (d *DB) analytics(ctx context.Context) querier {
 	m := d.mirror
 	if d.mirrorOnly() {
 		return d.completeMirror(ctx)
 	}
 	switch {
 	case m == nil:
-		return d.db
+		return d.reads()
 	case !m.ready.Load():
 		d.rebuildMirrorInBackground()
-		return d.db
+		return d.reads()
 	case m.fullDue():
 		d.rebuildMirrorInBackground()
 		if m.failedAt.Load() != 0 {
 			// Rebuilds are failing, so the copy may stay stale for good:
 			// cost speed, not correctness, until one succeeds.
-			return d.db
+			return d.reads()
 		}
 		return m.db
 	case m.fresh():
@@ -187,7 +187,7 @@ func (d *DB) analytics(ctx context.Context) *sql.DB {
 			return m.db
 		}
 		log.WithError(err).Warn("syncing analytics mirror; reading OpenCode directly")
-		return d.db
+		return d.reads()
 	}
 }
 

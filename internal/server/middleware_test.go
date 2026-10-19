@@ -137,14 +137,14 @@ func TestWithRequestTiming_SkipsNoise(t *testing.T) {
 	defer log.SetLevel(prev)
 
 	h := withRequestTiming(ringHandler(0, http.StatusOK))
-	for _, p := range []string{"/api/session/abc/events", "/api/debug/log"} {
+	for _, p := range []string{"/api/session/abc/stream", "/api/debug/log"} {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
 	}
 
 	for _, e := range hook.AllEntries() {
-		if path, _ := e.Data["path"].(string); path == "/api/session/abc/events" || path == "/api/debug/log" {
+		if path, _ := e.Data["path"].(string); path == "/api/session/abc/stream" || path == "/api/debug/log" {
 			t.Errorf("expected noisy path to be skipped, got entry: %#v", e.Data)
 		}
 	}
@@ -205,7 +205,7 @@ func TestStatusRecorder_DelegatesHijack(t *testing.T) {
 //
 // statusRecorder must expose http.Flusher so SSE handlers that flow
 // through the middleware (the global /api/events stream — NOT bypassed
-// like /api/session/{id}/events) can stream. Without it the handler's
+// like /api/session/{id}/stream) can stream. Without it the handler's
 // `w.(http.Flusher)` check fails, no client subscribes, and no broadcast
 // (e.g. ocman.queue.updated) is ever delivered — the live queue never
 // updates.

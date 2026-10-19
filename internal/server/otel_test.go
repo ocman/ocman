@@ -13,7 +13,7 @@ func TestRouteTemplate(t *testing.T) {
 		"/api/session/abc-123/info":              "/api/session/{id}/info",
 		"/api/session/abc-123/permissions":       "/api/session/{id}/permissions",
 		"/api/session/abc-123/permissions/pid42": "/api/session/{id}/permissions",
-		"/api/session/abc-123/events":            "/api/session/{id}/events",
+		"/api/session/abc-123/stream":            "/api/session/{id}/stream",
 		"/api/session/archive":                   "/api/session/archive",
 		"/api/session/seen":                      "/api/session/seen",
 		"/api/stats":                             "/api/stats",
@@ -30,7 +30,8 @@ func TestOtelSpanFilter(t *testing.T) {
 	cases := map[string]bool{
 		"/api/stats":              true,
 		"/api/session/abc/info":   true,
-		"/api/session/abc/events": false, // SSE skipped
+		"/api/session/abc/events": true,  // removed route, no longer special
+		"/api/session/abc/stream": false, // SSE skipped
 		"/":                       false, // static skipped
 		"/index.html":             false,
 		"/assets/x.js":            false,

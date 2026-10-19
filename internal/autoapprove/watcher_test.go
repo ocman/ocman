@@ -379,7 +379,7 @@ func TestStreamOnceCancelsSessionRefreshWhenConnectionCloses(t *testing.T) {
 
 func TestAutoApproveWatcherBroadcastsRejectedPermission(t *testing.T) {
 	var got string
-	svc := NewService(Deps{BroadcastPermissionResolved: func(_, _, reason string) { got = reason }})
+	svc := NewService(Deps{BroadcastPermissionResolved: func(_, _, _, reason string) { got = reason }})
 	w := newAutoApproveWatcher(svc)
 	w.onPermissionReplied("ses-1", "perm-1", "reject")
 	if got != "rejected" {
@@ -549,7 +549,7 @@ func TestAutoApproveWatcherAuthenticatesSSE(t *testing.T) {
 // primary regression: with no SSE client connected (no browser tab),
 // the watcher must still drive Ensure when OpenCode emits
 // permission.asked. This was the bug — the legacy path only fired
-// when a frontend session opened /api/session/{id}/events.
+// when a frontend session opened its per-session event stream.
 func TestAutoApproveWatcher_FiresOnPermissionWithoutFrontend(t *testing.T) {
 	fake := newFakeOpenCodeEventServer([]string{
 		permissionAskedEvent("ses-A", "perm-1", "Bash command", "rm bla"),

@@ -168,10 +168,13 @@ func (d *DB) GetMetricsLog(ctx context.Context, opts MetricsDashboardOptions, ki
 // and returns the filtered request rows plus the pre-filter agent/model sets
 // (used to keep dropdowns populated even when a filter is active).
 func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions) (filtered []requestRow, agentSet, modelSet map[string]struct{}, err error) {
+	if d.historyScope != nil {
+		return d.scanHistoryRequests(ctx, opts)
+	}
 	dirFrag, dirArgs := directoryWhere(opts.Dir)
 	query := `
 		SELECT m.id, m.session_id, m.time_created, m.data
-		FROM ` + messagesFrom(opts.Since, dirFrag != "") + `
+		FROM ` + d.messagesFrom(opts.Since, dirFrag != "") + `
 		WHERE json_extract(m.data, '$.role') = 'assistant'`
 	var args []interface{}
 	if opts.Since > 0 {
@@ -183,7 +186,7 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 		args = append(args, dirArgs...)
 	}
 	query += `
-		ORDER BY m.time_created ASC
+		ORDER BY m.time_created ASC, m.id ASC
 	`
 	source := d.analytics(ctx)
 	rows, qErr := source.QueryContext(ctx, query, args...)
@@ -255,20 +258,11 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 		if entry.StopReason == "" {
 			entry.StopReason = "none"
 		}
-		if opts.Pricing != nil {
-			entry.CalcCost = opts.Pricing.CalcCost(mkey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
-			entry.estimatedCostByType = CostByType{
-				Input:      opts.Pricing.CalcCost(mkey, entry.InputTokens, 0, 0, 0),
-				Output:     opts.Pricing.CalcCost(mkey, 0, entry.OutputTokens, 0, 0),
-				CacheRead:  opts.Pricing.CalcCost(mkey, 0, 0, entry.CacheReadTokens, 0),
-				CacheWrite: opts.Pricing.CalcCost(mkey, 0, 0, 0, entry.CacheWriteTokens),
-			}
-		}
 		// Effective cost: prefer the platform-reported value; fall back
 		// to the token-derived estimate when the platform reports $0
 		// (subscription plans). This is the figure the dashboard
 		// headlines and table rows display.
-		entry.EffectiveCost = effectiveCost(entry.Cost, entry.CalcCost)
+		priceRequest(&entry, opts.Pricing)
 
 		filtered = append(filtered, entry)
 	}

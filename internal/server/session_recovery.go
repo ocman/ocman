@@ -8,6 +8,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/sessionrecovery"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -26,7 +27,8 @@ func (s *Server) sessionRecovery() *sessionrecovery.Service {
 			reader, _ := s.router().Local().(hostsvc.ManagedRootReader)
 			return reader
 		},
-		MachineWide: ocv2.InstalledV2, BroadcastSessionChanged: s.broadcastSessionChanged,
+		// Runtime replacement fences OpenCode instances only.
+		MachineWide: ocv2.InstalledV2, BroadcastSessionChanged: func(id string) { s.broadcastSessionChanged(string(opencode.PlatformID), id) },
 		InjectHistoryNotice: injectHistoryNotice,
 	})
 }

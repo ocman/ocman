@@ -32,7 +32,8 @@ func isLocalAdapter(p platforms.Platform) bool {
 // timeout, skipping hub-side approval-notice injection per AD-14b)
 // without branching on a specific remote identity.
 func isRemotePlatformID(id string) bool {
-	return len(id) >= 2 && id[:2] == "r-"
+	remoteID, _ := platforms.SplitPlatformID(id)
+	return remoteID != ""
 }
 
 // fanOutSessions lists sessions across every available adapter

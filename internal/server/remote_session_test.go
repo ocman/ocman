@@ -11,6 +11,9 @@ func TestIsRemotePlatformID(t *testing.T) {
 		"r":                   false,
 		"":                    false,
 		"remote-but-not-pref": false,
+		"r-":                  false,
+		"r-abc":               false,
+		"r-:opencode":         false,
 	}
 	for id, want := range cases {
 		if got := isRemotePlatformID(id); got != want {

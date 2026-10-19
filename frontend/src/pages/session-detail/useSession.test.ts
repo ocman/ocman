@@ -16,6 +16,10 @@ import { useApiStore } from '../../lib/apiStore';
 import { KEEPALIVE_TIMEOUT_MS } from '../../lib/sseKeepalive';
 import { SIDEBAR_SESSIONS_KEY, getSidebarSessions } from '../../lib/sessionsCache';
 import { queryClient } from '../../lib/queryClient';
+import type { OceEvent } from '../../lib/conversation/events';
+import { SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from '../../lib/conversation/conversationStream';
+import { onQueueUpdated } from '../../lib/useGlobalEvents';
+import { hello, oceEnvelope, partUpserted, streamSessionId, textDelta } from '../../test/oce';
 
 // ---------- Fake EventSource ----------
 
@@ -55,6 +59,10 @@ class FakeEventSource {
     const event = new MessageEvent('message', { data: payload });
     this.onmessage?.(event);
     for (const cb of this.listeners.message || []) cb(event);
+  }
+
+  emitOce(event: OceEvent, opts?: { sessionId?: string; epoch?: string; seq?: number }) {
+    this.emitNamed('oce', oceEnvelope(opts?.sessionId ?? streamSessionId(this.url), event, opts));
   }
 
   emitNamed(name: string, data: unknown) {
@@ -151,11 +159,26 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('useSession — bounded SSE work (#722)', () => {
-  const delta = (text: string) => ({
-    type: 'message.part.delta',
-    properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: text },
+describe('useSession — bounded stream work (#722)', () => {
+  it('removes cached history deleted while the page was unmounted', async () => {
+    useApiStore.getState().setCachedSession(SID, makeDetail({
+      messages: [{ id: 'removed', sessionId: SID, timeCreated: 1, data: { role: 'assistant' } }],
+      parts: [{ id: 'removed-part', messageId: 'removed', sessionId: SID, data: JSON.stringify({ type: 'text', text: 'deleted while away' }) }],
+    }));
+    let finish!: (d: SessionDetail) => void;
+    const fetchSession = vi.fn(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+    const { result, unmount } = renderHook(() => useSession(SID, { fetchSession }));
+    expect(result.current.messages.map((m) => m.id)).toContain('removed');
+    await act(async () => finish(makeDetail()));
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.parts).toEqual([]);
+    unmount();
   });
+
+  const delta = (offset: number, text: string) => textDelta('p', offset, text);
+  const busy: OceEvent = { type: 'session.status', status: 'busy', notice: null };
+  const idleEdge: OceEvent = { type: 'session.status', status: 'done', provisional: true, notice: null };
+  const turnEnded = (outcome: 'done' | 'error' = 'done'): OceEvent => ({ type: 'turn.ended', outcome, endedAt: 1 });
   const textOf = (parts: SessionDetail['parts']) => {
     const data = parts.find((p) => p.id === 'p')?.data;
     return (typeof data === 'string' ? JSON.parse(data) : data)?.text;
@@ -178,7 +201,7 @@ describe('useSession — bounded SSE work (#722)', () => {
     const row = makeDetail().session;
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row, { ...row, platform: 'r-box:opencode' }]);
     const { result, sse, frame, rerender, unmount } = await setup();
-    act(() => sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } }));
+    act(() => sse.emitOce(busy));
     frame();
     expect(result.current.session?.status).toBe('busy');
     await act(async () => rerender({ id: 'other' }));
@@ -190,27 +213,27 @@ describe('useSession — bounded SSE work (#722)', () => {
   it('records a repeated live busy status as a newer sidebar observation', async () => {
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [makeDetail().session]);
     const { sse, unmount } = await setup();
-    const busy = { type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } };
-    act(() => sse.emitMessage(busy));
+    act(() => sse.emitOce(busy));
     const revision = useApiStore.getState().recentStatusRevisions[`opencode:${SID}`];
-    act(() => sse.emitMessage(busy));
+    act(() => sse.emitOce(busy));
     expect(useApiStore.getState().recentStatusRevisions[`opencode:${SID}`]).toBeGreaterThan(revision);
     unmount();
   });
 
   it('mirrors a fresh detail status but does not publish stale cached status while loading', async () => {
     const detail = makeDetail();
-    const busy = { ...detail, session: { ...detail.session, status: 'busy' as const } };
-    useApiStore.getState().setCachedSession(SID, busy);
+    const busyDetail = { ...detail, session: { ...detail.session, status: 'busy' as const } };
+    useApiStore.getState().setCachedSession(SID, busyDetail);
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [detail.session]);
     let finish!: (detail: SessionDetail) => void;
     const fetchSession = vi.fn().mockReturnValue(new Promise<SessionDetail>((resolve) => { finish = resolve; }));
     const view = renderHook(() => useSession(SID, { fetchSession }));
     expect(view.result.current.session?.status).toBe('busy');
     expect(getSidebarSessions()[0].status).toBe('done');
-    await act(async () => finish(busy));
+    await act(async () => finish(busyDetail));
     expect(getSidebarSessions()[0].status).toBe('busy');
-    await act(async () => FakeEventSource.latest()!.emitMessage({ type: 'session.idle', properties: { sessionID: SID } }));
+    fetchSession.mockResolvedValue(busyDetail);
+    await act(async () => FakeEventSource.latest()!.emitOce(turnEnded()));
     // The reconciled REST snapshot remains authoritative.
     expect(getSidebarSessions()[0].status).toBe('busy');
     fetchSession.mockResolvedValue(detail);
@@ -219,7 +242,7 @@ describe('useSession — bounded SSE work (#722)', () => {
     view.unmount();
   });
 
-  it.each(['status', 'delta', 'tool', 'idle'])('does not publish cached status after refresh failure, but accepts a subsequent live %s event', async (eventType) => {
+  it.each(['status', 'hello', 'idle'])('does not publish cached status after refresh failure, but accepts a subsequent live %s event', async (kind) => {
     const detail = makeDetail();
     useApiStore.getState().setCachedSession(SID, { ...detail, session: { ...detail.session, status: 'busy' } });
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [detail.session]);
@@ -229,19 +252,19 @@ describe('useSession — bounded SSE work (#722)', () => {
     expect(getSidebarSessions()[0].status).toBe('done');
     const sse = FakeEventSource.latest()!;
     act(() => {
-      sse.emitMessage({ type: 'session.status', properties: { sessionID: 'other', status: { type: 'busy' } } });
-      sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: 'invalid' } });
+      sse.emitOce(busy, { sessionId: 'other' });
+      sse.emitNamed('oce', { ...oceEnvelope(SID, busy), event: { type: 'future.event' } });
     });
     expect(getSidebarSessions()[0].status).toBe('done');
     const revision = useApiStore.getState().recentStatusRevisions[`opencode:${SID}`] ?? 0;
-    const events = {
-      status: { type: 'session.status', properties: { sessionID: SID, status: { type: 'busy' } } },
-      delta: { type: 'message.part.delta', properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: 'live' } },
-      tool: { type: 'message.part.updated', properties: { part: { id: 'p', sessionID: SID, messageID: 'm', type: 'tool', state: { status: 'running' } } } },
-      idle: { type: 'session.idle', properties: { sessionID: SID } },
+    const events: Record<string, OceEvent> = {
+      status: busy,
+      hello: hello(false, { status: busy as Extract<OceEvent, { type: 'session.status' }>, prompts: [], judge: [],
+        background: { type: 'background.changed', count: 0, tasks: [] }, inflight: { messages: [], parts: [] }, liveConnection: true }),
+      idle: idleEdge,
     };
-    await act(async () => sse.emitMessage(events[eventType as keyof typeof events]));
-    await waitFor(() => expect(getSidebarSessions()[0].status).toBe(eventType === 'idle' ? 'done' : 'busy'));
+    await act(async () => sse.emitOce(events[kind]));
+    await waitFor(() => expect(getSidebarSessions()[0].status).toBe(kind === 'idle' ? 'done' : 'busy'));
     expect(useApiStore.getState().recentStatusRevisions[`opencode:${SID}`]).toBeGreaterThan(revision);
     view.unmount();
   });
@@ -249,12 +272,12 @@ describe('useSession — bounded SSE work (#722)', () => {
   it('reduces an ordered burst once per frame, with a 50ms background fallback', async () => {
     const { result, sse, frame, unmount } = await setup();
     const before = result.current;
-    act(() => sse.emitMessage(delta('a')));
-    act(() => sse.emitNamed('message.part.delta', delta('b')));
+    act(() => sse.emitOce(delta(0, 'a')));
+    act(() => sse.emitOce(delta(1, 'b')));
     expect(result.current).toBe(before);
     frame();
     expect(textOf(result.current.parts)).toBe('ab');
-    act(() => sse.emitMessage(delta('c')));
+    act(() => sse.emitOce(delta(2, 'c')));
     act(() => vi.advanceTimersByTime(50));
     expect(textOf(result.current.parts)).toBe('abc');
     frame();
@@ -262,38 +285,85 @@ describe('useSession — bounded SSE work (#722)', () => {
     unmount();
   });
 
-  it('trailing-debounces diff refetches on both channels', async () => {
+  it('bumps the changes tick for a dirty signal without refetching the transcript', async () => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    const before = result.current.changesDirtyTick;
+    act(() => sse.emitOce({ type: 'changes.dirty', reason: 'edit' }));
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(result.current.changesDirtyTick).toBe(before + 1);
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('flushes final deltas and reconciles once per settled turn end', async () => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    act(() => sse.emitOce(delta(0, 'final')));
+    act(() => sse.emitOce(idleEdge));
+    expect(textOf(result.current.parts)).toBe('final');
+    await act(async () => sse.emitOce(turnEnded()));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    // The settled turn end cancels the provisional fallback.
+    await act(async () => vi.advanceTimersByTime(SETTLE_RECONCILE_MS));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    act(() => sse.emitOce(busy));
+    await act(async () => sse.emitOce(turnEnded()));
+    expect(fetchSession).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
+  it('reconciles once when an idle edge is never followed by a turn end', async () => {
     const { fetchSession, sse, unmount } = await setup();
-    act(() => sse.emitMessage({ type: 'session.diff', properties: { sessionID: SID } }));
-    await act(async () => vi.advanceTimersByTime(400));
-    act(() => sse.emitNamed('session.diff', { sessionID: SID }));
-    await act(async () => vi.advanceTimersByTime(499));
+    act(() => sse.emitOce(idleEdge));
+    await act(async () => vi.advanceTimersByTime(SETTLE_RECONCILE_MS - 1));
     expect(fetchSession).toHaveBeenCalledTimes(1);
     await act(async () => vi.advanceTimersByTime(1));
     expect(fetchSession).toHaveBeenCalledTimes(2);
     unmount();
   });
 
-  it('flushes final deltas and reconciles once per idle transition, including named events', async () => {
-    const { result, fetchSession, sse, unmount } = await setup();
-    act(() => sse.emitMessage(delta('final')));
-    await act(async () => sse.emitMessage({ type: 'session.idle', properties: { sessionID: SID } }));
-    await act(async () => sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: 'idle' } }));
+  it.each([
+    [{ type: 'history.rewritten', reason: 'compaction' }, 2],
+    [{ type: 'stream.reset', reason: 'source-restarted' }, 2],
+    [{ type: 'stream.reset', reason: 'slow-consumer' }, 1],
+  ] as const)('reconciles for %j as the design requires', async (event, fetches) => {
+    const { fetchSession, sse, unmount } = await setup();
+    await act(async () => sse.emitOce(event as OceEvent));
+    expect(fetchSession).toHaveBeenCalledTimes(fetches);
+    unmount();
+  });
+
+  it('reconciles a part the stream could not anchor after a grace period', async () => {
+    const { result, fetchSession, sse, frame, unmount } = await setup();
+    act(() => sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'ab' } }, SID)));
+    act(() => sse.emitOce(delta(5, 'gap')));
+    frame();
+    expect(textOf(result.current.parts)).toBe('ab');
+    expect(result.current._stale?.has('p')).toBe(true);
+    await act(async () => vi.advanceTimersByTime(STALE_RECONCILE_MS));
     expect(fetchSession).toHaveBeenCalledTimes(2);
-    expect(textOf(result.current.parts)).toBe('final');
-    act(() => sse.emitNamed('session.status', { sessionID: SID, status: { type: 'busy' } }));
-    await act(async () => sse.emitNamed('session.status', { sessionID: SID, status: { type: 'idle' } }));
-    expect(fetchSession).toHaveBeenCalledTimes(3);
+    expect(result.current._stale?.size ?? 0).toBe(0);
+    unmount();
+  });
+
+  it('does not reconcile a gap that a final upsert heals', async () => {
+    const { fetchSession, sse, frame, unmount } = await setup();
+    act(() => sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'ab' } }, SID)));
+    act(() => sse.emitOce(delta(5, 'gap')));
+    act(() => sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'abcdegap' } }, SID, true)));
+    frame();
+    await act(async () => vi.advanceTimersByTime(STALE_RECONCILE_MS));
+    expect(fetchSession).toHaveBeenCalledTimes(1);
     unmount();
   });
 
   it('keeps queued deltas in the outgoing cache and cancels delayed work on navigation', async () => {
     const { result, fetchSession, sse, rerender, unmount } = await setup();
-    act(() => sse.emitMessage(delta('keep')));
-    act(() => sse.emitMessage({ type: 'session.diff', properties: { sessionID: SID } }));
+    act(() => sse.emitOce(delta(0, 'keep')));
+    act(() => sse.emitOce(idleEdge));
+    act(() => sse.emitOce(delta(4, '!')));
     await act(async () => rerender({ id: 'other' }));
-    expect(textOf(useApiStore.getState().getCachedSession(SID)!.parts)).toBe('keep');
-    await act(async () => vi.advanceTimersByTime(1000));
+    expect(textOf(useApiStore.getState().getCachedSession(SID)!.parts)).toBe('keep!');
+    await act(async () => vi.advanceTimersByTime(SETTLE_RECONCILE_MS));
     expect(fetchSession).toHaveBeenCalledTimes(2);
     expect(result.current.sessionId).toBe('other');
     expect(result.current.parts).toEqual([]);
@@ -302,10 +372,10 @@ describe('useSession — bounded SSE work (#722)', () => {
 
   it('delivers urgent permissions immediately after earlier queued content', async () => {
     const { result, sse, frame, unmount } = await setup();
-    act(() => sse.emitMessage(delta('before prompt')));
-    act(() => sse.emitNamed('permission.asked', {
-      id: 'perm', sessionID: SID, permission: 'bash', patterns: ['ls'],
-    }));
+    act(() => sse.emitOce(delta(0, 'before prompt')));
+    act(() => sse.emitOce({ type: 'prompt.asked', prompt: {
+      id: 'perm', kind: 'permission', sessionId: SID, askedAt: 1, permission: { permission: 'bash', patterns: ['ls'] },
+    } }));
     expect(result.current.pendingPermission?.permissionId).toBe('perm');
     expect(textOf(result.current.parts)).toBe('before prompt');
     frame();
@@ -313,22 +383,29 @@ describe('useSession — bounded SSE work (#722)', () => {
     unmount();
   });
 
+  it('routes queue changes to the queue listeners', async () => {
+    const { sse, unmount } = await setup();
+    const seen: unknown[] = [];
+    const stop = onQueueUpdated((sid, messages) => seen.push([sid, messages]));
+    const queued = [{ id: 'q1', text: 'later' }] as never;
+    act(() => sse.emitOce({ type: 'queue.changed', messages: queued }));
+    expect(seen).toEqual([[SID, queued]]);
+    stop();
+    unmount();
+  });
+
   it('preserves snapshot/delta ordering and flushes before applying a REST snapshot', async () => {
     const { result, sse, frame, fetchSession, unmount } = await setup();
-    act(() => sse.emitNamed('message.part.updated', {
-      id: 'p', messageID: 'm', sessionID: SID, type: 'text', text: 'a',
-    }));
-    act(() => sse.emitMessage(delta('b')));
-    act(() => sse.emitNamed('message.part.updated', {
-      id: 'p', messageID: 'm', sessionID: SID, type: 'text', text: 'ab',
-    }));
+    act(() => sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'a' } }, SID)));
+    act(() => sse.emitOce(delta(1, 'b')));
+    act(() => sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'ab' } }, SID)));
     frame();
     expect(textOf(result.current.parts)).toBe('ab');
 
     let resolve!: (detail: SessionDetail) => void;
     fetchSession.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
-    act(() => sse.emitMessage({ type: 'session.idle', properties: {} }));
-    act(() => sse.emitMessage(delta('c')));
+    act(() => sse.emitOce(turnEnded()));
+    act(() => sse.emitOce(delta(2, 'c')));
     await act(async () => resolve(makeDetail({
       parts: [{ id: 'p', messageId: 'm', sessionId: SID, data: { type: 'text', text: 'abc' } }],
     })));
@@ -337,100 +414,104 @@ describe('useSession — bounded SSE work (#722)', () => {
     unmount();
   });
 
-  it('cancels a pending diff fetch at idle and ignores idle events for another session', async () => {
+  it('ignores turn ends addressed to another session', async () => {
     const { fetchSession, sse, unmount } = await setup();
-    act(() => sse.emitNamed('session.diff', { sessionID: SID }));
-    await act(async () => sse.emitNamed('session.idle', { sessionID: SID }));
-    await act(async () => vi.advanceTimersByTime(500));
-    expect(fetchSession).toHaveBeenCalledTimes(2);
-    await act(async () => sse.emitMessage({ type: 'session.idle', properties: { sessionID: 'child' } }));
-    expect(fetchSession).toHaveBeenCalledTimes(2);
+    await act(async () => sse.emitOce(turnEnded(), { sessionId: 'child' }));
+    expect(fetchSession).toHaveBeenCalledTimes(1);
     unmount();
   });
 
-  it('does not abort an idle fetch for its twin, but fetches again for a new turn', async () => {
-    const { fetchSession, sse, unmount } = await setup();
-    fetchSession.mockImplementationOnce(() => new Promise(() => {}));
-    act(() => sse.emitMessage({ type: 'session.status', properties: { status: 'idle' } }));
-    const signal = (fetchSession.mock.calls[1] as unknown[])[3] as AbortSignal;
-    act(() => sse.emitNamed('session.idle', {}));
-    expect(fetchSession).toHaveBeenCalledTimes(2);
-    expect(signal.aborted).toBe(false);
-    act(() => sse.emitNamed('session.status', { status: 'busy' }));
-    await act(async () => sse.emitNamed('session.idle', {}));
-    expect(fetchSession).toHaveBeenCalledTimes(3);
-    expect(signal.aborted).toBe(true);
-    unmount();
-  });
-
-  it('allows the next idle event to retry a failed reconcile', async () => {
+  it('allows the next turn end to retry a failed reconcile', async () => {
     const { fetchSession, sse, unmount } = await setup();
     fetchSession.mockRejectedValueOnce(new Error('offline'));
-    await act(async () => sse.emitNamed('session.idle', {}));
-    await act(async () => sse.emitNamed('session.idle', {}));
+    await act(async () => sse.emitOce(turnEnded()));
+    await act(async () => sse.emitOce(turnEnded()));
     expect(fetchSession).toHaveBeenCalledTimes(3);
     unmount();
   });
 
-  it('does not mistake child message activity for a new parent turn', async () => {
-    const { fetchSession, sse, unmount } = await setup();
-    await act(async () => sse.emitNamed('session.idle', { sessionID: SID }));
-    act(() => sse.emitMessage({ type: 'message.created', properties: {
-      info: { id: 'child-message', sessionID: 'child', role: 'assistant' },
-    } }));
-    await act(async () => sse.emitNamed('session.status', { sessionID: SID, status: 'idle' }));
-    expect(fetchSession).toHaveBeenCalledTimes(2);
-    unmount();
-  });
-
-  it.each([
-    ['session.idle', 'session.status'],
-    ['session.status', 'session.idle'],
-  ])('keeps authoritative error after %s and its %s twin, flushing queued content', async (first, twin) => {
+  it('settles a failed turn from the stream before the reconcile lands', async () => {
     const { result, fetchSession, sse, unmount } = await setup();
     const detail = makeDetail();
     fetchSession.mockResolvedValueOnce({ ...detail, session: { ...detail.session, status: 'error' } });
-    await act(async () => sse.emitMessage({ type: first, properties: { status: 'idle' } }));
+    act(() => sse.emitOce(idleEdge));
+    expect(result.current.session?.status).toBe('done');
+    act(() => sse.emitOce({ type: 'session.status', status: 'error' }));
     expect(result.current.session?.status).toBe('error');
-    act(() => sse.emitNamed('message.part.updated', {
-      id: 'p', messageID: 'm', sessionID: SID, type: 'text', text: 'final error details',
-    }));
-    expect(result.current.parts).toEqual([]);
-    await act(async () => sse.emitNamed(twin, { status: { type: 'idle' } }));
-    expect(textOf(result.current.parts)).toBe('final error details');
+    await act(async () => sse.emitOce(turnEnded('error')));
     expect(result.current.session?.status).toBe('error');
     expect(fetchSession).toHaveBeenCalledTimes(2);
     unmount();
   });
 
-  it('reconciles idle after reconnect even when the new turn only delivers snapshots', async () => {
+  it('reconciles after a reconnect the owner could not resume, but not after a resumed one', async () => {
     const { result, fetchSession, sse, unmount } = await setup();
-    act(() => sse.open());
-    await act(async () => sse.emitNamed('session.idle', {}));
+    await act(async () => { sse.open(); sse.emitOce(hello(false), { epoch: 'e1', seq: 7 }); });
+    expect(fetchSession).toHaveBeenCalledTimes(2);
     act(() => sse.error());
     act(() => result.current.retryNow());
-    const reconnected = FakeEventSource.latest()!;
-    await act(async () => reconnected.open());
+    const resumed = FakeEventSource.latest()!;
+    expect(resumed.url).toContain('after=e1%3A7');
+    await act(async () => { resumed.open(); resumed.emitOce(hello(true), { epoch: 'e1', seq: 8 }); });
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    act(() => resumed.error());
+    act(() => result.current.retryNow());
+    const fresh = FakeEventSource.latest()!;
+    expect(fresh.url).toContain('after=e1%3A8');
+    await act(async () => { fresh.open(); fresh.emitOce(hello(false), { epoch: 'e2', seq: 1 }); });
     expect(fetchSession).toHaveBeenCalledTimes(3);
-    const detail = makeDetail();
-    fetchSession.mockResolvedValueOnce({ ...detail, session: { ...detail.session, status: 'error' } });
-    act(() => reconnected.emitNamed('message.updated', {
-      info: { id: 'm', sessionID: SID, role: 'assistant', finish: 'error', time: { created: 100 } },
-    }));
-    await act(async () => reconnected.emitNamed('session.idle', {}));
-    expect(fetchSession).toHaveBeenCalledTimes(4);
-    expect(result.current.session?.status).toBe('error');
+    unmount();
+  });
+
+  it('loads a turn completed between the initial REST snapshot and first hello', async () => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    expect(result.current.messages.some((m) => m.id === 'between')).toBe(false);
+    fetchSession.mockResolvedValueOnce(makeDetail({ messages: [{ id: 'between', sessionId: SID,
+      timeCreated: 123, data: { role: 'assistant', finish: 'stop' } }], parts: [] }));
+    await act(async () => { sse.open(); sse.emitOce(hello(false)); });
+    expect(result.current.messages.map((m) => m.id)).toEqual(['between']);
+    unmount();
+  });
+
+  it.each(['rewrite', 'cold reconnect'])('%s removes missed deletions but keeps events received after the request fence', async (trigger) => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    await act(async () => { sse.open(); sse.emitOce(hello(false)); sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'removed' } }, SID)); });
+    act(() => sse.emitOce({ type: 'session.status', status: 'busy' }));
+    expect(result.current.parts.some((p) => p.id === 'p')).toBe(true);
+    let finish!: (d: SessionDetail) => void;
+    fetchSession.mockImplementationOnce(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+    await act(async () => {
+      if (trigger === 'rewrite') sse.emitOce({ type: 'history.rewritten', reason: 'revert' });
+      else { sse.error(); result.current.retryNow(); FakeEventSource.latest()!.open(); FakeEventSource.latest()!.emitOce(hello(false)); }
+    });
+    const active = FakeEventSource.latest()!;
+    act(() => { active.emitOce(partUpserted({ id: 'new', messageId: 'new-m', data: { type: 'text', text: 'new turn' } }, SID)); active.emitOce({ type: 'session.status', status: 'busy' }); });
+    await act(async () => finish(makeDetail({ messages: [], parts: [] })));
+    expect(result.current.parts.some((p) => p.id === 'p')).toBe(false);
+    expect(result.current.parts.some((p) => p.id === 'new')).toBe(true);
+    expect(result.current.session?.status).toBe('busy');
+    unmount();
+  });
+
+  it('shows upstream failures even when EventSource remains open', async () => {
+    const { result, sse, unmount } = await setup();
+    act(() => { sse.open(); sse.emitOce({ type: 'stream.error', code: 'owner-offline', message: 'Disconnected owner', retryable: true }); });
+    expect(result.current.status).toBe('reconnecting');
+    expect(result.current.sseReconnecting).toBe(true);
+    act(() => sse.emitOce(hello(false)));
+    expect(result.current.status).toBe('live');
+    expect(result.current.sseReconnecting).toBe(false);
     unmount();
   });
 
   it('flushes on disconnect and preserves the unmount cache without delayed callbacks', async () => {
     const { result, fetchSession, sse, frame, unmount } = await setup();
-    act(() => sse.emitMessage(delta('a')));
+    act(() => sse.emitOce(delta(0, 'a')));
     act(() => sse.error());
     expect(textOf(result.current.parts)).toBe('a');
     // A reconnect can still be scheduled when the user leaves.
     unmount();
-    act(() => sse.emitMessage(delta('late')));
+    act(() => sse.emitOce(delta(1, 'late')));
     frame();
     await act(async () => vi.advanceTimersByTime(1000));
     expect(textOf(useApiStore.getState().getCachedSession(SID)!.parts)).toBe('a');
@@ -441,15 +522,12 @@ describe('useSession — bounded SSE work (#722)', () => {
   it('batches the debug ring and coalesces resource dirtiness', async () => {
     const { result, sse, frame, unmount } = await setup(true);
     act(() => {
-      sse.emitMessage(' ');
-      sse.emitMessage('{bad json');
-      for (let i = 0; i < 60; i++) sse.emitMessage(delta('x'));
-      sse.emitNamed('message.part.updated', {
-        id: 'tool', messageID: 'm', sessionID: SID, type: 'tool', tool: 'edit',
-      });
-      sse.emitNamed('ocman.session.changed', { sessionID: SID });
+      sse.emitNamed('oce', ' ');
+      sse.emitNamed('oce', '{bad json');
+      for (let i = 0; i < 60; i++) sse.emitOce(delta(i, 'x'));
+      sse.emitOce({ type: 'changes.dirty', reason: 'edit' });
+      sse.emitOce({ type: 'changes.dirty', reason: 'commit' });
     });
-    expect(result.current.sseDebugEvents).toEqual([]);
     frame();
     expect(result.current.sseDebugEvents).toHaveLength(50);
     expect(result.current.changesDirtyTick).toBe(1);
@@ -567,14 +645,11 @@ describe('useSession — initial load', () => {
     await waitFor(() => expect(result.current.refreshError).toBe('offline'));
 
     const sse = FakeEventSource.latest()!;
-    act(() => sse.emitMessage({
-      type: 'message.part.delta',
-      properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: 'live' },
-    }));
-    act(() => sse.emitMessage({
-      type: 'question.asked',
-      properties: { id: 'q1', sessionID: SID, questions: [{ question: 'ok?', header: 'h', options: [] }] },
-    }));
+    act(() => sse.emitOce(textDelta('p', 0, 'live')));
+    act(() => sse.emitOce({ type: 'prompt.asked', prompt: {
+      id: 'q1', kind: 'question', sessionId: SID, askedAt: 1,
+      question: { questions: [{ question: 'ok?', header: 'h', options: [] }] },
+    } }));
     await waitFor(() => expect(result.current.parts.some((p) => p.id === 'p')).toBe(true));
     expect(result.current.pendingQuestion).not.toBeNull();
 
@@ -592,19 +667,13 @@ describe('useSession — initial load', () => {
     await waitFor(() => expect(result.current.refreshing).toBe(false));
     const sse = FakeEventSource.latest()!;
     expect(sse.url).toContain('platform=r-m2');
-    act(() => sse.emitMessage({
-      type: 'message.part.delta',
-      properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: 'live' },
-    }));
+    act(() => sse.emitOce(textDelta('p', 0, 'live')));
     await waitFor(() => expect(result.current.parts.some((p) => p.id === 'p')).toBe(true));
 
     // Ten hover prefetches push the active entry out of the LRU.
     for (let i = 0; i < 10; i++) useApiStore.getState().setCachedSession(`other-${i}`, makeDetail());
     expect(useApiStore.getState().getCachedSession(SID)).toBeNull();
-    act(() => sse.emitMessage({
-      type: 'message.part.delta',
-      properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: '!' },
-    }));
+    act(() => sse.emitOce(textDelta('p', 4, '!')));
 
     const text = () => {
       const data = result.current.parts.find((p) => p.id === 'p')?.data;
@@ -756,192 +825,78 @@ describe('useSession — initial load', () => {
   });
 });
 
-describe('useSession — SSE event dispatch', () => {
-  it('routes onmessage payloads through the reducer', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+describe('useSession — conversation stream dispatch', () => {
+  async function connected() {
+    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
+    const hook = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(hook.result.current.session?.id).toBe(SID));
+    const sse = FakeEventSource.latest()!;
+    act(() => { sse.open(); sse.emitOce(hello()); });
+    return { ...hook, sse, fetchSession };
+  }
+  const dataOf = (part?: { data: unknown }) => (typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data);
 
-    await waitFor(() => {
-      expect(result.current.session?.id).toBe(SID);
-    });
-
-    const sse = FakeEventSource.latest();
-    expect(sse).toBeDefined();
+  it('routes message and part upserts through the reducer', async () => {
+    const { result, sse } = await connected();
     act(() => {
-      sse!.open();
+      sse.emitOce({ type: 'message.upserted', message: { id: 'm-1', sessionId: SID, timeCreated: 100, data: { role: 'assistant' } } });
+      sse.emitOce(partUpserted({ id: 'p-1', messageId: 'm-1', data: { type: 'text', text: 'Hi' } }, SID, true));
     });
-    act(() => {
-      sse!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'm-1', sessionID: SID, role: 'assistant', time: { created: 100 } },
-          parts: [
-            { id: 'p-1', messageID: 'm-1', sessionID: SID, type: 'text', text: 'Hi' },
-          ],
-        },
-      });
-    });
-
     await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-1')).toBeDefined());
-    expect(result.current.parts.find((p) => p.id === 'p-1')).toBeDefined();
+    expect(dataOf(result.current.parts.find((p) => p.id === 'p-1')).text).toBe('Hi');
   });
 
-  it('does not dispatch default message-channel payloads twice', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => {
-      expect(result.current.session?.id).toBe(SID);
-    });
-
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
+  it('applies a replayed delta once', async () => {
+    const { result, sse } = await connected();
     act(() => {
-      sse.emitMessage({
-        type: 'message.part.delta',
-        properties: {
-          partID: 'p-dup', messageID: 'm-dup', sessionID: SID, field: 'text', delta: 'one ',
-        },
-      });
+      sse.emitOce(textDelta('p-dup', 0, 'one ', 'm-dup'));
+      sse.emitOce(textDelta('p-dup', 0, 'one ', 'm-dup'));
     });
-
     await waitFor(() => expect(result.current.parts.find((p) => p.id === 'p-dup')).toBeDefined());
-    const part = result.current.parts.find((p) => p.id === 'p-dup');
-    const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
-    expect(data.text).toBe('one ');
+    expect(dataOf(result.current.parts.find((p) => p.id === 'p-dup')).text).toBe('one ');
   });
 
-  it('routes named-channel payloads through the reducer', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => {
-      expect(result.current.session?.id).toBe(SID);
-    });
-
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
+  it('ignores legacy channels on the conversation stream', async () => {
+    const { result, sse } = await connected();
     act(() => {
-      sse.emitNamed('message.part.delta', {
-        properties: {
-          partID: 'p-named', messageID: 'm-named', sessionID: SID, field: 'text', delta: 'named ',
-        },
-      });
+      sse.emitMessage({ type: 'message.part.delta', properties: { partID: 'p', messageID: 'm', sessionID: SID, field: 'text', delta: 'x' } });
+      sse.emitNamed('message.part.delta', { properties: { partID: 'p', messageID: 'm', sessionID: SID, field: 'text', delta: 'x' } });
     });
-
-    await waitFor(() => expect(result.current.parts.find((p) => p.id === 'p-named')).toBeDefined());
-    const part = result.current.parts.find((p) => p.id === 'p-named');
-    const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
-    expect(data.text).toBe('named ');
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)); });
+    expect(result.current.parts).toEqual([]);
   });
 
-  it('routes raw named message.part.updated payloads as live tool snapshots', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => {
-      expect(result.current.session?.id).toBe(SID);
-    });
-
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-    act(() => {
-      sse.emitNamed('message.part.updated', {
-        id: 'p-tool-live',
-        messageID: 'm-tool-live',
-        sessionID: SID,
-        type: 'tool',
-        tool: 'bash',
-        state: { status: 'running', input: { command: 'sleep 10' } },
-      });
-    });
-
+  it('shows a running tool part with a stub message before its message arrives', async () => {
+    const { result, sse } = await connected();
+    act(() => sse.emitOce(partUpserted({ id: 'p-tool-live', messageId: 'm-tool-live', data: {
+      type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'sleep 10' } },
+    } }, SID)));
     await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-tool-live')).toBeDefined());
-    const stub = result.current.messages.find((m) => m.id === 'm-tool-live');
-    expect(stub).toBeDefined();
-    const part = result.current.parts.find((p) => p.id === 'p-tool-live');
-    const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
-    expect(data.type).toBe('tool');
-    expect(data.tool).toBe('bash');
-    expect((data.state as { status?: string }).status).toBe('running');
+    const data = dataOf(result.current.parts.find((p) => p.id === 'p-tool-live'));
+    expect(data).toMatchObject({ type: 'tool', tool: 'bash', state: { status: 'running' } });
   });
 
   it('dirties session info after the owner confirms persisted changes', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-    await waitFor(() => expect(result.current.session?.id).toBe(SID));
-
+    const { result, sse } = await connected();
     const before = result.current.changesDirtyTick;
-    act(() => {
-      FakeEventSource.latest()!.emitNamed('ocman.session.changed', { sessionID: SID });
-    });
-
+    act(() => sse.emitOce({ type: 'changes.dirty', reason: 'commit' }));
     await waitFor(() => expect(result.current.changesDirtyTick).toBe(before + 1));
   });
 
-  it('routes raw named tool payloads as live tool snapshots', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => {
-      expect(result.current.session?.id).toBe(SID);
-    });
-
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-    act(() => {
-      sse.emitNamed('tool', {
-        id: 'p-tool-channel',
-        messageID: 'm-tool-channel',
-        sessionID: SID,
-        type: 'tool',
-        tool: 'bash',
-        state: { status: 'running', input: { command: 'go test ./...' } },
-      });
-    });
-
-    await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-tool-channel')).toBeDefined());
-    const stub = result.current.messages.find((m) => m.id === 'm-tool-channel');
-    expect(stub).toBeDefined();
-    const part = result.current.parts.find((p) => p.id === 'p-tool-channel');
-    const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
-    expect(data.type).toBe('tool');
-    expect(data.tool).toBe('bash');
-    expect((data.state as { status?: string }).status).toBe('running');
-  });
-
-  it('opens the EventSource against the correct URL', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
+  it('opens the conversation stream against the correct URL', async () => {
+    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
     renderHook(() => useSession(SID, { fetchSession }));
-    await waitFor(() => {
-      expect(FakeEventSource.latest()).toBeDefined();
-    });
-    expect(FakeEventSource.latest()!.url).toContain(`/api/session/${SID}/events`);
+    await waitFor(() => expect(FakeEventSource.latest()).toBeDefined());
+    expect(FakeEventSource.latest()!.url).toBe(`/api/session/${SID}/stream`);
   });
 
-  it('routes remote EventSource and fetches through the cached platform', async () => {
-    const detail = makeDetail({
-      session: {
-        ...makeDetail().session,
-        platform: 'r-box:opencode',
-      },
-    });
+  it('routes remote streams and fetches through the cached platform', async () => {
+    const detail = makeDetail({ session: { ...makeDetail().session, platform: 'r-box:opencode' } });
     useApiStore.getState().setCachedSession(SID, detail);
     const fetchSession = vi.fn().mockResolvedValue(detail);
-
     renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => {
-      expect(FakeEventSource.latest()).toBeDefined();
-    });
-    expect(FakeEventSource.latest()!.url).toContain(`/api/session/${SID}/events?platform=r-box%3Aopencode`);
+    await waitFor(() => expect(FakeEventSource.latest()).toBeDefined());
+    expect(FakeEventSource.latest()!.url).toContain(`/api/session/${SID}/stream?platform=r-box%3Aopencode`);
     expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.any(AbortSignal), 'r-box:opencode', false);
   });
 });
@@ -976,7 +931,7 @@ describe('useSession — returning to the tab', () => {
 
     expect(first.closed).toBe(true);
     expect(FakeEventSource.instances).toHaveLength(2);
-    await act(async () => FakeEventSource.latest()!.open());
+    await act(async () => { FakeEventSource.latest()!.open(); FakeEventSource.latest()!.emitOce(hello(false)); });
     expect(fetchSession).toHaveBeenCalledTimes(2);
   });
 
@@ -1026,9 +981,10 @@ describe('useSession — reconnect after error', () => {
     });
     expect(FakeEventSource.instances.length).toBe(2);
 
-    // Open the new stream → refetch + status becomes 'live' again.
+    // The new stream cannot resume → refetch + status becomes 'live' again.
     act(() => {
       FakeEventSource.latest()!.open();
+      FakeEventSource.latest()!.emitOce(hello(false));
     });
     expect(result.current.status).toBe('live');
     expect(result.current.changesDirtyTick).toBe(dirtyBeforeReconnect + 1);
@@ -1049,7 +1005,7 @@ describe('useSession — reconnect after error', () => {
 
     act(() => FakeEventSource.latest()!.error());
     await act(async () => { await vi.advanceTimersByTimeAsync(15); });
-    act(() => FakeEventSource.latest()!.open());
+    act(() => { FakeEventSource.latest()!.open(); FakeEventSource.latest()!.emitOce(hello(false)); });
 
     expect(result.current.changesDirtyTick).toBe(dirtyBeforeReconnect + 1);
   });
@@ -1093,10 +1049,10 @@ describe('useSession — session.idle refetch', () => {
     // Another client archives the session. This tab has no navigation event.
     act(() => sse.error());
     await act(async () => vi.advanceTimersByTimeAsync(10));
-    await act(async () => FakeEventSource.latest()!.open());
+    await act(async () => { FakeEventSource.latest()!.open(); FakeEventSource.latest()!.emitOce(hello(false)); });
     expect(requests).toHaveLength(2);
     expect(requests[1].searchParams.get('peek')).toBe('1');
-    await act(async () => FakeEventSource.latest()!.emitMessage({ type: 'session.idle', properties: {} }));
+    await act(async () => FakeEventSource.latest()!.emitOce({ type: 'turn.ended', outcome: 'done', endedAt: 1 }));
     await act(async () => result.current.reload());
     await act(async () => result.current.loadMore());
     expect(requests).toHaveLength(5);
@@ -1108,7 +1064,7 @@ describe('useSession — session.idle refetch', () => {
     unmount();
   });
 
-  it('refetches /api/session/{id} when session.idle lands', async () => {
+  it('refetches /api/session/{id} when a turn ends', async () => {
     const detail = makeDetail();
     const fetchSession = vi.fn().mockResolvedValue(detail);
     const { result } = renderHook(() => useSession(SID, { fetchSession }));
@@ -1119,7 +1075,7 @@ describe('useSession — session.idle refetch', () => {
     act(() => sse.open());
 
     act(() => {
-      sse.emitMessage({ type: 'session.idle', properties: {} });
+      sse.emitOce({ type: 'turn.ended', outcome: 'done', endedAt: 1 });
     });
 
     await waitFor(() => {
@@ -1366,7 +1322,7 @@ describe('useSession — keepalive watchdog', () => {
     const second = FakeEventSource.latest()!;
     expect(second).not.toBe(first);
     const fetches = fetchSession.mock.calls.length;
-    await act(async () => second.open());
+    await act(async () => { second.open(); second.emitOce(hello(false)); });
     expect(fetchSession.mock.calls.length).toBe(fetches + 1);
   });
 });
@@ -1384,7 +1340,7 @@ describe('useSession — keepalive watchdog before first open', () => {
     act(() => { vi.advanceTimersByTime(KEEPALIVE_TIMEOUT_MS); });
     expect(first.closed).toBe(true);
     const fetches = fetchSession.mock.calls.length;
-    await act(async () => FakeEventSource.latest()!.open());
+    await act(async () => { FakeEventSource.latest()!.open(); FakeEventSource.latest()!.emitOce(hello(false)); });
     expect(fetchSession.mock.calls.length).toBe(fetches + 1);
   });
 });
@@ -1438,7 +1394,7 @@ describe('useSession — retryNow', () => {
     });
 
     const second = FakeEventSource.latest()!;
-    expect(second.url).toContain(`/api/session/${SID}/events`);
+    expect(second.url).toContain(`/api/session/${SID}/stream`);
   });
 
   it('transitions back to live after retryNow opens successfully', async () => {
@@ -1485,79 +1441,40 @@ describe('useSession — retryNow', () => {
 });
 
 describe('useSession — subagent event routing', () => {
-  it('dispatches events whose sessionID matches the parent session', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+  async function connected() {
+    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
+    const hook = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(hook.result.current.session?.id).toBe(SID));
     const sse = FakeEventSource.latest()!;
     act(() => sse.open());
+    return { ...hook, sse };
+  }
 
-    act(() => {
-      sse.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'm-parent', sessionID: SID, role: 'assistant', time: { created: 100 } },
-          parts: [],
-        },
-      });
-    });
-
-    // Message with matching session ID should appear.
+  it('dispatches envelopes for the page session', async () => {
+    const { result, sse } = await connected();
+    act(() => sse.emitOce({ type: 'message.upserted', message: { id: 'm-parent', sessionId: SID, timeCreated: 100, data: { role: 'assistant' } } }));
     await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-parent')).toBeDefined());
   });
 
-  it('drops events whose sessionID belongs to a different (subagent) session', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => expect(result.current.session?.id).toBe(SID));
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-
+  it('drops envelopes addressed to a different (subagent) session', async () => {
+    const { result, sse } = await connected();
     act(() => {
-      sse.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: {
-            id: 'm-subagent',
-            sessionID: 'subagent-sess-99', // different session ID
-            role: 'assistant',
-            time: { created: 100 },
-          },
-          parts: [],
-        },
-      });
+      sse.emitOce({ type: 'message.upserted', message: { id: 'm-subagent', sessionId: 'subagent-sess-99', timeCreated: 100, data: { role: 'assistant' } } }, { sessionId: 'subagent-sess-99' });
+      sse.emitOce(textDelta('p-sub', 0, 'streaming', 'm-sub'), { sessionId: 'subagent-sess-99' });
     });
-
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)); });
-    // The reducer should drop this event — no orphan message.
     expect(result.current.messages.find((m) => m.id === 'm-subagent')).toBeUndefined();
+    expect(result.current.parts.find((p) => p.id === 'p-sub')).toBeUndefined();
   });
 
-  it('drops a part delta addressed to another session', async () => {
-    const detail = makeDetail();
-    const fetchSession = vi.fn().mockResolvedValue(detail);
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await waitFor(() => expect(result.current.session?.id).toBe(SID));
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-
+  it('surfaces a descendant prompt the owner routed to this stream and tracks child status', async () => {
+    const { result, sse } = await connected();
     act(() => {
-      sse.emitMessage({
-        type: 'message.part.delta',
-        properties: {
-          partID: 'p-sub', messageID: 'm-sub', sessionID: 'subagent-sess-99',
-          field: 'text', delta: 'streaming',
-        },
-      });
+      sse.emitOce({ type: 'prompt.asked', prompt: { id: 'perm-child', kind: 'permission', sessionId: 'child', askedAt: 5, permission: { permission: 'bash', patterns: ['ls'] } } });
+      sse.emitOce({ type: 'child.status', childId: 'child', status: 'waiting' });
     });
-
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)); });
-    expect(result.current.parts.find((p) => p.id === 'p-sub')).toBeUndefined();
+    await waitFor(() => expect(result.current.pendingPermission).toMatchObject({ permissionId: 'perm-child', sessionId: 'child', askedAt: 5 }));
+    expect(result.current.childStatus).toEqual({ child: { status: 'waiting' } });
   });
 });
 
@@ -1582,15 +1499,7 @@ describe('useSession — cache mirror write amplification (#460)', () => {
     const sse = FakeEventSource.latest()!;
     act(() => sse.open());
     act(() => {
-      for (let i = 0; i < 50; i++) {
-        sse.emitMessage({
-          type: 'message.part.delta',
-          properties: {
-            partID: 'p-burst', messageID: 'm-burst', sessionID: SID,
-            field: 'text', delta: 'x',
-          },
-        });
-      }
+      for (let i = 0; i < 50; i++) sse.emitOce(textDelta('p-burst', i, 'x', 'm-burst'));
     });
 
     expect(spy.mock.calls.length).toBeLessThanOrEqual(1);

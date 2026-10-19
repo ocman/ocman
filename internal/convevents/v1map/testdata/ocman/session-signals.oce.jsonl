@@ -1,0 +1,3 @@
+{"v":1,"epoch":"golden","seq":1,"sessionId":"ses_a","platform":"ocman","at":1700000000000,"durability":"live","event":{"type":"background.changed","count":2,"tasks":[{"id":"t1","description":"npm run dev"},{"id":"t2","description":"sleep 60"}]}}
+{"v":1,"epoch":"golden","seq":2,"sessionId":"ses_a","platform":"ocman","at":1700000000000,"durability":"live","event":{"type":"changes.dirty","reason":"commit"}}
+{"v":1,"epoch":"golden","seq":3,"sessionId":"ses_a","platform":"ocman","at":1700000000000,"durability":"live","event":{"type":"background.changed","count":0,"tasks":[]}}

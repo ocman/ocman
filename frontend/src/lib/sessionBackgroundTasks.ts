@@ -16,8 +16,3 @@ export function reduceBackgroundTaskCount(state: SessionView, count: unknown, ra
   if (count === state.backgroundTaskCount && JSON.stringify(tasks) === JSON.stringify(state.backgroundTasks ?? [])) return state;
   return { ...state, backgroundTaskCount: count, backgroundTasks: tasks };
 }
-
-export function backgroundSnapshotCount(snapshot: unknown, sessionId: string): unknown {
-  if (!snapshot || typeof snapshot !== 'object') return 0;
-  return (snapshot as Record<string, unknown>)[sessionId] ?? 0;
-}

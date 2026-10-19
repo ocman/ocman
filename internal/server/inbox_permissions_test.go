@@ -136,7 +136,7 @@ func TestPermissionInboxExternalResolutionAndReconciliation(t *testing.T) {
 	for _, reason := range []string{"replied", "rejected", "auto-approved"} {
 		p.PermissionID = reason
 		srv.notifyPermissionInbox(p)
-		srv.broadcastPermissionResolved(p.SessionID, p.PermissionID, reason)
+		srv.broadcastPermissionResolved(p.Platform, p.SessionID, p.PermissionID, reason)
 		srv.notifyPermissionInbox(p)
 		items, _ = srv.stateDB.ListInboxItems(t.Context())
 		if len(items) != 0 {

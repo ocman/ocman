@@ -24,6 +24,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/tasksvc"
 	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/termmod"
 	"github.com/NoUseFreak/ocman/internal/tmuxmod"
@@ -36,6 +37,13 @@ func (s *Server) modules() []module.Module {
 	// Auto-approve first: it seeds the judge delay, which ran before every
 	// other startup step. Plugins next: their discovery came after it.
 	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
+	mods = append(mods, s.backgroundTasksModule())
+	if s.historyIngest != nil {
+		mods = append(mods, s.historyIngest)
+	}
+	if s.historyParity != nil {
+		mods = append(mods, s.historyParity)
+	}
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
 	}
@@ -55,7 +63,7 @@ func (s *Server) modules() []module.Module {
 		mods = append(mods, m)
 	}
 	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule())
-	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule(), s.remotesModule(), s.sessionLifecycleModule(), s.queueModule())
+	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule(), s.remotesModule(), s.sessionLifecycleModule(), s.queueModule(), s.convStreamModule())
 }
 
 // tmuxModule is stateless, so it is rebuilt on each call.
@@ -99,7 +107,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve

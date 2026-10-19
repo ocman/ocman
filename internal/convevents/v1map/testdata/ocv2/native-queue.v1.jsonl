@@ -1,0 +1,10 @@
+{"session":"s1"}
+{"data":{"properties":{"sessionID":"s1"},"type":"ocman.queue.changed"}}
+{"data":{"properties":{"info":{"agent":"build","cost":0,"finish":"stop","id":"msg01","mode":"build","modelID":"m","providerID":"p","role":"assistant","sessionID":"s1","time":{"completed":15,"created":10},"tokens":{"cache":{"read":0,"write":0},"input":0,"output":0,"reasoning":0},"usageAvailable":false},"sessionID":"s1"},"type":"message.updated"}}
+{"data":{"properties":{"part":{"id":"prt010000","messageID":"msg01","sessionID":"s1","snapshot":"","type":"step-start"},"sessionID":"s1"},"type":"message.part.updated"}}
+{"data":{"properties":{"part":{"id":"prt010001","messageID":"msg01","sessionID":"s1","text":"done","time":{"end":15,"start":10},"type":"text"},"sessionID":"s1"},"type":"message.part.updated"}}
+{"data":{"properties":{"part":{"cost":0,"id":"prt010002","messageID":"msg01","reason":"stop","sessionID":"s1","tokens":{"cache":{"read":0,"write":0},"input":0,"output":0,"reasoning":0},"type":"step-finish"},"sessionID":"s1"},"type":"message.part.updated"}}
+{"data":{"properties":{"info":{"id":"msg02","role":"user","sessionID":"s1","time":{"created":20}},"sessionID":"s1"},"type":"message.updated"}}
+{"data":{"properties":{"part":{"id":"prt020001","messageID":"msg02","sessionID":"s1","synthetic":false,"text":"follow up","type":"text"},"sessionID":"s1"},"type":"message.part.updated"}}
+{"data":{"properties":{"sessionID":"s1"},"type":"ocman.queue.changed"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"busy"}},"type":"session.status"}}

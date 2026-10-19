@@ -102,4 +102,10 @@ describe('useSessionCreation', () => {
     await act(() => r2.current.handleCompact());
     expect(api.compactSession).toHaveBeenCalledTimes(1);
   });
+
+  it('propagates compaction failures to the command feedback', async () => {
+    vi.mocked(api.compactSession).mockRejectedValueOnce(new Error('Session is busy'));
+    const { result } = renderHook(() => useSessionCreation(opts()));
+    await expect(result.current.handleCompact()).rejects.toThrow('Session is busy');
+  });
 });

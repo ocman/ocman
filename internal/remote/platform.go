@@ -115,10 +115,9 @@ func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset i
 	if client == nil {
 		return nil, ErrRemoteOffline
 	}
-	resp, err := client.Session(ctx, &pb.SessionReq{Platform: p.base, SessionId: id, Limit: int32(limit), Offset: int32(offset)})
+	resp, err := client.Session(ctx, &pb.SessionReq{Platform: p.base, SessionId: id, Limit: int32(limit), Offset: int32(offset), Browsing: platforms.IsConversationRead(ctx)})
 	if err != nil {
-		p.conn.markOffline()
-		return nil, err
+		return nil, conversationReadError(p.conn, err)
 	}
 	p.conn.markSeen()
 	var detail platforms.SessionDetail
@@ -392,7 +391,9 @@ func (p *remotePlatform) ProxyEvents(ctx context.Context, sessionID string, w io
 		if _, err := w.Write(chunk.Data); err != nil {
 			return err
 		}
-		flush()
+		if flush != nil {
+			flush()
+		}
 	}
 }
 

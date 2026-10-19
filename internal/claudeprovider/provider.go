@@ -24,13 +24,14 @@ import (
 const PlatformID = "claudecode"
 
 type Options struct {
-	IndexPath   string        // claude-index.db, beside state.db
-	ConfigDir   string        // ~/.claude or an inherited CLAUDE_CONFIG_DIR
-	CLI         string        // claude executable
-	Sweep       time.Duration // mtime sweep interval, the watcher's backstop
-	StatePath   string        // sessions ocman launched; empty keeps them in memory
-	ProjectRoot string        // canonical supervisor identity for durable ownership
-	UsagePath   string        // rate-limit windows observed by every supervisor; empty records none
+	HistoryReady func(*HistoryReader) // in-process browsing history; no socket protocol change
+	IndexPath    string               // claude-index.db, beside state.db
+	ConfigDir    string               // ~/.claude or an inherited CLAUDE_CONFIG_DIR
+	CLI          string               // claude executable
+	Sweep        time.Duration        // mtime sweep interval, the watcher's backstop
+	StatePath    string               // sessions ocman launched; empty keeps them in memory
+	ProjectRoot  string               // canonical supervisor identity for durable ownership
+	UsagePath    string               // rate-limit windows observed by every supervisor; empty records none
 	// Pool policy, owned by ocman (AD-3, spike §1): one machine-wide cap,
 	// idle timeout counted from turn completion.
 	MaxProcs    int
@@ -119,6 +120,9 @@ func newSupervisor(ctx context.Context, opts Options, spool string) (*providersu
 		return nil, nil, err
 	}
 	l.sup = sup
+	if opts.HistoryReady != nil {
+		opts.HistoryReady(&HistoryReader{index: idx, live: l})
+	}
 	go l.yieldSlots(ctx)
 	go func() {
 		if opts.NoSync {

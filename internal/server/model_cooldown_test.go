@@ -101,7 +101,7 @@ func TestRetryStatusCooldown(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newCooldownRig(t)
 			r.last = runningAssistant
-			r.srv.onSessionRetry("s1", tc.status)
+			r.srv.onSessionRetry("opencode", "s1", tc.status)
 			if got := r.modelFor(t); got != tc.want {
 				t.Fatalf("model = %q, want %q", got, tc.want)
 			}

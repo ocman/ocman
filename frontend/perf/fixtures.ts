@@ -143,29 +143,37 @@ export function taskSnapshot(childId: string, step: number) {
 
 type Frame = [channel: string, data: string][];
 
+// Envelope seqs keep rising across calls, like one hub log per run.
+let seq = 0;
+
+/** One `oce` frame: an envelope as /api/session/{id}/stream sends it. */
+function oce(sessionId: string, event: Record<string, unknown>, durability = 'live'): [string, string] {
+  seq += 1;
+  return ['oce', JSON.stringify({ v: 1, epoch: 'bench', seq, sessionId, platform: 'opencode', at: NOW, durability, event })];
+}
+
 /**
- * SSE frames for streaming a long assistant answer into `sessionId`:
- * message.created, a text part snapshot, then one delta per frame.
- * `foreignId` interleaves subagent events (dropped by the reducer but
- * still parsed and dispatched).
+ * Conversation stream frames for streaming a long assistant answer into
+ * `sessionId`: busy status, the message, an empty text part, then one
+ * offset-anchored delta per frame. With `foreignId` a subagent runs
+ * alongside: the stream never carries child content (design §4.9), so
+ * the child shows up as one `child.status` level while its transcript
+ * comes from `/tasks` polls.
  */
 export function streamFrames(sessionId: string, opts: { chars?: number; chunk?: number; foreignId?: string } = {}): Frame[] {
   const text = markdown(40, 7).slice(0, opts.chars ?? 9000);
   const chunk = opts.chunk ?? 24;
   const mid = `msg_${sessionId}_live`;
   const pid = `prt_${sessionId}_live`;
-  const ev = (type: string, properties: Record<string, unknown>) => JSON.stringify({ type, properties });
   const frames: Frame[] = [[
-    ['session.status', ev('session.status', { sessionID: sessionId, status: { type: 'busy' } })],
-    ['message.created', ev('message.created', { sessionID: sessionId, info: { id: mid, sessionID: sessionId, role: 'assistant', time: { created: NOW + 1 } }, parts: [] })],
-    ['message.part.updated', ev('message.part.updated', { part: { id: pid, messageID: mid, sessionID: sessionId, type: 'text', text: '' } })],
+    oce(sessionId, { type: 'session.status', status: 'busy', notice: null }),
+    oce(sessionId, { type: 'message.upserted', message: { id: mid, sessionId, timeCreated: NOW + 1, data: { role: 'assistant', time: { created: NOW + 1 } } } }, 'durable'),
+    oce(sessionId, { type: 'part.upserted', part: { id: pid, messageId: mid, sessionId, data: { type: 'text', text: '' } }, final: false }, 'durable'),
   ]];
-  for (let at = 0, n = 0; at < text.length; at += chunk, n++) {
-    const frame: Frame = [['message.part.delta', ev('message.part.delta', { sessionID: sessionId, messageID: mid, partID: pid, field: 'text', delta: text.slice(at, at + chunk) })]];
-    if (opts.foreignId && n % 3 === 0) {
-      frame.push(['message.part.delta', ev('message.part.delta', { sessionID: opts.foreignId, messageID: `m_${opts.foreignId}`, partID: `p_${opts.foreignId}`, field: 'text', delta: 'subagent output ' })]);
-    }
+  for (let at = 0; at < text.length; at += chunk) {
+    const frame: Frame = [oce(sessionId, { type: 'part.delta', messageId: mid, partId: pid, field: 'text', offset: at, text: text.slice(at, at + chunk), partType: 'text' }, 'ephemeral')];
     frames.push(frame);
   }
+  if (opts.foreignId) frames[0].push(oce(sessionId, { type: 'child.status', childId: opts.foreignId, status: 'busy' }));
   return frames;
 }

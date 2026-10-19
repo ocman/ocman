@@ -1,7 +1,7 @@
 /**
  * e2e: Permission & Question prompts
  *
- * Both prompts are injected via SSE (`permission.asked` / `question.asked`)
+ * Both prompts are injected via the conversation stream (`prompt.asked`)
  * and exercised entirely in-browser — no LLM or running agent is needed.
  *
  * Permission prompt covers:
@@ -31,8 +31,8 @@ import {
   expect,
   MOCK_SESSION,
   MOCK_SESSION_2,
-  mockSse,
-  sseEvent,
+  mockStream,
+  promptAsked,
   mockSessionWithLiveConnection,
 } from './fixtures';
 
@@ -66,16 +66,10 @@ async function setupLivePage(page: import('@playwright/test').Page) {
 }
 
 function permissionAsked(permId = 'perm-001', opts: { patterns?: string[] } = {}) {
-  // extractPendingPermission reads: obj.properties.id / .permission / .patterns
-  return sseEvent({
-    type: 'permission.asked',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      id: permId,
-      requestID: permId,
-      permission: 'Write to /tmp/output.txt',
-      patterns: opts.patterns ?? [],
-    },
+  return promptAsked(MOCK_SESSION.id, {
+    id: permId,
+    kind: 'permission',
+    permission: { permission: 'Write to /tmp/output.txt', patterns: opts.patterns ?? [] },
   });
 }
 
@@ -90,16 +84,7 @@ function questionAsked(reqId = 'q-001', steps = 1) {
     multiple: false,
     custom: true,
   }));
-  // extractPendingQuestion reads: obj.properties.id / .requestID / .requestId / .sessionID / .questions
-  return sseEvent({
-    type: 'question.asked',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      requestID: reqId,
-      requestId: reqId,
-      questions,
-    },
-  });
+  return promptAsked(MOCK_SESSION.id, { id: reqId, kind: 'question', question: { questions } });
 }
 
 // ===========================================================================
@@ -107,20 +92,20 @@ function questionAsked(reqId = 'q-001', steps = 1) {
 // ===========================================================================
 
 test('permission prompt renders permission text', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked()]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked()]);
   await setupLivePage(page);
   await expect(page.locator('.oc-permission-desc')).toContainText('/tmp/output.txt', { timeout: 5_000 });
 });
 
 test('permission prompt renders patterns when present', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('p1', { patterns: ['*.txt', '/tmp/**'] })]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('p1', { patterns: ['*.txt', '/tmp/**'] })]);
   await setupLivePage(page);
   await expect(page.locator('.oc-permission-pattern', { hasText: '*.txt' })).toBeVisible({ timeout: 5_000 });
   await expect(page.locator('.oc-permission-pattern', { hasText: '/tmp/**' })).toBeVisible();
 });
 
 test('"Allow once" button POSTs reply=once', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-once')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-once')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-once`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -136,7 +121,7 @@ test('"Allow once" button POSTs reply=once', async ({ mockedPage: page }) => {
 });
 
 test('"Allow always" button POSTs reply=always', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-always')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-always')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-always`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -156,7 +141,7 @@ test('"Allow always" button POSTs reply=always', async ({ mockedPage: page }) =>
 });
 
 test('"Reject" button POSTs reply=reject', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-reject')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-reject')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-reject`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -172,7 +157,7 @@ test('"Reject" button POSTs reply=reject', async ({ mockedPage: page }) => {
 });
 
 test('hotkey "a" triggers allow-once', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-a')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-a')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-a`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -192,7 +177,7 @@ test('hotkey "a" triggers allow-once', async ({ mockedPage: page }) => {
 });
 
 test('hotkey "Shift+A" triggers allow-always', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-A')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-A')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-A`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -216,7 +201,7 @@ test('hotkey "Shift+A" triggers allow-always', async ({ mockedPage: page }) => {
 });
 
 test('hotkey "r" triggers reject', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-r')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-r')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-r`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -232,7 +217,7 @@ test('hotkey "r" triggers reject', async ({ mockedPage: page }) => {
 });
 
 test('Escape key triggers reject on permission prompt', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-esc')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-esc')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-esc`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -248,7 +233,7 @@ test('Escape key triggers reject on permission prompt', async ({ mockedPage: pag
 });
 
 test('permission prompt shows error when API reply fails', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-err')]);
+  await mockStream(page, MOCK_SESSION.id, [permissionAsked('perm-err')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-err`),
     (route) => route.fulfill({ status: 500, body: 'Internal Server Error' }),
@@ -264,7 +249,7 @@ test('permission prompt shows error when API reply fails', async ({ mockedPage: 
 // ===========================================================================
 
 test('question prompt renders question text and options', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [questionAsked()]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked()]);
   await setupLivePage(page);
 
   await expect(page.locator('.oc-question-box-text')).toContainText('Which approach?', { timeout: 5_000 });
@@ -273,7 +258,7 @@ test('question prompt renders question text and options', async ({ mockedPage: p
 });
 
 test('clicking an option POSTs the answer', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [questionAsked('q-click')]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked('q-click')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/questions/q-click`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -291,7 +276,7 @@ test('clicking an option POSTs the answer', async ({ mockedPage: page }) => {
 });
 
 test('number key 1 selects first option and submits (single-step)', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [questionAsked('q-num')]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked('q-num')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/questions/q-num`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -308,7 +293,7 @@ test('number key 1 selects first option and submits (single-step)', async ({ moc
 });
 
 test('Escape key dismisses the question prompt', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [questionAsked('q-esc')]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked('q-esc')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/questions/q-esc/reject`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -321,7 +306,7 @@ test('Escape key dismisses the question prompt', async ({ mockedPage: page }) =>
 });
 
 test('"Dismiss" button rejects the question', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [questionAsked('q-dismiss')]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked('q-dismiss')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/questions/q-dismiss/reject`),
     (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
@@ -334,7 +319,7 @@ test('"Dismiss" button rejects the question', async ({ mockedPage: page }) => {
 });
 
 test('multi-step question shows step indicator and Next/Back buttons', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [questionAsked('q-multi', 2)]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked('q-multi', 2)]);
   await setupLivePage(page);
 
   await expect(page.locator('.oc-question-step-indicator')).toBeVisible({ timeout: 5_000 });
@@ -343,7 +328,7 @@ test('multi-step question shows step indicator and Next/Back buttons', async ({ 
 });
 
 test('multi-step: selecting option advances to next step', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [questionAsked('q-multi-advance', 2)]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked('q-multi-advance', 2)]);
   await setupLivePage(page);
 
   await expect(page.locator('.oc-question-wrap')).toBeVisible({ timeout: 5_000 });
@@ -371,7 +356,7 @@ test('multi-step: selecting option advances to next step', async ({ mockedPage: 
  * `pendingQuestion: true`, without waiting for the sidebar poll.
  *
  * This test sets up:
- *  - /api/session/{id} → pendingPermission: true (no SSE event)
+ *  - /api/session/{id} → pendingPermission: true (no stream event)
  *  - /api/sessions     → no pendingPermission flag (sidebar poll must NOT be
  *                        the trigger; we omit it to isolate the fast path)
  *  - /api/session/{id}/permissions → the actual permission data
@@ -387,7 +372,7 @@ test('permission prompt appears immediately on session load when pendingPermissi
   };
 
   // REST detail: session has pendingPermission: true.
-  // No SSE permission.asked event is delivered — the prompt must come
+  // No prompt.asked event is delivered — the prompt must come
   // purely from the initial fetch, not from the stream.
   await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
     route.fulfill({
@@ -433,8 +418,8 @@ test('permission prompt appears immediately on session load when pendingPermissi
     }),
   );
 
-  // SSE: abort immediately — no permission.asked event will arrive.
-  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) =>
+  // Stream: abort immediately — no prompt.asked event will arrive.
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/stream`), (route) =>
     route.abort(),
   );
 
@@ -511,7 +496,7 @@ test('question prompt appears immediately on session load when pendingQuestion i
     }),
   );
 
-  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) =>
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/stream`), (route) =>
     route.abort(),
   );
 
@@ -588,8 +573,8 @@ test('permission prompt appears immediately when switching to a session with a p
     }),
   );
 
-  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) => route.abort());
-  await page.route(new RegExp(`/api/session/${MOCK_SESSION_2.id}/events`), (route) => route.abort());
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/stream`), (route) => route.abort());
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION_2.id}/stream`), (route) => route.abort());
 
   // 1. Start on session A — no prompt.
   await page.goto(`/session/${MOCK_SESSION.id}`);
@@ -607,7 +592,7 @@ test('permission prompt appears immediately when switching to a session with a p
 test('custom text input accepts typed text', async ({ mockedPage: page }) => {
   // This test verifies that the custom-answer input is present and accepts input.
   // The full submit-via-custom-text path is covered by QuestionPrompt unit tests.
-  await mockSse(page, MOCK_SESSION.id, [questionAsked('q-custom-input')]);
+  await mockStream(page, MOCK_SESSION.id, [questionAsked('q-custom-input')]);
   await setupLivePage(page);
   await expect(page.locator('.oc-question-wrap')).toBeVisible({ timeout: 5_000 });
 

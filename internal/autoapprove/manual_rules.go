@@ -142,7 +142,7 @@ func (s *Service) applyManualAction(ctx context.Context, adapter platforms.Platf
 	}); ok {
 		_ = store.ResolvePermissionInboxItem(ctx, string(adapter.ID()), sessionID, permissionID)
 	}
-	s.broadcastPermissionResolved(sessionID, permissionID, "session-rule-"+action)
+	s.broadcastPermissionResolved(adapter.ID(), sessionID, permissionID, "session-rule-"+action)
 }
 
 func (s *Service) claimManualResponse(sessionID, permissionID string) bool {

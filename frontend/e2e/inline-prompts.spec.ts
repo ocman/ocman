@@ -1,4 +1,4 @@
-import { test, expect, MOCK_SESSION, mockSessionWithLiveConnection, mockSse, sseEvent } from './fixtures';
+import { test, expect, MOCK_SESSION, mockSessionWithLiveConnection, mockStream, promptAsked } from './fixtures';
 
 for (const kind of ['permission', 'question']) {
   test(`${kind} prompt scrolls with the conversation`, async ({ mockedPage: page }, testInfo) => {
@@ -20,15 +20,13 @@ for (const kind of ['permission', 'question']) {
       ],
       totalMessages: 2,
     } }));
-    await mockSse(page, MOCK_SESSION.id, [sseEvent({
-      type: `${kind}.asked`,
-      properties: kind === 'permission'
-        ? { sessionID: session.id, id: 'permission-preview', permission: 'bash', patterns: ['pnpm test -- auth'], metadata: { command: 'pnpm test -- auth' } }
-        : { sessionID: session.id, id: 'question-preview', questions: [{ header: 'Redirect behavior', question: 'Where should users go after signing in?', options: [
-          { label: 'Requested page', description: 'Return to the page they originally tried to open.' },
-          { label: 'Dashboard', description: 'Always open the dashboard after signing in.' },
-        ] }] },
-    })]);
+    await mockStream(page, MOCK_SESSION.id, [kind === 'permission'
+      ? promptAsked(session.id, { id: 'permission-preview', kind: 'permission', permission: { permission: 'bash', patterns: ['pnpm test -- auth'], metadata: { command: 'pnpm test -- auth' } } })
+      : promptAsked(session.id, { id: 'question-preview', kind: 'question', question: { questions: [{ header: 'Redirect behavior', question: 'Where should users go after signing in?', options: [
+        { label: 'Requested page', description: 'Return to the page they originally tried to open.' },
+        { label: 'Dashboard', description: 'Always open the dashboard after signing in.' },
+      ] }] } }),
+    ]);
     await page.goto(`/session/${session.id}`);
     const viewport = page.getByTestId('conversation-viewport');
     const prompt = kind === 'permission'

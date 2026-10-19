@@ -86,7 +86,7 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 // Flush delegates to the embedded writer so SSE handlers that flow through
 // this middleware (notably the global /api/events stream, which — unlike
-// /api/session/{id}/events — is NOT bypassed by noiseSkip) can stream.
+// /api/session/{id}/stream — is NOT bypassed by noiseSkip) can stream.
 // Without this, statusRecorder masks the embedded http.Flusher and the SSE
 // handler's `w.(http.Flusher)` check fails with "streaming unsupported",
 // so no client ever subscribes and no broadcast is delivered.
@@ -300,7 +300,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 }
 
 // noiseSkip returns true for paths that we deliberately do not log:
-//   - SSE streams (`/api/session/{id}/events`) are long-lived and
+//   - Session streams (`/api/session/{id}/stream`) are long-lived and
 //     would either log a single 0ms entry on connect (useless) or
 //     produce a misleading "slow" entry on disconnect.
 //   - The debug-log sink itself; logging the debug-log endpoint at
@@ -310,7 +310,7 @@ func noiseSkip(path string) bool {
 	if path == "/api/debug/log" {
 		return true
 	}
-	if strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/events") {
+	if isSessionStreamPath(path) {
 		return true
 	}
 	return false

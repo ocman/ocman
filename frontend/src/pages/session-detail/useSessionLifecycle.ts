@@ -3,7 +3,11 @@ import { useApiStore } from '../../lib/apiStore';
 import { initialSessionView, seedDeltaOwnedFields, type SessionView } from '../../lib/sessionReducer';
 import { onPageResume } from '../../lib/pageResume';
 import { watchKeepalive } from '../../lib/sseKeepalive';
-import { createSessionSse, reduceBatchedSessionView } from './sessionSse';
+import { conversationStreamUrl, createConversationStream } from '../../lib/conversation/conversationStream';
+import { reduceConversation } from '../../lib/conversation/conversationReducer';
+import type { OceEnvelope } from '../../lib/conversation/events';
+import type { LiveSessionAction } from '../../lib/conversation/liveSessionView';
+import { notifyQueueUpdated } from '../../lib/useGlobalEvents';
 import { isSessionPageRestore, latestPage, viewFromDetail } from './sessionView';
 import type { SseDebugEvent, UseSessionOptions, UseSessionStatus } from './useSession';
 
@@ -14,7 +18,7 @@ interface Options {
   reconnectDelay: (attempt: number) => number;
   pageSize: number;
   debug: boolean;
-  dispatch: Dispatch<Parameters<typeof reduceBatchedSessionView>[1]>;
+  dispatch: Dispatch<LiveSessionAction>;
   viewRef: MutableRefObject<SessionView>;
   loadMoreAbortRef: MutableRefObject<AbortController | null>;
   loadMoreInFlightRef: MutableRefObject<boolean>;
@@ -85,9 +89,17 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     let attempt = 0;
     let hasConnectedOnce = false;
     let reconnectingAfterError = false;
+    let recoveryEvents: OceEnvelope[] | null = null;
+    let upstreamFailed = false;
     const hasContent = () => viewRef.current.sessionId === sessionId && viewRef.current.session !== null;
     // Reconcile by default: SSE leads the database, so replacement can lose text.
-    const doFetch = async (mode: 'replace' | 'reconcile' = 'reconcile') => {
+    const doFetch = async (requestedMode: 'replace' | 'reconcile' | 'recover' | 'restore' = 'reconcile') => {
+      events.flush();
+      // A routine refresh must not cancel an authoritative recovery and
+      // replace it with union merging (e.g. a child arriving during recovery).
+      const mode = recoveryEvents && requestedMode === 'reconcile' ? 'recover' : requestedMode;
+      const sinceFence: OceEnvelope[] = [];
+      recoveryEvents = mode === 'recover' || mode === 'restore' ? sinceFence : null;
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -99,7 +111,13 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         opened = true;
         entryRef.current.opened = true;
         events.flush();
-        dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode, statusRevision });
+        if (cancelled || controller.signal.aborted) return false;
+        if (mode === 'recover' || mode === 'restore') {
+          loadMoreAbortRef.current?.abort();
+          loadMoreInFlightRef.current = false;
+          setLoadingMore(false);
+          dispatch({ type: 'recover', view: viewFromDetail(sessionId, detail), sinceFence, restoreLiveFields: mode === 'restore' });
+        } else dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode, statusRevision });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);
         setRefreshing(false);
@@ -128,21 +146,36 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         setLoadError(message);
         setStatus('error');
         return false;
+      } finally {
+        if (recoveryEvents === sinceFence) recoveryEvents = null;
       }
     };
-    const events = createSessionSse({
-      sessionId, dispatch,
+    const events = createConversationStream({
+      sessionId, dispatch: (action) => {
+        recoveryEvents?.push(...action.envelopes);
+        dispatch(action);
+      },
       reconcile: () => doFetch('reconcile'),
+      recover: () => doFetch('recover'),
+      upstream: (error) => {
+        if (cancelled) return;
+        upstreamFailed = !!error;
+        setStatus(error ? 'reconnecting' : 'live');
+        setSseReconnecting(!!error);
+        setRefreshError(error);
+      },
       dirty: () => setChangesDirtyTick((t) => t + 1),
+      queue: (messages) => notifyQueueUpdated(sessionId, messages),
+      hasStale: () => viewRef.current.sessionId === sessionId && !!viewRef.current._stale?.size,
       debug: debug ? (rows) => setSseDebugEvents((prev) => [...prev, ...rows].slice(-50)) : undefined,
     });
     reloadRef.current = async () => { if (hasContent()) setRefreshing(true); await doFetch('replace'); };
     refreshRef.current = async () => { if (hasContent()) setRefreshing(true); await doFetch('reconcile'); };
     const connect = () => {
       if (cancelled) return;
-      const query = routedPlatform ? `?platform=${encodeURIComponent(routedPlatform)}` : '';
       stopWatch();
-      evtSource = new EventSource(`/api/session/${encodeURIComponent(sessionId)}/events${query}`);
+      // Resume from the last folded envelope; the server decides whether it can.
+      evtSource = new EventSource(conversationStreamUrl(sessionId, routedPlatform, events.cursor()));
       stopWatch = watchKeepalive(evtSource, () => {
         // Even a stream that never opened may have missed events.
         reconnectingAfterError = true;
@@ -151,18 +184,15 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       evtSource.onopen = () => {
         if (cancelled) return;
         attempt = 0;
-        setStatus('live');
-        setSseReconnecting(false);
+        setStatus(upstreamFailed ? 'reconnecting' : 'live');
+        setSseReconnecting(upstreamFailed);
         setSseReconnectAttempt(0);
         setSseNextRetryAt(null);
-        if (hasConnectedOnce || reconnectingAfterError) {
-          void doFetch('reconcile');
-          setChangesDirtyTick((t) => t + 1);
-        }
         hasConnectedOnce = true;
         reconnectingAfterError = false;
       };
-      events.attach(evtSource);
+      // Reconciling waits for the hello: a resumed stream needs no refetch.
+      events.attach(evtSource, hasConnectedOnce || reconnectingAfterError);
       evtSource.onerror = () => {
         if (cancelled) return;
         events.flush();
@@ -187,7 +217,9 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       setSseNextRetryAt(null);
       connect();
     };
-    void doFetch();
+    // A cached page may have missed removals while unmounted. Rebuild it
+    // authoritatively, preserving only stream events observed during the read.
+    void doFetch('restore');
     connect();
     const unsubscribeResume = onPageResume(() => retryNowRef.current());
     return () => {
@@ -198,7 +230,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       // This is a state snapshot ref, not a DOM node: cleanup needs its latest view.
       if (pending.length && viewRef.current.sessionId === sessionId) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        const outgoing = reduceBatchedSessionView(viewRef.current, { type: 'sseBatch', events: pending });
+        const outgoing = reduceConversation(viewRef.current, pending);
         updateCachedSession(sessionId, (prev) => ({ ...prev, ...latestPage(outgoing.messages, outgoing.parts, pageSize) }));
       }
       abortRef.current?.abort();

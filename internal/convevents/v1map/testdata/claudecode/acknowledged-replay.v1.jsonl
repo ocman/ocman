@@ -1,0 +1,6 @@
+{"session":"cc_1"}
+{"id":"31","data":{"type":"session.status","properties":{"sessionID":"cc_1","status":{"type":"busy"}},"acknowledged":true}}
+{"id":"32","data":{"type":"question.asked","properties":{"id":"toolu_q1","sessionID":"cc_1","questions":[{"question":"Ship it?","header":"Ship","options":[{"label":"Yes","description":"Go"},{"label":"No","description":"Stop"}],"multiple":false}]}}}
+{"id":"33","data":{"type":"session.status","properties":{"sessionID":"cc_1","status":{"type":"done"}},"acknowledged":true}}
+{"id":"34","data":{"type":"session.idle","properties":{"sessionID":"cc_1"},"acknowledged":true}}
+{"id":"35","data":{"type":"question.replied","properties":{"sessionID":"cc_1","requestID":"toolu_q1"}}}

@@ -1,0 +1,7 @@
+{"session":"ses_a"}
+{"event":"tool","data":{"id":"prt_t1","messageID":"msg_a4","sessionID":"ses_a","type":"tool","callID":"call_r","tool":"read","state":{"status":"running","input":{"filePath":"/repo/a.go"}}}}
+{"event":"message.part.updated","data":{"id":"prt_t1","messageID":"msg_a4","sessionID":"ses_a","type":"tool","callID":"call_r","tool":"read","state":{"status":"error","input":{"filePath":"/repo/a.go"},"error":"File not found"}}}
+{"data":{"directory":"/repo","payload":{"type":"message.part.updated","properties":{"part":{"id":"prt_t2","messageID":"msg_a4","sessionID":"ses_a","type":"file","mime":"image/png","url":"data:image/png;base64,AAA","filename":"shot.png"}}}}}
+{"event":"error","data":{"properties":{"info":{"id":"msg_a5","sessionID":"ses_a","time":{"created":5000}}}}}
+{"data":{"type":"some.future.event","properties":{"sessionID":"ses_a"}}}
+{"data":"not an object"}

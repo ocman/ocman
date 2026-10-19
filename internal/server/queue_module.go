@@ -49,8 +49,8 @@ func (s *Server) enqueueFollowUp(ctx context.Context, platform string, req platf
 func (s *Server) cooldownTimes(ctx context.Context) (time.Duration, time.Duration) {
 	return s.queueModule().CooldownTimes(ctx)
 }
-func (s *Server) onSessionRetry(id string, st autoapprove.SessionStatus) {
-	s.queueModule().OnSessionRetry(id, st.Next, st.ActionReason)
+func (s *Server) onSessionRetry(platform, id string, st autoapprove.SessionStatus) {
+	s.queueModule().OnSessionRetry(platform, id, st.Next, st.ActionReason)
 }
 func (s *Server) applyFallNotice(platform string, sess *db.Session) {
 	s.queueModule().ApplyFallNotice(platform, sess)

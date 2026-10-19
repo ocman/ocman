@@ -243,7 +243,7 @@ func TestRemotePlatform_ProxyEvents(t *testing.T) {
 	rp := newRemotePlatform(conn, "opencode", func() string { return "Box" })
 
 	var buf bytes.Buffer
-	if err := rp.ProxyEvents(context.Background(), "s1", &buf, func() {}); err != nil {
+	if err := rp.ProxyEvents(context.Background(), "s1", &buf, nil); err != nil {
 		t.Fatalf("ProxyEvents: %v", err)
 	}
 	if buf.String() != "event: x\n\n" {

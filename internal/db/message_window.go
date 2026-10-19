@@ -26,3 +26,18 @@ func messagesFrom(since int64, joinSession bool) string {
 	}
 	return "message m"
 }
+
+func (d *DB) messagesFrom(since int64, joinSession bool) string {
+	if d.historyScope != nil {
+		// The legacy session-first CROSS JOIN compensates for OpenCode's
+		// indexes. History has instance/role/time indexes instead: let SQLite
+		// start with the message window, not repeat it for every session.
+		if joinSession {
+			// The scoped session already enforces visibility; using the message
+			// view here would repeat its hidden session lookup for every row.
+			return "main.analytics_message m JOIN session s ON s.instance_id = m.instance_id AND s.id = m.session_id"
+		}
+		return "message m"
+	}
+	return messagesFrom(since, joinSession)
+}

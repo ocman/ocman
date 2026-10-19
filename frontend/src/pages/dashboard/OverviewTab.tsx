@@ -21,6 +21,7 @@ function DatabaseSizeChart({ samples, isLoading }: { samples?: DatabaseSizeSampl
   const sizeByKey = new Map(samples?.map((sample) => [`${sample.database}:${sample.sampledAt}`, sample.sizeBytes / 1024 / 1024]) ?? []);
   const opencodeSizes = timestamps.map((timestamp) => sizeByKey.get(`opencode:${timestamp}`) ?? null);
   const ocmanSizes = timestamps.map((timestamp) => sizeByKey.get(`ocman:${timestamp}`) ?? null);
+  const historySizes = timestamps.map((timestamp) => sizeByKey.get(`statev2:${timestamp}`) ?? null);
   return <>
     <div className="metrics-chart-grid">
       {isLoading && !samples ? <ChartSkeleton label="Loading database sizes" /> : (
@@ -30,6 +31,7 @@ function DatabaseSizeChart({ samples, isLoading }: { samples?: DatabaseSizeSampl
             datasets: [
               { label: 'OpenCode (MiB)', data: opencodeSizes, borderColor: '#89b4fa', backgroundColor: 'rgba(137, 180, 250, 0.15)', tension: 0.25, pointRadius: 1 },
               { label: 'ocman (MiB)', data: ocmanSizes, borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.15)', tension: 0.25, pointRadius: 1 },
+              { label: 'Conversation history (MiB)', data: historySizes, borderColor: '#cba6f7', backgroundColor: 'rgba(203, 166, 247, 0.15)', tension: 0.25, pointRadius: 1 },
             ],
           }} options={LINE_OPTIONS_DATABASE_SIZE} /> : <EmptyState>No database size samples yet.</EmptyState>}
         </ChartCard>

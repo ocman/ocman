@@ -37,7 +37,7 @@ type Deps struct {
 	SendNow        func(context.Context, string, platforms.SendMessageRequest) error
 	PrepareSend    func(context.Context, string, platforms.SendMessageRequest) (func(context.Context) error, error)
 	Broadcast      func(string, []byte)
-	SessionChanged func(string)
+	SessionChanged func(platformID, sessionID string)
 	Guards         module.Guards
 }
 

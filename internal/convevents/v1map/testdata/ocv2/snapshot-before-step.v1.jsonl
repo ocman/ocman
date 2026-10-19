@@ -1,0 +1,5 @@
+{"session":"s1"}
+{"data":{"properties":{"info":{"agent":"","cost":0,"finish":"stop","id":"msg01","mode":"","modelID":"","providerID":"","role":"assistant","sessionID":"s1","time":{"completed":104,"created":100},"tokens":{"cache":{"read":0,"write":0},"input":0,"output":0,"reasoning":0},"usageAvailable":false},"sessionID":"s1"},"type":"message.updated"}}
+{"data":{"properties":{"part":{"id":"prt010000","messageID":"msg01","sessionID":"s1","snapshot":"","type":"step-start"},"sessionID":"s1"},"type":"message.part.updated"}}
+{"data":{"properties":{"part":{"id":"prt010001","messageID":"msg01","sessionID":"s1","text":"Hello!","time":{"end":104,"start":100},"type":"text"},"sessionID":"s1"},"type":"message.part.updated"}}
+{"data":{"properties":{"part":{"cost":0,"id":"prt010002","messageID":"msg01","reason":"stop","sessionID":"s1","tokens":{"cache":{"read":0,"write":0},"input":0,"output":0,"reasoning":0},"type":"step-finish"},"sessionID":"s1"},"type":"message.part.updated"}}

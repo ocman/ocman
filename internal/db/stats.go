@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 )
 
 // effectiveCost returns the cost figure the dashboard should headline
@@ -48,29 +50,20 @@ func directoryWhere(dir string) (string, []interface{}) {
 // extractModelProvider returns the provider and model from a MessageData,
 // handling the fallback from top-level fields to nested Model fields.
 func extractModelProvider(md MessageData) (provider, model string) {
-	provider = md.ProviderID
-	model = md.ModelID
-	if provider == "" && md.Model != nil {
-		provider = md.Model.ProviderID
-		model = md.Model.ModelID
-	}
-	return provider, model
+	return analyticsdata.ModelProvider(md)
 }
 
 // modelKey builds the canonical "provider/model" key, falling back to
 // the bare model when provider is empty (and to "" when model is empty).
 func modelKey(provider, model string) string {
-	if model == "" {
-		return ""
-	}
-	if provider == "" {
-		return model
-	}
-	return provider + "/" + model
+	return analyticsdata.ModelKey(provider, model)
 }
 
 // GetStats returns aggregate statistics using SQL aggregation.
 func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
+	if d.historyScope != nil {
+		return d.historyStats(ctx)
+	}
 	s := &Stats{}
 	sessions := d.sessionsDB(ctx)
 
@@ -96,7 +89,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	totals := `
 		SELECT COALESCE(SUM(tokens_input), 0), COALESCE(SUM(tokens_output), 0), COALESCE(SUM(cost), 0)
 		FROM session`
-	totalsDB := d.db
+	totalsDB := d.reads()
 	if !d.sessionTotals || d.mirrorOnly() {
 		totalsDB = d.analytics(ctx)
 		totals = `
@@ -141,7 +134,7 @@ func (d *DB) GetProjects(ctx context.Context) ([]ProjectStats, error) {
 	if d.sessionTotals {
 		totals = `SELECT id AS session_id, tokens_input, tokens_output, cost FROM session`
 	}
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reads().QueryContext(ctx, `
 		WITH totals AS (`+totals+`),
 		counts AS (SELECT session_id, count(*) AS message_count FROM message GROUP BY session_id)
 		SELECT
@@ -199,9 +192,9 @@ func (d *DB) GetProjects(ctx context.Context) ([]ProjectStats, error) {
 // collection interval, feeds each row into OTel counters/histograms,
 // and advances the high-water mark so the next call only sees new data.
 func (d *DB) GetNewAssistantMessages(ctx context.Context, since int64) ([]LLMMessageRow, int64, error) {
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reads().QueryContext(ctx, `
 		SELECT m.time_created, m.session_id, m.data
-		FROM `+messagesFrom(since, false)+`
+		FROM `+d.messagesFrom(since, false)+`
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created > ?
 		ORDER BY m.time_created ASC
@@ -268,6 +261,6 @@ func (d *DB) GetNewAssistantMessages(ctx context.Context, since int64) ([]LLMMes
 // ocman starts.
 func (d *DB) GetMaxMessageTime(ctx context.Context) (int64, error) {
 	var maxTime int64
-	err := d.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(time_created), 0) FROM message`).Scan(&maxTime)
+	err := d.reads().QueryRowContext(ctx, `SELECT COALESCE(MAX(time_created), 0) FROM message`).Scan(&maxTime)
 	return maxTime, err
 }

@@ -17,12 +17,12 @@ func TestWaitTimeByAgent(t *testing.T) {
 				id, session, agent, model, finish string
 				tools                             []toolTiming
 			}{
-				{"overlap", "s", "build", "one", "tool-calls", []toolTiming{{3000, 11000}, {5000, 11000}}},
+				{"overlap", "s", "build", "one", "tool-calls", []toolTiming{{Start: 3000, End: 11000}, {Start: 5000, End: 11000}}},
 				{"plain", "s", "plan", "two", "stop", nil},
-				{"unknown", "s", "build", "one", "tool-calls", []toolTiming{{2000, 0}}},
+				{"unknown", "s", "build", "one", "tool-calls", []toolTiming{{Start: 2000}}},
 				{"missing", "s", "build", "one", "tool-calls", nil},
-				{"all-tools", "s", "build", "one", "stop", []toolTiming{{1000, 11000}}},
-				{"clipped", "s", "build", "one", "stop", []toolTiming{{500, 2000}, {10000, 15000}}},
+				{"all-tools", "s", "build", "one", "stop", []toolTiming{{Start: 1000, End: 11000}}},
+				{"clipped", "s", "build", "one", "stop", []toolTiming{{Start: 500, End: 2000}, {Start: 10000, End: 15000}}},
 				{"unnamed", "s", "", "one", "stop", nil},
 				{"outside", "outside", "build", "one", "stop", nil},
 			} {

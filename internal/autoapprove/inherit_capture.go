@@ -7,6 +7,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -406,6 +407,6 @@ func (s *Service) replayRecordedAIApproval(ctx context.Context, sessionID, permi
 	if err == nil {
 		s.emitSessionSseEvent(sessionID, "ocman.permission.auto-approved", payload)
 	}
-	s.broadcastPermissionResolved(sessionID, permissionID, "auto-approved")
+	s.broadcastPermissionResolved(platforms.ID(asked.platformID), sessionID, permissionID, "auto-approved")
 	return true
 }

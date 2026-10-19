@@ -17,14 +17,14 @@ func TestModelDuration(t *testing.T) {
 		{"plain", 1000, 11000, nil, 10000},
 		{"invalid start", 0, 11000, nil, 0},
 		{"invalid end", 1000, 1000, nil, 0},
-		{"overlap", 1000, 11000, []toolTiming{{5000, 11000}, {3000, 9000}}, 2000},
-		{"disjoint", 1000, 11000, []toolTiming{{2000, 3000}, {5000, 6000}}, 8000},
-		{"clipped", 1000, 11000, []toolTiming{{100, 2000}, {10000, 15000}}, 8000},
-		{"outside", 1000, 11000, []toolTiming{{100, 500}, {12000, 15000}}, 10000},
-		{"missing", 1000, 11000, []toolTiming{{0, 5000}}, 0},
-		{"unfinished", 1000, 11000, []toolTiming{{2000, 0}}, 0},
-		{"reversed", 1000, 11000, []toolTiming{{5000, 2000}}, 0},
-		{"all wait", 1000, 11000, []toolTiming{{1000, 11000}}, 0},
+		{"overlap", 1000, 11000, []toolTiming{{Start: 5000, End: 11000}, {Start: 3000, End: 9000}}, 2000},
+		{"disjoint", 1000, 11000, []toolTiming{{Start: 2000, End: 3000}, {Start: 5000, End: 6000}}, 8000},
+		{"clipped", 1000, 11000, []toolTiming{{Start: 100, End: 2000}, {Start: 10000, End: 15000}}, 8000},
+		{"outside", 1000, 11000, []toolTiming{{Start: 100, End: 500}, {Start: 12000, End: 15000}}, 10000},
+		{"missing", 1000, 11000, []toolTiming{{End: 5000}}, 0},
+		{"unfinished", 1000, 11000, []toolTiming{{Start: 2000}}, 0},
+		{"reversed", 1000, 11000, []toolTiming{{Start: 5000, End: 2000}}, 0},
+		{"all wait", 1000, 11000, []toolTiming{{Start: 1000, End: 11000}}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := modelDuration(tc.start, tc.end, tc.tools); got != tc.want {

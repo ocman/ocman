@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Part } from './api';
 import {
-  extractMessageFromEvent,
-  extractPartFromEvent,
-  isSessionStatusIdle,
   extractPendingPermission,
   extractPendingQuestion,
   normalizeQuestionItems,
@@ -11,7 +8,6 @@ import {
   extractPendingQuestionFromPart,
   extractPendingQuestionFromParts,
   hasPendingQuestionInParts,
-  answeredQuestionRequestId,
   truncateSseData,
 } from './sseHelpers';
 
@@ -20,131 +16,6 @@ const SID = 'sess_123';
 function makePart(data: unknown, id = 'p1', messageId = 'm1'): Part {
   return { id, messageId, sessionId: SID, data: data as string };
 }
-
-describe('extractMessageFromEvent', () => {
-  it('returns null when there is no info object', () => {
-    expect(extractMessageFromEvent({ properties: {} }, SID)).toBeNull();
-  });
-
-  it('returns null when info.id is missing', () => {
-    expect(extractMessageFromEvent({ properties: { info: { role: 'assistant' } } }, SID)).toBeNull();
-  });
-
-  it('extracts a minimal message and falls back to role=assistant', () => {
-    const out = extractMessageFromEvent({ properties: { info: { id: 'm1' } } }, SID);
-    expect(out).not.toBeNull();
-    expect(out!.message.id).toBe('m1');
-    expect(out!.message.sessionId).toBe(SID);
-    expect(out!.message.data.role).toBe('assistant');
-    expect(out!.parts).toEqual([]);
-  });
-
-  it('preserves the message time including completion when present', () => {
-    const out = extractMessageFromEvent({
-      properties: { info: { id: 'm1', time: { created: 12345, completed: 12346 } } },
-    }, SID);
-    expect(out!.message.timeCreated).toBe(12345);
-    expect(out!.message.data.time).toEqual({ created: 12345, completed: 12346 });
-  });
-
-  it('reads payload at the top level when there is no `properties` envelope', () => {
-    const out = extractMessageFromEvent({ info: { id: 'm-top', role: 'user' } }, SID);
-    expect(out).not.toBeNull();
-    expect(out!.message.data.role).toBe('user');
-  });
-
-  it('skips lifecycle parts (step-start / step-finish / snapshot)', () => {
-    const out = extractMessageFromEvent({
-      properties: {
-        info: { id: 'm1' },
-        parts: [
-          { id: 'p1', type: 'step-start' },
-          { id: 'p2', type: 'step-finish' },
-          { id: 'p3', type: 'snapshot' },
-          { id: 'p4', type: 'text', text: 'hi' },
-        ],
-      },
-    }, SID);
-    expect(out!.parts.map((p) => p.id)).toEqual(['p4']);
-  });
-
-  it('synthesises ids and falls back to messageID/sessionID when missing', () => {
-    const out = extractMessageFromEvent({
-      properties: {
-        info: { id: 'm1' },
-        parts: [{ type: 'text', text: 'hello' }],
-      },
-    }, SID);
-    expect(out!.parts).toHaveLength(1);
-    expect(out!.parts[0].id).toBe('sse-part-m1-0');
-    expect(out!.parts[0].messageId).toBe('m1');
-    expect(out!.parts[0].sessionId).toBe(SID);
-  });
-
-  it('truncates oversized text/output strings', () => {
-    const huge = 'x'.repeat(300_000);
-    const out = extractMessageFromEvent({
-      properties: {
-        info: { id: 'm1' },
-        parts: [{ id: 'p1', type: 'text', text: huge }],
-      },
-    }, SID);
-    const part = out!.parts[0].data as unknown as { text: string };
-    expect(part.text.length).toBeLessThan(huge.length);
-    expect(part.text.endsWith('\n... (truncated)')).toBe(true);
-  });
-});
-
-describe('extractPartFromEvent', () => {
-  it('returns null without a partId/messageId', () => {
-    expect(extractPartFromEvent({ properties: {} }, SID)).toBeNull();
-    expect(extractPartFromEvent({ properties: { id: 'p1' } }, SID)).toBeNull();
-  });
-
-  it('returns null for lifecycle part types', () => {
-    expect(extractPartFromEvent({
-      properties: { id: 'p1', messageID: 'm1', type: 'step-start' },
-    }, SID)).toBeNull();
-  });
-
-  it('returns a Part when the payload is well-formed', () => {
-    const out = extractPartFromEvent({
-      properties: { id: 'p1', messageID: 'm1', type: 'text', text: 'ok' },
-    }, SID);
-    expect(out).not.toBeNull();
-    expect(out!.id).toBe('p1');
-    expect(out!.messageId).toBe('m1');
-  });
-
-  it('falls back to top-level payload when no `properties` envelope', () => {
-    const out = extractPartFromEvent({ id: 'p1', messageID: 'm1', type: 'text' }, SID);
-    expect(out).not.toBeNull();
-  });
-});
-
-describe('isSessionStatusIdle', () => {
-  it('returns false without properties', () => {
-    expect(isSessionStatusIdle({})).toBe(false);
-  });
-
-  it('returns true for string status === "idle"', () => {
-    expect(isSessionStatusIdle({ properties: { status: 'idle' } })).toBe(true);
-  });
-
-  it('returns false for other string statuses', () => {
-    expect(isSessionStatusIdle({ properties: { status: 'busy' } })).toBe(false);
-  });
-
-  it('handles object-shaped status with a type field', () => {
-    expect(isSessionStatusIdle({ properties: { status: { type: 'idle' } } })).toBe(true);
-    expect(isSessionStatusIdle({ properties: { status: { type: 'busy' } } })).toBe(false);
-  });
-
-  it('returns false for arrays and missing fields', () => {
-    expect(isSessionStatusIdle({ properties: { status: [] } })).toBe(false);
-    expect(isSessionStatusIdle({ properties: { status: null } })).toBe(false);
-  });
-});
 
 describe('extractPendingPermission', () => {
   it('returns null for non-permission events', () => {
@@ -421,57 +292,6 @@ describe('hasPendingQuestionInParts', () => {
 
   it('skips non-tool / non-question parts', () => {
     expect(hasPendingQuestionInParts([makePart({ type: 'text' })], SID)).toBe(false);
-  });
-});
-
-describe('answeredQuestionRequestId', () => {
-  it('returns the requestId for an answered question tool part', () => {
-    const part = makePart({
-      type: 'tool',
-      tool: 'question',
-      state: { status: 'completed', output: 'yes', input: { requestId: 'req_1' } },
-    });
-    expect(answeredQuestionRequestId(part)).toBe('req_1');
-  });
-
-  it('returns null while the question is still running', () => {
-    const part = makePart({
-      type: 'tool',
-      tool: 'question',
-      state: { status: 'running', output: '', input: { requestId: 'req_1' } },
-    });
-    expect(answeredQuestionRequestId(part)).toBeNull();
-  });
-
-  it('returns null when completed but output is empty', () => {
-    const part = makePart({
-      type: 'tool',
-      tool: 'question',
-      state: { status: 'completed', output: '', input: { requestId: 'req_1' } },
-    });
-    expect(answeredQuestionRequestId(part)).toBeNull();
-  });
-
-  it('falls back to metadata for the requestId', () => {
-    const part = makePart({
-      type: 'tool',
-      tool: 'mcp_Question',
-      state: { status: 'completed', output: 'x', input: {}, metadata: { id: 'meta_id' } },
-    });
-    expect(answeredQuestionRequestId(part)).toBe('meta_id');
-  });
-
-  it('returns null for non-question tool parts', () => {
-    const part = makePart({
-      type: 'tool',
-      tool: 'bash',
-      state: { status: 'completed', output: 'x', input: { requestId: 'req_1' } },
-    });
-    expect(answeredQuestionRequestId(part)).toBeNull();
-  });
-
-  it('returns null for malformed JSON-string data', () => {
-    expect(answeredQuestionRequestId(makePart('{bad json' as unknown))).toBeNull();
   });
 });
 

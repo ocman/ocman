@@ -2,12 +2,16 @@ package claudeprovider
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,19 +32,26 @@ const (
 // event name appended; empty writes no hooks.
 func WritePlugin(dir string, skills map[string][]byte, hook string) (string, error) {
 	plugin := filepath.Join(dir, "ocman")
-	files := map[string][]byte{
-		filepath.Join(dir, ".claude-plugin", "marketplace.json"): []byte(`{"name":"` + marketplaceName + `","owner":{"name":"ocman"},` +
-			`"plugins":[{"name":"ocman","source":"./ocman","description":"ocman skills and session status hooks"}]}` + "\n"),
-		filepath.Join(plugin, ".claude-plugin", "plugin.json"): []byte(`{"name":"ocman","version":"1.0.0","description":"ocman skills and session status hooks"}` + "\n"),
-	}
-	for name, content := range skills {
-		files[filepath.Join(plugin, "skills", name, "SKILL.md")] = content
+	content := map[string][]byte{}
+	for name, body := range skills {
+		content[filepath.Join(plugin, "skills", name, "SKILL.md")] = body
 	}
 	hooks := filepath.Join(plugin, "hooks", "hooks.json")
 	if hook != "" {
-		files[hooks] = hooksJSON(hook)
+		content[hooks] = hooksJSON(hook)
 	} else if err := os.Remove(hooks); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
+	}
+	// Claude runs a cached copy of an installed plugin and refreshes it only
+	// when the version changes, so the version follows the plugin's content.
+	files := map[string][]byte{
+		filepath.Join(dir, ".claude-plugin", "marketplace.json"): []byte(`{"name":"` + marketplaceName + `","owner":{"name":"ocman"},` +
+			`"plugins":[{"name":"ocman","source":"./ocman","description":"ocman skills, session status and history hooks"}]}` + "\n"),
+		filepath.Join(plugin, ".claude-plugin", "plugin.json"): []byte(`{"name":"ocman","version":"` + contentVersion(plugin, content) +
+			`","description":"ocman skills, session status and history hooks"}` + "\n"),
+	}
+	for path, body := range content {
+		files[path] = body
 	}
 	for path, content := range files {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -64,9 +75,17 @@ func hooksJSON(hook string) []byte {
 		Hooks   []command `json:"hooks"`
 	}
 	all := map[string][]matcher{}
-	for _, event := range HookEvents {
-		// Check before executing ocman, whose installed path may no longer exist.
+	for _, event := range append(slices.Clone(HookEvents), HistoryHookEvents...) {
+		if all[event] != nil {
+			continue
+		}
+		// Status-only hooks check before executing ocman, whose installed path
+		// may no longer exist. History hooks run in every session; ocman itself
+		// posts status only when managed. A missing binary stays silent.
 		cmd := `if [ "${OCMAN_MANAGED:-}" = "1" ]; then ` + hook + " " + event + "; fi"
+		if slices.Contains(HistoryHookEvents, event) {
+			cmd = hook + " " + event + " 2>/dev/null || true"
+		}
 		m := matcher{Hooks: []command{{Type: "command", Command: cmd, Timeout: 5}}}
 		if strings.HasSuffix(event, "ToolUse") {
 			m.Matcher = "*"
@@ -77,10 +96,39 @@ func hooksJSON(hook string) []byte {
 	return append(data, '\n')
 }
 
-// HookCommand is the hook command prefix for the ocman binary exe posting
-// to the loopback listener at addr.
-func HookCommand(exe, addr string) string {
-	return `"` + exe + `" hook --addr ` + addr
+// HookCommand is the hook command prefix for the ocman binary exe. Status
+// posts to the loopback listener at addr; history appends to journal. Either
+// may be empty.
+func HookCommand(exe, addr, journal string) string {
+	cmd := `"` + exe + `" hook`
+	if addr != "" {
+		cmd += " --addr " + addr
+	}
+	if journal != "" {
+		cmd += " --journal '" + strings.ReplaceAll(journal, "'", `'\''`) + "'"
+	}
+	return cmd
+}
+
+func contentVersion(root string, files map[string][]byte) string {
+	paths := slices.Sorted(maps.Keys(files))
+	h := sha256.New()
+	for _, path := range paths {
+		rel, _ := filepath.Rel(root, path)
+		fmt.Fprintf(h, "%s\x00%d\x00", rel, len(files[path]))
+		h.Write(files[path])
+	}
+	return "1.0.0-" + hex.EncodeToString(h.Sum(nil))[:12]
+}
+
+// PluginVersion reads the version WritePlugin last wrote to marketplace dir.
+func PluginVersion(marketplace string) string {
+	var manifest struct{ Version string }
+	data, err := os.ReadFile(filepath.Join(marketplace, "ocman", ".claude-plugin", "plugin.json"))
+	if err != nil || json.Unmarshal(data, &manifest) != nil {
+		return ""
+	}
+	return manifest.Version
 }
 
 // InstallPlugin registers the local marketplace and installs the plugin at
@@ -92,6 +140,50 @@ func InstallPlugin(ctx context.Context, cli, marketplace string) error {
 		return errors.Join(added, err)
 	}
 	return nil
+}
+
+// InstalledVersion is the plugin version Claude cached at user scope, or
+// empty when it is not installed there.
+func InstalledVersion(configDir string) string {
+	data, err := os.ReadFile(filepath.Join(configDir, "plugins", "installed_plugins.json"))
+	if err != nil {
+		return ""
+	}
+	var installed struct {
+		Plugins map[string][]struct {
+			Scope   string `json:"scope"`
+			Version string `json:"version"`
+		} `json:"plugins"`
+	}
+	if json.Unmarshal(data, &installed) != nil {
+		return ""
+	}
+	for _, entry := range installed.Plugins[PluginID] {
+		if entry.Scope == "user" {
+			return entry.Version
+		}
+	}
+	return ""
+}
+
+// EnsurePlugin keeps ocman's plugin installed at user scope and refreshes
+// Claude's cached copy when marketplace holds a different version, so hook
+// changes reach sessions started in a terminal. It reports what it did.
+func EnsurePlugin(ctx context.Context, cli, configDir, marketplace string) (string, error) {
+	want := PluginVersion(marketplace)
+	if want == "" {
+		return "", fmt.Errorf("ocman's Claude plugin has not been written")
+	}
+	if !PluginInstalled(configDir) {
+		return "installed", InstallPlugin(ctx, cli, marketplace)
+	}
+	if InstalledVersion(configDir) == want {
+		return "", nil
+	}
+	if err := runCLI(ctx, cli, "plugin", "marketplace", "update", marketplaceName); err != nil {
+		return "", err
+	}
+	return "updated", runCLI(ctx, cli, "plugin", "update", PluginID, "--scope", "user")
 }
 
 // UninstallPlugin removes the plugin and its marketplace through the CLI.

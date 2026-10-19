@@ -72,9 +72,31 @@ describe('usePendingSend — basic lifecycle', () => {
     expect(result.current.pending?.text).toBe('hello');
     expect(result.current.pending?.images).toHaveLength(1);
   });
+
+  it('does not apply a late command failure to a newer prompt', () => {
+    const { result } = renderHook(() => usePendingSend(SID));
+    act(() => result.current.begin('/compact', undefined, { id: 'command' }));
+    act(() => result.current.begin('follow-up', undefined, { id: 'prompt' }));
+    act(() => result.current.fail('Session is busy', 'command'));
+    expect(result.current.pending?.text).toBe('follow-up');
+    expect(result.current.pending?.error).toBeUndefined();
+    act(() => result.current.fail('Network down', 'prompt'));
+    expect(result.current.pending?.error).toBe('Network down');
+  });
 });
 
 describe('usePendingSend — server-confirmed clear', () => {
+  it('does not mistake the running response for acknowledgment of /compact', () => {
+    const { result, rerender } = renderHook(({ messages }: { messages: Message[] }) => {
+      const hook = usePendingSend(SID);
+      hook.observeMessages(messages);
+      return hook;
+    }, { initialProps: { messages: [] as Message[] } });
+    act(() => result.current.begin('/compact', undefined, { confirmation: 'user' }));
+    rerender({ messages: [{ id: 'running', sessionId: SID, timeCreated: Date.now() + 1, data: { role: 'assistant' } }] });
+    expect(result.current.pending?.text).toBe('/compact');
+  });
+
   it('keeps the prompt visible until the server message has parts', () => {
     const user = makeUserMessage('real', Date.now());
     const { result, rerender } = renderHook(({ phase }) => {

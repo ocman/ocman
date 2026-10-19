@@ -4,6 +4,13 @@ import { runSlashCommand, SLASH_COMMANDS, type CommandContext } from './slashCom
 import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
 import type { Session } from '../../lib/api';
 import { useUiStore } from '../../lib/uiStore';
+import { act, renderHook } from '@testing-library/react';
+import { usePendingSend } from './usePendingSend';
+import type { OceEnvelope } from '../../lib/conversation/events';
+import { reduceConversation } from '../../lib/conversation/conversationReducer';
+import { seedView } from '../../test/oceFixtures';
+// @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
+import { readFileSync } from 'node:fs';
 
 vi.mock('../../lib/api', () => ({ api: {} }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
@@ -13,7 +20,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     session: { id: 's1', platform: 'opencode', directory: '/repo', timeUpdated: 1 },
     portAvailable: true,
     caps: { fork: true, move: false, revert: true, runtimeRestart: true },
-    pending: { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
+    pending: { pending: null, begin: vi.fn().mockReturnValue('command-id'), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
     recentSessionsRef: { current: [] },
     messagesRef: { current: [] },
     partsRef: { current: [] },
@@ -37,6 +44,33 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 }
 
 describe('runSlashCommand', () => {
+  it('/compact acknowledges its successful assistant-only lifecycle', async () => {
+    const { result } = renderHook(() => usePendingSend('s1'));
+    let finish!: () => void;
+    const c = ctx({ pending: result.current, handleCompact: () => new Promise<void>((resolve) => { finish = resolve; }) });
+    let running!: Promise<boolean>;
+    act(() => { running = runSlashCommand(c, 'compact', ''); });
+    const compaction = readFileSync('../internal/convevents/v1map/testdata/ocv2/compaction.oce.jsonl', 'utf8');
+    const events = (compaction as string).trim().split('\n').map((line) => JSON.parse(line) as OceEnvelope);
+    const view = reduceConversation(seedView('s1'), events);
+    act(() => { result.current.observeMessages(view.messages, view.parts); });
+    expect(result.current.pending?.text).toBe('/compact');
+    await act(async () => { finish(); await running; });
+    expect(result.current.pending).toBeNull();
+  });
+  it('/compact cannot acknowledge a newer submission or another session', async () => {
+    const { result } = renderHook(() => usePendingSend('s1'));
+    let finish!: () => void;
+    const c = ctx({ pending: result.current, handleCompact: () => new Promise<void>((resolve) => { finish = resolve; }) });
+    let running!: Promise<boolean>;
+    act(() => { running = runSlashCommand(c, 'compact', ''); });
+    act(() => { result.current.begin('newer prompt'); });
+    await act(async () => { finish(); await running; });
+    expect(result.current.pending?.text).toBe('newer prompt');
+    const moved = ctx({ isCurrent: () => false });
+    await runSlashCommand(moved, 'compact', '');
+    expect(moved.pending.clear).not.toHaveBeenCalled();
+  });
   it('/permissions opens Ocman session rules without requiring a live agent', async () => {
     const open = vi.fn();
     window.addEventListener('oc-session-permissions-open', open);
@@ -45,6 +79,22 @@ describe('runSlashCommand', () => {
       expect(open).toHaveBeenCalledOnce();
     } finally { window.removeEventListener('oc-session-permissions-open', open); }
   });
+
+  it('/compact shows the submitted command before compaction finishes', async () => {
+    let finish!: () => void;
+    const c = ctx({ handleCompact: vi.fn(() => new Promise<void>((resolve) => { finish = resolve; })) });
+    const running = runSlashCommand(c, 'compact', '');
+    expect(c.pending.begin).toHaveBeenCalledWith('/compact', undefined, { confirmation: 'user' });
+    finish();
+    await running;
+  });
+
+  it('/compact keeps failures visible instead of only logging them', async () => {
+    const c = ctx({ handleCompact: vi.fn().mockRejectedValue(new Error('Session is busy')) });
+    await runSlashCommand(c, 'compact', '');
+    expect(c.pending.fail).toHaveBeenCalledWith('Session is busy', 'command-id');
+  });
+
   it('/clear archives the session and opens a draft route on the same owner', async () => {
     const c = ctx({ session: { id: 's1', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo', timeUpdated: 1 } });
     await runSlashCommand(c, 'clear', 'Next task');

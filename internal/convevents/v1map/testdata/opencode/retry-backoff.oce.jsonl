@@ -1,0 +1,6 @@
+{"v":1,"epoch":"golden","seq":1,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":null}}
+{"v":1,"epoch":"golden","seq":2,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":{"kind":"retry","message":"Provider is overloaded","retryAt":1700000005000,"attempt":1}}}
+{"v":1,"epoch":"golden","seq":3,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":{"kind":"retry","message":"Provider is overloaded","retryAt":1700000015000,"attempt":2}}}
+{"v":1,"epoch":"golden","seq":4,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":null}}
+{"v":1,"epoch":"golden","seq":5,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"durable","event":{"type":"session.error","error":{"name":"APIError","message":"Overloaded","statusCode":529}}}
+{"v":1,"epoch":"golden","seq":6,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"done","provisional":true,"notice":null}}

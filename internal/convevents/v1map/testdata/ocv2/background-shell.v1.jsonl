@@ -1,0 +1,8 @@
+{"session":"s1"}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"busy"}},"type":"session.status"}}
+{"data":{"properties":{"count":1,"sessionID":"s1","tasks":[{"description":"sleep 60","id":"sh_1"}]},"type":"ocman.session.background"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"busy"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"busy"}},"type":"session.status"}}
+{"data":{"properties":{"count":0,"sessionID":"s1","tasks":null},"type":"ocman.session.background"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"idle"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"s1"},"type":"session.idle"}}

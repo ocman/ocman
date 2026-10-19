@@ -85,8 +85,10 @@ function handleResolved(raw: string): void {
   if (!sessionId) return;
   notifyPromptDismissed(sessionId);
   const requestId = parsed?.permissionId ?? parsed?.requestId;
-  recheckNotifyData(requestId ? {
-    platform: parsed?.platform ?? 'opencode', sessionId, requestId,
+  // Without its owner a prompt's identity is incomplete: only refresh.
+  const platform = parsed?.platform;
+  recheckNotifyData(requestId && platform ? {
+    platform, sessionId, requestId,
     kind: parsed?.permissionId ? 'permission' : 'question',
   } : undefined);
 }
@@ -229,11 +231,16 @@ export function onQueueUpdated(cb: (sessionId: string, messages?: QueuedMessage[
   return () => queueUpdatedListeners.delete(cb);
 }
 
+/** Deliver a full queue from another stream (the conversation stream) to the same listeners. */
+export function notifyQueueUpdated(sessionId: string, messages?: QueuedMessage[]): void {
+  for (const cb of queueUpdatedListeners) cb(sessionId, messages);
+}
+
 function handleQueueUpdated(raw: string): void {
   const parsed = parsePayload(raw);
   const sessionId = parsed?.sessionID;
   if (!sessionId) return;
-  for (const cb of queueUpdatedListeners) cb(sessionId, parsed?.messages);
+  notifyQueueUpdated(sessionId, parsed?.messages);
 }
 
 // connectListeners fire every time the shared /api/events stream (re)opens

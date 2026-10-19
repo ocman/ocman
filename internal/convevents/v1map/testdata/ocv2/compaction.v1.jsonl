@@ -1,0 +1,5 @@
+{"session":"s1"}
+{"data":{"properties":{"info":{"agent":"compaction","cost":0,"finish":"stop","id":"msg05","mode":"compaction","role":"assistant","sessionID":"s1","summary":true,"time":{"created":50},"tokens":{"cache":{"read":0,"write":0},"input":0,"output":0,"reasoning":0},"usageAvailable":false},"sessionID":"s1"},"type":"message.updated"}}
+{"data":{"properties":{"part":{"id":"prt050001","messageID":"msg05","sessionID":"s1","text":"Earlier work summarised","type":"text"},"sessionID":"s1"},"type":"message.part.updated"}}
+{"data":{"properties":{"info":{"agent":"compaction","cost":0,"finish":"stop","id":"msg05","mode":"compaction","role":"assistant","sessionID":"s1","summary":true,"time":{"created":50},"tokens":{"cache":{"read":0,"write":0},"input":0,"output":0,"reasoning":0},"usageAvailable":false},"sessionID":"s1"},"type":"message.updated"}}
+{"data":{"properties":{"part":{"id":"prt050001","messageID":"msg05","sessionID":"s1","text":"Earlier work summarised","type":"text"},"sessionID":"s1"},"type":"message.part.updated"}}

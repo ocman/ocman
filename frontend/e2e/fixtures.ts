@@ -19,6 +19,7 @@
  */
 
 import { test as base, expect, type Page, type Route } from '@playwright/test';
+import type { OceEvent, OcePrompt } from '../src/lib/conversation/events';
 export { expect };
 export type { Page };
 
@@ -245,8 +246,8 @@ export async function installDefaultRoutes(page: Page) {
   // Session detail — matches /api/session/<id> and /api/session/<id>/sub-path
   await page.route('/api/session/**', (route) => {
     const url = route.request().url();
-    // Handle sub-paths like /agents, /commands, /models, /events
-    if (url.includes('/events')) {
+    // Handle sub-paths like /agents, /commands, /models, /stream
+    if (url.includes('/stream')) {
       // SSE — just close with empty stream
       return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
     }
@@ -460,49 +461,59 @@ export async function installDefaultRoutes(page: Page) {
 }
 
 // ---------------------------------------------------------------------------
-// SSE event helpers
+// Conversation stream helpers (GET /api/session/{id}/stream)
 // ---------------------------------------------------------------------------
 
+/** Stream epoch used by every mocked conversation stream. */
+export const OCE_EPOCH = 'e2e';
+
+const DURABLE_EVENTS = new Set([
+  'message.upserted', 'message.removed', 'part.upserted', 'part.removed', 'session.updated',
+  'history.rewritten', 'history.committed', 'child.upserted', 'session.error',
+]);
+
 /**
- * Build a raw SSE payload string from a top-level event object.
- *
- * The format mirrors what the ocman backend emits for OpenCode events:
- *   { "type": "...", "properties": { ...event-specific fields } }
- *
- * Pass `properties` nested under the event, OR pass the payload flat and
- * the helper will wrap it. The `type` field is always at the top level.
+ * One SSE frame as the server writes it (design §4.1): `event: oce`,
+ * `id: <epoch>:<seq>` and the envelope as `data`. stream.reset and
+ * stream.error carry no id line.
  */
-export function sseEvent(payload: { type: string; properties?: Record<string, unknown>; [key: string]: unknown }): string {
-  const { type, properties, ...rest } = payload;
-  // If properties is already provided, use it as-is. Otherwise wrap the
-  // remaining fields (everything except `type`) in `properties`.
-  const data = JSON.stringify({
-    type,
-    properties: properties ?? rest,
-  });
-  return `data: ${data}\n\n`;
+export function oceFrame(sessionId: string, seq: number, event: OceEvent): string {
+  const durability = event.type === 'part.delta' ? 'ephemeral' : DURABLE_EVENTS.has(event.type) ? 'durable' : 'live';
+  const envelope = { v: 1, epoch: OCE_EPOCH, seq, sessionId, platform: 'opencode', at: Date.now(), durability, event };
+  const id = event.type === 'stream.reset' || event.type === 'stream.error' ? '' : `id: ${OCE_EPOCH}:${seq}\n`;
+  return `event: oce\n${id}data: ${JSON.stringify(envelope)}\n\n`;
+}
+
+/** The first frame of every connection; a cold connect is not resumed. */
+export function oceHello(resumed = false): OceEvent {
+  return { type: 'stream.hello', protocol: 1, resumed, revision: 0 };
 }
 
 /**
- * Install an SSE stub for a specific session that delivers the provided
- * events on the first EventSource connection. Playwright closes fulfilled
- * responses, so reconnects receive no events instead of replaying them.
+ * Install a conversation stream stub for a session. The first connection
+ * receives `stream.hello` followed by `events` (seq 1..n). Playwright
+ * closes fulfilled responses, so the client reconnects with `?after=`; a
+ * reconnect gets a resumed hello and no replay, like a server whose log
+ * holds nothing newer.
  *
  * Usage:
- *   await mockSse(page, 'sess-abc123', [
- *     sseEvent({ type: 'session.status', properties: { status: 'busy' } }),
+ *   await mockStream(page, 'sess-abc123', [
+ *     { type: 'session.status', status: 'busy' },
  *   ]);
  */
-export async function mockSse(
+export async function mockStream(
   page: Page,
   sessionId: string,
-  events: string[],
+  events: OceEvent[],
 ): Promise<void> {
   let delivered = false;
   await page.route(
-    new RegExp(`/api/session/${sessionId}/events`),
+    new RegExp(`/api/session/${sessionId}/stream`),
     async (route) => {
-      const body = delivered ? '' : events.join('');
+      const resumed = new URL(route.request().url()).searchParams.has('after');
+      const frames = delivered
+        ? [oceFrame(sessionId, events.length, oceHello(resumed))]
+        : [oceFrame(sessionId, 0, oceHello(false)), ...events.map((event, i) => oceFrame(sessionId, i + 1, event))];
       delivered = true;
       await route.fulfill({
         status: 200,
@@ -511,50 +522,50 @@ export async function mockSse(
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
         },
-        body,
+        body: frames.join(''),
       });
     },
   );
 }
 
 /**
- * Build a mock `message.created` SSE event matching the format that
- * ocman's SSE handler expects:
- *
- *   { type: 'message.created', properties: { info: {...}, parts: [...] } }
- *
- * `extractMessageFromEvent` reads `properties.info` when `properties` exists.
+ * A message with one text part, as the stream announces it: a
+ * `message.upserted` followed by its `part.upserted`. The part is final
+ * once the message has finished (user messages always are).
  */
-export function sseMessage(opts: {
+export function oceMessage(opts: {
   sessionId: string;
   role: 'user' | 'assistant';
   text: string;
   finish?: string;
   msgId?: string;
-}): { event: string; msgId: string; partId: string } {
+}): { events: OceEvent[]; msgId: string; partId: string } {
   const msgId = opts.msgId ?? `msg-${Math.random().toString(36).slice(2)}`;
   const partId = `part-${msgId}`;
-  const event = sseEvent({
-    type: 'message.created',
-    properties: {
-      sessionID: opts.sessionId,
-      info: {
+  const created = Date.now();
+  const finish = opts.finish ?? (opts.role === 'assistant' ? 'end_turn' : undefined);
+  const events: OceEvent[] = [
+    {
+      type: 'message.upserted',
+      message: {
         id: msgId,
-        sessionID: opts.sessionId,
-        role: opts.role,
-        finish: opts.finish ?? (opts.role === 'assistant' ? 'end_turn' : undefined),
-        time: { created: Date.now() },
+        sessionId: opts.sessionId,
+        timeCreated: created,
+        data: { role: opts.role, ...(finish ? { finish } : {}), time: { created } },
       },
-      parts: [
-        {
-          id: partId,
-          type: 'text',
-          text: opts.text,
-        },
-      ],
     },
-  });
-  return { event, msgId, partId };
+    {
+      type: 'part.upserted',
+      part: { id: partId, messageId: msgId, sessionId: opts.sessionId, data: { type: 'text', text: opts.text } },
+      final: opts.role === 'user' || !!finish,
+    },
+  ];
+  return { events, msgId, partId };
+}
+
+/** A pending permission or question prompt asked by the session itself. */
+export function promptAsked(sessionId: string, prompt: Omit<OcePrompt, 'sessionId' | 'askedAt'>): OceEvent {
+  return { type: 'prompt.asked', prompt: { sessionId, askedAt: Date.now(), ...prompt } };
 }
 
 // ---------------------------------------------------------------------------

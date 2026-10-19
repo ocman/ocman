@@ -254,7 +254,18 @@ const undoRedo: SlashCommand = {
   },
 };
 
-const compact: SlashCommand = { live: true, run: ({ handleCompact }) => handleCompact() };
+const compact: SlashCommand = {
+  live: true,
+  run: async ({ handleCompact, pending, isCurrent }) => {
+    const id = pending.begin('/compact', undefined, { confirmation: 'user' });
+    try {
+      await handleCompact();
+      if (isCurrent?.() !== false) pending.clear(id);
+    } catch (error) {
+      if (isCurrent?.() !== false) pending.fail(error instanceof Error ? error.message : 'Failed to compact session', id);
+    }
+  },
+};
 
 const fork: SlashCommand = {
   live: true,

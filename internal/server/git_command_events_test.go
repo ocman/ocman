@@ -4,8 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,59 +22,93 @@ func (p *gitIdentityPlatform) CachedSession(string) (db.Session, bool) {
 	return p.identity, p.found
 }
 
+const gitPushFrame = "data: " + `{"type":"message.part.updated","properties":{"part":{"id":"p","sessionID":"s1","messageID":"m","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git push"}}}}}` + "\n\n"
+
 func TestGitHintDoesNotLookUpTranscriptOrBlockRemoteStream(t *testing.T) {
-	const event = "data: " + `{"type":"message.part.updated","properties":{"part":{"id":"p","sessionID":"s1","messageID":"m","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git push"}}}}}` + "\n\n"
 	blocked := make(chan struct{})
 	defer close(blocked)
 	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{id: "r-box:opencode",
 		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { <-blocked; return nil, nil },
 		proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
-			_, err := io.WriteString(w, event)
+			_, err := io.WriteString(w, gitPushFrame)
 			return err
 		},
 	}, identity: db.Session{RemoteID: "box", ProjectID: "p", Directory: "/repo"}, found: true}
 	reg := platforms.NewRegistry()
 	reg.Register(adapter)
 	srv := &Server{registry: reg, broadcastHub: newBroadcastHub()}
-	w := httptest.NewRecorder()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		srv.serveSessionEvents(w, httptest.NewRequest(http.MethodGet, "/", nil), "s1", adapter)
-	}()
+	var raw strings.Builder
+	done := make(chan error, 1)
+	go func() { done <- srv.proxyConversationSource(t.Context(), "s1", adapter, &raw, io.Discard, nil) }()
 	select {
-	case <-done:
-		if w.Body.String() != event {
-			t.Fatalf("raw event missing: %q", w.Body.String())
+	case err := <-done:
+		if err != nil || raw.String() != gitPushFrame {
+			t.Fatalf("err = %v, raw = %q", err, raw.String())
 		}
 	case <-time.After(time.Second):
 		t.Fatal("optional git identity lookup blocked the remote stream")
 	}
 }
 
-func TestRemoteStreamBroadcastsGitHintAndPreservesRawEvent(t *testing.T) {
-	const event = "data: " + `{"type":"message.part.updated","properties":{"part":{"id":"p","sessionID":"s1","messageID":"m","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git push"}}}}}` + "\n\n"
+func TestRemoteConversationSourceBroadcastsGitHintAndPreservesRawEvent(t *testing.T) {
 	reg := platforms.NewRegistry()
 	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{id: "r-box:opencode", proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
-		_, err := io.WriteString(w, event)
+		_, err := io.WriteString(w, gitPushFrame)
 		return err
 	}}, identity: db.Session{RemoteID: "box", ProjectID: "p", Directory: "/repo"}, found: true}
 	reg.Register(adapter)
 	srv := &Server{registry: reg, broadcastHub: newBroadcastHub()}
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
-	w := httptest.NewRecorder()
-	srv.serveSessionEvents(w, httptest.NewRequest(http.MethodGet, "/api/session/s1/events", nil), "s1", adapter)
-	if w.Body.String() != event {
-		t.Fatalf("raw stream changed: %q", w.Body.String())
+	var raw strings.Builder
+	if err := srv.proxyConversationSource(t.Context(), "s1", adapter, &raw, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	if raw.String() != gitPushFrame {
+		t.Fatalf("raw stream changed: %q", raw.String())
 	}
 	select {
 	case ev := <-sub.ch:
-		if ev.event != "ocman.git.command" {
-			t.Fatalf("event = %s", ev.event)
+		var payload map[string]string
+		_ = json.Unmarshal(ev.data, &payload)
+		if ev.event != "ocman.git.command" || payload["remoteId"] != "box" || payload["action"] != "push" {
+			t.Fatalf("event = %s %s", ev.event, ev.data)
 		}
 	default:
 		t.Fatal("git hint missing")
+	}
+}
+
+// Local hints come from the headless watcher, so the session stream must not
+// broadcast them a second time.
+func TestLocalConversationSourceLeavesGitHintToWatcher(t *testing.T) {
+	srv, raw := testServerWithRawDB(t)
+	if _, err := raw.Exec(`INSERT INTO session (id, directory, project_id) VALUES ('s1', '/repo', 'p')`); err != nil {
+		t.Fatal(err)
+	}
+	srv.broadcastHub = newBroadcastHub()
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+	adapter := &fakePlatform{id: "opencode", proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+		_, err := io.WriteString(w, gitPushFrame)
+		return err
+	}}
+	var out strings.Builder
+	if err := srv.proxyConversationSource(t.Context(), "s1", adapter, &out, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != gitPushFrame {
+		t.Fatalf("raw stream changed: %q", out.String())
+	}
+	for {
+		select {
+		case ev := <-sub.ch:
+			if ev.event == "ocman.git.command" {
+				t.Fatalf("local stream broadcast a git hint: %s", ev.data)
+			}
+		default:
+			return
+		}
 	}
 }
 

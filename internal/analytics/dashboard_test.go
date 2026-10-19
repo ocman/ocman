@@ -16,15 +16,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/pricing"
 )
 
-func TestOpenCodeRoutesRequireDB(t *testing.T) {
+func TestConversationAnalyticsRoutesRequireHistory(t *testing.T) {
 	mux := routes(newTestModule(Deps{}))
 	for _, path := range []string{
 		"/api/stats", "/api/metrics", "/api/metrics/performance", "/api/metric-logs?kind=request",
 		"/api/activity", "/api/models", "/api/hourly", "/api/hourly-tokens",
 		"/api/analytics/overview", "/api/analytics/session-concurrency", "/api/analytics/agent-run-hours",
 	} {
-		if rec := serve(mux, http.MethodGet, path, ""); rec.Code != http.StatusNotImplemented {
-			t.Errorf("%s: got %d, want 501: %s", path, rec.Code, rec.Body.String())
+		if rec := serve(mux, http.MethodGet, path, ""); rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s: got %d, want 503: %s", path, rec.Code, rec.Body.String())
 		}
 	}
 }

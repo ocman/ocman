@@ -14,6 +14,9 @@ import (
 // optionally filtered by a time window (since), model (modelFilter = "provider/model" or "model"),
 // and directory prefix (dir; see directoryWhere).
 func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir string) ([]DailyActivity, error) {
+	if d.historyScope != nil {
+		return d.historyDailyActivity(ctx, since, modelFilter, dir)
+	}
 	days := 365
 	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
 	if since > cutoff {
@@ -72,7 +75,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 		SELECT
 			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
 			` + selectExpr + `
-		FROM ` + messagesFrom(cutoff, true) + `
+		FROM ` + d.messagesFrom(cutoff, true) + `
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created >= ?`
 	args2 := []interface{}{cutoff}
@@ -132,7 +135,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 		SELECT
 			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
 			count(*) as user_messages
-		FROM ` + messagesFrom(cutoff, true) + `
+		FROM ` + d.messagesFrom(cutoff, true) + `
 		WHERE json_extract(m.data, '$.role') = 'user'
 		  AND m.time_created >= ?
 		  AND s.title NOT LIKE '%(% subagent)'`
@@ -185,6 +188,9 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 // windowDays controls how many days back to look (default 7); modelFilter optionally restricts
 // to one model key ("provider/model"); dir optionally scopes to a project subtree (see directoryWhere).
 func (d *DB) GetHourlyTokensByModel(ctx context.Context, windowDays int, since int64, modelFilter, dir string) ([]HourlyTokensByModel, error) {
+	if d.historyScope != nil {
+		return d.historyHourlyTokens(ctx, windowDays, since, modelFilter, dir)
+	}
 	if windowDays <= 0 {
 		windowDays = 7
 	}
@@ -198,7 +204,7 @@ func (d *DB) GetHourlyTokensByModel(ctx context.Context, windowDays int, since i
 		SELECT
 			strftime('%Y-%m-%d %H', m.time_created / 1000, 'unixepoch', 'localtime') as datetime,
 			m.data
-		FROM ` + messagesFrom(cutoff, dirFrag != "") + `
+		FROM ` + d.messagesFrom(cutoff, dirFrag != "") + `
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created >= ?`
 	args := []interface{}{cutoff}

@@ -1,0 +1,2 @@
+{"v":1,"epoch":"golden","seq":1,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"durable","event":{"type":"session.updated","patch":{"title":"Fix bug","archived":false,"revert":{"messageId":"msg02"}}}}
+{"v":1,"epoch":"golden","seq":2,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"durable","event":{"type":"session.updated","patch":{"title":"Fix bug","archived":false,"revert":null}}}

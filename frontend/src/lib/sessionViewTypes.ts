@@ -1,6 +1,7 @@
 // State and action types for the SessionDetail reducer (sessionReducer.ts).
 
 import type { Message, Part, SessionDetail } from './api';
+import type { SessionNotice, SessionStatus } from './api.types';
 import type { PendingPermission } from './sseHelpers';
 import type { PendingQuestion } from '../components/session/QuestionPrompt';
 
@@ -16,12 +17,11 @@ export type SessionMetadata = SessionDetail['session'] & {
  *
  * `_deltaOwnedFields` and `_refetchRequested` are reducer-internal
  * bookkeeping prefixed with `_` so consumers don't accidentally
- * depend on them. They survive `sse` actions but are cleared on
+ * depend on them. They survive stream batches but are cleared on
  * `load` (the freshly-fetched server state is authoritative).
  */
 export interface SessionView {
-  /** Active session id this view describes. Mismatched SSE events
-   *  are dropped against this id. */
+  /** Active session id this view describes. */
   sessionId: string;
   /** Session metadata header (status, agent, timing, ...). `null`
    *  until the first `load` lands. */
@@ -49,30 +49,29 @@ export interface SessionView {
    *  delta. Snapshots must leave those fields alone. */
   _deltaOwnedFields: Map<string, Set<string>>;
   /** True when the reducer wants the host hook to refetch
-   *  `/api/session/{id}` (currently only set by `session.idle`).
+   *  `/api/session/{id}` (set when a turn settles).
    *  Consumers must reset this flag once the refetch has been
    *  scheduled. */
   _refetchRequested: boolean;
   /**
-   * Set by the backend-emitted `ocman.permission.pending` SSE event.
+   * Set by the stream's `prompt.judge` scheduled phase.
    * Unix-ms timestamp of when the LLM judge will start (after the
    * configured delay). The UI counts down to this time. Cleared when
-   * `ocman.permission.checking` arrives (judge has started) or when
+   * the checking phase arrives (judge has started) or when
    * the permission is cleared.
    */
   judgeStartsAt: number | null;
   /**
-   * Set by the backend-emitted `ocman.permission.checking` SSE event.
+   * Set by the stream's `prompt.judge` checking phase.
    * Contains the permission ID currently being evaluated by the
-   * server-side LLM judge. Cleared when a `permission.replied` or
-   * `ocman.permission.auto-approved` event arrives for the same ID.
+   * server-side LLM judge. Cleared when the prompt resolves.
    * The UI uses this to show a "checking" spinner on the prompt.
    */
   checkingPermissionId: string | null;
   /**
    * The judge's one-line conclusion (the "reasoning" field of the JSON
    * it emits), surfaced on the prompt so the user can see *why* the AI
-   * flagged a permission. Set by `ocman.permission.flagged` and
+   * flagged a permission. Set by the `prompt.judge` flagged phase and
    * cleared when `pendingPermission` is cleared.
    *
    * The transient OpenCode session that produced this reasoning is
@@ -81,16 +80,18 @@ export interface SessionView {
    * is the only judge artifact carried in client state.
    */
   judgeReasoning: string | null;
-}
-
-/**
- * Parsed SSE event in the shape the reducer accepts. `properties`
- * carries the OpenCode-specific payload (info / part / status /
- * delta / ...).
- */
-export interface SseEvent {
-  type: string;
-  properties?: Record<string, unknown>;
+  /** Last conversation stream cursor folded into this view ("<epoch>:<seq>"). */
+  cursor?: string;
+  /** Latest statev2 revision the stream reported. */
+  lastRevision?: number;
+  /** Descendant status levels reported by the conversation stream. */
+  childStatus?: Record<string, { status: SessionStatus; notice?: SessionNotice }>;
+  /** Parts whose stream skipped ahead of local content; reconcile heals them. */
+  _stale?: ReadonlySet<string>;
+  /** Stream-owned ledger and current-turn content, separate from REST history. */
+  _live?: SessionView;
+  /** Authoritative replacements within the stream-only current-turn ledger. */
+  _liveFinalParts?: ReadonlySet<string>;
 }
 
 /**
@@ -145,9 +146,8 @@ export type SessionAction =
    * - `reconcile`: merge. The server's data wins on matching ids
    *   (messages by id, parts by id), but any in-memory entry the
    *   server doesn't return is preserved. Used for refetches
-   *   triggered by SSE signals like `session.idle` or
-   *   `session.diff`, where OpenCode's database may lag the SSE
-   *   stream by a few hundred ms — a wholesale replace would
+   *   triggered by stream signals such as a settled turn, where
+   *   OpenCode's database may lag the live stream by a few hundred ms — a wholesale replace would
    *   transiently wipe parts that were just streamed.
    *
    *   `_deltaOwnedFields` is preserved in reconcile mode so live
@@ -155,8 +155,8 @@ export type SessionAction =
    *   snapshots from the refetch.
    */
   | { type: 'load'; view: SessionView; mode?: 'replace' | 'reconcile'; statusRevision?: number }
-  | { type: 'sse'; event: SseEvent }
   | { type: 'setPendingPermission'; permission: PendingPermission; ownerIds?: string[] }
+  | { type: 'setPendingQuestion'; question: PendingQuestion }
   | { type: 'clearPrompt'; kind: 'permission' | 'question'; id: string }
   | { type: 'patchSession'; patch: Partial<SessionMetadata> }
   | { type: 'addNotice'; notice: AutoApprovedNoticePayload }

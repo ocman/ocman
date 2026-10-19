@@ -10,8 +10,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
 
-// HookEvents are the Claude hooks the ocman plugin registers (AD-11).
+// HookEvents are the status hooks the ocman plugin registers (AD-11). They
+// start ocman only inside managed processes.
 var HookEvents = []string{"SessionStart", "SessionEnd", "Stop", "Notification", "PreToolUse", "PostToolUse"}
+
+// HistoryHookEvents follow transcript changes in every Claude session,
+// including ones started in a terminal, and append to ocman's history journal.
+var HistoryHookEvents = []string{"SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SubagentStop", "PreCompact", "SessionEnd"}
 
 // hookBusyWindow is how long a hook's busy report stands: no hook marks a
 // killed claude, so a stale report falls back to the transcript.

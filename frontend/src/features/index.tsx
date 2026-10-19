@@ -30,6 +30,7 @@ import { HookPluginSettings } from '../components/HookPluginSettings';
 import { MaintenanceSettings } from '../components/MaintenanceSettings';
 import { PluginPage } from '../pages/PluginPage';
 import { PluginPageNav } from '../components/PluginPageNav';
+import { BackgroundTasks } from '../pages/BackgroundTasks';
 
 // Factory pages pull in the epic graph (@xyflow, dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
@@ -76,6 +77,11 @@ export interface Feature {
 
 export const FEATURES: Feature[] = [
   { id: 'plugin-pages', routes: [{ path: '/plugins/:pluginId/:pageId', element: <PluginPage />, layout: 'page', title: 'Plugin workspace' }], Navigation: PluginPageNav, titlePrefix: { prefix: '/plugins/', title: 'Plugin workspace' } },
+  {
+    id: 'background-tasks',
+    routes: [{ path: '/background-tasks', element: <BackgroundTasks />, layout: 'dashboard', title: 'Background tasks' }],
+    nav: { to: '/background-tasks', label: 'Background tasks', icon: 'bi-list-task' },
+  },
   {
     id: 'factory',
     routes: [

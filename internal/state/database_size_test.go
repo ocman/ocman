@@ -2,8 +2,41 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 )
+
+func TestHistoryDatabaseSizeMigrationPreservesExistingSamples(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := migrateToV93(tx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO database_size_sample VALUES ('ocman', 1, 100), ('opencode', 1, 200)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateHistoryDatabaseSize(tx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO database_size_sample VALUES ('statev2', 1, 300)`); err != nil {
+		t.Fatal(err)
+	}
+	var count, total int
+	if err := tx.QueryRow(`SELECT count(*), sum(size_bytes) FROM database_size_sample`).Scan(&count, &total); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 || total != 600 {
+		t.Fatalf("lost samples: count %d total %d", count, total)
+	}
+}
 
 func TestDatabaseSizeSamplesUpsertHourlyBucket(t *testing.T) {
 	store, err := Open(templateDBPath(t))

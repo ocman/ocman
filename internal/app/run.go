@@ -75,6 +75,7 @@ func run() {
 	guiBootTimeout := flag.Duration("gui-boot-timeout", 10*time.Second, "how long --gui waits for the backend to answer before showing an error")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:0", "listen address for the backend when --gui is set (default picks an ephemeral port)")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
+	historyPath := flag.String("statev2-db", "", "conversation history database path (default: $OCMAN_STATEV2_DB, else statev2.db beside state.db)")
 	platformNames := make([]string, 0, len(knownPlatforms))
 	for name := range knownPlatforms {
 		platformNames = append(platformNames, name)
@@ -176,6 +177,14 @@ func run() {
 			fatal("Failed to open state database: %v", err)
 		}
 		defer stateDB.Close()
+		historyDB, err := openConversationHistory(stateDBPath, *historyPath, os.Getenv)
+		if err != nil {
+			cancel()
+			return err
+		}
+		if historyDB != nil {
+			defer historyDB.Close()
+		}
 		platformsExplicit := false
 		flag.Visit(func(f *flag.Flag) { platformsExplicit = platformsExplicit || f.Name == "platforms" })
 		if *platformsFlag, err = platformsettings.Resolve(ctx, stateDB, *platformsFlag, platformsExplicit); err != nil {
@@ -318,6 +327,7 @@ func run() {
 		// is only reachable from the Wails WebView proxy.  In headless mode
 		// it listens on *addr as before.
 		srv := server.New(database, stateDB, listener.Addr().String(), registry, auth).
+			WithConversationHistory(historyDB, ident.InstanceID).
 			WithAnalytics(analyticsDB).
 			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).

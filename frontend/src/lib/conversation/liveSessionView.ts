@@ -1,0 +1,85 @@
+// The page reducer: REST loads and client actions go through the session
+// reducer; conversation stream batches go through reduceConversation.
+
+import { timeSseBatch } from '../perfMonitor';
+import { reduceSessionView } from '../sessionReducer';
+import type { SessionAction, SessionView } from '../sessionViewTypes';
+import { reduceConversation } from './conversationReducer';
+import { upsertMessageIndexed, upsertPart } from './conversationParts';
+import { DELTA_FIELD_PATH, type OceEnvelope, type OcePart } from './events';
+import { decode, encode, getFieldByPath, setFieldByPath, upsertSnapshotPart } from '../sessionViewParts';
+import { replaceAt } from './partIndex';
+
+// A non-final live part only contributes streamed text. REST owns its status,
+// timing and other metadata, which may be newer than the live copy.
+function restoreStreamedFields(view: SessionView, live: OcePart): SessionView {
+  const idx = view.parts.findIndex((p) => p.id === live.id);
+  if (idx < 0) return upsertPart(view, live, false);
+  const rest = decode(view.parts[idx]);
+  const streamed = decode(live as never);
+  let next = rest;
+  for (const path of Object.values(DELTA_FIELD_PATH)) {
+    const mine = getFieldByPath(streamed, path);
+    const theirs = getFieldByPath(rest, path);
+    if (typeof mine === 'string' && (typeof theirs !== 'string' || mine.length > theirs.length)) {
+      next = setFieldByPath(next, path, mine);
+    }
+  }
+  return { ...view, parts: replaceAt(view.parts, idx, encode(view.parts[idx], next)) };
+}
+
+export type LiveSessionAction = SessionAction | { type: 'oceBatch'; envelopes: OceEnvelope[] }
+  | { type: 'recover'; view: SessionView; sinceFence: OceEnvelope[]; restoreLiveFields?: boolean };
+
+export function reduceLiveSessionView(view: SessionView, action: LiveSessionAction): SessionView {
+  if (action.type === 'recover') {
+    let incoming = action.view;
+    // On navigation back to an active turn, REST may lag cached deltas for
+    // parts it still contains. Keep those fields, not entries missing in REST.
+    // Rewrites and non-resumable reconnects never use this cache-restoration rule.
+    if (action.restoreLiveFields && incoming.session?.status === 'busy' && view.sessionId === incoming.sessionId) {
+      const known = new Map(view.parts.map((p) => [p.id, p]));
+      const retained = new Set(incoming.parts.map((p) => p.id));
+      incoming = { ...incoming, _deltaOwnedFields: new Map([...view._deltaOwnedFields].filter(([id]) => retained.has(id))), parts: incoming.parts.map((p) => {
+        const old = known.get(p.id);
+        return old ? upsertSnapshotPart([old], p, view._deltaOwnedFields)[0] : p;
+      }) };
+    }
+    // Replace REST-owned history, not the stream's prompt/task ledger or live
+    // turn. Anchored deltas and upserts are idempotent when replayed below.
+    const live = view.sessionId === incoming.sessionId ? view._live : undefined;
+    if (live) {
+      incoming = { ...incoming, _live: live, cursor: view.cursor, lastRevision: view.lastRevision,
+        pendingPermission: live.pendingPermission, pendingQuestion: live.pendingQuestion,
+        judgeStartsAt: live.judgeStartsAt, checkingPermissionId: live.checkingPermissionId, judgeReasoning: live.judgeReasoning,
+        backgroundTaskCount: live.backgroundTaskCount, backgroundTasks: live.backgroundTasks, childStatus: view.childStatus,
+        _deltaOwnedFields: live._deltaOwnedFields,
+        session: incoming.session && live.session && live._statusRevision !== undefined ? { ...incoming.session, status: live.session.status,
+          notice: live.session.notice, resetsAt: live.session.resetsAt, liveConnection: live.session.liveConnection } : incoming.session };
+      for (const message of live.messages) incoming = { ...incoming, messages: upsertMessageIndexed(incoming.messages, message) };
+      for (const part of live.parts) {
+        const oce = { ...part, data: typeof part.data === 'string' ? JSON.parse(part.data) : part.data };
+        incoming = live._liveFinalParts?.has(part.id) ? upsertPart(incoming, oce, true) : restoreStreamedFields(incoming, oce);
+      }
+    }
+    return reduceConversation({ ...incoming, _statusRevision: view._statusRevision,
+      _refetchRequested: false, _stale: undefined }, action.sinceFence);
+  }
+  if (action.type === 'oceBatch') {
+    return timeSseBatch(action.envelopes.length, () => reduceConversation(view, action.envelopes),
+      (out) => [out.messages.length, out.parts.length]);
+  }
+  const next = reduceSessionView(view, action);
+  if (action.type !== 'load' || next === view) return next;
+  // A load is the reconcile that heals stale parts. Stream bookkeeping
+  // survives it for the same session.
+  const same = view.sessionId === next.sessionId;
+  return {
+    ...next,
+    _stale: undefined,
+    cursor: same ? view.cursor : undefined,
+    lastRevision: same ? view.lastRevision : undefined,
+    childStatus: same ? view.childStatus : undefined,
+    _live: same ? view._live : undefined,
+  };
+}

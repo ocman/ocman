@@ -94,6 +94,11 @@ func (x *Index) Close() error { return x.db.Close() }
 func (x *Index) Sync(ctx context.Context) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	return x.sync(ctx)
+}
+
+// sync is Sync with x.mu held.
+func (x *Index) sync(ctx context.Context) error {
 	known := map[string][2]int64{}
 	rows, err := x.db.QueryContext(ctx, `SELECT path, mtime, size FROM session`)
 	if err != nil {

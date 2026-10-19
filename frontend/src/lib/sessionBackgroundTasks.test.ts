@@ -1,73 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { initialSessionView, reduceSessionView } from './sessionReducer';
+import { reduceBackgroundTaskCount } from './sessionBackgroundTasks';
 
 describe('background task counts', () => {
   it('replaces live task details even when the count is unchanged, validates rows and clears old details', () => {
     const tasks = [{ id: 'one', description: 'pnpm test' }];
-    let view = reduceSessionView(initialSessionView('s1'), { type: 'sse', event: {
-      type: 'ocman.session.background', properties: { sessionID: 's1', count: 1, tasks: [...tasks, null, {}, tasks[0]] },
-    } });
+    let view = reduceBackgroundTaskCount(initialSessionView('s1'), 1, [...tasks, null, {}, tasks[0]]);
     expect(view.backgroundTasks).toEqual(tasks);
     for (const mode of ['replace', 'reconcile'] as const) {
       expect(reduceSessionView(view, { type: 'load', view: initialSessionView('s1'), mode }).backgroundTasks).toEqual(tasks);
     }
     expect(reduceSessionView(view, { type: 'load', view: initialSessionView('s2') }).backgroundTasks).toEqual([]);
-    view = reduceSessionView(view, { type: 'sse', event: { type: 'server.connected', properties: {
-      backgroundTasks: { s1: 1 }, backgroundTaskDetails: { s1: [{ id: 'two', description: 'go test' }] },
-    } } });
+    view = reduceBackgroundTaskCount(view, 1, [{ id: 'two', description: 'go test' }]);
     expect(view.backgroundTasks).toEqual([{ id: 'two', description: 'go test' }]);
-    expect(reduceSessionView(view, { type: 'sse', event: { type: 'session.idle' } }).backgroundTasks).toEqual([]);
-    expect(reduceSessionView(view, event(1)).backgroundTasks).toEqual([]);
-  });
-  const event = (count: unknown, sessionID = 's1') => ({
-    type: 'sse' as const,
-    event: { type: 'ocman.session.background', properties: { sessionID, count } },
+    expect(reduceBackgroundTaskCount(view, 1).backgroundTasks).toEqual([]);
   });
 
-  it('tracks absolute counts and ignores other sessions and invalid counts', () => {
-    let view = reduceSessionView(initialSessionView('s1'), event(2));
+  it('tracks absolute counts and ignores invalid counts', () => {
+    let view = reduceBackgroundTaskCount(initialSessionView('s1'), 2);
     expect(view.backgroundTaskCount).toBe(2);
     for (const count of [-1, 1.5, '3', null, Infinity]) {
-      expect(reduceSessionView(view, event(count))).toBe(view);
+      expect(reduceBackgroundTaskCount(view, count)).toBe(view);
     }
-    expect(reduceSessionView(view, event(5, 's2'))).toBe(view);
-    expect(reduceSessionView(view, event(2))).toBe(view);
-    view = reduceSessionView(view, event(0));
-    expect(view.backgroundTaskCount).toBe(0);
-  });
-
-  it('restores a reconnect snapshot and clears stale counts when absent', () => {
-    let view = reduceSessionView(initialSessionView('s1'), event(4));
-    view = reduceSessionView(view, { type: 'sse', event: {
-      type: 'server.connected', properties: { backgroundTasks: { s1: 2, s2: 9 } },
-    } });
-    expect(view.backgroundTaskCount).toBe(2);
-    view = reduceSessionView(view, { type: 'sse', event: { type: 'server.connected' } });
+    expect(reduceBackgroundTaskCount(view, 2)).toBe(view);
+    view = reduceBackgroundTaskCount(view, 0);
     expect(view.backgroundTaskCount).toBe(0);
   });
 
   it('preserves live counts across REST loads, but not navigation', () => {
-    const view = reduceSessionView(initialSessionView('s1'), event(3));
+    const view = reduceBackgroundTaskCount(initialSessionView('s1'), 3);
     for (const mode of ['replace', 'reconcile'] as const) {
       expect(reduceSessionView(view, { type: 'load', view: initialSessionView('s1'), mode }).backgroundTaskCount).toBe(3);
     }
     expect(reduceSessionView(view, { type: 'load', view: initialSessionView('s2') }).backgroundTaskCount).toBe(0);
-  });
-
-  it('clears counts when the turn ends', () => {
-    const view = reduceSessionView(initialSessionView('s1'), event(3));
-    expect(reduceSessionView(view, { type: 'sse', event: { type: 'session.idle' } }).backgroundTaskCount).toBe(0);
-    expect(reduceSessionView(view, { type: 'sse', event: {
-      type: 'session.status', properties: { status: { type: 'idle' } },
-    } }).backgroundTaskCount).toBe(0);
-  });
-
-  it('ignores malformed reconnect counts', () => {
-    const view = initialSessionView('s1');
-    for (const backgroundTasks of [null, 'invalid', {}, { s1: -2 }, { s1: '2' }]) {
-      expect(reduceSessionView(view, { type: 'sse', event: {
-        type: 'server.connected', properties: { backgroundTasks },
-      } }).backgroundTaskCount).toBe(0);
-    }
   });
 });

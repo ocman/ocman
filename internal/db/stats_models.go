@@ -11,8 +11,11 @@ import (
 // GetModelUsage returns usage stats per model, optionally filtered by time
 // window (since) and directory prefix (dir; see directoryWhere).
 func (d *DB) GetModelUsage(ctx context.Context, since int64, dir string) ([]ModelUsage, error) {
+	if d.historyScope != nil {
+		return d.historyModelUsage(ctx, since, dir)
+	}
 	dirFrag, dirArgs := directoryWhere(dir)
-	query := `SELECT m.data FROM ` + messagesFrom(since, dirFrag != "") + `
+	query := `SELECT m.data FROM ` + d.messagesFrom(since, dirFrag != "") + `
 		WHERE json_extract(m.data, '$.role') = 'assistant'`
 	var args []interface{}
 	if since > 0 {
@@ -105,7 +108,7 @@ func (d *DB) GetRecentModels(ctx context.Context, sessionLimit, maxResults int) 
 	// Per-model: max timestamp of an assistant message, scoped to the N most
 	// recently-updated sessions. Rely on SQL for the grouping/sort — way
 	// cheaper than decoding N JSON blobs in Go just to pluck out a string.
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reads().QueryContext(ctx, `
 		SELECT
 			COALESCE(
 				NULLIF(json_extract(m.data, '$.providerID'), ''),

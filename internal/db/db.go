@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/XSAM/otelsql"
@@ -19,7 +20,10 @@ import (
 
 // DB wraps the SQLite connection.
 type DB struct {
-	db *sql.DB
+	db           *sql.DB
+	historyScope *historyScopeValidation
+	// snapshot binds a history reader's queries to one read transaction.
+	snapshot *sql.Tx
 	// sessionTotals is true when the session table carries OpenCode's
 	// denormalised cost/tokens_input/tokens_output columns, letting the
 	// session list skip re-aggregating every message blob.
@@ -30,6 +34,43 @@ type DB struct {
 	// v2 is true when OpenCode v2 is installed and reads go through the
 	// v1 views over its schema (v2views.go).
 	v2 bool
+	// schemaV2 latches once the physical database is seen migrated to the
+	// v2 schema; OpenCode never migrates back. Shared by snapshot copies.
+	schemaV2 *atomic.Bool
+}
+
+// historyV2 reports whether the physical database uses the OpenCode v2
+// schema. An installed v2 can still face a v1 database it has not migrated,
+// so readers of native v2 tables check the file, not the installed version.
+func (d *DB) historyV2(ctx context.Context) (bool, error) {
+	if !d.v2 || d.schemaV2 == nil {
+		return false, nil
+	}
+	if d.schemaV2.Load() {
+		return true, nil
+	}
+	var n int
+	if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM main.sqlite_master
+		WHERE type='table' AND name IN ('session_v2','session_message')`).Scan(&n); err != nil {
+		return false, err
+	}
+	if n == 2 {
+		d.schemaV2.Store(true)
+	}
+	return n == 2, nil
+}
+
+type querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// reads is the primary read handle: the bound snapshot, else the pool.
+func (d *DB) reads() querier {
+	if d.snapshot != nil {
+		return d.snapshot
+	}
+	return d.db
 }
 
 // detectSessionTotals probes the session schema once. Older OpenCode
@@ -149,13 +190,17 @@ func Open(path string) (*DB, error) {
 			attribute.String("db.name", "opencode"),
 		),
 	)
-	d := &DB{db: db, v2: v2}
+	d := &DB{db: db, v2: v2, schemaV2: new(atomic.Bool)}
 	d.detectSessionTotals()
 	return d, nil
 }
 
-// V2 reports whether the database is read through the OpenCode v2 views.
-func (d *DB) V2() bool { return d.v2 }
+// V2 reports whether the database is read through the OpenCode v2 views:
+// v2 is installed and the physical database uses its schema.
+func (d *DB) V2() bool {
+	ok, _ := d.historyV2(context.Background())
+	return ok
+}
 
 // OpenReadWrite opens the database in read-write mode. This is intended for
 // test setup where schema creation must happen before read-only access.

@@ -264,24 +264,30 @@ describe('useGlobalEvents resolved handler', () => {
 
   it('dismisses the toast and rechecks notify on a valid payload', () => {
     __handleResolvedForTests(
-      JSON.stringify({ sessionID: 'sess-1', permissionId: 'p1', reason: 'auto-approved' }),
+      JSON.stringify({ platform: 'claudecode', sessionID: 'sess-1', permissionId: 'p1', reason: 'auto-approved' }),
     );
     expect(notifyPromptDismissed).toHaveBeenCalledWith('sess-1');
     expect(recheckNotifyData).toHaveBeenCalledTimes(1);
     expect(recheckNotifyData).toHaveBeenCalledWith({
-      platform: 'opencode', sessionId: 'sess-1', requestId: 'p1', kind: 'permission',
+      platform: 'claudecode', sessionId: 'sess-1', requestId: 'p1', kind: 'permission',
     });
   });
 
   it('dismisses the toast for a resolved question payload', () => {
     __handleResolvedForTests(
-      JSON.stringify({ sessionID: 'sess-q', requestId: 'r1', reason: 'rejected' }),
+      JSON.stringify({ platform: 'opencode', sessionID: 'sess-q', requestId: 'r1', reason: 'rejected' }),
     );
     expect(notifyPromptDismissed).toHaveBeenCalledWith('sess-q');
     expect(recheckNotifyData).toHaveBeenCalledTimes(1);
     expect(recheckNotifyData).toHaveBeenCalledWith({
       platform: 'opencode', sessionId: 'sess-q', requestId: 'r1', kind: 'question',
     });
+  });
+
+  it('never assumes an owner for a resolution without a platform', () => {
+    __handleResolvedForTests(JSON.stringify({ sessionID: 'sess-c', permissionId: 'p1', reason: 'replied' }));
+    expect(notifyPromptDismissed).toHaveBeenCalledWith('sess-c');
+    expect(recheckNotifyData).toHaveBeenCalledWith(undefined);
   });
 
   it('retains the owner on remote resolution identities', () => {

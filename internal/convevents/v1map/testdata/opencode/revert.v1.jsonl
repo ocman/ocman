@@ -1,0 +1,6 @@
+{"session":"ses_a"}
+{"data":{"type":"session.updated","properties":{"info":{"id":"ses_a","title":"Fix a.go","directory":"/repo","revert":{"messageID":"msg_u2","partID":"prt_u2","snapshot":"abc","diff":"d"},"share":{"url":"https://opncd.ai/s/xyz"},"time":{"created":900,"updated":3000}}}}}
+{"data":{"type":"message.part.removed","properties":{"sessionID":"ses_a","messageID":"msg_a2","partID":"prt_a2_1"}}}
+{"data":{"type":"message.removed","properties":{"sessionID":"ses_a","messageID":"msg_a2"}}}
+{"data":{"type":"message.removed","properties":{"sessionID":"ses_a","messageID":"msg_u2"}}}
+{"data":{"type":"session.updated","properties":{"info":{"id":"ses_a","title":"Fix a.go","directory":"/repo","share":{"url":"https://opncd.ai/s/xyz"},"time":{"created":900,"updated":3001,"archived":3001}}}}}

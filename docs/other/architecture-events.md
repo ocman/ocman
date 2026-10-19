@@ -51,6 +51,7 @@ sequenceDiagram
     O->>I: read owner-local approvals, interruptions and commit observations
     O->>O: inject persisted history notices,<br/>tee synthetic approval events
     O-->>S: owner-enriched JSON / framed SSE
+    S-->>B: /api/session/id/stream: OCE frames mapped from owner SSE
     Note over S,Q: every 5 s: claim due routines
     Q->>R: ensure project instance and create fresh session
     R->>A: create session and send saved prompt
@@ -113,8 +114,8 @@ sequenceDiagram
   commands without output. The payload carries `sessionID`, `remoteId`,
   `projectId`, `directory`, and `action`, never command arguments or output.
   The local headless watcher observes these without a browser or enabled
-  permission judge. Remote hints are observed by the hub while proxying a
-  remote session stream, using only the remote adapter's last cached session
+  permission judge. Remote hints are observed by the hub while feeding a
+  remote session's conversation stream, using only the remote adapter's last cached session
   identity. Unknown identities are skipped; no transcript read or RPC delays
   the stream. The visible PR/Issue tab re-reads its lists after a 750 ms
   debounce, scoped by owner and project, including sibling worktrees and
@@ -171,9 +172,8 @@ sequenceDiagram
   `ocman.keepalive` every 15 s, and the browser replaces a stream that goes
   40 s without one, including a first connection that never opened. The new
   stream's open runs the usual reconnect reconciliation and skips any
-  pending backoff. The hub forwards platform bytes to the session stream
-  only as whole SSE frames, so keepalives and synthetic events never land
-  inside one.
+  pending backoff. The hub maps platform bytes into the conversation stream
+  only as whole SSE frames, so synthetic events never land inside one.
 - A permission reply that lands while the stream is down is never replayed.
   While a permission prompt is open, the page polls
   `GET /api/session/{id}/permissions?refresh=1&platform=…`. The `platform`

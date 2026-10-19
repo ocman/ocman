@@ -1,0 +1,10 @@
+{"session":"s1"}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"busy"}},"type":"session.status"}}
+{"data":{"properties":{"info":{"directory":"/d","id":"c1","parentID":"s1","permission":[],"projectID":"","time":{"created":5,"updated":6},"title":"explore subagent","version":"2"},"sessionID":"c1"},"type":"session.created"}}
+{"data":{"properties":{"sessionID":"c1","status":{"type":"busy"}},"type":"session.status"}}
+{"data":{"properties":{"always":["rm *"],"id":"per_c1","metadata":{"command":"rm x"},"patterns":["rm x"],"permission":"bash","sessionID":"c1"},"type":"permission.asked"}}
+{"data":{"properties":{"reply":"reject","requestID":"per_c1","sessionID":"c1"},"type":"permission.replied"}}
+{"data":{"properties":{"sessionID":"c1","status":{"type":"idle"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"c1"},"type":"session.idle"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"idle"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"s1"},"type":"session.idle"}}

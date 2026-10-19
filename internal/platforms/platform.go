@@ -42,15 +42,16 @@ type ID string
 // FR-14. Every adapter must return the same shape — handlers trust the
 // typed fields rather than extracting from a map.
 type SessionDetail struct {
-	Session           *db.Session      `json:"session"`
-	SessionTree       []db.Session     `json:"sessionTree"`
-	Messages          []db.Message     `json:"messages"`
-	Parts             []db.Part        `json:"parts"`
-	TotalMessages     int              `json:"totalMessages"`
-	ContextTokenCount int64            `json:"contextTokenCount,omitempty"`
-	DefaultAgent      string           `json:"defaultAgent,omitempty"` // composer-agent (OpenCode "build"/"plan"/...) default
-	DefaultModel      string           `json:"defaultModel,omitempty"`
-	Warnings          []SessionWarning `json:"warnings,omitempty"`
+	Session            *db.Session      `json:"session"`
+	SessionTree        []db.Session     `json:"sessionTree"`
+	Messages           []db.Message     `json:"messages"`
+	Parts              []db.Part        `json:"parts"`
+	TotalMessages      int              `json:"totalMessages"`
+	ContextTokenCount  int64            `json:"contextTokenCount,omitempty"`
+	DefaultAgent       string           `json:"defaultAgent,omitempty"` // composer-agent (OpenCode "build"/"plan"/...) default
+	DefaultModel       string           `json:"defaultModel,omitempty"`
+	Warnings           []SessionWarning `json:"warnings,omitempty"`
+	ConversationSource string           `json:"-"`
 }
 
 // SessionWarning carries a non-blocking, platform-normalized condition that

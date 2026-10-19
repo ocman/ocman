@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -266,7 +265,7 @@ func TestAnalyticsMirrorNeverBlocksOnBusySync(t *testing.T) {
 		t.Fatal("cancelled waiter stayed blocked behind the running sync")
 	}
 
-	got := make(chan *sql.DB, 1)
+	got := make(chan querier, 1)
 	go func() { got <- d.analytics(t.Context()) }()
 	select {
 	case h := <-got:

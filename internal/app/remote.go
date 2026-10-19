@@ -32,7 +32,7 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 	}
 	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version).
 		UseInboxStore(stateDB).UsePlugins(srv.RemotePluginOperation).UseSessions(srv.SessionService()).
-		UseWebhookInboxes(webhook.LocalInboxes{Store: stateDB, Routines: srv.RoutineService()}).UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseEventProxy(srv.ProxyRemoteSessionEvents).
+		UseWebhookInboxes(webhook.LocalInboxes{Store: stateDB, Routines: srv.RoutineService()}).UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseConversationContext(srv.ConversationReadContext).UseEventProxy(srv.ProxyRemoteSessionEvents).
 		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred).UsePermissionPolicy(srv.SessionPermissionPolicy)
 	ln, err := remote.NewListener(remote.ListenConfig{Context: ctx, Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
 	if err != nil {

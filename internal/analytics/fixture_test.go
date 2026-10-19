@@ -73,7 +73,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { store.Close() })
 	f := &fixture{Module: newTestModule(Deps{DB: database, Store: store}), raw: raw}
-	f.mux = routes(f.Module)
+	f.mux = calculationRoutes(f.Module)
 	return f
 }
 

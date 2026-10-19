@@ -194,25 +194,35 @@ tools. An OpenCode-only ocman never uses Claude for judging.
 ## Claude hook plugin
 
 Terminal sessions get their status from their transcripts. A transcript that ends
-mid-turn reads as interrupted, however recently it was written. Hooks only run
-for Claude processes launched by ocman, which sets `OCMAN_MANAGED=1`.
-Standalone Claude sessions skip the hooks without contacting ocman or executing
-its binary, even if ocman is stopped or its installed binary has moved.
+mid-turn reads as interrupted, however recently it was written.
 
-To install the plugin, use Settings → Provider accounts → **Install**. Ocman runs
-`claude plugin marketplace add ~/.local/share/ocman/claude-marketplace` and
-`claude plugin install ocman@ocman --scope user`; it never edits `~/.claude`
-itself. **Uninstall** runs `claude plugin uninstall` and removes the marketplace.
+Ocman installs the plugin automatically at startup. It writes the plugin to
+`~/.local/share/ocman/claude-marketplace`, versioned by its content, then runs
+`claude plugin marketplace add` and `claude plugin install ocman@ocman --scope user`
+when it is missing, or `claude plugin marketplace update ocman` and
+`claude plugin update ocman@ocman --scope user` when Claude's cached copy is
+stale. This runs in the background and never edits `~/.claude` directly. Running
+Claude sessions load updated hooks after a restart. Settings → Provider accounts
+still offers **Install** and **Uninstall**; uninstalling lasts until the next start.
 
-The plugin's `SessionStart`, `SessionEnd`, `Stop`, `Notification`, `PreToolUse` and
-`PostToolUse` hooks run `ocman hook <event>`, which posts the session id to
-ocman's MCP listener (`-mcp-addr`) and gives up after one second, always exiting
-0, so Claude is never failed when ocman is not running. Hooks also report a
-best-effort Claude process ID for the external-instance warning. The
-install is unavailable when `-mcp-addr` is empty. The hook command holds the
-ocman binary path and listener address at install time: reinstall after moving
-either. Reinstall an older hook plugin to add the environment guard. Hooks from Claude
-processes ocman starts are excluded from external-instance detection.
+The plugin has two kinds of hooks, all running `ocman hook`, which gives up after
+one second and always exits 0, so Claude is never failed when ocman is stopped
+or its binary has moved:
+
+- **History hooks** (`SessionStart`, `UserPromptSubmit`, `PostToolUse`, `Stop`,
+  `SubagentStop`, `PreCompact`, `SessionEnd`) run in every Claude session,
+  including ones started in a terminal. They append the session id and
+  transcript path to `~/.local/share/ocman/journal/claudecode`, even while ocman
+  is stopped. Conversation history ingestion follows that journal instead of
+  polling; see [architecture](../other/architecture.md).
+- **Status hooks** post the session id to ocman's MCP listener (`-mcp-addr`),
+  only from Claude processes ocman launched (`OCMAN_MANAGED=1`). `Notification`
+  and `PreToolUse` are status-only, so standalone sessions never execute ocman
+  for them. Hooks also report a best-effort Claude process ID for the
+  external-instance warning; hooks from processes ocman starts are excluded.
+
+The hook command holds the ocman binary path, listener address and journal
+path; ocman rewrites and refreshes the plugin when any of them change.
 
 ## Usage and subscription
 

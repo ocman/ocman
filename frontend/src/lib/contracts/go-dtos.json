@@ -8,6 +8,82 @@
     "waiting"
   ],
   "dtos": {
+    "BackgroundChanged": [
+      {
+        "name": "count",
+        "omitempty": false
+      },
+      {
+        "name": "tasks",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "ChangesDirty": [
+      {
+        "name": "reason",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "ChildStatus": [
+      {
+        "name": "childId",
+        "omitempty": false
+      },
+      {
+        "name": "notice",
+        "omitempty": true
+      },
+      {
+        "name": "status",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "ChildUpserted": [
+      {
+        "name": "child",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "HistoryCommitted": [
+      {
+        "name": "revision",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "HistoryRewritten": [
+      {
+        "name": "fromMessageId",
+        "omitempty": true
+      },
+      {
+        "name": "reason",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
     "HostCapabilities": [
       {
         "name": "gitDiff",
@@ -38,6 +114,36 @@
         "omitempty": false
       }
     ],
+    "LiveOverlay": [
+      {
+        "name": "background",
+        "omitempty": false
+      },
+      {
+        "name": "inflight",
+        "omitempty": false
+      },
+      {
+        "name": "judge",
+        "omitempty": false
+      },
+      {
+        "name": "liveConnection",
+        "omitempty": false
+      },
+      {
+        "name": "prompts",
+        "omitempty": false
+      },
+      {
+        "name": "queue",
+        "omitempty": true
+      },
+      {
+        "name": "status",
+        "omitempty": false
+      }
+    ],
     "Message": [
       {
         "name": "data",
@@ -53,6 +159,260 @@
       },
       {
         "name": "timeCreated",
+        "omitempty": false
+      }
+    ],
+    "MessageRemoved": [
+      {
+        "name": "messageId",
+        "omitempty": false
+      },
+      {
+        "name": "reason",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "MessageUpserted": [
+      {
+        "name": "message",
+        "omitempty": false
+      },
+      {
+        "name": "position",
+        "omitempty": true
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "OceChild": [
+      {
+        "name": "agent",
+        "omitempty": true
+      },
+      {
+        "name": "deleted",
+        "omitempty": true
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      },
+      {
+        "name": "parentId",
+        "omitempty": true
+      },
+      {
+        "name": "timeCreated",
+        "omitempty": false
+      },
+      {
+        "name": "timeUpdated",
+        "omitempty": false
+      },
+      {
+        "name": "title",
+        "omitempty": false
+      }
+    ],
+    "OceEnvelope": [
+      {
+        "name": "at",
+        "omitempty": false
+      },
+      {
+        "name": "durability",
+        "omitempty": false
+      },
+      {
+        "name": "epoch",
+        "omitempty": false
+      },
+      {
+        "name": "event",
+        "omitempty": false
+      },
+      {
+        "name": "platform",
+        "omitempty": false
+      },
+      {
+        "name": "replayed",
+        "omitempty": true
+      },
+      {
+        "name": "seq",
+        "omitempty": false
+      },
+      {
+        "name": "sessionId",
+        "omitempty": false
+      },
+      {
+        "name": "v",
+        "omitempty": false
+      }
+    ],
+    "OceErrorInfo": [
+      {
+        "name": "message",
+        "omitempty": false
+      },
+      {
+        "name": "name",
+        "omitempty": true
+      },
+      {
+        "name": "statusCode",
+        "omitempty": true
+      }
+    ],
+    "OceInflight": [
+      {
+        "name": "messages",
+        "omitempty": false
+      },
+      {
+        "name": "parts",
+        "omitempty": false
+      }
+    ],
+    "OcePart": [
+      {
+        "name": "data",
+        "omitempty": false
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      },
+      {
+        "name": "messageId",
+        "omitempty": false
+      },
+      {
+        "name": "position",
+        "omitempty": true
+      },
+      {
+        "name": "sessionId",
+        "omitempty": false
+      },
+      {
+        "name": "timeCreated",
+        "omitempty": false
+      }
+    ],
+    "OcePermissionRequest": [
+      {
+        "name": "always",
+        "omitempty": true
+      },
+      {
+        "name": "metadata",
+        "omitempty": true
+      },
+      {
+        "name": "patterns",
+        "omitempty": false
+      },
+      {
+        "name": "permission",
+        "omitempty": false
+      }
+    ],
+    "OcePrompt": [
+      {
+        "name": "askedAt",
+        "omitempty": false
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      },
+      {
+        "name": "kind",
+        "omitempty": false
+      },
+      {
+        "name": "permission",
+        "omitempty": true
+      },
+      {
+        "name": "question",
+        "omitempty": true
+      },
+      {
+        "name": "sessionId",
+        "omitempty": false
+      }
+    ],
+    "OceQuestionRequest": [
+      {
+        "name": "questions",
+        "omitempty": false
+      }
+    ],
+    "OceRevertMarker": [
+      {
+        "name": "messageId",
+        "omitempty": false
+      },
+      {
+        "name": "partId",
+        "omitempty": true
+      }
+    ],
+    "OceSessionPatch": [
+      {
+        "name": "archived",
+        "omitempty": true
+      },
+      {
+        "name": "defaultAgent",
+        "omitempty": true
+      },
+      {
+        "name": "defaultModel",
+        "omitempty": true
+      },
+      {
+        "name": "revert",
+        "omitempty": true
+      },
+      {
+        "name": "shareUrl",
+        "omitempty": true
+      },
+      {
+        "name": "summaryAdditions",
+        "omitempty": true
+      },
+      {
+        "name": "summaryDeletions",
+        "omitempty": true
+      },
+      {
+        "name": "summaryFiles",
+        "omitempty": true
+      },
+      {
+        "name": "title",
+        "omitempty": true
+      }
+    ],
+    "OceStreamCapabilities": [
+      {
+        "name": "deltaFields",
+        "omitempty": false
+      },
+      {
+        "name": "streamResume",
         "omitempty": false
       }
     ],
@@ -75,6 +435,206 @@
       },
       {
         "name": "timeCreated",
+        "omitempty": false
+      }
+    ],
+    "PartData": [
+      {
+        "name": "approvedAt",
+        "omitempty": true
+      },
+      {
+        "name": "approvedBy",
+        "omitempty": true
+      },
+      {
+        "name": "askedAt",
+        "omitempty": true
+      },
+      {
+        "name": "callID",
+        "omitempty": true
+      },
+      {
+        "name": "content",
+        "omitempty": true
+      },
+      {
+        "name": "diff",
+        "omitempty": true
+      },
+      {
+        "name": "file",
+        "omitempty": true
+      },
+      {
+        "name": "filename",
+        "omitempty": true
+      },
+      {
+        "name": "ignored",
+        "omitempty": true
+      },
+      {
+        "name": "metadata",
+        "omitempty": true
+      },
+      {
+        "name": "mime",
+        "omitempty": true
+      },
+      {
+        "name": "path",
+        "omitempty": true
+      },
+      {
+        "name": "patterns",
+        "omitempty": true
+      },
+      {
+        "name": "permission",
+        "omitempty": true
+      },
+      {
+        "name": "reasoning",
+        "omitempty": true
+      },
+      {
+        "name": "reply",
+        "omitempty": true
+      },
+      {
+        "name": "state",
+        "omitempty": true
+      },
+      {
+        "name": "synthetic",
+        "omitempty": true
+      },
+      {
+        "name": "text",
+        "omitempty": true
+      },
+      {
+        "name": "time",
+        "omitempty": true
+      },
+      {
+        "name": "tool",
+        "omitempty": true
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      },
+      {
+        "name": "url",
+        "omitempty": true
+      }
+    ],
+    "PartDelta": [
+      {
+        "name": "field",
+        "omitempty": false
+      },
+      {
+        "name": "messageId",
+        "omitempty": false
+      },
+      {
+        "name": "offset",
+        "omitempty": false
+      },
+      {
+        "name": "partId",
+        "omitempty": false
+      },
+      {
+        "name": "partType",
+        "omitempty": true
+      },
+      {
+        "name": "text",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "PartRemoved": [
+      {
+        "name": "messageId",
+        "omitempty": false
+      },
+      {
+        "name": "partId",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "PartState": [
+      {
+        "name": "attachments",
+        "omitempty": true
+      },
+      {
+        "name": "error",
+        "omitempty": true
+      },
+      {
+        "name": "input",
+        "omitempty": true
+      },
+      {
+        "name": "metadata",
+        "omitempty": true
+      },
+      {
+        "name": "output",
+        "omitempty": true
+      },
+      {
+        "name": "raw",
+        "omitempty": true
+      },
+      {
+        "name": "status",
+        "omitempty": true
+      },
+      {
+        "name": "time",
+        "omitempty": true
+      },
+      {
+        "name": "title",
+        "omitempty": true
+      }
+    ],
+    "PartTime": [
+      {
+        "name": "end",
+        "omitempty": true
+      },
+      {
+        "name": "start",
+        "omitempty": true
+      }
+    ],
+    "PartUpserted": [
+      {
+        "name": "final",
+        "omitempty": false
+      },
+      {
+        "name": "part",
+        "omitempty": false
+      },
+      {
+        "name": "type",
         "omitempty": false
       }
     ],
@@ -173,6 +733,132 @@
       },
       {
         "name": "slashCommands",
+        "omitempty": false
+      }
+    ],
+    "PromptAsked": [
+      {
+        "name": "prompt",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "PromptJudge": [
+      {
+        "name": "phase",
+        "omitempty": false
+      },
+      {
+        "name": "promptId",
+        "omitempty": false
+      },
+      {
+        "name": "reasoning",
+        "omitempty": true
+      },
+      {
+        "name": "startsAt",
+        "omitempty": true
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "PromptResolved": [
+      {
+        "name": "by",
+        "omitempty": false
+      },
+      {
+        "name": "kind",
+        "omitempty": false
+      },
+      {
+        "name": "outcome",
+        "omitempty": false
+      },
+      {
+        "name": "promptId",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "QuestionItem": [
+      {
+        "name": "custom",
+        "omitempty": true
+      },
+      {
+        "name": "header",
+        "omitempty": false
+      },
+      {
+        "name": "multiple",
+        "omitempty": true
+      },
+      {
+        "name": "options",
+        "omitempty": false
+      },
+      {
+        "name": "question",
+        "omitempty": false
+      }
+    ],
+    "QuestionOption": [
+      {
+        "name": "description",
+        "omitempty": false
+      },
+      {
+        "name": "label",
+        "omitempty": false
+      }
+    ],
+    "QueueChanged": [
+      {
+        "name": "messages",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "QueuedMessage": [
+      {
+        "name": "agent",
+        "omitempty": true
+      },
+      {
+        "name": "createdAt",
+        "omitempty": false
+      },
+      {
+        "name": "hasImages",
+        "omitempty": false
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      },
+      {
+        "name": "model",
+        "omitempty": true
+      },
+      {
+        "name": "reasoning",
+        "omitempty": true
+      },
+      {
+        "name": "text",
         "omitempty": false
       }
     ],
@@ -346,6 +1032,30 @@
         "omitempty": false
       }
     ],
+    "SessionBackgroundTask": [
+      {
+        "name": "description",
+        "omitempty": false
+      },
+      {
+        "name": "id",
+        "omitempty": false
+      }
+    ],
+    "SessionError": [
+      {
+        "name": "error",
+        "omitempty": false
+      },
+      {
+        "name": "messageId",
+        "omitempty": true
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
     "SessionNotice": [
       {
         "name": "attempt",
@@ -361,6 +1071,120 @@
       },
       {
         "name": "retryAt",
+        "omitempty": false
+      }
+    ],
+    "SessionStatusEvent": [
+      {
+        "name": "notice",
+        "omitempty": true
+      },
+      {
+        "name": "provisional",
+        "omitempty": true
+      },
+      {
+        "name": "resetsAt",
+        "omitempty": true
+      },
+      {
+        "name": "status",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "SessionUpdated": [
+      {
+        "name": "patch",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "StreamError": [
+      {
+        "name": "code",
+        "omitempty": false
+      },
+      {
+        "name": "message",
+        "omitempty": false
+      },
+      {
+        "name": "retryable",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "StreamHello": [
+      {
+        "name": "overlay",
+        "omitempty": true
+      },
+      {
+        "name": "protocol",
+        "omitempty": false
+      },
+      {
+        "name": "resumed",
+        "omitempty": false
+      },
+      {
+        "name": "revision",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "StreamReset": [
+      {
+        "name": "reason",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "TurnEnded": [
+      {
+        "name": "endedAt",
+        "omitempty": false
+      },
+      {
+        "name": "latestMessageId",
+        "omitempty": true
+      },
+      {
+        "name": "outcome",
+        "omitempty": false
+      },
+      {
+        "name": "type",
+        "omitempty": false
+      }
+    ],
+    "TurnStarted": [
+      {
+        "name": "messageId",
+        "omitempty": true
+      },
+      {
+        "name": "startedAt",
+        "omitempty": false
+      },
+      {
+        "name": "type",
         "omitempty": false
       }
     ]

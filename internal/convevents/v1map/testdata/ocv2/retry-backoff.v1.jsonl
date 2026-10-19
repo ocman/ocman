@@ -1,0 +1,8 @@
+{"session":"s1"}
+{"data":{"properties":{"backgroundTaskDetails":{},"backgroundTasks":{}},"type":"server.connected"}}
+{"data":{"properties":{},"type":"server.heartbeat"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"busy"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"s1","status":{"attempt":2,"message":"rate limited","next":12345,"type":"retry"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"busy"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"s1","status":{"type":"idle"}},"type":"session.status"}}
+{"data":{"properties":{"sessionID":"s1"},"type":"session.idle"}}

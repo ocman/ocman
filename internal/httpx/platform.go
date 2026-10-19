@@ -6,7 +6,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -23,6 +22,11 @@ func WritePlatformError(w http.ResponseWriter, msg string, err error) {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	if errors.Is(err, platforms.ErrHistoryUnavailable) {
+		w.Header().Set("X-Ocman-Conversation-Error", "history-unavailable")
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
 	if errors.Is(err, platforms.ErrBusy) {
 		http.Error(w, "session is currently processing a prompt; try again in a moment", http.StatusConflict)
 		return
@@ -31,9 +35,9 @@ func WritePlatformError(w http.ResponseWriter, msg string, err error) {
 		http.Error(w, "no running platform instance for this location", http.StatusServiceUnavailable)
 		return
 	}
-	if errors.Is(err, ocapi.ErrAuthentication) {
+	if errors.Is(err, platforms.ErrPlatformUnauthenticated) {
 		log.WithError(err).Error(msg)
-		http.Error(w, "OpenCode authentication failed; check the configured server password", http.StatusBadGateway)
+		http.Error(w, "platform authentication failed; check its configured credentials", http.StatusBadGateway)
 		return
 	}
 	if errors.Is(err, platforms.ErrUpstreamRejected) {

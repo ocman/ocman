@@ -108,9 +108,10 @@ type Deps struct {
 	PromptNeedsUser func(platformID, sessionID, kind, requestID string)
 
 	// Broadcast hooks fan events out to every connected client. All
-	// optional.
-	BroadcastPermissionResolved func(sessionID, permissionID, reason string)
-	BroadcastQuestionResolved   func(sessionID, requestID, reason string)
+	// optional. The resolved hooks carry the platform that owns the
+	// prompt, like BroadcastSessionIdle.
+	BroadcastPermissionResolved func(platformID, sessionID, permissionID, reason string)
+	BroadcastQuestionResolved   func(platformID, sessionID, requestID, reason string)
 	// BroadcastSessionIdle carries the platform the edge came from: a
 	// session's identity is (platform, sessionID), and the consumer drains
 	// that session's message queue with it.
@@ -325,9 +326,16 @@ func (s *Service) ReloadJudgeModel(ctx context.Context) {
 }
 
 // broadcastPermissionResolved invokes the injected hook, if any.
-func (s *Service) broadcastPermissionResolved(sessionID, permissionID, reason string) {
+func (s *Service) broadcastPermissionResolved(platformID platforms.ID, sessionID, permissionID, reason string) {
 	if s.deps.BroadcastPermissionResolved != nil {
-		s.deps.BroadcastPermissionResolved(sessionID, permissionID, reason)
+		s.deps.BroadcastPermissionResolved(string(platformID), sessionID, permissionID, reason)
+	}
+}
+
+// broadcastQuestionResolved invokes the injected hook, if any.
+func (s *Service) broadcastQuestionResolved(platformID platforms.ID, sessionID, requestID, reason string) {
+	if s.deps.BroadcastQuestionResolved != nil {
+		s.deps.BroadcastQuestionResolved(string(platformID), sessionID, requestID, reason)
 	}
 }
 

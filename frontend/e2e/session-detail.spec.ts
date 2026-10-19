@@ -265,10 +265,10 @@ function buildSyntheticHistoricalThread(sessionId: string) {
  * intentionally not backed by a static HTTP SSE body: we need a live
  * stream that keeps producing deltas *while* the user clicks away, so
  * the test can expose the current bug where navigation waits for the
- * working session to reach a quieter/block boundary. The stub also
- * emits periodic `message.updated` events so the frontend takes its
- * real reconciliation path (`loadNow()`), which is closer to the
- * production behaviour than plain deltas alone.
+ * working session to reach a quieter/block boundary. The stub speaks the
+ * conversation stream protocol (`oce` envelopes after a `stream.hello`)
+ * and also emits periodic tool `part.upserted` and `message.upserted`
+ * frames so every content path of the reducer stays hot.
  */
 async function installSlowStreamingEventSource(
   page: import('@playwright/test').Page,
@@ -287,117 +287,84 @@ async function installSlowStreamingEventSource(
       onmessage: ((evt: MessageEvent) => void) | null = null;
       listeners: Record<string, Array<(evt: Event) => void>> = {};
       private timer: number | null = null;
+      private seq = 0;
       private msgId = `msg-${streamSessionId}`;
       private partId = `part-${streamSessionId}`;
       private toolPartId = `tool-${streamSessionId}`;
 
       constructor(url: string) {
         this.url = url;
-        // Only the active session's /events endpoint streams; any
+        // Only the active session's /stream endpoint streams; any
         // other EventSource usage still opens cleanly but stays idle.
         queueMicrotask(() => {
           if (this.readyState === StreamingEventSource.CLOSED) return;
           this.readyState = StreamingEventSource.OPEN;
           this.onopen?.(new Event('open'));
 
-          if (!url.includes(`/api/session/${streamSessionId}/events`)) return;
+          if (!url.includes(`/api/session/${streamSessionId}/stream`)) return;
 
-          const created = JSON.stringify({
-            type: 'message.created',
-            properties: {
-              sessionID: streamSessionId,
-              info: {
-                id: this.msgId,
-                sessionID: streamSessionId,
-                role: 'assistant',
-                time: { created: Date.now() },
+          const toolPart = (status: string, output: string) => ({
+            id: this.toolPartId,
+            messageId: this.msgId,
+            sessionId: streamSessionId,
+            data: {
+              type: 'tool',
+              tool: 'bash',
+              callID: `call-${streamSessionId}`,
+              state: {
+                status,
+                input: { command: 'printf "streaming tool\\n"' },
+                metadata: { output, description: 'Synthetic active tool call' },
               },
-              parts: [
-                { id: this.partId, type: 'text', text: '' },
-                {
-                  id: this.toolPartId,
-                  type: 'tool',
-                  tool: 'bash',
-                  callID: `call-${streamSessionId}`,
-                  state: {
-                    status: 'running',
-                    input: { command: 'printf "streaming tool\\n"' },
-                    metadata: {
-                      output: 'streaming tool boot',
-                      description: 'Synthetic active tool call',
-                    },
-                  },
-                },
-              ],
             },
           });
-          this.onmessage?.(new MessageEvent('message', { data: created }));
+          const created = Date.now();
+          this.emit({ type: 'stream.hello', protocol: 1, resumed: false, revision: 0 });
+          // The hub reports busy on the first running part of a turn.
+          this.emit({ type: 'session.status', status: 'busy', notice: null });
+          this.emit({
+            type: 'message.upserted',
+            message: { id: this.msgId, sessionId: streamSessionId, timeCreated: created, data: { role: 'assistant', time: { created } } },
+          });
+          this.emit({
+            type: 'part.upserted',
+            part: { id: this.partId, messageId: this.msgId, sessionId: streamSessionId, data: { type: 'text', text: '' } },
+            final: false,
+          });
+          this.emit({ type: 'part.upserted', part: toolPart('running', 'streaming tool boot'), final: false });
 
           let i = 0;
+          let offset = 0;
           const codeLine = 'const veryLongVariableName = 1234567890; // streamed code\n';
           this.timer = window.setInterval(() => {
             if (this.readyState === StreamingEventSource.CLOSED) return;
             i += 1;
-            const delta = JSON.stringify({
-              type: 'message.part.delta',
-              properties: {
-                sessionID: streamSessionId,
-                messageID: this.msgId,
-                partID: this.partId,
-                field: 'text',
-                // Large-ish markdown/code deltas to exercise the real
-                // text-part rendering path rather than a tiny token.
-                delta: i === 1
-                  ? 'Streaming response start\n\n```ts\n'
-                  : `${codeLine}${codeLine}${codeLine}// chunk-${i}\n`,
-              },
-            });
-            this.onmessage?.(new MessageEvent('message', { data: delta }));
+            // Large-ish markdown/code deltas to exercise the real
+            // text-part rendering path rather than a tiny token.
+            const text = i === 1
+              ? 'Streaming response start\n\n```ts\n'
+              : `${codeLine}${codeLine}${codeLine}// chunk-${i}\n`;
+            this.emit({ type: 'part.delta', messageId: this.msgId, partId: this.partId, field: 'text', offset, text, partType: 'text' });
+            offset += text.length;
 
             if (i % 2 === 0) {
-              const toolUpdate = JSON.stringify({
-                type: 'message.part.updated',
-                properties: {
-                  sessionID: streamSessionId,
-                  part: {
-                    id: this.toolPartId,
-                    messageID: this.msgId,
-                    sessionID: streamSessionId,
-                    type: 'tool',
-                    tool: 'bash',
-                    callID: `call-${streamSessionId}`,
-                    state: {
-                      status: i % 6 === 0 ? 'completed' : 'running',
-                      input: { command: 'printf "streaming tool\\n"' },
-                      metadata: {
-                        output: Array.from({ length: 8 }, (_, n) => `tool chunk ${i}.${n + 1}`).join('\n'),
-                        description: 'Synthetic active tool call',
-                      },
-                    },
-                  },
-                },
-              });
-              this.onmessage?.(new MessageEvent('message', { data: toolUpdate }));
+              const status = i % 6 === 0 ? 'completed' : 'running';
+              const output = Array.from({ length: 8 }, (_, n) => `tool chunk ${i}.${n + 1}`).join('\n');
+              this.emit({ type: 'part.upserted', part: toolPart(status, output), final: status === 'completed' });
             }
 
-            // Every few chunks emit message.updated too. In the real
-            // app this triggers the reconciliation/load path, which is
-            // one of the suspected contributors to navigation delay.
+            // Every few chunks restate the message with fresh token
+            // accounting, as the hub does on each step.
             if (i % 3 === 0) {
-              const updated = JSON.stringify({
-                type: 'message.updated',
-                properties: {
-                  sessionID: streamSessionId,
-                  info: {
-                    id: this.msgId,
-                    sessionID: streamSessionId,
-                    role: 'assistant',
-                    tokens: { output: i * 10 },
-                    time: { created: Date.now() - 100 },
-                  },
+              this.emit({
+                type: 'message.upserted',
+                message: {
+                  id: this.msgId,
+                  sessionId: streamSessionId,
+                  timeCreated: created,
+                  data: { role: 'assistant', tokens: { output: i * 10 }, time: { created } },
                 },
               });
-              this.onmessage?.(new MessageEvent('message', { data: updated }));
             }
           }, 40);
         });
@@ -410,6 +377,12 @@ async function installSlowStreamingEventSource(
       close() {
         this.readyState = StreamingEventSource.CLOSED;
         if (this.timer !== null) window.clearInterval(this.timer);
+      }
+
+      private emit(event: Record<string, unknown>) {
+        const seq = this.seq++;
+        const data = JSON.stringify({ v: 1, epoch: 'e2e', seq, sessionId: streamSessionId, platform: 'opencode', at: Date.now(), durability: 'live', event });
+        for (const cb of this.listeners.oce || []) cb(new MessageEvent('oce', { data, lastEventId: `e2e:${seq}` }));
       }
     }
 
@@ -440,8 +413,8 @@ async function setupStreamingSessionPage(page: import('@playwright/test').Page) 
   );
 
   await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), async (route) => {
-    // Add a little latency so repeated message.updated-triggered
-    // reconciliations overlap while the user clicks away.
+    // Add a little latency so any reconciliation overlaps while the
+    // user clicks away.
     await new Promise((resolve) => setTimeout(resolve, 150));
     await route.fulfill({
       status: 200,
@@ -502,7 +475,7 @@ test('shows loading skeleton while session data is loading', async ({ mockedPage
   await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}`), async (route) => {
     const url = route.request().url();
     if (url.includes('/agents') || url.includes('/commands') || url.includes('/models') ||
-        url.includes('/permissions') || url.includes('/questions') || url.includes('/events')) {
+        url.includes('/permissions') || url.includes('/questions') || url.includes('/stream')) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
       return;
     }
@@ -723,16 +696,15 @@ test('using main navigation while the current session is streaming redirects imm
 // ---------------------------------------------------------------------------
 //
 // Reproducer for the user-reported regression "tool/text blocks don't
-// show until refresh". A counter stream sends `message.part.delta`
-// events at 1-second intervals carrying the text "1", "2", ..., "5".
-// Each number must be visible in the DOM *while the stream is still
-// running* — never after a refresh, never only after the final event.
+// show until refresh". A counter stream sends `part.delta` events at
+// 1-second intervals carrying the text "1", "2", ..., "5". Each number
+// must be visible in the DOM *while the stream is still running* —
+// never after a refresh, never only after the final event.
 //
 // This is the most surgical streaming test we have: minimal payload,
-// no tool parts, no embedded `parts` snapshot, just deltas accruing
-// on a single text part. If text deltas don't render live, every
-// other streaming surface (tool output, edit diffs, etc.) breaks the
-// same way.
+// no tool parts, just deltas accruing on a single text part. If text
+// deltas don't render live, every other streaming surface (tool output,
+// edit diffs, etc.) breaks the same way.
 test('streaming counter renders each number live as deltas arrive', async ({ mockedPage: page }) => {
   const streamSessionId = MOCK_SESSION.id;
   const liveSession = mockSessionWithLiveConnection({
@@ -743,9 +715,9 @@ test('streaming counter renders each number live as deltas arrive', async ({ moc
 
   // Install a fake EventSource that emits one delta per second for
   // the numbers 1..5. The delta accumulates onto a single text part
-  // already created by `message.created`. After the last number,
-  // emit `session.idle` so the session transitions out of busy —
-  // but the test asserts each number appears *before* idle lands.
+  // already announced by `part.upserted`. After the last number, emit
+  // the idle edge and `turn.ended` so the session transitions out of
+  // busy — but the test asserts each number appears *before* idle lands.
   await page.addInitScript(({ streamSessionId }) => {
     class CounterEventSource {
       static CONNECTING = 0;
@@ -759,6 +731,7 @@ test('streaming counter renders each number live as deltas arrive', async ({ moc
       onmessage: ((evt: MessageEvent) => void) | null = null;
       listeners: Record<string, Array<(evt: Event) => void>> = {};
       private intervalId: number | null = null;
+      private seq = 0;
       private msgId = `msg-counter-${streamSessionId}`;
       private partId = `part-counter-${streamSessionId}`;
 
@@ -769,30 +742,27 @@ test('streaming counter renders each number live as deltas arrive', async ({ moc
           this.readyState = CounterEventSource.OPEN;
           this.onopen?.(new Event('open'));
 
-          if (!url.includes(`/api/session/${streamSessionId}/events`)) return;
+          if (!url.includes(`/api/session/${streamSessionId}/stream`)) return;
 
           // Seed an assistant message with one empty text part.
-          const created = JSON.stringify({
-            type: 'message.created',
-            properties: {
-              sessionID: streamSessionId,
-              info: {
-                id: this.msgId,
-                sessionID: streamSessionId,
-                role: 'assistant',
-                time: { created: Date.now() },
-              },
-              parts: [
-                { id: this.partId, type: 'text', text: '' },
-              ],
-            },
+          const created = Date.now();
+          this.emit({ type: 'stream.hello', protocol: 1, resumed: false, revision: 0 });
+          this.emit({ type: 'session.status', status: 'busy', notice: null });
+          this.emit({
+            type: 'message.upserted',
+            message: { id: this.msgId, sessionId: streamSessionId, timeCreated: created, data: { role: 'assistant', time: { created } } },
           });
-          this.onmessage?.(new MessageEvent('message', { data: created }));
+          this.emit({
+            type: 'part.upserted',
+            part: { id: this.partId, messageId: this.msgId, sessionId: streamSessionId, data: { type: 'text', text: '' } },
+            final: false,
+          });
 
           // Stream the counter: one delta per second carrying the
           // next number. The user must see each number appear in
           // real time, not at the end.
           let i = 0;
+          let offset = 0;
           const COUNT_TO = 5;
           // Use a short interval so the e2e doesn't take a full
           // 5 seconds. The contract we're testing is "delta lands
@@ -802,36 +772,25 @@ test('streaming counter renders each number live as deltas arrive', async ({ moc
           this.intervalId = window.setInterval(() => {
             if (this.readyState === CounterEventSource.CLOSED) return;
             i += 1;
-            const delta = JSON.stringify({
-              type: 'message.part.delta',
-              properties: {
-                sessionID: streamSessionId,
-                messageID: this.msgId,
-                partID: this.partId,
-                field: 'text',
-                // Each delta appends one number + space so the
-                // accumulated text is "1 2 3 4 5 ".
-                delta: `${i} `,
-              },
-            });
-            this.onmessage?.(new MessageEvent('message', { data: delta }));
+            // Each delta appends one number + space so the
+            // accumulated text is "1 2 3 4 5 ".
+            const text = `${i} `;
+            this.emit({ type: 'part.delta', messageId: this.msgId, partId: this.partId, field: 'text', offset, text, partType: 'text' });
+            offset += text.length;
             if (i >= COUNT_TO) {
               window.clearInterval(this.intervalId!);
               this.intervalId = null;
-              // Emit session.idle so the test exercises the
-              // end-of-turn refetch path too. Before the
-              // reconcile-mode fix, this refetch was a wholesale
-              // replace — when the mocked API response returned
-              // empty messages/parts (server hadn't caught up
-              // with the SSE stream), it wiped the streamed
+              // End the turn so the test exercises the end-of-turn
+              // reconcile too. Before the reconcile-mode fix, this
+              // refetch was a wholesale replace — when the mocked API
+              // response returned empty messages/parts (server hadn't
+              // caught up with the stream), it wiped the streamed
               // numbers from the DOM. The reconcile mode keeps
               // in-memory state alive when the server's response
               // doesn't yet include it.
-              const idle = JSON.stringify({
-                type: 'session.idle',
-                properties: { sessionID: streamSessionId },
-              });
-              this.onmessage?.(new MessageEvent('message', { data: idle }));
+              this.emit({ type: 'session.status', status: 'done', provisional: true, notice: null });
+              this.emit({ type: 'turn.ended', outcome: 'done', endedAt: Date.now(), latestMessageId: this.msgId });
+              this.emit({ type: 'session.status', status: 'done', notice: null });
             }
           }, INTERVAL_MS);
         });
@@ -844,6 +803,12 @@ test('streaming counter renders each number live as deltas arrive', async ({ moc
       close() {
         this.readyState = CounterEventSource.CLOSED;
         if (this.intervalId !== null) window.clearInterval(this.intervalId);
+      }
+
+      private emit(event: Record<string, unknown>) {
+        const seq = this.seq++;
+        const data = JSON.stringify({ v: 1, epoch: 'e2e', seq, sessionId: streamSessionId, platform: 'opencode', at: Date.now(), durability: 'live', event });
+        for (const cb of this.listeners.oce || []) cb(new MessageEvent('oce', { data, lastEventId: `e2e:${seq}` }));
       }
     }
 
@@ -915,6 +880,7 @@ test('long-running tool call renders partial output before completion', async ({
       onmessage: ((evt: MessageEvent) => void) | null = null;
       listeners: Record<string, Array<(evt: MessageEvent) => void>> = {};
       private timers: number[] = [];
+      private seq = 0;
 
       constructor(url: string) {
         this.url = url;
@@ -922,58 +888,43 @@ test('long-running tool call renders partial output before completion', async ({
           if (this.readyState === LongToolEventSource.CLOSED) return;
           this.readyState = LongToolEventSource.OPEN;
           this.onopen?.(new Event('open'));
-          if (!url.includes(`/api/session/${streamSessionId}/events`)) return;
+          if (!url.includes(`/api/session/${streamSessionId}/stream`)) return;
 
           const messageId = `msg-long-tool-${streamSessionId}`;
           const partId = `part-long-tool-${streamSessionId}`;
-
-          // Exercise the raw named `tool` channel shape: if the app
-          // drops this start event, no tool block is visible until
-          // the completed snapshot arrives at the end of the command.
-          this.dispatchNamed('tool', {
+          const command = 'for i in 1 2 3 4 5; do echo tool-second-$i; sleep 1; done';
+          const toolPart = (status: string, output: string) => ({
             id: partId,
-            messageID: messageId,
-            sessionID: streamSessionId,
-            type: 'tool',
-            tool: 'bash',
-            state: {
-              status: 'running',
-              input: { command: 'for i in 1 2 3 4 5; do echo tool-second-$i; sleep 1; done' },
-              output: '',
-            },
+            messageId,
+            sessionId: streamSessionId,
+            data: { type: 'tool', tool: 'bash', state: { status, input: { command }, output } },
           });
 
+          // If the app drops this running upsert, no tool block is
+          // visible until the completed upsert at the end of the command.
+          this.emit({ type: 'stream.hello', protocol: 1, resumed: false, revision: 0 });
+          this.emit({ type: 'session.status', status: 'busy', notice: null });
+          this.emit({ type: 'part.upserted', part: toolPart('running', ''), final: false });
+
+          let offset = 0;
           for (let i = 1; i <= 5; i += 1) {
             this.timers.push(window.setTimeout(() => {
               if (this.readyState === LongToolEventSource.CLOSED) return;
-              this.dispatchDefault({
-                type: 'message.part.delta',
-                properties: {
-                  sessionID: streamSessionId,
-                  messageID: messageId,
-                  partID: partId,
-                  field: 'state.output',
-                  delta: `tool-second-${i}\n`,
-                },
-              });
+              const text = `tool-second-${i}\n`;
+              this.emit({ type: 'part.delta', messageId, partId, field: 'tool.output', offset, text, partType: 'tool' });
+              offset += text.length;
             }, i * 1_000));
           }
 
           this.timers.push(window.setTimeout(() => {
             if (this.readyState === LongToolEventSource.CLOSED) return;
-            this.dispatchNamed('message.part.updated', {
-              id: partId,
-              messageID: messageId,
-              sessionID: streamSessionId,
-              type: 'tool',
-              tool: 'bash',
-              state: {
-                status: 'completed',
-                input: { command: 'for i in 1 2 3 4 5; do echo tool-second-$i; sleep 1; done' },
-                output: 'tool-second-1\ntool-second-2\ntool-second-3\ntool-second-4\ntool-second-5\n',
-              },
+            this.emit({
+              type: 'part.upserted',
+              part: toolPart('completed', 'tool-second-1\ntool-second-2\ntool-second-3\ntool-second-4\ntool-second-5\n'),
+              final: true,
             });
-            this.dispatchDefault({ type: 'session.idle', properties: { sessionID: streamSessionId } });
+            this.emit({ type: 'session.status', status: 'done', provisional: true, notice: null });
+            this.emit({ type: 'turn.ended', outcome: 'done', endedAt: Date.now() });
           }, 5_500));
         });
       }
@@ -988,14 +939,10 @@ test('long-running tool call renders partial output before completion', async ({
         this.timers = [];
       }
 
-      private dispatchDefault(payload: Record<string, unknown>) {
-        const event = new MessageEvent('message', { data: JSON.stringify(payload) });
-        this.onmessage?.(event);
-      }
-
-      private dispatchNamed(name: string, payload: Record<string, unknown>) {
-        const event = new MessageEvent(name, { data: JSON.stringify(payload) });
-        for (const cb of this.listeners[name] || []) cb(event);
+      private emit(event: Record<string, unknown>) {
+        const seq = this.seq++;
+        const data = JSON.stringify({ v: 1, epoch: 'e2e', seq, sessionId: streamSessionId, platform: 'opencode', at: Date.now(), durability: 'live', event });
+        for (const cb of this.listeners.oce || []) cb(new MessageEvent('oce', { data, lastEventId: `e2e:${seq}` }));
       }
     }
 
@@ -1105,8 +1052,8 @@ test('rapid session switching always shows the correct session thread', async ({
     }),
   );
 
-  await page.route(new RegExp(`/api/session/${SESSION_A}/events`), (route) => route.abort());
-  await page.route(new RegExp(`/api/session/${SESSION_B}/events`), (route) => route.abort());
+  await page.route(new RegExp(`/api/session/${SESSION_A}/stream`), (route) => route.abort());
+  await page.route(new RegExp(`/api/session/${SESSION_B}/stream`), (route) => route.abort());
 
   await page.route('/api/sessions*', (route) =>
     route.fulfill({
@@ -1182,9 +1129,9 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   // Track whether the user has navigated away from session A so the
   // mock can serve different bodies on initial-load vs reconcile-after-
   // return. A boolean flag is used instead of a request counter because
-  // the useSession hook fires multiple fetches on the initial visit
-  // (the initial doFetch plus a reconcile triggered by the SSE
-  // onopen handler). A counter-based check (`=== 1`) would let the
+  // the useSession hook may fire multiple fetches on the initial visit
+  // (the initial doFetch plus any reconcile the stream asks for). A
+  // counter-based check (`=== 1`) would let the
   // second fetch serve the reconcile snapshot before the user ever
   // leaves, causing the snapshot's text to collide with in-flight SSE
   // deltas and produce duplicated or missing tokens.
@@ -1261,8 +1208,8 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
     });
   });
 
-  // Session B's SSE endpoint: empty stream, kept open.
-  await page.route(new RegExp(`/api/session/${SESSION_B}/events`), (route) =>
+  // Session B's stream endpoint: empty stream, kept open.
+  await page.route(new RegExp(`/api/session/${SESSION_B}/stream`), (route) =>
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
@@ -1283,9 +1230,9 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   // two phases, but is driven by the test step-by-step rather than by
   // wall-clock timers:
   //   1st connection (visit A): "1 " "2 " "3 " "4 " "5 "
-  //   2nd connection (return to A): "6 7 "
-  // No replay of 4/5 on reconnect — that mirrors OpenCode's behaviour
-  // (its /event stream is live-only, no buffering).
+  //   2nd connection (return to A): "6 7 " at offset 10
+  // No event replay of 4/5 on the cold reconnect: the return opens without a
+  // cursor, so hello restates the current live prefix before new deltas.
   //
   // The previous timer-based version fired phase 2 on a fixed setTimeout
   // after the second connection opened, independent of when the reconcile
@@ -1300,8 +1247,9 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
       // Resolves once an A-targeting EventSource is open and ready to
       // receive pumped deltas. Re-armed for each new connection.
       ready: Promise<void>;
-      // Emit one message.created (first connection only) + the given
-      // deltas through the currently-open A EventSource.
+      // Emit the message and its empty text part (first connection
+      // only) + the given offset-anchored deltas through the
+      // currently-open A EventSource.
       pump: (deltas: string[], opts: { emitCreated: boolean }) => void;
     };
 
@@ -1312,6 +1260,16 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
 
     let activeA: GapStreamingEventSource | null = null;
     const setActiveA = (src: GapStreamingEventSource | null) => { activeA = src; };
+    // The server's view of the part: offsets continue across connections.
+    let seq = 0;
+    let offset = 0;
+    let liveText = '';
+    let messageCreatedAt = 0;
+    const emit = (src: GapStreamingEventSource, event: Record<string, unknown>) => {
+      seq += 1;
+      const data = JSON.stringify({ v: 1, epoch: 'e2e', seq, sessionId: sessionAId, platform: 'opencode', at: Date.now(), durability: 'live', event });
+      for (const cb of src.listeners.oce || []) cb(new MessageEvent('oce', { data, lastEventId: `e2e:${seq}` }));
+    };
 
     const bridge: Bridge = {
       ready: new Promise<void>((res) => { resolveReady = res; }),
@@ -1319,33 +1277,22 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
         const src = activeA;
         if (!src || src.readyState !== GapStreamingEventSource.OPEN) return;
         if (emitCreated) {
-          const created = JSON.stringify({
-            type: 'message.created',
-            properties: {
-              sessionID: sessionAId,
-              info: {
-                id: msgId,
-                sessionID: sessionAId,
-                role: 'assistant',
-                time: { created: Date.now() },
-              },
-              parts: [{ id: partId, type: 'text', text: '' }],
-            },
+          const created = Date.now();
+          messageCreatedAt = created;
+          emit(src, {
+            type: 'message.upserted',
+            message: { id: msgId, sessionId: sessionAId, timeCreated: created, data: { role: 'assistant', time: { created } } },
           });
-          src.onmessage?.(new MessageEvent('message', { data: created }));
+          emit(src, {
+            type: 'part.upserted',
+            part: { id: partId, messageId: msgId, sessionId: sessionAId, data: { type: 'text', text: '' } },
+            final: false,
+          });
         }
-        for (const deltaText of deltas) {
-          const delta = JSON.stringify({
-            type: 'message.part.delta',
-            properties: {
-              sessionID: sessionAId,
-              messageID: msgId,
-              partID: partId,
-              field: 'text',
-              delta: deltaText,
-            },
-          });
-          src.onmessage?.(new MessageEvent('message', { data: delta }));
+        for (const text of deltas) {
+          emit(src, { type: 'part.delta', messageId: msgId, partId, field: 'text', offset, text, partType: 'text' });
+          offset += text.length;
+          liveText += text;
         }
       },
     };
@@ -1365,7 +1312,7 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
 
       constructor(url: string) {
         this.url = url;
-        this.isATarget = url.includes(`/api/session/${sessionAId}/events`);
+        this.isATarget = url.includes(`/api/session/${sessionAId}/stream`);
         // Register as the active A connection synchronously; the consumer
         // only pumps after `bridge.ready` resolves (on open below).
         if (this.isATarget) setActiveA(this);
@@ -1379,6 +1326,16 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
           this.readyState = GapStreamingEventSource.OPEN;
           this.onopen?.(new Event('open'));
           if (this.isATarget) {
+            // A real cold hello always includes the server's current-turn
+            // overlay, including content already covered by queued deltas.
+            emit(this, { type: 'stream.hello', protocol: 1, resumed: false, revision: 0, overlay: {
+              status: { type: 'session.status', status: 'busy' }, liveConnection: true,
+              prompts: [], judge: [], background: { type: 'background.changed', count: 0, tasks: [] },
+              inflight: {
+                messages: messageCreatedAt ? [{ id: msgId, sessionId: sessionAId, timeCreated: messageCreatedAt, data: { role: 'assistant' } }] : [],
+                parts: messageCreatedAt ? [{ id: partId, messageId: msgId, sessionId: sessionAId, data: { type: 'text', text: liveText } }] : [],
+              },
+            } });
             resolveReady?.();
             resolveReady = null;
           }

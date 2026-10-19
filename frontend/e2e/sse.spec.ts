@@ -1,20 +1,20 @@
 /**
- * e2e: SSE-driven live session updates — no real LLM required
+ * e2e: conversation-stream-driven live session updates — no real LLM required
  *
- * The SSE stream is mocked at the HTTP layer via Playwright route
- * interception. Events are delivered as a pre-built string body and
- * the browser's EventSource processes them normally, exercising the
- * full `handleParsedEvent` dispatch path in `SessionDetail.tsx`.
+ * The conversation stream (`/api/session/{id}/stream`) is mocked at the
+ * HTTP layer via Playwright route interception. OCE envelopes are
+ * delivered as a pre-built SSE body and the browser's EventSource
+ * processes them normally, exercising the full stream client and
+ * conversation reducer.
  *
  * Covers:
- *  - `session.status` → `busy` updates the sidebar status dot
- *  - `message.created` (user) → user message card appears in thread
- *  - `message.created` (assistant, finish=end_turn) → assistant card appears
- *  - `session.idle` after assistant message → stop button disappears
- *  - `permission.asked` → PermissionPrompt replaces the composer
- *  - `permission.replied` → PermissionPrompt is dismissed
- *  - `question.asked` → QuestionPrompt replaces the composer
- *  - `question.rejected` → QuestionPrompt is dismissed
+ *  - `message.upserted` + `part.upserted` (user) → user message card appears in thread
+ *  - `message.upserted` (assistant, finish=end_turn) → assistant card appears
+ *  - an idle `session.status` → no stop button
+ *  - `prompt.asked` (permission) → PermissionPrompt replaces the composer
+ *  - `prompt.resolved` (permission) → PermissionPrompt is dismissed
+ *  - `prompt.asked` (question) → QuestionPrompt replaces the composer
+ *  - `prompt.resolved` (question rejected) → QuestionPrompt is dismissed
  *  - Multiple back-to-back messages accumulate in the thread
  *  - Messages that arrive while switched to another session are shown on return
  */
@@ -24,9 +24,11 @@ import {
   expect,
   MOCK_SESSION,
   MOCK_SESSION_2,
-  mockSse,
-  sseMessage,
-  sseEvent,
+  mockStream,
+  oceFrame,
+  oceHello,
+  oceMessage,
+  promptAsked,
   mockSessionWithLiveConnection,
 } from './fixtures';
 
@@ -68,23 +70,23 @@ async function setupLivePage(page: import('@playwright/test').Page) {
 // ---------------------------------------------------------------------------
 
 test('SSE user message appears in the thread', async ({ mockedPage: page }) => {
-  const { event } = sseMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Hello from SSE user' });
-  await mockSse(page, MOCK_SESSION.id, [event]);
+  const { events } = oceMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Hello from SSE user' });
+  await mockStream(page, MOCK_SESSION.id, events);
   await setupLivePage(page);
 
   await expect(page.locator('.oc-msg-user', { hasText: 'Hello from SSE user' })).toBeVisible({ timeout: 5_000 });
 });
 
 test('SSE assistant message with finish=end_turn appears in thread', async ({ mockedPage: page }) => {
-  const { event: userEv } = sseMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Hello' });
-  const { event: asstEv } = sseMessage({
+  const { events: userEv } = oceMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Hello' });
+  const { events: asstEv } = oceMessage({
     sessionId: MOCK_SESSION.id,
     role: 'assistant',
     text: 'SSE assistant reply here',
     finish: 'end_turn',
   });
-  // Omit session.idle to prevent loadNow() from wiping SSE messages via reconciliation
-  await mockSse(page, MOCK_SESSION.id, [userEv, asstEv]);
+  // Omit turn.ended to prevent the end-of-turn reconcile from racing the stream
+  await mockStream(page, MOCK_SESSION.id, [...userEv, ...asstEv]);
   await setupLivePage(page);
 
   await expect(
@@ -93,10 +95,10 @@ test('SSE assistant message with finish=end_turn appears in thread', async ({ mo
 });
 
 test('multiple SSE messages accumulate in order', async ({ mockedPage: page }) => {
-  const { event: ev1 } = sseMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'First message' });
-  const { event: ev2 } = sseMessage({ sessionId: MOCK_SESSION.id, role: 'assistant', text: 'Second message', finish: 'end_turn' });
-  const { event: ev3 } = sseMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Third message' });
-  await mockSse(page, MOCK_SESSION.id, [ev1, ev2, ev3]);
+  const { events: ev1 } = oceMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'First message' });
+  const { events: ev2 } = oceMessage({ sessionId: MOCK_SESSION.id, role: 'assistant', text: 'Second message', finish: 'end_turn' });
+  const { events: ev3 } = oceMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Third message' });
+  await mockStream(page, MOCK_SESSION.id, [...ev1, ...ev2, ...ev3]);
   await setupLivePage(page);
 
   await expect(page.locator('.oc-msg-user, .oc-msg-assistant').first()).toBeVisible({ timeout: 5_000 });
@@ -106,9 +108,9 @@ test('multiple SSE messages accumulate in order', async ({ mockedPage: page }) =
   await expect(page.locator('.oc-msg-user, .oc-msg-assistant').filter({ hasText: 'Third message' })).toBeVisible();
 });
 
-test('stop button disappears after session.idle SSE event', async ({ mockedPage: page }) => {
+test('stop button disappears after an idle session.status event', async ({ mockedPage: page }) => {
   // Send a user message event (no finish → running)
-  const { event: userEv } = sseMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Running…' });
+  const { events: userEv } = oceMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Running…' });
   // Stub the SSE stream with a gate we can release. The promise side is
   // unused — we only need the resolver — but it's kept readable rather than
   // dropping it into a bare `new Promise(...)` expression.
@@ -116,12 +118,12 @@ test('stop button disappears after session.idle SSE event', async ({ mockedPage:
   void new Promise<void>((r) => { sseResolve = r; });
 
   await page.route(
-    new RegExp(`/api/session/${MOCK_SESSION.id}/events`),
+    new RegExp(`/api/session/${MOCK_SESSION.id}/stream`),
     async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
-        body: userEv,
+        body: [oceHello(), ...userEv].map((event, seq) => oceFrame(MOCK_SESSION.id, seq, event)).join(''),
       });
     },
   );
@@ -144,9 +146,11 @@ test('stop button disappears after session.idle SSE event', async ({ mockedPage:
 });
 
 test('stop button absent when session starts idle', async ({ mockedPage: page }) => {
-  // Deliver only idle event — no running message
-  await mockSse(page, MOCK_SESSION.id, [
-    sseEvent({ type: 'session.idle', properties: { sessionID: MOCK_SESSION.id } }),
+  // Deliver only the idle edge (provisional, then settled) — no running message
+  await mockStream(page, MOCK_SESSION.id, [
+    { type: 'session.status', status: 'done', provisional: true, notice: null },
+    { type: 'turn.ended', outcome: 'done', endedAt: Date.now() },
+    { type: 'session.status', status: 'done', notice: null },
   ]);
   await setupLivePage(page);
   // After loading, no stop button should be present
@@ -157,45 +161,30 @@ test('stop button absent when session starts idle', async ({ mockedPage: page })
 // Permission prompt via SSE
 // ---------------------------------------------------------------------------
 
-test('permission.asked SSE event shows the PermissionPrompt', async ({ mockedPage: page }) => {
-  // extractPendingPermission expects: { type, properties: { id, permission, patterns } }
-  const permissionEvent = sseEvent({
-    type: 'permission.asked',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      id: 'perm-001',
-      requestID: 'perm-001',
-      permission: 'Read file /etc/passwd',
-      patterns: [],
-    },
+test('prompt.asked permission event shows the PermissionPrompt', async ({ mockedPage: page }) => {
+  const permissionEvent = promptAsked(MOCK_SESSION.id, {
+    id: 'perm-001',
+    kind: 'permission',
+    permission: { permission: 'Read file /etc/passwd', patterns: [] },
   });
-  await mockSse(page, MOCK_SESSION.id, [permissionEvent]);
+  await mockStream(page, MOCK_SESSION.id, [permissionEvent]);
   await setupLivePage(page);
 
   await expect(page.locator('[role="dialog"][aria-label="Permission required"]')).toBeVisible({ timeout: 5_000 });
   await expect(page.locator('.oc-permission-desc')).toContainText('/etc/passwd');
 });
 
-test('permission.replied SSE event dismisses the PermissionPrompt', async ({ mockedPage: page }) => {
+test('prompt.resolved permission event dismisses the PermissionPrompt', async ({ mockedPage: page }) => {
   const permId = 'perm-002';
-  const askEvent = sseEvent({
-    type: 'permission.asked',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      id: permId,
-      requestID: permId,
-      permission: 'Execute shell command',
-      patterns: [],
-    },
+  const askEvent = promptAsked(MOCK_SESSION.id, {
+    id: permId,
+    kind: 'permission',
+    permission: { permission: 'Execute shell command', patterns: [] },
   });
-  const replyEvent = sseEvent({
-    type: 'permission.replied',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      requestID: permId,
-    },
-  });
-  await mockSse(page, MOCK_SESSION.id, [askEvent, replyEvent]);
+  await mockStream(page, MOCK_SESSION.id, [
+    askEvent,
+    { type: 'prompt.resolved', promptId: permId, kind: 'permission', outcome: 'once', by: 'external' },
+  ]);
   await setupLivePage(page);
 
   // Prompt should be gone (replied immediately)
@@ -206,14 +195,11 @@ test('permission.replied SSE event dismisses the PermissionPrompt', async ({ moc
 // Question prompt via SSE
 // ---------------------------------------------------------------------------
 
-test('question.asked SSE event shows the QuestionPrompt', async ({ mockedPage: page }) => {
-  // extractPendingQuestion expects: { type, properties: { id/requestID/requestId, sessionID, questions } }
-  const questionEvent = sseEvent({
-    type: 'question.asked',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      requestID: 'q-001',
-      requestId: 'q-001',
+test('prompt.asked question event shows the QuestionPrompt', async ({ mockedPage: page }) => {
+  const questionEvent = promptAsked(MOCK_SESSION.id, {
+    id: 'q-001',
+    kind: 'question',
+    question: {
       questions: [
         {
           question: 'Which approach would you like?',
@@ -228,7 +214,7 @@ test('question.asked SSE event shows the QuestionPrompt', async ({ mockedPage: p
       ],
     },
   });
-  await mockSse(page, MOCK_SESSION.id, [questionEvent]);
+  await mockStream(page, MOCK_SESSION.id, [questionEvent]);
   await setupLivePage(page);
 
   await expect(page.locator('[role="dialog"][aria-label="Pending question"]')).toBeVisible({ timeout: 5_000 });
@@ -237,25 +223,17 @@ test('question.asked SSE event shows the QuestionPrompt', async ({ mockedPage: p
   await expect(page.locator('.oc-question-opt-label', { hasText: 'Clean path' })).toBeVisible();
 });
 
-test('question.rejected SSE event dismisses the QuestionPrompt', async ({ mockedPage: page }) => {
+test('prompt.resolved question rejection dismisses the QuestionPrompt', async ({ mockedPage: page }) => {
   const reqId = 'q-002';
-  const askEvent = sseEvent({
-    type: 'question.asked',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      requestID: reqId,
-      requestId: reqId,
-      questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes', description: '' }] }],
-    },
+  const askEvent = promptAsked(MOCK_SESSION.id, {
+    id: reqId,
+    kind: 'question',
+    question: { questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes', description: '' }] }] },
   });
-  const rejectEvent = sseEvent({
-    type: 'question.rejected',
-    properties: {
-      sessionID: MOCK_SESSION.id,
-      requestId: reqId,
-    },
-  });
-  await mockSse(page, MOCK_SESSION.id, [askEvent, rejectEvent]);
+  await mockStream(page, MOCK_SESSION.id, [
+    askEvent,
+    { type: 'prompt.resolved', promptId: reqId, kind: 'question', outcome: 'reject', by: 'external' },
+  ]);
   await setupLivePage(page);
 
   await expect(page.locator('[role="dialog"][aria-label="Pending question"]')).toHaveCount(0, { timeout: 3_000 });
@@ -375,10 +353,10 @@ test('messages that arrive while on another session are shown on return', async 
   // via exponential backoff (first delay ≈ 500 ms). Because we navigate
   // to session B before that timer fires, the cleanup cancels it and no
   // extra doFetch is triggered. This keeps sessionAFetchCount accurate.
-  await page.route(new RegExp(`/api/session/${SESSION_A}/events`), (route) =>
+  await page.route(new RegExp(`/api/session/${SESSION_A}/stream`), (route) =>
     route.abort(),
   );
-  await mockSse(page, SESSION_B, []);
+  await mockStream(page, SESSION_B, []);
 
   await page.route('/api/sessions*', (route) =>
     route.fulfill({

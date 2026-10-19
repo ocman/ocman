@@ -7,32 +7,30 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 // quotaActionReasons are retry action reasons that mean the account is
-// out of tokens, however soon OpenCode plans to retry.
+// out of tokens, however soon the platform plans to retry.
 var quotaActionReasons = map[string]bool{"account_rate_limit": true, "free_tier_limit": true}
 
-// onSessionRetry cools the session's provider when a retry parks longer
+// OnSessionRetry cools the session's provider when a retry parks longer
 // than the patience threshold or names a quota wall. A short backoff is
-// OpenCode's business.
-func (s *Module) OnSessionRetry(sessionID string, nextAttempt int64, actionReason string) {
+// the platform's business.
+func (s *Module) OnSessionRetry(platformID, sessionID string, nextAttempt int64, actionReason string) {
 	var wait time.Duration
 	if nextAttempt > 0 {
 		next := time.UnixMilli(nextAttempt)
 		// ponytail: one entry per retrying session, dropped on its idle edge.
-		s.retryNext.Store(fallKey(string(opencode.PlatformID), sessionID), next)
+		s.retryNext.Store(fallKey(platformID, sessionID), next)
 		wait = time.Until(next)
 	}
 	ctx := context.Background()
 	if patience, _ := s.CooldownTimes(ctx); !quotaActionReasons[actionReason] && wait <= patience {
 		return
 	}
-	if msg, ok := s.latestAssistant(ctx, string(opencode.PlatformID), sessionID); ok {
+	if msg, ok := s.latestAssistant(ctx, platformID, sessionID); ok {
 		s.recordCooldown(ctx, msg.ProviderID, wait)
-		s.abortParkedRetry(ctx, sessionID, msg.ProviderID)
+		s.abortParkedRetry(ctx, platformID, sessionID, msg.ProviderID)
 	}
 }
 

@@ -1,0 +1,8 @@
+{"session":"cc_1"}
+{"id":"41","data":{"type":"session.status","properties":{"sessionID":"cc_1","status":{"type":"busy"}}}}
+{"id":"42","data":{"type":"message.part.updated","properties":{"part":{"id":"prt_msg_t_0000","messageID":"msg_t","sessionID":"cc_1","type":"tool","tool":"task","callID":"toolu_spike0010","state":{"status":"running","input":{"description":"Spike","prompt":"go"},"title":"Spike","metadata":{"sessionId":"agent-a000000000000000d"},"time":{"start":1700000200000}}}}}}
+{"id":"43","data":{"type":"ocman.session.background","properties":{"sessionID":"cc_1","count":1,"tasks":[{"id":"bash_1","description":"npm run watch"}]}}}
+{"id":"44","data":{"type":"message.part.updated","properties":{"part":{"id":"prt_msg_t_0000","messageID":"msg_t","sessionID":"cc_1","type":"tool","tool":"task","callID":"toolu_spike0010","state":{"status":"completed","input":{"description":"Spike","prompt":"go"},"output":"SUBAGENT_DONE","title":"Spike","metadata":{"sessionId":"agent-a000000000000000d","output":"SUBAGENT_DONE"},"time":{"start":1700000200000,"end":1700000200900}}}}}}
+{"id":"45","data":{"type":"message.part.updated","properties":{"part":{"id":"prt_msg_x_0001","messageID":"msg_x","sessionID":"cc_1","type":"tool","tool":"write","callID":"toolu_w","state":{"status":"completed","input":{"filePath":"/repo/new.txt","content":"x"},"output":"ok","title":"new.txt","metadata":{"output":"ok"},"time":{"start":1700000201000,"end":1700000201100}}}}}}
+{"id":"46","data":{"type":"ocman.session.background","properties":{"sessionID":"cc_1","count":0,"tasks":[]}}}
+{"id":"47","data":{"type":"session.idle","properties":{"sessionID":"cc_1"}}}

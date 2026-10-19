@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/historyjournal"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
 
@@ -19,14 +21,22 @@ const HookTimeout = time.Second
 // ocman's loopback listener at addr. It never fails or blocks Claude:
 // errors are dropped and the whole call returns within timeout.
 func RunHook(addr, event string, stdin io.Reader, timeout time.Duration) {
+	HandleHook(addr, "", event, true, stdin, timeout)
+}
+
+// HandleHook reads Claude's hook input once, appends history events to the
+// journal in every session, and posts status to addr only when managed. Like
+// RunHook it never fails or blocks Claude beyond timeout.
+func HandleHook(addr, journal, event string, managed bool, stdin io.Reader, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		id := hookSessionID(json.NewDecoder(stdin))
-		if id != "" {
-			body, _ := json.Marshal(providerprotocol.HookEvent{Event: event, SessionID: id,
+		in := readHookInput(stdin)
+		recordHook(journal, event, in)
+		if managed && addr != "" && in.SessionID != "" {
+			body, _ := json.Marshal(providerprotocol.HookEvent{Event: event, SessionID: in.SessionID,
 				PID: hookClaudePID(ctx), Managed: os.Getenv("OCMAN_MANAGED") == "1"})
 			if req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/hook", bytes.NewReader(body)); err == nil {
 				req.Header.Set("Content-Type", "application/json")
@@ -44,26 +54,57 @@ func RunHook(addr, event string, stdin io.Reader, timeout time.Duration) {
 	}
 }
 
-// hookSessionID reads only up to session_id: tool hooks carry the whole
-// tool input, which can be large.
-func hookSessionID(dec *json.Decoder) string {
+// RecordHook appends a history record for event when it is a history hook
+// and returns the input's session id.
+func RecordHook(journal, event string, stdin io.Reader) string {
+	in := readHookInput(stdin)
+	recordHook(journal, event, in)
+	return in.SessionID
+}
+
+func recordHook(journal, event string, in hookInput) {
+	if journal == "" || in.SessionID == "" || !slices.Contains(HistoryHookEvents, event) {
+		return
+	}
+	// Only the pointer to the transcript is recorded: the transcript itself
+	// is Claude's durable, append-only record of the conversation.
+	data, _ := json.Marshal(map[string]string{"transcriptPath": in.TranscriptPath, "cwd": in.Cwd})
+	_ = historyjournal.Append(journal, "claudecode-"+time.Now().UTC().Format("20060102")+".jsonl",
+		historyjournal.Record{Time: time.Now().UnixMilli(), Session: in.SessionID, Type: event, Data: data})
+}
+
+type hookInput struct{ SessionID, TranscriptPath, Cwd string }
+
+// readHookInput reads only the few top-level fields ocman needs: tool hooks
+// carry whole tool inputs and outputs, which are skipped, not retained.
+func readHookInput(r io.Reader) hookInput {
+	var in hookInput
+	dec := json.NewDecoder(r)
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
-		return ""
+		return hookInput{}
 	}
 	for dec.More() {
 		key, err := dec.Token()
 		if err != nil {
-			return ""
+			return hookInput{}
 		}
-		if key == "session_id" {
-			var id string
-			_ = dec.Decode(&id)
-			return id
+		var target *string
+		switch key {
+		case "session_id":
+			target = &in.SessionID
+		case "transcript_path":
+			target = &in.TranscriptPath
+		case "cwd":
+			target = &in.Cwd
+		}
+		if target != nil {
+			_ = dec.Decode(target)
+			continue
 		}
 		var skip json.RawMessage
 		if dec.Decode(&skip) != nil {
-			return ""
+			return hookInput{}
 		}
 	}
-	return ""
+	return in
 }

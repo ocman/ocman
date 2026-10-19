@@ -438,6 +438,8 @@ export interface PartData {
       ocmanUserExecutedShell?: boolean;
     };
     attachments?: FilePart[];
+    /** Streamed tool arguments (OCE `tool.input` deltas) before `input` is parsed. */
+    raw?: string;
   };
   file?: string;
   path?: string;

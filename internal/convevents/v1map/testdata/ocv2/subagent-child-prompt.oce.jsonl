@@ -1,0 +1,7 @@
+{"v":1,"epoch":"golden","seq":1,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":null}}
+{"v":1,"epoch":"golden","seq":2,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"durable","event":{"type":"child.upserted","child":{"id":"c1","parentId":"s1","title":"explore subagent","timeCreated":5,"timeUpdated":6}}}
+{"v":1,"epoch":"golden","seq":3,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"child.status","childId":"c1","status":"busy"}}
+{"v":1,"epoch":"golden","seq":4,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"prompt.asked","prompt":{"id":"per_c1","kind":"permission","sessionId":"c1","askedAt":1700000000000,"permission":{"permission":"bash","patterns":["rm x"],"always":["rm *"],"metadata":{"command":"rm x"}}}}}
+{"v":1,"epoch":"golden","seq":5,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"prompt.resolved","promptId":"per_c1","kind":"permission","outcome":"reject","by":"user"}}
+{"v":1,"epoch":"golden","seq":6,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"child.status","childId":"c1","status":"done"}}
+{"v":1,"epoch":"golden","seq":7,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"done","provisional":true,"notice":null}}

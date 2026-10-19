@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -28,9 +27,9 @@ func (s *Server) onPromptNeedsUser(platform, session, kind, request string) {
 	s.conversationPromptNeedsUser(platform, session, kind, request)
 }
 
-func (s *Server) onAgentPromptResolved(session, kind, request string) {
+func (s *Server) onAgentPromptResolved(platform, session, kind, request string) {
 	s.recordAgentWait(func(ctx context.Context) error {
-		return s.stateDB.ResolveAgentUserWait(ctx, string(opencode.PlatformID), session, kind, request, time.Now().UnixMilli())
+		return s.stateDB.ResolveAgentUserWait(ctx, platform, session, kind, request, time.Now().UnixMilli())
 	})
 }
 

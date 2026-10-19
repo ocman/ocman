@@ -47,13 +47,13 @@ func TestBroadcastSessionChangedReplyUsesServerLifetime(t *testing.T) {
 	stopped, cancel := context.WithCancel(t.Context())
 	cancel()
 	srv.lifetimeCtx = stopped
-	srv.broadcastSessionChanged("s1")
+	srv.broadcastSessionChanged("opencode", "s1")
 	if replied() {
 		t.Fatal("a stopped server recorded a conversation reply")
 	}
 
 	srv.lifetimeCtx = t.Context()
-	srv.broadcastSessionChanged("s1")
+	srv.broadcastSessionChanged("opencode", "s1")
 	if !replied() {
 		t.Fatal("a running server did not record the reply")
 	}

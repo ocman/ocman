@@ -1,0 +1,13 @@
+{"session":"cc_1"}
+{"id":"11","data":{"type":"session.status","properties":{"sessionID":"cc_1","status":{"type":"busy"}}}}
+{"id":"12","data":{"type":"message.updated","properties":{"info":{"id":"msg_p","sessionID":"cc_1","role":"assistant","time":{"created":1700000100000},"providerID":"anthropic","modelID":"haiku","mode":"","agent":"","cost":0,"tokens":{"input":3,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}}}}
+{"id":"13","data":{"type":"message.part.updated","properties":{"part":{"id":"prt_msg_p_0000","messageID":"msg_p","sessionID":"cc_1","type":"reasoning","text":"hmm"}}}}
+{"id":"14","data":{"type":"message.part.updated","properties":{"part":{"id":"prt_msg_p_0001","messageID":"msg_p","sessionID":"cc_1","type":"text","text":"SPIKE"}}}}
+{"id":"15","data":{"type":"message.part.updated","properties":{"part":{"id":"prt_msg_p_0001","messageID":"msg_p","sessionID":"cc_1","type":"text","text":"SPIKE_OK","time":{"start":1700000100500,"end":1700000100500}}}}}
+{"id":"16","data":{"type":"permission.asked","properties":{"id":"toolu_perm1","sessionID":"cc_1","permission":"bash","patterns":["ls"],"metadata":{"command":"ls"}}}}
+{"id":"17","data":{"type":"permission.replied","properties":{"sessionID":"cc_1","requestID":"toolu_perm1","reply":"reject","reason":"cancelled"}}}
+{"id":"18","data":{"type":"session.status","properties":{"sessionID":"cc_1","status":{"type":"limited","resetsAt":1700003600000}}}}
+{"id":"19","data":{"type":"session.idle","properties":{"sessionID":"cc_1"}}}
+{"id":"20","data":{"type":"session.status","properties":{"sessionID":"cc_1","status":{"type":"busy"}}}}
+{"id":"21","data":{"type":"session.status","properties":{"sessionID":"cc_1","status":{"type":"error"}}}}
+{"id":"22","data":{"type":"session.idle","properties":{"sessionID":"cc_1"}}}

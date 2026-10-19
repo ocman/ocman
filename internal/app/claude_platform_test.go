@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -199,8 +200,9 @@ func getJSON(t *testing.T, url string, out any) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(out) != nil {
-		t.Fatalf("GET %s = %d", url, resp.StatusCode)
+	body, readErr := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || readErr != nil || json.Unmarshal(body, out) != nil {
+		t.Fatalf("GET %s = %d: %s", url, resp.StatusCode, body)
 	}
 }
 
@@ -372,7 +374,7 @@ func TestClaudeComposerStart(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/session/"+started.SessionID+"/events?platform=claudecode", nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/session/"+started.SessionID+"/stream?platform=claudecode", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -382,7 +384,8 @@ func TestClaudeComposerStart(t *testing.T) {
 	stream.Buffer(nil, 8<<20)
 	streamed := false
 	for !streamed && stream.Scan() {
-		streamed = strings.Contains(stream.Text(), "SPIKE_OK") && strings.Contains(stream.Text(), "message.part.updated")
+		line := stream.Text()
+		streamed = strings.Contains(line, "SPIKE_OK") && (strings.Contains(line, `"part.upserted"`) || strings.Contains(line, `"part.delta"`))
 	}
 	if !streamed {
 		t.Fatalf("reply never streamed (status %d)\n%s", resp.StatusCode, out.String())

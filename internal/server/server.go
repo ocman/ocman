@@ -13,9 +13,13 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/conversationingest"
+	"github.com/NoUseFreak/ocman/internal/conversationread"
+	"github.com/NoUseFreak/ocman/internal/convstream"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/filesystem"
+	"github.com/NoUseFreak/ocman/internal/historyparity"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/idleprojects"
 	"github.com/NoUseFreak/ocman/internal/inbox"
@@ -36,6 +40,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/sessiontitles"
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/tasksvc"
 	"github.com/NoUseFreak/ocman/internal/webhook"
 )
 
@@ -46,6 +51,11 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
+	tasks              lazy[*tasksvc.Manager]
+	historyIngest      *conversationingest.Module
+	historyAnalytics   *analytics.HistoryAnalytics
+	conversationReader *conversationread.Service
+	historyParity      *historyparity.Module
 	analytics          *db.DB
 	db                 *db.DB
 	stateDB            *state.DB
@@ -168,6 +178,7 @@ type Server struct {
 	projectForgeMod     lazy[*projectforge.Module]
 	previewsMod         lazy[*previews.Module]
 	platformSettingsMod lazy[*platformsettings.Module]
+	convStreamMod       lazy[*convstream.Module]
 }
 
 type factoryProjectResolver struct{ server *Server }

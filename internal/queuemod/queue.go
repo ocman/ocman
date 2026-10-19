@@ -169,6 +169,20 @@ func (s *Module) OnSessionIdle(platformID, sessionID string) {
 	s.queueFlushWorker().Enqueue(queueFlush{ctx: lifetime, platformID: platformID, sessionID: sessionID, cooled: cooled})
 }
 
+// Queued lists a session's held messages, native ones first. A failed
+// ocman queue read is an error: the list is never partial.
+func (s *Module) Queued(ctx context.Context, platform, sessionID string) ([]MessageView, error) {
+	msgs, err := s.queue.List(ctx, platform, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	messages := make([]queuedMessageView, 0, len(msgs))
+	for _, m := range msgs {
+		messages = append(messages, toQueuedMessageView(m))
+	}
+	return mergeQueued(messages, s.nativeQueuedViews(ctx, platform, sessionID)), nil
+}
+
 // broadcastQueueUpdated broadcasts that a session's follow-up queue
 // changed (message enqueued or drained), carrying the session's full
 // queue so clients apply it directly without a refetch. The messages key
@@ -181,16 +195,7 @@ func (s *Module) BroadcastQueueUpdated(ctx context.Context, platform, sessionID 
 	// Scoped to the owning platform: a same-id session on another machine
 	// has its own queue and its own broadcast. A read error just omits
 	// messages so the client falls back to a refetch.
-	var messages []queuedMessageView
-	if msgs, err := s.queue.List(ctx, platform, sessionID); err == nil {
-		messages = make([]queuedMessageView, 0, len(msgs))
-		for _, m := range msgs {
-			messages = append(messages, toQueuedMessageView(m))
-		}
-	}
-	if messages != nil { // a failed read omits messages: never send a partial list
-		messages = mergeQueued(messages, s.nativeQueuedViews(ctx, platform, sessionID))
-	}
+	messages, _ := s.Queued(ctx, platform, sessionID)
 	payload, err := json.Marshal(map[string]interface{}{
 		"sessionID": sessionID,
 		"messages":  messages,

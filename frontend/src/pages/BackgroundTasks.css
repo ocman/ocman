@@ -1,0 +1,45 @@
+.background-tasks {
+  display: grid;
+  gap: 1rem;
+}
+
+.background-tasks > p,
+.background-task-progress,
+.background-task-state {
+  color: var(--text-dim);
+}
+
+.background-tasks-controls,
+.background-task-counters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.background-task-progress {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.3rem;
+}
+
+.background-task-progress progress {
+  width: 100%;
+  max-width: 28rem;
+  accent-color: var(--accent);
+}
+
+.background-task-state {
+  margin-left: 0.5rem;
+}
+
+.background-task-state[data-status="failed"],
+.background-task-state[data-status="interrupted"],
+.background-task-progress .background-task-error {
+  color: var(--danger);
+}
+
+.background-task-error {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

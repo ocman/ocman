@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/convevents"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -44,25 +45,86 @@ var dtos = map[string]any{
 	"Part":                 db.Part{},
 	"PlatformCapabilities": platforms.Capabilities{},
 	"HostCapabilities":     hostsvc.HostCaps{},
+	"QueuedMessage":        convevents.QueuedMessage{},
+
+	// Conversation events (frontend/src/lib/conversation/events.ts).
+	"OceEnvelope":           convevents.Envelope{},
+	"OcePart":               convevents.Part{},
+	"PartData":              convevents.PartData{},
+	"PartState":             convevents.PartState{},
+	"PartTime":              convevents.PartTime{},
+	"OcePrompt":             convevents.Prompt{},
+	"OcePermissionRequest":  convevents.PermissionRequest{},
+	"OceQuestionRequest":    convevents.QuestionRequest{},
+	"QuestionItem":          convevents.QuestionItem{},
+	"QuestionOption":        convevents.QuestionOption{},
+	"OceChild":              convevents.Child{},
+	"OceSessionPatch":       convevents.SessionPatch{},
+	"OceRevertMarker":       convevents.RevertMarker{},
+	"OceErrorInfo":          convevents.ErrorInfo{},
+	"SessionBackgroundTask": convevents.BackgroundTask{},
+	"OceInflight":           convevents.Inflight{},
+	"LiveOverlay":           convevents.LiveOverlay{},
+	"OceStreamCapabilities": convevents.StreamCapabilities{},
+}
+
+// events maps each OCE event interface to its Go struct. Their JSON also
+// carries the "type" discriminator, which the Go structs add on marshal.
+var events = map[string]convevents.Event{
+	"StreamHello":        convevents.StreamHello{},
+	"StreamReset":        convevents.StreamReset{},
+	"StreamError":        convevents.StreamError{},
+	"MessageUpserted":    convevents.MessageUpserted{},
+	"MessageRemoved":     convevents.MessageRemoved{},
+	"PartUpserted":       convevents.PartUpserted{},
+	"PartRemoved":        convevents.PartRemoved{},
+	"PartDelta":          convevents.PartDelta{},
+	"SessionStatusEvent": convevents.SessionStatusEvent{},
+	"TurnStarted":        convevents.TurnStarted{},
+	"TurnEnded":          convevents.TurnEnded{},
+	"SessionUpdated":     convevents.SessionUpdated{},
+	"HistoryRewritten":   convevents.HistoryRewritten{},
+	"HistoryCommitted":   convevents.HistoryCommitted{},
+	"PromptAsked":        convevents.PromptAsked{},
+	"PromptJudge":        convevents.PromptJudge{},
+	"PromptResolved":     convevents.PromptResolved{},
+	"QueueChanged":       convevents.QueueChanged{},
+	"BackgroundChanged":  convevents.BackgroundChanged{},
+	"ChildUpserted":      convevents.ChildUpserted{},
+	"ChildStatus":        convevents.ChildStatus{},
+	"ChangesDirty":       convevents.ChangesDirty{},
+	"SessionError":       convevents.SessionError{},
 }
 
 func jsonFields(t reflect.Type) []field {
+	out := collectFields(t)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// collectFields follows encoding/json: untagged embedded structs are inlined.
+func collectFields(t reflect.Type) []field {
 	var out []field
 	for i := range t.NumField() {
 		f := t.Field(i)
+		tag := f.Tag.Get("json")
+		if f.Anonymous && tag == "" && f.Type.Kind() == reflect.Struct {
+			out = append(out, collectFields(f.Type)...)
+			continue
+		}
 		if !f.IsExported() {
 			continue
 		}
-		name, opts, _ := strings.Cut(f.Tag.Get("json"), ",")
+		name, opts, _ := strings.Cut(tag, ",")
 		if name == "-" {
 			continue
 		}
 		if name == "" {
 			name = f.Name
 		}
-		out = append(out, field{Name: name, OmitEmpty: strings.Contains(","+opts+",", ",omitempty,")})
+		opts = "," + opts + ","
+		out = append(out, field{Name: name, OmitEmpty: strings.Contains(opts, ",omitempty,") || strings.Contains(opts, ",omitzero,")})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
@@ -107,6 +169,14 @@ func TestFrontendContractSnapshot(t *testing.T) {
 	}
 	for name, v := range dtos {
 		snap.DTOs[name] = jsonFields(reflect.TypeOf(v))
+	}
+	for name, ev := range events {
+		fields := append(collectFields(reflect.TypeOf(ev)), field{Name: "type"})
+		sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
+		snap.DTOs[name] = fields
+	}
+	if len(events) != len(convevents.Types()) {
+		t.Fatalf("contract lists %d event types, convevents registers %d", len(events), len(convevents.Types()))
 	}
 	got, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {

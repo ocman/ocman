@@ -26,7 +26,7 @@ func TestRoutineUpstreamCreationCannotPublishUntaggedList(t *testing.T) {
 				id: "opencode",
 				createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					// OpenCode announces the row before returning its creation response.
-					srv.broadcastSessionChanged("session-1")
+					srv.broadcastSessionChanged("opencode", "session-1")
 					if blockedPhase == "creation" {
 						block()
 					}
@@ -52,7 +52,7 @@ func TestRoutineUpstreamCreationCannotPublishUntaggedList(t *testing.T) {
 			<-blocked
 			sub, unsubscribe := srv.broadcastHub.subscribe()
 			defer unsubscribe()
-			srv.broadcastSessionChanged("session-1")
+			srv.broadcastSessionChanged("opencode", "session-1")
 			<-sub.ch
 			response := httptest.NewRecorder()
 			listDone := make(chan struct{})

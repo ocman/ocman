@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/claudecli"
 	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/historyjournal"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -52,19 +54,29 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 		opts.CLI = cli
 	}
 	configEnv := os.Getenv("CLAUDE_CONFIG_DIR")
+	// Status hooks need ocman's listener; history hooks only need the journal,
+	// so terminal sessions are recorded even while ocman is stopped.
+	journal, err := historyjournal.Dir(string(claudeprovider.PlatformID))
+	if err != nil {
+		log.WithError(err).Warn("Claude history journal unavailable; terminal sessions sync only at startup")
+		journal = ""
+	}
+	statusAddr := mcpAddr
 	hook := ""
-	if mcpAddr != "" {
-		hook = claudeprovider.HookCommand(exe, mcpAddr)
+	if mcpAddr != "" || journal != "" {
+		hook = claudeprovider.HookCommand(exe, mcpAddr, journal)
 	}
 	marketplace := filepath.Join(dataDir, "claude-marketplace")
 	pluginDir, err := claudeprovider.WritePlugin(marketplace, skills, hook)
 	if err != nil {
 		log.WithError(err).Warn("writing ocman's Claude plugin; launching without ocman skills")
-		hook, pluginDir = "", ""
+		pluginDir, statusAddr = "", ""
 	}
 	// The directory catalog is served here: it lists ocman's plugin skills
 	// like the children project supervisors launch with it.
 	opts.PluginDir = pluginDir
+	var history *claudeprovider.HistoryReader
+	opts.HistoryReady = func(reader *claudeprovider.HistoryReader) { history = reader }
 	adapter, err := startClaudeBrowser(ctx, opts)
 	if err != nil {
 		log.WithError(err).Warn("Claude Code sessions unavailable")
@@ -96,7 +108,8 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 		// or the analytics store of an ocman without OpenCode.
 		database.AddAnalyticsSource(claudeprovider.AnalyticsSource(opts.IndexPath))
 	}
-	p := &claudePlatform{Adapter: adapter, cli: opts.CLI, configDir: opts.ConfigDir, marketplace: marketplace, hooks: hook != "", launchPath: opts.LaunchPath, slots: opts.SlotDir}
+	p := &claudePlatform{Adapter: adapter, cli: opts.CLI, configDir: opts.ConfigDir, marketplace: marketplace, hooks: statusAddr != "", journal: journal, launchPath: opts.LaunchPath, slots: opts.SlotDir}
+	p.history = history
 	runtime := ocruntime.NewBackendRuntime(claudeprovider.PlatformID, exe, filepath.Join(dataDir, "p"))
 	runtime.Args = func() []string {
 		args := []string{"--data-dir", dataDir, "--plugin-dir", pluginDir, "--claude-cli", opts.CLI, "--claude-config-dir", configEnv}
@@ -117,19 +130,44 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 	if stateDB != nil {
 		p.projects.recover(projectsCtx)
 	}
+	if pluginDir != "" {
+		p.ensurePlugin(projectsCtx)
+	}
 	return p
 }
+
+// ensurePlugin installs ocman's plugin, or refreshes Claude's cached copy,
+// in the background: the CLI is slow and startup must not wait for it.
+func (p *claudePlatform) ensurePlugin(ctx context.Context) {
+	if _, err := exec.LookPath(p.cli); err != nil {
+		return
+	}
+	p.pluginSync.Go(func() {
+		action, err := claudeprovider.EnsurePlugin(ctx, p.cli, p.configDir, p.marketplace)
+		switch {
+		case err != nil && ctx.Err() == nil:
+			log.WithError(err).Warn("installing ocman's Claude plugin; terminal sessions sync only at startup")
+		case action != "":
+			log.WithField("action", action).Info("ocman's Claude plugin is current; restart running Claude sessions to load its hooks")
+		}
+	})
+}
+
+// HistoryJournalDir is where the plugin's hooks record transcript changes.
+func (p *claudePlatform) HistoryJournalDir() string { return p.journal }
 
 // Close stops recovery and the project supervisors' event streams and waits
 // for them; the supervisors themselves keep running (AD-4).
 func (p *claudePlatform) Close() {
 	p.projects.close()
+	p.pluginSync.Wait()
 	p.Adapter.Close()
 }
 
 // claudePlatform is the browsing adapter plus the project supervisors that
 // drive launched sessions (projects.go).
 type claudePlatform struct {
+	history *claudeprovider.HistoryReader
 	*provider.Adapter
 	projects    *claudeProjects
 	mcpAddr     atomic.Value // string: ocman's bound MCP listener
@@ -137,8 +175,10 @@ type claudePlatform struct {
 	cli         string
 	configDir   string
 	marketplace string // local marketplace holding ocman's plugin (AD-11)
-	hooks       bool   // the plugin carries hooks: the MCP listener is enabled
+	hooks       bool   // the plugin carries status hooks: the MCP listener is enabled
+	journal     string // history journal the plugin's hooks append to
 	slots       string // machine-wide claude process slots (claudeprovider.HelperSlot)
+	pluginSync  sync.WaitGroup
 }
 
 func (p *claudePlatform) RuntimeAvailable() bool {

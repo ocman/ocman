@@ -65,6 +65,16 @@ func (d *DB) AddAnalyticsSource(src AnalyticsSource) {
 	m.lastFull.Store(0)
 }
 
+// OpenCodeOnly returns a reader of the OpenCode database alone, bypassing the
+// mirror and the other platforms' rows it merges. It shares d's connection:
+// close d, not the view. ok is false when no OpenCode database backs d.
+func (d *DB) OpenCodeOnly() (view *DB, ok bool) {
+	if d.mirror != nil && d.db == d.mirror.db {
+		return nil, false
+	}
+	return &DB{db: d.db, sessionTotals: d.sessionTotals, v2: d.v2}, true
+}
+
 // mirrorOnly reports whether the mirror is the only complete analytics
 // copy: there is no OpenCode database, or another platform's rows live
 // only in the mirror. Then no read may fall back to OpenCode.
@@ -106,11 +116,11 @@ func (d *DB) completeMirror(ctx context.Context) *sql.DB {
 
 // sessionsDB is where analytics read the session table: OpenCode itself,
 // unless other platforms' sessions exist only in the mirror.
-func (d *DB) sessionsDB(ctx context.Context) *sql.DB {
+func (d *DB) sessionsDB(ctx context.Context) querier {
 	if d.mirrorOnly() {
 		return d.analytics(ctx)
 	}
-	return d.db
+	return d.reads()
 }
 
 // copySources writes the sources' messages (after since, or changed since

@@ -12,7 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
@@ -74,7 +73,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 
 	workers.Go(func() { s.runAutoArchiveLoop(ctx) })
 	workers.Go(func() { s.runProjectsIndexLoop(ctx) })
-	if _, enabled := s.registry.Get(platforms.OpenCodeID); enabled {
+	if _, enabled := s.registry.Get(opencode.PlatformID); enabled {
 		if health, ok := s.router().Local().(interface{ RunOpenCodeHealthChecks(context.Context) }); ok {
 			workers.Go(func() { health.RunOpenCodeHealthChecks(ctx) })
 		}

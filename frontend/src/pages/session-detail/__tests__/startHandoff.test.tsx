@@ -54,9 +54,9 @@ describe('new-session handoff', () => {
     await screen.findByRole('textbox');
     expect(screen.getByText('Fix login')).toBeInTheDocument();
     await waitFor(() => expect(page.sse()).toBeDefined());
-    await act(async () => page.sse()!.emitMessage({ type: 'message.part.updated', properties: { part: {
-      id: 'part-first', messageID: message.id, sessionID: 'child', type: 'text', text: 'Fix login',
-    } } }));
+    await act(async () => page.sse()!.emitOce({ type: 'part.upserted', final: true, part: {
+      id: 'part-first', messageId: message.id, sessionId: 'child', data: { type: 'text', text: 'Fix login' },
+    } }));
     // The real part may render a tick after the handoff clears.
     await waitFor(() => {
       expect(screen.queryByTestId('start-progress')).not.toBeInTheDocument();

@@ -8,7 +8,7 @@ import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
 import { markSseCommit } from '../../lib/perfMonitor';
 import { computeReconnectDelay } from './sseBackoff';
-import { reduceBatchedSessionView } from './sessionSse';
+import { reduceLiveSessionView } from '../../lib/conversation/liveSessionView';
 import { platformMessageCount } from './sessionView';
 import { useSessionCache } from './useSessionCache';
 import { useSessionLifecycle } from './useSessionLifecycle';
@@ -94,7 +94,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
     },
     sessionTree: cached.sessionTree ?? [], messages: cached.messages, parts: cached.parts,
   } : initialSessionView(sessionId ?? '');
-  const [view, dispatch] = useReducer(reduceBatchedSessionView, initialView);
+  const [view, dispatch] = useReducer(reduceLiveSessionView, initialView);
   const [loadingMore, setLoadingMore] = useState(false);
   const [totalMessages, setTotalMessages] = useState(cached?.totalMessages || cached?.session.messageCount || 0);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
@@ -109,7 +109,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
     dispatch({ type: 'setPendingPermission', permission, ownerIds });
   }, []);
   const setPendingQuestion = useCallback((q: import('../../components/session/QuestionPrompt').PendingQuestion) => {
-    dispatch({ type: 'sse', event: { type: 'question.asked', properties: { id: q.requestId, sessionID: q.sessionID, questions: q.questions } } });
+    dispatch({ type: 'setPendingQuestion', question: q });
   }, []);
   const patchSession = useCallback((patch: Partial<SessionMetadata>) => dispatch({ type: 'patchSession', patch }), []);
 

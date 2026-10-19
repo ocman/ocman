@@ -76,8 +76,7 @@ func TestUIUsageEmptyAndUnavailable(t *testing.T) {
 
 func TestAgentRunHoursAPI(t *testing.T) {
 	s := newFixture(t)
-	w := httptest.NewRecorder()
-	s.handleAgentRunHours(w, httptest.NewRequest(http.MethodGet, "/api/analytics/agent-run-hours?days=7&dir=/repo", nil))
+	w := s.serve(http.MethodGet, "/api/analytics/agent-run-hours?days=7&dir=/repo", "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"minutes":0`) {
 		t.Fatal(w.Code, w.Body.String())
 	}

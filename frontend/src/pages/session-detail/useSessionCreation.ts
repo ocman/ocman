@@ -89,6 +89,7 @@ export function useSessionCreation({
       if (agentBeforeCompact) setSelectedAgent(agentBeforeCompact);
     } catch (e) {
       remoteLog.error('Failed to compact session', e);
+      throw e;
     }
   }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
 

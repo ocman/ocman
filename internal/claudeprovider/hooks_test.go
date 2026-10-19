@@ -113,7 +113,7 @@ func TestWritePluginHooks(t *testing.T) {
 		}
 	}
 	data, _ := os.ReadFile(filepath.Join(plugin, "hooks", "hooks.json"))
-	if err := json.Unmarshal(data, &hooks); err != nil || len(hooks.Hooks) != len(HookEvents) {
+	if err := json.Unmarshal(data, &hooks); err != nil || len(hooks.Hooks) != 9 {
 		t.Fatalf("hooks = %s, %v", data, err)
 	}
 	if h := hooks.Hooks["PreToolUse"][0]; h.Matcher != "*" || h.Hooks[0].Command != `if [ "${OCMAN_MANAGED:-}" = "1" ]; then "/bin/ocman" hook --addr 127.0.0.1:1 PreToolUse; fi` {

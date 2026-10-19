@@ -1,0 +1,15 @@
+{"session":"ses_a"}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_a","status":{"type":"busy"}}}}
+{"data":{"type":"message.part.updated","properties":{"part":{"id":"prt_task","sessionID":"ses_a","messageID":"msg_a6","type":"tool","callID":"call_task","tool":"task","state":{"status":"running","input":{"description":"Explore repo","prompt":"look","subagent_type":"explore"},"metadata":{"sessionId":"ses_child"},"time":{"start":6000}}}}}}
+{"data":{"type":"session.created","properties":{"info":{"id":"ses_child","parentID":"ses_a","title":"Explore repo (@explore subagent)","directory":"/repo","time":{"created":6001,"updated":6001}}}}}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_child","status":{"type":"busy"}}}}
+{"data":{"type":"message.part.delta","properties":{"sessionID":"ses_child","messageID":"msg_c","partID":"prt_c","field":"text","delta":"child text"}}}
+{"data":{"type":"permission.asked","properties":{"id":"per_child","sessionID":"ses_child","permission":"bash","patterns":["git status"],"always":["git status *"],"metadata":{"command":"git status"},"tool":{"messageID":"msg_c","callID":"call_c"}}}}
+{"data":{"type":"permission.replied","properties":{"sessionID":"ses_child","requestID":"per_child","reply":"always"}}}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_unrelated","status":{"type":"busy"}}}}
+{"data":{"type":"session.updated","properties":{"info":{"id":"ses_child","parentID":"ses_a","title":"Explore repo","directory":"/repo","time":{"created":6001,"updated":6050}}}}}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_child","status":{"type":"idle"}}}}
+{"data":{"type":"session.idle","properties":{"sessionID":"ses_child"}}}
+{"data":{"type":"message.part.updated","properties":{"part":{"id":"prt_task","sessionID":"ses_a","messageID":"msg_a6","type":"tool","callID":"call_task","tool":"task","state":{"status":"completed","input":{"description":"Explore repo","prompt":"look","subagent_type":"explore"},"output":"done","metadata":{"sessionId":"ses_child"},"time":{"start":6000,"end":6060}}}}}}
+{"data":{"type":"session.deleted","properties":{"info":{"id":"ses_child","parentID":"ses_a","title":"Explore repo","time":{"created":6001,"updated":6070}}}}}
+{"data":{"type":"session.idle","properties":{"sessionID":"ses_a"}}}

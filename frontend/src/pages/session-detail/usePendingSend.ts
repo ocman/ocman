@@ -51,14 +51,18 @@ export interface UsePendingSendResult {
   begin: (
     text: string,
     images?: PendingSendImage[],
-    opts?: { id?: string; model?: string; agent?: string; reasoning?: string },
+    opts?: {
+      id?: string; model?: string; agent?: string; reasoning?: string;
+      /** Commands must not be acknowledged by an unrelated running response. */
+      confirmation?: 'user';
+    },
   ) => string;
   /** Set the failure flag on the pending entry. The bubble stays
    *  visible so the user can retry / dismiss it. */
-  fail: (message: string) => void;
+  fail: (message: string, id?: string) => void;
   /** Drop the pending entry. Called explicitly on retry / dismiss /
    *  manual clear. */
-  clear: () => void;
+  clear: (id?: string) => void;
   /** Hook the page's current messages list. When a new user message
    *  appears that wasn't there last frame, pending is cleared.
    *  Pure read — call from render. */
@@ -90,6 +94,8 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
   // A queued send may not emit the user's message.created event to this
   // client. A later assistant message proves that the server accepted it.
   const pendingStartedAtRef = useRef<number | null>(null);
+  const requireUserConfirmationRef = useRef(false);
+  const pendingIdRef = useRef<string | null>(null);
   // Latest `messages` reference observed during render. The
   // session-change effect uses this to recompute the baseline if
   // needed; tests use it to verify lifecycle.
@@ -106,6 +112,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     setPending(null);
     baselineUserIdsRef.current = null;
     pendingStartedAtRef.current = null;
+    pendingIdRef.current = null;
   }, [sessionId]);
 
   const begin = useCallback<UsePendingSendResult['begin']>((text, images, opts) => {
@@ -120,8 +127,10 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     }
     baselineUserIdsRef.current = baseline;
     const id = opts?.id ?? generateId();
+    pendingIdRef.current = id;
     const startedAt = Date.now();
     pendingStartedAtRef.current = startedAt;
+    requireUserConfirmationRef.current = opts?.confirmation === 'user';
     setPending({
       id,
       text,
@@ -134,11 +143,13 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     return id;
   }, []);
 
-  const fail = useCallback((message: string) => {
-    setPending((prev) => (prev ? { ...prev, error: message } : prev));
+  const fail = useCallback((message: string, id?: string) => {
+    setPending((prev) => (prev && (id === undefined || prev.id === id) ? { ...prev, error: message } : prev));
   }, []);
 
-  const clear = useCallback(() => {
+  const clear = useCallback((id?: string) => {
+    if (id !== undefined && pendingIdRef.current !== id) return;
+    pendingIdRef.current = null;
     setPending(null);
     baselineUserIdsRef.current = null;
     pendingStartedAtRef.current = null;
@@ -162,7 +173,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     }
     const startedAt = pendingStartedAtRef.current;
     if (startedAt === null) return;
-    if (messages.some((m) => m.data.role === 'assistant' && m.timeCreated >= startedAt)) {
+    if (!requireUserConfirmationRef.current && messages.some((m) => m.data.role === 'assistant' && m.timeCreated >= startedAt)) {
       setPending((prev) => (prev ? null : prev));
       baselineUserIdsRef.current = null;
       pendingStartedAtRef.current = null;

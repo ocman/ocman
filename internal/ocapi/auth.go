@@ -3,16 +3,19 @@
 package ocapi
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 const DefaultUsername = "opencode"
 
-var ErrAuthentication = errors.New("OpenCode authentication failed")
+// ErrAuthentication is OpenCode's authentication failure. It wraps the
+// platform-neutral platforms.ErrPlatformUnauthenticated so shared handlers
+// can classify it without knowing OpenCode.
+var ErrAuthentication = fmt.Errorf("OpenCode authentication failed: %w", platforms.ErrPlatformUnauthenticated)
 
 // Auth keeps the OpenCode server password opaque outside this package.
 // Its formatting methods deliberately redact the value.

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -134,12 +135,13 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := adapter.Session(r.Context(), sessionID, limit, offset)
+	detail, err := adapter.Session(s.ConversationReadContext(r.Context()), sessionID, limit, offset)
 	if err != nil {
 		writePlatformError(w, "fetching session", err)
 		return
 	}
 	remote := isRemotePlatformID(string(adapter.ID()))
+	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 	peek := r.URL.Query().Get("peek") == "1"
 	if detail.Session != nil {
@@ -268,8 +270,12 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		detail, err := adapter.Session(r.Context(), taskID, limit, 0)
+		detail, err := adapter.Session(s.ConversationReadContext(r.Context()), taskID, limit, 0)
 		if err != nil {
+			if errors.Is(err, platforms.ErrHistoryUnavailable) {
+				writePlatformError(w, "fetching stored task conversation", err)
+				return
+			}
 			continue
 		}
 

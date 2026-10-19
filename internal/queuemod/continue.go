@@ -9,7 +9,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 // continuationPrompt resumes a turn that died on a quota wall. OpenCode
@@ -70,11 +69,10 @@ func (s *Module) continueSession(ctx context.Context, platformID, sessionID, pro
 	return true
 }
 
-// abortParkedRetry stops a turn OpenCode parked on a cooled provider so
-// the idle edge can continue it on the next model. Only one abort per
+// abortParkedRetry stops a turn the platform parked on a cooled provider
+// so the idle edge can continue it on the next model. Only one abort per
 // park: the marker is consumed by that idle edge.
-func (s *Module) abortParkedRetry(ctx context.Context, sessionID, provider string) {
-	platformID := string(opencode.PlatformID)
+func (s *Module) abortParkedRetry(ctx context.Context, platformID, sessionID, provider string) {
 	key := fallKey(platformID, sessionID)
 	if s.d.Sessions() == nil || provider == "" {
 		return
@@ -107,7 +105,7 @@ func (s *Module) setExhaustedNotice(platformID, sessionID string, recovers time.
 func (s *Module) setFallNotice(platformID, sessionID string, n db.SessionNotice, until time.Time) {
 	// ponytail: one entry per switched session, overwritten, never evicted.
 	s.fallNotices.Store(fallKey(platformID, sessionID), fallNotice{notice: n, until: until})
-	s.d.SessionChanged(sessionID)
+	s.d.SessionChanged(platformID, sessionID)
 }
 
 // applyFallNotice replaces a session's notice with a live fallthrough one.

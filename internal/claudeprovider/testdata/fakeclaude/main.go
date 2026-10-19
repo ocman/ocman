@@ -377,7 +377,19 @@ func plugin(args []string) {
 	if len(args) < 2 || (args[0] != "install" && args[0] != "uninstall") {
 		return
 	}
-	path := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "settings.json")
+	// Like the real CLI, default to ~/.claude: never the working directory.
+	config := os.Getenv("CLAUDE_CONFIG_DIR")
+	if config == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fail(1, "settings: %v", err)
+		}
+		config = filepath.Join(home, ".claude")
+		if err := os.MkdirAll(config, 0o700); err != nil {
+			fail(1, "settings: %v", err)
+		}
+	}
+	path := filepath.Join(config, "settings.json")
 	settings := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, &settings); err != nil {

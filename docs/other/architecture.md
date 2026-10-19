@@ -57,7 +57,7 @@ flowchart LR
     Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode instances<br/>or registered v2 service]
     Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
     Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
-    ClaudeHooks[claude hook plugin<br/>ocman-launched processes only] -->|ocman hook → /hook| Ocman
+    ClaudeHooks[claude hook plugin<br/>status: ocman-launched; history: all sessions] -->|ocman hook → /hook, journal| Ocman
     Ocman -->|exec| Shell[git / tmux<br/>host tools]
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
@@ -113,6 +113,18 @@ flowchart LR
   local projects-index snapshot. Artifact file bytes sit beside it in a
   SHA-256 content-addressed `artifacts/blobs/` directory. Inbox sends are owner-local and persist until recalled or archived
   by the user. Legacy `workflow_*` rows remain inert for manual recovery.
+- **statev2.db.** `internal/statev2` owns a separate durable
+  conversation schema with immutable platform-instance identities, historical
+  sessions/messages/parts, ingestion checkpoints, purge tombstones, and a change
+  outbox. Storage, ingestion and historical reads are always enabled;
+  development targets in the Makefile use isolated paths. The file sits beside
+  `state.db` unless `-statev2-db` or `OCMAN_STATEV2_DB` names another path.
+  Owner-local ingestion supplies settled conversation reads and analytics.
+  Source deletion retains history; only an explicit Ocman purge removes
+  queryable content. Supported upgrades apply append-only migrations;
+  unsupported schema versions fail closed and never reset stored history.
+  Database-size analytics include this store as a separate conversation-history
+  series, including while its initial import is pending.
 - **analytics-cache.db.** A disposable copy of opencode.db's message and
   session rows, stored beside state.db, which the analytics queries read.
   User-message attachments are stripped from the copy. A minimal tool-timing
@@ -144,10 +156,11 @@ flowchart LR
   `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`) into the disposable
   `claude-index.db` beside state.db and drives sessions it starts or adopts by
   spawning the user's own `claude` binary with pipes (stream-json and the
-  control protocol), so every call runs under the user's own account. The
-  hook plugin, installed with `claude plugin install`, checks the injected
-  `OCMAN_MANAGED=1` marker before executing ocman. Standalone Claude
-  sessions skip hooks; managed hooks have a 1 s timeout and always exit 0.
+  control protocol), so every call runs under the user's own account. Ocman
+  installs or refreshes its hook plugin at startup with `claude plugin`.
+  History hooks journal transcript changes in every session; status hooks run
+  ocman only for the injected `OCMAN_MANAGED=1` marker. Hooks have a 1 s
+  timeout and always exit 0.
   Sending to an external root session records
   ownership and resumes its transcript through its project supervisor. Owner
   observations are shared as advisory files under `claude-external` beside
@@ -230,6 +243,263 @@ adapter and connection. Older remotes without the list remain OpenCode-only.
 Duplicate instance ids are rejected for the whole remote, even when the
 advertised platforms differ.
 
+### Statev2 history ingestion
+
+Each owning instance imports its own local platform history. Analytics and
+settled conversation browsing always read Ocman history. There are no feature
+flags or legacy read fallback. Runtime actions and live streaming remain
+platform-owned.
+
+```mermaid
+flowchart LR
+    Import[conversationingest module<br/>independent source workers]
+    Adapters[Local platform adapters<br/>complete history snapshots] --> Import
+    Events[Session invalidations<br/>periodic repair] --> Import
+    Import -->|snapshots or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
+    Rules[internal/analyticsdata<br/>shared accounting and timing] --> Commit
+    Rules --> Analytics
+    Commit -->|one transaction| History[(statev2.db<br/>history, checkpoint, change outbox)]
+    History --> Reader[conversationread<br/>settled conversation browsing]
+    Adapters -->|bounded lifecycle and version only| Reader
+    Reader -->|bounded wait for initial import or stale snapshot| Import
+    Reader -->|active sessions only| Live[Platform live transcript]
+    History -->|affected facts and UTC-hour summaries| Analytics[Conversation analytics APIs]
+    History --> Changes[Durable invalidation stream<br/>no lifecycle actions]
+    Purge[Explicit Ocman purge] -->|remove queryable content<br/>retain identity tombstone| History
+```
+
+- Platform type and platform instance are separate. Native session identities
+  belong to an immutable source instance, so identical IDs cannot cross sources.
+- Content and ingestion progress commit together before upstream acknowledgment
+  or outward publication. Conflicting repair writes fail instead of overwriting
+  another ingestion revision.
+- Source deletion never removes retained history. Purged identities suppress
+  later imports while still allowing source checkpoints to advance.
+- History is not live execution authority. Future collectors must keep runtime
+  freshness and idempotent action reconciliation separate from historical replay.
+- `platforms.HistoryReader` bypasses UI filtering without bypassing owner/platform
+  routing. OpenCode reads one source transaction and reuses the v2 converter;
+  Claude borrows the browsing index and checks transcript identity/mtime/size
+  across each snapshot. Native v2 payloads and unsupported message types survive
+  normalization. Missing source inventories never authorize deletions.
+- OpenCode v2 is event-driven and does not poll. Its worker follows the machine
+  server's `/api/event` firehose, which covers every location and session the
+  background service runs, including terminal sessions. A durable session event
+  reads only the messages it names and upserts them with `statev2.ApplyStream`,
+  advancing that session's applied sequence in the same transaction. Reverts,
+  compactions and similar events without message IDs reread their session;
+  deletions are retained as source-deleted. The firehose has no replay, so each
+  connection first catches up: it compares OpenCode's indexed `event_sequence`
+  with the sequences already applied and rereads only sessions that moved. The
+  same comparison repeats while the firehose is unavailable. Stored-history
+  readiness uses the durable sequence (`seq:N`), not session timestamps, which
+  OpenCode v2 does not advance on every message change.
+  Targeted hints are deduplicated and bounded; overflow requests durable
+  sequence catch-up. Failed and deferred repairs remain pending even when
+  their sequence did not change, and retry with a backoff timer independent of
+  new feed events. A successful inventory retires repairs for deleted sessions.
+  Incremental mutations invalidate full-snapshot digests atomically.
+- Claude follows its hook journal (`internal/historyjournal`). Hooks append a
+  record pointing at the changed transcript in every session, including
+  terminal sessions and while ocman is stopped. At startup the worker compares
+  transcript version hints once; afterwards each journal record rereads its
+  session (Claude's converter needs the whole transcript) and compares hints so
+  subagent transcripts follow their parent. The journal offset advances only
+  after that succeeds. Checking for records costs one directory read; there is
+  no periodic polling or automatic full verification. The journal is
+  machine-wide under the XDG data directory; each statev2 store keeps its own
+  offsets, and consumed segments are pruned after a week idle.
+  Failed startup scans and deferred hook reads retry without needing another
+  hook. Journal read errors revoke readiness rather than appearing as no work.
+  Writers lock each segment and terminate interrupted tails before appending.
+  Translation failures have one task receipt, separate from journal I/O errors.
+- Sources with neither (OpenCode v1) still poll change hints every 30 seconds
+  and coalesce event-triggered repairs for one second. A pass reads only invalidated, new or re-hinted
+  sessions. Version hints, content fingerprints and the last verification time
+  persist in statev2, so a restart skips unchanged snapshots unless their
+  conversation read-format metadata needs upgrading.
+  The server joins all source workers before the application closes the database.
+- Messages carry their accounting (agent, provider, cost, token counts, finish,
+  error name) as indexed columns, and sessions carry parent and project IDs, so
+  analytics can filter and sum without parsing stored JSON. Indexes cover
+  message time, model and session parent/project. Projection-era databases
+  (schema v5+) upgrade in place. Unsupported earlier or future schemas cause
+  startup to fail without dropping tables or discarding history. Re-syncs
+  upsert retained sessions, messages and parts; they never empty the store.
+- For polled sources, every six hours a verification pass rereads all sessions. It counts content
+  that changed under an unchanged hint as drift, logs and repairs it, and reports
+  matched, drifted, changed and missing sessions as a background task. It also
+  compares each session's stored accounting with totals recomputed from the
+  snapshot it just read; a `usage-mismatch` counter means a normalization or
+  column mapping bug.
+- `internal/historyparity` compares the current OpenCode analytics reader with
+  the same reports computed from statev2: daily sessions, assistant messages
+  and user prompts, and per-model message and token totals. It runs ten
+  minutes after startup and then daily as a background task, and logs each
+  differing date or model with both values. It reads only. Today and model totals for sessions still being
+  written can differ by in-flight activity. This
+  checks the change hints against the same history readers, not against the
+  existing UI readers.
+- This is committed-history ingestion, not lossless raw-event capture. Supervisor
+  acknowledgments and active streaming stay on their existing paths until direct
+  durable event ingestion is implemented. Hub replication is not enabled.
+
+#### Completed conversation reads
+
+Settled OpenCode and Claude conversations always use validated statev2
+snapshots. No opt-in or legacy opt-out is available.
+
+- `internal/conversationread` runs through `platforms.Platform`, only in explicit
+  browsing contexts. HTTP session/task reads, MCP session reads and owner-side
+  remote Session RPCs marked `browsing` use it. Operational Session RPCs,
+  mutations, lifecycle queries and streams do not.
+- Adapters read bounded lifecycle/version metadata, not transcript content.
+  Busy, limited and approval-waiting sessions retain the platform
+  path, as do attached live runtimes before their first persisted transcript.
+  Missing imports of an existing transcript never qualify for that live-only
+  path. Settled snapshots require the same physical source, a matching source
+  version and a successful background accounting check. A second metadata check
+  rejects concurrent source changes.
+- Missing, outdated or unvalidated snapshots first wait for bounded ingestion
+  catch-up, including the initial source registration and validation receipt.
+  If a turn starts during either wait, its live status selects the platform
+  path. Otherwise snapshots still unavailable after the wait return HTTP 503,
+  never an automatic platform transcript retry. These reads notify ingestion to repair
+  the snapshot. `X-Ocman-Conversation-Error: history-unavailable` identifies the
+  failure; successful local reads expose `X-Ocman-Conversation-Source` as
+  `statev2` or `platform-live`. Remote reads expose `remote`; the owner selects
+  its own reader and fails closed when its selected snapshot is unavailable.
+- Schema v8 preserves part timestamps, text-field presence and displayable
+  message markers. Existing snapshots stay retained but require a background
+  metadata refresh before normal browsing. Paging counts backward from the
+  newest displayable message and excludes superseded records without deleting
+  their audit history. Source-deleted sessions remain readable after validation;
+  explicitly purged sessions do not.
+- Composer defaults, context tokens, session trees and accounting come from
+  Ocman projections. Cost estimates still use current pricing. Full native
+  payloads stay stored, but opaque native-only messages do not consume visible
+  paging slots.
+
+#### Analytics reads
+
+All conversation-derived analytics use the existing `internal/db` calculations
+over ingestion-maintained statev2 summaries: overview/stats, daily/hourly activity, model
+usage, cost estimates, performance, throughput, request/session/project logs,
+concurrency and agent runtime. Each imported batch commits these derived tables
+in the same transaction as its history and checkpoint:
+
+- `analytics_session` contains compact metadata and session accounting totals.
+- `analytics_hour` groups counts and tokens by source, session, UTC hour, role
+  and provider/model. Activity/model charts sum these rows instead of messages.
+- `analytics_fact` retains normalized per-request values and computed model,
+  tool and unknown durations. Metrics/logs retain request-level percentiles and
+  live pricing without parsing message JSON or rereading tool parts.
+- `analytics_question` retains question wait intervals for runtime accounting.
+- `analytics_conflict` contains only duplicate native-ID candidates, maintained
+  by insert/delete triggers so validation does not scan the whole history.
+
+Full repairs replace the session's summaries. Incremental updates replace only
+affected message facts, question timings and old/new UTC-hour buckets, and adjust
+session totals by their net change. Human activity uses the persisted subagent
+flag for both session and user-message counts. Tool-only changes recompute the
+owning message's timing summaries too. Purges cascade through these
+tables and cannot resurrect suppressed history. Native payloads stay intact.
+`internal/analyticsdata` supplies the same metadata and interval-union rules to
+both legacy readers and ingestion; there is no second timing engine.
+
+The one-time upgrade builds summaries from stored compact projections, preserving
+history, checkpoints, source hints and purge markers. It does not reimport from
+platforms. Startup logs identify this backfill. Failure rolls back the upgrade.
+
+`internal/db.OpenHistoryAnalytics` opens statev2 read-only with bounded pooled
+connections and scoped TEMP views installed on every connection. Each response
+uses one selected reader for all dates, including today. Filters, pricing,
+pagination, subagent rollups and observed permission waits keep their current
+calculation logic. Permission decisions, UI usage, database-size history and
+provider/subscription quotas keep their original sources. Live streaming and
+execution remain platform-owned.
+
+Summary queries retain exact millisecond cutoffs. Partial UTC hours and local
+calendar boundaries that split a UTC hour read only their normalized boundary
+facts. This also supports fractional-offset timezones without persisting a
+timezone-dependent rollup. Pricing remains dynamic. Request timestamp ties use
+native ID as a stable secondary sort key in both readers for pagination.
+
+Native-ID validation checks the sparse conflict markers against active selected
+sources, with a per-reader/outbox-revision cache. Imports and purges invalidate
+the cache. The mark and collision checks share one read transaction.
+
+Inspect the response headers in the browser's Network panel:
+
+- `X-Ocman-Analytics-Source: statev2` means the cutover is active.
+- `X-Ocman-Analytics-Checked-At` gives the oldest successful local source scan.
+  Recent/live figures can lag ingestion; the default poll interval is 30 seconds.
+- `X-Ocman-Analytics-Error` explains a statev2 availability failure:
+  `history-unavailable`, `import-incomplete`, `history-error` or
+  `history-scope-error`. These responses are HTTP 503, not legacy results.
+  `X-Ocman-Activity-Source` remains an alias for the source header.
+
+The cutover waits for a clean scan of every enabled local history source after
+each startup. Remote adapters are excluded from both local ingestion and its
+readiness checks; connecting a remote does not block completed local imports.
+Unsupported local adapters, failed or deferred reads, accounting
+mismatches and scans older than two poll intervals make statev2 analytics
+unavailable. Because existing response types and links use native IDs, overlapping
+session or message IDs across selected instances fail closed rather
+than merging unrelated records. The retained schema remains instance-scoped.
+Query errors are returned without retrying against legacy. An empty or partially
+hydrated store never produces incomplete totals. Startup requires the history
+store to open successfully. While initial imports or repairs are pending,
+unavailable readers return HTTP 503 rather than selecting platform history.
+
+Route-level parity tests compare all conversation analytics with the legacy
+reader on the same fixtures, including filters, pagination, pricing, throughput
+and question timings. They also close the legacy handle to verify selected
+statev2 routes do not query it. Summary tests cover exact cutoffs, fractional
+timezones, repeated DST hours, tool-only repairs, collision markers and upgrade
+rollback. The opt-in `TestHistorySummarySnapshotParity` compares the old
+projection calculations and summaries against one frozen compact snapshot,
+including pricing, metrics and runtime. It must not use a changing live store.
+The scheduled real-data parity task still checks
+daily and per-model totals; it is not a full production-data dashboard audit.
+
+### Background task status
+
+`internal/tasksvc` runs bounded owner-local work inside Ocman's process.
+`internal/taskmod` exposes authenticated, read-only list and detail APIs at
+`/api/background-tasks`. The dashboard's Background tasks page polls while visible.
+
+```mermaid
+flowchart LR
+    Import[History ingestion] -->|typed work + progress| Manager[tasksvc<br/>4 running, 128 admitted]
+    Manager -->|module-owned schema| State[(state.db<br/>task records)]
+    Browser[Background tasks page] -->|authenticated GET| API[taskmod]
+    API --> State
+    Manager -->|snapshots and repairs| History[(statev2.db)]
+```
+
+- Records distinguish queued, running, succeeded, failed, cancelled and interrupted
+  work. A restart interrupts unfinished records instead of replaying closures.
+  Shutdown cancels and joins admitted work before databases close.
+- Producers report a phase, completed units, optional total and named counters.
+  Unknown totals show indeterminate progress. Finishing a scan does not imply
+  success if any session failed. History tasks count imported, unchanged, skipped,
+  purged, failed and source-deleted sessions without deleting retained history.
+  Polls with nothing to read are not recorded, and a repeated inventory failure
+  is recorded once until it changes or recovers.
+- Active keys deduplicate work within a task kind. At most 1,000 terminal records
+  are retained. Reads return at most 200 records, active work first. Remote task
+  queries fail closed; hub aggregation is not implemented.
+- Only history ingestion currently uses the manager. Other candidates are
+  analytics mirror rebuilds, project inventory refreshes, database cleanup and
+  restore, artifact/share publishing, auto-archive and attachment cleanup, and
+  plugin discovery or reconciliation. These can report rows, checkouts, named
+  steps, files/bytes, items or deliveries, respectively. Integration must preserve
+  their existing locks, authorization and retry rules.
+- Agent execution, permission handling and queue delivery keep their domain-owned
+  records and recovery. Connection watchers need health and last-success status,
+  not percentage completion. There is no HTTP command-execution or retry endpoint.
+
 ## 2. Backend composition
 
 Server shutdown cancels and joins its owned background loops before returning,
@@ -287,6 +557,8 @@ flowchart TD
     Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
+    Modules --> HistoryImport[internal/conversationingest<br/>owner-local import + repairs]
+    HistoryImport --> HistoryStore[internal/statev2<br/>statev2.db]
     Inbox --> State
     Inbox -.->|remote RPC| Router
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
@@ -411,6 +683,28 @@ flowchart TD
   transport, auth, owner resolution, permission/question audit orchestration and
   queue/cooldown/idle ordering. Compatibility handler wrappers delegate to the
   module, whose routes are registered through `modules()`.
+- **Conversation stream** (`internal/convstream`). Serves
+  `GET /api/session/{id}/stream`, the Ocman conversation event (OCE) stream
+  from `spec/conversation-events/design.md`. One `Hub` keeps one upstream per
+  session for every subscriber, a bounded and compacted replay log with an
+  `epoch:seq` cursor, and the live overlay that `stream.hello` restates. It
+  settles idle edges through `LifecycleReader`, derives `waiting` and turn
+  edges, and resets slow consumers. It is the only per-session browser stream.
+  Until native sources exist, its live source runs the owner pipeline:
+  `ProxyEvents` through the auto-approve tee and sinks, then
+  `internal/convevents/v1map`. Remote sessions are bridged on the hub from the
+  owner's forwarded bytes, where the hub also observes git command hints.
+  Sequence admission occurs before mapping, once per source frame. Mapper
+  anchors keep bounded UTF-16 lengths rather than full conversation text. A
+  cursorless refresh is display-only; unpositioned deltas wait for an ordered
+  upstream upsert. Descendant prompts resolve through the owning platform's
+  metadata, never the hub's local database. Reconnect seeds invalidate pending
+  settle generations before opening the new epoch, and
+  every browser write/flush has a deadline. Upstream failures are visible even
+  when browser keepalives continue. Every non-resumed hello, including the first,
+  triggers fenced recovery. The browser replaces REST-owned history, preserves
+  the separate stream-owned live content and prompt/task ledger, and replays
+  events received after the request fence.
 - **Session recovery** (`internal/sessionrecovery`). A workerless service owns
   interruption history, replacement membership, admission and stop fences, and
   confirmed-stop reconciliation. Runtime hooks and history reads call it through

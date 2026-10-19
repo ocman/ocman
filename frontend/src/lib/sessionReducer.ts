@@ -1,50 +1,24 @@
-// Pure reducer for the SessionDetail page.
-//
-// Owns the *only* write path into the page's `SessionView`. REST
-// snapshots arrive via `load` actions; SSE events arrive via `sse`
-// actions; the action table maps each event type to a deterministic
-// state transition. No caching, no length heuristics, no
-// reparent-temp-id dance — see spec/sse-rewrite/architecture.md for
-// the full design rationale.
+// Pure reducer for the SessionDetail page's REST loads and client actions.
+// Conversation stream batches are folded by lib/conversation/conversationReducer.
 //
 // Field ownership rule (the only subtle bit):
 //
-//   Once a `message.part.delta` has been observed for a (partId,
-//   field) pair, snapshots can no longer overwrite that field. Every
-//   other field is owned by snapshots. This replaces the old length-
-//   comparison heuristic with a deterministic ownership table.
+//   Once a streaming delta has been observed for a (partId, field) pair,
+//   snapshots can no longer overwrite that field. Every other field is
+//   owned by snapshots.
 //
-// The reducer is intentionally allocation-free for the no-op path
-// (unknown event, wrong sessionId, no-op state change) — the
-// `useSession` hook calls `dispatch` per SSE event and React will
-// short-circuit re-renders when the state reference is identical.
+// No-op actions return the same state reference so React skips re-renders.
 
 import type { Message, Part } from './api';
-import type { SessionAction, SessionView, SseEvent } from './sessionViewTypes';
+import type { SessionAction, SessionView } from './sessionViewTypes';
 import { upsertMessage, upsertSnapshotPart } from './sessionViewParts';
-import { reduceSseEvent } from './sessionSseReducer';
+import { normalizeQuestionItems } from './sseHelpers';
 
 export type {
-  AutoApprovedNoticePayload, AutoRejectedNoticePayload, SessionAction, SessionMetadata, SessionView, SseEvent,
+  AutoApprovedNoticePayload, AutoRejectedNoticePayload, SessionAction, SessionMetadata, SessionView,
 } from './sessionViewTypes';
 export { initialSessionView } from './sessionViewTypes';
 export { seedDeltaOwnedFields } from './sessionViewParts';
-
-/**
- * Resolve the session id an event targets. Returns null when the
- * event lacks one (legacy payloads — treated as "current session"
- * by the caller). Looks in the canonical places OpenCode uses.
- */
-function eventSessionId(event: SseEvent): string | null {
-  const props = event.properties;
-  if (!props) return null;
-  if (typeof props.sessionID === 'string') return props.sessionID;
-  const info = props.info as Record<string, unknown> | undefined;
-  if (info && typeof info.sessionID === 'string') return info.sessionID;
-  const part = props.part as Record<string, unknown> | undefined;
-  if (part && typeof part.sessionID === 'string') return part.sessionID;
-  return null;
-}
 
 /**
  * Reconcile-mode load: merge `incoming` into `state` such that
@@ -183,7 +157,7 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
       return state;
     }
     case 'setPendingPermission': {
-      // Session guard, mirroring the `sse` case below. The reverse-sync
+      // Session guard. The reverse-sync
       // fetch that dispatches this outlives a navigation, so without it
       // a late response for session A injects A's prompt into B and
       // disables B's composer behind a dialog it can never answer.
@@ -200,19 +174,16 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
         judgeReasoning: null,
       };
     }
+    case 'setPendingQuestion': {
+      const q = action.question;
+      if (q.sessionID && q.sessionID !== state.sessionId) return state;
+      if (!q.requestId || state.pendingQuestion?.requestId === q.requestId) return state;
+      const questions = normalizeQuestionItems(q.questions);
+      return questions.length ? { ...state, pendingQuestion: { ...q, questions } } : state;
+    }
     case 'patchSession': {
       if (!state.session) return state;
       return { ...state, session: { ...state.session, ...action.patch } };
-    }
-    case 'sse': {
-      const event = action.event;
-      const evtSid = eventSessionId(event);
-      // Events that explicitly belong to a different session are
-      // dropped here. The legacy "subagent bubbling" path is no
-      // longer the reducer's concern; the hook routes those events
-      // by composing a second `useSession(subagentId)`.
-      if (evtSid && evtSid !== state.sessionId) return state;
-      return reduceSseEvent(state, event);
     }
     case 'addNotice': {
       // Use the OpenCode permission ID as a stable key so re-dispatching

@@ -4,8 +4,8 @@
  * All responses are mocked at the HTTP layer. The LLM response is
  * simulated by:
  *  1. The POST /api/session/:id/message returning 204 immediately.
- *  2. An SSE stream delivering a synthetic `message.created` event with
- *     a canned assistant reply, then a `session.idle` event.
+ *  2. A conversation stream delivering synthetic `message.upserted` and
+ *     `part.upserted` events with a canned assistant reply.
  *
  * This lets every composer test run fully offline without any API key
  * or live agent process.
@@ -25,7 +25,7 @@
  *  - Busy (409) response shows a "try again" message in the thread
  */
 
-import { test, expect, MOCK_SESSION, mockSse, sseMessage, mockSessionWithLiveConnection } from './fixtures';
+import { test, expect, MOCK_SESSION, mockStream, oceMessage, mockSessionWithLiveConnection } from './fixtures';
 
 const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 
@@ -71,8 +71,8 @@ async function goToLiveSession(page: import('@playwright/test').Page) {
 // ---------------------------------------------------------------------------
 
 test('composer is disabled when session has no live connection', async ({ mockedPage: page }) => {
-  // Block the SSE endpoint so onopen never fires and portAvailable stays false
-  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) =>
+  // Block the stream endpoint so onopen never fires and portAvailable stays false
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/stream`), (route) =>
     route.fulfill({ status: 503, body: 'Service Unavailable' }),
   );
   await page.goto(SESSION_URL);
@@ -82,8 +82,8 @@ test('composer is disabled when session has no live connection', async ({ mocked
 });
 
 test('disabled composer textarea has a "No live connection" placeholder', async ({ mockedPage: page }) => {
-  // Block SSE entirely so onopen never fires and portAvailable stays false
-  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) =>
+  // Block the stream entirely so onopen never fires and portAvailable stays false
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/stream`), (route) =>
     route.fulfill({ status: 503, body: 'Service Unavailable' }),
   );
   await page.goto(SESSION_URL);
@@ -211,22 +211,22 @@ test('backend failure keeps the composer locked and announces the retry', async 
 test('mocked assistant reply appears in thread via SSE (on page load)', async ({ mockedPage: page }) => {
   // Wire up SSE to deliver a synthetic assistant message immediately on connection.
   // We include both a user message (so the session has prior context) and the
-  // assistant reply, then an idle signal. The reply should appear in the thread
-  // without requiring a real LLM call.
-  const { event: userEvent } = sseMessage({
+  // assistant reply. The reply should appear in the thread without requiring
+  // a real LLM call.
+  const { events: userEvents } = oceMessage({
     sessionId: MOCK_SESSION.id,
     role: 'user',
     text: 'Prior user message',
   });
-  const { event: assistantEvent } = sseMessage({
+  const { events: assistantEvents } = oceMessage({
     sessionId: MOCK_SESSION.id,
     role: 'assistant',
     text: 'Hello from the mocked LLM!',
     finish: 'end_turn',
   });
-  // Do NOT send session.idle — that triggers loadNow() which reconciles
-  // against the empty messages mock and could interfere with SSE messages.
-  await mockSse(page, MOCK_SESSION.id, [userEvent, assistantEvent]);
+  // Do NOT send turn.ended — that triggers a reconcile against the empty
+  // messages mock and could interfere with streamed messages.
+  await mockStream(page, MOCK_SESSION.id, [...userEvents, ...assistantEvents]);
 
   await goToLiveSession(page);
 
@@ -241,14 +241,14 @@ test('mocked assistant reply appears in thread via SSE (on page load)', async ({
 // ---------------------------------------------------------------------------
 
 test('stop button is visible while agent is running (SSE busy)', async ({ mockedPage: page }) => {
-  // Deliver a user message SSE event (no finish → still running)
-  const { event: userEvent } = sseMessage({
+  // Deliver a user message stream event (no finish → still running)
+  const { events: userEvents } = oceMessage({
     sessionId: MOCK_SESSION.id,
     role: 'user',
     text: 'Are you there?',
   });
   // Keep the stream open without delivering finish — agent stays "running"
-  await mockSse(page, MOCK_SESSION.id, [userEvent]);
+  await mockStream(page, MOCK_SESSION.id, userEvents);
 
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
@@ -264,12 +264,12 @@ test('stop button is visible while agent is running (SSE busy)', async ({ mocked
 });
 
 test('clicking stop button calls POST /api/session/:id/abort', async ({ mockedPage: page }) => {
-  const { event: userEvent } = sseMessage({
+  const { events: userEvents } = oceMessage({
     sessionId: MOCK_SESSION.id,
     role: 'user',
     text: 'Abort me',
   });
-  await mockSse(page, MOCK_SESSION.id, [userEvent]);
+  await mockStream(page, MOCK_SESSION.id, userEvents);
 
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),

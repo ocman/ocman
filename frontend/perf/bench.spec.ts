@@ -38,7 +38,15 @@ const INIT = () => {
       super();
       this.url = url;
       sources.push(this);
-      setTimeout(() => { this.readyState = 1; this.onopen?.(new Event('open')); }, 0);
+      setTimeout(() => {
+        this.readyState = 1;
+        this.onopen?.(new Event('open'));
+        // Every conversation stream connection starts with a cold hello.
+        const sessionId = /\/api\/session\/([^/?]+)\/stream/.exec(url)?.[1];
+        if (!sessionId) return;
+        const event = { type: 'stream.hello', protocol: 1, resumed: false, revision: 0 };
+        this.dispatchEvent(new MessageEvent('oce', { data: JSON.stringify({ v: 1, epoch: 'bench', seq: 0, sessionId: decodeURIComponent(sessionId), platform: 'opencode', at: Date.now(), durability: 'live', event }) }));
+      }, 0);
     }
     close() { this.readyState = 2; }
   }
@@ -64,9 +72,8 @@ const INIT = () => {
           for (; next <= due && next < frames.length; next++) {
             for (const [channel, data] of frames[next]) {
               for (const es of sources) {
-                if (es.readyState !== 1 || !es.url.includes(`/api/session/${sessionId}/events`)) continue;
-                const ev = new MessageEvent(channel, { data });
-                if (channel === 'message') es.onmessage?.(ev); else es.dispatchEvent(ev);
+                if (es.readyState !== 1 || !es.url.includes(`/api/session/${sessionId}/stream`)) continue;
+                es.dispatchEvent(new MessageEvent(channel, { data }));
               }
             }
           }
@@ -217,7 +224,7 @@ test('interaction bench', async ({ mockedPage: page }) => {
     }],
     // Sit idle on the session page: background polls only.
     ['idle', () => page.waitForTimeout(30_000)],
-    // Stream while a subagent runs (task poll + foreign events).
+    // Stream while a subagent runs (task poll + child status levels).
     ['streamWithSubagent', () => play(page, id(1), streamFrames(id(1), { foreignId: SUBAGENT }))],
   ];
   for (const [name, run] of scenarios) {

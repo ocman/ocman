@@ -1,0 +1,3 @@
+{"session":"s1"}
+{"data":{"properties":{"info":{"directory":"/d","id":"s1","permission":[],"projectID":"","revert":{"messageID":"msg02"},"time":{"created":1,"updated":3},"title":"Fix bug","version":"2"},"sessionID":"s1"},"type":"session.updated"}}
+{"data":{"properties":{"info":{"directory":"/d","id":"s1","permission":[],"projectID":"","time":{"created":1,"updated":4},"title":"Fix bug","version":"2"},"sessionID":"s1"},"type":"session.updated"}}

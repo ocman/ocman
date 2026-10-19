@@ -22,8 +22,8 @@ import (
 // of the HTTP metrics surface for free.
 //
 // SSE is filtered out here (otelSpanFilter returns false for the
-// /events suffix) so the long-lived connection doesn't keep an
-// otelhttp span open for hours; the SSE handler manages its own
+// session /stream suffix) so the long-lived connection doesn't keep an
+// otelhttp span open for hours; traceSessionStream manages its own
 // connection-lifetime span instead.
 func withOTel(next http.Handler) http.Handler {
 	return otelhttp.NewHandler(
@@ -47,7 +47,7 @@ func otelSpanFilter(r *http.Request) bool {
 	if !strings.HasPrefix(path, "/api/") {
 		return false
 	}
-	if strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/events") {
+	if isSessionStreamPath(path) {
 		return false
 	}
 	return true
@@ -99,4 +99,9 @@ func routeTemplate(path string) string {
 		return prefix + "{id}"
 	}
 	return prefix + "{id}/" + head
+}
+
+// isSessionStreamPath matches the long-lived per-session SSE route.
+func isSessionStreamPath(path string) bool {
+	return strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/stream")
 }

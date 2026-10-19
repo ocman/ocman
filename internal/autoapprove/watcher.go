@@ -174,7 +174,7 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 			if reply == "reject" {
 				reason = "rejected"
 			}
-			svc.broadcastPermissionResolved(sessionID, permissionID, reason)
+			svc.broadcastPermissionResolved(opencode.PlatformID, sessionID, permissionID, reason)
 		}
 	}
 	return w

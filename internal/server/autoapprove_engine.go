@@ -61,15 +61,15 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 			}
 			return nil
 		},
-		BroadcastPermissionResolved: func(session, request, reason string) {
-			s.onAgentPromptResolved(session, "permission", request)
-			s.broadcastPermissionResolved(session, request, reason)
+		BroadcastPermissionResolved: func(platform, session, request, reason string) {
+			s.onAgentPromptResolved(platform, session, "permission", request)
+			s.broadcastPermissionResolved(platform, session, request, reason)
 		},
 		PermissionAsked: s.notifyPermissionInbox,
 		PromptNeedsUser: s.onPromptNeedsUser,
-		BroadcastQuestionResolved: func(session, request, reason string) {
-			s.onAgentPromptResolved(session, "question", request)
-			s.broadcastQuestionResolved(session, request, reason)
+		BroadcastQuestionResolved: func(platform, session, request, reason string) {
+			s.onAgentPromptResolved(platform, session, "question", request)
+			s.broadcastQuestionResolved(platform, session, request, reason)
 		},
 		BroadcastSessionIdle: func(platform, session string) {
 			s.onAgentWaitIdle(platform, session)
@@ -78,11 +78,18 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		BroadcastQueueChanged: func(platformID, sessionID string) {
 			s.broadcastQueueUpdated(context.Background(), platformID, sessionID)
 		},
-		SessionRetry:            s.onSessionRetry,
-		BroadcastSessionChanged: s.broadcastSessionChanged,
-		BroadcastSessionStatus:  s.onLocalSessionStatus,
-		BroadcastSessionTitle:   s.broadcastSessionTitle,
-		BroadcastGlobalEvent:    s.broadcastGlobalEvent,
+		// The retry, change and title hooks fire from the OpenCode watcher only.
+		SessionRetry: func(session string, status autoapprove.SessionStatus) {
+			s.onSessionRetry(string(opencode.PlatformID), session, status)
+		},
+		BroadcastSessionChanged: func(session string) {
+			s.broadcastSessionChanged(string(opencode.PlatformID), session)
+		},
+		BroadcastSessionStatus: s.onLocalSessionStatus,
+		BroadcastSessionTitle: func(session, title string) {
+			s.broadcastSessionTitle(string(opencode.PlatformID), session, title)
+		},
+		BroadcastGlobalEvent: s.broadcastGlobalEvent,
 		BroadcastGitCommand: func(sessionID, action string) {
 			s.broadcastGitCommand(context.Background(), string(opencode.PlatformID), sessionID, action)
 		},

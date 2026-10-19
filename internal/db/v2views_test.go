@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -235,6 +236,23 @@ func TestOpenV2InstalledOnV1SchemaDoesNotError(t *testing.T) {
 	msgs, err := d.GetSessionMessages(t.Context(), "s1")
 	if err != nil || len(msgs) != 1 {
 		t.Fatalf("GetSessionMessages = %v, %v; want 1 message", msgs, err)
+	}
+	// History readers follow the physical schema, not the installed version.
+	snapshot, err := d.HistorySnapshot(t.Context(), "s1")
+	if err != nil || len(snapshot.Messages) != 1 || snapshot.Messages[0].ID != "m1" {
+		t.Fatalf("HistorySnapshot on v1 schema with v2 installed = %+v, %v", snapshot, err)
+	}
+	if d.V2() {
+		t.Fatal("V2() = true for a v1 schema")
+	}
+	if _, err := d.HistorySequences(t.Context()); !errors.Is(err, ErrHistoryUnsupported) {
+		t.Fatalf("HistorySequences on v1 schema = %v, want ErrHistoryUnsupported", err)
+	}
+	if _, err := d.HistorySequence(t.Context(), "s1"); !errors.Is(err, ErrHistoryUnsupported) {
+		t.Fatalf("HistorySequence on v1 schema = %v, want ErrHistoryUnsupported", err)
+	}
+	if _, err := d.HistoryMessages(t.Context(), "s1", nil); !errors.Is(err, ErrHistoryUnsupported) {
+		t.Fatalf("HistoryMessages on v1 schema = %v, want ErrHistoryUnsupported", err)
 	}
 }
 

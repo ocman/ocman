@@ -119,7 +119,7 @@ export default defineConfig({
     allowedHosts: extraAllowedHosts,
      proxy: {
        // Disable response buffering for /api so SSE event streams
-       // (e.g. /api/session/{id}/events) are forwarded to the client
+       // (e.g. /api/session/{id}/stream) are forwarded to the client
        // immediately rather than held until the stream closes.
        //
        // `ws: true` is required so WebSocket upgrade requests (the live

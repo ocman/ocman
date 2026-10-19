@@ -39,11 +39,14 @@ func (s *Server) Session(ctx context.Context, req *pb.SessionReq) (*pb.JsonResp,
 	if err != nil {
 		return nil, err
 	}
+	if req.Browsing && s.conversationContext != nil {
+		ctx = s.conversationContext(ctx)
+	}
 	detail, err := p.Session(ctx, req.SessionId, int(req.Limit), int(req.Offset))
 	if err == nil && detail != nil && s.enrichSession != nil {
 		s.enrichSession(ctx, req.Platform, req.SessionId, detail)
 	}
-	return jsonResp(detail, err)
+	return jsonResp(detail, svcErr(err))
 }
 func (s *Server) SessionsInactiveBefore(ctx context.Context, req *pb.CutoffReq) (*pb.JsonResp, error) {
 	p, err := s.platformFor(req.Platform)

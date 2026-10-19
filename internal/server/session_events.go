@@ -6,7 +6,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
@@ -43,35 +42,35 @@ func (s *Server) broadcastSessionIdle(sessionID string) {
 }
 
 // broadcastSessionChanged refreshes the list for upstream session changes.
-func (s *Server) broadcastSessionChanged(sessionID string) {
+func (s *Server) broadcastSessionChanged(platform, sessionID string) {
 	if sessionID == "" {
 		return
 	}
-	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID, "platform": opencode.PlatformID})
+	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID, "platform": platform})
 	if err != nil {
 		return
 	}
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
-	// Recovery for OpenCode terminal changes without a matching idle edge.
+	// Recovery for terminal changes without a matching idle edge.
 	// Runs on the caller's goroutine (joined event watchers), bounded by the
 	// server lifetime so shutdown cancels its reads.
-	s.replyToConversation(s.lifetime(), "opencode", sessionID)
-	s.replyToSession(s.lifetime(), "opencode", sessionID)
+	s.replyToConversation(s.lifetime(), platform, sessionID)
+	s.replyToSession(s.lifetime(), platform, sessionID)
 }
 
-func (s *Server) broadcastSessionStatus(sessionID string, status db.SessionStatus) {
-	s.broadcastSessionPatch(sessionID, map[string]interface{}{"status": status})
+func (s *Server) broadcastSessionStatus(platform, sessionID string, status db.SessionStatus) {
+	s.broadcastSessionPatch(platform, sessionID, map[string]interface{}{"status": status})
 }
 
-func (s *Server) broadcastSessionTitle(sessionID, title string) {
-	s.broadcastSessionPatch(sessionID, map[string]interface{}{"title": title})
+func (s *Server) broadcastSessionTitle(platform, sessionID, title string) {
+	s.broadcastSessionPatch(platform, sessionID, map[string]interface{}{"title": title})
 }
 
-func (s *Server) broadcastSessionPatch(sessionID string, patch map[string]interface{}) {
+func (s *Server) broadcastSessionPatch(platform, sessionID string, patch map[string]interface{}) {
 	if sessionID == "" {
 		return
 	}
-	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID, "platform": opencode.PlatformID, "patch": patch})
+	payload, err := json.Marshal(map[string]interface{}{"sessionID": sessionID, "platform": platform, "patch": patch})
 	if err == nil {
 		s.broadcastGlobalEvent("ocman.session.changed", payload)
 	}

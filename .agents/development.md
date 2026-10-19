@@ -47,6 +47,10 @@ make otel-logs
 make otel-reset       # also wipes persisted telemetry data
 ```
 
+Conversation storage and ingestion are always enabled. Dev targets keep
+`statev2.db` in this checkout's `tmp/`. Tests use temporary stores; builds do
+not start ingestion.
+
 Vite proxies `/api` to `localhost:8229`. Air rebuilds Go but does not rebuild
 embedded frontend assets. Use Vite on `:8228`, or run `pnpm build` in `frontend/`
 and trigger an Air rebuild to refresh the embedded bundle.

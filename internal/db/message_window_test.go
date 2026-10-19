@@ -28,7 +28,7 @@ func TestMessagesFromQueryPlan(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rows, err := d.db.Query(`EXPLAIN QUERY PLAN SELECT m.id FROM `+messagesFrom(tt.since, true)+
+			rows, err := d.db.Query(`EXPLAIN QUERY PLAN SELECT m.id FROM `+d.messagesFrom(tt.since, true)+
 				` WHERE json_extract(m.data, '$.role') = 'assistant' AND m.time_created >= ?`, tt.since)
 			if err != nil {
 				t.Fatal(err)
@@ -65,7 +65,7 @@ func TestMessagesFromKeepsWindowRows(t *testing.T) {
 
 	since := now - 7*24*3600*1000
 	var n int
-	err := d.db.QueryRow(`SELECT count(*) FROM `+messagesFrom(since, false)+
+	err := d.db.QueryRow(`SELECT count(*) FROM `+d.messagesFrom(since, false)+
 		` WHERE json_extract(m.data, '$.role') = 'assistant' AND m.time_created >= ?`, since).Scan(&n)
 	if err != nil {
 		t.Fatal(err)

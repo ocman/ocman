@@ -11,7 +11,8 @@ import (
 // HandleProviderEvent is the headless prompt pipeline for a provider
 // adapter's event stream (AD-7a). Prompts ocman's rules settle never get
 // here; the rest go to the safe-command cache, the judge, then the user.
-// Replies are recorded with their provenance like OpenCode's.
+// Replies are recorded with their provenance like OpenCode's and broadcast
+// as resolved under the adapter's platform.
 func (s *Service) HandleProviderEvent(ctx context.Context, adapter platforms.Platform, event providerprotocol.Event) {
 	var prompt platforms.LivePrompt
 	if json.Unmarshal(event.Properties, &prompt) != nil {
@@ -34,7 +35,19 @@ func (s *Service) HandleProviderEvent(ctx context.Context, adapter platforms.Pla
 			return
 		}
 		s.HandlePermissionReplied(ctx, sessionID, id, reply)
+		reason := "replied"
+		if reply == "reject" {
+			reason = "rejected"
+		}
+		s.broadcastPermissionResolved(adapter.ID(), sessionID, id, reason)
 	case "question.asked":
 		s.ObserveQuestionPrompt(adapter.ID(), prompt)
+	case "question.replied", "question.rejected":
+		id, _ := prompt["requestID"].(string)
+		reason := "replied"
+		if event.Type == "question.rejected" {
+			reason = "rejected"
+		}
+		s.broadcastQuestionResolved(adapter.ID(), sessionID, id, reason)
 	}
 }

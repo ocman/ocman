@@ -18,7 +18,7 @@ func TestAgentWaitsObserveQuestionsAndManualPermissions(t *testing.T) {
 	if err != nil || len(waits) != 2 {
 		t.Fatalf("waits %v, %v", waits, err)
 	}
-	s.onAgentPromptResolved("s", "question", "q")
+	s.onAgentPromptResolved("opencode", "s", "question", "q")
 	s.onAgentWaitIdle("opencode", "s")
 	s.onPromptNeedsUser("opencode", "s", "question", "q")
 	if _, err := s.stateDB.AgentUserWaits(t.Context(), "opencode", before, time.Now().UnixMilli()+1000); err != nil {
@@ -26,9 +26,9 @@ func TestAgentWaitsObserveQuestionsAndManualPermissions(t *testing.T) {
 	}
 	// Safe autoapproval never calls onPromptNeedsUser, so a resolution alone
 	// creates no measurable human wait.
-	s.onAgentPromptResolved("safe", "permission", "p")
+	s.onAgentPromptResolved("opencode", "safe", "permission", "p")
 	s.stateDB = nil
-	s.onAgentPromptResolved("missing", "permission", "p")
+	s.onAgentPromptResolved("opencode", "missing", "permission", "p")
 	s.onPromptNeedsUser("opencode", "missing", "question", "q")
 }
 

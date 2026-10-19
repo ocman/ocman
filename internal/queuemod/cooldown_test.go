@@ -68,10 +68,29 @@ func TestRetryResetIsOwnerQualified(t *testing.T) {
 		Sessions: func() Sessions { return svc },
 		Adapter:  func(context.Context, string, string) (platforms.Platform, bool) { return quotaPlatform{}, true },
 	})
-	m.OnSessionRetry("same", time.Now().Add(time.Minute).UnixMilli(), "")
-	m.recordQuotaCooldown(t.Context(), "r-other:opencode", "same")
+	m.OnSessionRetry("claudecode", "same", time.Now().Add(time.Minute).UnixMilli(), "")
+	m.recordQuotaCooldown(t.Context(), "r-other:claudecode", "same")
 	m.recordQuotaCooldown(t.Context(), "opencode", "same")
-	if len(svc.durations) != 2 || svc.durations[0] != 0 || svc.durations[1] <= 0 {
-		t.Fatalf("reset durations = %v; remote must not consume local retry reset", svc.durations)
+	m.recordQuotaCooldown(t.Context(), "claudecode", "same")
+	if len(svc.durations) != 3 || svc.durations[0] != 0 || svc.durations[1] != 0 || svc.durations[2] <= 0 {
+		t.Fatalf("reset durations = %v; only the retrying owner may consume its retry reset", svc.durations)
+	}
+}
+
+func TestFallNoticeAnnouncesOwnerPlatform(t *testing.T) {
+	var changed []string
+	m := NewModule(Deps{SessionChanged: func(platformID, sessionID string) { changed = append(changed, platformID+"/"+sessionID) }})
+	m.setExhaustedNotice("claudecode", "s1", time.Now().Add(time.Minute))
+	if len(changed) != 1 || changed[0] != "claudecode/s1" {
+		t.Fatalf("session changes = %v, want claudecode/s1", changed)
+	}
+	sess := &db.Session{ID: "s1"}
+	m.ApplyFallNotice("opencode", sess)
+	if sess.Notice != nil {
+		t.Fatal("another owner's session received the notice")
+	}
+	m.ApplyFallNotice("claudecode", sess)
+	if sess.Notice == nil || sess.Notice.Kind != "models_exhausted" {
+		t.Fatalf("notice = %+v", sess.Notice)
 	}
 }

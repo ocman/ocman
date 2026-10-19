@@ -1,4 +1,4 @@
-import { test, expect, MOCK_SESSION, mockSse, sseEvent } from './fixtures';
+import { test, expect, MOCK_SESSION, mockStream } from './fixtures';
 
 for (const width of [1280, 390]) {
   test(`background task stop controls fit the popover at ${width}px`, async ({ mockedPage: page }) => {
@@ -6,9 +6,9 @@ for (const width of [1280, 390]) {
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
       session: { ...MOCK_SESSION, status: 'busy', liveConnection: true }, messages: [], parts: [],
     } }));
-    await mockSse(page, MOCK_SESSION.id, [sseEvent({ type: 'ocman.session.background', properties: {
-      sessionID: MOCK_SESSION.id, count: 1, tasks: [{ id: 'one', description: 'pnpm test '.repeat(12) }],
-    } })]);
+    await mockStream(page, MOCK_SESSION.id, [{
+      type: 'background.changed', count: 1, tasks: [{ id: 'one', description: 'pnpm test '.repeat(12) }],
+    }]);
     await page.goto(`/session/${MOCK_SESSION.id}`);
     await page.getByRole('button', { name: '1 background task running' }).click();
     const panel = page.getByRole('dialog', { name: 'Background tasks' });

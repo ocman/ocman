@@ -1,0 +1,6 @@
+{"session":"ses_a"}
+{"event":"ocman.session.background","data":{"type":"ocman.session.background","properties":{"sessionID":"ses_a","count":2,"tasks":[{"id":"t1","description":"npm run dev"},{"id":"t1","description":"duplicate"},{"id":"t2","description":"sleep 60"},{"id":5,"description":"bad id"}]}}}
+{"event":"ocman.session.background","data":{"type":"ocman.session.background","properties":{"sessionID":"ses_a","count":-1}}}
+{"data":{"type":"ocman.queue.changed","properties":{"sessionID":"ses_a"}}}
+{"event":"ocman.session.changed","data":{"sessionID":"ses_a","patch":{"title":"Renamed"}}}
+{"event":"ocman.session.background","data":{"type":"ocman.session.background","properties":{"sessionID":"ses_a","count":0,"tasks":[]}}}

@@ -92,8 +92,8 @@ func (s *Service) Ensure(
 
 // backgroundAutoApprove is the authoritative auto-approve engine.
 // It fires whenever an SSE permission.asked event is observed on an
-// OpenCode event stream — either via the frontend-driven /event tee in
-// serveSessionEvents (active while a browser tab is open) or via the
+// OpenCode event stream — either via the session stream's tee in the
+// server's proxyOwnerSessionEvents (active while a browser tab is open) or via the
 // headless runAutoApproveWatcher (active for the lifetime of the
 // ocman process). Both entry points funnel through Ensure,
 // which deduplicates so the judge runs at most once per permission.
@@ -344,7 +344,7 @@ func (s *Service) respondAndPersistSafeApproval(
 	// per-session SSE sink) so cross-page prompt toasts for this session
 	// can clear immediately instead of lingering until the next
 	// /api/sessions/notify poll.
-	s.broadcastPermissionResolved(sessionID, permissionID, "auto-approved")
+	s.broadcastPermissionResolved(platformID, sessionID, permissionID, "auto-approved")
 
 	logger.Debug("background auto-approve: permission approved")
 }

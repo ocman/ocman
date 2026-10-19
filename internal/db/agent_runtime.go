@@ -17,12 +17,7 @@ type AgentRunHour struct {
 // tools, then subtracts the union of human waits. Subagents remain separate.
 func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir string, waits map[string][]RunInterval) ([]AgentRunHour, error) {
 	source := d.analytics(ctx)
-	query := `SELECT m.session_id, json_extract(m.data, '$.time.created'), json_extract(m.data, '$.time.completed')
-		FROM message m JOIN session s ON s.id = m.session_id
-		WHERE json_extract(m.data, '$.role') = 'assistant'
-		AND json_extract(m.data, '$.time.created') > 0
-		AND json_extract(m.data, '$.time.completed') > json_extract(m.data, '$.time.created')
-		AND json_extract(m.data, '$.time.completed') > ? AND json_extract(m.data, '$.time.created') < ?`
+	query := d.runIntervalsQuery()
 	args := []any{since, until}
 	if clause, values := directoryWhere(dir); clause != "" {
 		query += " AND " + clause
@@ -50,13 +45,10 @@ func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir strin
 	// Read only compact question timings from the same source as the message
 	// scan. Before the mirror is warm, the equivalent source projection works.
 	questionTable, questionTime, questionTool := "part", "json_extract(p.data, '$.state.time')", "json_extract(p.data, '$.tool')"
-	if source != d.db {
+	if source != d.reads() {
 		questionTable, questionTime, questionTool = "tool_timing", "p.time", "p.tool"
 	}
-	questionQuery := `SELECT m.session_id, json_extract(` + questionTime + `, '$.start'), json_extract(` + questionTime + `, '$.end')
-		FROM ` + questionTable + ` p JOIN message m ON m.id = p.message_id JOIN session s ON s.id = m.session_id
-		WHERE ` + questionTool + ` = 'question' AND json_extract(m.data, '$.time.completed') > ?
-		AND json_extract(m.data, '$.time.created') < ?`
+	questionQuery := d.questionIntervalsQuery(questionTable, questionTime, questionTool)
 	if clause, _ := directoryWhere(dir); clause != "" {
 		questionQuery += " AND " + clause
 	}

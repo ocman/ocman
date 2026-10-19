@@ -34,6 +34,9 @@ type Deps struct {
 	// Analytics serves the usage views: the analytics mirror, which other
 	// platforms feed too. Defaults to DB.
 	Analytics *db.DB
+	// HistoryAnalytics is resolved per request so startup wiring can finish
+	// before the module's lazy dependencies are used.
+	HistoryAnalytics func() *HistoryAnalytics
 	// Store is ocman's state database; may be nil.
 	Store *state.DB
 	// Version is the build version reported by /api/stats, read per request.
@@ -80,24 +83,25 @@ func (m *Module) Name() string { return "analytics" }
 // extraction.
 func (m *Module) Routes(r module.Router) {
 	get := func(h http.HandlerFunc) http.HandlerFunc { return method(http.MethodGet, m.deps.Guards.Auth(h)) }
+	data := func(h http.HandlerFunc) http.HandlerFunc { return get(m.analyticsRoute(h)) }
 	post := func(h http.HandlerFunc) http.HandlerFunc { return method(http.MethodPost, m.deps.Guards.Auth(h)) }
-	r.Handle("/api/stats", get(m.handleStats))
-	r.Handle("/api/analytics/overview", get(m.handleAnalyticsOverview))
-	r.Handle("/api/analytics/session-concurrency", get(m.handleSessionConcurrency))
+	r.Handle("/api/stats", data(m.handleStats))
+	r.Handle("/api/analytics/overview", data(m.handleAnalyticsOverview))
+	r.Handle("/api/analytics/session-concurrency", data(m.handleSessionConcurrency))
 	r.Handle("/api/analytics/database-sizes", get(m.handleDatabaseSizes))
 	r.Handle("/api/analytics/ui-usage", get(m.handleUIUsageDays))
-	r.Handle("/api/analytics/agent-run-hours", get(m.handleAgentRunHours))
+	r.Handle("/api/analytics/agent-run-hours", data(m.handleAgentRunHours))
 	r.Handle("/api/ui-usage", post(m.handleUIUsage))
 	r.Handle("/api/subscription-usage", method(http.MethodGet, m.deps.Guards.Localhost(m.handleSubscriptionUsage)))
 	r.Handle("/api/provider-usage", method(http.MethodGet, m.deps.Guards.Localhost(m.handleSubscriptionUsage)))
-	r.Handle("/api/metrics", get(m.handleMetrics))
-	r.Handle("/api/metrics/performance", get(m.handleMetricsPerformance))
-	r.Handle("/api/metric-logs", get(m.handleMetricLogs))
+	r.Handle("/api/metrics", data(m.handleMetrics))
+	r.Handle("/api/metrics/performance", data(m.handleMetricsPerformance))
+	r.Handle("/api/metric-logs", data(m.handleMetricLogs))
 	r.Handle("/api/permission-stats", get(m.handlePermissionStats))
-	r.Handle("/api/activity", get(m.handleActivity))
-	r.Handle("/api/models", get(m.handleModels))
-	r.Handle("/api/hourly", get(m.handleHourly))
-	r.Handle("/api/hourly-tokens", get(m.handleHourlyTokens))
+	r.Handle("/api/activity", data(m.handleActivity))
+	r.Handle("/api/models", data(m.handleModels))
+	r.Handle("/api/hourly", data(m.handleHourly))
+	r.Handle("/api/hourly-tokens", data(m.handleHourlyTokens))
 	r.Handle("/api/cost/calc", post(m.handleCalcCost))
 }
 
@@ -127,18 +131,9 @@ func method(want string, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// requireDB writes 501 when the OpenCode platform is off.
-func (m *Module) requireDB(w http.ResponseWriter) bool {
-	if m.deps.DB == nil {
-		http.Error(w, "OpenCode platform is not enabled", http.StatusNotImplemented)
-		return false
-	}
-	return true
-}
-
 // requireAnalytics writes 501 when no platform contributes analytics.
-func (m *Module) requireAnalytics(w http.ResponseWriter) bool {
-	if m.deps.Analytics == nil {
+func (m *Module) requireAnalytics(w http.ResponseWriter, r *http.Request) bool {
+	if m.analyticsReader(r.Context()) == nil {
 		http.Error(w, "no analytics database: enable a platform", http.StatusNotImplemented)
 		return false
 	}

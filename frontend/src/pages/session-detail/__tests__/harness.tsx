@@ -29,6 +29,8 @@ import type {
   SessionInfo,
   SessionChanges,
 } from '../../../lib/api';
+import type { OceEvent } from '../../../lib/conversation/events';
+import { oceEnvelope, streamSessionId } from '../../../test/oce';
 
 /**
  * Minimal FakeEventSource that records every constructed instance so
@@ -76,6 +78,11 @@ export class FakeEventSource {
     const payload = typeof data === 'string' ? data : JSON.stringify(data);
     const ev = new MessageEvent(type, { data: payload });
     this.listeners.get(type)?.forEach((l) => l(ev));
+  }
+
+  /** Dispatch one conversation event envelope for this stream's session. */
+  emitOce(event: OceEvent, opts?: { sessionId?: string; epoch?: string; seq?: number }) {
+    this.emit('oce', oceEnvelope(opts?.sessionId ?? streamSessionId(this.url), event, opts));
   }
 
   /** Dispatch a generic onmessage event. */

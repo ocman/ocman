@@ -19,6 +19,8 @@ import { formatDate } from '../../../lib/format';
 import { useUiStore } from '../../../lib/uiStore';
 import { __handleSessionChangedForTests } from '../../../lib/useGlobalEvents';
 import { getSidebarSessions, patchSessionLists } from '../../../lib/sessionsCache';
+import { hello, partUpserted, textDelta } from '../../../test/oce';
+import type { OceEvent } from '../../../lib/conversation/events';
 
 // Pass-through spy: the real patch still runs, calls are recorded.
 vi.mock('../../../lib/sessionsCache', async (importOriginal) => {
@@ -212,544 +214,125 @@ describe('SessionDetail — initial mount', () => {
 
 });
 
-describe('SessionDetail — SSE stream', () => {
-  it('opens an EventSource against the active session id', async () => {
+describe('SessionDetail — conversation stream', () => {
+  type SeedDetail = {
+    session: never;
+    messages: { id: string; data: unknown }[];
+    parts: { id: string; data: unknown }[];
+    totalMessages: number;
+  };
+  const seedDetail = (): SeedDetail => ({ session: {} as never, messages: [], parts: [], totalMessages: 0 });
+  // The page mirrors live state into the apiStore cache through updater
+  // calls; folding them in order yields the latest mirrored state.
+  const mirrored = (handle: ReturnType<typeof renderSessionPage>) => {
+    let detail = seedDetail();
+    for (const call of handle.store.updateCachedSession.mock.calls) {
+      const [, updater] = call as [string, (prev: SeedDetail) => SeedDetail];
+      detail = updater(detail);
+    }
+    return {
+      messages: detail.messages,
+      parts: detail.parts.map((p) => ({ id: p.id, data: (typeof p.data === 'string' ? JSON.parse(p.data) : p.data) as Record<string, unknown> })),
+    };
+  };
+  async function openStream(sessionId = 'sess_1') {
+    const handle = renderSessionPage({ sessionId });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    handle.store.updateCachedSession.mockClear();
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitOce(hello());
+    });
+    return handle;
+  }
+
+  it('opens the conversation stream against the active session id', async () => {
     const { sse } = renderSessionPage({ sessionId: 'sess_42' });
     await flushPromises();
-    await waitFor(() => {
-      expect(sse()).toBeDefined();
-    });
-    expect(sse()!.url).toContain('/api/session/sess_42/events');
+    await waitFor(() => expect(sse()).toBeDefined());
+    expect(sse()!.url).toContain('/api/session/sess_42/stream');
   });
 
-  it('updates the session cache when message.created is dispatched', async () => {
-    // The page mirrors live state into the apiStore's session cache
-    // via updateCachedSession. Asserting on its calls verifies the
-    // SSE handler reached setMessages without depending on
-    // assistant-ui's render scheduling.
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-    // Reset the spy so we ignore mirror calls from the initial load.
-    handle.store.updateCachedSession.mockClear();
-
+  it('updates the session cache when a message and its part are upserted', async () => {
+    const handle = await openStream();
     act(() => {
-      handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: {
-            id: 'msg_1',
-            sessionID: 'sess_1',
-            role: 'assistant',
-            time: { created: Date.now() },
-          },
-          parts: [
-            { id: 'p_1', type: 'text', text: 'Hello world', messageID: 'msg_1' },
-          ],
-        },
-      });
+      handle.sse()!.emitOce({ type: 'message.upserted', message: { id: 'msg_1', sessionId: 'sess_1', timeCreated: Date.now(), data: { role: 'assistant' } } });
+      handle.sse()!.emitOce(partUpserted({ id: 'p_1', messageId: 'msg_1', data: { type: 'text', text: 'Hello world' } }, 'sess_1'));
     });
-
     await waitFor(() => {
-      // updateCachedSession is invoked with an updater function. We
-      // run that updater against an empty SessionDetail seed and
-      // inspect the resulting messages array.
-      const calls = handle.store.updateCachedSession.mock.calls;
-      expect(calls.length).toBeGreaterThan(0);
-      const seedDetail = {
-        session: {} as never,
-        messages: [],
-        parts: [],
-        totalMessages: 0,
-      };
-      const seenMsgIds = calls.flatMap((call) => {
-        const [, updater] = call as [string, (prev: typeof seedDetail) => { messages: { id: string }[] }];
-        return updater(seedDetail).messages.map((m) => m.id);
-      });
-      expect(seenMsgIds).toContain('msg_1');
+      const state = mirrored(handle);
+      expect(state.messages.map((m) => m.id)).toContain('msg_1');
+      expect(state.parts.find((p) => p.id === 'p_1')?.data.text).toBe('Hello world');
     });
   });
 
-  it('appends streamed delta text to an existing part', async () => {
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-
-    const seedDetail = {
-      session: {} as never,
-      messages: [],
-      parts: [],
-      totalMessages: 0,
-    };
-    const partTextsFromUpdaters = () => {
-      const calls = handle.store.updateCachedSession.mock.calls;
-      return calls.flatMap((call) => {
-        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { data: unknown }[] }];
-        return updater(seedDetail).parts.map((p) => {
-          const data = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-          return (data as { text?: string })?.text ?? '';
-        });
-      });
-    };
-
-    handle.store.updateCachedSession.mockClear();
+  it('appends offset-anchored text deltas to an existing part', async () => {
+    const handle = await openStream();
     act(() => {
-      handle.sse()!.open();
-      // Seed the message and its initial part via the same
-      // `message.created` event OpenCode emits in practice — the
-      // embedded parts snapshot is the only channel that carries
-      // tool / question blocks before they finalise, so the SSE
-      // handler must merge it into the parts array.
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'msg_1', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
-          parts: [{ id: 'p_1', type: 'text', text: 'Hi', messageID: 'msg_1' }],
-        },
-      });
+      handle.sse()!.emitOce(partUpserted({ id: 'p_1', messageId: 'msg_1', data: { type: 'text', text: 'Hi' } }, 'sess_1'));
+      handle.sse()!.emitOce(textDelta('p_1', 2, ' there', 'msg_1'));
+    });
+    await waitFor(() => expect(mirrored(handle).parts.find((p) => p.id === 'p_1')?.data.text).toBe('Hi there'));
+  });
+
+  it('appends streamed tool output to a running tool part', async () => {
+    const handle = await openStream();
+    act(() => {
+      handle.sse()!.emitOce(partUpserted({ id: 'p_tool', messageId: 'msg_1', data: {
+        type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'echo 1' }, output: '' },
+      } }, 'sess_1'));
+      handle.sse()!.emitOce({ type: 'part.delta', messageId: 'msg_1', partId: 'p_tool', field: 'tool.output', offset: 0, text: 'line 1\n', partType: 'tool' });
     });
     await waitFor(() => {
-      expect(partTextsFromUpdaters().some((t) => t.includes('Hi'))).toBe(true);
-    });
-
-    act(() => {
-      handle.sse()!.emitMessage({
-        type: 'message.part.delta',
-        properties: {
-          partID: 'p_1',
-          messageID: 'msg_1',
-          field: 'text',
-          delta: ' there',
-        },
-      });
-    });
-
-    await waitFor(() => {
-      expect(partTextsFromUpdaters().some((t) => t.includes('Hi there'))).toBe(true);
+      const tool = mirrored(handle).parts.find((p) => p.id === 'p_tool')?.data;
+      expect((tool?.state as { output?: string })?.output).toBe('line 1\n');
+      expect(tool?.tool).toBe('bash');
     });
   });
 
-  it('appends streamed delta text from documented OpenCode payload events', async () => {
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-
-    const seedDetail = {
-      session: {} as never,
-      messages: [],
-      parts: [],
-      totalMessages: 0,
-    };
-    const partTextsFromUpdaters = () => {
-      const calls = handle.store.updateCachedSession.mock.calls;
-      return calls.flatMap((call) => {
-        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { data: unknown }[] }];
-        return updater(seedDetail).parts.map((p) => {
-          const data = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-          return (data as { text?: string })?.text ?? '';
-        });
-      });
-    };
-
-    handle.store.updateCachedSession.mockClear();
-    act(() => {
-      handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        id: 'evt-created',
-        type: 'message.created',
-        payload: {
-          info: { id: 'msg_1', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
-          parts: [{ id: 'p_1', type: 'text', text: 'Hi', messageID: 'msg_1' }],
-        },
-      });
-    });
+  it('renders a running tool part that leads its message', async () => {
+    const handle = await openStream();
+    act(() => handle.sse()!.emitOce(partUpserted({ id: 'p_bash', messageId: 'msg_a', data: {
+      type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'echo hello' }, title: 'echo hello' },
+    } }, 'sess_1')));
     await waitFor(() => {
-      expect(partTextsFromUpdaters().some((t) => t.includes('Hi'))).toBe(true);
-    });
-
-    act(() => {
-      handle.sse()!.emitMessage({
-        id: 'evt-delta',
-        type: 'message.part.delta',
-        payload: {
-          sessionID: 'sess_1',
-          partID: 'p_1',
-          messageID: 'msg_1',
-          field: 'text',
-          delta: ' there',
-        },
-      });
-    });
-
-    await waitFor(() => {
-      expect(partTextsFromUpdaters().some((t) => t.includes('Hi there'))).toBe(true);
+      const state = mirrored(handle);
+      expect(state.messages.map((m) => m.id)).toContain('msg_a');
+      expect(state.parts.find((p) => p.id === 'p_bash')?.data.type).toBe('tool');
     });
   });
 
-  it('appends streamed tool output from documented OpenCode payload events', async () => {
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-
-    const seedDetail = {
-      session: {} as never,
-      messages: [],
-      parts: [],
-      totalMessages: 0,
-    };
-    const partOutputsFromUpdaters = () => {
-      const calls = handle.store.updateCachedSession.mock.calls;
-      return calls.flatMap((call) => {
-        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { data: unknown }[] }];
-        return updater(seedDetail).parts.map((p) => {
-          const data = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-          return (data as { state?: { output?: string } })?.state?.output ?? '';
-        });
-      });
-    };
-
-    handle.store.updateCachedSession.mockClear();
+  it('ignores frames that are not conversation envelopes', async () => {
+    const handle = await openStream();
     act(() => {
-      handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        id: 'evt-tool',
-        type: 'message.part.updated',
-        payload: {
-          id: 'p_tool',
-          sessionID: 'sess_1',
-          messageID: 'msg_1',
-          type: 'tool',
-          tool: 'bash',
-          state: {
-            status: 'running',
-            input: { command: 'for i in 1 2; do echo $i; sleep 1; done' },
-            output: '',
-          },
-        },
-      });
+      handle.sse()!.emitMessage({ type: 'message.part.updated', properties: { part: { id: 'legacy', messageID: 'm', type: 'text', text: 'x' } } });
+      handle.sse()!.emit('oce', '{bad json');
+      handle.sse()!.emit('oce', { v: 2, epoch: 'test', seq: 1, sessionId: 'sess_1', event: { type: 'part.upserted' } });
+      handle.sse()!.emitOce(partUpserted({ id: 'foreign', messageId: 'm', data: { type: 'text', text: 'x' } }, 'other'), { sessionId: 'other' });
+      handle.sse()!.emitOce(partUpserted({ id: 'kept', messageId: 'm', data: { type: 'text', text: 'y' } }, 'sess_1'));
     });
-    await waitFor(() => {
-      expect(partOutputsFromUpdaters()).toContain('');
-    });
-
-    act(() => {
-      handle.sse()!.emitMessage({
-        id: 'evt-tool-delta',
-        type: 'message.part.delta',
-        payload: {
-          sessionID: 'sess_1',
-          partID: 'p_tool',
-          messageID: 'msg_1',
-          field: 'state.output',
-          delta: 'line 1\n',
-        },
-      });
-    });
-
-    await waitFor(() => {
-      expect(partOutputsFromUpdaters().some((out) => out.includes('line 1'))).toBe(true);
-    });
+    await waitFor(() => expect(mirrored(handle).parts.map((p) => p.id)).toEqual(['kept']));
   });
 
-  it('accepts OpenCode global payload wrappers for running bash metadata output', async () => {
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-
-    const seedDetail = {
-      session: {} as never,
-      messages: [],
-      parts: [],
-      totalMessages: 0,
-    };
-    const metadataOutputsFromUpdaters = () => {
-      const calls = handle.store.updateCachedSession.mock.calls;
-      return calls.flatMap((call) => {
-        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { data: unknown }[] }];
-        return updater(seedDetail).parts.map((p) => {
-          const data = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-          return (data as { state?: { metadata?: { output?: string } } })?.state?.metadata?.output ?? '';
-        });
-      });
-    };
-
-    handle.store.updateCachedSession.mockClear();
+  it('keeps streamed text against a lagging non-final upsert and lets a final upsert replace it', async () => {
+    const handle = await openStream();
+    const text = () => mirrored(handle).parts.find((p) => p.id === 'p_drift')?.data;
     act(() => {
-      handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        type: 'event',
-        payload: {
-          type: 'message.part.updated',
-          properties: {
-            part: {
-              id: 'p_tool',
-              sessionID: 'sess_1',
-              messageID: 'msg_1',
-              type: 'tool',
-              tool: 'bash',
-              state: {
-                status: 'running',
-                input: { command: 'ping -c 6 8.8.8.8' },
-                metadata: { output: '64 bytes from 8.8.8.8: icmp_seq=0\n' },
-              },
-            },
-          },
-        },
-      });
+      handle.sse()!.emitOce({ type: 'message.upserted', message: { id: 'msg_drift', sessionId: 'sess_1', timeCreated: Date.now(), data: { role: 'assistant' } } });
+      handle.sse()!.emitOce(partUpserted({ id: 'p_drift', messageId: 'msg_drift', data: { type: 'text', text: 'Hello' } }, 'sess_1'));
+      handle.sse()!.emitOce(textDelta('p_drift', 5, ' world', 'msg_drift'));
     });
-
-    await waitFor(() => {
-      expect(metadataOutputsFromUpdaters().some((out) => out.includes('icmp_seq=0'))).toBe(true);
-    });
-  });
-
-  it('renders a tool part embedded in message.created without a refresh', async () => {
-    // Regression: tool blocks (including `question` prompts) arrive
-    // exclusively via the embedded `parts` snapshot on
-    // `message.created` / `message.updated` — they have no
-    // standalone `message.part.delta` channel. Dropping that
-    // snapshot makes tool blocks invisible until the user
-    // refreshes. See lib/partReducer.ts.
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-
-    const seedDetail = {
-      session: {} as never,
-      messages: [],
-      parts: [],
-      totalMessages: 0,
-    };
-    const collectedParts = () => {
-      const calls = handle.store.updateCachedSession.mock.calls;
-      return calls.flatMap((call) => {
-        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { id: string; data: unknown }[] }];
-        return updater(seedDetail).parts.map((p) => ({
-          id: p.id,
-          data: typeof p.data === 'string' ? JSON.parse(p.data) : p.data,
-        }));
-      });
-    };
-
-    handle.store.updateCachedSession.mockClear();
-    act(() => {
-      handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'msg_tool', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
-          parts: [
-            {
-              id: 'p_tool',
-              type: 'tool',
-              tool: 'bash',
-              messageID: 'msg_tool',
-              sessionID: 'sess_1',
-              state: { status: 'running', input: { command: 'ls' } },
-            },
-          ],
-        },
-      });
-    });
-
-    await waitFor(() => {
-      const parts = collectedParts();
-      expect(parts.some((p) => p.id === 'p_tool' && (p.data as { type?: string }).type === 'tool')).toBe(true);
-    });
-  });
-
-  it('routes a live message.part.updated into the cache as a tool part', async () => {
-    // Regression: the symptom is "tool blocks / question answers
-    // don't show up live, only after refresh". The new reducer
-    // pipeline writes tool parts to state on every part.updated
-    // SSE event, then mirrors into the apiStore cache. We assert
-    // via the cache mirror because the AssistantThread is mocked
-    // out at the harness level (see harness.tsx). End-to-end DOM
-    // rendering of `.oc-tool` is covered by the Playwright e2e
-    // suite.
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-    handle.store.updateCachedSession.mockClear();
-
-    act(() => {
-      handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'msg_a', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
-        },
-      });
-      handle.sse()!.emitMessage({
-        type: 'message.part.updated',
-        properties: {
-          part: {
-            id: 'p_bash',
-            type: 'tool',
-            tool: 'bash',
-            messageID: 'msg_a',
-            sessionID: 'sess_1',
-            state: {
-              status: 'running',
-              input: { command: 'echo hello' },
-              title: 'echo hello',
-            },
-          },
-        },
-      });
-    });
-
-    await waitFor(() => {
-      const calls = handle.store.updateCachedSession.mock.calls;
-      expect(calls.length).toBeGreaterThan(0);
-      type SeedDetail = {
-        session: never;
-        messages: { id: string; data: { role: string } }[];
-        parts: { id: string; data: unknown }[];
-        totalMessages: number;
-      };
-      const seedDetail: SeedDetail = { session: {} as never, messages: [], parts: [], totalMessages: 0 };
-      const lastCall = calls.at(-1)!;
-      const updater = lastCall[1] as (prev: SeedDetail) => SeedDetail;
-      const result = updater(seedDetail);
-      const toolPart = result.parts.find((p) => p.id === 'p_bash');
-      expect(toolPart).toBeDefined();
-      const data = typeof toolPart!.data === 'string' ? JSON.parse(toolPart!.data) : toolPart!.data;
-      expect((data as { type: string }).type).toBe('tool');
-      expect((data as { tool: string }).tool).toBe('bash');
-    });
-  });
-
-  it('reconciles delta-accumulated text against trailing snapshots using longest-wins', async () => {
-    // Contract for delta-owned streaming fields: the longer of (local,
-    // snapshot) wins — streaming fields are append-only on the wire,
-    // so the shorter string is always a prefix of the longer one, and
-    // the longer string is the more-complete value.
-    //
-    // History:
-    //  - Originally the reducer compared lengths naïvely and would
-    //    rewind local text when a snapshot happened to be shorter,
-    //    leaving mid-text gaps.
-    //  - That was replaced with "local always wins for delta-owned
-    //    fields", which fixed the rewind but introduced a new bug:
-    //    after a session-switch round-trip the cache-seeded local
-    //    text could not grow even when the server snapshot had moved
-    //    ahead, and (because the cache doesn't persist the ownership
-    //    map) a DB-lagging snapshot could wipe the cached text.
-    //  - The current rule is "longest-wins" — strictly safe given the
-    //    append-only contract, and it heals both gaps from
-    //    cache-seeded revisits and the original rewind. See
-    //    seedDeltaOwnedFields / upsertSnapshotPart in sessionReducer.
-    const handle = renderSessionPage({ sessionId: 'sess_1' });
-    await flushPromises();
-    await waitFor(() => expect(handle.sse()).toBeDefined());
-
-    type SeedDetail = {
-      session: never;
-      messages: { id: string; data: unknown }[];
-      parts: { id: string; data: unknown }[];
-      totalMessages: number;
-    };
-    const seedDetail: SeedDetail = {
-      session: {} as never,
-      messages: [],
-      parts: [],
-      totalMessages: 0,
-    };
-    const latestParts = () => {
-      const calls = handle.store.updateCachedSession.mock.calls;
-      // Reduce all updater calls in order to get the final state.
-      let detail: SeedDetail = seedDetail;
-      for (const call of calls) {
-        const [, updater] = call as [string, (prev: SeedDetail) => SeedDetail];
-        detail = updater(detail);
-      }
-      return detail.parts.map((p) => ({
-        id: p.id,
-        data: typeof p.data === 'string' ? JSON.parse(p.data) : p.data,
-      }));
-    };
-
-    handle.store.updateCachedSession.mockClear();
-    act(() => {
-      handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'msg_drift', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
-          parts: [{ id: 'p_drift', type: 'text', text: 'Hello', messageID: 'msg_drift' }],
-        },
-      });
-      // Stream a few deltas so the local copy gets to "Hello world".
-      handle.sse()!.emitMessage({
-        type: 'message.part.delta',
-        properties: { partID: 'p_drift', messageID: 'msg_drift', field: 'text', delta: ' world' },
-      });
-    });
-
-    await waitFor(() => {
-      const parts = latestParts();
-      const drift = parts.find((p) => p.id === 'p_drift');
-      expect((drift?.data as { text?: string })?.text).toBe('Hello world');
-    });
-
-    // A trailing snapshot arrives carrying stale text (server-side
-    // commit lagged the deltas) plus updated metadata. The reducer
-    // must preserve the delta-built text while still applying any
-    // new metadata fields.
-    act(() => {
-      handle.sse()!.emitMessage({
-        type: 'message.part.updated',
-        properties: {
-          part: {
-            id: 'p_drift',
-            type: 'text',
-            text: 'Hello',
-            messageID: 'msg_drift',
-            sessionID: 'sess_1',
-            // A field that does NOT participate in delta streaming —
-            // we want to see this land while text stays put.
-            completed: true,
-          },
-        },
-      });
-    });
-
-    await waitFor(() => {
-      const parts = latestParts();
-      const drift = parts.find((p) => p.id === 'p_drift');
-      const data = drift?.data as { text?: string; completed?: boolean };
-      expect(data?.text).toBe('Hello world');
-      expect(data?.completed).toBe(true);
-    });
-
-    // A snapshot that jumps AHEAD of the deltas takes over: it
-    // carries strictly more content (append-only), so refusing it
-    // would leave the user's view permanently truncated relative to
-    // the server. This is the path that heals "missing sections"
-    // after a session-switch round-trip when the DB has caught up
-    // past the cached text.
-    act(() => {
-      handle.sse()!.emitMessage({
-        type: 'message.part.updated',
-        properties: {
-          part: {
-            id: 'p_drift',
-            type: 'text',
-            text: 'Hello world how are you doing today',
-            messageID: 'msg_drift',
-            sessionID: 'sess_1',
-          },
-        },
-      });
-    });
-
-    await waitFor(() => {
-      const parts = latestParts();
-      const drift = parts.find((p) => p.id === 'p_drift');
-      expect((drift?.data as { text?: string })?.text).toBe('Hello world how are you doing today');
-    });
+    await waitFor(() => expect(text()?.text).toBe('Hello world'));
+    // A lagging snapshot keeps the streamed text but applies its other fields.
+    act(() => handle.sse()!.emitOce(partUpserted({ id: 'p_drift', messageId: 'msg_drift', data: { type: 'text', text: 'Hello', completed: true } as never }, 'sess_1')));
+    await waitFor(() => expect(text()).toMatchObject({ text: 'Hello world', completed: true }));
+    // A snapshot ahead of the deltas takes over.
+    act(() => handle.sse()!.emitOce(partUpserted({ id: 'p_drift', messageId: 'msg_drift', data: { type: 'text', text: 'Hello world how are you' } }, 'sess_1')));
+    await waitFor(() => expect(text()?.text).toBe('Hello world how are you'));
+    // The final text wins even when shorter (e.g. trimmed).
+    act(() => handle.sse()!.emitOce(partUpserted({ id: 'p_drift', messageId: 'msg_drift', data: { type: 'text', text: 'Hello world' } }, 'sess_1', true)));
+    await waitFor(() => expect(text()?.text).toBe('Hello world'));
   });
 });
 
@@ -1217,18 +800,10 @@ describe('SessionDetail — regression: user message appears immediately and sta
 
     // Server delivers the real user message via SSE.
     act(() => {
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'msg_real', sessionID: 'sess_1', role: 'user', time: { created: Date.now() } },
-        },
-      });
+      handle.sse()!.emitOce({ type: 'message.upserted', message: { id: 'msg_real', sessionId: 'sess_1', timeCreated: Date.now(), data: { role: 'user' } } });
     });
     expect(handle.result.getByText('hello agent', { selector: 'span' })).toBeVisible();
-    act(() => handle.sse()!.emitMessage({
-      type: 'message.part.updated',
-      properties: { part: { id: 'p_real', type: 'text', text: 'hello agent', messageID: 'msg_real', sessionID: 'sess_1' } },
-    }));
+    act(() => handle.sse()!.emitOce(partUpserted({ id: 'p_real', messageId: 'msg_real', data: { type: 'text', text: 'hello agent' } }, 'sess_1', true)));
     await waitFor(() => expect(handle.result.getAllByText('hello agent', { selector: 'span' })).toHaveLength(1));
 
     // The cache mirror now reflects the real user message with
@@ -1277,48 +852,22 @@ describe('SessionDetail — regression: no max-update-depth loop during streamin
     // (not the early `null` short-circuit). The loop only fires
     // when a real numeric value is being written.
     const start = Date.now() - 5_000; // 5s of "elapsed" stream
-    act(() => {
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: {
-            id: 'msg_busy',
-            sessionID: 'sess_1',
-            role: 'assistant',
-            time: { created: start },
-            tokens: { input: 0, output: 500 },
-          },
-        },
-      });
+    const busyMessage = (output: number) => ({
+      type: 'message.upserted' as const,
+      message: { id: 'msg_busy', sessionId: 'sess_1', timeCreated: start, data: { role: 'assistant' as const, time: { created: start }, tokens: { input: 0, output } } },
     });
+    act(() => handle.sse()!.emitOce(busyMessage(500)));
     // Burst of 30 deltas + interleaved message.updated events that
     // bump the output token count. Each message.updated changes
     // `messages` identity (because the reducer reassigns the message
     // object), which is the dep useSessionStatus reacts to.
     act(() => {
+      let offset = 0;
       for (let i = 0; i < 30; i++) {
-        handle.sse()!.emitMessage({
-          type: 'message.part.delta',
-          properties: {
-            partID: 'p_text',
-            messageID: 'msg_busy',
-            sessionID: 'sess_1',
-            field: 'text',
-            delta: `token ${i} `,
-          },
-        });
-        handle.sse()!.emitMessage({
-          type: 'message.updated',
-          properties: {
-            info: {
-              id: 'msg_busy',
-              sessionID: 'sess_1',
-              role: 'assistant',
-              time: { created: start },
-              tokens: { input: 0, output: 500 + i * 5 },
-            },
-          },
-        });
+        const text = `token ${i} `;
+        handle.sse()!.emitOce(textDelta('p_text', offset, text, 'msg_busy'));
+        offset += text.length;
+        handle.sse()!.emitOce(busyMessage(500 + i * 5));
       }
     });
     await flushPromises(8);
@@ -1332,41 +881,19 @@ describe('SessionDetail — regression: no max-update-depth loop during streamin
   });
 });
 
-describe('SessionDetail — regression: session.diff triggers an immediate refetch', () => {
-  it('refetches /api/session/{id} as soon as session.diff arrives', async () => {
-    // The user-reported regression: tool blocks (edit/write) carry
-    // their diff result via `state.metadata.filediff` on the part,
-    // which the server fills in after emitting the corresponding
-    // `session.diff` event. Without observing `session.diff` and
-    // triggering a refetch, the tool block's diff stays empty in
-    // the UI until the user refreshes the page.
-    //
-    // The refetch fires immediately (not debounced) so the diff
-    // appears as soon as it's ready. The doFetch AbortController
-    // ensures overlapping diff events don't pile up — only one
-    // request is ever in flight.
+describe('SessionDetail — regression: changes signals', () => {
+  // A completed edit tool carries its filediff on its final upsert, so a
+  // changes signal only refreshes the Changes view, never the transcript.
+  it('does not refetch the transcript when changes are dirtied', async () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
-    act(() => handle.sse()!.open());
+    act(() => { handle.sse()!.open(); handle.sse()!.emitOce(hello()); });
     await flushPromises();
-
     const initialCallCount = handle.api.session.mock.calls.length;
-    act(() => {
-      handle.sse()!.emitMessage({
-        type: 'session.diff',
-        properties: {
-          sessionID: 'sess_1',
-          diff: [
-            { file: 'src/foo.ts', patch: 'diff body', additions: 5, deletions: 1, status: 'modified' },
-          ],
-        },
-      });
-    });
-
-    await waitFor(() => {
-      expect(handle.api.session.mock.calls.length).toBeGreaterThan(initialCallCount);
-    });
+    act(() => handle.sse()!.emitOce({ type: 'changes.dirty', reason: 'diff' }));
+    await flushPromises(4);
+    expect(handle.api.session.mock.calls.length).toBe(initialCallCount);
   });
 });
 
@@ -1395,10 +922,10 @@ describe('SessionDetail — regression: disconnect-reconnect recovers cleanly', 
       expect((globalThis as unknown as { EventSource: { instances: unknown[] } }).EventSource.instances.length).toBeGreaterThanOrEqual(2);
     }, { timeout: 4000 });
 
-    act(() => handle.sse()!.open());
+    // The owner could not resume the cursor, so the hook refetches
+    // /api/session/{id} to reconcile the gap in one shot.
+    act(() => { handle.sse()!.open(); handle.sse()!.emitOce(hello(false)); });
 
-    // On reconnect, the hook refetches /api/session/{id} so any
-    // events emitted during the gap reconcile in one shot.
     await waitFor(() => {
       expect(apiSession.mock.calls.length).toBeGreaterThan(initialCallCount);
     });
@@ -1413,18 +940,8 @@ describe('SessionDetail — composer abort', () => {
     act(() => {
       handle.sse()!.open();
       // Mark the assistant as running so the abort button appears.
-      handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: {
-            id: 'msg_busy',
-            sessionID: 'sess_1',
-            role: 'assistant',
-            time: { created: Date.now() },
-          },
-          parts: [],
-        },
-      });
+      handle.sse()!.emitOce({ type: 'session.status', status: 'busy', notice: null });
+      handle.sse()!.emitOce({ type: 'message.upserted', message: { id: 'msg_busy', sessionId: 'sess_1', timeCreated: Date.now(), data: { role: 'assistant' } } });
     });
     await flushPromises();
     // Find the abort button — the composer renders it with a stop
@@ -1491,20 +1008,14 @@ describe('SessionDetail — sidebar archive', () => {
 });
 
 describe('SessionDetail — status badge follows the backend', () => {
-  const erroredMessage = {
-    type: 'message.created',
-    properties: {
-      info: {
-        id: 'msg_1',
-        sessionID: 'sess_1',
-        role: 'assistant',
-        finish: 'error',
-        error: { name: 'Boom', data: { message: 'kaboom' } },
-        time: { created: 1_000 },
-      },
-      parts: [],
+  const erroredMessage: OceEvent = {
+    type: 'message.upserted',
+    message: {
+      id: 'msg_1', sessionId: 'sess_1', timeCreated: 1_000,
+      data: { role: 'assistant', finish: 'error', error: { name: 'Boom', data: { message: 'kaboom' } }, time: { created: 1_000 } },
     },
   };
+  const idleEdge: OceEvent = { type: 'session.status', status: 'done', provisional: true, notice: null };
 
   it('flips to error when a session.status event reports it', async () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
@@ -1513,10 +1024,7 @@ describe('SessionDetail — status badge follows the backend', () => {
 
     act(() => {
       handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        type: 'session.status',
-        properties: { sessionID: 'sess_1', status: 'error' },
-      });
+      handle.sse()!.emitOce({ type: 'session.status', status: 'error' });
     });
 
     await waitFor(() => {
@@ -1534,16 +1042,13 @@ describe('SessionDetail — status badge follows the backend', () => {
 
     act(() => {
       handle.sse()!.open();
-      handle.sse()!.emitMessage({
-        type: 'session.status',
-        properties: { sessionID: 'sess_1', status: { type: 'busy' } },
-      });
+      handle.sse()!.emitOce({ type: 'session.status', status: 'busy', notice: null });
     });
     await waitFor(() => {
       expect(handle.result.container.querySelector('[data-state="busy"]')).toBeInTheDocument();
     });
 
-    act(() => { handle.sse()!.emitMessage(erroredMessage); });
+    act(() => { handle.sse()!.emitOce(erroredMessage); });
     await flushPromises(8);
 
     expect(handle.result.container.querySelector('[data-state="busy"]')).toBeInTheDocument();
@@ -1612,37 +1117,22 @@ describe('SessionDetail — status badge follows the backend', () => {
     act(() => { handle.sse()!.open(); });
     await flushPromises(4);
 
-    act(() => {
-      handle.sse()!.emitMessage({
-        type: 'message.updated',
-        properties: {
-          info: {
-            id: 'msg_1',
-            sessionID: 'sess_1',
-            role: 'assistant',
-            finish: 'error',
-            error: { name: 'Boom', data: { message: 'kaboom' } },
-            time: { created: 1_000 },
-          },
-          parts: [],
-        },
-      });
-    });
+    act(() => { handle.sse()!.emitOce(erroredMessage); });
     await flushPromises(4);
 
     settledYet = true;
-    act(() => {
-      handle.sse()!.emitMessage({
-        type: 'session.idle',
-        properties: { sessionID: 'sess_1' },
-      });
-    });
+    // The provisional idle edge arrives before the owner settles the turn.
+    act(() => { handle.sse()!.emitOce(idleEdge); });
 
     // Asserted before the reconcile round trip resolves: that gap is
     // exactly where the badge used to claim `done`.
     expect(handle.result.container.querySelector('[data-state="done"]')).not.toBeInTheDocument();
     expect(handle.result.container.querySelector('[data-state="error"]')).toBeInTheDocument();
 
+    act(() => {
+      handle.sse()!.emitOce({ type: 'session.status', status: 'error' });
+      handle.sse()!.emitOce({ type: 'turn.ended', outcome: 'error', endedAt: 2_000 });
+    });
     await flushPromises(8);
     expect(handle.result.container.querySelector('[data-state="done"]')).not.toBeInTheDocument();
     expect(handle.result.container.querySelector('[data-state="error"]')).toBeInTheDocument();
@@ -1665,12 +1155,8 @@ describe('SessionDetail — status badge follows the backend', () => {
 
     act(() => {
       handle.sse()!.open();
-      handle.sse()!.emitMessage(erroredMessage);
-      // The live stream only ever reports idle for a finished turn.
-      handle.sse()!.emitMessage({
-        type: 'session.idle',
-        properties: { sessionID: 'sess_1' },
-      });
+      handle.sse()!.emitOce(erroredMessage);
+      handle.sse()!.emitOce(idleEdge);
     });
     await flushPromises(8);
 
@@ -1692,7 +1178,7 @@ describe('SessionDetail — status badge follows the backend', () => {
 
     act(() => {
       handle.sse()!.open();
-      handle.sse()!.emitMessage(erroredMessage);
+      handle.sse()!.emitOce(erroredMessage);
     });
     await flushPromises(8);
 

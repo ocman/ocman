@@ -158,6 +158,7 @@ func (s sessionMCPService) SearchSessionText(ctx context.Context, query, directo
 }
 
 func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, messageLimit int) (*platforms.SessionDetail, error) {
+	ctx = s.server.ConversationReadContext(ctx)
 	var adapter platforms.Platform
 	var detail *platforms.SessionDetail
 	var err error

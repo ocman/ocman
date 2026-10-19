@@ -44,7 +44,6 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodGet, "{id}/permission-rules", (*Server).handleSessionPermissionRulesGet},
 	{http.MethodPut, "{id}/permission-rules", (*Server).handleSessionPermissionRulesSet},
 	{http.MethodGet, "{id}/questions", (*Server).handleSessionQuestions},
-	{http.MethodGet, "{id}/events", (*Server).handleSessionEvents},
 	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},
 
 	// Session-scoped POSTs (specific patterns first).

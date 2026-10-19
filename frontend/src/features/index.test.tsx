@@ -13,6 +13,7 @@ describe('feature registry', () => {
   });
 
   it.each([
+    ['/background-tasks', 'dashboard'],
     ['/routines', 'dashboard'],
     ['/artifacts', 'dashboard'],
     ['/artifacts/abc', 'dashboard'],
@@ -39,6 +40,7 @@ describe('feature registry', () => {
   });
 
   it.each([
+    ['/background-tasks', 'Background tasks'],
     ['/factory/how-to', 'Factory how to'],
     ['/factory/queue', 'Factory queue'],
     ['/factory/epics/e1', 'Factory'],

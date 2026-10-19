@@ -2,6 +2,7 @@ package claudeprovider
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -23,11 +24,12 @@ type Converter struct {
 }
 
 type group struct {
-	info  map[string]any
-	parts []map[string]any
-	times []int64
-	tools map[string]map[string]any
-	block int
+	info    map[string]any
+	parts   []map[string]any
+	times   []int64
+	tools   map[string]map[string]any
+	results map[string]string // tool_result line uuid -> tool_use id
+	block   int
 }
 
 // Add converts one JSONL record. Malformed lines are skipped.
@@ -36,6 +38,44 @@ func (c *Converter) Add(raw []byte) {
 	if json.Unmarshal(raw, &l) != nil {
 		return
 	}
+	c.add(&l)
+}
+
+// AddChecked converts one JSONL record for durable history. Invalid JSON and
+// user or assistant records whose fields or content blocks do not decode are
+// errors. Record types the converter ignores, including unknown ones, are
+// still skipped.
+func (c *Converter) AddChecked(raw []byte) error {
+	if !json.Valid(raw) {
+		return errors.New("invalid transcript JSON")
+	}
+	var l line
+	err := json.Unmarshal(raw, &l)
+	if !convertedRecord(raw) {
+		return nil
+	}
+	if err == nil {
+		_, err = l.decodeBlocks()
+	}
+	if err != nil {
+		return fmt.Errorf("decoding %s record %q: %w", l.Type, l.UUID, err)
+	}
+	c.add(&l)
+	return nil
+}
+
+// convertedRecord reports a record type the converter turns into history.
+func convertedRecord(raw []byte) bool {
+	var probe struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(raw, &probe) != nil {
+		return false
+	}
+	return probe.Type == "user" || probe.Type == "assistant"
+}
+
+func (c *Converter) add(l *line) {
 	current := ""
 	if c.cur != nil && c.cur.info["role"] == "assistant" {
 		current, _ = c.cur.info["id"].(string)
@@ -44,30 +84,70 @@ func (c *Converter) Add(raw []byte) {
 	if ts == 0 { // live stream-json assistant lines carry no timestamp
 		ts = time.Now().UnixMilli()
 	}
-	switch classify(&l, current) {
+	switch classify(l, current) {
 	case startUser:
 		c.Finish()
-		c.start(groupID(&l), "user", ts)
+		c.start(groupID(l), "user", ts)
 		for _, b := range l.blocks() {
 			c.userBlock(b, ts)
 		}
 	case startAssistant:
 		c.Finish()
-		c.start(groupID(&l), "assistant", ts)
-		c.assistant(&l, ts)
+		c.start(groupID(l), "assistant", ts)
+		c.assistant(l, ts)
 	case continueGroup:
 		if c.cur == nil {
 			return
 		}
 		if l.Type == "assistant" {
-			c.assistant(&l, ts)
+			c.assistant(l, ts)
+			return
+		}
+		if l.TurnCompanion {
+			c.turnNote(l)
 			return
 		}
 		for _, b := range l.blocks() {
+			if b.Type == "tool_result" {
+				c.cur.results[l.UUID] = b.ToolUseID
+			}
 			c.result(b, ts)
 		}
 		setCompleted(c.cur.info, ts)
 	}
+}
+
+// turnNote footnotes a tool result with an allowlisted companion note, such as
+// an image's original dimensions. Other companion notes are not shown.
+func (c *Converter) turnNote(l *line) {
+	note, ok := keptTurnNote(l)
+	toolID, linked := c.cur.results[l.ParentUUID]
+	state := c.cur.tools[toolID]
+	if !ok || !linked || state == nil {
+		return
+	}
+	previous, _ := state["output"].(string)
+	output := previous + "\n\n" + note
+	state["output"] = output
+	state["metadata"].(map[string]any)["output"] = output
+}
+
+// keptTurnNote returns the companion text when it is one of the notes ocman
+// shows. Only known prefixes pass, so new companion records stay hidden.
+func keptTurnNote(l *line) (string, bool) {
+	var text strings.Builder
+	for _, b := range l.blocks() {
+		if b.Type == "text" {
+			text.WriteString(b.Text)
+		}
+	}
+	note := strings.TrimSpace(text.String())
+	for _, prefix := range []string{"[Image: ", "Base directory for this skill:"} {
+		if strings.HasPrefix(note, prefix) {
+			return note, true
+		}
+	}
+	return "", false
 }
 
 func (g *group) find(id string) int {
@@ -81,8 +161,9 @@ func (g *group) find(id string) int {
 
 func (c *Converter) start(id, role string, ts int64) {
 	c.cur = &group{
-		info:  map[string]any{"id": id, "sessionID": c.SessionID, "role": role, "time": map[string]any{"created": ts}},
-		tools: map[string]map[string]any{},
+		info:    map[string]any{"id": id, "sessionID": c.SessionID, "role": role, "time": map[string]any{"created": ts}},
+		tools:   map[string]map[string]any{},
+		results: map[string]string{},
 	}
 }
 

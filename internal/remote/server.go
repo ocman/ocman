@@ -28,6 +28,7 @@ type Server struct {
 	instanceID                     string
 	version                        string
 	enrichSession                  func(context.Context, string, string, *platforms.SessionDetail)
+	conversationContext            func(context.Context) context.Context
 	proxyEvents                    func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
 	permissionNotificationDeferred func(string, string) bool
 	webhooks                       WebhookInboxes
@@ -48,6 +49,11 @@ func (s *Server) UseSessionEnricher(fn func(context.Context, string, string, *pl
 	s.enrichSession = fn
 	return s
 }
+
+func (s *Server) UseConversationContext(fn func(context.Context) context.Context) *Server {
+	s.conversationContext = fn
+	return s
+}
 func (s *Server) UseEventProxy(fn func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error) *Server {
 	s.proxyEvents = fn
 	return s
@@ -64,6 +70,9 @@ func svcErr(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	if errors.Is(err, platforms.ErrPlatformUnreachable) {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	if errors.Is(err, platforms.ErrHistoryUnavailable) {
 		return status.Error(codes.Unavailable, err.Error())
 	}
 	if errors.Is(err, platforms.ErrUnsupported) {

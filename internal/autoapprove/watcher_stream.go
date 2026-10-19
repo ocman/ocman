@@ -145,8 +145,8 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			}
 		},
 		OnQuestionResolved: func(sessionID, requestID, reason string) {
-			if w.svc != nil && w.svc.deps.BroadcastQuestionResolved != nil {
-				w.svc.deps.BroadcastQuestionResolved(sessionID, requestID, reason)
+			if w.svc != nil {
+				w.svc.broadcastQuestionResolved(opencode.PlatformID, sessionID, requestID, reason)
 			}
 		},
 		OnSessionStatus: func(sessionID string, status SessionStatus) {

@@ -1,0 +1,7 @@
+{"session":"s1"}
+{"data":{"properties":{"always":["ls *"],"id":"per_ev_1","metadata":{"command":"ls"},"patterns":["ls"],"permission":"bash","sessionID":"s1"},"type":"permission.asked"}}
+{"data":{"properties":{"reply":"once","requestID":"per_ev_1","sessionID":"s1"},"type":"permission.replied"}}
+{"data":{"properties":{"id":"que_ev_1","questions":[{"custom":true,"header":"T","multiple":false,"options":[],"question":"Q?"}],"sessionID":"s1"},"type":"question.asked"}}
+{"data":{"properties":{"requestID":"que_ev_1","sessionID":"s1"},"type":"question.replied"}}
+{"data":{"properties":{"id":"que_ev_2","questions":[{"custom":true,"header":"T2","multiple":false,"options":[],"question":"Again?"}],"sessionID":"s1"},"type":"question.asked"}}
+{"data":{"properties":{"requestID":"que_ev_2","sessionID":"s1"},"type":"question.rejected"}}

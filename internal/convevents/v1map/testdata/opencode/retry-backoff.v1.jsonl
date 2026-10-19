@@ -1,0 +1,8 @@
+{"session":"ses_a"}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_a","status":{"type":"busy"}}}}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_a","status":{"type":"retry","attempt":1,"message":"Provider is overloaded","next":1700000005000}}}}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_a","status":{"type":"retry","attempt":2,"message":"Provider is overloaded","next":1700000015000}}}}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_a","status":{"type":"busy"}}}}
+{"data":{"type":"session.error","properties":{"sessionID":"ses_a","error":{"name":"APIError","data":{"message":"Overloaded","statusCode":529,"isRetryable":true}}}}}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_a","status":{"type":"idle"}}}}
+{"data":{"type":"session.idle","properties":{"sessionID":"ses_a"}}}

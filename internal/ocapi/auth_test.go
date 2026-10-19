@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 func TestAuthHTTP(t *testing.T) {
@@ -38,8 +40,8 @@ func TestAuthHTTP(t *testing.T) {
 			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
 			resp, err := client.Do(req)
 			if tt.wantErr {
-				if !errors.Is(err, ErrAuthentication) {
-					t.Fatalf("error = %v, want ErrAuthentication", err)
+				if !errors.Is(err, ErrAuthentication) || !errors.Is(err, platforms.ErrPlatformUnauthenticated) {
+					t.Fatalf("error = %v, want ErrAuthentication wrapping ErrPlatformUnauthenticated", err)
 				}
 				return
 			}

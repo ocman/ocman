@@ -122,7 +122,8 @@ func TestClaudeHookPlugin(t *testing.T) {
 		t.Fatalf("install: %d %v\n%s", resp.StatusCode, plugin, out.String())
 	}
 	hooks, err := os.ReadFile(filepath.Join(dir, ".local", "share", "ocman", "claude-marketplace", "ocman", "hooks", "hooks.json"))
-	if err != nil || !bytes.Contains(hooks, []byte("hook --addr "+mcp+" Stop")) {
+	// History hooks record terminal sessions in the isolated test journal.
+	if err != nil || !bytes.Contains(hooks, []byte("hook --addr "+mcp+" --journal '")) || !bytes.Contains(hooks, []byte("/ocman/journal/claudecode' Stop 2")) {
 		t.Fatalf("hooks.json = %s, %v", hooks, err)
 	}
 

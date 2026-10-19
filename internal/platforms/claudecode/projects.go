@@ -297,6 +297,9 @@ func (p *claudePlatform) Sessions(ctx context.Context, dir string, since int64) 
 }
 
 func (p *claudePlatform) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
+	if detail, handled, err := platforms.TryStoredConversation(ctx, p, id, limit, offset); handled || err != nil {
+		return detail, err
+	}
 	a, err := p.adapter(ctx, id, false)
 	if err != nil {
 		return nil, err

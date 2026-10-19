@@ -31,6 +31,11 @@ export OTEL_SERVICE_NAME ?= ocman-dev
 #   make dev OCMAN_RELAY_URL=https://share.example.com # a deployed relay
 export OCMAN_RELAY_URL ?= http://localhost:$(RELAY_PORT)
 
+# --- Conversation history -------------------------------------------------
+# Dev targets keep their mandatory conversation store checkout-local.
+DEV_TARGETS := dev dev-prod dev-prod-watch dev-backend dev-remote
+$(DEV_TARGETS): export OCMAN_STATEV2_DB ?= $(CURDIR)/tmp/statev2.db
+
 # --- dev targets ----------------------------------------------------------
 #
 # The dev loop lives in scripts/dev.sh, not here. `make` catches Ctrl+C and

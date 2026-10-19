@@ -104,7 +104,7 @@ func testServer(t *testing.T) *Server {
 func TestHandleStats_Empty(t *testing.T) {
 	// Through the route table: the version is set after New, so this also
 	// proves the analytics module reads it per request.
-	srv := testServer(t).WithVersion("v1.2.3-test")
+	srv := withReadyTestHistory(t, testServer(t)).WithVersion("v1.2.3-test")
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)

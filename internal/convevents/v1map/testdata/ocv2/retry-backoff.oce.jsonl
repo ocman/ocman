@@ -1,0 +1,5 @@
+{"v":1,"epoch":"golden","seq":1,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"background.changed","count":0,"tasks":[]}}
+{"v":1,"epoch":"golden","seq":2,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":null}}
+{"v":1,"epoch":"golden","seq":3,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":{"kind":"retry","message":"rate limited","retryAt":12345,"attempt":2}}}
+{"v":1,"epoch":"golden","seq":4,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"busy","notice":null}}
+{"v":1,"epoch":"golden","seq":5,"sessionId":"s1","platform":"ocv2","at":1700000000000,"durability":"live","event":{"type":"session.status","status":"done","provisional":true,"notice":null}}

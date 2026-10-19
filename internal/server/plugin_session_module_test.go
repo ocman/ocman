@@ -22,7 +22,7 @@ func TestPluginSessionModuleCompletionTriggers(t *testing.T) {
 			case "idle bus":
 				f.s.onSessionIdle("opencode", "ses-run-1")
 			case "terminal change":
-				f.s.broadcastSessionChanged("ses-run-1")
+				f.s.broadcastSessionChanged("opencode", "ses-run-1")
 			case "module runner":
 				runPluginsModule(t, f.s)
 			}

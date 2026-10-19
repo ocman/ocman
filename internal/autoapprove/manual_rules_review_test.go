@@ -51,11 +51,15 @@ func TestManualDenyReplyBeforeReturnKeepsRuleAttribution(t *testing.T) {
 	store := openModuleStore(t)
 	saveManualRules(t, store, "fake", "s", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "deny"}})
 	resolved := false
-	svc := NewService(Deps{Store: store, BroadcastPermissionResolved: func(_, _, reason string) { resolved = reason == "session-rule-deny" }})
-	adapter := &fakePlatform{respondPermissionFn: func(req platforms.RespondPermissionRequest) error {
+	adapter := &fakePlatform{}
+	// The resolution is broadcast under the session's own platform.
+	svc := NewService(Deps{Store: store, BroadcastPermissionResolved: func(platform, _, _, reason string) {
+		resolved = platform == string(adapter.ID()) && reason == "session-rule-deny"
+	}})
+	adapter.respondPermissionFn = func(req platforms.RespondPermissionRequest) error {
 		svc.HandlePermissionReplied(t.Context(), req.SessionID, req.PermissionID, req.Reply)
 		return nil
-	}}
+	}
 	asked := svc.rememberAsked("fake", "s", "p", "bash", []string{"tea do something"}, nil)
 	svc.applyManualRules(t.Context(), adapter, "s", "p", asked)
 	st, ok := svc.lookupAutoApproveStatus("s", "p")

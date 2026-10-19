@@ -20,7 +20,7 @@ func TestBroadcastSessionStatusCarriesPatch(t *testing.T) {
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 
-	srv.broadcastSessionStatus("s1", db.StatusBusy)
+	srv.broadcastSessionStatus("opencode", "s1", db.StatusBusy)
 	ev := <-sub.ch
 	var payload struct {
 		SessionID string `json:"sessionID"`
@@ -42,9 +42,22 @@ func TestBroadcastSessionTitleCarriesPatch(t *testing.T) {
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 
-	srv.broadcastSessionTitle("s1", "Renamed")
+	srv.broadcastSessionTitle("claudecode", "s1", "Renamed")
 	ev := <-sub.ch
-	if ev.event != "ocman.session.changed" || string(ev.data) != `{"patch":{"title":"Renamed"},"platform":"opencode","sessionID":"s1"}` {
+	if ev.event != "ocman.session.changed" || string(ev.data) != `{"patch":{"title":"Renamed"},"platform":"claudecode","sessionID":"s1"}` {
+		t.Fatalf("unexpected event: %s %s", ev.event, ev.data)
+	}
+}
+
+// A session change is stamped with the caller's platform, not OpenCode's.
+func TestBroadcastSessionChangedCarriesCallerPlatform(t *testing.T) {
+	srv := &Server{broadcastHub: newBroadcastHub()}
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+
+	srv.broadcastSessionChanged("claudecode", "s1")
+	ev := <-sub.ch
+	if ev.event != "ocman.session.changed" || string(ev.data) != `{"platform":"claudecode","sessionID":"s1"}` {
 		t.Fatalf("unexpected event: %s %s", ev.event, ev.data)
 	}
 }
@@ -58,8 +71,8 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 		srv.broadcastGlobalEvent("filler", []byte(`{}`))
 	}
 
-	srv.broadcastSessionTitle("s1", "Renamed")
-	srv.broadcastSessionStatus("s1", db.StatusBusy)
+	srv.broadcastSessionTitle("opencode", "s1", "Renamed")
+	srv.broadcastSessionStatus("opencode", "s1", db.StatusBusy)
 	pending := sub.drainPending()
 	if len(pending) != 1 || string(pending[0].data) != `{"patch":{"status":"busy","title":"Renamed"},"platform":"opencode","sessionID":"s1"}` {
 		t.Fatalf("pending = %+v", pending)
@@ -67,9 +80,9 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 
 	// An identity-only event asks for a refetch, and that request survives
 	// a later patch.
-	srv.broadcastSessionTitle("s1", "Again")
-	srv.broadcastSessionChanged("s1")
-	srv.broadcastSessionStatus("s1", db.StatusDone)
+	srv.broadcastSessionTitle("opencode", "s1", "Again")
+	srv.broadcastSessionChanged("opencode", "s1")
+	srv.broadcastSessionStatus("opencode", "s1", db.StatusDone)
 	pending = sub.drainPending()
 	if len(pending) != 1 || string(pending[0].data) != `{"platform":"opencode","sessionID":"s1"}` {
 		t.Fatalf("pending = %+v", pending)
@@ -84,13 +97,13 @@ func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 
-	srv.broadcastSessionTitle("s1", "Old") // buffered
+	srv.broadcastSessionTitle("opencode", "s1", "Old") // buffered
 	for len(sub.ch) < cap(sub.ch) {
 		srv.broadcastGlobalEvent("filler", []byte(`{}`))
 	}
-	srv.broadcastSessionTitle("s1", "New")    // parked
+	srv.broadcastSessionTitle("opencode", "s1", "New")    // parked
 	<-sub.ch                                  // the writer frees one slot...
-	srv.broadcastSessionTitle("s1", "Newest") // ...but s1 stays parked
+	srv.broadcastSessionTitle("opencode", "s1", "Newest") // ...but s1 stays parked
 
 	var titles []string
 	collect := func(ev broadcastEvent) {
@@ -112,11 +125,11 @@ func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
 	}
 
 	// Old buffered + new parked: the buffered one is written first.
-	srv.broadcastSessionTitle("s1", "A")
+	srv.broadcastSessionTitle("opencode", "s1", "A")
 	for len(sub.ch) < cap(sub.ch) {
 		srv.broadcastGlobalEvent("filler", []byte(`{}`))
 	}
-	srv.broadcastSessionTitle("s1", "B")
+	srv.broadcastSessionTitle("opencode", "s1", "B")
 	titles = nil
 	for _, ev := range sub.takeBatch() {
 		collect(ev)
@@ -131,15 +144,15 @@ func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
 	for len(sub.ch) < cap(sub.ch) {
 		srv.broadcastGlobalEvent("filler", []byte(`{}`))
 	}
-	srv.broadcastSessionTitle("other", "parked")
+	srv.broadcastSessionTitle("opencode", "other", "parked")
 	titles = nil
 	for i, ev := range sub.takeBatch() {
 		if i == 0 {
 			for len(sub.ch) < cap(sub.ch)-1 {
 				srv.broadcastGlobalEvent("filler", []byte(`{}`))
 			}
-			srv.broadcastSessionTitle("x", "A") // last free slot
-			srv.broadcastSessionTitle("x", "B") // parked
+			srv.broadcastSessionTitle("opencode", "x", "A") // last free slot
+			srv.broadcastSessionTitle("opencode", "x", "B") // parked
 		}
 		_ = ev
 	}

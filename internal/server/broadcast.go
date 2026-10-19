@@ -259,18 +259,20 @@ func (s *Server) broadcastGlobalEvent(event string, data []byte) {
 		return
 	}
 	s.broadcastHub.broadcast(event, data)
+	s.observeHistoryChange(event, data)
 }
 
 // broadcastPermissionResolved broadcasts that a permission prompt is no
 // longer pending (auto-approved, or answered via the TUI / another tab),
 // so cross-page prompt toasts for the session clear immediately. reason
 // is a short tag for diagnostics ("auto-approved", "replied").
-func (s *Server) broadcastPermissionResolved(sessionID, permissionID, reason string) {
-	s.resolvePermissionInbox(context.Background(), "opencode", sessionID, permissionID)
+func (s *Server) broadcastPermissionResolved(platform, sessionID, permissionID, reason string) {
+	s.resolvePermissionInbox(context.Background(), platform, sessionID, permissionID)
 	if sessionID == "" {
 		return
 	}
 	payload, err := json.Marshal(map[string]interface{}{
+		"platform":     platform,
 		"sessionID":    sessionID,
 		"permissionId": permissionID,
 		"reason":       reason,
@@ -284,11 +286,12 @@ func (s *Server) broadcastPermissionResolved(sessionID, permissionID, reason str
 // broadcastQuestionResolved broadcasts that a question prompt is no
 // longer pending (answered or rejected), so cross-page prompt toasts
 // for the session clear immediately.
-func (s *Server) broadcastQuestionResolved(sessionID, requestID, reason string) {
+func (s *Server) broadcastQuestionResolved(platform, sessionID, requestID, reason string) {
 	if sessionID == "" {
 		return
 	}
 	payload, err := json.Marshal(map[string]interface{}{
+		"platform":  platform,
 		"sessionID": sessionID,
 		"requestId": requestID,
 		"reason":    reason,

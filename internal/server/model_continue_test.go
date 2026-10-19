@@ -76,7 +76,7 @@ func TestContinuationDisabled(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r := newCooldownRigWith(t, ps)
 			r.dieOnQuota(t, "a")
-			r.srv.onSessionRetry("s1", autoapprove.SessionStatus{Type: "retry", ActionReason: "free_tier_limit"})
+			r.srv.onSessionRetry("opencode", "s1", autoapprove.SessionStatus{Type: "retry", ActionReason: "free_tier_limit"})
 			if len(r.sent) != 0 || r.aborts != 0 || r.notice() != nil {
 				t.Fatalf("sent %v, aborts %d, notice %+v", r.sent, r.aborts, r.notice())
 			}
@@ -90,7 +90,7 @@ func TestParkedRetryAbortsThenContinues(t *testing.T) {
 	r := newCooldownRig(t)
 	r.last = runningAssistant
 	for range 2 {
-		r.srv.onSessionRetry("s1", autoapprove.SessionStatus{Type: "retry", ActionReason: "free_tier_limit"})
+		r.srv.onSessionRetry("opencode", "s1", autoapprove.SessionStatus{Type: "retry", ActionReason: "free_tier_limit"})
 	}
 	if r.aborts != 1 {
 		t.Fatalf("aborts = %d, want 1", r.aborts)

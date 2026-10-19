@@ -43,7 +43,7 @@ func (m *Module) collectDatabaseSizes(ctx context.Context, now time.Time) error 
 	}
 
 	bucket := now.Truncate(databaseSizeSampleInterval).UnixMilli()
-	samples := make([]state.DatabaseSizeSample, 0, 2)
+	samples := make([]state.DatabaseSizeSample, 0, 3)
 	var errs []error
 	if m.deps.DB != nil {
 		size, err := m.deps.DB.SizeBytes(ctx)
@@ -60,6 +60,17 @@ func (m *Module) collectDatabaseSizes(ctx context.Context, now time.Time) error 
 		samples = append(samples, state.DatabaseSizeSample{Database: "ocman", SampledAt: bucket, SizeBytes: size})
 	}
 	if len(samples) > 0 {
+		// Sampling is independent of ingestion readiness: the store already
+		// occupies space during its initial import and during source outages.
+		if m.deps.HistoryAnalytics != nil {
+			if h := m.deps.HistoryAnalytics(); h != nil && h.Store != nil {
+				if size, err := h.Store.SizeBytes(ctx); err != nil {
+					errs = append(errs, fmt.Errorf("statev2: %w", err))
+				} else {
+					samples = append(samples, state.DatabaseSizeSample{Database: "statev2", SampledAt: bucket, SizeBytes: size})
+				}
+			}
+		}
 		if err := m.deps.Store.RecordDatabaseSizeSamples(ctx, samples); err != nil {
 			errs = append(errs, err)
 		}

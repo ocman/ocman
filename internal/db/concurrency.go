@@ -26,13 +26,7 @@ type concurrencyEvent struct {
 // Overlapping messages in the same session count once; subagents count separately.
 func (d *DB) GetSessionConcurrency(ctx context.Context, since, until int64, dir string) (SessionConcurrency, error) {
 	result := SessionConcurrency{Series: []ConcurrencyPoint{}}
-	query := `SELECT m.session_id, json_extract(m.data, '$.time.created'), json_extract(m.data, '$.time.completed')
-		FROM message m JOIN session s ON s.id = m.session_id
-		WHERE json_extract(m.data, '$.role') = 'assistant'
-		AND json_extract(m.data, '$.time.created') > 0
-		AND json_extract(m.data, '$.time.completed') > json_extract(m.data, '$.time.created')
-		AND json_extract(m.data, '$.time.completed') > ?
-		AND json_extract(m.data, '$.time.created') < ?`
+	query := d.runIntervalsQuery()
 	args := []any{since, until}
 	if clause, values := directoryWhere(dir); clause != "" {
 		query += " AND " + clause

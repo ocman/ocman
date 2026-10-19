@@ -15,6 +15,10 @@ var ErrUnsupported = errors.New("platforms: capability not supported by this ada
 // the adapter. Handlers translate this into HTTP 404.
 var ErrNotFound = errors.New("platforms: not found")
 
+// ErrHistoryUnavailable means completed conversation reads were selected but
+// their validated owner-local snapshot is not ready. Never retry on a platform.
+var ErrHistoryUnavailable = errors.New("platforms: conversation history unavailable")
+
 // ErrBusy is returned by interactive operations (SendMessage on
 // platforms that can't interleave) when the target session is mid-turn and
 // accepting another prompt would corrupt the conversation tree. See
@@ -29,6 +33,11 @@ var ErrBusy = errors.New("platforms: session is currently processing a prompt")
 // translate this into HTTP 503 Service Unavailable so the frontend
 // can offer to launch the missing process (see launchOpencodeInTmux).
 var ErrPlatformUnreachable = errors.New("platforms: no running instance for this location")
+
+// ErrPlatformUnauthenticated is returned when a live platform process
+// refused ocman's credentials. Adapters translate their own authentication
+// failures to it; handlers answer HTTP 502 without exposing the secret.
+var ErrPlatformUnauthenticated = errors.New("platforms: the platform rejected ocman's credentials")
 
 // ErrReplyUnrecorded is returned by a prompt reply that reached the agent
 // but whose event is not recorded yet (it is retried). The decision took

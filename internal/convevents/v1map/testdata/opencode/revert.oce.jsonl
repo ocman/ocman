@@ -1,0 +1,5 @@
+{"v":1,"epoch":"golden","seq":1,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"durable","event":{"type":"session.updated","patch":{"title":"Fix a.go","shareUrl":"https://opncd.ai/s/xyz","archived":false,"revert":{"messageId":"msg_u2","partId":"prt_u2"}}}}
+{"v":1,"epoch":"golden","seq":2,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"durable","event":{"type":"part.removed","messageId":"msg_a2","partId":"prt_a2_1"}}
+{"v":1,"epoch":"golden","seq":3,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"durable","event":{"type":"message.removed","messageId":"msg_a2","reason":"deleted"}}
+{"v":1,"epoch":"golden","seq":4,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"durable","event":{"type":"message.removed","messageId":"msg_u2","reason":"deleted"}}
+{"v":1,"epoch":"golden","seq":5,"sessionId":"ses_a","platform":"opencode","at":1700000000000,"durability":"durable","event":{"type":"session.updated","patch":{"title":"Fix a.go","shareUrl":"https://opncd.ai/s/xyz","archived":true,"revert":null}}}

@@ -81,6 +81,7 @@ describe('analytics sections', () => {
       { database: 'ocman', sampledAt: 1_757_500_000_000, sizeBytes: 10 * 1024 * 1024 },
       { database: 'opencode', sampledAt: 1_757_500_000_000, sizeBytes: 100 * 1024 * 1024 },
       { database: 'opencode', sampledAt: 1_757_503_600_000, sizeBytes: 120 * 1024 * 1024 },
+      { database: 'statev2', sampledAt: 1_757_500_000_000, sizeBytes: 30 * 1024 * 1024 },
     ]));
     usePermissionStats.mockReturnValue(query({ eligibleRequests: 1, autoApprovedRate: 1, manualPreemptions: 0, manualPreemptionRate: 0, medianJudgmentDurationMs: 10, medianManualResponseDurationMs: 20, userDecisionCount: 1, userDecisionRate: 1, affectedSessions: 1, unresolvedEligibleRequests: 0, observedUserWaitMs: 5000, p50UserWaitMs: 5000, p95UserWaitMs: 5000, daily: [] }));
     useMetricLogs.mockImplementation(({ kind }: { kind: string }) => query({ kind, total: 0, availableAgents: [], availableModels: [], [`${kind}s`]: [] }));
@@ -100,9 +101,10 @@ describe('analytics sections', () => {
     expect(useDatabaseSizes).toHaveBeenCalledWith({ days: 30 });
     const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
     const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
-    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['OpenCode (MiB)', 'ocman (MiB)']);
+    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['OpenCode (MiB)', 'ocman (MiB)', 'Conversation history (MiB)']);
     expect(chart.datasets[1].data).toEqual([10, null]);
-    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1]);
+    expect(chart.datasets[2].data).toEqual([30, null]);
+    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1, 1]);
     const options = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-options') ?? '{}');
     expect(Object.keys(options.scales)).toEqual(['x', 'y']);
     expect(options.scales.y.type).toBe('logarithmic');
@@ -327,7 +329,7 @@ describe('analytics sections', () => {
     renderTab(<OverviewTab />);
     const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
     const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
-    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1]);
+    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1, 1]);
     expect(chart.labels[0]).toContain('2025');
   });
 

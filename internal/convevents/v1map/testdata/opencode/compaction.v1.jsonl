@@ -1,0 +1,6 @@
+{"session":"ses_a"}
+{"data":{"type":"session.status","properties":{"sessionID":"ses_a","status":{"type":"busy"}}}}
+{"data":{"type":"message.updated","properties":{"info":{"id":"msg_c1","sessionID":"ses_a","role":"assistant","summary":true,"mode":"compaction","agent":"compaction","time":{"created":2000,"completed":2005},"finish":"stop","modelID":"claude","providerID":"anthropic","cost":0}}}}
+{"data":{"type":"message.part.updated","properties":{"part":{"id":"prt_c1_1","sessionID":"ses_a","messageID":"msg_c1","type":"text","text":"Summary of the conversation so far.","time":{"start":2001,"end":2005}}}}}
+{"data":{"type":"session.compacted","properties":{"sessionID":"ses_a"}}}
+{"data":{"type":"session.idle","properties":{"sessionID":"ses_a"}}}

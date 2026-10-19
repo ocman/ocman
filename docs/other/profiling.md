@@ -32,7 +32,7 @@ simultaneously:
 | 8 | `SessionDetail` line ~2416             | 2 s                | While a Task tool is running                       |
 | 9 | `SessionDetail` line ~2523             | 1 s                | Recompute live tokens/sec                          |
 | 10| `SessionDetail` line ~579              | **0 ms** (≈250 Hz) | Polls Zustand for the palette command              |
-| 11| `SessionDetail` SSE                    | streaming          | `GET /api/session/{id}/events`                     |
+| 11| `SessionDetail` SSE                    | streaming          | `GET /api/session/{id}/stream`                     |
 
 On the dashboard:
 
@@ -139,7 +139,7 @@ Three independent, low-risk additions, each on its own commit:
 
 - Wraps the mux. Logs `method`, `path`, `status`, `duration_ms`.
 - INFO when `duration ≥ 250 ms`, DEBUG otherwise.
-- Skips SSE (`/api/session/{id}/events`) and the recursive
+- Skips SSE (`/api/session/{id}/stream`) and the recursive
   `/api/debug/log` sink.
 
 **B. Frontend long-task observer**

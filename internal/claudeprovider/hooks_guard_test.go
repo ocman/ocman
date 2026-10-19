@@ -17,7 +17,7 @@ func TestGeneratedHooksSkipMissingBinaryOutsideOcman(t *testing.T) {
 					Hooks []struct{ Command string }
 				}
 			}
-			if err := json.Unmarshal(hooksJSON(HookCommand(filepath.Join(t.TempDir(), "missing ocman"), "127.0.0.1:1")), &config); err != nil {
+			if err := json.Unmarshal(hooksJSON(HookCommand(filepath.Join(t.TempDir(), "missing ocman"), "127.0.0.1:1", t.TempDir())), &config); err != nil {
 				t.Fatal(err)
 			}
 			for event, matchers := range config.Hooks {

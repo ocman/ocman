@@ -1,0 +1,13 @@
+{"session":"ses_a"}
+{"data":{"type":"permission.asked","properties":{"id":"per_1","sessionID":"ses_a","permission":"bash","patterns":["go test ./..."],"always":["go test *"],"metadata":{"command":"go test ./..."}}}}
+{"event":"ocman.permission.pending","data":{"permissionId":"per_1","sessionID":"ses_a","judgeStartsAt":1700000003000}}
+{"event":"ocman.permission.checking","data":{"permissionId":"per_1","sessionID":"ses_a"}}
+{"data":{"type":"permission.replied","properties":{"sessionID":"ses_a","requestID":"per_1","reply":"once"}}}
+{"event":"ocman.permission.auto-approved","data":{"permissionId":"per_1","sessionID":"ses_a","permission":"bash","patterns":["go test ./..."],"reasoning":"Running the test suite is safe.","approvedBy":"ai","reply":"once","metadata":{"command":"go test ./..."},"askedAt":1700000000000,"approvedAt":1700000004000}}
+{"data":{"type":"permission.asked","properties":{"id":"per_2","sessionID":"ses_a","permission":"bash","patterns":["rm -rf build"],"metadata":{"command":"rm -rf build"}}}}
+{"event":"ocman.permission.pending","data":{"permissionId":"per_2","sessionID":"ses_a","judgeStartsAt":1700000013000}}
+{"event":"ocman.permission.checking","data":{"permissionId":"per_2","sessionID":"ses_a"}}
+{"event":"ocman.permission.flagged","data":{"permissionId":"per_2","sessionID":"ses_a","reasoning":"Deletes files outside the request."}}
+{"data":{"type":"permission.replied","properties":{"sessionID":"ses_a","requestID":"per_2","reply":"always"}}}
+{"event":"ocman.permission.approved","data":{"permissionId":"per_2","sessionID":"ses_a","permission":"bash","patterns":["rm -rf build"],"reasoning":"ignored for user approvals","approvedBy":"user","reply":"always","askedAt":1700000010000,"approvedAt":1700000020000}}
+{"event":"ocman.permission.pending","data":{"sessionID":"ses_a"}}

@@ -215,6 +215,9 @@ func (a *Adapter) Owns(ctx context.Context, sessionID string) bool {
 // API data (for in-flight streams) with a fallback to the read-only
 // DB. Both paths return the same typed SessionDetail shape.
 func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
+	if detail, handled, err := platforms.TryStoredConversation(ctx, a, id, limit, offset); handled || err != nil {
+		return detail, err
+	}
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
