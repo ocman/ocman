@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
@@ -25,6 +26,7 @@ type subscriptionUsageClient struct {
 	authPath     string
 	openAIURL    string
 	anthropicURL string
+	credentials  func(context.Context) (map[string]db.SubscriptionOAuth, error)
 }
 
 type subscriptionUsageResponse struct {
@@ -46,12 +48,7 @@ type subscriptionUsageWindow struct {
 	ResetsAt    string  `json:"resetsAt,omitempty"`
 }
 
-type subscriptionOAuth struct {
-	Type      string `json:"type"`
-	Access    string `json:"access"`
-	Expires   int64  `json:"expires"`
-	AccountID string `json:"accountId"`
-}
+type subscriptionOAuth = db.SubscriptionOAuth
 
 func newSubscriptionUsageClient() subscriptionUsageClient {
 	return subscriptionUsageClient{
@@ -116,6 +113,28 @@ func (m *Module) handleSubscriptionUsage(w http.ResponseWriter, r *http.Request)
 }
 
 func fetchSubscriptionUsage(ctx context.Context, client subscriptionUsageClient) (subscriptionUsageResponse, error) {
+	auth, err := readSubscriptionCredentials(ctx, client)
+	if err != nil {
+		return subscriptionUsageResponse{}, err
+	}
+	providers := make([]subscriptionProviderUsage, 0, 2)
+	if usableOAuth(auth["openai"]) {
+		providers = append(providers, fetchOpenAIUsage(ctx, client, auth["openai"]))
+	} else if configuredOAuth(auth["openai"]) {
+		providers = append(providers, subscriptionProviderUsage{ID: "openai", Name: "OpenAI", Status: "expired", Windows: []subscriptionUsageWindow{}})
+	}
+	if usableOAuth(auth["anthropic"]) {
+		providers = append(providers, fetchAnthropicUsage(ctx, client, auth["anthropic"]))
+	} else if configuredOAuth(auth["anthropic"]) {
+		providers = append(providers, subscriptionProviderUsage{ID: "anthropic", Name: "Anthropic", Status: "expired", Windows: []subscriptionUsageWindow{}})
+	}
+	return subscriptionUsageResponse{Providers: providers}, nil
+}
+
+func readSubscriptionCredentials(ctx context.Context, client subscriptionUsageClient) (map[string]subscriptionOAuth, error) {
+	if client.credentials != nil {
+		return client.credentials(ctx)
+	}
 	var auth struct {
 		OpenAI    subscriptionOAuth `json:"openai"`
 		Anthropic subscriptionOAuth `json:"anthropic"`
@@ -123,27 +142,16 @@ func fetchSubscriptionUsage(ctx context.Context, client subscriptionUsageClient)
 	file, err := os.Open(client.authPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return subscriptionUsageResponse{Providers: []subscriptionProviderUsage{}}, nil
+			return nil, nil
 		}
-		return subscriptionUsageResponse{}, errors.New("cannot open OpenCode auth file")
+		return nil, errors.New("cannot open OpenCode auth file")
 	}
 	defer file.Close()
 	if err := json.NewDecoder(io.LimitReader(file, 1<<20)).Decode(&auth); err != nil {
-		return subscriptionUsageResponse{}, errors.New("cannot decode OpenCode auth file")
+		return nil, errors.New("cannot decode OpenCode auth file")
 	}
 
-	providers := make([]subscriptionProviderUsage, 0, 2)
-	if usableOAuth(auth.OpenAI) {
-		providers = append(providers, fetchOpenAIUsage(ctx, client, auth.OpenAI))
-	} else if configuredOAuth(auth.OpenAI) {
-		providers = append(providers, subscriptionProviderUsage{ID: "openai", Name: "OpenAI", Status: "expired", Windows: []subscriptionUsageWindow{}})
-	}
-	if usableOAuth(auth.Anthropic) {
-		providers = append(providers, fetchAnthropicUsage(ctx, client, auth.Anthropic))
-	} else if configuredOAuth(auth.Anthropic) {
-		providers = append(providers, subscriptionProviderUsage{ID: "anthropic", Name: "Anthropic", Status: "expired", Windows: []subscriptionUsageWindow{}})
-	}
-	return subscriptionUsageResponse{Providers: providers}, nil
+	return map[string]subscriptionOAuth{"openai": auth.OpenAI, "anthropic": auth.Anthropic}, nil
 }
 
 func configuredOAuth(auth subscriptionOAuth) bool {

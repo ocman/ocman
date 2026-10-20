@@ -67,7 +67,11 @@ func NewModule(deps Deps) *Module {
 	if deps.Version == nil {
 		deps.Version = func() string { return "" }
 	}
-	return &Module{deps: deps, subscription: newSubscriptionUsageClient()}
+	client := newSubscriptionUsageClient()
+	if deps.DB != nil && deps.DB.V2() {
+		client.credentials = deps.DB.SubscriptionCredentials
+	}
+	return &Module{deps: deps, subscription: client}
 }
 
 func (m *Module) Name() string { return "analytics" }

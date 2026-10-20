@@ -51,7 +51,7 @@ Everything external that the ocman process touches.
 flowchart LR
     Browser[Browser SPA<br/>REST + SSE] -->|core APIs, batched previews, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
-    Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
+    Ocman -->|read-only sessions + v2 OAuth credentials<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox, state + provider cost ledger| StateDB[(state.db)]
     Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
     Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode instances<br/>or registered v2 service]
@@ -154,7 +154,12 @@ flowchart LR
   state.db; they produce non-blocking session warnings, not admission locks.
   See [Claude Code](../features/claude-code.md).
 - **Provider usage.** `/provider-usage` reads OpenCode's local OAuth credentials
-  server-side for normalized quota windows. `/api/provider-usage` also reads
+  server-side for normalized quota windows. V2 reads the configured OpenCode
+  database through `internal/db`, selecting the active credential or, for
+  legacy rows without a selection, the newest account. It never falls back to
+  stale `auth.json` credentials. V1 still reads `auth.json`. OpenCode remains
+  responsible for token refresh; ocman only reads credentials.
+  `/api/provider-usage` also reads
   the analytics-owned `provider_usage` ledger in state.db. The server injects
   a recorder into auto-approve so keyed requests to TypeSafe's hosted System
   One API retain only model, timestamp, token counts and estimated USD. The
