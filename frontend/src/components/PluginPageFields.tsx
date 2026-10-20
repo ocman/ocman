@@ -1,5 +1,5 @@
 import { Button, CheckboxField, SelectField, TextareaField, TextField } from './Control';
-import { blankPageValues, type PageField, type PageValues } from '../lib/pluginPages';
+import { blankPageValues, pageRowName, type PageField, type PageValues } from '../lib/pluginPages';
 import { PluginProjectPicker } from './PluginProjectPicker';
 
 export function PluginPageFields({ fields, values, onChange, prefix = '', ownerId = 'local' }: {
@@ -14,7 +14,7 @@ export function PluginPageFields({ fields, values, onChange, prefix = '', ownerI
       return <fieldset key={field.key} className="plugin-page-list"><legend>{field.label}</legend>
         {field.help && <p className="plugin-page-help">{field.help}</p>}
         {rows.map((row, index) => <details key={index} open className="plugin-page-item">
-          <summary>{String(row[field.fields?.[0]?.key ?? ''] || `${field.label} ${index + 1}`)}</summary>
+          <summary>{pageRowName(field.fields, row) || `${field.label} ${index + 1}`}</summary>
           <div className="plugin-page-item-fields"><PluginPageFields fields={field.fields ?? []} values={row} prefix={`${label} ${index + 1}: `} ownerId={ownerId}
             onChange={(next) => update(rows.map((item, i) => i === index ? next : item))} />
           </div><Button variant="danger" onClick={() => update(rows.filter((_, i) => i !== index))}>Remove {field.label} {index + 1}</Button>

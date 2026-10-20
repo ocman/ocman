@@ -20,6 +20,20 @@ function Form() {
 }
 
 describe('Plugin page fields', () => {
+  it('never uses a secret first field as the list heading, including while collapsed', () => {
+    function SecretForm() {
+      const [values, setValues] = useState<PageValues>({ accounts: [{ password: '' }] });
+      return <PluginPageFields fields={[{ key: 'accounts', label: 'Accounts', type: 'list', fields: [
+        { key: 'password', label: 'Password', type: 'secret' },
+      ] }]} values={values} onChange={setValues} />;
+    }
+    render(<SecretForm />);
+    fireEvent.change(screen.getByLabelText('Accounts 1: Password'), { target: { value: 'private-password' } });
+    expect(screen.queryByText('private-password')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Accounts 1'));
+    expect(screen.getByText('Accounts 1')).toBeInTheDocument();
+    expect(screen.queryByText('private-password')).not.toBeInTheDocument();
+  });
   it('keeps target choices in sync with named rows and shows stale selections', () => {
     function SelectionForm() {
       const [values, setValues] = useState<PageValues>({ selected: 'removed', targets: [{ name: 'staging' }] });

@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { callPluginPage, usePluginPages, type PageDocument } from './pluginPages';
+import { callPluginPage, pageRowName, usePluginPages, type PageDocument, type PageField } from './pluginPages';
 import { fetchJSON, postJSON } from './api';
 
 const hosts = vi.hoisted(() => ({ data: [] as { remoteId: string; pluginManagement: boolean }[], isPending: false, isError: false }));
@@ -18,6 +18,21 @@ beforeEach(() => {
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>;
 }
+
+it.each(['secret', 'multiline', 'boolean', 'list', 'projects', 'select'] as const)('never uses a %s field as a row name', (type) => {
+  expect(pageRowName([{ key: 'value', label: 'Value', type }], { value: 'private' })).toBe('');
+});
+
+it.each([null, false, 42, 'opaque', [], {}, { title: 42 }].map((row) => ({ row })))('ignores malformed row names in $row', ({ row }) => {
+  expect(pageRowName([{ key: 'title', label: 'Title', type: 'text' }], row)).toBe('');
+});
+
+it('uses only the declared first text field and ignores undeclared values', () => {
+  const fields: PageField[] = [{ key: 'title', label: 'Title', type: 'text' }];
+  expect(pageRowName(fields, { title: 'production', password: 'secret' })).toBe('production');
+  expect(pageRowName(undefined, { title: 'secret' })).toBe('');
+  expect(pageRowName([], { title: 'secret' })).toBe('');
+});
 
 it('lists pages independently on capable owners without calling legacy owners', async () => {
   vi.mocked(fetchJSON).mockImplementation(async (url) => [{ ownerId: url.includes('local') ? 'local' : 'remote', pluginId: 'plugin', page: { id: 'pentest', label: 'Pentest' } }] as never);

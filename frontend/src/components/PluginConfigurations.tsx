@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { callPluginPage, type PluginPage, type PageDocument } from '../lib/pluginPages';
+import { callPluginPage, pageRowName, type PluginPage, type PageDocument } from '../lib/pluginPages';
 import { shortPath } from '../lib/format';
 import { Button } from './Control';
 
@@ -41,10 +41,14 @@ export function PluginConfigurations({ page, directories, onOpen }: {
     {!configurations.length && !query.isPending && !query.data?.failed && !query.isError && <p>No saved configurations. Create one to set up your targets.</p>}
     <div className="plugin-configuration-list">{configurations.map((configuration) => {
       const targets = configuration.document.values.targets;
+      const schema = configuration.document.fields?.find((field) => field.key === 'targets' && field.type === 'list');
+      const names = Array.isArray(targets) ? targets.map((row) => pageRowName(schema?.fields, row)).filter(Boolean) : [];
+      const selection = configuration.document.fields?.find((field) => field.key === 'selected_target' && field.type === 'select' && field.optionsFrom === 'targets');
+      const selected = selection && configuration.document.values[selection.key];
       return <article key={configuration.directory} className="plugin-configuration-card">
         <div><h2>{shortPath(configuration.directory)}</h2><small>{page.ownerId} · {configuration.directory}</small></div>
-        {Array.isArray(targets) && <div><p>{targets.length} {targets.length === 1 ? 'target' : 'targets'} · {targets.map((t) => String(t.name ?? '')).join(', ')}</p>
-          {configuration.document.values.selected_target && <small>Target to scan: {String(configuration.document.values.selected_target)}</small>}</div>}
+        {names.length > 0 && <div><p>{names.length} {names.length === 1 ? 'target' : 'targets'} · {names.join(', ')}</p>
+          {typeof selected === 'string' && names.includes(selected) && <small>Target to scan: {selected}</small>}</div>}
         <Button aria-label={`Open configuration for ${shortPath(configuration.directory)}`} onClick={() => onOpen(configuration)}>Open configuration</Button>
       </article>;
     })}</div>

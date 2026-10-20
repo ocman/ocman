@@ -8,6 +8,15 @@ export type PageField = { key: string; label: string; type: 'text' | 'multiline'
 export type PageValues = { [key: string]: string | boolean | PageValues[] };
 export type PageDocument = { revision: string; fields: PageField[] | null; values: PageValues; tree: PluginPaneTree; configured?: boolean };
 
+// Only a declared text field may name a row outside its editable controls.
+// Undeclared values and other field types may contain secrets or opaque JSON.
+export function pageRowName(fields: PageField[] | undefined, row: unknown): string {
+  const first = fields?.[0];
+  if (first?.type !== 'text' || !row || typeof row !== 'object' || Array.isArray(row)) return '';
+  const value = (row as Record<string, unknown>)[first.key];
+  return typeof value === 'string' ? value : '';
+}
+
 export function blankPageValues(fields: PageField[]): PageValues {
   return Object.fromEntries(fields.map((f) => [f.key, f.type === 'list' ? [] : f.type === 'boolean' ? false : '']));
 }
