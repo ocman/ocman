@@ -160,4 +160,31 @@ describe('image preview navigation', () => {
     expect(screen.getByRole('dialog', { name: 'First' })).toBeInTheDocument();
     other.remove();
   });
+
+  it('keeps duplicate occurrences stable when older history is prepended and after reload', async () => {
+    const user = userEvent.setup();
+    function History({ older = false, initial = '/session/example' }) {
+      return <MemoryRouter initialEntries={[initial]}><LocationControls /><ImagePreviewProvider>
+        {older && <div data-message-id="older-message"><PreviewImage src="/same.png" alt="Older copy" /></div>}
+        <div data-message-id="newer-message"><PreviewImage src="/same.png" alt="Newer copy" /></div>
+      </ImagePreviewProvider></MemoryRouter>;
+    }
+    const view = render(<History />);
+    await user.click(screen.getByRole('button', { name: 'Expand Newer copy' }));
+    const newerURL = screen.getByTestId('url').textContent!;
+    view.rerender(<History older />);
+    expect(screen.getByRole('dialog', { name: 'Newer copy' })).toBeInTheDocument();
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+    expect(screen.getByTestId('url').textContent).toBe(newerURL);
+    await user.keyboard('{ArrowLeft}');
+    const olderURL = screen.getByTestId('url').textContent!;
+    view.unmount();
+    const reloaded = render(<History initial={olderURL} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    reloaded.rerender(<History older initial={olderURL} />);
+    expect(screen.getByRole('dialog', { name: 'Older copy' })).toBeInTheDocument();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('dialog', { name: 'Newer copy' })).toBeInTheDocument();
+    expect(screen.getByTestId('url').textContent).toBe(newerURL);
+  });
 });

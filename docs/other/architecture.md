@@ -960,7 +960,7 @@ flowchart TD
   boundaries, totals, and requests.
 - **Image previews.** Markdown images and conversation attachments register with
   the app's `ImagePreviewProvider`. The `image` query parameter selects a mounted
-  image using a short source fingerprint and duplicate occurrence number, never
+  image using message/source fingerprints and a within-message duplicate number, never
   an arbitrary image URL. Links reopen when the matching image mounts. Previous
   and next buttons and arrow keys follow page order, retain owner parameters and
   URL fragments, and replace the preview history entry. The shared zoomable modal

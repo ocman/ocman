@@ -31,7 +31,9 @@ function GalleryProvider({ children, selected, select }: {
 }) {
   const [entries, setEntries] = useState<(ImageEntry & { key: string })[]>([]);
   const register = useCallback((entry: ImageEntry) => {
-    const registered = { ...entry, key: imageKey(entry.src) };
+    // Scope duplicate ordinals to their persistent message, not loaded history.
+    const messageId = entry.element.closest('[data-message-id]')?.getAttribute('data-message-id') ?? '';
+    const registered = { ...entry, key: `${imageKey(messageId)}.${imageKey(entry.src)}` };
     setEntries(current => [...current, registered]);
     return () => setEntries(current => current.filter(item => item !== registered));
   }, []);

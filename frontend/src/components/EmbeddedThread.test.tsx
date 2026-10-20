@@ -28,6 +28,7 @@ describe('EmbeddedThread', () => {
     const parts = [makePart('m1', { type: 'text', text: 'Hello from subagent' })];
     render(<EmbeddedThread messages={messages} parts={parts} />);
     expect(screen.getByText('Hello from subagent')).toBeTruthy();
+    expect(screen.getByText('Hello from subagent').closest('[data-message-id]')).toHaveAttribute('data-message-id', 'm1');
   });
 
   it('renders the embedded-thread container with data-testid', () => {

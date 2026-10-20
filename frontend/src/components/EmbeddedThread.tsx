@@ -133,7 +133,7 @@ function EmbeddedMessage({ msg }: { msg: ThreadMessageLike }) {
       : 'oc-msg oc-msg-assistant';
 
   return (
-    <div className={className}>
+    <div className={className} data-message-id={msg.id}>
       <div className="oc-msg-body oc-md">
         {items.map((it, i) => <ContentItem key={i} item={it} />)}
       </div>
