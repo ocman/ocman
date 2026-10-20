@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"io"
 
 	"github.com/NoUseFreak/ocman/internal/composerattachments"
@@ -18,7 +19,7 @@ const attachmentChunkBytes = 32 << 10
 func (h *remoteHost) SaveComposerAttachment(ctx context.Context, req hostsvc.ComposerAttachmentRequest, reader io.Reader) (*hostsvc.ComposerAttachment, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // A local read failure must stop the owner and remove its partial file.

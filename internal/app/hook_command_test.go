@@ -92,9 +92,10 @@ func TestClaudeHookPlugin(t *testing.T) {
 	base, out, stop := startClaudeOcman(t, "TestClaudeHookPlugin", dir, "OCMAN_TEST_MCP_ADDR="+mcp, "CLAUDE_CONFIG_DIR="+config)
 	defer stop()
 
+	identity := waitSessionIdentity(t, base, "claudecode", "22222222-2222-4222-8222-222222222222")
 	status := func() db.SessionStatus {
 		for _, s := range listSessions(base) {
-			if s.ID == "22222222-2222-4222-8222-222222222222" {
+			if s.ID == identity.ID {
 				return s.Status
 			}
 		}

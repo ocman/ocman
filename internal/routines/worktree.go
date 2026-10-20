@@ -18,8 +18,9 @@ func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensur
 		rules = []platforms.PermissionRule{}
 	}
 	title := run.RoutineName + " " + s.now().Format("2006-01-02 15:04")
+	creation := &platforms.CreationIdentity{RequestKey: "routine/" + run.ID, Origin: "routine", OriginID: run.RoutineID}
 	if !run.Worktree {
-		result, err := s.sessions.CreateRoutine(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: title, Port: ensured.Port()}, rules, run.RoutineID, link)
+		result, err := s.sessions.CreateRoutine(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: title, Port: ensured.Port(), Creation: creation}, rules, run.RoutineID, link)
 		if err != nil {
 			return "", err
 		}
@@ -28,7 +29,7 @@ func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensur
 	done := s.sessions.BeginRoutineCreation()
 	defer done()
 	_, base := platforms.SplitPlatformID(platformID)
-	created, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: run.Directory, Branch: "routine/" + run.ID, NewBranch: true, MustCreateBranch: true, Title: title, PermissionRules: rules})
+	created, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: run.Directory, Branch: "routine/" + run.ID, NewBranch: true, MustCreateBranch: true, Title: title, PermissionRules: rules, Creation: creation})
 	if err != nil {
 		return "", err
 	}

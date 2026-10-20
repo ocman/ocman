@@ -64,7 +64,8 @@ type Deps struct {
 	// Remotes is nil while no remote manager exists.
 	Remotes func() Remotes
 	// PublicURL makes a link a reader elsewhere can open.
-	PublicURL func(path string) string
+	PublicURL  func(path string) string
+	SessionURL func(context.Context, string, string) (string, error)
 	// ProjectDirectory resolves an OpenCode project ID to its root on this
 	// machine for the context.project.path grant; nil without an OpenCode
 	// database.

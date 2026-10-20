@@ -255,6 +255,7 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type taskData struct {
+		Platform string          `json:"platform"`
 		Messages json.RawMessage `json:"messages"`
 		Parts    json.RawMessage `json:"parts"`
 	}
@@ -265,12 +266,31 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		adapter, ok := s.registry.PlatformForSession(r.Context(), taskID)
+		nativeID, platform := taskID, r.URL.Query().Get("platform")
+		if strings.HasPrefix(taskID, "ocm_") {
+			identity, err := s.sessions.LookupSessionIdentity(r.Context(), platform, platforms.SessionIdentityRequest{ID: taskID})
+			if err != nil {
+				writeIdentityError(w, err)
+				return
+			}
+			nativeID, platform = identity.NativeID, identity.Platform
+		}
+		var adapter platforms.Platform
+		var ok bool
+		if platform != "" {
+			adapter, ok = s.registry.Get(platforms.ID(platform))
+			if !ok {
+				writeIdentityError(w, platforms.ErrPlatformUnreachable)
+				return
+			}
+		} else {
+			adapter, ok = s.registry.PlatformForSession(r.Context(), nativeID)
+		}
 		if !ok {
 			continue
 		}
 
-		detail, err := adapter.Session(s.ConversationReadContext(r.Context()), taskID, limit, 0)
+		detail, err := adapter.Session(s.ConversationReadContext(r.Context()), nativeID, limit, 0)
 		if err != nil {
 			if errors.Is(err, platforms.ErrHistoryUnavailable) {
 				writePlatformError(w, "fetching stored task conversation", err)
@@ -297,7 +317,7 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		result[taskID] = taskData{Messages: msgsJSON, Parts: ptsJSON}
+		result[taskID] = taskData{Platform: string(adapter.ID()), Messages: msgsJSON, Parts: ptsJSON}
 	}
 
 	writeJSON(w, map[string]interface{}{"tasks": result})

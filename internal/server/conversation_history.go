@@ -9,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/historyparity"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 	log "github.com/sirupsen/logrus"
 )
@@ -27,6 +28,9 @@ func (s *Server) WithConversationHistory(store *statev2.DB, ownerID string) *Ser
 		}}
 	if s.stateDB != nil {
 		deps.Tasks = s.taskManager()
+		catalogue, _ := sessioncatalog.New(s.stateDB)
+		s.sessions.WithSessionCatalogue(catalogue, ownerID)
+		s.sessionCatalogue = s.newSessionCatalogue(catalogue, store, ownerID)
 	}
 	for _, adapter := range s.registry.Platforms() {
 		if remoteID, _ := platforms.SplitPlatformID(string(adapter.ID())); remoteID != "" {

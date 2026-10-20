@@ -169,6 +169,7 @@ type RenameSessionRequest struct {
 // optionally from a specific message in the timeline. An empty
 // MessageID forks from the current HEAD.
 type ForkSessionRequest struct {
+	Creation  *CreationIdentity `json:"creation,omitempty"`
 	SessionID string
 	MessageID string // optional; empty = fork from HEAD
 }
@@ -202,6 +203,7 @@ type SetPermissionRulesRequest struct {
 // existing session — the handler picks the platform from the
 // ?platform= query or defaults to a single registered one.
 type CreateSessionRequest struct {
+	Creation  *CreationIdentity `json:"creation,omitempty"`
 	Directory string
 	Title     string // Optional custom title for the new session
 	// Port is an optional already-known OpenCode port. When set, the
@@ -214,7 +216,8 @@ type CreateSessionRequest struct {
 // CreateSessionResponse is the minimal payload returned after creating
 // a session — the ID the caller can now use for subsequent requests.
 type CreateSessionResponse struct {
-	ID string `json:"id"`
+	ID                   string `json:"id"`
+	ConfigurationApplied bool   `json:"configurationApplied,omitempty"`
 }
 
 // AgentCatalogEntry is one entry in a platform's composer-agent

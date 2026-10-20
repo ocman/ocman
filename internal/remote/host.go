@@ -46,7 +46,7 @@ func (h *remoteHost) Capabilities() hostsvc.HostCaps {
 func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]string{"dir": dir})
 	resp, err := client.ProjectUpstreams(ctx, &pb.JsonReq{Payload: b})
@@ -69,7 +69,7 @@ func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 func (h *remoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return "", ErrRemoteOffline
+		return "", platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -91,7 +91,7 @@ func (h *remoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadReq
 func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir})
 	resp, err := client.ListWorktrees(ctx, &pb.JsonReq{Payload: b})
@@ -108,7 +108,7 @@ func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]git.Workt
 func (h *remoteHost) WorktreeDefaultBaseRef(ctx context.Context, dir string) (string, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return "", ErrRemoteOffline
+		return "", platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir})
 	resp, err := client.WorktreeDefaultBaseRef(ctx, &pb.JsonReq{Payload: b})
@@ -124,7 +124,7 @@ func (h *remoteHost) WorktreeDefaultBaseRef(ctx context.Context, dir string) (st
 func (h *remoteHost) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -141,7 +141,7 @@ func (h *remoteHost) CreateWorktreeSession(ctx context.Context, req hostsvc.Work
 func (h *remoteHost) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {
 	client := h.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -154,7 +154,7 @@ func (h *remoteHost) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorkt
 func (h *remoteHost) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -171,7 +171,7 @@ func (h *remoteHost) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxReque
 func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -188,7 +188,7 @@ func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.Ensu
 func (h *remoteHost) EnsureRuntime(ctx context.Context, platform, dir string) (*hostsvc.EnsureRuntimeResult, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(map[string]string{"platform": platform, "projectDir": dir})
 	if err != nil {
@@ -208,7 +208,7 @@ func (h *remoteHost) EnsureRuntime(ctx context.Context, platform, dir string) (*
 func (h *remoteHost) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
 	client := h.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -221,7 +221,7 @@ func (h *remoteHost) StopProjectOpencode(ctx context.Context, req hostsvc.Ensure
 func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -238,7 +238,7 @@ func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.Ens
 func (h *remoteHost) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := client.ManagedOpencodes(ctx, &pb.Empty{})
 	if err != nil {
@@ -251,7 +251,7 @@ func (h *remoteHost) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpe
 func (h *remoteHost) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := client.TmuxSessions(ctx, &pb.Empty{})
 	if err != nil {
@@ -266,7 +266,7 @@ func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 	// stats); the Host interface expects ProjectStats. Map both across.
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := client.Projects(ctx, &pb.Empty{})
 	if err != nil {
@@ -294,7 +294,7 @@ func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 func (h *remoteHost) TermWindows(ctx context.Context, dir string) ([]hostsvc.TermWindow, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir})
 	resp, err := client.TermWindows(ctx, &pb.JsonReq{Payload: b})
@@ -308,7 +308,7 @@ func (h *remoteHost) TermWindows(ctx context.Context, dir string) ([]hostsvc.Ter
 func (h *remoteHost) TermCreateWindow(ctx context.Context, dir string) (string, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return "", ErrRemoteOffline
+		return "", platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir})
 	resp, err := client.TermCreateWindow(ctx, &pb.JsonReq{Payload: b})
@@ -324,7 +324,7 @@ func (h *remoteHost) TermCreateWindow(ctx context.Context, dir string) (string, 
 func (h *remoteHost) TermKillWindow(ctx context.Context, dir, window string) error {
 	client := h.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir, "window": window})
 	_, err := client.TermKillWindow(ctx, &pb.JsonReq{Payload: b})
@@ -338,7 +338,7 @@ func (h *remoteHost) TermKillWindow(ctx context.Context, dir, window string) err
 func (h *remoteHost) TermAttach(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error {
 	client := h.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -399,7 +399,7 @@ func (h *remoteHost) TermAttach(ctx context.Context, req hostsvc.TermAttachReque
 func (h *remoteHost) ProjectIdentities(ctx context.Context) ([]ProjectIdentity, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := client.Projects(ctx, &pb.Empty{})
 	if err != nil {

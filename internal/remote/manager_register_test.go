@@ -138,7 +138,7 @@ func TestManager_DoesNotRegisterAdaptersForAnUnmanagedRemote(t *testing.T) {
 	// supervisor registered after the removal survives as a leak.
 	mgr.Stop()
 
-	if _, ok := hubReg.Get(platforms.ID(CompoundPlatformID("inst-gone", "opencode"))); ok {
+	if _, ok := hubReg.Get(platforms.ID(platforms.CompoundPlatformID("inst-gone", "opencode"))); ok {
 		t.Error("stale platform registered for a removed remote")
 	}
 	if got := router.Remotes(); len(got) != 0 {

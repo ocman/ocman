@@ -104,6 +104,21 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if req.Directory == "" {
 		return nil, validation("directory is required")
 	}
+	if err := prepareCreationIdentity(&req, routine.id); err != nil {
+		return nil, err
+	}
+	if rules == nil && req.Creation.Configured {
+		rules = req.Creation.PermissionRules
+		if rules == nil {
+			rules = []platforms.PermissionRule{}
+		}
+	}
+	if err := normalizePermissionRules(rules); err != nil {
+		return nil, err
+	}
+	if rules != nil {
+		req.Creation.Configured, req.Creation.PermissionRules = true, rules
+	}
 	adapter, err := s.pickAdapter(ctx, platformID)
 	if err != nil {
 		return nil, err
@@ -121,16 +136,23 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 			return nil, platforms.ErrUnsupported
 		}
 	}
+	attempt, replay, err := s.reserveCreation(ctx, adapter, req, rules)
+	if err != nil || replay != nil {
+		return replay, err
+	}
 	createPhase := srvtiming.Begin(ctx, "create_session")
 	resp, err := adapter.CreateSession(ctx, req)
 	createPhase.EndWithDesc("adapter.CreateSession")
 	if err != nil {
-		return nil, err
+		return nil, attempt.nativeFailure(ctx, err)
 	}
 	if resp == nil || strings.TrimSpace(resp.ID) == "" {
-		return nil, fmt.Errorf("platform %s returned no session", adapter.ID())
+		return nil, attempt.uncertain("", fmt.Errorf("platform %s returned no session", adapter.ID()))
 	}
-	if rules != nil {
+	if err := attempt.attach(ctx, resp.ID); err != nil {
+		return nil, err
+	}
+	if rules != nil && !resp.ConfigurationApplied {
 		err = adapter.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: resp.ID, Rules: rules})
 	}
 	if err == nil && routine.link != nil {
@@ -141,17 +163,27 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		defer cancel()
 		cleanupErr := disposer.DisposeSession(cleanupCtx, platforms.DisposeSessionRequest{SessionID: resp.ID, Port: req.Port})
 		if cleanupErr != nil {
-			return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: errors.Join(err, cleanupErr)}
+			return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: attempt.uncertain(resp.ID, errors.Join(err, cleanupErr))}
 		}
+		return nil, attempt.failed(ctx, err)
+	}
+	if err := attempt.bind(ctx, resp.ID); err != nil {
 		return nil, err
 	}
+	copy := *resp
+	resp = &copy
+	resp.ConfigurationApplied = resp.ConfigurationApplied || rules != nil
 	// The first send looks up project defaults by directory; we already know it.
-	s.sessionDirs.Store(resp.ID, req.Directory)
+	s.sessionDirs.Store(nativeSessionKey{adapter.ID(), resp.ID}, req.Directory)
 	s.rememberFirstPrompt(adapter, resp.ID, req.Directory, req.Title)
 	if s.hooks.SessionCreated != nil {
+		routineID := routine.id
+		if routineID == "" && req.Creation.Origin == "routine" {
+			routineID = req.Creation.OriginID
+		}
 		s.hooks.SessionCreated(CreatedSession{
 			ID: resp.ID, Platform: string(adapter.ID()), Directory: req.Directory,
-			Title: req.Title, RoutineID: routine.id,
+			Title: req.Title, RoutineID: routineID,
 		})
 	}
 	return resp, nil

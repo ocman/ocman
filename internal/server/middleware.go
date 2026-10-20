@@ -131,6 +131,7 @@ func isLoopback(r *http.Request) bool {
 // requireLocalhost protects host-control routes from both network and browser
 // cross-origin access while preserving Origin-less local CLI/MCP clients.
 func (s *Server) requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
+	h = s.withSessionViews(h)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.isPrivilegedRequest(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)

@@ -251,6 +251,9 @@ func TestForkRenameAndCommands(t *testing.T) {
 	if _, err := h.adapter.ForkSession(t.Context(), platforms.ForkSessionRequest{SessionID: src, MessageID: "m"}); !errors.Is(err, platforms.ErrUnsupported) {
 		t.Fatalf("fork at message = %v", err)
 	}
+	if _, err := h.adapter.ForkSession(t.Context(), platforms.ForkSessionRequest{SessionID: src, MessageID: "m"}); !errors.Is(err, platforms.ErrCreationRejected) {
+		t.Fatalf("rejected fork lost allocation certainty: %v", err)
+	}
 
 	if err := h.adapter.RenameSession(t.Context(), platforms.RenameSessionRequest{SessionID: fork.ID, Title: "  Renamed  "}); err != nil {
 		t.Fatal(err)

@@ -14,7 +14,7 @@ import (
 func (h *remoteHost) ReloadOpencode(ctx context.Context) error {
 	client := h.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	_, err := client.ReloadOpencode(ctx, &pb.Empty{})
 	if status.Code(err) == codes.FailedPrecondition {

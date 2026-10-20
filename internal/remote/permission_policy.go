@@ -48,7 +48,7 @@ func (s *Server) SessionPermissionPolicy(ctx context.Context, req *pb.PlatformJs
 func (p *remotePlatform) SessionPermissionPolicy(ctx context.Context, id string, rules *[]platforms.PermissionRule) (*autoapprove.PermissionPolicy, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	if rules != nil && *rules == nil {
 		empty := []platforms.PermissionRule{}

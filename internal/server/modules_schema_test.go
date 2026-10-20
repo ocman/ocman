@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
@@ -13,6 +14,13 @@ func TestModuleSchemasOpen(t *testing.T) {
 	db, err := state.Open(statetest.Path(t), ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
+	}
+	catalogue, err := sessioncatalog.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := catalogue.List(t.Context(), "owner", 10, 0); err != nil || len(rows) != 0 {
+		t.Fatalf("catalogue schema not registered: %+v %v", rows, err)
 	}
 	_ = db.Close()
 }

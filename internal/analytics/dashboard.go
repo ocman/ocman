@@ -28,7 +28,7 @@ func (m *Module) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if !m.requireAnalytics(w, r) {
 		return
 	}
-	metrics, err := m.analyticsReader(r.Context()).GetMetricsDashboard(r.Context(), metricsOptions(r))
+	metrics, err := m.analyticsReader(r.Context()).GetMetricsDashboard(r.Context(), m.publicMetricsOptions(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching metrics", err)
 		return
@@ -40,7 +40,7 @@ func (m *Module) handleMetricsPerformance(w http.ResponseWriter, r *http.Request
 	if !m.requireAnalytics(w, r) {
 		return
 	}
-	metrics, err := m.analyticsReader(r.Context()).GetMetricsPerformance(r.Context(), metricsOptions(r))
+	metrics, err := m.analyticsReader(r.Context()).GetMetricsPerformance(r.Context(), m.publicMetricsOptions(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching performance metrics", err)
 		return
@@ -57,7 +57,7 @@ func (m *Module) handleMetricLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "kind must be request, session, or project", http.StatusBadRequest)
 		return
 	}
-	logs, err := m.analyticsReader(r.Context()).GetMetricsLog(r.Context(), metricsOptions(r), kind)
+	logs, err := m.analyticsReader(r.Context()).GetMetricsLog(r.Context(), m.publicMetricsOptions(r), kind)
 	if err != nil {
 		httpx.ServerError(w, "fetching metric logs", err)
 		return

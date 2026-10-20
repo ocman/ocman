@@ -117,6 +117,10 @@ type RateLimit struct {
 // could not record yet (platforms.ErrReplyUnrecorded).
 const CodeReplyUnrecorded = "reply_unrecorded"
 
+// CodeCreationRejected guarantees that create/fork failed before allocation.
+// Missing this code leaves the outcome uncertain, regardless of HTTP status.
+const CodeCreationRejected = "creation_rejected"
+
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

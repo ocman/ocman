@@ -117,6 +117,7 @@ func (s *Server) buildMCPHandler() http.Handler {
 
 func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handler {
 	deps := internalmcp.Deps{
+		ToolMiddleware: s.sessionIdentityToolMiddleware,
 		SignFile:       s.FileURL,
 		SessionService: sessionService,
 	}
@@ -141,7 +142,7 @@ func (s sessionMCPService) ListSessions(ctx context.Context, directory string) (
 		}
 	}
 	applySessionNotice(sessions)
-	return sessions, nil
+	return publicSessionValue(s.server, ctx, "", sessions, true)
 }
 
 // SearchSessionText searches this machine's OpenCode database only; remote
@@ -154,10 +155,20 @@ func (s sessionMCPService) SearchSessionText(ctx context.Context, query, directo
 	for i := range matches {
 		matches[i].Platform = string(opencode.PlatformID)
 	}
-	return matches, err
+	if err != nil {
+		return nil, err
+	}
+	return publicSessionValue(s.server, ctx, string(opencode.PlatformID), matches, false)
 }
 
 func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, messageLimit int) (*platforms.SessionDetail, error) {
+	if strings.HasPrefix(id, "ocm_") {
+		info, err := s.server.sessions.LookupSessionIdentity(ctx, platform, platforms.SessionIdentityRequest{ID: id})
+		if err != nil {
+			return nil, err
+		}
+		platform, id = info.Platform, info.NativeID
+	}
 	ctx = s.server.ConversationReadContext(ctx)
 	var adapter platforms.Platform
 	var detail *platforms.SessionDetail
@@ -184,7 +195,7 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 		detail.Session = &sessions[0]
 	}
 	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
-	return detail, nil
+	return publicSessionValue(s.server, ctx, string(adapter.ID()), detail, false)
 }
 
 // findSession asks every available adapter for id, so callers may omit the

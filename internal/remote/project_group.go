@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -95,11 +96,11 @@ func (m *Manager) ResolveProjectTargets(source db.ProjectStats, localProjects []
 		// disabled one (FR-1/2).
 		candidate := TargetCandidate{RemoteID: p.RemoteID, Dir: p.Directory, Platform: m.localDefault(), RemoteName: "This machine"}
 		if p.RemoteID != "local" {
-			_, preferred := SplitPlatformID(source.Platform)
+			_, preferred := platforms.SplitPlatformID(source.Platform)
 			if preferred == "" {
 				preferred = m.base
 			}
-			candidate.Platform = CompoundPlatformID(p.RemoteID, selectPlatform(m.remotePlatforms(p.RemoteID), preferred))
+			candidate.Platform = platforms.CompoundPlatformID(p.RemoteID, selectPlatform(m.remotePlatforms(p.RemoteID), preferred))
 			candidate.RemoteName = m.nameForRemoteID(p.RemoteID)
 		}
 		seen[p.RemoteID] = len(out)
@@ -138,7 +139,7 @@ func (m *Manager) localPlatforms() []string {
 		return out
 	}
 	for _, p := range m.registry.Platforms() {
-		if owner, base := SplitPlatformID(string(p.ID())); owner == "" {
+		if owner, base := platforms.SplitPlatformID(string(p.ID())); owner == "" {
 			out = append(out, base)
 		}
 	}

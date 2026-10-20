@@ -23,10 +23,11 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/projects", s.get(s.handleProjects))
 	mux.HandleFunc("/api/system/stats", s.get(s.handleSystemStats))
 	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
+	mux.HandleFunc("GET /api/session-identity", s.requireAuth(s.handleSessionIdentity))
 	mux.HandleFunc("/api/sessions/notify", s.get(s.handleSessionsNotify))
 	mux.HandleFunc("/api/events", s.get(s.handleGlobalEvents))
 	mux.HandleFunc("/api/client-activity", s.post(s.handleClientActivity))
-	mux.HandleFunc("/api/session/", s.requireAuth(s.dispatchSessionSubpath))
+	mux.HandleFunc("/api/session/", s.withOwnedSessionPath(s.requireAuth(s.dispatchSessionSubpath)))
 	// Public, UNAUTHENTICATED share endpoints. A valid share token is
 	// the only credential: anyone with the unguessable URL can view the
 	// conversation read-only, even when password auth is configured.

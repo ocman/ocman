@@ -49,18 +49,19 @@ type CostCalculator interface {
 //   - Dir: when non-empty, scopes the query to sessions whose
 //     directory equals Dir or starts with Dir+"/". See directoryWhere.
 type MetricsDashboardOptions struct {
-	AgentFilter   string
-	ModelFilter   string
-	Since         int64
-	Days          int
-	RequestLimit  int
-	RequestOffset int
-	SessionLimit  int
-	SessionOffset int
-	ProjectLimit  int
-	ProjectOffset int
-	Pricing       CostCalculator
-	Dir           string
+	SessionIdentity func(context.Context, string, string) (string, error)
+	AgentFilter     string
+	ModelFilter     string
+	Since           int64
+	Days            int
+	RequestLimit    int
+	RequestOffset   int
+	SessionLimit    int
+	SessionOffset   int
+	ProjectLimit    int
+	ProjectOffset   int
+	Pricing         CostCalculator
+	Dir             string
 }
 
 // GetMetricsDashboard returns filtered request-level analytics for
@@ -648,12 +649,7 @@ func (d *DB) populateSessionLog(ctx context.Context, dashboard *MetricsDashboard
 		}
 	}
 
-	// Look up session titles/directories in a single query.
-	ids := make([]string, 0, len(accs))
-	for id := range accs {
-		ids = append(ids, id)
-	}
-	titles, dirs, err := d.lookupSessionMetadata(ctx, ids)
+	titles, dirs, err := d.requestSessionMetadata(ctx, filtered)
 	if err != nil {
 		return err
 	}
@@ -692,16 +688,7 @@ func (d *DB) populateProjectLog(ctx context.Context, dashboard *MetricsDashboard
 		return nil
 	}
 
-	// Collect the unique session IDs so we can look up directories.
-	sessionIDs := make([]string, 0)
-	seenSessions := make(map[string]struct{})
-	for _, r := range filtered {
-		if _, ok := seenSessions[r.SessionID]; !ok {
-			seenSessions[r.SessionID] = struct{}{}
-			sessionIDs = append(sessionIDs, r.SessionID)
-		}
-	}
-	_, dirs, err := d.lookupSessionMetadata(ctx, sessionIDs)
+	_, dirs, err := d.requestSessionMetadata(ctx, filtered)
 	if err != nil {
 		return err
 	}

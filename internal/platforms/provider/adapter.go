@@ -194,23 +194,9 @@ func (a *Adapter) request(ctx context.Context, method, path string, body any) (*
 		return resp, nil
 	}
 	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusNotFound:
-		return nil, platforms.ErrNotFound
-	case http.StatusConflict:
-		return nil, platforms.ErrBusy
-	case http.StatusNotImplemented:
-		return nil, platforms.ErrUnsupported
-	}
 	var wire providerprotocol.Error
 	_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&wire)
-	if resp.StatusCode == http.StatusServiceUnavailable && wire.Code == providerprotocol.CodeReplyUnrecorded {
-		return nil, fmt.Errorf("%w: %s", platforms.ErrReplyUnrecorded, wire.Message)
-	}
-	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-		return nil, &platforms.UpstreamError{Status: resp.StatusCode, Message: wire.Message}
-	}
-	return nil, fmt.Errorf("provider HTTP %d: %s", resp.StatusCode, wire.Message)
+	return nil, providerResponseError(resp.StatusCode, wire)
 }
 
 func sessionPath(id, suffix string) string { return "/sessions/" + url.PathEscape(id) + suffix }

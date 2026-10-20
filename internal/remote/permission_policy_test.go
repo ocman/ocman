@@ -79,7 +79,7 @@ func TestRemoteSessionPermissionPolicyRoundTrip(t *testing.T) {
 		t.Fatal("empty replacement was lost in transport")
 	}
 	conn.Close()
-	if _, err := adapter.SessionPermissionPolicy(t.Context(), "s1", &rules); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := adapter.SessionPermissionPolicy(t.Context(), "s1", &rules); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline write = %v", err)
 	}
 }

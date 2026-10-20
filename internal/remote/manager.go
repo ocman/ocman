@@ -64,12 +64,12 @@ func (m *Manager) webhookRemote(id string) (*RemoteConn, error) {
 	for _, remote := range m.remotes {
 		if remote.conn != nil && remote.conn.RemoteID() == id {
 			if remote.conn.Client() == nil {
-				return nil, ErrRemoteOffline
+				return nil, platforms.ErrRemoteOffline
 			}
 			return remote.conn, nil
 		}
 	}
-	return nil, ErrRemoteOffline
+	return nil, platforms.ErrRemoteOffline
 }
 
 func (m *Manager) RegisterWebhookInbox(ctx context.Context, owner, routineID, relayURL, enrollmentToken string) (state.WebhookInbox, error) {
@@ -85,7 +85,7 @@ func (m *Manager) RegisterWebhookInboxWithSecret(ctx context.Context, owner, rou
 		return conn.RegisterWebhookInboxWithSecret(ctx, routineID, relayURL, enrollmentToken, secret, secretHeader)
 	}
 	if m.webhooks == nil {
-		return state.WebhookInbox{}, ErrRemoteOffline
+		return state.WebhookInbox{}, platforms.ErrRemoteOffline
 	}
 	return m.webhooks.RegisterWithSecret(ctx, routineID, relayURL, enrollmentToken, secret, secretHeader)
 }
@@ -99,7 +99,7 @@ func (m *Manager) PollWebhookInbox(ctx context.Context, owner, routineID string)
 		return conn.PollWebhookInbox(ctx, routineID)
 	}
 	if m.webhooks == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	return m.webhooks.Poll(ctx, routineID)
 }
@@ -790,14 +790,14 @@ func (m *Manager) EnabledRemotes() []TargetCandidate {
 	defer m.mu.RUnlock()
 	out := make([]TargetCandidate, 0, len(m.remotes))
 	for _, mr := range m.remotes {
-		if mr.conn == nil || mr.conn.RemoteID() == "" || mr.conn.Health() != HealthConnected {
+		if mr.conn == nil || mr.conn.RemoteID() == "" || mr.conn.Health() != HealthConnected || len(mr.conn.Platforms()) == 0 {
 			continue
 		}
 		rid := mr.conn.RemoteID()
 		out = append(out, TargetCandidate{
 			RemoteID:   rid,
 			RemoteName: m.nameForRemoteIDLocked(rid),
-			Platform:   CompoundPlatformID(rid, selectPlatform(mr.conn.Platforms(), m.base)),
+			Platform:   platforms.CompoundPlatformID(rid, selectPlatform(mr.conn.Platforms(), m.base)),
 		})
 	}
 	return out
@@ -834,7 +834,7 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 				TotalCost:      p.TotalCost,
 				RemoteID:       remoteID,
 				RemoteName:     name,
-				Platform:       CompoundPlatformID(remoteID, base),
+				Platform:       platforms.CompoundPlatformID(remoteID, base),
 			})
 		}
 	}

@@ -31,6 +31,11 @@ var BodyReadTimeout = 30 * time.Second
 
 // WriteJSON writes a JSON response with an implicit 200 status.
 func WriteJSON(w http.ResponseWriter, data any) {
+	var err error
+	if data, err = projectJSON(w, data); err != nil {
+		WritePlatformError(w, "projecting public response", err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.WithError(err).Error("failed to encode JSON response")
@@ -42,11 +47,23 @@ func WriteJSON(w http.ResponseWriter, data any) {
 // flushed by WriteHeader, so a Content-Type set afterwards is silently
 // dropped and the client sniffs the type instead.
 func WriteJSONStatus(w http.ResponseWriter, code int, data any) {
+	var err error
+	if data, err = projectJSON(w, data); err != nil {
+		WritePlatformError(w, "projecting public response", err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.WithError(err).Error("failed to encode JSON response")
 	}
+}
+
+func projectJSON(w http.ResponseWriter, value any) (any, error) {
+	if projector, ok := w.(interface{ ProjectJSON(any) (any, error) }); ok {
+		return projector.ProjectJSON(value)
+	}
+	return value, nil
 }
 
 // WriteCancellation keeps abandoned requests out of server-error telemetry,
@@ -102,6 +119,18 @@ func ReadJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, dst any) b
 	if err := json.Unmarshal(body, dst); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return false
+	}
+	if projector, ok := w.(interface {
+		ProjectRequest(*http.Request, any) error
+	}); ok {
+		if err := projector.ProjectRequest(r, dst); err != nil {
+			if response, ok := w.(interface{ WriteRequestError(error) }); ok {
+				response.WriteRequestError(err)
+			} else {
+				WritePlatformError(w, "resolving session request", err)
+			}
+			return false
+		}
 	}
 	return true
 }

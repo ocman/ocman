@@ -74,7 +74,7 @@ func (s legacyHelloServer) Hello(ctx context.Context, req *pb.HelloReq) (*pb.Hel
 	return hello, err
 }
 
-func TestManagerLegacyHelloDefaultsToOpenCode(t *testing.T) {
+func TestManagerEmptyAdvertisementDoesNotInventSessionPlatforms(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +90,11 @@ func TestManagerLegacyHelloDefaultsToOpenCode(t *testing.T) {
 	m.remotes[1] = mr
 	m.connectAndRegisterTest(t, mr)
 	registered := m.registry.Platforms()
-	if len(registered) != 1 || registered[0].ID() != "r-legacy:opencode" {
-		t.Fatalf("legacy adapters = %v", registered)
+	if len(registered) != 0 || len(m.router.Remotes()) != 1 {
+		t.Fatalf("empty advertisement invented a session platform or lost its host: %v", registered)
+	}
+	if targets := m.EnabledRemotes(); len(targets) != 0 {
+		t.Fatalf("host-only remote became a session creation target: %+v", targets)
 	}
 	m.unregisterAdapters(mr)
 	if len(m.registry.Platforms()) != 0 || len(m.router.Remotes()) != 0 {

@@ -6,7 +6,7 @@ import (
 )
 
 func (d *DB) scanHistoryRequests(ctx context.Context, opts MetricsDashboardOptions) ([]requestRow, map[string]struct{}, map[string]struct{}, error) {
-	query := `SELECT m.id,m.session_id,m.time_created,m.agent,m.provider,m.model,m.cost,
+	query := `SELECT m.instance_id,s.title,s.directory,m.id,m.session_id,m.time_created,m.agent,m.provider,m.model,m.cost,
 		m.input_tokens,m.output_tokens,m.cache_read,m.cache_write,m.started_at,m.duration_ms,
 		m.agent_ms,m.tool_ms,m.unknown_ms,m.tokens_per_second,m.finish,m.is_error,m.is_completed
 		FROM history_fact m JOIN session s ON s.instance_id=m.instance_id AND s.id=m.session_id
@@ -31,7 +31,8 @@ func (d *DB) scanHistoryRequests(ctx context.Context, opts MetricsDashboardOptio
 	for rows.Next() {
 		var r requestRow
 		var provider, model string
-		if err := rows.Scan(&r.ID, &r.SessionID, &r.TimeCreated, &r.Agent, &provider, &model, &r.Cost,
+		var instance string
+		if err := rows.Scan(&instance, &r.sessionTitle, &r.sessionDirectory, &r.ID, &r.SessionID, &r.TimeCreated, &r.Agent, &provider, &model, &r.Cost,
 			&r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheWriteTokens, &r.modelStarted, &r.DurationMs,
 			&r.agentDurationMs, &r.toolDurationMs, &r.unknownDurationMs, &r.TokensPerSecond, &r.StopReason, &r.isError, &r.completed); err != nil {
 			return nil, nil, nil, err
@@ -46,6 +47,14 @@ func (d *DB) scanHistoryRequests(ctx context.Context, opts MetricsDashboardOptio
 		}
 		if (opts.AgentFilter != "" && opts.AgentFilter != r.Agent) || (opts.ModelFilter != "" && opts.ModelFilter != r.Model) {
 			continue
+		}
+		r.historyMetadata = true
+		if opts.SessionIdentity != nil {
+			id, err := opts.SessionIdentity(ctx, instance, r.SessionID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			r.SessionID = id
 		}
 		if r.StopReason == "" {
 			r.StopReason = "none"

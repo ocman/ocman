@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -56,7 +57,7 @@ func TestEnsureRuntimeFallsBackOnlyForOpenCode(t *testing.T) {
 	if _, err := host.EnsureRuntime(t.Context(), "fake", "/repo"); status.Code(err) != codes.Unimplemented || client.calls != 1 {
 		t.Fatalf("provider fallback = %v, calls %d", err, client.calls)
 	}
-	if _, err := newRemoteHost(&RemoteConn{}).EnsureRuntime(t.Context(), "fake", "/repo"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := newRemoteHost(&RemoteConn{}).EnsureRuntime(t.Context(), "fake", "/repo"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline = %v", err)
 	}
 	conn := connectedPair(t, &fakePlatform{id: "opencode"})

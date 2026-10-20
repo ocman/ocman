@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -71,7 +72,7 @@ func (s *Server) MarkInboxItemUnread(ctx context.Context, req *pb.JsonReq) (*pb.
 func (c *RemoteConn) InboxItems(ctx context.Context) ([]state.InboxItem, error) {
 	client := c.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := client.InboxItems(ctx, &pb.Empty{})
 	if err != nil {
@@ -87,7 +88,7 @@ func (c *RemoteConn) InboxItems(ctx context.Context) ([]state.InboxItem, error) 
 func (c *RemoteConn) ArchivedInboxItems(ctx context.Context) ([]state.InboxItem, error) {
 	client := c.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := client.ArchivedInboxItems(ctx, &pb.Empty{})
 	if err != nil {
@@ -103,7 +104,7 @@ func (c *RemoteConn) ArchivedInboxItems(ctx context.Context) ([]state.InboxItem,
 func (c *RemoteConn) MarkInboxItemRead(ctx context.Context, id string) error {
 	client := c.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	payload, err := marshalJSON(inboxMutation{ID: id})
 	if err != nil {
@@ -116,7 +117,7 @@ func (c *RemoteConn) MarkInboxItemRead(ctx context.Context, id string) error {
 func (c *RemoteConn) MarkInboxItemUnread(ctx context.Context, id string) error {
 	client := c.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	payload, err := marshalJSON(inboxMutation{ID: id})
 	if err != nil {
@@ -129,7 +130,7 @@ func (c *RemoteConn) MarkInboxItemUnread(ctx context.Context, id string) error {
 func (c *RemoteConn) ArchiveInboxItems(ctx context.Context, ids []string, allRead bool) error {
 	client := c.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	payload, err := marshalJSON(inboxMutation{IDs: ids, AllRead: allRead})
 	if err != nil {
@@ -142,7 +143,7 @@ func (c *RemoteConn) ArchiveInboxItems(ctx context.Context, ids []string, allRea
 func (m *Manager) inboxOwner(source string) (*state.DB, *RemoteConn, error) {
 	if source == "local" {
 		if m.store == nil {
-			return nil, nil, ErrRemoteOffline
+			return nil, nil, platforms.ErrRemoteOffline
 		}
 		return m.store, nil, nil
 	}
@@ -153,7 +154,7 @@ func (m *Manager) inboxOwner(source string) (*state.DB, *RemoteConn, error) {
 			return nil, mr.conn, nil
 		}
 	}
-	return nil, nil, ErrRemoteOffline
+	return nil, nil, platforms.ErrRemoteOffline
 }
 
 func (m *Manager) InboxItems(ctx context.Context, source string) ([]state.InboxItem, error) {

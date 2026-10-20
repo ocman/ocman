@@ -22,6 +22,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
+	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
@@ -40,6 +41,9 @@ func (s *Server) modules() []module.Module {
 	mods = append(mods, s.backgroundTasksModule())
 	if s.historyIngest != nil {
 		mods = append(mods, s.historyIngest)
+	}
+	if s.sessionCatalogue != nil {
+		mods = append(mods, s.sessionCatalogue)
 	}
 	if s.historyParity != nil {
 		mods = append(mods, s.historyParity)
@@ -107,7 +111,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve
@@ -304,26 +308,6 @@ func (s *Server) routineService() *routines.Service {
 	return nil
 }
 
-// moduleRouter mounts module routes behind the server's guards.
-type moduleRouter struct {
-	s   *Server
-	mux *http.ServeMux
-}
-
-func (r moduleRouter) Handle(pattern string, h http.HandlerFunc) { r.mux.HandleFunc(pattern, h) }
-
-func (r moduleRouter) Local(pattern string, h http.HandlerFunc) {
-	r.mux.HandleFunc(pattern, r.s.requireLocalhost(h))
-}
-
-func (r moduleRouter) Setting(pattern string, h http.HandlerFunc) {
-	r.mux.HandleFunc(pattern, r.s.settingsHandler(h))
-}
-
-func (r moduleRouter) LocalSetting(pattern string, h http.HandlerFunc) {
-	r.mux.HandleFunc(pattern, r.s.settingsHandler(r.s.requireLocalhost(h)))
-}
-
 func (s *Server) mountModules(mux *http.ServeMux) {
 	for _, m := range s.modules() {
 		m.Routes(moduleRouter{s: s, mux: mux})
@@ -404,6 +388,7 @@ func (s *Server) pluginsModule() *pluginsmod.Module {
 				return s.remotes
 			},
 			PublicURL:        s.publicURL,
+			SessionURL:       s.publicSessionURL,
 			ProjectDirectory: s.projectDirectory(),
 			LiveCatalog:      s.liveCatalog,
 			Guards:           module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},

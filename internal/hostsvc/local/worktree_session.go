@@ -18,6 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // provisionalPrefix names an automatic worktree until the small model has
@@ -112,7 +113,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		rollback()
 		return nil, fmt.Errorf("CreateWorktreeSession: CreateSession dep not wired")
 	}
-	request := platforms.CreateSessionRequest{Directory: res.Path, Port: port, Title: req.Title}
+	request := platforms.CreateSessionRequest{Directory: res.Path, Port: port, Title: req.Title, Creation: req.Creation}
 	// Automatic sessions keep OpenCode's default title so OpenCode titles
 	// them from the first message; the branch name is no title.
 	if request.Title == "" && !req.AutoName {
@@ -133,7 +134,11 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	}
 	hostsvc.FinishStep(ctx, hostsvc.StepSession, err)
 	if err != nil {
-		rollback()
+		var uncertain *sessionsvc.CreationUncertainError
+		var cleanup *sessionsvc.ConfiguredSessionCleanupError
+		if !errors.As(err, &uncertain) && !errors.As(err, &cleanup) {
+			rollback()
+		}
 		return nil, fmt.Errorf("creating worktree session: %w", err)
 	}
 	if name := h.worktreeNamer(req.Platform, port); req.AutoName && name != nil {

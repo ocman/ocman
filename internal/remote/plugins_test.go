@@ -59,12 +59,12 @@ func TestPluginOperationAuthenticationAndRouting(t *testing.T) {
 		t.Fatalf("round trip: %+v %v calls=%d", response, err, calls.Load())
 	}
 	for _, owner := range []string{"local", "missing"} {
-		if _, err := mgr.PluginOperation(t.Context(), owner, req); !errors.Is(err, ErrRemoteOffline) {
+		if _, err := mgr.PluginOperation(t.Context(), owner, req); !errors.Is(err, platforms.ErrRemoteOffline) {
 			t.Fatalf("%s: %v", owner, err)
 		}
 	}
 	conn.Close()
-	if _, err := mgr.PluginOperation(t.Context(), "owner", req); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := mgr.PluginOperation(t.Context(), "owner", req); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatal(err)
 	}
 	if calls.Load() != 1 {
@@ -96,7 +96,7 @@ func TestPluginOperationInputValidation(t *testing.T) {
 		}
 	}
 	conn := NewRemoteConn("grpc://127.0.0.1:1", "tok")
-	if _, err := conn.PluginOperation(t.Context(), PluginRequest{}); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := conn.PluginOperation(t.Context(), PluginRequest{}); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatal(err)
 	}
 }

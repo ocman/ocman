@@ -118,6 +118,8 @@ func decode(r *http.Request, v any) error {
 
 func reply(w http.ResponseWriter, v any, err error) {
 	switch {
+	case errors.Is(err, platforms.ErrCreationRejected):
+		writeJSON(w, errStatus(err), providerprotocol.Error{Code: providerprotocol.CodeCreationRejected, Message: err.Error()})
 	case errors.Is(err, platforms.ErrReplyUnrecorded):
 		writeJSON(w, errStatus(err), providerprotocol.Error{Code: providerprotocol.CodeReplyUnrecorded, Message: err.Error()})
 	case err != nil:
@@ -138,10 +140,10 @@ func (l *live) usable() error {
 
 func (l *live) create(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	if err := l.usable(); err != nil {
-		return nil, err
+		return nil, errors.Join(platforms.ErrCreationRejected, err)
 	}
 	if !filepath.IsAbs(req.Directory) {
-		return nil, statusError{http.StatusBadRequest, errors.New("directory must be absolute")}
+		return nil, errors.Join(platforms.ErrCreationRejected, statusError{http.StatusBadRequest, errors.New("directory must be absolute")})
 	}
 	id := uuid.NewString() // claude's --session-id, so ocman and claude share the id
 	l.mu.Lock()
@@ -159,26 +161,26 @@ func (l *live) create(req platforms.CreateSessionRequest) (*platforms.CreateSess
 // (--resume <src> --fork-session --session-id <new>).
 func (l *live) fork(ctx context.Context, src, messageID string) (*platforms.CreateSessionResponse, error) {
 	if err := l.usable(); err != nil {
-		return nil, err
+		return nil, errors.Join(platforms.ErrCreationRejected, err)
 	}
 	if messageID != "" {
-		return nil, statusError{http.StatusNotImplemented, errors.New("claude sessions fork from the latest message only")}
+		return nil, errors.Join(platforms.ErrCreationRejected, statusError{http.StatusNotImplemented, errors.New("claude sessions fork from the latest message only")})
 	}
 	o, isOwned := l.ownedSession(src)
 	if isOwned && l.foreign(&o) {
-		return nil, l.foreignError(o)
+		return nil, errors.Join(platforms.ErrCreationRejected, l.foreignError(o))
 	}
 	e, err := l.idx.get(ctx, src)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(platforms.ErrCreationRejected, err)
 	}
 	switch {
 	case e != nil:
 		o.Directory = e.Directory
 	case !isOwned:
-		return nil, platforms.ErrNotFound
+		return nil, errors.Join(platforms.ErrCreationRejected, platforms.ErrNotFound)
 	case !o.Started:
-		return nil, statusError{http.StatusConflict, errors.New("session has no messages to fork yet")}
+		return nil, errors.Join(platforms.ErrCreationRejected, statusError{http.StatusConflict, errors.New("session has no messages to fork yet")})
 	}
 	id := uuid.NewString()
 	root := l.opts.ProjectRoot

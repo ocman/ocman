@@ -132,6 +132,9 @@ func (a *Adapter) MoveSession(ctx context.Context, req platforms.MoveSessionRequ
 	return err
 }
 func (a *Adapter) create(ctx context.Context, supported bool, path string, req any) (*platforms.CreateSessionResponse, error) {
+	if !supported {
+		return nil, errors.Join(platforms.ErrCreationRejected, platforms.ErrUnsupported)
+	}
 	var result platforms.CreateSessionResponse
 	if err := a.call(ctx, supported, "POST", path, req, &result); err != nil {
 		return nil, err

@@ -23,6 +23,14 @@ type storedReadPlatform struct {
 	nativeCalls int
 }
 
+func (p *storedReadPlatform) HistoryIdentity(context.Context) (platforms.HistoryIdentity, error) {
+	return platforms.HistoryIdentity{Platform: "test", SourceKey: "source"}, nil
+}
+
+func (p *storedReadPlatform) SessionSummary(_ context.Context, id string) (*db.Session, error) {
+	return &db.Session{ID: id}, nil
+}
+
 func (p *storedReadPlatform) ConversationHead(context.Context, string) (*platforms.ConversationHead, error) {
 	return &platforms.ConversationHead{Identity: platforms.HistoryIdentity{Platform: "test", SourceKey: "source"}, Version: "v1", Session: &db.Session{ID: "s", Status: db.StatusWaiting}}, nil
 }

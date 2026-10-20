@@ -126,7 +126,7 @@ func (s *Service) projectModels(ctx context.Context, p platforms.Platform, sessi
 	if s.hooks.ProjectModels == nil {
 		return nil, false, false
 	}
-	dir, ok := s.sessionDirs.Load(sessionID)
+	dir, ok := s.sessionDirs.Load(nativeSessionKey{p.ID(), sessionID})
 	if !ok {
 		detail, err := p.Session(ctx, sessionID, 1, 0)
 		if err != nil || detail == nil || detail.Session == nil || detail.Session.Directory == "" {
@@ -143,7 +143,7 @@ func (s *Service) projectModels(ctx context.Context, p platforms.Platform, sessi
 		}
 		// ponytail: unbounded per-session cache, one string per prompted
 		// session; add eviction if a process ever outlives millions.
-		s.sessionDirs.Store(sessionID, dir)
+		s.sessionDirs.Store(nativeSessionKey{p.ID(), sessionID}, dir)
 	}
 	models, off := s.hooks.ProjectModels(ctx, dir.(string))
 	return models, off, true

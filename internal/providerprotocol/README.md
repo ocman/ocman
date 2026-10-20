@@ -68,6 +68,12 @@ not found, 409 busy, 501 unsupported. Other 4xx errors retain the backend's
 message. A prompt reply the agent received but whose event the backend could
 not record yet is 503 with code `reply_unrecorded`
 (`platforms.ErrReplyUnrecorded`): the decision took effect, its event follows. Unsupported methods must be gated locally using `/hello` capabilities.
+
+Create/fork rejections known to precede allocation include error code
+`creation_rejected`, independently of their HTTP status. Adapters preserve it as
+`platforms.ErrCreationRejected`. Without that explicit guarantee, even an error
+response leaves allocation uncertain. Older supervisors omit the code and remain
+conservative; clients must never infer safe replay from a status alone.
 Composer gates creation and sending; rename, native queue and account have
 additional protocol capability flags. Browsing and lifecycle reads are required.
 

@@ -65,12 +65,13 @@ type Hooks struct {
 type Service struct {
 	registry Registry
 	hooks    Hooks
-	// sessionDirs caches session ID → directory for project-default
+	// sessionDirs caches owner-qualified native session keys to directories for project-default
 	// resolution; Move drops the entry.
 	sessionDirs        sync.Map
 	cooldowns          cooldowns
 	routinePublication routinePublication
 	firstPrompts       sync.Map
+	identities         *creationIdentities
 }
 
 // New builds a Service over the given registry.
@@ -192,6 +193,9 @@ func (s *Service) Abort(ctx context.Context, platformID string, req platforms.Ab
 
 // Dispose permanently removes a session so it can no longer be discovered or used.
 func (s *Service) Dispose(ctx context.Context, platformID string, req platforms.DisposeSessionRequest) error {
+	if req.SessionID == "" {
+		return validation("session ID is required")
+	}
 	p, err := s.resolve(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
@@ -253,27 +257,6 @@ func (s *Service) Compact(ctx context.Context, platformID string, req platforms.
 	return p.Compact(ctx, req)
 }
 
-// Fork branches a session into a new child session, optionally from a
-// specific message. Returns the new session's ID.
-func (s *Service) Fork(ctx context.Context, platformID string, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
-	if req.SessionID == "" {
-		return nil, validation("session ID is required")
-	}
-	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	resp, err := p.ForkSession(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if s.hooks.SessionCreated != nil {
-		s.hooks.SessionCreated(CreatedSession{ID: resp.ID, Platform: string(p.ID())})
-	}
-	return resp, nil
-}
-
 // Move relocates a session to another project directory on the same
 // host.
 func (s *Service) Move(ctx context.Context, platformID string, req platforms.MoveSessionRequest) error {
@@ -287,7 +270,7 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 	if err := p.MoveSession(ctx, req); err != nil {
 		return err
 	}
-	s.sessionDirs.Delete(req.SessionID)
+	s.sessionDirs.Delete(nativeSessionKey{p.ID(), req.SessionID})
 	// A move changes which project row the session belongs to; refresh
 	// the projects index just like session creation does.
 	if s.hooks.SessionCreated != nil {

@@ -48,8 +48,16 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 		return nil, err
 	}
 	var out []notifications.Candidate
+	publicIDs, err := s.notificationPublicIDs(ctx, entries)
+	if err != nil {
+		return nil, err
+	}
 	for _, entry := range entries {
-		target := "/session/" + url.PathEscape(entry.ID) + "?platform=" + url.QueryEscape(entry.platform) + "&notification=1"
+		id := publicIDs[state.Key{Platform: entry.platform, SessionID: entry.ID}]
+		if id == "" {
+			continue
+		}
+		target := "/session/" + url.PathEscape(id) + "?platform=" + url.QueryEscape(entry.platform) + "&notification=1"
 		tag := "ocman:" + entry.platform + ":" + entry.ID
 		add := func(key, kind, action string) {
 			title, body := notificationText(entry.Title, entry.Directory, action)

@@ -48,7 +48,7 @@ func newRemotePlatform(conn *RemoteConn, base string, nameFn func() string) *rem
 func (p *remotePlatform) remoteID() string { return p.conn.RemoteID() }
 
 func (p *remotePlatform) ID() platforms.ID {
-	return platforms.ID(CompoundPlatformID(p.remoteID(), p.base))
+	return platforms.ID(platforms.CompoundPlatformID(p.remoteID(), p.base))
 }
 
 func (p *remotePlatform) DisplayName() string {
@@ -113,7 +113,7 @@ func (p *remotePlatform) Sessions(ctx context.Context, dir string, since int64) 
 func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := client.Session(ctx, &pb.SessionReq{Platform: p.base, SessionId: id, Limit: int32(limit), Offset: int32(offset), Browsing: platforms.IsConversationRead(ctx)})
 	if err != nil {
@@ -340,7 +340,7 @@ func (p *remotePlatform) MoveSession(ctx context.Context, req platforms.MoveSess
 func (p *remotePlatform) ForkSession(ctx context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -357,7 +357,7 @@ func (p *remotePlatform) ForkSession(ctx context.Context, req platforms.ForkSess
 func (p *remotePlatform) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -374,7 +374,7 @@ func (p *remotePlatform) CreateSession(ctx context.Context, req platforms.Create
 func (p *remotePlatform) ProxyEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error {
 	client := p.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	stream, err := client.StreamEvents(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
 	if err != nil {
@@ -401,7 +401,7 @@ func (p *remotePlatform) ProxyEvents(ctx context.Context, sessionID string, w io
 func (p *remotePlatform) mutate(_ context.Context, req any, fn func(pb.OcmanClient, []byte) error) error {
 	client := p.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(req)
 	if err != nil {
@@ -416,7 +416,7 @@ func (p *remotePlatform) mutate(_ context.Context, req any, fn func(pb.OcmanClie
 func sliceCall[T any](p *remotePlatform, fn func(pb.OcmanClient) (*pb.JsonResp, error)) ([]T, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := fn(client)
 	if err != nil {
@@ -433,7 +433,7 @@ func sliceCall[T any](p *remotePlatform, fn func(pb.OcmanClient) (*pb.JsonResp, 
 func jsonCall[T any](_ context.Context, p *remotePlatform, fn func(pb.OcmanClient) (*pb.JsonResp, error), dst *T) (*T, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := fn(client)
 	if err != nil {
@@ -445,11 +445,18 @@ func jsonCall[T any](_ context.Context, p *remotePlatform, fn func(pb.OcmanClien
 	return dst, nil
 }
 
-func remotePlatformError(err error) error {
+func remotePlatformError(err error) (out error) {
+	defer func() {
+		if creationWasRejected(err) {
+			out = errors.Join(platforms.ErrCreationRejected, out)
+		}
+	}()
 	if err == nil {
 		return nil
 	}
 	switch status.Code(err) {
+	case codes.NotFound:
+		return errors.Join(platforms.ErrNotFound, err)
 	case codes.Unavailable:
 		return errors.Join(platforms.ErrPlatformUnreachable, err)
 	case codes.Unimplemented: // includes a remote too old to know the RPC

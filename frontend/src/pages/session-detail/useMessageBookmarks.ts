@@ -5,6 +5,7 @@
 // exist before useSession runs (it feeds protectedMessageId).
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Message, Part, Session } from '../../lib/api';
+import { onSessionBrowserStateAdopted } from '../../lib/sessionIdentityState';
 import {
   buildMessageBookmarks,
   groupMessageBookmarks,
@@ -47,6 +48,16 @@ export function useMessageBookmarks({
     selectedKey: loadedMessageBookmarks[0] ? messageBookmarkKey(loadedMessageBookmarks[0]) : null,
   }));
   const [messageBookmarkStorageTick, setMessageBookmarkStorageTick] = useState(0);
+
+  useEffect(() => onSessionBrowserStateAdopted((adoptedId) => {
+    if (adoptedId !== id) return;
+    const bookmarks = loadMessageBookmarks(id);
+    setMessageBookmarkState((current) => ({
+      sessionId: id, bookmarks,
+      selectedKey: current.selectedKey || (bookmarks[0] ? messageBookmarkKey(bookmarks[0]) : null),
+    }));
+    setMessageBookmarkStorageTick((tick) => tick + 1);
+  }), [id]);
 
   const activeMessageBookmarkState = messageBookmarkState.sessionId === id
     ? messageBookmarkState

@@ -127,7 +127,7 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 	if !protocolCompatible(hello.ProtocolVersion) {
 		conn.Close()
 		c.setHealth(HealthIncompatible)
-		return fmt.Errorf("remote: incompatible protocol version %d (hub supports %d)", hello.ProtocolVersion, ProtocolVersion)
+		return fmt.Errorf("remote: incompatible protocol version %d (hub requires %d); upgrade ocman on both machines", hello.ProtocolVersion, ProtocolVersion)
 	}
 
 	c.mu.Lock()
@@ -143,13 +143,11 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Platforms returns the advertised base ids, with the legacy OpenCode default.
+// Platforms returns only the advertised owner-local base IDs. Protocol v8 no
+// longer needs the legacy empty-Hello fallback that invented an OpenCode owner.
 func (c *RemoteConn) Platforms() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if len(c.platforms) == 0 {
-		return []string{"opencode"}
-	}
 	return append([]string(nil), c.platforms...)
 }
 
@@ -190,6 +188,10 @@ func (c *RemoteConn) WaitForDrop(ctx context.Context) {
 			cancel()
 			if err != nil {
 				c.markOffline()
+				return
+			}
+			if !protocolCompatible(hello.ProtocolVersion) {
+				c.setHealth(HealthIncompatible)
 				return
 			}
 			if hello.InstanceId != wantID || !slices.Equal(hello.Platforms, wantPlatforms) {

@@ -65,15 +65,15 @@ describe('SessionDetail wrapper (index.tsx)', () => {
     renderCount = 0;
 
     render(
-      <MemoryRouter initialEntries={['/session/aaa']}>
+      <MemoryRouter initialEntries={['/session/ocm_aaa']}>
         <Routes>
           <Route path="/session/:id" element={<SessionDetail />} />
         </Routes>
       </MemoryRouter>,
     );
 
-    expect(lastRenderedId).toBe('aaa');
-    expect(screen.getByTestId('inner-session-detail').textContent).toBe('instance:1 id:aaa');
+    expect(lastRenderedId).toBe('ocm_aaa');
+    expect(screen.getByTestId('inner-session-detail').textContent).toBe('instance:1 id:ocm_aaa');
   });
 
   it('forwards a new :id without remounting the inner component', () => {
@@ -83,16 +83,16 @@ describe('SessionDetail wrapper (index.tsx)', () => {
     renderCount = 0;
 
     render(
-      <MemoryRouter initialEntries={['/session/aaa']}>
+      <MemoryRouter initialEntries={['/session/ocm_aaa']}>
         <Routes>
           <Route path="/session/:id" element={<SessionDetail />} />
         </Routes>
-        <NavigateButton to="/session/bbb" />
+        <NavigateButton to="/session/ocm_bbb" />
       </MemoryRouter>,
     );
 
     expect(mountedInstances).toHaveLength(1);
-    expect(lastRenderedId).toBe('aaa');
+    expect(lastRenderedId).toBe('ocm_aaa');
 
     act(() => {
       screen.getByText('go').click();
@@ -102,8 +102,8 @@ describe('SessionDetail wrapper (index.tsx)', () => {
     // identity is unchanged. This is the contract we depend on so
     // the sidebar (which lives inside the inner component) does not
     // restart its polling cycle on every navigation.
-    expect(lastRenderedId).toBe('bbb');
-    expect(screen.getByTestId('inner-session-detail').textContent).toBe('instance:1 id:bbb');
+    expect(lastRenderedId).toBe('ocm_bbb');
+    expect(screen.getByTestId('inner-session-detail').textContent).toBe('instance:1 id:ocm_bbb');
     expect(mountedInstances).toHaveLength(1);
   });
 
@@ -114,11 +114,11 @@ describe('SessionDetail wrapper (index.tsx)', () => {
     renderCount = 0;
 
     render(
-      <MemoryRouter initialEntries={['/session/same']}>
+      <MemoryRouter initialEntries={['/session/ocm_same']}>
         <Routes>
           <Route path="/session/:id" element={<SessionDetail />} />
         </Routes>
-        <NavigateButton to="/session/same" />
+        <NavigateButton to="/session/ocm_same" />
       </MemoryRouter>,
     );
 

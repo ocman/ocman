@@ -251,10 +251,10 @@ func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store.DB, "opencode")
 
 	for _, source := range []string{"", "missing"} {
-		if err := mgr.MarkInboxItemUnread(t.Context(), source, item.ID); !errors.Is(err, ErrRemoteOffline) {
+		if err := mgr.MarkInboxItemUnread(t.Context(), source, item.ID); !errors.Is(err, platforms.ErrRemoteOffline) {
 			t.Errorf("MarkInboxItemUnread source %q = %v, want ErrRemoteOffline", source, err)
 		}
-		if err := mgr.MarkInboxItemRead(t.Context(), source, item.ID); !errors.Is(err, ErrRemoteOffline) {
+		if err := mgr.MarkInboxItemRead(t.Context(), source, item.ID); !errors.Is(err, platforms.ErrRemoteOffline) {
 			t.Errorf("MarkInboxItemRead source %q = %v, want ErrRemoteOffline", source, err)
 		}
 	}
@@ -266,20 +266,20 @@ func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 	conn := &RemoteConn{remoteID: "offline", health: HealthOffline}
 	mr := &managedRemote{localID: 1, conn: conn, host: newRemoteHost(conn)}
 	mgr.remotes[1] = mr
-	if _, err := mgr.InboxItems(t.Context(), "offline"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := mgr.InboxItems(t.Context(), "offline"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("InboxItems offline = %v, want ErrRemoteOffline", err)
 	}
-	if err := mgr.MarkInboxItemRead(t.Context(), "offline", item.ID); !errors.Is(err, ErrRemoteOffline) {
+	if err := mgr.MarkInboxItemRead(t.Context(), "offline", item.ID); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("MarkInboxItemRead offline = %v, want ErrRemoteOffline", err)
 	}
-	if err := mgr.MarkInboxItemUnread(t.Context(), "offline", item.ID); !errors.Is(err, ErrRemoteOffline) {
+	if err := mgr.MarkInboxItemUnread(t.Context(), "offline", item.ID); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("MarkInboxItemUnread offline = %v, want ErrRemoteOffline", err)
 	}
 	for _, source := range []string{"missing", "offline"} {
-		if _, err := mgr.ArchivedInboxItems(t.Context(), source); !errors.Is(err, ErrRemoteOffline) {
+		if _, err := mgr.ArchivedInboxItems(t.Context(), source); !errors.Is(err, platforms.ErrRemoteOffline) {
 			t.Errorf("ArchivedInboxItems source %q = %v", source, err)
 		}
-		if err := mgr.ArchiveInboxItems(t.Context(), source, []string{item.ID}, false); !errors.Is(err, ErrRemoteOffline) {
+		if err := mgr.ArchiveInboxItems(t.Context(), source, []string{item.ID}, false); !errors.Is(err, platforms.ErrRemoteOffline) {
 			t.Errorf("ArchiveInboxItems source %q = %v, want ErrRemoteOffline", source, err)
 		}
 	}

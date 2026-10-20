@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { claimDraftStart, persistDraftStart, readDraftStart, type DraftStart } from '../../lib/draftStartClaims';
 import { randomId } from '../../lib/randomId';
+import { ensureSessionBrowserState } from '../../lib/sessionIdentityState';
 
 interface Submission {
   text: string;
@@ -82,6 +83,10 @@ function probeOwner(id: string, record: DraftStart) {
 
 export async function reconcileFirstSubmission(id: string, hint?: DraftStart) {
   const before = records.get(id);
+  if (id.startsWith('ocm_')) {
+    await ensureSessionBrowserState(id);
+    if (records.get(id) !== before) return;
+  }
   const stored = await readDraftStart(key(id));
   if (records.get(id) !== before) return;
   let live = records.get(id);

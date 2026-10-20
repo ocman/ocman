@@ -99,7 +99,7 @@ func TestComposerAttachmentStreamPropagatesOwnerLimit(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 	_, err = newRemoteHost(&RemoteConn{}).SaveComposerAttachment(t.Context(), hostsvc.ComposerAttachmentRequest{}, bytes.NewReader(nil))
-	if !errors.Is(err, ErrRemoteOffline) {
+	if !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline error=%v", err)
 	}
 }

@@ -463,6 +463,91 @@ including pricing, metrics and runtime. It must not use a changing live store.
 The scheduled real-data parity task still checks
 daily and per-model totals; it is not a full production-data dashboard audit.
 
+### Session identity catalogue
+
+`internal/sessioncatalog` owns an append-only module schema in `state.db` for
+`ocm_<uuid>` identities. The store persists creation intent before binding a
+native execution. Owner-local creation uses the catalogue before platform side
+effects and binds before publication. Public session lists, reads, creation
+results and browser events use the same Ocman identity. Native execution and
+existing permission/queue/bookkeeping keys remain behind the boundary.
+
+```mermaid
+flowchart LR
+    Remote[Remote creation intent + initial rules] --> Sessions[sessionsvc<br/>owning machine]
+    Sessions -->|reserve before create; bind before publication| Catalogue[sessioncatalog]
+    Sessions -->|native execution| Platform[platforms.Platform]
+    Browser[Browser + MCP session reads] --> View[sessionview wire contracts + identity resolution]
+    View -->|public IDs; opaque payloads unchanged| Catalogue
+    History[(statev2.db<br/>metadata + durable outbox)] --> Indexer[sessioncatalog module<br/>startup inventory + changes]
+    Indexer --> Catalogue
+    Catalogue --> State[(state.db<br/>session_catalog)]
+    Resolve[Resolve within explicit owner] --> Catalogue
+```
+
+- Request keys deduplicate creation intent within a stable owning machine.
+  Origin and routine/factory metadata exist before a native session can be
+  bound. An uncertain creation outcome remains pending rather than permitting
+  another execution.
+- Native bindings are unique across owner, platform, physical source and native
+  ID. Early native announcements defer while creation in their directory is
+  unbound, avoiding a second Ocman identity with missing origin metadata.
+- Catalogue states describe binding progress, not agent status. Platform
+  adapters retain execution authority. See `internal/sessioncatalog/README.md`
+  for the remaining creation, remote, routing and history migration work.
+- Routine and factory intent travels with worktree creation. Initial rules apply
+  on the remote owner, with a response receipt preventing the hub from applying
+  them again on replay. Remote disposal uses a dedicated RPC through sessionsvc;
+  uncertain creation or cleanup retains the workspace for reconciliation.
+- Forks reserve the child and its Ocman parent link before native history copy.
+  The catalogue module backfills retained metadata and follows statev2's durable
+  change stream, without platform content reads or historical message-ID changes.
+  A startup sequence fence catches concurrent writes, and late parents repair
+  existing child links. Pin/seen/archive and other native-keyed state remain
+  intact. Native-only provenance is attributed only to the selected physical
+  source, never guessed across inactive sources with colliding native IDs.
+- Explicit purge tombstones clear catalogue display metadata without recycling
+  identities, including after downtime. Source deletion alone does not delete
+  an identity. Pending native announcements use bounded metadata retries and
+  overflow to a fenced inventory; healthy source content is never polled.
+- Public projection batches owner lookups, mirrors remote IDs without allocating
+  hub-specific identities, and preserves stream cursors and native message/part
+  IDs. Public paths and structured request references translate before native
+  handlers touch existing state. Legacy browser links canonicalize before
+  opening streams; unknown IDs never fall back to native probing. Inactive
+  source bindings return unavailable instead of targeting a new installation.
+- Catalogue v1 is frozen. The append-only v2 upgrade preserves development
+  databases, including both intermediate native-parent column spellings.
+- Explicit response contracts cover notifications, routine/Factory references,
+  Inbox, artifacts, webhook dispatches, sharing and launch results. MCP tools
+  apply the same owner/source validation to structured arguments and results.
+  REST request contracts declare fields by route and method, without inspecting
+  Go fields. REST bodies, query parameters and MCP arguments share the owner
+  policy in `internal/server/session_reference.go`.
+  Cold/reconnected hello overlays use the same projection contracts. Task reads
+  retain canonical references until owner selection and annotate each result's
+  platform rather than resolving native IDs through a cross-owner cache.
+  Push and plugin notice links use owned destinations while retaining native
+  durable deduplication keys. Plugin `session.v1` remains a native execution
+  protocol so existing run/completion correlation does not change mid-flight.
+- Analytics resolves session identities using the physical statev2 instance
+  before grouping request/session logs. Titles and directories come from the
+  same validated read snapshot, not a native lookup using a public ID.
+- Browser adoption migrates session-keyed recovery data without replaying it or
+  remounting canonical-route conversations. First-delivery readiness waits for
+  uncertain legacy receipts. Adoption receipts prevent source/owner collisions
+  and hide retained legacy bookmark copies without deleting recovery data.
+  Canonical route loading and first-delivery readiness share one in-flight
+  identity lookup and migration through `ensureSessionBrowserState`.
+  Failed-send adoption retries missing persisted entries even when complete
+  payloads survive only in the browser's memory.
+
+- Definitive create/fork rejection is an explicit adapter guarantee. Provider
+  error codes and gRPC `ErrorInfo` preserve it; status codes alone never authorize
+  replay. Uncertain outcomes retain their reservations, while definitely rejected
+  reservations stop blocking external discovery. Configuring metadata remains
+  queued for bounded retry until binding completes.
+
 ### Background task status
 
 `internal/tasksvc` runs bounded owner-local work inside Ocman's process.

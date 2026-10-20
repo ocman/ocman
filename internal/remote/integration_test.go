@@ -102,7 +102,7 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 	mgr.Start(ctx)
 
 	waitForPlatform := func(instanceID string) {
-		id := platforms.ID(CompoundPlatformID(instanceID, "opencode"))
+		id := platforms.ID(platforms.CompoundPlatformID(instanceID, "opencode"))
 		testutil.WaitFor(t, waitTimeout, "platform "+instanceID+" to register", func() bool {
 			_, ok := hubReg.Get(id)
 			return ok
@@ -120,7 +120,7 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 	waitForPlatform("inst-2")
 
 	// The stale adapter for the old instance ID must be gone.
-	if _, ok := hubReg.Get(platforms.ID(CompoundPlatformID("inst-1", "opencode"))); ok {
+	if _, ok := hubReg.Get(platforms.ID(platforms.CompoundPlatformID("inst-1", "opencode"))); ok {
 		t.Fatal("stale platform for inst-1 still registered after restart")
 	}
 }
@@ -177,7 +177,7 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	stop := startRealRemoteAt(t, addr, "tok", "late", remoteReg)
 	t.Cleanup(stop)
 
-	id := platforms.ID(CompoundPlatformID("late", "opencode"))
+	id := platforms.ID(platforms.CompoundPlatformID("late", "opencode"))
 	testutil.WaitFor(t, waitTimeout, "the platform to register after the remote came up", func() bool {
 		_, ok := hubReg.Get(id)
 		return ok
@@ -228,7 +228,7 @@ func TestManager_AuthFailedDoesNotRetry(t *testing.T) {
 			return ""
 		}())
 	}
-	if _, ok := hubReg.Get(platforms.ID(CompoundPlatformID("auth-remote", "opencode"))); ok {
+	if _, ok := hubReg.Get(platforms.ID(platforms.CompoundPlatformID("auth-remote", "opencode"))); ok {
 		t.Fatal("platform should not register on auth failure")
 	}
 }
@@ -330,7 +330,7 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 	// platform appears in the hub registry.
 	var rp platforms.Platform
 	testutil.WaitFor(t, waitTimeout, "the remote platform to register in the hub registry", func() bool {
-		p, ok := hubReg.Get(platforms.ID(CompoundPlatformID("abc123", "opencode")))
+		p, ok := hubReg.Get(platforms.ID(platforms.CompoundPlatformID("abc123", "opencode")))
 		rp = p
 		return ok
 	})

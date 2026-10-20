@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"io"
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
@@ -77,7 +78,7 @@ func (s *Server) PluginOperation(ctx context.Context, req *pb.JsonReq) (*pb.Json
 func (c *RemoteConn) PluginOperation(ctx context.Context, req PluginRequest) (PluginResponse, error) {
 	client := c.Client()
 	if client == nil {
-		return PluginResponse{}, ErrRemoteOffline
+		return PluginResponse{}, platforms.ErrRemoteOffline
 	}
 	payload, err := marshalJSON(req)
 	if err != nil {
@@ -103,7 +104,7 @@ func (m *Manager) PluginOperation(ctx context.Context, owner string, req PluginR
 	}
 	m.mu.RUnlock()
 	if conn == nil {
-		return PluginResponse{}, ErrRemoteOffline
+		return PluginResponse{}, platforms.ErrRemoteOffline
 	}
 	return conn.PluginOperation(ctx, req)
 }

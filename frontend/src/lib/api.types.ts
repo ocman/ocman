@@ -1196,6 +1196,7 @@ export interface HostCapabilityEntry {
 }
 
 export interface CapabilitiesResponse {
+  ownedSessionIds?: boolean;
   platforms: PlatformCapabilityEntry[];
   /**
    * Host-scoped capabilities per machine (additive; multi-remote

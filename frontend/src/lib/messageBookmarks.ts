@@ -4,6 +4,7 @@
 import type { Message, Part, PartData, Session } from './api';
 import { cleanTitle, shortPath } from './format';
 import { projectRootForDirectory } from './worktrees';
+import { adoptedLegacySessionKeys } from './sessionIdentityReceipts';
 
 export interface MessageBookmark {
   id: string;
@@ -135,13 +136,14 @@ export function loadAllMessageBookmarks(activeSessionId: string | undefined, act
   const storage = messageBookmarkStorage();
   if (!storage) return activeBookmarks;
   const bookmarks: MessageBookmark[] = [];
+  const adopted = adoptedLegacySessionKeys(storage);
   try {
     if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return activeBookmarks;
     for (let i = 0; i < storage.length; i++) {
       const key = storage.key(i);
       if (!key?.startsWith(MESSAGE_BOOKMARKS_STORAGE_PREFIX)) continue;
       const sessionId = key.slice(MESSAGE_BOOKMARKS_STORAGE_PREFIX.length);
-      if (sessionId === activeSessionId) continue;
+      if (sessionId === activeSessionId || adopted.has(sessionId)) continue;
       bookmarks.push(...loadMessageBookmarks(sessionId));
     }
   } catch {

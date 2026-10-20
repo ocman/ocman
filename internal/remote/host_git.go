@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -15,7 +16,7 @@ import (
 func (h *remoteHost) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, err := marshalJSON(dirs)
 	if err != nil {
@@ -32,7 +33,7 @@ func (h *remoteHost) GitInfo(ctx context.Context, dirs []string) (map[string]git
 func (h *remoteHost) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDiffOptions) (*git.Diff, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir, "force": opts.Force})
 	resp, err := client.GitDiff(ctx, &pb.JsonReq{Payload: b})
@@ -46,7 +47,7 @@ func (h *remoteHost) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDi
 func (h *remoteHost) GitBranches(ctx context.Context, dir string) ([]string, error) {
 	client := h.conn.Client()
 	if client == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir})
 	resp, err := client.GitBranches(ctx, &pb.JsonReq{Payload: b})
@@ -82,7 +83,7 @@ const maxRepoResponseBytes = 6*8<<20 + 16<<20
 func (h *remoteHost) callFiles(ctx context.Context, notFound error, out any, call func(pb.OcmanClient, *pb.JsonReq) (*pb.JsonResp, error), args map[string]any) error {
 	client := h.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(args)
 	resp, err := call(client, &pb.JsonReq{Payload: b})
@@ -98,7 +99,7 @@ func (h *remoteHost) callFiles(ctx context.Context, notFound error, out any, cal
 func (h *remoteHost) GitCheckout(ctx context.Context, dir, branch string) error {
 	client := h.conn.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	b, _ := marshalJSON(map[string]any{"dir": dir, "branch": branch})
 	_, err := client.GitCheckout(ctx, &pb.JsonReq{Payload: b})

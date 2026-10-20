@@ -289,7 +289,7 @@ func (m *Module) ReplyToConversation(ctx context.Context, platformID, sessionID 
 	// next turn's failure is a new notice.
 	if messageID != "" && detail.Session.Status == db.StatusError {
 		m.appendConversationNotice(ctx, key, sessionID+conversationNoticeOutcome+"error:"+messageID,
-			m.conversationNotice("error", sessionID))
+			m.conversationNoticeFor(ctx, "error", platformID, sessionID))
 	}
 	if text == "" {
 		return

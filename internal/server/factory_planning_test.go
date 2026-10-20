@@ -183,6 +183,10 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	if err := (srv.factoryModule().PlanningLauncher()).PromptPlanningSession(context.Background(), got, req); err != nil {
 		t.Fatal(err)
 	}
+	if created.Creation == nil || created.Creation.Origin != "factory" || created.Creation.OriginID != req.AttemptID || created.Creation.RequestKey == "" || !created.Creation.Configured {
+		t.Fatalf("factory creation intent missing: %+v", created.Creation)
+	}
+	created.Creation = nil
 	if created != (platforms.CreateSessionRequest{Directory: "/repo", Title: "Plan: Ship", Port: strings.TrimPrefix(endpoint, "http://127.0.0.1:")}) {
 		t.Fatalf("create = %#v", created)
 	}

@@ -8,23 +8,10 @@
 // See spec/multi-remote-support/architecture.md.
 package remote
 
-import "github.com/NoUseFreak/ocman/internal/platforms"
-
-// ErrRemoteOffline aliases platforms.ErrRemoteOffline so errors.Is matches
-// across both names. Callers outside this package use platforms directly.
-var ErrRemoteOffline = platforms.ErrRemoteOffline
-
 // ProtocolVersion is the wire protocol version exchanged in Hello
 // (AD-12). It is bumped on breaking wire or required semantic changes;
 // additive db-type changes ride the JSON envelopes (AD-11) and do not bump it.
-const ProtocolVersion int32 = 7
-
-// Compound platform-id helpers live in internal/platforms so modules can
-// use them without importing the gRPC client. These thin aliases keep this
-// package's own call sites unchanged.
-const PlatformIDSeparator = platforms.PlatformIDSeparator
-
-var (
-	CompoundPlatformID = platforms.CompoundPlatformID
-	SplitPlatformID    = platforms.SplitPlatformID
-)
+// v8 requires owner-allocated session identities and the identity batch RPC.
+// Reject v7 before publishing adapters or launching a native session whose
+// public identity the hub cannot retrieve.
+const ProtocolVersion int32 = 8

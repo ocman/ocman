@@ -101,9 +101,13 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		created.SessionID = resp.ID
 	}
 	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: created.SessionID, Message: in.Prompt, Model: in.Model, Agent: in.Agent}); err != nil {
-		return created, err
+		projected, projectionErr := publicSessionValue(s.server, ctx, platformID, created, false)
+		if projectionErr != nil {
+			return internalmcp.CreatedSession{}, errors.Join(err, projectionErr)
+		}
+		return projected, err
 	}
-	return created, nil
+	return publicSessionValue(s.server, ctx, platformID, created, false)
 }
 
 // Match the composer's eligibility rules, including manually created worktrees.

@@ -58,7 +58,12 @@ func (s *Server) UseEventProxy(fn func(context.Context, string, string, platform
 	s.proxyEvents = fn
 	return s
 }
-func svcErr(err error) error {
+func svcErr(err error) (out error) {
+	defer func() {
+		if errors.Is(err, platforms.ErrCreationRejected) {
+			out = withCreationRejected(out)
+		}
+	}()
 	if err == nil {
 		return nil
 	}
@@ -104,7 +109,7 @@ func (s *Server) Hello(_ context.Context, _ *pb.HelloReq) (*pb.HelloResp, error)
 	hostname, _ := os.Hostname()
 	var enabled []string
 	for _, p := range s.registry.Platforms() {
-		if owner, _ := SplitPlatformID(string(p.ID())); owner == "" {
+		if owner, _ := platforms.SplitPlatformID(string(p.ID())); owner == "" {
 			enabled = append(enabled, string(p.ID()))
 		}
 	}

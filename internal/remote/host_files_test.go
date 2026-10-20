@@ -32,7 +32,7 @@ func TestRemoteHostRepoFilesRoundTrip(t *testing.T) {
 	if _, err := host.ReadRepoFile(ctx, "/remote/repo", ".env", false); !errors.Is(err, git.ErrFileNotFound) {
 		t.Fatalf("missing err = %v, want ErrFileNotFound", err)
 	}
-	if _, err := newRemoteHost(&RemoteConn{}).ListRepoFiles(ctx, "/x", false); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := newRemoteHost(&RemoteConn{}).ListRepoFiles(ctx, "/x", false); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline err = %v", err)
 	}
 }

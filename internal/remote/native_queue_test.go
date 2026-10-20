@@ -153,10 +153,10 @@ func (unimplementedClient) NativeQueued(context.Context, *pb.SessionRef, ...grpc
 
 func TestRemoteNativeQueue_Offline(t *testing.T) {
 	rp := newRemotePlatform(&RemoteConn{}, "opencode", func() string { return "Box" })
-	if _, err := rp.NativeQueued(t.Context(), "s1"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := rp.NativeQueued(t.Context(), "s1"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("NativeQueued offline err = %v, want ErrRemoteOffline", err)
 	}
-	if err := rp.CancelNativeQueued(t.Context(), platforms.CancelNativeQueuedRequest{}); !errors.Is(err, ErrRemoteOffline) {
+	if err := rp.CancelNativeQueued(t.Context(), platforms.CancelNativeQueuedRequest{}); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("CancelNativeQueued offline err = %v, want ErrRemoteOffline", err)
 	}
 }

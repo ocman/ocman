@@ -47,24 +47,24 @@ func TestManagerLocalWebhookLifecycle(t *testing.T) {
 	if err := manager.PollWebhookInbox(t.Context(), "local", "routine"); err != nil {
 		t.Fatalf("poll: %v", err)
 	}
-	if _, err := manager.RegisterWebhookInbox(t.Context(), "missing", "routine", relay.URL, "enroll"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := manager.RegisterWebhookInbox(t.Context(), "missing", "routine", relay.URL, "enroll"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("missing remote error = %v", err)
 	}
 	emptyManager := &Manager{}
-	if _, err := emptyManager.RegisterWebhookInbox(t.Context(), "local", "routine", relay.URL, "enroll"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := emptyManager.RegisterWebhookInbox(t.Context(), "local", "routine", relay.URL, "enroll"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("missing local store error = %v", err)
 	}
-	if err := emptyManager.PollWebhookInbox(t.Context(), "local", "routine"); !errors.Is(err, ErrRemoteOffline) {
+	if err := emptyManager.PollWebhookInbox(t.Context(), "local", "routine"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("missing local poll store error = %v", err)
 	}
 }
 
 func TestRemoteConnWebhookRequiresConnection(t *testing.T) {
 	conn := &RemoteConn{}
-	if _, err := conn.RegisterWebhookInbox(t.Context(), "routine", "https://relay", "token"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := conn.RegisterWebhookInbox(t.Context(), "routine", "https://relay", "token"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("register error = %v", err)
 	}
-	if err := conn.PollWebhookInbox(t.Context(), "routine"); !errors.Is(err, ErrRemoteOffline) {
+	if err := conn.PollWebhookInbox(t.Context(), "routine"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("poll error = %v", err)
 	}
 }

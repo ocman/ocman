@@ -116,6 +116,7 @@ type FetchPRHeadRequest struct {
 
 // WorktreeSessionRequest captures a create-worktree-and-launch action.
 type WorktreeSessionRequest struct {
+	Creation         *platforms.CreationIdentity `json:"creation,omitempty"`
 	Platform         string
 	ProjectDir       string
 	AutoName         bool

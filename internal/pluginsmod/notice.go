@@ -84,6 +84,24 @@ func (m *Module) conversationNotice(kind, sessionID string) string {
 	return conversationReplyText(sentence + "\n" + m.sessionURL(sessionID))
 }
 
+func (m *Module) conversationNoticeFor(ctx context.Context, kind, platformID, sessionID string) string {
+	if m.deps.SessionURL == nil || sessionID == "" {
+		return m.conversationNotice(kind, sessionID)
+	}
+	sentence, ok := conversationNoticeText[kind]
+	if !ok {
+		return ""
+	}
+	link, err := m.deps.SessionURL(ctx, platformID, sessionID)
+	if err != nil {
+		// A missing binding is not permission to publish a guessed native link.
+		// Keep the notice actionable at the app root without leaking content.
+		log.WithError(err).Warn("resolving conversation notice session link")
+		link = m.deps.PublicURL("/")
+	}
+	return conversationReplyText(sentence + "\n" + link)
+}
+
 // appendConversationNotice records a notice for delivery to one thread.
 // operation is the dedup key: appending the same operation twice adds one
 // delivery, which is what makes a re-observed prompt silent.
@@ -120,7 +138,7 @@ func (m *Module) notifyConversationSession(ctx context.Context, platformID, sess
 	if err != nil || !linked {
 		return
 	}
-	m.appendConversationNotice(ctx, key, operation, m.conversationNotice(kind, sessionID))
+	m.appendConversationNotice(ctx, key, operation, m.conversationNoticeFor(ctx, kind, platformID, sessionID))
 }
 
 // PromptNeedsUser is the autoapprove pipeline's PromptNeedsUser

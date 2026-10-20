@@ -16,6 +16,7 @@ func connectedConn(remoteID, hostname string) *RemoteConn {
 	c.health = HealthConnected
 	c.remoteID = remoteID
 	c.hostname = hostname
+	c.platforms = []string{"opencode"}
 	return c
 }
 

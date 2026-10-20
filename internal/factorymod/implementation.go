@@ -297,7 +297,7 @@ func (l ImplementationLauncher) LaunchImplementationSession(ctx context.Context,
 	for _, r := range req.PermissionRules {
 		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})
 	}
-	created, err := owner.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: req.Repository, Branch: req.Branch, BaseRef: req.BaseRef, MustCreateBranch: req.BaseRef != "", Title: "IMPL " + req.WorkID + " (@factory)", NewBranch: true, PermissionRules: rules})
+	created, err := owner.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{Platform: base, ProjectDir: req.Repository, Branch: req.Branch, BaseRef: req.BaseRef, MustCreateBranch: req.BaseRef != "", Title: "IMPL " + req.WorkID + " (@factory)", NewBranch: true, PermissionRules: rules, Creation: factoryCreationIdentity(req.AttemptID, req.EpicID, req.WorkID)})
 	if err != nil {
 		return factory.PlanningSession{}, fmt.Errorf("create Factory worktree: %w", err)
 	}

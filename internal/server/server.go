@@ -36,6 +36,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
+	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/sessiontitles"
 	"github.com/NoUseFreak/ocman/internal/sharing"
@@ -53,6 +54,7 @@ const (
 type Server struct {
 	tasks              lazy[*tasksvc.Manager]
 	historyIngest      *conversationingest.Module
+	sessionCatalogue   *sessioncatalog.Module
 	historyAnalytics   *analytics.HistoryAnalytics
 	conversationReader *conversationread.Service
 	historyParity      *historyparity.Module
@@ -403,8 +405,6 @@ func (s *Server) RemoteServerHost() hostsvc.Host { return s.router().Local() }
 // Registry returns the platform registry so main.go can wire the
 // remote-access gRPC server over the same adapters.
 func (s *Server) Registry() *platforms.Registry { return s.registry }
-
-func (s *Server) StateDB() *state.DB { return s.stateDB }
 
 // HostRouter returns the host router so the remote Manager (Phase 4+)
 // can register remote hosts as connections come up.

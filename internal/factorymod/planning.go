@@ -78,7 +78,7 @@ func (l PlanningLauncher) launchReadOnlySession(ctx context.Context, req factory
 	for _, r := range req.PermissionRules {
 		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})
 	}
-	created, err := l.m.deps.Sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port()}, rules)
+	created, err := l.m.deps.Sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port(), Creation: factoryCreationIdentity(req.AttemptID, req.EpicID, req.WorkID)}, rules)
 	if err != nil {
 		var cleanup *sessionsvc.ConfiguredSessionCleanupError
 		if errors.As(err, &cleanup) {

@@ -113,6 +113,11 @@ service Ocman {
   // --- Project inventory ---
   rpc Projects(Empty) returns (JsonResp);                 // []ProjectIdentity
   rpc WatchProjects(Empty) returns (stream JsonResp);
+
+  // Remove a failed newly-created execution on its owner.
+  rpc DisposeSession(PlatformJsonReq) returns (Empty);   // DisposeSessionRequest
+  rpc SessionIdentity(PlatformJsonReq) returns (JsonResp); // SessionIdentityRequest -> SessionIdentity
+  rpc SessionIdentities(PlatformJsonReq) returns (JsonResp); // []nativeID -> []SessionIdentity
 }
 
 message Empty {}

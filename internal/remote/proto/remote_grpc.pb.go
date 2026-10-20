@@ -90,6 +90,9 @@ const (
 	Ocman_TerminalStream_FullMethodName          = "/ocman.remote.v1.Ocman/TerminalStream"
 	Ocman_Projects_FullMethodName                = "/ocman.remote.v1.Ocman/Projects"
 	Ocman_WatchProjects_FullMethodName           = "/ocman.remote.v1.Ocman/WatchProjects"
+	Ocman_DisposeSession_FullMethodName          = "/ocman.remote.v1.Ocman/DisposeSession"
+	Ocman_SessionIdentity_FullMethodName         = "/ocman.remote.v1.Ocman/SessionIdentity"
+	Ocman_SessionIdentities_FullMethodName       = "/ocman.remote.v1.Ocman/SessionIdentities"
 )
 
 // OcmanClient is the client API for Ocman service.
@@ -197,6 +200,10 @@ type OcmanClient interface {
 	// --- Project inventory ---
 	Projects(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	WatchProjects(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JsonResp], error)
+	// Remove a failed newly-created execution on its owner.
+	DisposeSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
+	SessionIdentity(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	SessionIdentities(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 }
 
 type ocmanClient struct {
@@ -941,6 +948,36 @@ func (c *ocmanClient) WatchProjects(ctx context.Context, in *Empty, opts ...grpc
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Ocman_WatchProjectsClient = grpc.ServerStreamingClient[JsonResp]
 
+func (c *ocmanClient) DisposeSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_DisposeSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) SessionIdentity(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_SessionIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) SessionIdentities(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_SessionIdentities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OcmanServer is the server API for Ocman service.
 // All implementations must embed UnimplementedOcmanServer
 // for forward compatibility.
@@ -1046,6 +1083,10 @@ type OcmanServer interface {
 	// --- Project inventory ---
 	Projects(context.Context, *Empty) (*JsonResp, error)
 	WatchProjects(*Empty, grpc.ServerStreamingServer[JsonResp]) error
+	// Remove a failed newly-created execution on its owner.
+	DisposeSession(context.Context, *PlatformJsonReq) (*Empty, error)
+	SessionIdentity(context.Context, *PlatformJsonReq) (*JsonResp, error)
+	SessionIdentities(context.Context, *PlatformJsonReq) (*JsonResp, error)
 	mustEmbedUnimplementedOcmanServer()
 }
 
@@ -1268,6 +1309,15 @@ func (UnimplementedOcmanServer) Projects(context.Context, *Empty) (*JsonResp, er
 }
 func (UnimplementedOcmanServer) WatchProjects(*Empty, grpc.ServerStreamingServer[JsonResp]) error {
 	return status.Error(codes.Unimplemented, "method WatchProjects not implemented")
+}
+func (UnimplementedOcmanServer) DisposeSession(context.Context, *PlatformJsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DisposeSession not implemented")
+}
+func (UnimplementedOcmanServer) SessionIdentity(context.Context, *PlatformJsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method SessionIdentity not implemented")
+}
+func (UnimplementedOcmanServer) SessionIdentities(context.Context, *PlatformJsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method SessionIdentities not implemented")
 }
 func (UnimplementedOcmanServer) mustEmbedUnimplementedOcmanServer() {}
 func (UnimplementedOcmanServer) testEmbeddedByValue()               {}
@@ -2532,6 +2582,60 @@ func _Ocman_WatchProjects_Handler(srv interface{}, stream grpc.ServerStream) err
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Ocman_WatchProjectsServer = grpc.ServerStreamingServer[JsonResp]
 
+func _Ocman_DisposeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).DisposeSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_DisposeSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).DisposeSession(ctx, req.(*PlatformJsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_SessionIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).SessionIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_SessionIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).SessionIdentity(ctx, req.(*PlatformJsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_SessionIdentities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).SessionIdentities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_SessionIdentities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).SessionIdentities(ctx, req.(*PlatformJsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Ocman_ServiceDesc is the grpc.ServiceDesc for Ocman service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2806,6 +2910,18 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Projects",
 			Handler:    _Ocman_Projects_Handler,
+		},
+		{
+			MethodName: "DisposeSession",
+			Handler:    _Ocman_DisposeSession_Handler,
+		},
+		{
+			MethodName: "SessionIdentity",
+			Handler:    _Ocman_SessionIdentity_Handler,
+		},
+		{
+			MethodName: "SessionIdentities",
+			Handler:    _Ocman_SessionIdentities_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

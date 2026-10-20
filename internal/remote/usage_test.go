@@ -73,7 +73,7 @@ func TestRemoteSessionUsageConnectedOwner(t *testing.T) {
 		t.Fatalf("unknown owner platform: %v", err)
 	}
 	conn.Close()
-	if got, err := reader.SessionUsage(t.Context(), "same-id"); !errors.Is(err, ErrRemoteOffline) || got != nil {
+	if got, err := reader.SessionUsage(t.Context(), "same-id"); !errors.Is(err, platforms.ErrRemoteOffline) || got != nil {
 		t.Fatalf("disconnected owner returned usage: %+v, %v", got, err)
 	}
 }

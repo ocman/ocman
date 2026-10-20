@@ -45,7 +45,7 @@ func TestRemotePlatformSessionLifecycleUnsupported(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnsupported", err)
 	}
 	offline := newRemotePlatform(NewRemoteConn("grpc://127.0.0.1:1", "tok"), "opencode", func() string { return "Box" })
-	if _, err := offline.SessionLifecycle(t.Context(), "s1"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := offline.SessionLifecycle(t.Context(), "s1"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline err = %v, want ErrRemoteOffline", err)
 	}
 }

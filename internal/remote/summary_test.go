@@ -55,7 +55,7 @@ func TestRemoteSessionSummaryUnsupportedAndOffline(t *testing.T) {
 		t.Fatalf("unsupported: %v", err)
 	}
 	offline := newRemotePlatform(NewRemoteConn("grpc://127.0.0.1:1", "tok"), "opencode", func() string { return "Box" })
-	if _, err := offline.SessionSummary(t.Context(), "s1"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := offline.SessionSummary(t.Context(), "s1"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline: %v", err)
 	}
 	srv := NewServer(platforms.NewRegistry(), nil, "rid", "test")

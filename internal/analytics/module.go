@@ -37,6 +37,7 @@ type Deps struct {
 	// HistoryAnalytics is resolved per request so startup wiring can finish
 	// before the module's lazy dependencies are used.
 	HistoryAnalytics func() *HistoryAnalytics
+	SessionIdentity  func(context.Context, string, string) (string, error)
 	// Store is ocman's state database; may be nil.
 	Store *state.DB
 	// Version is the build version reported by /api/stats, read per request.

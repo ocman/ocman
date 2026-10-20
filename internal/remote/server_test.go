@@ -305,16 +305,16 @@ func TestRemoteHostRemainingMutationsRoundTrip(t *testing.T) {
 	}
 
 	offline := newRemoteHost(&RemoteConn{})
-	if _, err := offline.GitBranches(t.Context(), "/repo"); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := offline.GitBranches(t.Context(), "/repo"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline branches: %v", err)
 	}
-	if err := offline.GitCheckout(t.Context(), "/repo", "main"); !errors.Is(err, ErrRemoteOffline) {
+	if err := offline.GitCheckout(t.Context(), "/repo", "main"); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline checkout: %v", err)
 	}
-	if err := offline.RemoveWorktree(t.Context(), hostsvc.RemoveWorktreeRequest{}); !errors.Is(err, ErrRemoteOffline) {
+	if err := offline.RemoveWorktree(t.Context(), hostsvc.RemoveWorktreeRequest{}); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline remove worktree: %v", err)
 	}
-	if _, err := offline.ManagedOpencodes(t.Context()); !errors.Is(err, ErrRemoteOffline) {
+	if _, err := offline.ManagedOpencodes(t.Context()); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline managed opencodes: %v", err)
 	}
 	for name, call := range map[string]func() error{
@@ -350,7 +350,7 @@ func TestRemoteHostRemainingMutationsRoundTrip(t *testing.T) {
 		"identities":    func() error { _, err := offline.ProjectIdentities(t.Context()); return err },
 	} {
 		t.Run("offline "+name, func(t *testing.T) {
-			if err := call(); !errors.Is(err, ErrRemoteOffline) {
+			if err := call(); !errors.Is(err, platforms.ErrRemoteOffline) {
 				t.Fatalf("error = %v, want ErrRemoteOffline", err)
 			}
 		})

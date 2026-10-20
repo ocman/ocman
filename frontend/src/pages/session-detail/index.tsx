@@ -22,8 +22,9 @@
 // directly via `./SessionDetail` and pass `id` as a prop.
 import { useParams } from 'react-router-dom';
 import { SessionDetail as SessionDetailInner } from './SessionDetail';
+import { SessionIdentityRoute } from './SessionIdentityRoute';
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
-  return <SessionDetailInner id={id} />;
+  return <SessionIdentityRoute id={id}><SessionDetailInner id={id} /></SessionIdentityRoute>;
 }

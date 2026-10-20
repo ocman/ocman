@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -14,7 +15,7 @@ func (c *RemoteConn) RegisterWebhookInbox(ctx context.Context, routineID, relayU
 func (c *RemoteConn) RegisterWebhookInboxWithSecret(ctx context.Context, routineID, relayURL, enrollmentToken, secret, secretHeader string) (state.WebhookInbox, error) {
 	client := c.Client()
 	if client == nil {
-		return state.WebhookInbox{}, ErrRemoteOffline
+		return state.WebhookInbox{}, platforms.ErrRemoteOffline
 	}
 	payload, err := marshalJSON(struct {
 		RoutineID       string `json:"routineId"`
@@ -37,7 +38,7 @@ func (c *RemoteConn) RegisterWebhookInboxWithSecret(ctx context.Context, routine
 func (c *RemoteConn) PollWebhookInbox(ctx context.Context, routineID string) error {
 	client := c.Client()
 	if client == nil {
-		return ErrRemoteOffline
+		return platforms.ErrRemoteOffline
 	}
 	payload, err := marshalJSON(struct {
 		RoutineID string `json:"routineId"`

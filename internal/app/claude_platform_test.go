@@ -42,13 +42,14 @@ func TestClaudeOnlyStartup(t *testing.T) {
 	base, out, stop := startClaudeOcman(t, "TestClaudeOnlyStartup", dir, "OCMAN_TEST_EXEC_MARKER="+marker)
 	defer stop()
 
+	identity := waitSessionIdentity(t, base, "claudecode", claudeFixtureSession)
 	var listed db.Session
 	for deadline := time.Now().Add(30 * time.Second); listed.ID == ""; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("Claude session never listed\n%s", out.String())
 		}
 		for _, s := range listSessions(base) {
-			if s.ID == claudeFixtureSession {
+			if s.ID == identity.ID {
 				listed = s
 			}
 		}
@@ -57,7 +58,7 @@ func TestClaudeOnlyStartup(t *testing.T) {
 		t.Fatalf("listed = %+v", listed)
 	}
 
-	resp, err := http.Get(base + "/api/session/" + claudeFixtureSession)
+	resp, err := http.Get(base + "/api/session/" + listed.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,9 +70,9 @@ func TestClaudeOnlyStartup(t *testing.T) {
 	}
 
 	for _, req := range []map[string]any{
-		{"platform": "claudecode", "sessionId": claudeFixtureSession, "timeUpdated": listed.TimeUpdated, "archived": true},
-		{"platform": "claudecode", "sessionId": claudeFixtureSession, "pinned": true},
-		{"platform": "claudecode", "sessionId": claudeFixtureSession, "timeUpdated": listed.TimeUpdated},
+		{"platform": "claudecode", "sessionId": listed.ID, "timeUpdated": listed.TimeUpdated, "archived": true},
+		{"platform": "claudecode", "sessionId": listed.ID, "pinned": true},
+		{"platform": "claudecode", "sessionId": listed.ID, "timeUpdated": listed.TimeUpdated},
 	} {
 		action := "seen"
 		if _, ok := req["archived"]; ok {
@@ -88,7 +89,7 @@ func TestClaudeOnlyStartup(t *testing.T) {
 	}
 	applied := false
 	for _, s := range listSessions(base) {
-		applied = applied || (s.ID == claudeFixtureSession && s.Archived && s.Pinned && s.Seen)
+		applied = applied || (s.ID == listed.ID && s.Archived && s.Pinned && s.Seen)
 	}
 	if !applied {
 		t.Fatalf("archive/pin/seen state not applied: %+v", listSessions(base))

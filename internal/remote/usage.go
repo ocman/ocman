@@ -16,7 +16,7 @@ func (p *remotePlatform) SessionUsage(ctx context.Context, id string) (map[strin
 	conn := p.conn.conn
 	p.conn.mu.RUnlock()
 	if conn == nil {
-		return nil, ErrRemoteOffline
+		return nil, platforms.ErrRemoteOffline
 	}
 	resp, err := pb.NewUsageClient(conn).SessionUsage(ctx, &pb.SessionRef{Platform: p.base, SessionId: id})
 	if err != nil {
