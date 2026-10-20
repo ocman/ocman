@@ -89,8 +89,28 @@ func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool) error
 	if err != nil {
 		return err
 	}
-	off := false
-	entry, err := json.Marshal(v2Server{Type: "remote", URL: url, Disabled: &disabled, Codemode: &off})
+	raw := servers[ServerName]
+	if raw == nil {
+		raw = mcp[ServerName]
+	}
+	fields, err := object(raw, `"mcp ocman entry"`)
+	if err != nil {
+		return err
+	}
+	// Keep connection options (including unknown future options) during
+	// startup repair. Only the layout and the fields we own change.
+	delete(fields, "enabled")
+	fields["type"] = json.RawMessage(`"remote"`)
+	fields["url"], err = json.Marshal(url)
+	if err != nil {
+		return err
+	}
+	fields["disabled"] = json.RawMessage("false")
+	if disabled {
+		fields["disabled"] = json.RawMessage("true")
+	}
+	fields["codemode"] = json.RawMessage("false")
+	entry, err := json.Marshal(fields)
 	if err != nil {
 		return err
 	}
