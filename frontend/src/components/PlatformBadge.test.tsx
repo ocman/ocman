@@ -3,10 +3,24 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useMultiPlatform } from '../lib/useCapabilities';
 import { PlatformBadge, PlatformLogo } from './PlatformBadge';
+// @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
+import { readFileSync } from 'node:fs';
 
 vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: vi.fn() }));
 
 beforeEach(() => vi.mocked(useMultiPlatform).mockReturnValue(true));
+
+it('keeps platform icon images at zero vertical offset', () => {
+	const style = document.createElement('style');
+	style.textContent = readFileSync('src/components/PlatformBadge.css', 'utf8');
+	document.head.appendChild(style);
+	try {
+		const { container } = render(<PlatformBadge platform="opencode" variant="icon" />);
+		expect(getComputedStyle(container.querySelector('img')!).top).toBe('0px');
+	} finally {
+		style.remove();
+	}
+});
 
 it('renders decorative platform logos, including remote platforms, without broken unknown icons', () => {
 	const { container, rerender } = render(<PlatformLogo platform="r-owner:claudecode" />);
