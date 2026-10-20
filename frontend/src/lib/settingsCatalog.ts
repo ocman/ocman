@@ -28,6 +28,12 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'snooze-quick-choices': {
+    group: 'sessions', title: 'Snooze quick choices',
+    description: 'Add or remove snooze shortcuts and set their durations or local wake-up times. Saved for this browser.',
+    example: 'Offer a 15-minute snooze and tomorrow at 8:00 AM. Custom date and time is always available.',
+    keywords: 'remind later clock tomorrow monday presets',
+  },
   'compact-tool-calls': {
     group: 'sessions', title: 'Compact tool calls',
     description: 'Show only shell commands until you expand their output. Off by default. Saved for this browser.',

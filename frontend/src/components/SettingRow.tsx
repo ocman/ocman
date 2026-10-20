@@ -222,7 +222,7 @@ export function SettingText({
   onSave: (next: string) => void | Promise<unknown>;
   ariaLabel: string;
   placeholder?: string;
-  type?: 'text' | 'password' | 'url';
+  type?: 'text' | 'password' | 'url' | 'time';
   disabled?: boolean;
 }) {
   const commit = (next: string) => {

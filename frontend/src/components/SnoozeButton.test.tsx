@@ -8,6 +8,8 @@ import { SnoozeButton } from './SnoozeButton';
 import { snoozeDeadline, SNOOZE_OPTIONS } from '../lib/snooze';
 import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists } from '../lib/sessionsCache';
 import { queryClient } from '../lib/queryClient';
+import { useSnoozePreferences } from '../lib/snoozePreferences';
+import { DEFAULT_SNOOZE_CHOICES } from '../lib/snooze';
 
 vi.mock('../lib/api', () => ({ api: { snoozeSession: vi.fn() } }));
 const session = { id: 's1', platform: 'r-box:claudecode' } as Session;
@@ -15,21 +17,39 @@ const localSession = { ...session, platform: 'opencode', archived: false };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useSnoozePreferences.setState({ choices: DEFAULT_SNOOZE_CHOICES });
   vi.mocked(api.snoozeSession).mockResolvedValue({ ok: true });
   queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [localSession, { ...session, archived: false }]);
 });
 
 describe('snooze deadlines', () => {
-  it('uses exact durations and local 9 AM, including the next Monday', () => {
+  it('uses exact durations and local 8 AM, including the next Monday', () => {
     const now = new Date(2026, 9, 12, 12, 30);
     expect([0, 1, 2].map((index) => snoozeDeadline(index, now) - now.getTime())).toEqual([30, 60, 180].map((minutes) => minutes * 60_000));
-    expect(new Date(snoozeDeadline(3, now))).toEqual(new Date(2026, 9, 13, 9));
-    expect(new Date(snoozeDeadline(4, now))).toEqual(new Date(2026, 9, 19, 9));
-    expect(new Date(snoozeDeadline(4, new Date(2026, 9, 18, 20)))).toEqual(new Date(2026, 9, 19, 9));
+    expect(new Date(snoozeDeadline(3, now))).toEqual(new Date(2026, 9, 13, 8));
+    expect(new Date(snoozeDeadline(4, now))).toEqual(new Date(2026, 9, 19, 8));
+    expect(new Date(snoozeDeadline(4, new Date(2026, 9, 18, 20)))).toEqual(new Date(2026, 9, 19, 8));
   });
 });
 
 describe('SnoozeButton', () => {
+  it('uses configured choices and still offers custom when all choices are removed', async () => {
+    useSnoozePreferences.setState({ choices: [{ kind: 'tomorrow', time: '07:15' }] });
+    const { user } = setup();
+    await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
+    expect(screen.queryByRole('menuitem', { name: 'In 30 mins' })).not.toBeInTheDocument();
+    const before = Date.now();
+    await user.click(screen.getByRole('menuitem', { name: 'Tomorrow at 7:15 AM' }));
+    const deadline = vi.mocked(api.snoozeSession).mock.calls[0][2];
+    expect(new Date(deadline).getHours()).toBe(7);
+    expect(new Date(deadline).getMinutes()).toBe(15);
+    expect(deadline).toBeGreaterThan(before);
+    act(() => useSnoozePreferences.setState({ choices: [] }));
+    await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
+    expect(screen.getAllByRole('menuitem')).toHaveLength(1);
+    await user.click(screen.getByRole('menuitem', { name: 'Custom...' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
   it('opens the duration picker from a swipe and reports pending delivery', async () => {
     let finish!: (value: { ok: boolean }) => void;
     vi.mocked(api.snoozeSession).mockReturnValue(new Promise(resolve => { finish = resolve; }));
@@ -65,13 +85,16 @@ describe('SnoozeButton', () => {
     const { user } = setup();
     await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
     await user.click(screen.getByRole('menuitem', { name: 'Custom...' }));
-    const input = screen.getByLabelText('Wake up at');
-    expect(input).toHaveAttribute('type', 'datetime-local');
+    const input = screen.getByLabelText('Wake-up date');
+    const time = screen.getByLabelText('Wake-up time');
+    expect(input).toHaveAttribute('type', 'date');
+    expect(time).toHaveValue('08:00');
     const submit = screen.getByRole('button', { name: 'Snooze' });
     expect(submit).toBeDisabled();
-    fireEvent.change(input, { target: { value: '2020-01-01T09:00' } });
+    fireEvent.change(input, { target: { value: '2020-01-01' } });
     expect(submit).toBeDisabled();
-    fireEvent.change(input, { target: { value: '2099-01-02T14:30' } });
+    fireEvent.change(input, { target: { value: '2099-01-02' } });
+    fireEvent.change(time, { target: { value: '14:30' } });
     vi.mocked(api.snoozeSession).mockRejectedValueOnce(new Error('Offline'));
     await user.click(submit);
     expect(await screen.findByRole('alert')).toHaveTextContent('Offline');

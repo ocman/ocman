@@ -12,6 +12,7 @@ import { api } from '../../lib/api';
 import { enablePush, disablePush, pushSupported, pushSubscribed } from '../../lib/pushNotifications';
 import { Button } from '../../components/Control';
 import { AppBadgeSettings } from '../../components/AppBadgeSettings';
+import { SnoozeSettings } from '../../components/SnoozeSettings';
 import {
   notificationsSupported,
   requestNotificationPermission,
@@ -229,6 +230,7 @@ export function SessionsSection() {
         </SettingRow>
       )}
       <ArchiveResurfaceSetting />
+      <SnoozeSettings />
     </>
   );
 }
