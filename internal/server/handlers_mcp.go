@@ -83,6 +83,21 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 	})
 }
 
+// ensureOpenCodeMCPLayout runs at startup so an ocman entry installed
+// for OpenCode v1 keeps working after an upgrade to v2: v2 drops codemode
+// from v1-style entries and would hide ocman's tools behind Code Mode.
+func ensureOpenCodeMCPLayout() {
+	backup, err := opencodeconfig.EnsureV2Layout()
+	switch {
+	case errors.Is(err, opencodeconfig.ErrNotEditable):
+		log.WithError(err).Info("mcp: cannot update the OpenCode config for v2; set codemode to false for ocman by hand")
+	case err != nil:
+		log.WithError(err).Warn("mcp: updating the OpenCode config for v2 failed")
+	case backup != "":
+		log.WithField("backup", backup).Info("mcp: moved ocman's OpenCode MCP entry to the v2 layout with Code Mode off")
+	}
+}
+
 // mcpHandler returns the MCP handler shared by both mounts. Only agents
 // speak MCP (the browser uses REST), so user-only Factory actions are
 // refused here as well as on the dedicated listener.

@@ -274,8 +274,12 @@ On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
 - **History.** v2 stores conversations in new tables (`session_v2`, `session_message`). Ocman
   reads them through read-only views with the v1 names, so the session list, transcripts,
   search and analytics work unchanged.
-- **MCP.** Installing ocman's MCP entry on a v2 machine also sets `"codemode": false`, so the
-  agent calls ocman's tools directly instead of through v2's Code Mode `execute` tool.
+- **MCP.** On a v2 machine ocman writes its MCP entry in v2's own layout,
+  `mcp.servers.ocman`, with `"codemode": false`, so the agent calls ocman's tools directly
+  instead of through v2's Code Mode `execute` tool. v2 still reads v1-style `mcp.ocman`
+  entries but drops `codemode` from them. At startup ocman moves an existing ocman entry
+  to the v2 layout, keeping its URL and enabled state, after backing up the config. It
+  never adds an entry you haven't installed, and it leaves a JSONC config alone.
 - **Settings → Maintenance** is not available on v2; it only knows the v1 storage layout.
 
 Use `/reload-opencode` in an existing conversation to refresh the owning machine's

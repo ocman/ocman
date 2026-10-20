@@ -2,6 +2,7 @@ package opencodeconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,54 +17,236 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestInstallCodemodeByVersion(t *testing.T) {
-	for _, v2 := range []bool{true, false} {
-		t.Run(map[bool]string{true: "v2", false: "v1"}[v2], func(t *testing.T) {
-			defer ocv2.SetInstalledV2(v2)()
+const testURL = "http://127.0.0.1:8227/mcp"
+
+// configDoc is the subset of a written config the v2 tests assert on.
+type configDoc struct {
+	MCP map[string]json.RawMessage `json:"mcp"`
+}
+
+func readDoc(t *testing.T, path string) (configDoc, map[string]map[string]any) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc configDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("%v: %s", err, raw)
+	}
+	servers := map[string]map[string]any{}
+	if rawServers, ok := doc.MCP["servers"]; ok {
+		if err := json.Unmarshal(rawServers, &servers); err != nil {
+			t.Fatalf("mcp.servers: %v: %s", err, raw)
+		}
+	}
+	return doc, servers
+}
+
+func TestInstallV1WritesFlatEntryWithoutCodemode(t *testing.T) {
+	dir := configHome(t)
+	if _, err := Install(testURL); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	doc, servers := readDoc(t, filepath.Join(dir, "opencode.json"))
+	var entry map[string]any
+	if err := json.Unmarshal(doc.MCP[ServerName], &entry); err != nil {
+		t.Fatalf("flat entry: %v", err)
+	}
+	if _, has := entry["codemode"]; has {
+		t.Errorf("v1 entry carries codemode: %v", entry)
+	}
+	if len(servers) != 0 {
+		t.Errorf("v1 install wrote mcp.servers: %v", servers)
+	}
+	if st, err := Check(testURL); err != nil || !st.Configured {
+		t.Errorf("Check after Install: %+v, %v", st, err)
+	}
+}
+
+// OpenCode v2 converts v1's flat mcp.<name> entries field by field and
+// drops codemode, so the entry must live in v2's own mcp.servers layout
+// for Code Mode to stay off.
+func TestInstallV2WritesServersLayout(t *testing.T) {
+	defer ocv2.SetInstalledV2(true)()
+	dir := configHome(t)
+	path := filepath.Join(dir, "opencode.json")
+	writeConfig(t, path, `{"mcp":{
+		"ocman":{"type":"remote","url":"http://127.0.0.1:1/mcp","enabled":true},
+		"other":{"type":"local","command":["x"],"enabled":true},
+		"servers":{"kept":{"type":"remote","url":"http://k/mcp","disabled":false}}}}`)
+
+	if _, err := Install(testURL); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	doc, servers := readDoc(t, path)
+	if _, has := doc.MCP[ServerName]; has {
+		t.Errorf("flat mcp.ocman left behind: %s", doc.MCP[ServerName])
+	}
+	if _, has := doc.MCP["other"]; !has {
+		t.Error("unrelated flat server dropped")
+	}
+	if _, has := servers["kept"]; !has {
+		t.Error("unrelated mcp.servers entry dropped")
+	}
+	want := map[string]any{"type": "remote", "url": testURL, "disabled": false, "codemode": false}
+	got := servers[ServerName]
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("mcp.servers.ocman[%s] = %v, want %v (entry %v)", k, got[k], v, got)
+		}
+	}
+	if st, err := Check(testURL); err != nil || !st.Configured {
+		t.Errorf("Check after Install: %+v, %v", st, err)
+	}
+}
+
+func TestCheckV2(t *testing.T) {
+	cases := []struct {
+		name       string
+		mcp        string
+		configured bool
+		currentURL string
+	}{
+		{"v1-era flat entry without codemode",
+			`{"ocman":{"type":"remote","url":"` + testURL + `","enabled":true}}`, false, testURL},
+		// What ocman wrote before this fix: v2 drops codemode from it.
+		{"flat entry with codemode false",
+			`{"ocman":{"type":"remote","url":"` + testURL + `","enabled":true,"codemode":false}}`, false, testURL},
+		{"servers entry with codemode false",
+			`{"servers":{"ocman":{"type":"remote","url":"` + testURL + `","disabled":false,"codemode":false}}}`, true, testURL},
+		{"servers entry without codemode",
+			`{"servers":{"ocman":{"type":"remote","url":"` + testURL + `","disabled":false}}}`, false, testURL},
+		{"servers entry disabled",
+			`{"servers":{"ocman":{"type":"remote","url":"` + testURL + `","disabled":true,"codemode":false}}}`, false, testURL},
+		{"servers entry with stale URL",
+			`{"servers":{"ocman":{"type":"remote","url":"http://127.0.0.1:1/mcp","codemode":false}}}`, false, "http://127.0.0.1:1/mcp"},
+		{"servers entry plus leftover flat entry",
+			`{"ocman":{"type":"remote","url":"` + testURL + `"},"servers":{"ocman":{"type":"remote","url":"` + testURL + `","codemode":false}}}`, false, testURL},
+		{"no entry", `{"other":{"type":"local","command":["x"]}}`, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer ocv2.SetInstalledV2(true)()
 			dir := configHome(t)
-			if _, err := Install("http://127.0.0.1:8227/mcp"); err != nil {
-				t.Fatalf("Install: %v", err)
-			}
-			raw, err := os.ReadFile(filepath.Join(dir, "opencode.json"))
+			writeConfig(t, filepath.Join(dir, "opencode.json"), `{"mcp":`+tc.mcp+`}`)
+			st, err := Check(testURL)
 			if err != nil {
 				t.Fatal(err)
 			}
-			var doc struct {
-				MCP map[string]map[string]any `json:"mcp"`
-			}
-			if err := json.Unmarshal(raw, &doc); err != nil {
-				t.Fatal(err)
-			}
-			cm, has := doc.MCP[ServerName]["codemode"]
-			if v2 && cm != false {
-				t.Errorf("v2 entry codemode = %v (present %v), want false: %s", cm, has, raw)
-			}
-			if !v2 && has {
-				t.Errorf("v1 entry carries codemode: %s", raw)
-			}
-			if st, err := Check("http://127.0.0.1:8227/mcp"); err != nil || !st.Configured {
-				t.Errorf("Check after Install: %+v, %v", st, err)
+			if st.Configured != tc.configured || st.CurrentURL != tc.currentURL {
+				t.Errorf("Check = configured %v url %q, want %v %q", st.Configured, st.CurrentURL, tc.configured, tc.currentURL)
 			}
 		})
 	}
 }
 
-// An entry installed while v1 was current has no codemode key. After an
-// upgrade to v2 Check still reports it configured, so the install prompt
-// never offers to add codemode:false and ocman's tools stay behind v2's
-// Code Mode.
-func TestCheckV2FlagsEntryWithoutCodemode(t *testing.T) {
-	const url = "http://127.0.0.1:8227/mcp"
-	configHome(t)
-	if _, err := Install(url); err != nil { // v1 (pinned by TestMain)
-		t.Fatal(err)
+func TestEnsureV2Layout(t *testing.T) {
+	const stale = "http://127.0.0.1:1/mcp"
+	cases := []struct {
+		name      string
+		v2        bool
+		body      string // config file contents; "" means no file
+		rewritten bool
+		wantURL   string
+		disabled  bool
+	}{
+		{name: "v1 installed", body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `"}}}`},
+		{name: "no config file", v2: true},
+		{name: "no ocman entry", v2: true, body: `{"mcp":{"other":{"type":"local","command":["x"]}}}`},
+		{name: "already current", v2: true,
+			body: `{"mcp":{"servers":{"ocman":{"type":"remote","url":"` + testURL + `","disabled":false,"codemode":false}}}}`},
+		{name: "flat entry without codemode", v2: true, rewritten: true, wantURL: testURL,
+			body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `","enabled":true}}}`},
+		{name: "flat entry with codemode false", v2: true, rewritten: true, wantURL: testURL,
+			body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `","enabled":true,"codemode":false}}}`},
+		{name: "keeps stale URL", v2: true, rewritten: true, wantURL: stale,
+			body: `{"mcp":{"ocman":{"type":"remote","url":"` + stale + `"}}}`},
+		{name: "keeps disabled flat entry disabled", v2: true, rewritten: true, wantURL: testURL, disabled: true,
+			body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `","enabled":false}}}`},
+		{name: "servers entry without codemode", v2: true, rewritten: true, wantURL: testURL,
+			body: `{"mcp":{"servers":{"ocman":{"type":"remote","url":"` + testURL + `"}}}}`},
+		{name: "keeps disabled servers entry disabled", v2: true, rewritten: true, wantURL: testURL, disabled: true,
+			body: `{"mcp":{"servers":{"ocman":{"type":"remote","url":"` + testURL + `","disabled":true,"codemode":true}}}}`},
+		{name: "drops leftover flat entry", v2: true, rewritten: true, wantURL: testURL,
+			body: `{"mcp":{"ocman":{"type":"remote","url":"` + stale + `"},"servers":{"ocman":{"type":"remote","url":"` + testURL + `","codemode":false}}}}`},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer ocv2.SetInstalledV2(tc.v2)()
+			dir := configHome(t)
+			path := filepath.Join(dir, "opencode.json")
+			if tc.body != "" {
+				writeConfig(t, path, `{"theme":"x",`+tc.body[1:])
+			}
+			backup, err := EnsureV2Layout()
+			if err != nil {
+				t.Fatalf("EnsureV2Layout: %v", err)
+			}
+			if !tc.rewritten {
+				if backup != "" {
+					t.Errorf("backup = %q, want no rewrite", backup)
+				}
+				if tc.body != "" {
+					if raw, _ := os.ReadFile(path); string(raw) != `{"theme":"x",`+tc.body[1:] {
+						t.Errorf("config changed without a rewrite: %s", raw)
+					}
+				}
+				return
+			}
+			if orig, err := os.ReadFile(backup); err != nil || string(orig) != `{"theme":"x",`+tc.body[1:] {
+				t.Errorf("backup %q = %q, %v; want the original bytes", backup, orig, err)
+			}
+			doc, servers := readDoc(t, path)
+			if _, has := doc.MCP[ServerName]; has {
+				t.Errorf("flat mcp.ocman left behind: %s", doc.MCP[ServerName])
+			}
+			got := servers[ServerName]
+			want := map[string]any{"type": "remote", "url": tc.wantURL, "disabled": tc.disabled, "codemode": false}
+			for k, v := range want {
+				if got[k] != v {
+					t.Errorf("mcp.servers.ocman[%s] = %v, want %v (entry %v)", k, got[k], v, got)
+				}
+			}
+			if raw, _ := os.ReadFile(path); !json.Valid(raw) || !containsTheme(raw) {
+				t.Errorf("other keys not preserved: %s", raw)
+			}
+			if again, err := EnsureV2Layout(); err != nil || again != "" {
+				t.Errorf("second run rewrote again: %q, %v", again, err)
+			}
+		})
+	}
+}
+
+func containsTheme(raw []byte) bool {
+	var doc map[string]any
+	return json.Unmarshal(raw, &doc) == nil && doc["theme"] == "x"
+}
+
+func TestEnsureV2LayoutRefusesUneditable(t *testing.T) {
 	defer ocv2.SetInstalledV2(true)()
-	st, err := Check(url)
-	if err != nil {
-		t.Fatal(err)
+	cases := map[string]struct{ file, body string }{
+		"jsonc":          {"opencode.jsonc", `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `"}}}`},
+		"comments":       {"opencode.json", "{\n// note\n\"mcp\":{}}"},
+		"mcp not object": {"opencode.json", `{"mcp":[1],"x":{}}`},
 	}
-	if st.Configured {
-		t.Error("v1-era entry without codemode:false reported configured under v2")
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := configHome(t)
+			path := filepath.Join(dir, tc.file)
+			writeConfig(t, path, tc.body)
+			backup, err := EnsureV2Layout()
+			if name == "mcp not object" {
+				// No readable ocman entry: nothing to repair.
+				if err != nil || backup != "" {
+					t.Errorf("got %q, %v; want no-op", backup, err)
+				}
+			} else if !errors.Is(err, ErrNotEditable) || backup != "" {
+				t.Errorf("got %q, %v; want ErrNotEditable", backup, err)
+			}
+			if raw, _ := os.ReadFile(path); string(raw) != tc.body {
+				t.Errorf("config modified: %s", raw)
+			}
+		})
 	}
 }

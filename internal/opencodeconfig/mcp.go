@@ -116,15 +116,16 @@ func Check(wantURL string) (Status, error) {
 		}
 		return st, nil
 	}
+	if ocv2.InstalledV2() {
+		checkV2(doc, &st)
+		return st, nil
+	}
 	entry, ok := mcpEntry(doc)
 	if !ok {
 		return st, nil
 	}
 	st.CurrentURL = entry.URL
 	st.Configured = entry.URL == wantURL && enabled(entry)
-	if ocv2.InstalledV2() && (entry.Codemode == nil || *entry.Codemode) {
-		st.Configured = false // installed for v1: v2 would hide ocman's tools behind Code Mode
-	}
 	return st, nil
 }
 
@@ -141,43 +142,53 @@ func Install(wantURL string) (string, error) {
 	}
 
 	doc := map[string]json.RawMessage{}
-	var mode os.FileMode = 0o644
-	backup := ""
-
 	raw, err := os.ReadFile(st.Path) //nolint:gosec // path is ocman's own config location
 	switch {
 	case err == nil:
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			return "", fmt.Errorf("%w: %w", ErrNotEditable, err)
 		}
-		if info, err := os.Stat(st.Path); err == nil {
-			mode = info.Mode().Perm()
-		}
-		// Back up the *original* bytes before touching anything, so a
-		// bad merge is always recoverable by hand.
-		backup = backupPath(st.Path, time.Now())
-		if err := os.WriteFile(backup, raw, mode); err != nil {
-			return "", fmt.Errorf("writing backup %s: %w", backup, err)
-		}
 	case errors.Is(err, os.ErrNotExist):
+		raw = nil
 		if err := os.MkdirAll(filepath.Dir(st.Path), 0o755); err != nil {
 			return "", err
 		}
-		if _, ok := doc["$schema"]; !ok {
-			doc["$schema"] = json.RawMessage(`"https://opencode.ai/config.json"`)
-		}
+		doc["$schema"] = json.RawMessage(`"https://opencode.ai/config.json"`)
 	default:
 		return "", err
 	}
 
-	if err := setMCPEntry(doc, wantURL); err != nil {
+	if ocv2.InstalledV2() {
+		err = setV2Entry(doc, wantURL, false)
+	} else {
+		err = setMCPEntry(doc, wantURL)
+	}
+	if err != nil {
 		return "", err
+	}
+	return writeDoc(st.Path, raw, doc)
+}
+
+// writeDoc writes doc to path, first backing up original (the file's
+// current bytes, nil when it doesn't exist) so a bad merge is always
+// recoverable by hand. It keeps the file's mode and returns the backup path.
+func writeDoc(path string, original []byte, doc map[string]json.RawMessage) (string, error) {
+	var mode os.FileMode = 0o644
+	backup := ""
+	if original != nil {
+		if info, err := os.Stat(path); err == nil {
+			mode = info.Mode().Perm()
+		}
+		backup = backupPath(path, time.Now())
+		if err := os.WriteFile(backup, original, mode); err != nil {
+			return "", fmt.Errorf("writing backup %s: %w", backup, err)
+		}
 	}
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return "", err
 	}
-	if err := writeFileAtomic(st.Path, append(out, '\n'), mode); err != nil {
+	if err := writeFileAtomic(path, append(out, '\n'), mode); err != nil {
 		return "", err
 	}
 	return backup, nil
@@ -193,13 +204,11 @@ func backupPath(path string, now time.Time) string {
 	return filepath.Join(dir, fmt.Sprintf("%s.%s-backup.json", base, now.Format(backupStamp)))
 }
 
-// mcpServer is the subset of an MCP entry ocman cares about.
+// mcpServer is the subset of a v1 (flat) MCP entry ocman cares about.
 type mcpServer struct {
 	Type    string `json:"type"`
 	URL     string `json:"url"`
 	Enabled *bool  `json:"enabled"`
-	// Codemode false exposes the tools directly under OpenCode v2.
-	Codemode *bool `json:"codemode"`
 }
 
 // enabled treats a missing "enabled" as true, matching OpenCode, which
@@ -219,8 +228,8 @@ func mcpEntry(doc map[string]json.RawMessage) (mcpServer, bool) {
 	return entry, ok
 }
 
-// setMCPEntry replaces doc["mcp"]["ocman"], leaving any other server
-// definitions (and their unknown fields) untouched.
+// setMCPEntry replaces doc["mcp"]["ocman"] in the v1 layout, leaving any
+// other server definitions (and their unknown fields) untouched.
 func setMCPEntry(doc map[string]json.RawMessage, url string) error {
 	servers := map[string]json.RawMessage{}
 	if rawMCP, ok := doc["mcp"]; ok {
@@ -228,17 +237,11 @@ func setMCPEntry(doc map[string]json.RawMessage, url string) error {
 			return fmt.Errorf("%w: \"mcp\" is not an object: %w", ErrNotEditable, err)
 		}
 	}
-	fields := map[string]interface{}{
+	entry, err := json.Marshal(map[string]interface{}{
 		"type":    "remote",
 		"url":     url,
 		"enabled": true,
-	}
-	if ocv2.InstalledV2() {
-		// v2 hides MCP tools behind its Code Mode `execute` tool by
-		// default; ocman's tools are meant to be called directly.
-		fields["codemode"] = false
-	}
-	entry, err := json.Marshal(fields)
+	})
 	if err != nil {
 		return err
 	}

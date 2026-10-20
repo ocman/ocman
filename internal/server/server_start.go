@@ -79,6 +79,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			workers.Go(func() { health.RunOpenCodeHealthChecks(ctx) })
 		}
 		workers.Go(func() { ocv2.WatchInstalledVersion(ctx) })
+		workers.Go(ensureOpenCodeMCPLayout)
 		if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
 			workers.Go(func() { sup.RunMachineSupervisor(ctx) })
 		}
