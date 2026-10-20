@@ -16,7 +16,7 @@ for (const [platform, label] of [['opencode', 'OpenCode'], ['claudecode', 'Claud
     await expect(page.getByTestId('header-breadcrumb')).toHaveText(`${MOCK_SESSION.title} ·`);
     await expect(image).toHaveAttribute('src', `/platform-${platform}.svg`);
     await expect(image).toHaveCSS('width', '16px');
-    await expect(image).toHaveCSS('top', '-2px');
+    await expect(image).toHaveCSS('top', '0px');
     await expect(image).toHaveCSS('filter', 'grayscale(1)');
     await expect(image).toHaveCSS('opacity', '0.55');
     await icon.hover();
