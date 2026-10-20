@@ -32,7 +32,8 @@ function mount() {
 
 it('routes reads and saves to the selected owner and clears passwords after save', async () => {
   const client = mount();
-  fireEvent.change(screen.getByLabelText('Project'), { target: { value: '/srv/project' } });
+  expect(screen.queryByLabelText('Project')).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: 'Open configuration for srv/project' }));
   await screen.findByLabelText('Target name');
   expect(mocks.call).toHaveBeenCalledWith(mocks.pages[0], 'project-a', 'read', undefined, expect.any(AbortSignal));
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'private-write' } });
@@ -47,7 +48,7 @@ it('routes reads and saves to the selected owner and clears passwords after save
 
 it('does not overwrite an edit or retry a failed save', async () => {
   mount();
-  fireEvent.change(screen.getByLabelText('Project'), { target: { value: '/srv/project' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Open configuration for srv/project' }));
   fireEvent.change(await screen.findByLabelText('Target name'), { target: { value: 'unsaved' } });
   mocks.call.mockRejectedValue(new Error('conflict'));
   fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }));
@@ -59,13 +60,13 @@ it('does not overwrite an edit or retry a failed save', async () => {
 it('renders a results-only document with null fields', async () => {
   mocks.call.mockResolvedValue({ revision: 'r1', fields: null, values: {}, tree: { available: true, nodes: [{ id: 'result', title: 'Saved finding' }] } });
   mount();
-  fireEvent.change(screen.getByLabelText('Project'), { target: { value: '/srv/project' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Open configuration for srv/project' }));
   expect(await screen.findByText('Saved finding')).toBeInTheDocument();
 });
 
 it('keeps saved values and revision when an older polling read finishes late', async () => {
   const client = mount();
-  fireEvent.change(screen.getByLabelText('Project'), { target: { value: '/srv/project' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Open configuration for srv/project' }));
   fireEvent.change(await screen.findByLabelText('Target name'), { target: { value: 'production' } });
   const key = ['plugin-page-document', 'machine', 'org.example.pentest', 'pentest', 'project-a'];
   const old = client.getQueryData(key) as { revision: string; values: object };
@@ -89,6 +90,19 @@ it('hides unavailable plugin links and refuses a direct route', async () => {
   expect(mocks.call).not.toHaveBeenCalled();
   render(<MemoryRouter><PluginPageNav /></MemoryRouter>);
   expect(screen.queryByRole('link', { name: 'Pentest' })).not.toBeInTheDocument();
+});
+
+it('lists only saved configurations and uses the project picker only when creating one', async () => {
+  mocks.call.mockResolvedValue({ configured: false, revision: 'r1', fields: [], values: {}, tree: {} });
+  mount();
+  await screen.findByText(/No saved configurations/);
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'New configuration' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Configuration project' }));
+  fireEvent.click(screen.getByRole('option', { name: 'srv/project' }));
+  await screen.findByRole('button', { name: 'Save configuration' });
+  fireEvent.click(screen.getByRole('button', { name: 'Back to configurations' }));
+  await screen.findByText(/No saved configurations/);
 });
 
 it('adds an owner-qualified navigation link', async () => {

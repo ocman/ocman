@@ -1,5 +1,15 @@
 # Plugin protocol v1
 
+Page forms also support `projects`, a newline-separated string rendered with
+the host's owner-local multi-project picker, and `select`. A `select` field must
+set `optionsFrom` to a sibling `list` field whose first field is `text`. The host
+uses that text field's values as the choices and updates them as rows change.
+Plugins still validate saved paths and selected values. `PageDocument.configured`
+is an optional boolean indicating whether a project has a saved configuration.
+The workspace homepage uses it to omit unconfigured projects; older documents
+fall back to nonempty values or available results. These field types require a
+host SDK with project-picker support.
+
 For installation, Settings controls, diagnostics, removal, and development, see
 the [plugin guide](../../docs/features/plugins.md).
 

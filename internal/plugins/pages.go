@@ -23,18 +23,20 @@ type PageRequest struct {
 }
 
 type PageField struct {
-	Key    string      `json:"key"`
-	Label  string      `json:"label"`
-	Type   string      `json:"type"` // text, multiline, secret, boolean, list
-	Help   string      `json:"help,omitempty"`
-	Fields []PageField `json:"fields,omitempty"`
+	Key         string      `json:"key"`
+	Label       string      `json:"label"`
+	Type        string      `json:"type"` // text, multiline, secret, boolean, list, projects, select
+	Help        string      `json:"help,omitempty"`
+	Fields      []PageField `json:"fields,omitempty"`
+	OptionsFrom string      `json:"optionsFrom,omitempty"`
 }
 
 type PageDocument struct {
-	Revision string          `json:"revision"`
-	Fields   []PageField     `json:"fields"`
-	Values   json.RawMessage `json:"values"`
-	Tree     PaneTree        `json:"tree"`
+	Revision   string          `json:"revision"`
+	Fields     []PageField     `json:"fields"`
+	Values     json.RawMessage `json:"values"`
+	Tree       PaneTree        `json:"tree"`
+	Configured *bool           `json:"configured,omitempty"`
 }
 
 func (d Description) validatePages() error {
@@ -71,15 +73,16 @@ func DecodePageDocument(raw []byte) (PageDocument, error) {
 	// Fields decodes as raw JSON so an absent or null schema is a valid
 	// results-only document rather than a rejected plugin response.
 	var wire struct {
-		Revision string          `json:"revision"`
-		Fields   json.RawMessage `json:"fields"`
-		Values   json.RawMessage `json:"values"`
-		Tree     PaneTree        `json:"tree"`
+		Revision   string          `json:"revision"`
+		Fields     json.RawMessage `json:"fields"`
+		Values     json.RawMessage `json:"values"`
+		Tree       PaneTree        `json:"tree"`
+		Configured *bool           `json:"configured,omitempty"`
 	}
 	if decodePaneJSON(raw, &wire) != nil || len(wire.Revision) > 128 || len(wire.Values) == 0 {
 		return PageDocument{}, ErrInvalidMessage
 	}
-	p := PageDocument{Revision: wire.Revision, Values: wire.Values, Tree: wire.Tree}
+	p := PageDocument{Revision: wire.Revision, Values: wire.Values, Tree: wire.Tree, Configured: wire.Configured}
 	if len(wire.Fields) > 0 && string(wire.Fields) != "null" {
 		// Keep the strict recursive schema decode: only the whole schema is
 		// optional, not its shape.
@@ -113,7 +116,16 @@ func validPageFields(fields []PageField, depth int, count *int) bool {
 	seen := map[string]bool{}
 	for _, f := range fields {
 		*count++
-		if *count > 128 || !settingKey.MatchString(f.Key) || !validText(f.Label) || len(f.Help) > 4096 || seen[f.Key] || !slices.Contains([]string{"text", "multiline", "secret", "boolean", "list"}, f.Type) {
+		if *count > 128 || !settingKey.MatchString(f.Key) || !validText(f.Label) || len(f.Help) > 4096 || seen[f.Key] || !slices.Contains([]string{"text", "multiline", "secret", "boolean", "list", "projects", "select"}, f.Type) {
+			return false
+		}
+		if f.Type == "select" {
+			if !slices.ContainsFunc(fields, func(source PageField) bool {
+				return source.Key == f.OptionsFrom && source.Type == "list" && len(source.Fields) > 0 && source.Fields[0].Type == "text"
+			}) {
+				return false
+			}
+		} else if f.OptionsFrom != "" {
 			return false
 		}
 		if f.Type != "list" && len(f.Fields) > 0 || f.Type == "list" && len(f.Fields) == 0 {

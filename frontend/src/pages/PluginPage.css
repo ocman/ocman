@@ -1,6 +1,18 @@
-.plugin-page { display: grid; gap: 1rem; max-width: 76rem; margin: 0 auto; }
+.plugin-page { display: grid; gap: 1rem; width: 100%; min-width: 0; }
 .plugin-page-editor, .plugin-page-list { display: grid; gap: 1rem; min-width: 0; }
 .plugin-page fieldset { border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; }
 .plugin-page-field { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; }
 .plugin-page-field small { color: var(--text-dim); }
 .plugin-page textarea { min-height: 5rem; }
+.plugin-page .plugin-page-editor, .plugin-page .plugin-page-list { border: 0; padding: 0; }
+.plugin-page-heading, .plugin-configuration-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.plugin-configuration-list { display: grid; gap: 0.75rem; }
+.plugin-configuration-card, .plugin-page-create, .plugin-page-item { border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; background: var(--bg-card); }
+.plugin-configuration-card small, .plugin-page-help, .plugin-project-picker small { color: var(--text-dim); overflow-wrap: anywhere; }
+.plugin-page-item summary { cursor: pointer; font-weight: 600; padding-bottom: 0.75rem; }
+.plugin-page-item-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 1.5rem; }
+.plugin-page-item-fields > .plugin-page-list { grid-column: 1 / -1; }
+.plugin-project-picker ul { list-style: none; margin: 0; padding: 0; }
+.plugin-project-picker li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.plugin-project-picker li span { overflow-wrap: anywhere; }
+@media (width <= 700px) { .plugin-page-item-fields { grid-template-columns: minmax(0, 1fr); } }

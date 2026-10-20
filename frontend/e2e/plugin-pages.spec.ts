@@ -1,19 +1,26 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 import type { PageDocument } from '../src/lib/pluginPages';
 
-test('enabled plugin workspace appears in navigation and saves private target settings', async ({ mockedPage: page }) => {
+test('enabled plugin workspace appears in navigation and saves private target settings', async ({ mockedPage: page }, testInfo) => {
   // Never send an unmocked API request to a developer's running backend.
   await page.context().route('**/api/**', (route) => route.abort());
   await page.route('/api/capabilities', (route) => route.fulfill({ json: {
     hosts: [{ remoteId: 'local', remoteName: 'This machine', pluginManagement: true, capabilities: {} }], platforms: [],
   } }));
   await page.route('/api/plugins/pages?*', (route) => route.fulfill({ json: [{ ownerId: 'local', pluginId: 'be.nousefreak.pentest', page: { id: 'pentest', label: 'Pentest' } }] }));
-  await page.route('/api/sessions?*', (route) => route.fulfill({ json: [{ ...MOCK_SESSION, projectId: 'project-a' }] }));
+  await page.route('/api/projects*', (route) => route.fulfill({ json: [
+    { directory: MOCK_SESSION.directory }, { directory: '/home/user/projects/api' },
+  ] }));
+  await page.route('/api/sessions?*', (route) => {
+    const directory = new URL(route.request().url()).searchParams.get('dir') || MOCK_SESSION.directory;
+    return route.fulfill({ json: [{ ...MOCK_SESSION, directory, projectId: directory === MOCK_SESSION.directory ? 'project-a' : 'project-api' }] });
+  });
   await page.route('/api/plugins/actions?*', (route) => route.fulfill({ json: [{ ownerId: 'local', pluginId: 'be.nousefreak.pentest', scope: 'owner', action: { id: 'start-pentest', label: 'Start pentest run', placement: 'project' } }] }));
   let doc: PageDocument = {
-    revision: 'r1', fields: [{ key: 'selected_target', label: 'Selected target', type: 'text' },
+    configured: false, revision: 'r1', fields: [{ key: 'selected_target', label: 'Target to scan', type: 'select', optionsFrom: 'targets' },
       { key: 'targets', label: 'Targets', type: 'list', fields: [
         { key: 'name', label: 'Target name', type: 'text' }, { key: 'base_url', label: 'Base URL', type: 'text' },
+        { key: 'projects', label: 'Code projects', type: 'projects' },
         { key: 'credentials', label: 'Credentials', type: 'list', fields: [{ key: 'user', label: 'Username', type: 'text' }, { key: 'pass', label: 'Password', type: 'secret' }] },
       ] }], values: { selected_target: '', targets: [] }, tree: { available: true, nodes: [{ id: 'run-1', title: 'Staging scan', status: 'closed' }] },
   };
@@ -21,11 +28,13 @@ test('enabled plugin workspace appears in navigation and saves private target se
   await page.route('/api/plugins/pages/call', (route) => {
     const input = route.request().postDataJSON();
     expect(input.ownerId).toBe('local');
+    if (input.request.projectId === 'project-api') return route.fulfill({ json: { ...doc, configured: false, values: {}, tree: {} } });
     expect(input.request.projectId).toBe('project-a');
     if (input.method === 'save') {
       expect(input.request.revision).toBe('r1');
       expect(input.request.values.targets[0].credentials[0].pass).toBe('write-only');
-      doc = { ...doc, revision: 'r2', values: { ...input.request.values, targets: [{ ...input.request.values.targets[0], credentials: [{ ref: '0:0', user: 'alice', pass: '' }] }] } };
+      expect(input.request.values.targets[0].projects).toBe(`${MOCK_SESSION.directory}\n/home/user/projects/api`);
+      doc = { ...doc, configured: true, revision: 'r2', values: { ...input.request.values, targets: [{ ...input.request.values.targets[0], credentials: [{ ref: '0:0', user: 'alice', pass: '' }] }, input.request.values.targets[1]] } };
       saved++;
     }
     return route.fulfill({ json: doc });
@@ -33,14 +42,24 @@ test('enabled plugin workspace appears in navigation and saves private target se
   await page.goto('/sessions');
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Pentest' }).click();
   await expect(page.getByRole('heading', { name: 'Pentest', exact: true })).toBeVisible();
-  await page.getByLabel('Project', { exact: true }).selectOption(MOCK_SESSION.directory);
+  await expect(page.getByText(/No saved configurations/)).toBeVisible();
+  await page.getByRole('button', { name: 'New configuration', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Configuration project', exact: true }).click();
+  await page.getByRole('option', { name: 'projects/myapp', exact: true }).click();
   await page.getByRole('button', { name: 'Add Targets', exact: true }).click();
-  await page.getByLabel('Selected target', { exact: true }).fill('staging');
   await page.getByLabel('Targets 1: Target name', { exact: true }).fill('staging');
+  await page.getByLabel('Target to scan', { exact: true }).selectOption('staging');
   await page.getByLabel('Targets 1: Base URL', { exact: true }).fill('https://example.com');
+  await page.getByRole('combobox', { name: 'Targets 1: Code projects', exact: true }).click();
+  await page.getByRole('option', { name: 'projects/myapp', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Targets 1: Code projects', exact: true }).click();
+  await page.getByRole('option', { name: 'projects/api', exact: true }).click();
   await page.getByRole('button', { name: 'Add Credentials', exact: true }).click();
   await page.getByLabel('Targets 1: Credentials 1: Username', { exact: true }).fill('alice');
   await page.getByLabel('Targets 1: Credentials 1: Password', { exact: true }).fill('write-only');
+  await page.getByRole('button', { name: 'Add Targets', exact: true }).click();
+  await page.getByLabel('Targets 2: Target name', { exact: true }).fill('production');
+  await page.getByLabel('Targets 2: Base URL', { exact: true }).fill('https://production.example.com');
   await expect(page.getByRole('button', { name: 'Start pentest run' })).toBeDisabled();
   await page.getByRole('button', { name: 'Save configuration' }).click();
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
@@ -48,6 +67,16 @@ test('enabled plugin workspace appears in navigation and saves private target se
   await expect(page.getByRole('button', { name: 'Start pentest run' })).toBeEnabled();
   await expect(page.getByText('Staging scan', { exact: true })).toBeVisible();
   expect(saved).toBe(1);
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole('heading', { name: 'Pentest', exact: true }).scrollIntoViewIfNeeded();
+  const editorScreenshot = testInfo.outputPath('configuration-editor.png');
+  await page.screenshot({ path: editorScreenshot, fullPage: true });
+  await testInfo.attach('configuration-editor', { path: editorScreenshot, contentType: 'image/png' });
+  await page.getByRole('button', { name: 'Back to configurations', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Open configuration for projects\/myapp/ })).toBeVisible();
+  const listScreenshot = testInfo.outputPath('saved-configurations.png');
+  await page.screenshot({ path: listScreenshot, fullPage: true });
+  await testInfo.attach('saved-configurations', { path: listScreenshot, contentType: 'image/png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('navigation', { name: 'Phone navigation' }).getByRole('link', { name: 'Sessions', exact: true }).click();
   await expect(page).toHaveURL(/\/sessions$/);

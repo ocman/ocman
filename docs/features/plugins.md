@@ -22,8 +22,10 @@ section for its grants, configuration, health and diagnostics.
 
 Enabled owner-scoped plugins can declare `page.v1` workspaces. After approval of
 `page.project`, each page appears in the main navigation and the phone's More
-menu. The route records the owner, plugin and page identity. Select a project on
-that owner before loading or saving data. Disconnected owners fail visibly;
+menu. The route records the owner, plugin and page identity. The homepage lists
+saved configurations for that owner's known projects. Open a configuration to
+edit it, or use **New configuration** and the app's searchable project picker.
+Disconnected owners fail visibly;
 requests never fall back to a different machine.
 
 The host renders bounded typed forms and read-only result trees, not plugin HTML,
@@ -31,6 +33,18 @@ JavaScript or styles. Plugins own validation and private storage. Save calls are
 not automatically retried. Plugins should use revisions to refuse stale writes
 and must omit stored passwords from read/save responses. A blank password can
 mean unchanged only when the plugin explicitly implements that behavior.
+
+Editors use the available page width. Named list entries can be collapsed.
+Plugins can declare `projects` fields for adding multiple code projects with
+the same project picker. Choices are restricted to the plugin's owner; existing
+unavailable paths stay visible until you explicitly remove them. Project paths
+are stored internally, but you do not need to type them.
+
+A `select` field can draw its choices from a sibling list. Pentest uses this for
+**Target to scan**, rather than requiring an exact target name to be typed.
+Each target is an independent website or environment with its own accounts,
+code projects and limits. Switching the target requires saving before using the
+scan controls or viewing its results.
 
 Project actions remain grant checked and use the existing confirmation dialog.
 A workspace cannot bypass engagement consent or run a command through a form.

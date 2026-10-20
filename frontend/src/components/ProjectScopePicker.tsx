@@ -42,6 +42,8 @@ export interface ProjectScopePickerProps {
    * standalone pages) show the picker bare.
    */
   showLabel?: boolean;
+  onlyProjects?: boolean;
+  placeholder?: string;
 }
 
 // Indent character: an em-space, repeated. Keeps the dropdown readable
@@ -55,6 +57,8 @@ export function ProjectScopePicker({
   scopePrefix = '',
   label = 'Project scope',
   showLabel = false,
+  onlyProjects = false,
+  placeholder = 'All projects',
 }: ProjectScopePickerProps) {
   // Memoise so we don't rebuild the trie on every parent re-render. The
   // input list reference changes whenever `projects` is reloaded, which
@@ -68,9 +72,10 @@ export function ProjectScopePicker({
       value: project.key ?? project.directory,
       label: `${label}${project.remoteName ? ` · ${project.remoteName}` : ''}`,
     }));
+    if (onlyProjects) return projectOptions;
     if (!scopePrefix && !leaves.some((project) => project.key)) return [scope];
     return [...(!leaves.length || option.projectCount > 1 ? [scope] : []), ...projectOptions];
-  }), [projects, scopePrefix]);
+  }), [projects, scopePrefix, onlyProjects]);
 
   const unavailable = !!value && !options.some((option) => option.value === value);
   const disabled = options.length === 0 && !value;
@@ -81,11 +86,11 @@ export function ProjectScopePicker({
         value={value}
         disabled={disabled}
         ariaLabel={label}
-        placeholder="All projects"
+        placeholder={placeholder}
         searchLabel="Search projects"
         onChange={onChange}
         options={[
-          { value: '', label: 'All projects' },
+          { value: '', label: placeholder },
           ...(unavailable ? [{ value, label: 'Unavailable project', disabled: true }] : []),
           ...options,
         ]}

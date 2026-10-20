@@ -533,6 +533,9 @@ flowchart TD
   raw stdio messages. Both transports use the same lifecycle and action broker.
   Catalog identities are `(ownerId, description.id)`; nested capabilities and
   instances inherit that owner. Management and artifact endpoints take `ownerId`.
+  Plugin workspace homepages read typed documents for the owner's known projects
+  and list saved configurations. Editors reuse the app project picker for
+  owner-local multi-project fields; plugin responses remain data, never UI code.
   Action requests distinguish the installation `ownerId` from `context.ownerId`.
   Project/session listings combine the owner's owner-scoped actions with the hub's
   hub-scoped actions. Owner-scoped actions run on the owner; hub-scoped actions run

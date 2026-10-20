@@ -20,6 +20,22 @@ function Form() {
 }
 
 describe('Plugin page fields', () => {
+  it('keeps target choices in sync with named rows and shows stale selections', () => {
+    function SelectionForm() {
+      const [values, setValues] = useState<PageValues>({ selected: 'removed', targets: [{ name: 'staging' }] });
+      return <PluginPageFields fields={[
+        { key: 'selected', label: 'Target to scan', type: 'select', optionsFrom: 'targets', help: 'Save before scanning' },
+        { key: 'targets', label: 'Targets', type: 'list', fields: [{ key: 'name', label: 'Name', type: 'text' }] },
+      ]} values={values} onChange={setValues} />;
+    }
+    render(<SelectionForm />);
+    expect(screen.getByRole('option', { name: /no matching target/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Targets 1: Name'), { target: { value: 'production' } });
+    expect(screen.queryByRole('option', { name: 'staging' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Target to scan'), { target: { value: 'production' } });
+    expect(screen.getByLabelText('Target to scan')).toHaveValue('production');
+    expect(screen.getByText('Save before scanning')).toBeInTheDocument();
+  });
   it('edits nested target and credential lists without fixed slots', () => {
     render(<Form />);
     fireEvent.click(screen.getByRole('button', { name: 'Add Targets' }));

@@ -5,7 +5,10 @@ import { api } from '../lib/api';
 import { useProjects } from '../lib/queries';
 import { callPluginPage, usePluginPages, type PluginPage as Page, type PageDocument } from '../lib/pluginPages';
 import { pluginActions, type PluginAction, type PluginActionRequest } from '../lib/plugins';
-import { Button, ButtonGroup, SelectField } from '../components/Control';
+import { Button, ButtonGroup } from '../components/Control';
+import { ProjectScopePicker } from '../components/ProjectScopePicker';
+import { PluginConfigurations, type Configuration } from '../components/PluginConfigurations';
+import { shortPath } from '../lib/format';
 import { PluginPageFields } from '../components/PluginPageFields';
 import { PluginTreePane } from '../components/PluginTreePane';
 import { PluginActionDialog } from '../components/PluginActionDialog';
@@ -17,35 +20,50 @@ export function PluginPage() {
   const ownerId = search.get('ownerId') || 'local';
   const catalog = usePluginPages();
   const page = catalog.pages.find((p) => p.ownerId === ownerId && p.pluginId === pluginId && p.page.id === pageId);
+  if (!page) return <p role="status">{catalog.loading ? 'Loading plugin…' : 'Plugin unavailable. Check its owner, enablement and page.project grant in Settings.'}</p>;
+  return <Workspace key={`${ownerId}/${pluginId}/${pageId}`} page={page} />;
+}
+
+function Workspace({ page }: { page: Page }) {
   const projects = useProjects();
   const [directory, setDirectory] = useState('');
-  const choices = (projects.data ?? []).filter((p) => (p.remoteId || 'local') === ownerId);
-  if (!page) return <p role="status">{catalog.loading ? 'Loading plugin…' : 'Plugin unavailable. Check its owner, enablement and page.project grant in Settings.'}</p>;
-  return <section className="plugin-page" key={`${ownerId}/${pluginId}/${pageId}`}>
+  const [creating, setCreating] = useState(false);
+  const [configuration, setConfiguration] = useState<Configuration | null>(null);
+  const choices = (projects.data ?? []).filter((p) => (p.remoteId || 'local') === page.ownerId);
+  const back = () => { setDirectory(''); setConfiguration(null); setCreating(false); };
+  return <section className="plugin-page">
     <h1>{page.page.label}</h1>
-    <label>Project on {ownerId}<SelectField aria-label="Project" value={directory} onChange={(e) => setDirectory(e.target.value)}>
-      <option value="">Select a project</option>
-      {choices.map((p) => <option key={p.directory} value={p.directory}>{p.directory}</option>)}
-    </SelectField></label>
+    {!directory && !configuration ? <>
+      <div className="plugin-page-heading"><div><h2>Configurations</h2><p>Each configuration groups the targets, code projects and scan settings for one project.</p></div>
+        <Button variant="accent" onClick={() => setCreating(true)}>New configuration</Button></div>
+      {creating && <div className="plugin-page-create"><p>Choose the project that owns this configuration. You can attach more code projects to each target.</p>
+        <ProjectScopePicker projects={choices} value="" onlyProjects label="Configuration project" placeholder="Choose a project…"
+          onChange={(dir) => { if (choices.some((p) => p.directory === dir)) setDirectory(dir); }} />
+        <Button onClick={() => setCreating(false)}>Cancel</Button></div>}
+      <PluginConfigurations page={page} directories={[...new Set(choices.map((p) => p.directory))]} onOpen={setConfiguration} />
+    </> : <>
+      <div><h2>{shortPath(configuration?.directory ?? directory)}</h2><p>{page.ownerId} · {configuration?.directory ?? directory}</p></div>
+      {configuration ? <PageEditor page={page} projectId={configuration.projectId} initialDocument={configuration.document} onBack={back} />
+        : <ProjectPage key={directory} page={page} directory={directory} onBack={back} />}
+    </>}
     {projects.isError && <p role="alert">Could not load projects.</p>}
-    {directory && choices.some((p) => p.directory === directory) && <ProjectPage key={`${ownerId}/${pluginId}/${pageId}/${directory}`} page={page} directory={directory} />}
   </section>;
 }
 
-function ProjectPage({ page, directory }: { page: Page; directory: string }) {
+function ProjectPage({ page, directory, onBack }: { page: Page; directory: string; onBack: () => void }) {
   const project = useQuery({ queryKey: ['plugin-page-project', page.ownerId, directory], retry: false,
     queryFn: async ({ signal }) => (await api.sessions({ dir: directory, limit: 0 }, signal))
       .find((s) => s.directory === directory && (s.remoteId || 'local') === page.ownerId)?.projectId ?? null });
-  if (project.isPending) return <p role="status">Loading project…</p>;
-  if (!project.data || project.isError) return <p role="alert">No owner-local project identity is available for this project.</p>;
-  return <PageEditor key={project.data} page={page} projectId={project.data} />;
+  if (project.isPending) return <><Button onClick={onBack}>Back to configurations</Button><p role="status">Loading project…</p></>;
+  if (!project.data || project.isError) return <><Button onClick={onBack}>Back to configurations</Button><p role="alert">No owner-local project identity is available for this project.</p></>;
+  return <PageEditor key={project.data} page={page} projectId={project.data} onBack={onBack} />;
 }
 
-function PageEditor({ page, projectId }: { page: Page; projectId: string }) {
+function PageEditor({ page, projectId, initialDocument, onBack }: { page: Page; projectId: string; initialDocument?: PageDocument; onBack: () => void }) {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const queryKey = ['plugin-page-document', page.ownerId, page.pluginId, page.page.id, projectId];
-  const document = useQuery({ queryKey,
+  const document = useQuery({ queryKey, initialData: initialDocument,
     queryFn: ({ signal }) => callPluginPage(page, projectId, 'read', undefined, signal), retry: false, gcTime: 0,
     enabled: !busy, staleTime: 10_000, refetchInterval: busy ? false : 10_000 });
   const [draft, setDraft] = useState<PageDocument | null>(null);
@@ -73,8 +91,9 @@ function PageEditor({ page, projectId }: { page: Page; projectId: string }) {
   if (!current) return <><p role={document.isError ? 'alert' : 'status'}>{document.isError ? 'Could not read target configuration. Check the plugin and file permissions.' : 'Loading target configuration…'}</p>
     <Button onClick={() => void document.refetch()}>Retry</Button></>;
   return <>
+    <Button disabled={busy} onClick={() => { if (!draft || window.confirm('Discard unsaved edits?')) onBack(); }}>Back to configurations</Button>
     <fieldset disabled={busy} className="plugin-page-editor">
-      <PluginPageFields fields={current.fields} values={current.values} onChange={(values) => { setMessage(''); setDraft({ ...current, values }); }} />
+      <PluginPageFields fields={current.fields} values={current.values} ownerId={page.ownerId} onChange={(values) => { setMessage(''); setDraft({ ...current, values }); }} />
       <ButtonGroup label="Configuration controls"><Button variant="accent" onClick={() => void save()}>Save configuration</Button>
         <Button onClick={() => { if (draft && !window.confirm('Discard unsaved edits and reload?')) return; setDraft(null); setMessage(''); void document.refetch(); }}>Reload configuration</Button></ButtonGroup>
     </fieldset>
