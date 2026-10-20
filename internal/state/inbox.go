@@ -153,7 +153,11 @@ func (d *DB) EnsurePermissionInboxItem(ctx context.Context, permission InboxPerm
 	}
 	title := "Permission requested: " + permission.Permission
 	body := "A session is waiting for your permission. Review the request below before responding."
-	_, err = d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, ?, ?, ?, NULL, NULL, 'permission', ?, '') ON CONFLICT(id) DO NOTHING`, permissionInboxID(permission.Platform, permission.SessionID, permission.PermissionID), title, body, time.Now().UnixMilli(), string(payload))
+	// A fast reply can create a tombstone before the asked event is observed.
+	// Retain the original request for history without reopening its notification.
+	_, err = d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, ?, ?, ?, NULL, NULL, 'permission', ?, '')
+		ON CONFLICT(id) DO UPDATE SET permission_json = excluded.permission_json
+		WHERE inbox_item.permission_json = ''`, permissionInboxID(permission.Platform, permission.SessionID, permission.PermissionID), title, body, time.Now().UnixMilli(), string(payload))
 	return err
 }
 

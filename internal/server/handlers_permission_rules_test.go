@@ -15,6 +15,11 @@ func newPermissionRulesTestServer(t *testing.T, fake *fakePlatform) *Server {
 	t.Helper()
 	srv, reg := newSessionsTestServer(t)
 	fake.sessions = []db.Session{mkSession(string(fake.ID()), "sess-1", "t", 1000)}
+	if fake.sessionDetailFn == nil {
+		fake.sessionDetailFn = func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &fake.sessions[0]}, nil
+		}
+	}
 	reg.Register(fake)
 	return srv
 }

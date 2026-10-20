@@ -39,8 +39,9 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 
 func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 	deps := autoapprove.Deps{
-		OpenCodeAuth: s.openCodeAuth,
-		SessionDir:   s.autoApproveSessionDir,
+		OpenCodeAuth:     s.openCodeAuth,
+		SessionDir:       s.autoApproveSessionDir,
+		PermissionParent: permissionPolicyParent,
 		ParentSessionID: func(ctx context.Context, childID string) (string, bool) {
 			if s.db == nil {
 				return "", false

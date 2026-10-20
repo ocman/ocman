@@ -87,7 +87,8 @@ type Deps struct {
 	// inherits the parent's safe-command cache: a command the parent
 	// already had auto-approved is approved for the child without a
 	// fresh judge run or a user prompt. May be nil.
-	ParentSessionID func(context.Context, string) (parentID string, ok bool)
+	ParentSessionID  func(context.Context, string) (parentID string, ok bool)
+	PermissionParent func(context.Context, platforms.Platform, string) (string, error)
 
 	// OpencodePlatform resolves the OpenCode platform adapter for the
 	// headless watcher. May be nil / return nil; Ensure fails safe.
@@ -171,7 +172,8 @@ func (s *Service) ObserveQuestionPrompt(platformID platforms.ID, prompt platform
 // ocman process. The zero value is usable in tests; production code
 // uses NewService so the judge is wired against real port discovery.
 type Service struct {
-	deps Deps
+	deps          Deps
+	manualRulesMu sync.RWMutex
 
 	// judge is the default OpenCode backend and owns its model settings.
 	judge *PermissionJudge

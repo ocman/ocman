@@ -35,6 +35,7 @@ import { RateLimitBanner } from '../../components/RateLimitBanner';
 import './ComposerNotices.css';
 import { BackgroundTasksNotice } from './BackgroundTasksNotice';
 import { PermissionModeLock } from '../../components/PermissionModeLock';
+import { SessionPermissions } from '../../components/session/SessionPermissions';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
 import { useUiStore } from '../../lib/uiStore';
@@ -1139,6 +1140,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 </PreviewSessionContext.Provider>
                 </PreviewOwnerContext.Provider>
               </ErrorBoundary>
+              <SessionPermissions key={`${session.platform}/${session.id}`} sessionId={session.id} platform={session.platform} />
               <SessionModals
                 session={session}
                 messages={messages}

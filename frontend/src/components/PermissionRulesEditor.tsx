@@ -1,6 +1,7 @@
 import type { PermissionRule } from '../lib/api.types';
 import { PERMISSION_MODES, classifyPermissionMode } from '../lib/permissionModes';
 import { ButtonGroup, SelectField, TextField } from './Control';
+import { IconButton } from './IconButton';
 import './PermissionRulesEditor.css';
 
 const KNOWN_PERMISSIONS = ['*', 'bash', 'edit', 'external_directory'];
@@ -17,9 +18,12 @@ interface Props {
   rules: PermissionRule[];
   onChange: (rules: PermissionRule[]) => void;
   disabled?: boolean;
+  presets?: boolean;
+  reorderable?: boolean;
+  emptyMessage?: string;
 }
 
-export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
+export function PermissionRulesEditor({ rules, onChange, disabled, presets = true, reorderable = false, emptyMessage = 'No rules — the session uses platform defaults.' }: Props) {
   const modeId = classifyPermissionMode(rules);
 
   const setRule = (i: number, patch: Partial<PermissionRule>) => {
@@ -38,9 +42,9 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
   };
 
   return (
-    <div className="perm-rules-editor" aria-label="Permission rules">
+    <div className={`perm-rules-editor${reorderable ? ' perm-rules-editor--reorderable' : ''}`} aria-label="Permission rules">
       {/* Preset strip */}
-      <ButtonGroup label="Permission presets">
+      {presets && <ButtonGroup label="Permission presets">
         {PERMISSION_MODES.map((mode) => (
           <button
             key={mode.id}
@@ -58,7 +62,7 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
             Custom
           </span>
         )}
-      </ButtonGroup>
+      </ButtonGroup>}
 
       {/* Rule rows */}
       {rules.length > 0 && (
@@ -130,6 +134,18 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
                 </button>
 
                 {err && <p className="perm-rules-row-error" role="alert">{err}</p>}
+                {reorderable && <ButtonGroup className="perm-rules-order" label={`Move rule ${i + 1}`}>
+                  <IconButton icon="bi-arrow-up" variant="ghost" disabled={disabled || i === 0} label={`Move rule ${i + 1} up`} onClick={() => {
+                    const next = [...rules];
+                    [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                    onChange(next);
+                  }} />
+                  <IconButton icon="bi-arrow-down" variant="ghost" disabled={disabled || i === rules.length - 1} label={`Move rule ${i + 1} down`} onClick={() => {
+                    const next = [...rules];
+                    [next[i], next[i + 1]] = [next[i + 1], next[i]];
+                    onChange(next);
+                  }} />
+                </ButtonGroup>}
               </div>
             );
           })}
@@ -148,7 +164,7 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
 
       {rules.length === 0 && (
         <p className="perm-rules-empty">
-          No rules — the session uses platform defaults.
+          {emptyMessage}
         </p>
       )}
     </div>

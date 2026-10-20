@@ -82,7 +82,7 @@ func TestModuleRoutesAreAuthGuarded(t *testing.T) {
 			t.Errorf("%s mounted as %s, want localSetting: the judge endpoint is an outbound-URL credential switch and must stay localhost-gated", pattern, kind)
 		}
 	}
-	if len(r.kind) != 8 {
+	if len(r.kind) != 10 {
 		t.Fatalf("routes = %v", r.kind)
 	}
 }

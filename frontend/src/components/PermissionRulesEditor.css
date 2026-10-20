@@ -76,6 +76,63 @@
   grid-template-rows: auto auto;
 }
 
+.perm-rules-editor--reorderable .perm-rules-header,
+.perm-rules-editor--reorderable .perm-rules-row {
+  grid-template-columns: minmax(80px, 1fr) minmax(120px, 3fr) 90px 56px 28px;
+}
+
+.perm-rules-order {
+  grid-column: 4;
+  grid-row: 1;
+  flex-wrap: nowrap;
+  gap: 0;
+  align-self: center;
+}
+
+.perm-rules-editor--reorderable .perm-rules-remove {
+  grid-column: 5;
+  grid-row: 1;
+  align-self: center;
+}
+
+@media (width <= 600px) {
+  .perm-rules-editor--reorderable .perm-rules-header,
+  .perm-rules-editor--reorderable .perm-rules-row {
+    grid-template-columns: minmax(60px, 1fr) minmax(70px, 1fr) 88px 44px;
+  }
+
+  .perm-rules-editor--reorderable .perm-rules-cell {
+    min-width: 0;
+  }
+
+  .perm-rules-editor--reorderable .perm-rules-header > span:nth-child(2) {
+    display: none;
+  }
+
+  .perm-rules-editor--reorderable .perm-rules-cell:first-child {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .perm-rules-editor--reorderable .perm-rules-cell:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .perm-rules-editor--reorderable .perm-rules-cell:nth-child(3) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .perm-rules-editor--reorderable .perm-rules-order {
+    grid-column: 3;
+  }
+
+  .perm-rules-editor--reorderable .perm-rules-remove {
+    grid-column: 4;
+  }
+}
+
 .perm-rules-cell .oc-field {
   width: 100%;
 }

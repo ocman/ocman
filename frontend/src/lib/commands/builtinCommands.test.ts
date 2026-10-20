@@ -18,6 +18,7 @@ describe('BUILTIN_COMMANDS', () => {
       'help',
       'model',
       'move',
+      'permissions',
       'new',
       'rename',
       'routines',

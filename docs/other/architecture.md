@@ -239,7 +239,8 @@ flowchart TD
     App --> Registry
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir + runtime seam]
-    Server --> AutoApprove[internal/autoapprove<br/>safe-command cache + Judge seam]
+    Server --> AutoApprove[internal/autoapprove<br/>session rules, safe-command cache + Judge seam]
+    Browser -->|/permissions: session policy + request history| AutoApprove
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
     Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod, platformsettings]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
@@ -417,6 +418,14 @@ flowchart TD
   `claudecode` is enabled, `autoapprove.ClaudeJudge` runs `claude -p --model
   haiku` with no tools. With neither, an explicit `needs-user` verdict leaves the
   prompt unanswered.
+- **Session approval rules.** `/permissions` reads request history and edits
+  Ocman-only allow/ask/deny patterns through the auto-approve module. Rules are
+  keyed by platform and session in state.db, apply to native nested subagents,
+  and precede native-mode auto-approvals, cached verdicts and the AI judge.
+  A final reply check serializes with saves so an older judge cannot bypass a
+  newly saved ask/deny. Remote platform adapters forward policy reads and writes
+  to the owner over `SessionPermissionPolicy` RPC. Rules and rule-based replies
+  never enter native agent settings or worktree permission inheritance.
 - **Session summary reads.** Pinned sessions outside the recent window use
   `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound

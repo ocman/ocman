@@ -77,6 +77,11 @@ session's working directory and capture the output in the thread.
 settings and actions. `/new [title]`, `/clear` and `/wt` cover the common
 actions, and renaming is keyboard-driven.
 
+Use [`/permissions`](session-permissions.md) to review requested permissions and
+create session-scoped allow, ask or deny rules, including editable command
+wildcards. These rules control Ocman's approvals without changing native agent
+settings.
+
 **Diffs and changes.** Syntax-highlighted diffs inline in the thread, plus a
 *Changes* sidebar that combines session edits with the working-tree `git`
 diff.

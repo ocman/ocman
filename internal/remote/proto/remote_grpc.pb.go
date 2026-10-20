@@ -19,76 +19,77 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Ocman_Hello_FullMethodName                  = "/ocman.remote.v1.Ocman/Hello"
-	Ocman_Sessions_FullMethodName               = "/ocman.remote.v1.Ocman/Sessions"
-	Ocman_Session_FullMethodName                = "/ocman.remote.v1.Ocman/Session"
-	Ocman_SessionLifecycle_FullMethodName       = "/ocman.remote.v1.Ocman/SessionLifecycle"
-	Ocman_SessionSummary_FullMethodName         = "/ocman.remote.v1.Ocman/SessionSummary"
-	Ocman_SessionsInactiveBefore_FullMethodName = "/ocman.remote.v1.Ocman/SessionsInactiveBefore"
-	Ocman_SessionChanges_FullMethodName         = "/ocman.remote.v1.Ocman/SessionChanges"
-	Ocman_SessionInfo_FullMethodName            = "/ocman.remote.v1.Ocman/SessionInfo"
-	Ocman_AgentCatalog_FullMethodName           = "/ocman.remote.v1.Ocman/AgentCatalog"
-	Ocman_SlashCommands_FullMethodName          = "/ocman.remote.v1.Ocman/SlashCommands"
-	Ocman_SessionModels_FullMethodName          = "/ocman.remote.v1.Ocman/SessionModels"
-	Ocman_DirectoryCatalog_FullMethodName       = "/ocman.remote.v1.Ocman/DirectoryCatalog"
-	Ocman_ListPermissions_FullMethodName        = "/ocman.remote.v1.Ocman/ListPermissions"
-	Ocman_RefreshPermissions_FullMethodName     = "/ocman.remote.v1.Ocman/RefreshPermissions"
-	Ocman_ListQuestions_FullMethodName          = "/ocman.remote.v1.Ocman/ListQuestions"
-	Ocman_PermissionRules_FullMethodName        = "/ocman.remote.v1.Ocman/PermissionRules"
-	Ocman_Capabilities_FullMethodName           = "/ocman.remote.v1.Ocman/Capabilities"
-	Ocman_Owns_FullMethodName                   = "/ocman.remote.v1.Ocman/Owns"
-	Ocman_SendMessage_FullMethodName            = "/ocman.remote.v1.Ocman/SendMessage"
-	Ocman_ExecuteCommand_FullMethodName         = "/ocman.remote.v1.Ocman/ExecuteCommand"
-	Ocman_RunShell_FullMethodName               = "/ocman.remote.v1.Ocman/RunShell"
-	Ocman_RespondPermission_FullMethodName      = "/ocman.remote.v1.Ocman/RespondPermission"
-	Ocman_RespondQuestion_FullMethodName        = "/ocman.remote.v1.Ocman/RespondQuestion"
-	Ocman_RejectQuestion_FullMethodName         = "/ocman.remote.v1.Ocman/RejectQuestion"
-	Ocman_Abort_FullMethodName                  = "/ocman.remote.v1.Ocman/Abort"
-	Ocman_RenameSession_FullMethodName          = "/ocman.remote.v1.Ocman/RenameSession"
-	Ocman_SetPermissionRules_FullMethodName     = "/ocman.remote.v1.Ocman/SetPermissionRules"
-	Ocman_Compact_FullMethodName                = "/ocman.remote.v1.Ocman/Compact"
-	Ocman_ForkSession_FullMethodName            = "/ocman.remote.v1.Ocman/ForkSession"
-	Ocman_MoveSession_FullMethodName            = "/ocman.remote.v1.Ocman/MoveSession"
-	Ocman_CreateSession_FullMethodName          = "/ocman.remote.v1.Ocman/CreateSession"
-	Ocman_NativeQueued_FullMethodName           = "/ocman.remote.v1.Ocman/NativeQueued"
-	Ocman_CancelNativeQueued_FullMethodName     = "/ocman.remote.v1.Ocman/CancelNativeQueued"
-	Ocman_StreamEvents_FullMethodName           = "/ocman.remote.v1.Ocman/StreamEvents"
-	Ocman_GitInfo_FullMethodName                = "/ocman.remote.v1.Ocman/GitInfo"
-	Ocman_GitDiff_FullMethodName                = "/ocman.remote.v1.Ocman/GitDiff"
-	Ocman_GitBranches_FullMethodName            = "/ocman.remote.v1.Ocman/GitBranches"
-	Ocman_ListRepoFiles_FullMethodName          = "/ocman.remote.v1.Ocman/ListRepoFiles"
-	Ocman_ReadRepoFile_FullMethodName           = "/ocman.remote.v1.Ocman/ReadRepoFile"
-	Ocman_SaveComposerAttachment_FullMethodName = "/ocman.remote.v1.Ocman/SaveComposerAttachment"
-	Ocman_GitCheckout_FullMethodName            = "/ocman.remote.v1.Ocman/GitCheckout"
-	Ocman_ProjectUpstreams_FullMethodName       = "/ocman.remote.v1.Ocman/ProjectUpstreams"
-	Ocman_FetchPRHead_FullMethodName            = "/ocman.remote.v1.Ocman/FetchPRHead"
-	Ocman_ListWorktrees_FullMethodName          = "/ocman.remote.v1.Ocman/ListWorktrees"
-	Ocman_WorktreeDefaultBaseRef_FullMethodName = "/ocman.remote.v1.Ocman/WorktreeDefaultBaseRef"
-	Ocman_CreateWorktreeSession_FullMethodName  = "/ocman.remote.v1.Ocman/CreateWorktreeSession"
-	Ocman_RemoveWorktree_FullMethodName         = "/ocman.remote.v1.Ocman/RemoveWorktree"
-	Ocman_LaunchTmux_FullMethodName             = "/ocman.remote.v1.Ocman/LaunchTmux"
-	Ocman_EnsureProjectOpencode_FullMethodName  = "/ocman.remote.v1.Ocman/EnsureProjectOpencode"
-	Ocman_EnsureRuntime_FullMethodName          = "/ocman.remote.v1.Ocman/EnsureRuntime"
-	Ocman_StopProjectOpencode_FullMethodName    = "/ocman.remote.v1.Ocman/StopProjectOpencode"
-	Ocman_RestartProjectOpencode_FullMethodName = "/ocman.remote.v1.Ocman/RestartProjectOpencode"
-	Ocman_ReloadOpencode_FullMethodName         = "/ocman.remote.v1.Ocman/ReloadOpencode"
-	Ocman_ManagedOpencodes_FullMethodName       = "/ocman.remote.v1.Ocman/ManagedOpencodes"
-	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
-	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
-	Ocman_RegisterWebhookInbox_FullMethodName   = "/ocman.remote.v1.Ocman/RegisterWebhookInbox"
-	Ocman_PollWebhookInbox_FullMethodName       = "/ocman.remote.v1.Ocman/PollWebhookInbox"
-	Ocman_InboxItems_FullMethodName             = "/ocman.remote.v1.Ocman/InboxItems"
-	Ocman_ArchivedInboxItems_FullMethodName     = "/ocman.remote.v1.Ocman/ArchivedInboxItems"
-	Ocman_MarkInboxItemRead_FullMethodName      = "/ocman.remote.v1.Ocman/MarkInboxItemRead"
-	Ocman_MarkInboxItemUnread_FullMethodName    = "/ocman.remote.v1.Ocman/MarkInboxItemUnread"
-	Ocman_ArchiveInboxItems_FullMethodName      = "/ocman.remote.v1.Ocman/ArchiveInboxItems"
-	Ocman_PluginOperation_FullMethodName        = "/ocman.remote.v1.Ocman/PluginOperation"
-	Ocman_TermWindows_FullMethodName            = "/ocman.remote.v1.Ocman/TermWindows"
-	Ocman_TermCreateWindow_FullMethodName       = "/ocman.remote.v1.Ocman/TermCreateWindow"
-	Ocman_TermKillWindow_FullMethodName         = "/ocman.remote.v1.Ocman/TermKillWindow"
-	Ocman_TerminalStream_FullMethodName         = "/ocman.remote.v1.Ocman/TerminalStream"
-	Ocman_Projects_FullMethodName               = "/ocman.remote.v1.Ocman/Projects"
-	Ocman_WatchProjects_FullMethodName          = "/ocman.remote.v1.Ocman/WatchProjects"
+	Ocman_Hello_FullMethodName                   = "/ocman.remote.v1.Ocman/Hello"
+	Ocman_Sessions_FullMethodName                = "/ocman.remote.v1.Ocman/Sessions"
+	Ocman_Session_FullMethodName                 = "/ocman.remote.v1.Ocman/Session"
+	Ocman_SessionLifecycle_FullMethodName        = "/ocman.remote.v1.Ocman/SessionLifecycle"
+	Ocman_SessionSummary_FullMethodName          = "/ocman.remote.v1.Ocman/SessionSummary"
+	Ocman_SessionsInactiveBefore_FullMethodName  = "/ocman.remote.v1.Ocman/SessionsInactiveBefore"
+	Ocman_SessionChanges_FullMethodName          = "/ocman.remote.v1.Ocman/SessionChanges"
+	Ocman_SessionInfo_FullMethodName             = "/ocman.remote.v1.Ocman/SessionInfo"
+	Ocman_AgentCatalog_FullMethodName            = "/ocman.remote.v1.Ocman/AgentCatalog"
+	Ocman_SlashCommands_FullMethodName           = "/ocman.remote.v1.Ocman/SlashCommands"
+	Ocman_SessionModels_FullMethodName           = "/ocman.remote.v1.Ocman/SessionModels"
+	Ocman_DirectoryCatalog_FullMethodName        = "/ocman.remote.v1.Ocman/DirectoryCatalog"
+	Ocman_ListPermissions_FullMethodName         = "/ocman.remote.v1.Ocman/ListPermissions"
+	Ocman_RefreshPermissions_FullMethodName      = "/ocman.remote.v1.Ocman/RefreshPermissions"
+	Ocman_ListQuestions_FullMethodName           = "/ocman.remote.v1.Ocman/ListQuestions"
+	Ocman_PermissionRules_FullMethodName         = "/ocman.remote.v1.Ocman/PermissionRules"
+	Ocman_SessionPermissionPolicy_FullMethodName = "/ocman.remote.v1.Ocman/SessionPermissionPolicy"
+	Ocman_Capabilities_FullMethodName            = "/ocman.remote.v1.Ocman/Capabilities"
+	Ocman_Owns_FullMethodName                    = "/ocman.remote.v1.Ocman/Owns"
+	Ocman_SendMessage_FullMethodName             = "/ocman.remote.v1.Ocman/SendMessage"
+	Ocman_ExecuteCommand_FullMethodName          = "/ocman.remote.v1.Ocman/ExecuteCommand"
+	Ocman_RunShell_FullMethodName                = "/ocman.remote.v1.Ocman/RunShell"
+	Ocman_RespondPermission_FullMethodName       = "/ocman.remote.v1.Ocman/RespondPermission"
+	Ocman_RespondQuestion_FullMethodName         = "/ocman.remote.v1.Ocman/RespondQuestion"
+	Ocman_RejectQuestion_FullMethodName          = "/ocman.remote.v1.Ocman/RejectQuestion"
+	Ocman_Abort_FullMethodName                   = "/ocman.remote.v1.Ocman/Abort"
+	Ocman_RenameSession_FullMethodName           = "/ocman.remote.v1.Ocman/RenameSession"
+	Ocman_SetPermissionRules_FullMethodName      = "/ocman.remote.v1.Ocman/SetPermissionRules"
+	Ocman_Compact_FullMethodName                 = "/ocman.remote.v1.Ocman/Compact"
+	Ocman_ForkSession_FullMethodName             = "/ocman.remote.v1.Ocman/ForkSession"
+	Ocman_MoveSession_FullMethodName             = "/ocman.remote.v1.Ocman/MoveSession"
+	Ocman_CreateSession_FullMethodName           = "/ocman.remote.v1.Ocman/CreateSession"
+	Ocman_NativeQueued_FullMethodName            = "/ocman.remote.v1.Ocman/NativeQueued"
+	Ocman_CancelNativeQueued_FullMethodName      = "/ocman.remote.v1.Ocman/CancelNativeQueued"
+	Ocman_StreamEvents_FullMethodName            = "/ocman.remote.v1.Ocman/StreamEvents"
+	Ocman_GitInfo_FullMethodName                 = "/ocman.remote.v1.Ocman/GitInfo"
+	Ocman_GitDiff_FullMethodName                 = "/ocman.remote.v1.Ocman/GitDiff"
+	Ocman_GitBranches_FullMethodName             = "/ocman.remote.v1.Ocman/GitBranches"
+	Ocman_ListRepoFiles_FullMethodName           = "/ocman.remote.v1.Ocman/ListRepoFiles"
+	Ocman_ReadRepoFile_FullMethodName            = "/ocman.remote.v1.Ocman/ReadRepoFile"
+	Ocman_SaveComposerAttachment_FullMethodName  = "/ocman.remote.v1.Ocman/SaveComposerAttachment"
+	Ocman_GitCheckout_FullMethodName             = "/ocman.remote.v1.Ocman/GitCheckout"
+	Ocman_ProjectUpstreams_FullMethodName        = "/ocman.remote.v1.Ocman/ProjectUpstreams"
+	Ocman_FetchPRHead_FullMethodName             = "/ocman.remote.v1.Ocman/FetchPRHead"
+	Ocman_ListWorktrees_FullMethodName           = "/ocman.remote.v1.Ocman/ListWorktrees"
+	Ocman_WorktreeDefaultBaseRef_FullMethodName  = "/ocman.remote.v1.Ocman/WorktreeDefaultBaseRef"
+	Ocman_CreateWorktreeSession_FullMethodName   = "/ocman.remote.v1.Ocman/CreateWorktreeSession"
+	Ocman_RemoveWorktree_FullMethodName          = "/ocman.remote.v1.Ocman/RemoveWorktree"
+	Ocman_LaunchTmux_FullMethodName              = "/ocman.remote.v1.Ocman/LaunchTmux"
+	Ocman_EnsureProjectOpencode_FullMethodName   = "/ocman.remote.v1.Ocman/EnsureProjectOpencode"
+	Ocman_EnsureRuntime_FullMethodName           = "/ocman.remote.v1.Ocman/EnsureRuntime"
+	Ocman_StopProjectOpencode_FullMethodName     = "/ocman.remote.v1.Ocman/StopProjectOpencode"
+	Ocman_RestartProjectOpencode_FullMethodName  = "/ocman.remote.v1.Ocman/RestartProjectOpencode"
+	Ocman_ReloadOpencode_FullMethodName          = "/ocman.remote.v1.Ocman/ReloadOpencode"
+	Ocman_ManagedOpencodes_FullMethodName        = "/ocman.remote.v1.Ocman/ManagedOpencodes"
+	Ocman_TmuxSessions_FullMethodName            = "/ocman.remote.v1.Ocman/TmuxSessions"
+	Ocman_HostCapabilities_FullMethodName        = "/ocman.remote.v1.Ocman/HostCapabilities"
+	Ocman_RegisterWebhookInbox_FullMethodName    = "/ocman.remote.v1.Ocman/RegisterWebhookInbox"
+	Ocman_PollWebhookInbox_FullMethodName        = "/ocman.remote.v1.Ocman/PollWebhookInbox"
+	Ocman_InboxItems_FullMethodName              = "/ocman.remote.v1.Ocman/InboxItems"
+	Ocman_ArchivedInboxItems_FullMethodName      = "/ocman.remote.v1.Ocman/ArchivedInboxItems"
+	Ocman_MarkInboxItemRead_FullMethodName       = "/ocman.remote.v1.Ocman/MarkInboxItemRead"
+	Ocman_MarkInboxItemUnread_FullMethodName     = "/ocman.remote.v1.Ocman/MarkInboxItemUnread"
+	Ocman_ArchiveInboxItems_FullMethodName       = "/ocman.remote.v1.Ocman/ArchiveInboxItems"
+	Ocman_PluginOperation_FullMethodName         = "/ocman.remote.v1.Ocman/PluginOperation"
+	Ocman_TermWindows_FullMethodName             = "/ocman.remote.v1.Ocman/TermWindows"
+	Ocman_TermCreateWindow_FullMethodName        = "/ocman.remote.v1.Ocman/TermCreateWindow"
+	Ocman_TermKillWindow_FullMethodName          = "/ocman.remote.v1.Ocman/TermKillWindow"
+	Ocman_TerminalStream_FullMethodName          = "/ocman.remote.v1.Ocman/TerminalStream"
+	Ocman_Projects_FullMethodName                = "/ocman.remote.v1.Ocman/Projects"
+	Ocman_WatchProjects_FullMethodName           = "/ocman.remote.v1.Ocman/WatchProjects"
 )
 
 // OcmanClient is the client API for Ocman service.
@@ -129,6 +130,7 @@ type OcmanClient interface {
 	RefreshPermissions(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
 	ListQuestions(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
 	PermissionRules(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
+	SessionPermissionPolicy(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	Capabilities(ctx context.Context, in *PlatformRef, opts ...grpc.CallOption) (*JsonResp, error)
 	Owns(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*OwnsResp, error)
 	// --- Session mutations (JSON request payload) ---
@@ -359,6 +361,16 @@ func (c *ocmanClient) PermissionRules(ctx context.Context, in *SessionRef, opts 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
 	err := c.cc.Invoke(ctx, Ocman_PermissionRules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) SessionPermissionPolicy(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_SessionPermissionPolicy_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -967,6 +979,7 @@ type OcmanServer interface {
 	RefreshPermissions(context.Context, *SessionRef) (*JsonResp, error)
 	ListQuestions(context.Context, *SessionRef) (*JsonResp, error)
 	PermissionRules(context.Context, *SessionRef) (*JsonResp, error)
+	SessionPermissionPolicy(context.Context, *PlatformJsonReq) (*JsonResp, error)
 	Capabilities(context.Context, *PlatformRef) (*JsonResp, error)
 	Owns(context.Context, *SessionRef) (*OwnsResp, error)
 	// --- Session mutations (JSON request payload) ---
@@ -1090,6 +1103,9 @@ func (UnimplementedOcmanServer) ListQuestions(context.Context, *SessionRef) (*Js
 }
 func (UnimplementedOcmanServer) PermissionRules(context.Context, *SessionRef) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method PermissionRules not implemented")
+}
+func (UnimplementedOcmanServer) SessionPermissionPolicy(context.Context, *PlatformJsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method SessionPermissionPolicy not implemented")
 }
 func (UnimplementedOcmanServer) Capabilities(context.Context, *PlatformRef) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method Capabilities not implemented")
@@ -1558,6 +1574,24 @@ func _Ocman_PermissionRules_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OcmanServer).PermissionRules(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_SessionPermissionPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).SessionPermissionPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_SessionPermissionPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).SessionPermissionPolicy(ctx, req.(*PlatformJsonReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2568,6 +2602,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PermissionRules",
 			Handler:    _Ocman_PermissionRules_Handler,
+		},
+		{
+			MethodName: "SessionPermissionPolicy",
+			Handler:    _Ocman_SessionPermissionPolicy_Handler,
 		},
 		{
 			MethodName: "Capabilities",

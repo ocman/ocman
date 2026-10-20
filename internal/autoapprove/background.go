@@ -123,6 +123,9 @@ func (s *Service) backgroundAutoApprove(
 	asked askedPermission,
 ) {
 	permission, patterns, metadata := asked.permission, asked.patterns, asked.metadata
+	if s.applyManualRules(ctx, adapter, sessionID, permissionID, asked) {
+		return
+	}
 	logger := log.WithFields(log.Fields{
 		"sessionID":    sessionID,
 		"permissionID": permissionID,
@@ -253,6 +256,11 @@ func (s *Service) respondAndPersistSafeApproval(
 	permission, patterns := asked.permission, asked.patterns
 	respondCtx, respondCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer respondCancel()
+	unlock, proceed := s.guardManualApproval(respondCtx, adapter, sessionID, permissionID, asked)
+	if !proceed {
+		return
+	}
+	defer unlock()
 	if r, ok := adapter.(platforms.ReplyOutcomeReporter); ok && !r.ReplyOutcomes(respondCtx, sessionID) {
 		s.handleUnsafeVerdict(platformID, sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe,
 			Reasoning: "auto-approve is unavailable until this session's provider is replaced; answer it yourself"})

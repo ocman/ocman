@@ -311,6 +311,7 @@ const rename: SlashCommand = {
 };
 
 export const SLASH_COMMANDS: Readonly<Record<string, SlashCommand>> = {
+  permissions: { run: () => { window.dispatchEvent(new Event('oc-session-permissions-open')); } },
   archive,
   worktree,
   wt: worktree,

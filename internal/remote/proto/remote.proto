@@ -39,6 +39,7 @@ service Ocman {
   rpc RefreshPermissions(SessionRef) returns (JsonResp);
   rpc ListQuestions(SessionRef) returns (JsonResp);
   rpc PermissionRules(SessionRef) returns (JsonResp);     // []platforms.PermissionRule
+  rpc SessionPermissionPolicy(PlatformJsonReq) returns (JsonResp); // Ocman-only session rules and request history
   rpc Capabilities(PlatformRef) returns (JsonResp);       // platforms.Capabilities
   rpc Owns(SessionRef) returns (OwnsResp);
 

@@ -63,7 +63,9 @@ type autoApproveStatus struct {
 
 	// rulesApproved marks a prompt answered because the session's
 	// permission rules allow it (see ApplySessionRules).
-	rulesApproved bool
+	rulesApproved      bool
+	manualRuleResponse bool
+	policyRecheck      func()
 }
 
 // autoApproveKey is the registry key for a single permission record.
@@ -173,6 +175,8 @@ func (s *Service) releaseAutoApprove(sessionID, permissionID string) {
 		return
 	}
 	cancel := st.cancel
+	recheck := st.policyRecheck
+	st.policyRecheck = nil
 	st.cancel = nil
 	// If the judge exited without recording a verdict (cancelled
 	// before completion, panic, etc.) drop the record so a fresh
@@ -186,6 +190,9 @@ func (s *Service) releaseAutoApprove(sessionID, permissionID string) {
 	s.autoApproveMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if recheck != nil {
+		recheck()
 	}
 }
 
@@ -354,18 +361,13 @@ func (s *Service) replayAutoApproveState(sessionID, permissionID, permission str
 		return
 	}
 	switch {
+	case st.aiResponseSucceeded:
+		return
 	case st.verdict == verdictSafe:
-		// Safe verdicts: nothing to replay over SSE. OpenCode has
-		// already cleared the prompt via RespondPermission, so the
-		// REST /permissions list won't even include it on a fresh
-		// page load. The approval notice is injected into the
-		// message stream by injectApprovalNotices when the session
-		// detail loads.
+		// Approval notices load from the session's persisted audit.
 		return
 	case st.verdict == verdictUnsafe || st.verdict == verdictNeedsUser:
-		// Unsafe verdicts: the prompt stays pending for the human, so
-		// the frontend needs the flagged reasoning to render the
-		// "AI flagged this" annotation.
+		// Pending prompts replay the reason manual approval is required.
 		if st.reasoning == "" {
 			return
 		}

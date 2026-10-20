@@ -41,6 +41,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'help', description: 'Show all available slash commands' },
   { name: 'model', description: 'Change the active model (opens a picker)' },
   { name: 'move', description: 'Move this session to another project directory (opens a picker)' },
+  { name: 'permissions', description: 'Review requested permissions and edit session-scoped Ocman approval rules' },
   { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },
   { name: 'rename', description: 'Rename this session' },
   { name: 'routines', description: 'Insert a saved routine prompt (opens a picker)' },

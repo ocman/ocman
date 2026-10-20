@@ -32,6 +32,7 @@ type Server struct {
 	permissionNotificationDeferred func(string, string) bool
 	webhooks                       WebhookInboxes
 	plugins                        PluginHandler
+	permissionPolicy               PermissionPolicyHandler
 }
 
 func (s *Server) UseInboxStore(store *state.DB) *Server { s.inboxStore = store; return s }

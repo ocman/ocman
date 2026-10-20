@@ -18,6 +18,9 @@ const sessionRulesReason = "allowed by the session's permission mode"
 // subagent it started, prompting under the old rules. Returns whether it
 // approved. Called when the rules change, for every prompt already pending.
 func (s *Service) ApplySessionRules(ctx context.Context, platformID platforms.ID, adapter platforms.Platform, sessionID, permissionID, permission string, patterns []string, metadata map[string]any) bool {
+	if s.applyManualRules(ctx, adapter, sessionID, permissionID, askedPermission{permission: permission, patterns: patterns, metadata: metadata}) {
+		return true
+	}
 	if !s.allowedBySessionRules(ctx, adapter, sessionID, permission, patterns) {
 		return false
 	}

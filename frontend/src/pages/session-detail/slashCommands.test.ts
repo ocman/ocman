@@ -37,6 +37,14 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 }
 
 describe('runSlashCommand', () => {
+  it('/permissions opens Ocman session rules without requiring a live agent', async () => {
+    const open = vi.fn();
+    window.addEventListener('oc-session-permissions-open', open);
+    try {
+      expect(await runSlashCommand(ctx({ portAvailable: false }), 'permissions', '')).toBe(true);
+      expect(open).toHaveBeenCalledOnce();
+    } finally { window.removeEventListener('oc-session-permissions-open', open); }
+  });
   it('/clear archives the session and opens a draft route on the same owner', async () => {
     const c = ctx({ session: { id: 's1', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo', timeUpdated: 1 } });
     await runSlashCommand(c, 'clear', 'Next task');
