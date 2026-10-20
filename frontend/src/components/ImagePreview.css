@@ -1,0 +1,9 @@
+.oc-button.oc-image-preview-trigger {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}

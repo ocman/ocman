@@ -24,7 +24,8 @@ import { trackRender } from '../lib/renderRateMonitor';
 import { useUiStore } from '../lib/uiStore';
 import type { FC } from 'react';
 import { LinkPreviewStrip } from './GitHubLinkPreview';
-import { MarkdownText, ZoomableGraphicModal } from './assistant/MarkdownText';
+import { MarkdownText } from './assistant/MarkdownText';
+import { PreviewImage } from './ImagePreview';
 import { LocalCommand } from './assistant/LocalCommand';
 import { parseLocalCommand } from '../lib/localCommand';
 import { parseTaskNotification } from '../lib/taskNotification';
@@ -83,24 +84,11 @@ function MessageBookmarkButton({ messageId }: { messageId: string }) {
  * components, which the suite mocks out.
  */
 export const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filename }) => {
-  const [expanded, setExpanded] = useState(false);
   const label = filename || 'Image';
   return (
     <div className="oc-image-wrap">
-      <button
-        type="button"
-        className="oc-image-toggle"
-        aria-label={`Expand ${label}`}
-        onClick={() => setExpanded(true)}
-      >
-        <img src={image} alt={label} className="oc-image" loading="lazy" />
-      </button>
+      <PreviewImage buttonClassName="oc-image-toggle" src={image} alt={label} className="oc-image" loading="lazy" />
       {filename && <div className="oc-image-label">{filename}</div>}
-      {expanded && (
-        <ZoomableGraphicModal label={label} closeLabel="Close image" maxScale={8} onClose={() => setExpanded(false)}>
-          <img className="oc-image-modal-graphic" src={image} alt={label} />
-        </ZoomableGraphicModal>
-      )}
     </div>
   );
 };

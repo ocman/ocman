@@ -921,6 +921,7 @@ flowchart TD
     Comp -->|capability-gated individual task stop| API
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
+    Comp <-->|image preview query, Back/Forward| Shell
 ```
 
 - **Feature registry.** `src/features/index.tsx` is a static list in which
@@ -957,6 +958,14 @@ flowchart TD
   `CopyButton` add action feedback; copying is confirmed only after success.
   `Pagination` shares previous/next controls while callers own indexing, page
   boundaries, totals, and requests.
+- **Image previews.** Markdown images and conversation attachments register with
+  the app's `ImagePreviewProvider`. The `image` query parameter selects a mounted
+  image using a short source fingerprint and duplicate occurrence number, never
+  an arbitrary image URL. Links reopen when the matching image mounts. Previous
+  and next buttons and arrow keys follow page order, retain owner parameters and
+  URL fragments, and replace the preview history entry. The shared zoomable modal
+  retains wheel/pinch zoom and Escape-to-close. Linking a preview does not grant
+  access to the conversation or its files.
 - **Existing-conversation sends.** `usePendingSend` records the prompt immediately.
   `OcmanRuntimeProvider` appends its text and images to the display messages only,
   leaving the server transcript untouched. The pending prompt stays visible until

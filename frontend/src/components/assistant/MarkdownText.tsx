@@ -2,13 +2,11 @@
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
 import { Children, cloneElement, Fragment, isValidElement, memo, useEffect, useId, useState } from 'react';
-import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import type { ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeHighlight from 'rehype-highlight';
-import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ComponentProps, FC, ReactNode } from 'react';
 import { Link, useInRouterContext } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
@@ -19,7 +17,8 @@ import { factoryActionFromHref } from '../factoryEpicStatus';
 import { remarkFactoryCards } from '../factoryCards';
 import { remarkFactoryIssueReferences } from '../factoryIssueReferences';
 import { FactoryIssueReference } from '../FactoryIssueReference';
-import { Modal } from '../Modal';
+import { ZoomableGraphicModal } from '../ZoomableGraphicModal';
+import { PreviewImage } from '../ImagePreview';
 import { CopyButton } from '../CopyButton';
 import { splitMarkdownBlocks } from './markdownBlocks';
 import './Reasoning.css';
@@ -69,60 +68,6 @@ function nodeText(node: ReactNode): string {
   return '';
 }
 
-export function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose, children }: {
-  label: string;
-  closeLabel: string;
-  maxScale?: number;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const [zoom, setZoom] = useState(1);
-  return createPortal(
-    <Modal label={label} onClose={onClose} backdropClassName="oc-mermaid-modal-backdrop" dialogClassName="oc-mermaid-modal">
-      <TransformWrapper
-        minScale={0.25}
-        maxScale={maxScale}
-        centerOnInit
-        centerZoomedOut
-        disablePadding
-        smooth={false}
-        wheel={{ step: 0.01 }}
-        pinch={{ step: 8, disabled: false, allowPanning: true }}
-        panning={{ allowMiddleClickPan: false, allowRightClickPan: false }}
-        doubleClick={{ disabled: true }}
-        onTransform={(_, state) => setZoom(state.scale)}
-      >
-        {({ zoomIn, zoomOut }) => (
-          <>
-            <div className="oc-mermaid-modal-toolbar">
-              <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomOut(0.25, 0)}>
-                <i className="bi bi-dash-lg" aria-hidden="true" />
-              </button>
-              <span>{Math.round(zoom * 100)}%</span>
-              <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomIn(0.25, 0)}>
-                <i className="bi bi-plus-lg" aria-hidden="true" />
-              </button>
-              <button type="button" aria-label={closeLabel} title={closeLabel} onClick={onClose}>
-                <i className="bi bi-x-lg" aria-hidden="true" />
-              </button>
-            </div>
-            <TransformComponent
-              wrapperClass="oc-mermaid-modal-viewport"
-              contentClass="oc-mermaid-modal-content"
-              wrapperStyle={{ width: '100%', height: '100%' }}
-              contentStyle={{ width: '100%', height: '100%' }}
-              wrapperProps={{ 'aria-label': `${label} viewport` }}
-            >
-              {children}
-            </TransformComponent>
-          </>
-        )}
-      </TransformWrapper>
-    </Modal>,
-    document.body,
-  );
-}
-
 function MermaidDiagram({ source }: { source: string }) {
   const id = `oc-mermaid-${useId().replaceAll(':', '')}`;
   const [result, setResult] = useState({ source: '', svg: '', failed: false });
@@ -170,22 +115,7 @@ function relativeFileURL(href: string | undefined): string | undefined {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownImage({ node: _node, alt = '', src, ...props }: ComponentProps<'img'> & { node?: unknown }) {
-  const [expanded, setExpanded] = useState(false);
-  const label = alt || 'Image';
-  const image = relativeFileURL(src);
-
-  return (
-    <>
-      <button type="button" className="oc-md-image" aria-label={`Expand ${label}`} onClick={() => setExpanded(true)}>
-        <img alt={alt} src={image} {...props} />
-      </button>
-      {expanded && (
-        <ZoomableGraphicModal label={label} closeLabel="Close image" maxScale={8} onClose={() => setExpanded(false)}>
-          <img className="oc-image-modal-graphic" alt={alt} src={image} {...props} />
-        </ZoomableGraphicModal>
-      )}
-    </>
-  );
+  return <PreviewImage buttonClassName="oc-md-image" alt={alt} src={relativeFileURL(src)} {...props} />;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

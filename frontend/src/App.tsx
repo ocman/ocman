@@ -44,6 +44,7 @@ import { installPerfMonitor } from './lib/perfMonitor';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { Inbox } from './pages/Inbox';
 import { MainNav } from './components/MainNav';
+import { ImagePreviewProvider } from './components/ImagePreview';
 import { featureRoutes } from './features';
 import { patchSessionLists } from './lib/sessionsCache';
 
@@ -309,12 +310,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
-        <Routes>
-          {/* Public, unauthenticated read-only conversation view. */}
-          <Route path="/v/:token" element={<SharedConversationView relay />} />
-          {/* Everything else is the authenticated app. */}
-          <Route path="*" element={<AuthenticatedApp />} />
-        </Routes>
+        <ImagePreviewProvider>
+          <Routes>
+            {/* Public, unauthenticated read-only conversation view. */}
+            <Route path="/v/:token" element={<SharedConversationView relay />} />
+            {/* Everything else is the authenticated app. */}
+            <Route path="*" element={<AuthenticatedApp />} />
+          </Routes>
+        </ImagePreviewProvider>
       </QueryClientProvider>
     </BrowserRouter>
   );
