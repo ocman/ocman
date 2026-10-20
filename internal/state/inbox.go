@@ -166,7 +166,10 @@ func (d *DB) ResolvePermissionInboxItem(ctx context.Context, platform, sessionID
 	now := time.Now().UnixMilli()
 	_, err := d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, 'Permission resolved', 'This permission request has been handled.', ?, NULL, ?, 'permission', '', json_object('platform', ?, 'sessionId', ?))
 		ON CONFLICT(id) DO UPDATE SET archived_at = COALESCE(inbox_item.archived_at, excluded.archived_at)`, permissionInboxID(platform, sessionID, permissionID), now, now, platform, sessionID)
-	return err
+	if err != nil {
+		return err
+	}
+	return d.UpsertPermissionLifecycle(ctx, PermissionLifecycle{Platform: platform, SessionID: sessionID, PermissionID: permissionID, ResolvedAt: now})
 }
 
 // ListInboxItems returns active items newest first.

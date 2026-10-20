@@ -53,6 +53,7 @@ type autoApproveStatus struct {
 	// until the adapter call says whether it was ours.
 	aiResponseInFlight   bool
 	aiResponseSucceeded  bool
+	expectedAIReply      string
 	pendingObservedReply string
 	pendingObservedAt    int64
 	userCaptureStarted   bool

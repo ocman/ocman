@@ -123,7 +123,7 @@ func (s *Service) applyManualAction(ctx context.Context, adapter platforms.Platf
 	if !s.claimManualResponse(sessionID, permissionID) {
 		return
 	}
-	s.beginAIResponse(sessionID, permissionID)
+	s.beginAIResponse(sessionID, permissionID, reply)
 	err := adapter.RespondPermission(ctx, platforms.RespondPermissionRequest{SessionID: sessionID, PermissionID: permissionID, Reply: reply})
 	if err != nil && !errors.Is(err, platforms.ErrReplyUnrecorded) {
 		s.finishAIResponse(sessionID, permissionID, false)

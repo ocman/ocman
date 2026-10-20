@@ -63,6 +63,14 @@ func TestRemoteSessionPermissionPolicyRoundTrip(t *testing.T) {
 	if err != nil || len(result.Rules) != 1 {
 		t.Fatalf("read = %+v, %v", result, err)
 	}
+	var nilReplacement []platforms.PermissionRule
+	result, err = adapter.SessionPermissionPolicy(t.Context(), "s1", &nilReplacement)
+	if err != nil || len(result.Rules) != 0 {
+		t.Fatalf("nil replacement retained remote rules: %+v, %v", result, err)
+	}
+	if _, err := adapter.SessionPermissionPolicy(t.Context(), "s1", &rules); err != nil {
+		t.Fatal(err)
+	}
 	empty := []platforms.PermissionRule{}
 	if _, err := adapter.SessionPermissionPolicy(t.Context(), "s1", &empty); err != nil {
 		t.Fatal(err)

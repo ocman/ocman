@@ -50,6 +50,10 @@ func (p *remotePlatform) SessionPermissionPolicy(ctx context.Context, id string,
 	if client == nil {
 		return nil, ErrRemoteOffline
 	}
+	if rules != nil && *rules == nil {
+		empty := []platforms.PermissionRule{}
+		rules = &empty
+	}
 	payload, err := json.Marshal(permissionPolicyRequest{SessionID: id, Rules: rules})
 	if err != nil {
 		return nil, err

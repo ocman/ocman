@@ -94,7 +94,6 @@ func (m *Module) SessionPermissionPolicy(ctx context.Context, adapter platforms.
 		if err != nil {
 			return nil, err
 		}
-		m.applyManualToPending(ctx, adapter, id)
 	}
 	current, err := m.svc.manualRules(ctx, string(adapter.ID()), id)
 	if err != nil {
@@ -118,6 +117,11 @@ func (m *Module) SessionPermissionPolicy(ctx context.Context, adapter platforms.
 			if !changed {
 				break
 			}
+		}
+	}
+	if rules != nil {
+		for _, sessionID := range ids {
+			m.applyManualToPending(ctx, adapter, sessionID)
 		}
 	}
 	history, err := m.Store.SessionPermissionHistory(ctx, string(adapter.ID()), ids)

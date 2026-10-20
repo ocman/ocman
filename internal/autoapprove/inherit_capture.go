@@ -276,7 +276,7 @@ func (s *Service) captureUserReply(ctx context.Context, sessionID, permissionID,
 	}
 }
 
-func (s *Service) beginAIResponse(sessionID, permissionID string) {
+func (s *Service) beginAIResponse(sessionID, permissionID string, expectedReply ...string) {
 	key := autoApproveKey(sessionID, permissionID)
 	s.autoApproveMu.Lock()
 	if s.autoApprove == nil {
@@ -289,6 +289,10 @@ func (s *Service) beginAIResponse(sessionID, permissionID string) {
 	}
 	status.aiResponseInFlight = true
 	status.aiResponseSucceeded = false
+	status.expectedAIReply = "once"
+	if len(expectedReply) > 0 {
+		status.expectedAIReply = expectedReply[0]
+	}
 	s.autoApproveMu.Unlock()
 }
 
@@ -303,7 +307,7 @@ func (s *Service) finishAIResponse(sessionID, permissionID string, succeeded boo
 	status.aiResponseInFlight = false
 	reply := status.pendingObservedReply
 	repliedAt := status.pendingObservedAt
-	userWon := reply != "" && reply != "once"
+	userWon := reply != "" && reply != status.expectedAIReply
 	status.aiResponseSucceeded = succeeded && !userWon
 	status.pendingObservedReply = ""
 	status.pendingObservedAt = 0

@@ -29,8 +29,7 @@ func (d *DB) SessionPermissionHistory(ctx context.Context, platform string, sess
 	args = append(args, args...)
 	rows, err := d.db.QueryContext(ctx, `
 		WITH requests AS (
-			SELECT permission_json AS payload, created_at AS requested_at,
-				COALESCE(archived_at, 0) AS resolved_at
+			SELECT permission_json AS payload, created_at AS requested_at, 0 AS resolved_at
 			FROM inbox_item
 			WHERE category = 'permission' AND permission_json != ''
 			AND json_extract(permission_json, '$.platform') = ?
@@ -42,12 +41,18 @@ func (d *DB) SessionPermissionHistory(ctx context.Context, platform string, sess
 				CASE WHEN asked_at > 0 THEN asked_at ELSE approved_at END, approved_at
 			FROM auto_approved_permission
 			WHERE platform = ? AND session_id IN (`+marks+`)
+			AND NOT EXISTS (
+				SELECT 1 FROM inbox_item i WHERE i.category = 'permission' AND i.permission_json != ''
+				AND json_extract(i.permission_json, '$.platform') = auto_approved_permission.platform
+				AND json_extract(i.permission_json, '$.sessionId') = auto_approved_permission.session_id
+				AND json_extract(i.permission_json, '$.permissionId') = auto_approved_permission.permission_id
+			)
 		)
 		SELECT r.payload, r.requested_at,
 			MAX(r.resolved_at, COALESCE(l.resolved_at, 0), COALESCE(a.approved_at, 0)),
 			COALESCE(NULLIF(l.resolution, ''), CASE WHEN a.permission_id IS NOT NULL
 				THEN a.approved_by || '-' || a.reply
-				WHEN r.resolved_at > 0 THEN 'resolved' ELSE 'pending' END)
+				WHEN MAX(r.resolved_at, COALESCE(l.resolved_at, 0)) > 0 THEN 'resolved' ELSE 'pending' END)
 		FROM requests r
 		LEFT JOIN permission_lifecycle l ON l.platform = json_extract(r.payload, '$.platform')
 			AND l.session_id = json_extract(r.payload, '$.sessionId')

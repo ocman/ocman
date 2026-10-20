@@ -2,6 +2,49 @@ package state
 
 import "testing"
 
+func TestPermissionHistoryArchivalDoesNotResolveRequest(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	if err := d.EnsurePermissionInboxItem(ctx, InboxPermission{Platform: "p", SessionID: "s", PermissionID: "pending", Permission: "bash"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := d.ListInboxItems(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ArchiveInboxItems(ctx, []string{items[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := d.SessionPermissionHistory(ctx, "p", []string{"s"})
+	if err != nil || len(history) != 1 {
+		t.Fatalf("history = %+v, %v", history, err)
+	}
+	if history[0].Resolution != "pending" || history[0].ResolvedAt != 0 {
+		t.Fatalf("notification archival answered the permission: %+v", history[0])
+	}
+}
+
+func TestPermissionHistoryOriginalRequestWinsOverLaterApproval(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	if err := d.EnsurePermissionInboxItem(ctx, InboxPermission{Platform: "p", SessionID: "s", PermissionID: "p", Permission: "bash", Patterns: []string{"tea do something"}, Always: []string{"tea do *"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SQL().ExecContext(ctx, "UPDATE inbox_item SET created_at = 100"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.RecordApprovedPermission(ctx, "p", "s", ApprovedPermission{PermissionID: "p", PermissionText: "bash", Patterns: []string{"tea do something"}, AskedAt: 200, ApprovedAt: 300}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := d.SessionPermissionHistory(ctx, "p", []string{"s"})
+	if err != nil || len(history) != 1 {
+		t.Fatalf("history = %+v, %v", history, err)
+	}
+	if len(history[0].Always) != 1 || history[0].Always[0] != "tea do *" || history[0].RequestedAt != 100 {
+		t.Fatalf("synthetic approval displaced original request: %+v", history[0])
+	}
+}
+
 func TestPermissionHistoryPreservesPromptWhenReplyArrivesFirst(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
