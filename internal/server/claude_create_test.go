@@ -17,7 +17,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/routines"
@@ -182,9 +181,32 @@ func TestClaudeMCPCreate(t *testing.T) {
 		t.Run(fmt.Sprintf("worktree=%t", worktree), func(t *testing.T) {
 			srv, adapter, _ := newClaudeServer(t)
 			repo := claudeRepo(t)
-			created, err := (sessionMCPService{server: srv}).CreateSession(t.Context(), internalmcp.CreateSessionRequest{
-				Platform: "claudecode", Directory: repo, Worktree: &worktree, Prompt: "Reply with exactly SPIKE_OK."})
-			if err != nil || created.Platform != "claudecode" || created.SessionID == "" {
+			body, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+				"params": map[string]any{"name": "sessions", "arguments": map[string]any{
+					"action": "create", "platform": "claudecode", "directory": repo,
+					"worktree": worktree, "prompt": "Reply with exactly SPIKE_OK.",
+				}},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(string(body)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			rec := httptest.NewRecorder()
+			srv.buildMCPHandler().ServeHTTP(rec, req)
+			var response struct {
+				Result struct {
+					IsError bool
+					Content []struct{ Text string }
+				}
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || rec.Code != http.StatusOK || response.Result.IsError || len(response.Result.Content) != 1 {
+				t.Fatalf("MCP create = %d %s, %v", rec.Code, rec.Body.String(), err)
+			}
+			var created struct {
+				Platform, Directory string
+				SessionID           string `json:"session_id"`
+			}
+			if err := json.Unmarshal([]byte(response.Result.Content[0].Text), &created); err != nil || created.Platform != "claudecode" || created.SessionID == "" {
 				t.Fatalf("created = %+v, %v", created, err)
 			}
 			if dir := claudeSessionDir(t, adapter, created.SessionID); dir != created.Directory || (!worktree && dir != repo) || (worktree && !strings.Contains(dir, "/.worktrees/repo/session-")) {

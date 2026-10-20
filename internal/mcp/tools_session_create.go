@@ -60,8 +60,8 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 		return mcplib.NewToolResultError("model must be provider/model")
 	case in.Directory != "" && !filepath.IsAbs(in.Directory):
 		return mcplib.NewToolResultError("directory must be absolute")
-	case (in.Platform == "") != (in.SessionID == ""):
-		return mcplib.NewToolResultError("platform and session_id must be provided together")
+	case in.SessionID != "" && in.Platform == "":
+		return mcplib.NewToolResultError("session_id requires platform")
 	case in.Directory == "" && in.SessionID == "":
 		return mcplib.NewToolResultError("directory or the calling session's platform and session_id is required")
 	}

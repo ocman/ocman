@@ -51,7 +51,8 @@ func TestCreateSessionTool(t *testing.T) {
 		{args: map[string]any{"directory": "/repo"}, want: "prompt is required"},
 		{args: map[string]any{"prompt": "x", "directory": "/repo", "model": "claude"}, want: "model must be provider/model"},
 		{args: map[string]any{"prompt": "x", "directory": "repo"}, want: "directory must be absolute"},
-		{args: map[string]any{"prompt": "x", "session_id": "ses-1"}, want: "platform and session_id must be provided together"},
+		{args: map[string]any{"prompt": "x", "session_id": "ses-1"}, want: "session_id requires platform"},
+		{args: map[string]any{"prompt": "x", "platform": "claudecode"}, want: "directory or the calling session's platform and session_id is required"},
 		{args: map[string]any{"prompt": "x"}, want: "directory or the calling session's platform and session_id is required"},
 		{args: map[string]any{"prompt": "x", "directory": "/repo", "worktree": "false"}, want: "worktree must be a boolean"},
 	} {
@@ -89,5 +90,22 @@ func TestCreateSessionUnavailableWithoutCreator(t *testing.T) {
 	srv := sessionServer(t, &fakeSessionService{})
 	if result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo"}); !result.IsError || resultText(result) != "session creation is unavailable" {
 		t.Fatalf("result = %q", resultText(result))
+	}
+}
+
+func TestCreateSessionToolExplicitPlatformWithoutCaller(t *testing.T) {
+	for _, platform := range []string{"opencode", "claudecode", "r-machine:claudecode", "other-platform"} {
+		t.Run(platform, func(t *testing.T) {
+			svc := &fakeSessionCreator{created: internalmcp.CreatedSession{Platform: platform, SessionID: "new", Directory: "/repo"}}
+			srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{SessionService: svc})...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(srv.Close)
+			result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "platform": platform})
+			if result.IsError || svc.got.Platform != platform || svc.got.SessionID != "" {
+				t.Fatalf("create on %s = %q, request = %#v", platform, resultText(result), svc.got)
+			}
+		})
 	}
 }
