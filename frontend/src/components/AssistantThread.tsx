@@ -34,6 +34,7 @@ import { TaskNotification } from './assistant/TaskNotification';
 import { parseV2Notification } from '../lib/v2Notification';
 import { V2Notification } from './assistant/V2Notification';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
+import { ExplorationContent } from './assistant/ExplorationContent';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
 import { formatTimelineMarker } from '../lib/conversationTimeline';
@@ -261,7 +262,7 @@ const AssistantMessage: FC = () => {
         {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
         {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
         <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
-          <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
+          <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
           <TurnSummaryBar messageId={messageId} />
         </MessagePrimitive.Root>
       </>
@@ -274,7 +275,7 @@ const AssistantMessage: FC = () => {
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
       <MessagePrimitive.Root className={`oc-msg oc-msg-assistant${onlyTools ? ' oc-msg-tools' : ''}`} data-message-id={messageId}>
         <div className="oc-msg-body oc-md">
-          <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
+          <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
         </div>
         <AssistantMeta />
         <TurnSummaryBar messageId={messageId} />
@@ -739,6 +740,8 @@ export function AssistantThread({
       if (hasMore && !loadingMore) void onLoadMore?.();
       return;
     }
+    const exploration = target.closest('details.oc-exploration');
+    if (exploration instanceof HTMLDetailsElement) exploration.open = true;
     const viewportTop = viewport.getBoundingClientRect().top;
     const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
     viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
@@ -754,6 +757,8 @@ export function AssistantThread({
     const message = viewport.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(scrollToToolCall.messageId)}"]`);
     const source = message?.querySelector<HTMLElement>(`[data-tool-call-id="${CSS.escape(scrollToToolCall.toolCallId)}"]`);
     if (!source?.firstElementChild) return;
+    const exploration = source.closest('details.oc-exploration');
+    if (exploration instanceof HTMLDetailsElement) exploration.open = true;
     viewport.querySelectorAll('.oc-tool-source-revealed').forEach((node) => node.classList.remove('oc-tool-source-revealed'));
     source.classList.add('oc-tool-source-revealed');
     source.querySelector<HTMLButtonElement>('[aria-expanded="false"]')?.click();

@@ -1,0 +1,18 @@
+.oc-exploration > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 400;
+}
+
+.oc-exploration > summary,
+.oc-exploration > summary:hover {
+  color: var(--overlay0);
+}
+
+.oc-exploration > summary::-webkit-details-marker {
+  display: none;
+}
+
+.oc-exploration-children {
+  padding-left: 16px;
+}

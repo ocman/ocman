@@ -73,6 +73,11 @@ turn or its subagents still raise.
 **Bash mode.** Prefix a message with `!` to run a shell command in the
 session's working directory and capture the output in the thread.
 
+In compact view, consecutive Read, Grep and Glob calls share a muted,
+expandable line such as `Explored: 2 searches 4 files`. Grep and Glob count
+as searches; Read counts as a file. The label changes to `Exploring` while
+a call is pending or running. Click the line to see the individual calls.
+
 **Command palette and slash commands.** <kbd>⌘K</kbd> jumps between sessions,
 settings and actions. `/new [title]`, `/clear` and `/wt` cover the common
 actions, and renaming is keyboard-driven.

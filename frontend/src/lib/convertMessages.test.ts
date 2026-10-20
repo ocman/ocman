@@ -50,6 +50,22 @@ describe('message throughput metadata', () => {
   });
 });
 
+describe('exploration tool status', () => {
+  it.each(['read', 'mcp_read', 'grep', 'mcp_grep', 'glob', 'webfetch'])('preserves %s status without changing its line label', tool => {
+    for (const status of ['pending', 'running', 'completed', 'error']) {
+      const messages = [makeMessage('explore', { role: 'assistant' })];
+      const parts = [makePart('explore', { type: 'tool', tool, state: {
+        status, input: { filePath: '/repo/a.go', pattern: 'Session', url: 'https://example.com' },
+      } })];
+      const [call] = asContentArray(createConvertMessages()(messages, parts)[0].content);
+      expect(call.type).toBe('tool-call');
+      if (call.type !== 'tool-call') throw new Error('Expected tool');
+      expect(call.artifact).toMatchObject({ explorationStatus: status });
+      expect(call.argsText).not.toContain(status);
+    }
+  });
+});
+
 describe('isImageMime', () => {
   it.each([
     ['image/png', true],
@@ -313,7 +329,7 @@ describe('AI approval footnotes', () => {
     expect(calls[0].toolName).toBe('edit');
     expect(calls[0].artifact?.ocmanApprovals).toHaveLength(1);
     expect(calls[1].toolName).toBe('__read__');
-    expect(calls[1].artifact).toBeUndefined();
+    expect(calls[1].artifact?.ocmanApprovals).toEqual([]);
   });
 
   it('keeps an edit approval standalone when only a read matches its path', () => {

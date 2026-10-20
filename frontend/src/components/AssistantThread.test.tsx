@@ -84,7 +84,7 @@ vi.mock('@assistant-ui/react', async () => {
           : <components.Text key={index} text={part.text ?? ''} />)}</>
       ),
     },
-    useAuiState: (selector: (value: { message: typeof message }) => unknown) => selector({ message }),
+    useAuiState: (selector: (value: { message: typeof message; thread: { messages: typeof message[] } }) => unknown) => selector({ message, thread: { messages: [message] } }),
   };
 });
 
@@ -123,7 +123,7 @@ beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
   vi.stubGlobal('ResizeObserver', StubResizeObserver);
   useUiStore.getState().setShowMessageMetadata(false);
-  useUiStore.setState({ showToolDetails: true });
+  useUiStore.setState({ showToolDetails: true, compactToolCalls: false });
   threadState.renderUser = false;
   message.content = [{ type: 'text', text: 'Reply' }];
   turnStats.promptCacheRebuilt = false;
@@ -514,6 +514,17 @@ describe('AssistantThread message jumps', () => {
     expect(container.querySelector('[data-tool-call-id="call-1"]')?.firstElementChild).not.toHaveClass('oc-msg-scroll-highlight');
     expect(container.querySelector('[data-tool-call-id="call-2"]')?.firstElementChild).toHaveFocus();
     expect(Element.prototype.scrollTo).toHaveBeenCalled();
+  });
+
+  it('opens an exploration group when jumping to a child tool', async () => {
+    useUiStore.setState({ compactToolCalls: true });
+    message.content = [
+      { type: 'tool-call', toolCallId: 'read-1', toolName: '__read__', argsText: 'Read a.go' },
+      { type: 'tool-call', toolCallId: 'read-2', toolName: '__read__', argsText: 'Read b.go' },
+    ];
+    const { container } = render(<AssistantThread scrollToToolCall={{ messageId: 'assistant-1', toolCallId: 'read-2', tick: 1 }} />);
+    expect(container.querySelector('details')).toHaveAttribute('open');
+    await vi.waitFor(() => expect(screen.getByText('Read b.go').parentElement).toHaveClass('oc-msg-scroll-highlight'));
   });
 
   it('reveals the requested call while tool details are hidden', async () => {

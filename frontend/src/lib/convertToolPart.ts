@@ -19,7 +19,7 @@ export interface ToolCallItem {
   toolCallId: string;
   toolName: string;
   argsText: string;
-  artifact?: { ocmanApprovals: ToolApproval[]; projectDirectory?: string };
+  artifact?: { ocmanApprovals: ToolApproval[]; projectDirectory?: string; explorationStatus?: string };
   result?: string;
 }
 
@@ -300,6 +300,7 @@ export function convertToolPart(
   }
 
   const special = renderSpecialTool(ctx, toolName, st, input, inp, argsText, title, partIdx, toolCallId);
+  if (special?.toolName === '__read__') special.artifact = { ocmanApprovals: [], explorationStatus: toolStatus(ctx, st.status, partIdx) };
   if (special) return { toolCall: special, images };
 
   // For edit/write tools, generate a unified diff; the diff is shown as

@@ -24,17 +24,17 @@ test('compact tool rows keep the same rhythm within and across messages', async 
   } }));
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const viewport = page.getByTestId('conversation-viewport');
-  const labels = ['Skill "skill-0"', 'Read /example.ts', 'Grep example', 'Skill "skill-2"', 'Bash: Check the frontend build', '$ echo command-4'];
+  const labels = ['Skill "skill-0"', 'Explored: 1 search 1 file', 'Skill "skill-2"', 'Bash: Check the frontend build', '$ echo command-4'];
   // Measure the rendered text rather than implementation-specific row classes.
-  await expect(viewport.getByText('Read /example.ts', { exact: true })).toBeVisible();
+  await expect(viewport.getByText('Explored: 1 search 1 file', { exact: true })).toBeVisible();
   const positions = [];
   for (const label of labels) {
     const element = label.startsWith('$ ') ? viewport.getByRole('button', { name: label }) : viewport.getByText(label, { exact: true });
     positions.push((await element.boundingBox())!.y);
   }
-  const withinMessage = positions[2] - positions[1];
+  const withinMessage = positions[1] - positions[0];
   for (let i = 1; i < positions.length; i++) {
-    expect(positions[i] - positions[i - 1]).toBeCloseTo(withinMessage * (i === 5 ? 2 : 1), 0);
+    expect(positions[i] - positions[i - 1]).toBeCloseTo(withinMessage * (i === 4 ? 2 : 1), 0);
   }
   const bounds = (await viewport.boundingBox())!;
   const clip = { x: bounds.x, y: positions[0] - 12, width: bounds.width, height: positions.at(-1)! - positions[0] + 40 };
