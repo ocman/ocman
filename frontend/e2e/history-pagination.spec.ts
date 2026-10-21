@@ -13,10 +13,13 @@ for (const hidden of [true, false]) {
       },
     }));
     const offsets: number[] = [];
-    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) => {
+    let releasePage!: () => void;
+    const nextPage = new Promise<void>(resolve => { releasePage = resolve; });
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const offset = Number(params.get('offset') || 0);
       offsets.push(offset);
+      if (!hidden && offset === 30) await nextPage;
       const batch = messages.slice(Math.max(0, messages.length - offset - 30), messages.length - offset);
       return route.fulfill({ json: {
         session: { ...MOCK_SESSION, messageCount: messages.length },
@@ -39,9 +42,14 @@ for (const hidden of [true, false]) {
       // oldest message is revealed by a deliberate scroll to the top.
       await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
       expect(offsets.filter(offset => offset > 0)).toEqual([]);
+      await viewport.dispatchEvent('wheel', { deltaY: -100 });
       await viewport.evaluate(el => { el.scrollTop = 0; });
+      const anchor = viewport.locator('[data-message-id="history-31"]');
+      const before = await anchor.evaluate(el => el.getBoundingClientRect().top);
+      releasePage();
       await expect(viewport.getByText('A short reply')).toHaveCount(60);
       await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+      await expect.poll(async () => Math.abs(await anchor.evaluate(el => el.getBoundingClientRect().top) - before)).toBeLessThan(2);
       await viewport.evaluate(el => { el.scrollTop = 0; });
     }
     await expect(viewport.getByText('The original user prompt')).toBeVisible();

@@ -20,6 +20,7 @@ import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool } from '../lib/mutedTools';
 import { useStickyBottom } from '../lib/useStickyBottom';
 import { useHistoryPagination } from '../lib/useHistoryPagination';
+import { useHistoryScrollAnchor } from '../lib/useHistoryScrollAnchor';
 import { trackRender } from '../lib/renderRateMonitor';
 import { useUiStore } from '../lib/uiStore';
 import type { FC } from 'react';
@@ -565,12 +566,13 @@ export function AssistantThread({
   const speech = React.useContext(TurnSpeechContext);
   const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const loadMore = useHistoryScrollAnchor(viewportRef, loadingMore, onLoadMore);
   const hasMoreRef = useRef(hasMore);
   const loadingMoreRef = useRef(loadingMore);
-  const onLoadMoreRef = useRef(onLoadMore);
+  const onLoadMoreRef = useRef(loadMore);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
   useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
-  useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
+  useEffect(() => { onLoadMoreRef.current = loadMore; }, [loadMore]);
 
   // Safety net for any non-markdown-rendered links in message bodies.
   // Markdown links are handled at render time by MarkdownLink; this catches
@@ -612,29 +614,7 @@ export function AssistantThread({
     isJumpingRef.current = false;
   }, [hasMore, loadingMore]);
 
-  const historyStartRef = useHistoryPagination(viewportRef, { oldestMessageId, hasMore, loadingMore, onLoadMore });
-
-  // Preserve scroll position when older messages are prepended
-  const prevScrollHeightRef = useRef(0);
-  const wasLoadingRef = useRef(false);
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    if (loadingMore && !wasLoadingRef.current) {
-      // Started loading: save current scroll height
-      prevScrollHeightRef.current = el.scrollHeight;
-    } else if (!loadingMore && wasLoadingRef.current && prevScrollHeightRef.current > 0) {
-      // Finished loading: adjust scroll to maintain position
-      requestAnimationFrame(() => {
-        const diff = el.scrollHeight - prevScrollHeightRef.current;
-        if (diff > 0) {
-          el.scrollTop += diff;
-        }
-        prevScrollHeightRef.current = 0;
-      });
-    }
-    wasLoadingRef.current = !!loadingMore;
-  }, [loadingMore]);
+  const historyStartRef = useHistoryPagination(viewportRef, { oldestMessageId, hasMore, loadingMore, onLoadMore: loadMore });
 
   // Companion auto-scroll, replacing ThreadPrimitive.Viewport's built-in
   // `autoScroll` (disabled below): its hardcoded 1px at-bottom tolerance
