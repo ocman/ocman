@@ -241,7 +241,9 @@ function renderSpecialTool(
       return mutedLine('__read__', `${grepPattern ? `Grep ${grepPattern}` : 'Grep'}${include}`, toolCallId);
     }
     case 'glob':
-    case 'mcp_glob': {
+    case 'Glob':
+    case 'mcp_glob':
+    case 'mcp_Glob': {
       const pattern = inp.pattern || argsText || title || '';
       const path = inp.path ? ` (${inp.path})` : '';
       return mutedLine('__read__', `${pattern ? `Glob ${pattern}` : 'Glob'}${path}`, toolCallId);

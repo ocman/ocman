@@ -51,7 +51,7 @@ describe('message throughput metadata', () => {
 });
 
 describe('exploration tool status', () => {
-  it.each(['read', 'mcp_read', 'grep', 'mcp_grep', 'glob', 'webfetch'])('preserves %s status without changing its line label', tool => {
+  it.each(['read', 'mcp_read', 'grep', 'mcp_grep', 'glob', 'mcp_glob', 'Glob', 'mcp_Glob', 'webfetch'])('preserves %s status without changing its line label', tool => {
     for (const status of ['pending', 'running', 'completed', 'error']) {
       const messages = [makeMessage('explore', { role: 'assistant' })];
       const parts = [makePart('explore', { type: 'tool', tool, state: {
@@ -60,6 +60,7 @@ describe('exploration tool status', () => {
       const [call] = asContentArray(createConvertMessages()(messages, parts)[0].content);
       expect(call.type).toBe('tool-call');
       if (call.type !== 'tool-call') throw new Error('Expected tool');
+      expect(call.toolName).toBe('__read__');
       expect(call.artifact).toMatchObject({ explorationStatus: status });
       expect(call.argsText).not.toContain(status);
     }

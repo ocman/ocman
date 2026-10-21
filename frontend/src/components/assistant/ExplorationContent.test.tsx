@@ -32,6 +32,15 @@ beforeEach(() => {
 afterEach(() => useUiStore.setState({ compactToolCalls: false }));
 
 describe('compact exploration content', () => {
+  it('includes glob calls in the search count and expanded group across messages', () => {
+    setMessages([tool('Glob **/*.go'), tool('Read http.go')], [tool('Grep Session'), tool('Glob **/*.ts')]);
+    render(<ExplorationContent />);
+    const summary = screen.getByText('Explored: 3 searches 1 file');
+    fireEvent.click(summary);
+    expect(screen.getByText('Glob **/*.go')).toBeVisible();
+    expect(screen.getByText('Glob **/*.ts')).toBeVisible();
+  });
+
   it('collapses the example into one line and expands child rows', () => {
     const { container } = render(<ExplorationContent />);
     const summary = screen.getByText('Explored: 2 searches 4 files');
