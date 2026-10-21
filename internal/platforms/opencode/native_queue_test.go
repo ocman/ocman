@@ -82,7 +82,7 @@ func writeJSONBody(w http.ResponseWriter, body string) {
 func nativeQueueAdapter(t *testing.T, sid, dir string, f *v2Fake) *Adapter {
 	t.Helper()
 	withTestPort(t, dir, f.Port())
-	return New(newTestDBWithSession(t, sid, dir), nil)
+	return New(newBoundTestDBWithSession(t, sid, dir), nil)
 }
 
 const inboxBody = `{"data":[

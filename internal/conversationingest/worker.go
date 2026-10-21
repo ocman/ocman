@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/statev2"
@@ -29,6 +27,7 @@ type sourceWorker struct {
 	wake     chan struct{}
 	mu       sync.Mutex
 	dirty    map[string]bool
+	priority map[string]bool // requested conversation reads, served before backfill
 	// versions holds the source version hint of each stored session. It is
 	// persisted, so a restart reads only sessions that changed meanwhile.
 	versions    map[string]string
@@ -51,11 +50,14 @@ type sourceWorker struct {
 // pass is one planned scan of a source: the sessions to read and the stored
 // sessions the source no longer lists.
 type pass struct {
-	verify    bool
-	routine   bool // one already stored session; suppress routine task records
-	reads     []db.HistoryEntry
-	deletions []statev2.Session
-	skipped   int64
+	verify     bool
+	full       bool // explicit source-wide repair bypasses transcript cursors
+	background bool // historical work shares the module's resource budget
+	routine    bool // one already stored session; suppress routine task records
+	reads      []db.HistoryEntry
+	deletions  []statev2.Session
+	skipped    int64
+	deferred   int // unresolved creation identities; never authorize absence markers
 }
 
 func (w *sourceWorker) run(ctx context.Context) {
@@ -98,7 +100,12 @@ func (w *sourceWorker) sweepChecked(ctx context.Context) error {
 	dirty := w.dirty
 	w.dirty = map[string]bool{}
 	w.mu.Unlock()
-	err := w.runPass(ctx, dirty)
+	var err error
+	if w.journaled && w.loaded && len(dirty) > 0 {
+		err = w.runJournalPass(ctx, dirty)
+	} else {
+		err = w.runPass(ctx, dirty)
+	}
 	w.readiness(err == nil && ctx.Err() == nil && w.last.Counters["deferred"] == 0 && w.last.Counters["usage-mismatch"] == 0)
 	if ctx.Err() == nil {
 		w.module.report(w.instance.ID, "", err)
@@ -114,29 +121,23 @@ func (w *sourceWorker) sweepChecked(ctx context.Context) error {
 	return err
 }
 
-func (w *sourceWorker) repair(ctx context.Context, dirty map[string]bool) error {
-	p, err := w.prepare(ctx, dirty)
-	if err != nil {
-		return err
-	}
-	return w.execute(ctx, p, nil)
-}
-
 // prepare resolves the source identity and compares its inventory with the
 // stored sessions. A normal pass reads only invalidated, new or changed
 // sessions. A verify pass rereads everything to measure missed changes.
 func (w *sourceWorker) prepare(ctx context.Context, dirty map[string]bool) (pass, error) {
 	var p pass
+	p.full = dirty[""]
 	deps := w.module.deps
 	if err := w.ensureInstance(ctx); err != nil {
 		return p, err
 	}
 	readCtx, cancel := context.WithTimeout(ctx, deps.ReadTimeout)
-	entries, err := w.source.Reader.HistoryInventory(readCtx)
+	entries, deferred, err := readInventory(readCtx, w.source.Reader)
 	cancel()
 	if err != nil {
 		return p, err
 	}
+	p.deferred = deferred
 	present := map[string]bool{}
 	for _, entry := range entries {
 		if entry.ID == "" || present[entry.ID] {
@@ -145,7 +146,7 @@ func (w *sourceWorker) prepare(ctx context.Context, dirty map[string]bool) (pass
 		present[entry.ID] = true
 	}
 	for id := range w.failing {
-		if !present[id] {
+		if deferred == 0 && !present[id] {
 			delete(w.failing, id)
 		}
 	}
@@ -160,15 +161,16 @@ func (w *sourceWorker) prepare(ctx context.Context, dirty map[string]bool) (pass
 		existing[session.SessionID] = !session.SourceDeleted
 		if session.SourceDeleted {
 			deleted[session.SessionID] = true
-		} else if !present[session.SessionID] {
+		} else if deferred == 0 && !present[session.SessionID] {
 			p.deletions = append(p.deletions, session)
 		}
 	}
-	p.verify = !w.journaled && time.Since(w.verifiedAt) >= deps.VerifyInterval
+	p.verify = deferred == 0 && !w.journaled && time.Since(w.verifiedAt) >= deps.VerifyInterval
 	for _, entry := range entries {
 		version, seen := w.versions[entry.ID]
+		_, touched := dirty[entry.ID]
 		// dirty[""] is the queue-overflow sentinel: every session is invalidated.
-		if p.verify || dirty[""] || dirty[entry.ID] || refresh[entry.ID] || !seen || version != entry.Version || deleted[entry.ID] {
+		if p.verify || dirty[""] || touched || refresh[entry.ID] || !seen || version != entry.Version || deleted[entry.ID] {
 			p.reads = append(p.reads, entry)
 		} else {
 			p.skipped++
@@ -232,115 +234,6 @@ func (w *sourceWorker) markVerified(ctx context.Context) error {
 	return w.module.deps.Store.SetSourceState(ctx, w.instance.ID, verifiedAtKey, strconv.FormatInt(w.verifiedAt.UnixMilli(), 10))
 }
 
-func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.Progress) error) error {
-	total := int64(len(p.reads) + len(p.deletions))
-	progress := tasksvc.Progress{Phase: "reading sessions", Unit: "sessions", Total: &total, Counters: map[string]int64{}}
-	defer func() { w.last = progress }()
-	if p.skipped > 0 {
-		progress.Counters["skipped"] = p.skipped
-	}
-	update := func() error {
-		if report != nil {
-			return report(progress)
-		}
-		return nil
-	}
-	if err := update(); err != nil {
-		return err
-	}
-	failed := 0
-	for _, entry := range p.reads {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		hint, hinted := w.versions[entry.ID]
-		result, err := w.importSession(ctx, entry)
-		outcome, cause := result.outcome, ""
-		if err != nil {
-			failed++
-			outcome, cause = "failed", err.Error()
-			w.forget(ctx, entry.ID)
-			if ctx.Err() == nil {
-				w.module.report(w.instance.ID, entry.ID, err)
-			}
-		} else {
-			if p.verify {
-				outcome = w.classify(result, hint, hinted, entry.ID)
-			}
-			if result.outcome != "purged" && result.outcome != "deferred" {
-				matched, checkErr := w.usageMatches(ctx, entry.ID, result.usage)
-				switch {
-				case checkErr != nil:
-					failed++
-					outcome, cause = "failed", checkErr.Error()
-					w.forget(ctx, entry.ID)
-					w.module.report(w.instance.ID, entry.ID, checkErr)
-				case !matched:
-					// Unchanged content is not rewritten, so this does not self-heal.
-					// It means a normalization or column mapping bug to investigate.
-					progress.Counters["usage-mismatch"]++
-					failed++
-					cause = "usage mismatch"
-					w.forget(ctx, entry.ID)
-					log.WithFields(log.Fields{"instance_id": w.instance.ID, "session_id": entry.ID}).
-						Warn("conversation history accounting differs from source; investigate the mapping")
-				default:
-					err := w.approveRead(ctx, entry.ID, result.version)
-					if err == nil && w.feed != nil {
-						err = w.advanceSequence(ctx, entry.ID, result.version)
-					}
-					if err != nil {
-						failed++
-						outcome, cause = "failed", err.Error()
-						w.forget(ctx, entry.ID)
-						w.module.report(w.instance.ID, entry.ID, err)
-					}
-				}
-			}
-		}
-		if cause == "" && result.outcome == "deferred" {
-			cause = errDeferred.Error()
-		}
-		if cause != "" {
-			w.failing[entry.ID] = cause
-		} else {
-			delete(w.failing, entry.ID)
-		}
-		progress.Completed++
-		progress.Counters[outcome]++
-		if err := update(); err != nil {
-			return err
-		}
-	}
-	progress.Phase = "retaining removed history"
-	if err := update(); err != nil {
-		return err
-	}
-	// Only a successful, complete source inventory authorizes absence markers.
-	// Failed snapshots never authorize deletion of any message or part.
-	for _, session := range p.deletions {
-		if err := w.markDeleted(ctx, session); err != nil {
-			return err
-		}
-		w.forget(ctx, session.SessionID)
-		delete(w.failing, session.SessionID)
-		progress.Completed++
-		progress.Counters["source-deleted"]++
-		if err := update(); err != nil {
-			return err
-		}
-	}
-	if p.verify {
-		if err := w.markVerified(ctx); err != nil {
-			return err
-		}
-	}
-	if failed > 0 {
-		return fmt.Errorf("%d sessions failed; history was not fully verified", failed)
-	}
-	return nil
-}
-
 func (w *sourceWorker) forget(ctx context.Context, id string) {
 	delete(w.versions, id)
 	// Best effort: a stale hint is only cleared to force a reread, and the
@@ -349,68 +242,6 @@ func (w *sourceWorker) forget(ctx context.Context, id string) {
 }
 
 func snapshotStream(id string) string { return "history/snapshot-v1/" + id }
-
-type importResult struct {
-	outcome string // imported, unchanged or purged
-	version string // source version hint of the content read
-	usage   statev2.Usage
-}
-
-func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry) (importResult, error) {
-	store := w.module.deps.Store
-	if err := w.clearReadReceipt(ctx, entry.ID); err != nil {
-		return importResult{}, err
-	}
-	key := statev2.Key{InstanceID: w.instance.ID, SessionID: entry.ID}
-	stored, purged, err := store.SessionState(ctx, key)
-	if err != nil {
-		return importResult{}, err
-	}
-	if purged {
-		return w.remember(ctx, entry.ID, importResult{"purged", entry.Version, statev2.Usage{}})
-	}
-	cursor, err := store.Checkpoint(ctx, key.InstanceID, snapshotStream(entry.ID))
-	if err != nil {
-		return importResult{}, err
-	}
-	snapshot, err := w.snapshot(ctx, entry.ID)
-	if errors.Is(err, db.ErrHistoryChanged) {
-		// Still being written. The version hint is not recorded, so the next poll reads it again.
-		w.forget(ctx, entry.ID)
-		return importResult{outcome: "deferred"}, nil
-	}
-	if err != nil {
-		return importResult{}, err
-	}
-	batch, digest, err := Normalize(key, snapshot)
-	if err != nil {
-		return importResult{}, err
-	}
-	version := snapshot.Version
-	if w.feed != nil {
-		// Feed sources version stored history by durable event sequence,
-		// read before this snapshot, matching the platform's conversation head.
-		version = entry.Version
-	}
-	result := importResult{"unchanged", version, expectedUsage(batch)}
-	if digest != cursor || stored.ReadFormat != statev2.ConversationReadFormat {
-		batch.ExpectedRevision = stored.Revision
-		if digest != cursor {
-			batch.Checkpoint = &statev2.CheckpointUpdate{Stream: snapshotStream(entry.ID), ExpectedCursor: cursor, Cursor: digest}
-		}
-		committed, err := store.Commit(ctx, batch)
-		if err != nil {
-			return importResult{}, err
-		}
-		switch {
-		case committed.Suppressed:
-			result.outcome = "purged"
-		case !committed.Duplicate:
-			result.outcome = "imported"
-		}
-	}
-	return w.remember(ctx, entry.ID, result)
-}
 
 const snapshotAttempts = 3
 
@@ -449,5 +280,8 @@ func (w *sourceWorker) markDeleted(ctx context.Context, session statev2.Session)
 	session.SourceDeleted = true
 	_, err = store.Commit(ctx, statev2.Batch{Session: session, ExpectedRevision: session.Revision,
 		Checkpoint: &statev2.CheckpointUpdate{Stream: snapshotStream(session.SessionID), ExpectedCursor: cursor, Cursor: "deleted:" + cursor}})
+	if err == nil {
+		w.module.publishReceipt(w.source.AdapterID, session.SessionID)
+	}
 	return err
 }

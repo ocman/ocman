@@ -1,12 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import type { Session } from './api';
-import { computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, mergeSidebarSessions, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
+import { compareSidebarCompletion, computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, mergeSidebarSessions, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
 import { vi } from 'vitest';
 
 it('changes the sidebar hash when only the Factory association changes', () => {
   const plain = makeSession();
   const tagged = { ...plain, factoryAttemptId: 'attempt' };
   expect(computeSidebarHash([tagged])).not.toBe(computeSidebarHash([plain]));
+});
+
+it('ranks an older resumed conversation above a newer inactive one on fresh compact reads', () => {
+  const newer = makeSession({ id: 'newer', timeCreated: 200, timeUpdated: 200 });
+  for (const attention of ['lastUserPromptAt', 'lastTurnCompletedAt', 'lastHaltAt'] as const) {
+    const resumed = makeSession({ id: 'resumed', timeCreated: 1, timeUpdated: 400, [attention]: 300 });
+    const sessions = JSON.parse(JSON.stringify([newer, resumed])) as Session[];
+    expect(sessions.sort(compareSidebarCompletion).map(s => s.id)).toEqual(['resumed', 'newer']);
+  }
 });
 
 function makeSession(overrides: Partial<Session> = {}): Session {

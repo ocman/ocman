@@ -2,8 +2,6 @@ package opencode
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -197,7 +195,7 @@ func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T)
 	if err := os.MkdirAll(worktree, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ResetCachesForTests()
+	ResetCaches()
 	fake := newOpencodeFake(t)
 	fake.turnStatus = map[string]string{}
 	fake.turnStatusByDir = map[string]map[string]string{
@@ -228,7 +226,7 @@ func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T)
 	b := New(newTestDBWithSessions(t, []testSession{
 		{id: "ses-worktree", directory: worktree, busy: true},
 	}), nil)
-	ResetCachesForTests()
+	ResetCaches()
 	if b.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
 		t.Fatal("SeedSessionStatusFromInstance reported success with a failed directory read")
 	}
@@ -252,7 +250,7 @@ func TestSeedSessionStatusFromInstance_ReadsRecentWorktreeWithSettledStoredStatu
 			t.Fatal(err)
 		}
 	}
-	ResetCachesForTests()
+	ResetCaches()
 	fake := newOpencodeFake(t)
 	fake.turnStatus = map[string]string{}
 	fake.turnStatusByDir = map[string]map[string]string{active: {"ses-active": "busy"}}
@@ -280,41 +278,6 @@ func TestSeedSessionStatusFromInstance_ReadsRecentWorktreeWithSettledStoredStatu
 	}
 }
 
-// A warm sessions snapshot can predate a turn started while the watcher was
-// disconnected: it still shows the worktree's row as old and settled. The
-// window must come from the database, not that snapshot.
-func TestSeedSessionStatusFromInstance_IgnoresStaleSessionsCache(t *testing.T) {
-	base := t.TempDir()
-	root := filepath.Join(base, "project")
-	worktree := filepath.Join(base, ".worktrees", "project", "feature")
-	for _, dir := range []string{root, worktree} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	ResetCachesForTests()
-	stale := newTestDBWithSessions(t, []testSession{
-		{id: "ses-worktree", directory: worktree, messageData: `{"role":"assistant","finish":"stop"}`},
-	})
-	if _, err := getSessionsCached(context.Background(), stale, "", 0); err != nil {
-		t.Fatal(err)
-	}
-	fresh := newTestDBWithSessions(t, []testSession{
-		{id: "ses-worktree", directory: worktree, busy: true, updated: time.Now().UnixMilli()},
-	})
-	fake := newOpencodeFake(t)
-	fake.turnStatus = map[string]string{}
-	fake.turnStatusByDir = map[string]map[string]string{worktree: {"ses-worktree": "busy"}}
-	a := New(fresh, nil)
-	port := fake.Port()
-	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
-		t.Fatal("SeedSessionStatusFromInstance reported failure")
-	}
-	if got := a.turns.turnStateForPort("ses-worktree", port); got != db.TurnRunning {
-		t.Errorf("worktree turnState with stale cache = %v, want TurnRunning", got)
-	}
-}
-
 // A turn blocked for over a day (e.g. on a permission after a tool-call step)
 // has an old session and a last message with finish "tool-calls", which
 // infers as a terminal state. OpenCode treats that finish as non-terminal, so
@@ -328,7 +291,7 @@ func TestSeedSessionStatusFromInstance_ReadsOldWorktreeWithOpenToolCallTurn(t *t
 			t.Fatal(err)
 		}
 	}
-	ResetCachesForTests()
+	ResetCaches()
 	fake := newOpencodeFake(t)
 	fake.turnStatus = map[string]string{}
 	fake.turnStatusByDir = map[string]map[string]string{worktree: {"ses-blocked": "busy"}}
@@ -347,7 +310,7 @@ func TestSeedSessionStatusFromInstance_ReadsOldWorktreeWithOpenToolCallTurn(t *t
 // If the session list cannot be read, the worktree candidates are unknown;
 // seeding from the root read alone would settle busy worktree sessions.
 func TestSeedSessionStatusFromInstance_SessionListFailureLeavesPortUnseeded(t *testing.T) {
-	ResetCachesForTests()
+	ResetCaches()
 	fake := newOpencodeFake(t)
 	fake.turnStatus = map[string]string{}
 	database := newTestDBWithSessions(t, nil)
@@ -404,7 +367,7 @@ func TestSeedSessionStatusFromInstance_FailureLeavesPortUnseeded(t *testing.T) {
 // A child session whose turn has just started has the user's prompt as its
 // last message, which infers as "done" — the exact lag that used to hide it
 // from the list. The live turn signal keeps it visible.
-func TestSessions_LiveSignalKeepsJustStartedChildVisible(t *testing.T) {
+func TestRuntimeInventorySettlesChildTurnsFromLiveSignal(t *testing.T) {
 	const dir = "/repo/main"
 	parentID := "ses-parent"
 	database := newTestDBWithSessions(t, []testSession{
@@ -413,20 +376,20 @@ func TestSessions_LiveSignalKeepsJustStartedChildVisible(t *testing.T) {
 	})
 	fake := newOpencodeFake(t)
 	withTestPort(t, dir, fake.Port())
-	InvalidateSessionsCache()
 
 	a := New(database, nil)
-	// Without a live signal the child is inferred done and filtered out.
+	// The runtime inventory keeps every row for reload safety; without a
+	// live signal the child settles as not running.
 	a.SeedSessionStatus(fake.Port(), 0, 0, map[string]string{})
 	sessions, err := a.Sessions(context.Background(), dir, 0)
 	if err != nil {
 		t.Fatalf("Sessions: %v", err)
 	}
-	if len(sessions) != 1 || sessions[0].ID != parentID {
-		t.Fatalf("settled child should be filtered out, got %+v", sessionIDs(sessions))
+	if child, ok := sessionByID(sessions, "ses-child"); !ok || child.Status == db.StatusBusy {
+		t.Fatalf("settled child = %+v, %v", child, ok)
 	}
 
-	// The instance reports the child's turn running: it must reappear.
+	// The instance reports the child's turn running.
 	a.SeedSessionStatus(fake.Port(), 0, 0, map[string]string{"ses-child": "busy"})
 	sessions, err = a.Sessions(context.Background(), dir, 0)
 	if err != nil {
@@ -434,7 +397,7 @@ func TestSessions_LiveSignalKeepsJustStartedChildVisible(t *testing.T) {
 	}
 	child, ok := sessionByID(sessions, "ses-child")
 	if !ok {
-		t.Fatalf("running child missing from listing, got %+v", sessionIDs(sessions))
+		t.Fatalf("running child missing from inventory, got %+v", sessionIDs(sessions))
 	}
 	if child.Status != db.StatusBusy {
 		t.Errorf("child status = %q, want busy", child.Status)
@@ -448,7 +411,6 @@ func TestSessions_SettledInstanceEndsStaleBusy(t *testing.T) {
 	database := newTestDBWithSessions(t, []testSession{{id: "ses-1", directory: dir, busy: true}})
 	fake := newOpencodeFake(t)
 	withTestPort(t, dir, fake.Port())
-	InvalidateSessionsCache()
 
 	a := New(database, nil)
 	a.SeedSessionStatus(fake.Port(), 0, 0, map[string]string{})
@@ -490,7 +452,6 @@ func TestSessions_DeadInstanceReportsInterrupted(t *testing.T) {
 		restore()
 		resetPortCacheForTests()
 	})
-	InvalidateSessionsCache()
 
 	a := New(database, nil)
 	sessions, err := a.Sessions(context.Background(), dir, 0)
@@ -505,27 +466,6 @@ func TestSessions_DeadInstanceReportsInterrupted(t *testing.T) {
 	}
 	if sessions[0].LiveConnection {
 		t.Error("LiveConnection should be false with no instance")
-	}
-}
-
-// A running instance whose conversation can't be fetched (e.g. a body
-// over maxUpstreamConversationBytes) falls back to the DB, but the
-// session is still live: reporting it as disconnected leaves the UI
-// stuck on "OpenCode is not running" right after a successful launch.
-func TestSession_DBFallbackStillReportsLiveInstance(t *testing.T) {
-	const dir = "/repo/main"
-	database := newTestDBWithSession(t, "ses-1", dir)
-	fake := newOpencodeFake(t)
-	fake.SetSession("ses-1", json.RawMessage(`{"id":"ses-1","directory":"/repo/main"}`))
-	fake.messagesStatus = http.StatusInternalServerError
-	withTestPort(t, dir, fake.Port())
-
-	detail, err := New(database, nil).Session(context.Background(), "ses-1", 0, 0)
-	if err != nil {
-		t.Fatalf("Session: %v", err)
-	}
-	if !detail.Session.LiveConnection {
-		t.Error("LiveConnection should be true while an instance serves the directory")
 	}
 }
 

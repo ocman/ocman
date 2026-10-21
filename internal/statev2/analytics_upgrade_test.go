@@ -2,7 +2,6 @@ package statev2
 
 import (
 	"database/sql"
-	"fmt"
 	"path/filepath"
 	"testing"
 )
@@ -151,7 +150,8 @@ func removeConversationColumns(t *testing.T, d *DB) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := d.db.Exec(`DROP INDEX message_conversation_page;
+	removeSidebarSchema(t, d)
+	if _, err := d.db.Exec(`DROP TABLE projects_cache; DROP INDEX message_conversation_page;
 		ALTER TABLE session DROP COLUMN is_subagent;
 		ALTER TABLE session DROP COLUMN read_format;
 		ALTER TABLE message DROP COLUMN conversation_visible;
@@ -175,7 +175,8 @@ func TestSubagentUpgradeBackfillsLegacyTitleRule(t *testing.T) {
 		b.Session.SessionID, b.Session.Title, b.Checkpoint = id, title, nil
 		commit(t, d, b)
 	}
-	if _, err := d.db.Exec(fmt.Sprintf(`ALTER TABLE session DROP COLUMN is_subagent; ALTER TABLE analytics_session DROP COLUMN is_subagent; DROP INDEX analytics_fact_hour; PRAGMA user_version=%d`, len(migrations)-2)); err != nil {
+	removeSidebarSchema(t, d)
+	if _, err := d.db.Exec(`DROP TABLE projects_cache; ALTER TABLE session DROP COLUMN is_subagent; ALTER TABLE analytics_session DROP COLUMN is_subagent; DROP INDEX analytics_fact_hour; PRAGMA user_version=8`); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()

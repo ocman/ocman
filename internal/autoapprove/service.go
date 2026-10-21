@@ -26,7 +26,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -80,6 +79,8 @@ type Deps struct {
 	// for OpenCode port discovery). May be nil when no session DB is
 	// available; the judge then falls through to human review.
 	SessionDir func(sessionID string) (string, error)
+	// RecentUserMessages reads ingested owner-local prose, never native history.
+	RecentUserMessages func(context.Context, platforms.ID, string) ([]string, error)
 
 	// ParentSessionID resolves a (possibly child) session ID to its
 	// parent session ID, returning ok=false when the session is not a
@@ -233,14 +234,15 @@ func NewService(deps Deps) *Service {
 	if !deps.OpenCodeDisabled {
 		judge.openCodePort = svc.openCodePort
 	}
+	judge.sessionIdentity = svc.judgeSessionIdentity
 	return svc
 }
 
 // openCodeDiscovery is the wired OpenCode adapter's port discovery, or nil
 // when no OpenCode adapter is registered.
-func (s *Service) openCodeDiscovery() *opencode.Discovery {
-	if a, ok := s.OpencodeAdapter().(*opencode.Adapter); ok && a != nil {
-		return a.Discovery()
+func (s *Service) openCodeDiscovery() platforms.InstancePorts {
+	if a, ok := s.OpencodeAdapter().(platforms.InstancePortProvider); ok {
+		return a.InstancePorts()
 	}
 	return nil
 }

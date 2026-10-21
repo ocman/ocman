@@ -25,7 +25,7 @@ func (d *DB) DailyActivity(ctx context.Context, instanceID string, since int64) 
 	days := map[string]*DayActivity{}
 	var order []string
 	add := func(query string, set func(*DayActivity, int64)) error {
-		rows, err := d.db.QueryContext(ctx, query, instanceID, since)
+		rows, err := d.reader().QueryContext(ctx, query, instanceID, since)
 		if err != nil {
 			return err
 		}
@@ -85,7 +85,7 @@ type ModelUsageRow struct {
 // ModelUsage totals assistant messages per model since the given time,
 // ordered by key. Messages without a model are skipped, as in analytics.
 func (d *DB) ModelUsage(ctx context.Context, instanceID string, since int64) ([]ModelUsageRow, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT m.model, count(*), sum(m.tokens_input), sum(m.tokens_output),
+	rows, err := d.reader().QueryContext(ctx, `SELECT m.model, count(*), sum(m.tokens_input), sum(m.tokens_output),
 		sum(m.tokens_cache_read), sum(m.tokens_cache_write)
 		FROM message m JOIN session s ON s.instance_id=m.instance_id AND s.id=m.session_id
 		WHERE m.instance_id=? AND m.role='assistant' AND m.created_at>=? AND m.model<>''
@@ -109,7 +109,7 @@ func (d *DB) ModelUsage(ctx context.Context, instanceID string, since int64) ([]
 // InstanceBySource finds the instance registered for one physical source.
 func (d *DB) InstanceBySource(ctx context.Context, ownerID, platform, sourceKey string) (Instance, error) {
 	i := Instance{OwnerID: ownerID, Platform: platform, SourceKey: sourceKey}
-	err := d.db.QueryRowContext(ctx, `SELECT id,name FROM instance WHERE owner_id=? AND platform=? AND source_key=?`,
+	err := d.reader().QueryRowContext(ctx, `SELECT id,name FROM instance WHERE owner_id=? AND platform=? AND source_key=?`,
 		ownerID, platform, sourceKey).Scan(&i.ID, &i.Name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Instance{}, ErrNotFound

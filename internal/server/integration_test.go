@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
 // Ensure the sql import is used (needed for the sqlite3 driver side-effect
@@ -40,6 +42,7 @@ func testServer(t *testing.T) *Server {
 		t.Fatalf("opening temp oc file: %v", err)
 	}
 	_, err = setupDB.Exec(`
+		CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL DEFAULT '');
 		CREATE TABLE session (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL DEFAULT '',
@@ -88,9 +91,10 @@ func testServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { stateDB.Close() })
 
-	reg := platforms.NewRegistry()
-	reg.Register(opencodeplatform.New(database, stateDB))
+	reg, history := canonicalOpenCodeRegistry(t, database, stateDB)
 	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
+	testHistories.Store(srv, history)
+	installProjectCacheFixture(t, srv, database)
 	// Never spawn real tmux/opencode from tests — that leaks a tmux
 	// session per run (the temp dir is cleaned up, the session isn't).
 	// Override before the host router is built lazily on first use.
@@ -866,24 +870,26 @@ func TestApplySessionState_UnreadCount(t *testing.T) {
 	}
 	mustExec(`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s1', 'S1', '/d', 100, 400)`)
 	mustExec(`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s2', 'S2', '/d', 100, 300)`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 100, '{}')`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m2', 's1', 250, '{}')`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m3', 's1', 400, '{}')`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m4', 's2', 150, '{}')`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m5', 's2', 300, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 100, '{"role":"user"}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m2', 's1', 250, '{"role":"assistant","finish":"stop"}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m3', 's1', 400, '{"role":"assistant","finish":"stop"}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m4', 's2', 150, '{"role":"user"}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m5', 's2', 300, '{"role":"assistant","finish":"stop"}')`)
+	ingestRaw(t, srv, 2)
+	s1, s2 := canonicalID(t, srv, "s1"), canonicalID(t, srv, "s2")
 
 	// s1: user saw up to time_updated=200 → 2 messages newer (m2, m3).
 	// s2: user saw up to time_updated=300 → fully seen, count omitted.
-	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s1", 200); err != nil {
+	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", s1, 200); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s2", 300); err != nil {
+	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", s2, 300); err != nil {
 		t.Fatal(err)
 	}
 
 	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", TimeUpdated: 400},
-		{ID: "s2", Platform: "opencode", TimeUpdated: 300},
+		{ID: s1, Platform: "opencode", TimeUpdated: 400},
+		{ID: s2, Platform: "opencode", TimeUpdated: 300},
 	}
 	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
@@ -913,12 +919,13 @@ func TestApplySessionState_UnreadCount_NeverSeen(t *testing.T) {
 		}
 	}
 	mustExec(`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s1', 'S1', '/d', 100, 500)`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 100, '{}')`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m2', 's1', 200, '{}')`)
-	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m3', 's1', 300, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 100, '{"role":"user"}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m2', 's1', 200, '{"role":"assistant","finish":"stop"}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m3', 's1', 300, '{"role":"user"}')`)
+	ingestRaw(t, srv, 1)
 
 	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", TimeUpdated: 500},
+		{ID: canonicalID(t, srv, "s1"), Platform: "opencode", TimeUpdated: 500},
 	}
 	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
@@ -1239,6 +1246,7 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
+	ingestRaw(t, srv, 2)
 
 	srv.autoArchiveInactiveSessions(t.Context())
 
@@ -1246,10 +1254,10 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ArchivedSessions: %v", err)
 	}
-	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "old-session"}]; !ok {
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: canonicalID(t, srv, "old-session")}]; !ok {
 		t.Errorf("expected old-session to be archived under opencode after auto-archive pass, got %+v", archived)
 	}
-	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "recent-session"}]; ok {
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: canonicalID(t, srv, "recent-session")}]; ok {
 		t.Errorf("expected recent-session to remain unarchived, got %+v", archived)
 	}
 }
@@ -1266,6 +1274,7 @@ func TestAutoArchiveUsesConfiguredTTL(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
+	ingestRaw(t, srv, 1)
 	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: true, TTLDays: 3}); err != nil {
 		t.Fatal(err)
 	}
@@ -1276,7 +1285,7 @@ func TestAutoArchiveUsesConfiguredTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "custom-ttl-session"}]; !ok {
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: canonicalID(t, srv, "custom-ttl-session")}]; !ok {
 		t.Errorf("session older than configured TTL was not archived: %+v", archived)
 	}
 }
@@ -1294,7 +1303,7 @@ func TestAutoArchiveCanBeDisabled(t *testing.T) {
 	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: false, TTLDays: 7}); err != nil {
 		t.Fatal(err)
 	}
-	opencodeplatform.ResetCachesForTests()
+	opencodeplatform.ResetCaches()
 
 	srv.autoArchiveInactiveSessions(t.Context())
 	srv.autoArchiveInactiveProjects(t.Context())
@@ -1334,7 +1343,7 @@ func TestAutoArchiveProjects(t *testing.T) {
 	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: true, TTLDays: 3}); err != nil {
 		t.Fatal(err)
 	}
-	opencodeplatform.ResetCachesForTests()
+	opencodeplatform.ResetCaches()
 
 	srv.autoArchiveInactiveProjects(t.Context())
 
@@ -1365,7 +1374,7 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
-	opencodeplatform.ResetCachesForTests()
+	opencodeplatform.ResetCaches()
 
 	// The user goes looking for the old work and unarchives it.
 	if err := srv.stateDB.UnarchiveSession(t.Context(), "opencode", "old-session"); err != nil {
@@ -1399,13 +1408,8 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 // handle to the same OpenCode database so tests can seed additional rows.
 func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	t.Helper()
-	// The opencode package keeps several process-global caches
-	// (recents, session defaults, sessions list) for production
-	// performance. Tests that seed a fresh DB need a fresh cache,
-	// otherwise a row inserted after a previous test's GetSessions
-	// call won't appear in this test's result. Reset before doing
-	// anything else so the cache state matches the DB state.
-	opencodeplatform.ResetCachesForTests()
+	// Process-wide OpenCode HTTP caches are keyed by port; start clean.
+	opencodeplatform.ResetCaches()
 	tmpDir := t.TempDir()
 
 	tmpOC := tmpDir + "/opencode.db"
@@ -1414,6 +1418,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 		t.Fatalf("opening temp oc file: %v", err)
 	}
 	_, err = setupDB.Exec(`
+		CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL DEFAULT '');
 		CREATE TABLE session (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL DEFAULT '',
@@ -1460,11 +1465,28 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	}
 	t.Cleanup(func() { stateDB.Close() })
 
-	reg := platforms.NewRegistry()
-	reg.Register(opencodeplatform.New(database, stateDB))
+	reg, history := canonicalOpenCodeRegistry(t, database, stateDB)
 	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
+	installProjectCacheFixture(t, srv, database)
 	srv.runtime = fakeRuntime{}
+	testHistories.Store(srv, history)
 	return srv, setupDB
+}
+
+var testHistories sync.Map // *Server -> *statev2.DB for the OpenCode test servers
+
+// ingestRaw wires history ingestion into an OpenCode test server, as startup
+// does, and waits for want seeded sessions.
+func ingestRaw(t *testing.T, s *Server, want int) {
+	t.Helper()
+	history, ok := testHistories.Load(s)
+	if !ok {
+		t.Fatal("server was not built by testServer or testServerWithRawDB")
+	}
+	if s.historyIngest == nil {
+		s.WithConversationHistory(history.(*statev2.DB), "owner")
+	}
+	ingestHistory(t, s, history.(*statev2.DB), want)
 }
 
 // TestHandleSessions_MergesByTimeUpdatedDesc guards the list merge
@@ -1508,6 +1530,8 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seeding opencode sessions: %v", err)
 	}
+	ingestRaw(t, srv, 2)
+	mid, old := canonicalID(t, srv, "oc-mid"), canonicalID(t, srv, "oc-old")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
@@ -1523,7 +1547,7 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 	if len(got) != 4 {
 		t.Fatalf("expected 4 sessions, got %d: %+v", len(got), got)
 	}
-	wantIDs := []string{"cc-newest", "oc-mid", "oc-old", "cc-oldest"} //nolint:gocritic // IDs are stable test fixtures
+	wantIDs := []string{"cc-newest", mid, old, "cc-oldest"}
 	for i, want := range wantIDs {
 		if got[i].ID != want {
 			t.Errorf("position %d: got %s, want %s (full order: %v)",
@@ -1595,9 +1619,12 @@ func TestHandleSessionChanges_OpenCodeAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seeding parts: %v", err)
 	}
+	ingestRaw(t, srv, 1)
+	id := canonicalID(t, srv, "s1")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/session/s1/changes", nil)
-	req.URL.Path = "/api/session/s1/changes"
+	req := httptest.NewRequest(http.MethodGet, "/api/session/"+id+"/changes", nil)
+	req.URL.Path = "/api/session/" + id + "/changes"
+	req.SetPathValue("id", id)
 	rr := httptest.NewRecorder()
 	srv.handleSessionChanges(rr, req)
 

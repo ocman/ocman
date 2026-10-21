@@ -15,34 +15,45 @@ import (
 // reconnects to it; draining (out of range), the same stream continues
 // with the draining supervisor's prompts.
 func (p *claudePlatform) ProxyEvents(ctx context.Context, id string, w io.Writer, flush func()) error {
-	// The notification is captured before the state is read: recovery
-	// installs a supervisor and closes this channel under one lock, so one
-	// found after this point closes it, and one found before is seen below.
-	p.projects.mu.Lock()
-	attached := p.projects.attached
-	p.projects.mu.Unlock()
-	if d := p.projects.drainingFor(ctx, id); d != nil {
-		return p.proxyDraining(ctx, id, d, w, flush)
-	}
 	a, _, err := p.projects.route(ctx, id, false)
 	if err != nil {
 		return err
 	}
-	claudeTestHook("routed", id)
-	if a != nil {
-		return a.ProxyEvents(ctx, id, w, flush)
+	// Both attachment and a corrected native-session binding end the old
+	// stream. Capturing before rechecking the binding closes the routing race.
+	p.projects.mu.Lock()
+	attached := p.projects.attached
+	changed := p.projects.sessionChangedLocked(id)
+	p.projects.mu.Unlock()
+	if p.projects.owner(id) != a {
+		return nil
 	}
+	if d := p.projects.drainingFor(ctx, id); d != nil {
+		return p.proxyDraining(ctx, id, d, w, flush)
+	}
+	claudeTestHook("routed", id)
 	browse, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		select {
 		case <-attached:
 			cancel()
+		case <-changed:
+			cancel()
 		case <-browse.Done():
 		}
 	}()
-	claudeTestHook("browsing", id)
-	err = p.Adapter.ProxyEvents(browse, id, w, flush)
+	if a != nil {
+		err = a.ProxyEvents(browse, id, w, flush)
+	} else {
+		claudeTestHook("browsing", id)
+		err = p.Adapter.ProxyEvents(browse, id, w, flush)
+	}
+	select {
+	case <-changed:
+		return nil
+	default:
+	}
 	select {
 	case <-attached:
 		if d := p.projects.drainingFor(ctx, id); d != nil {

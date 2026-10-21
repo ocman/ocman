@@ -109,4 +109,4 @@ CREATE TABLE analytics_part (
 	FOREIGN KEY(instance_id,session_id) REFERENCES session(instance_id,id) ON DELETE CASCADE
 );
 CREATE INDEX analytics_part_message ON analytics_part(instance_id,message_id);
-`, analyticsSummarySchema, analyticsIdentitySchema, conversationSchema, sessionSubagentSchema, analyticsIncrementalSchema}
+`, analyticsSummarySchema, analyticsIdentitySchema, conversationSchema, sessionSubagentSchema, projectsCacheSchema, sidebarSchema, sidebarStreamRepair, sidebarAttentionSchema, analyticsIncrementalSchema}

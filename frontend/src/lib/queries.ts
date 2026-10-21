@@ -141,6 +141,7 @@ export function useArchiveInboxItems() {
 export const SESSIONS_POLL_MS = 5000;
 
 type SessionsParams = {
+  accounting?: boolean;
   dir?: string;
   /**
    * Lookback window in hours. Preferred over a raw `since` timestamp
@@ -174,8 +175,8 @@ export function useSessions(
   // Build a stable query key from the params. `sinceHours` is a stable
   // number (e.g. 12, 168) rather than a moving timestamp.
   const key = params?.dir
-    ? ['sessions', { dir: params.dir, sinceHours: params.sinceHours, limit: params.limit }]
-    : ['sessions', { sinceHours: params?.sinceHours, limit: params?.limit }];
+    ? ['sessions', { dir: params.dir, sinceHours: params.sinceHours, limit: params.limit, ...(params.accounting ? { accounting: true } : {}) }]
+    : ['sessions', { sinceHours: params?.sinceHours, limit: params?.limit, ...(params?.accounting ? { accounting: true } : {}) }];
 
   return useQuery<Session[]>({
     queryKey: key,
@@ -185,7 +186,7 @@ export function useSessions(
       const since = params?.sinceHours
         ? Date.now() - params.sinceHours * 60 * 60 * 1000
         : undefined;
-      return api.sessions({ dir: params?.dir, since, limit: params?.limit }, signal)
+      return api.sessions({ dir: params?.dir, since, limit: params?.limit, view: params?.accounting ? undefined : 'sidebar' }, signal)
         .then((r) => r ?? []);
     },
     refetchInterval: options?.poll ? SESSIONS_POLL_MS : undefined,

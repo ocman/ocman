@@ -30,6 +30,7 @@ prompts to the user.
 | GET /hello | `Hello` |
 | GET /sessions?directory=&since= | `[]Session`, since is Unix milliseconds |
 | GET /sessions?live=1 | `[]Session` with only id, status and resetsAt: the statuses this process settled |
+| GET /sessions?runtime=1&directory= | `[]Session` owned by this supervisor, including pre-transcript sessions; excludes status-only helper observations. Older supervisors ignore `runtime` and return their ordinary session list. |
 | GET /sessions/{id}?limit=&offset= | `SessionDetail`, message paging |
 | GET /sessions/{id}/lifecycle | `SessionLifecycle`, bounded read |
 | POST /sessions | `CreateSessionRequest` / `CreateSessionResponse` |

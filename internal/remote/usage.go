@@ -38,7 +38,7 @@ func (s *usageServer) SessionUsage(ctx context.Context, req *pb.SessionRef) (*pb
 	if req.SessionId == "" {
 		return nil, status.Error(codes.InvalidArgument, "session id is required")
 	}
-	adapter, err := s.owner.platformFor(req.Platform)
+	adapter, err := s.owner.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}

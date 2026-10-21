@@ -7,17 +7,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
 // openCodeClient is an HTTP client with a reasonable timeout for API
@@ -87,22 +83,6 @@ func getInto(port, path string, v interface{}) bool {
 	return json.Unmarshal(body, v) == nil
 }
 
-// fetchOpenCodeSession fetches session metadata from the OpenCode HTTP API.
-func fetchOpenCodeSession(ctx context.Context, port, sessionID string) (map[string]interface{}, error) {
-	path := "/session/" + sessionID
-	body, ok := sessionCache.getOrFetchShared(ctx, port, path, func(shared context.Context) ([]byte, bool) {
-		return rawGetContext(shared, port, path)
-	})
-	if !ok {
-		return nil, fmt.Errorf("session API: upstream fetch failed")
-	}
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("decoding session: %w", err)
-	}
-	return result, nil
-}
-
 // fetchOpenCodeSmallModel fetches the resolved OpenCode config and extracts small_model.
 func fetchOpenCodeSmallModel(port string) (providerID, modelID string, ok bool) {
 	var cfg struct {
@@ -167,190 +147,6 @@ func fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCo
 		return empty, false
 	}
 	return parsed, true
-}
-
-// fetchOpenCodeMessages fetches messages for a session from the OpenCode HTTP API.
-func fetchOpenCodeMessages(ctx context.Context, port, sessionID string) ([]map[string]interface{}, error) {
-	path := "/session/" + sessionID + "/message"
-	body, ok := sessionCache.getOrFetchShared(ctx, port, path, func(shared context.Context) ([]byte, bool) {
-		return rawGetContext(shared, port, path)
-	})
-	if !ok {
-		return nil, fmt.Errorf("messages API: upstream fetch failed")
-	}
-	var result []map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("decoding messages: %w", err)
-	}
-	return result, nil
-}
-
-// isSynthesizedTerminal reports whether a raw OpenCode message originated
-// from a non-LLM source (e.g. POST /session/{id}/shell) and has finished.
-func isSynthesizedTerminal(raw map[string]interface{}) bool {
-	rawParts, ok := raw["parts"].([]interface{})
-	if !ok || len(rawParts) == 0 {
-		return false
-	}
-	hasPart := false
-	for _, p := range rawParts {
-		part, ok := p.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		hasPart = true
-		if t, _ := part["type"].(string); t == "step-start" {
-			return false
-		}
-		if state, ok := part["state"].(map[string]interface{}); ok {
-			if status, _ := state["status"].(string); status == "running" {
-				return false
-			}
-		}
-	}
-	return hasPart
-}
-
-// fetchSessionFromOpenCodeCtx tries to get session data from the running
-// OpenCode HTTP API, with per-phase Server-Timing instrumentation.
-func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID string, limit, offset int) (*platforms.SessionDetail, bool) {
-	if a.db == nil {
-		return nil, false
-	}
-	dbPhase := srvtiming.Begin(ctx, "db_get_session")
-	dbSession, err := a.db.GetSession(ctx, sessionID)
-	dbPhase.End()
-	if err != nil {
-		return nil, false
-	}
-
-	port := a.rt.resolveOpenCodePortForSessionCtx(ctx, sessionID, dbSession.Directory)
-	if port == "" {
-		return nil, false
-	}
-
-	var ocSession map[string]interface{}
-	var ocMessages []map[string]interface{}
-	var sessionErr, messagesErr error
-	parallelPhase := srvtiming.Begin(ctx, "http_parallel")
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		p := srvtiming.Begin(ctx, "http_session")
-		ocSession, sessionErr = fetchOpenCodeSession(ctx, port, sessionID)
-		p.EndWithDesc("GET /session/{id}")
-	}()
-	go func() {
-		defer wg.Done()
-		p := srvtiming.Begin(ctx, "http_messages")
-		ocMessages, messagesErr = fetchOpenCodeMessages(ctx, port, sessionID)
-		p.EndWithDesc("GET /session/{id}/message")
-	}()
-	wg.Wait()
-	parallelPhase.EndWithDesc("wall-clock for both fetches")
-
-	if ctx.Err() != nil {
-		// The caller left; the port is fine, so keep it.
-		return nil, false
-	}
-	if sessionErr != nil || messagesErr != nil || ocSession == nil {
-		a.rt.forgetSessionPort(sessionID, port)
-		return nil, false
-	}
-
-	convPhase := srvtiming.Begin(ctx, "convert")
-	untypedMessages, untypedParts := convertOpenCodeMessages(ocMessages)
-	stats := computeMessageStats(untypedMessages)
-	totalMessages := len(untypedMessages)
-	pagedMessages, pagedMsgIDs := paginateUntyped(untypedMessages, limit, offset)
-	pagedParts := filterPartsUntyped(untypedParts, pagedMsgIDs)
-	convPhase.EndWithDesc("convertOpenCodeMessages + paginate")
-
-	defaultsPhase := srvtiming.Begin(ctx, "db_session_defaults")
-	defaults, err := getSessionDefaultsCached(ctx, a.db, sessionID, dbSession.Directory)
-	defaultsPhase.End()
-	if err != nil {
-		logFetchFailure(err, log.Fields{"sessionID": sessionID},
-			"opencode: fetching session defaults for live path")
-	}
-	if stats.currentModel != "" {
-		defaults.Model = stats.currentModel
-	}
-
-	inferredStatus := db.StatusDone
-	lastErrorName := ""
-	lastErrorMessage := ""
-	lastErrorAt := int64(0)
-	if n := len(untypedMessages); n > 0 {
-		lastMessage := untypedMessages[n-1]
-		if info, ok := lastMessage["data"].(map[string]interface{}); ok {
-			role, _ := info["role"].(string)
-			finish, _ := info["finish"].(string)
-			lastErr := ""
-			if rawError, hasError := info["error"]; hasError {
-				lastErr = "true"
-				if errorMap, ok := rawError.(map[string]interface{}); ok {
-					lastErrorName, _ = errorMap["name"].(string)
-					lastErrorMessage, _ = errorMap["message"].(string)
-					if dataMap, ok := errorMap["data"].(map[string]interface{}); ok {
-						if dataMessage, _ := dataMap["message"].(string); dataMessage != "" {
-							lastErrorMessage = dataMessage
-						}
-					}
-				}
-			}
-			switch v := lastMessage["timeCreated"].(type) {
-			case float64:
-				lastErrorAt = int64(v)
-			case int64:
-				lastErrorAt = v
-			}
-			synthTerminal := false
-			if rawIdx := len(ocMessages) - 1; rawIdx >= 0 {
-				synthTerminal = isSynthesizedTerminal(ocMessages[rawIdx])
-			}
-			inferredStatus = db.InferSessionStatus(role, finish, lastErr, synthTerminal)
-		}
-	}
-	// This path only runs with a live instance on `port`, so the live turn
-	// signal is authoritative here; the inference above only decides which
-	// terminal state a settled session is in.
-	turnState := db.TurnUnobserved
-	if a.turns != nil {
-		turnState = a.turns.turnStateForPort(sessionID, port)
-	}
-	sessionStatus := db.SettleSessionStatus(turnState, port != "", inferredStatus)
-	stats.activeDurationMs = stats.activeDurationAt(time.Now().UnixMilli(), turnState == db.TurnRunning)
-
-	userMsgCount := 0
-	for _, m := range untypedMessages {
-		if info, ok := m["data"].(map[string]interface{}); ok {
-			if role, _ := info["role"].(string); role == "user" {
-				userMsgCount++
-			}
-		}
-	}
-
-	typedPhase := srvtiming.Begin(ctx, "typed")
-	session := sessionFromOpenCode(ocSession, stats, userMsgCount, sessionStatus)
-	session.LastErrorName = lastErrorName
-	session.LastErrorMessage = lastErrorMessage
-	session.LastErrorAt = lastErrorAt
-	messages := typedMessagesFromUntyped(pagedMessages)
-	parts := typedPartsFromUntyped(pagedParts)
-	typedPhase.EndWithDesc("untyped->typed conversion")
-
-	return &platforms.SessionDetail{
-		Session:           session,
-		Messages:          messages,
-		Parts:             parts,
-		TotalMessages:     totalMessages,
-		ContextTokenCount: int64(stats.contextTokenCount),
-		DefaultAgent:      defaults.Agent,
-		DefaultModel:      defaults.Model,
-		Warnings:          a.rt.sessionWarningsForDirectory(dbSession.Directory),
-	}, true
 }
 
 // scopedPath adds the directory scope to a catalog path on an OpenCode v2

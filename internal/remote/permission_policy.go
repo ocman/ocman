@@ -38,6 +38,11 @@ func (s *Server) SessionPermissionPolicy(ctx context.Context, req *pb.PlatformJs
 	if len(req.Payload) > 1<<20 || json.Unmarshal(req.Payload, &input) != nil || input.SessionID == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid permission policy request")
 	}
+	if s.registry.CanonicalSessionIDs() {
+		if err := validateCanonicalReferences(input.SessionID, "", true); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := platforms.ReadSessionSummary(ctx, adapter, input.SessionID); err != nil {
 		return nil, svcErr(err)
 	}

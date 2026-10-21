@@ -11,7 +11,7 @@ import (
 func (d *DB) SessionState(ctx context.Context, key Key) (Session, bool, error) {
 	s := Session{Key: key}
 	var purged bool
-	if err := d.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM purged_session WHERE instance_id=? AND session_id=?)`,
+	if err := d.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM purged_session WHERE instance_id=? AND session_id=?)`,
 		key.InstanceID, key.SessionID).Scan(&purged); err != nil {
 		return s, false, err
 	}
@@ -19,7 +19,7 @@ func (d *DB) SessionState(ctx context.Context, key Key) (Session, bool, error) {
 		return s, true, nil
 	}
 	var raw string
-	err := d.db.QueryRowContext(ctx, `SELECT title,directory,created_at,updated_at,source_deleted,revision,extensions,parent_id,project_id,read_format,is_subagent
+	err := d.reader().QueryRowContext(ctx, `SELECT title,directory,created_at,updated_at,source_deleted,revision,extensions,parent_id,project_id,read_format,is_subagent
 		FROM session WHERE instance_id=? AND id=?`, key.InstanceID, key.SessionID).
 		Scan(&s.Title, &s.Directory, &s.CreatedAt, &s.UpdatedAt, &s.SourceDeleted, &s.Revision, &raw, &s.ParentID, &s.ProjectID, &s.ReadFormat, &s.Subagent)
 	if errors.Is(notFound(err), ErrNotFound) {
@@ -32,7 +32,7 @@ func (d *DB) SessionState(ctx context.Context, key Key) (Session, bool, error) {
 // Sessions inventories retained metadata without loading conversation content.
 // Purged identities are deliberately absent, source-deleted sessions are retained.
 func (d *DB) Sessions(ctx context.Context, instanceID string) ([]Session, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT id,title,directory,created_at,updated_at,source_deleted,revision,extensions,parent_id,project_id,read_format,is_subagent
+	rows, err := d.reader().QueryContext(ctx, `SELECT id,title,directory,created_at,updated_at,source_deleted,revision,extensions,parent_id,project_id,read_format,is_subagent
 		FROM session WHERE instance_id=? ORDER BY id`, instanceID)
 	if err != nil {
 		return nil, err

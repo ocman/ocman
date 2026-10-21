@@ -127,7 +127,7 @@ const llmMetricsScanInterval = 30 * time.Second
 // current max message time so only messages arriving after ocman
 // starts are counted (avoids a counter spike on restart).
 func (m *Module) runLLMMetricsLoop(ctx context.Context) {
-	if !telemetry.Enabled() || m.deps.DB == nil {
+	if !telemetry.Enabled() || m.deps.HistoryAnalytics == nil {
 		return
 	}
 
@@ -139,11 +139,10 @@ func (m *Module) runLLMMetricsLoop(ctx context.Context) {
 
 	// Initialise high-water mark to the current max so we don't
 	// replay the entire history on startup.
-	hwm, err := m.deps.DB.GetMaxMessageTime(ctx)
-	if err != nil {
-		log.WithError(err).Warn("LLM metrics: failed to get initial high-water mark")
-		return
-	}
+	var hwm int64
+	seeded := false
+	tick := func() { m.runStoredLLMMetricsTick(ctx, metrics, &hwm, &seeded) }
+	runWithRecover("llm-metrics", tick)
 
 	ticker := time.NewTicker(llmMetricsScanInterval)
 	defer ticker.Stop()
@@ -153,9 +152,26 @@ func (m *Module) runLLMMetricsLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			runWithRecover("llm-metrics", func() { m.runLLMMetricsTick(ctx, metrics, &hwm) })
+			runWithRecover("llm-metrics", tick)
 		}
 	}
+}
+
+func (m *Module) runStoredLLMMetricsTick(ctx context.Context, metrics *llmMetrics, hwm *int64, seeded *bool) {
+	if *seeded {
+		m.runLLMMetricsTick(ctx, metrics, hwm)
+		return
+	}
+	var next int64
+	err := m.withStoredAnalytics(ctx, func(reader *db.DB) error { var err error; next, err = reader.GetMaxMessageTime(ctx); return err })
+	if err != nil {
+		if ctx.Err() == nil {
+			log.WithError(err).Warn("LLM metrics: initial history snapshot unavailable; will retry")
+		}
+		return
+	}
+	*hwm = next
+	*seeded = true
 }
 
 func (m *Module) runLLMMetricsTick(ctx context.Context, metrics *llmMetrics, hwm *int64) {
@@ -163,7 +179,10 @@ func (m *Module) runLLMMetricsTick(ctx context.Context, metrics *llmMetrics, hwm
 	// external dashboards do not hold browser activity leases.
 	getMessages := m.getNewAssistantMessages
 	if getMessages == nil {
-		getMessages = m.deps.DB.GetNewAssistantMessages
+		getMessages = func(ctx context.Context, since int64) (rows []db.LLMMessageRow, next int64, err error) {
+			err = m.withStoredAnalytics(ctx, func(reader *db.DB) error { rows, next, err = reader.GetNewAssistantMessages(ctx, since); return err })
+			return rows, next, err
+		}
 	}
 	rows, newHWM, err := getMessages(ctx, *hwm)
 	if err != nil {

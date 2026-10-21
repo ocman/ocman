@@ -75,7 +75,7 @@ func run() {
 	guiBootTimeout := flag.Duration("gui-boot-timeout", 10*time.Second, "how long --gui waits for the backend to answer before showing an error")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:0", "listen address for the backend when --gui is set (default picks an ephemeral port)")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
-	historyPath := flag.String("statev2-db", "", "conversation history database path (default: $OCMAN_STATEV2_DB, else statev2.db beside state.db)")
+	historyPath := conversationHistoryFlag(flag.CommandLine)
 	platformNames := make([]string, 0, len(knownPlatforms))
 	for name := range knownPlatforms {
 		platformNames = append(platformNames, name)
@@ -177,7 +177,7 @@ func run() {
 			fatal("Failed to open state database: %v", err)
 		}
 		defer stateDB.Close()
-		historyDB, err := openConversationHistory(stateDBPath, *historyPath, os.Getenv)
+		historyDB, err := openApplicationHistory(ctx, stateDB, stateDBPath, *historyPath, os.Getenv)
 		if err != nil {
 			cancel()
 			return err
@@ -296,18 +296,24 @@ func run() {
 		// returns the same Table even if the background fetch is still
 		// running; calls into it just see an empty table until then.
 		registry := platforms.NewRegistry()
+		var integrations []platforms.Integration
 		for id, enabled := range enabledPlatforms {
 			if enabled {
 				// analyticsDB is OpenCode's database whenever OpenCode is
 				// enabled; other platforms only add analytics sources to it.
 				platform := knownPlatforms[id](ctx, analyticsDB, stateDB, opencodeAuth)
-				registry.Register(platform)
+				integrations = append(integrations, platform)
 				if closer, ok := platform.(interface{ Close() }); ok {
 					// Runs after cancel (deferred later): joins the platform's
 					// goroutines before state.db closes.
 					defer closer.Close()
 				}
 			}
+		}
+		if err := prepareCanonicalSessionCore(ctx, stateDB, historyDB, registry, integrations, ident.InstanceID); err != nil {
+			startupErr := canonicalStartupError(ctx, err)
+			cancel()
+			return startupErr
 		}
 		if analyticsDB != nil {
 			// After registration: platforms add their analytics sources first,
@@ -366,7 +372,7 @@ func run() {
 		defer opencodeplatform.ResetCaches()
 		return srv.StartOnListener(ctx, listener)
 	}
-	start := func(ctx context.Context, listener net.Listener) error { return reloadBackend(ctx, listener, serve) }
+	start := func(ctx context.Context, listener net.Listener) error { return startBackend(ctx, listener, serve) }
 	if *guiMode {
 		err = gui.RunGUIWithStarter(ctx, start, httpListenAddr, state.DefaultDBPath(), *guiBootTimeout)
 	} else {

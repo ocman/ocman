@@ -311,7 +311,7 @@ func TestAutoApproveWatcherUpdatesPromptRegistryFromWrappedEvents(t *testing.T) 
 	adapter := opencode.New(nil, nil)
 	var changed atomic.Int32
 	svc := NewService(Deps{
-		OpencodePlatform:        func() platforms.Platform { return adapter },
+		OpencodePlatform:        func() platforms.Platform { return openCodePlatform{Adapter: adapter} },
 		BroadcastSessionChanged: func(string) { changed.Add(1) },
 	})
 	w := newAutoApproveWatcher(svc)
@@ -409,7 +409,7 @@ func TestAutoApproveWatcherConnectsBeforePromptReconciliation(t *testing.T) {
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
 	adapter := opencode.New(nil, nil)
-	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return adapter }})
+	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	w := newAutoApproveWatcher(svc)
 	w.discoverPorts = func() map[string]string {
 		return map[string]string{"/repo/a": port, "/repo/b": port}
@@ -443,7 +443,7 @@ func TestAutoApproveWatcherReconcilesPendingPermissionIntoAutoApprove(t *testing
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
 	adapter := opencode.New(nil, nil)
-	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return adapter }})
+	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	w := newAutoApproveWatcher(svc)
 	w.discoverPorts = func() map[string]string { return map[string]string{"/repo/a": port} }
 	got := make(chan string, 1)
@@ -488,7 +488,7 @@ func TestAutoApproveWatcherRetriesFailedReconciliationOnHealthyStream(t *testing
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
 	adapter := opencode.New(nil, nil)
-	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return adapter }})
+	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	w := newAutoApproveWatcher(svc)
 	w.discoverPorts = func() map[string]string { return map[string]string{"/repo/retry": port} }
 	w.reconnectDelay = time.Millisecond

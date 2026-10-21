@@ -231,7 +231,7 @@ func TestRestartedDashboardKeepsSettledStatus(t *testing.T) {
 		if i := slices.IndexFunc(sessions, func(s db.Session) bool { return s.ID == id }); i >= 0 {
 			listed = sessions[i]
 		}
-		if d, err := p.Session(t.Context(), id, 10, 0); err == nil {
+		if d, err := runtimeDetail(t.Context(), p, id, 10, 0); err == nil {
 			detail = *d.Session
 		}
 		if l, err := p.SessionLifecycle(t.Context(), id); err == nil {

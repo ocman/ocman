@@ -3,7 +3,8 @@ package conversationingest
 import "time"
 
 // LastCheckedAt is the oldest successful source scan in the current import.
-// ReadyInstances independently decides whether the set is usable.
+// ReadyInstances reports complete verification; analytics can use initialized
+// sources' committed data independently of that diagnostic.
 func (m *Module) LastCheckedAt() time.Time {
 	m.readyMu.Lock()
 	defer m.readyMu.Unlock()

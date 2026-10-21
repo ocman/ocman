@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	_ platforms.Platform            = (*Adapter)(nil)
+	_ platforms.Integration         = (*Adapter)(nil)
 	_ platforms.LifecycleReader     = (*Adapter)(nil)
 	_ platforms.NativeQueue         = (*Adapter)(nil)
 	_ platforms.PermissionRefresher = (*Adapter)(nil)
@@ -28,24 +28,25 @@ var (
 )
 
 type Adapter struct {
-	hello         providerprotocol.Hello
-	client        *http.Client
-	mu            sync.RWMutex
-	observeMu     sync.Mutex // keep lifecycle callbacks in sequence across consumers
-	sessions      map[string]db.Session
-	live          map[string]platforms.LiveState
-	permissions   map[string]platforms.LivePrompt
-	questions     map[string]platforms.LivePrompt
-	seq           uint64
-	promptVersion uint64
-	sink          platforms.SessionEventSink
-	onEvent       func(providerprotocol.Event)
-	acks          map[string]uint64
-	rules         *Rules          // ocman-owned rules; nil uses the provider's rules RPC
-	ruled         map[string]bool // prompts answered by rules, until their reply
-	ctx           context.Context // the adapter's lifetime, ended by Close
-	draining      bool            // NewDraining: an out-of-range supervisor being replaced
-	stop          context.CancelFunc
+	hello             providerprotocol.Hello
+	client            *http.Client
+	mu                sync.RWMutex
+	observeMu         sync.Mutex      // keep lifecycle callbacks in sequence across consumers
+	known             map[string]bool // session IDs seen in listings, details or events
+	live              map[string]platforms.LiveState
+	permissions       map[string]platforms.LivePrompt
+	questions         map[string]platforms.LivePrompt
+	seq               uint64
+	promptVersion     uint64
+	headlessConnected bool
+	sink              platforms.SessionEventSink
+	onEvent           func(providerprotocol.Event)
+	acks              map[string]uint64
+	rules             *Rules          // ocman-owned rules; nil uses the provider's rules RPC
+	ruled             map[string]bool // prompts answered by rules, until their reply
+	ctx               context.Context // the adapter's lifetime, ended by Close
+	draining          bool            // NewDraining: an out-of-range supervisor being replaced
+	stop              context.CancelFunc
 }
 
 // New negotiates the protocol on socket. No goroutine is started implicitly;
@@ -74,8 +75,8 @@ func connect(ctx context.Context, socket string, draining bool) (*Adapter, error
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 	a := &Adapter{
-		client:   &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
-		sessions: make(map[string]db.Session), live: make(map[string]platforms.LiveState),
+		client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		known:  make(map[string]bool), live: make(map[string]platforms.LiveState),
 		permissions: make(map[string]platforms.LivePrompt), questions: make(map[string]platforms.LivePrompt), ruled: make(map[string]bool),
 	}
 	var handshake struct {
@@ -202,9 +203,8 @@ func (a *Adapter) request(ctx context.Context, method, path string, body any) (*
 func sessionPath(id, suffix string) string { return "/sessions/" + url.PathEscape(id) + suffix }
 
 func (a *Adapter) remember(s db.Session) {
-	s.Platform = string(a.ID())
 	a.mu.Lock()
-	a.sessions[s.ID] = s
+	a.known[s.ID] = true
 	a.mu.Unlock()
 }
 
@@ -221,7 +221,10 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	return sessions, nil
 }
 
-func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
+// RuntimeDetail reads the supervisor's own page of a session it serves. It
+// routes execution and seeds identity metadata for a running session before
+// its transcript exists; conversations are read from statev2.
+func (a *Adapter) RuntimeDetail(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
 	var detail platforms.SessionDetail
 	err := a.call(ctx, true, "GET", sessionPath(id, fmt.Sprintf("?limit=%d&offset=%d", limit, offset)), nil, &detail)
 	if err != nil {
@@ -239,25 +242,12 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	return &detail, nil
 }
 
-func (a *Adapter) Owns(_ context.Context, id string) bool {
+// Knows reports whether this adapter has observed the session in a listing,
+// detail or event. It never makes a provider call.
+func (a *Adapter) Knows(id string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	_, ok := a.sessions[id]
-	return ok
-}
-
-func (a *Adapter) SessionsInactiveBefore(ctx context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error) {
-	sessions, err := a.Sessions(ctx, "", 0)
-	if err != nil {
-		return nil, err
-	}
-	var result []db.SessionArchiveCandidate
-	for _, s := range sessions {
-		if s.TimeUpdated < cutoff {
-			result = append(result, db.SessionArchiveCandidate{ID: s.ID, TimeUpdated: s.TimeUpdated})
-		}
-	}
-	return result, nil
+	return a.known[id]
 }
 
 func (a *Adapter) SessionLifecycle(ctx context.Context, id string) (*platforms.SessionLifecycle, error) {
@@ -266,16 +256,6 @@ func (a *Adapter) SessionLifecycle(ctx context.Context, id string) (*platforms.S
 	return &result, err
 }
 
-func (a *Adapter) SessionChanges(ctx context.Context, id string) (*platforms.SessionChanges, error) {
-	var result platforms.SessionChanges
-	err := a.call(ctx, a.Capabilities().FileChanges, "GET", sessionPath(id, "/changes"), nil, &result)
-	return &result, err
-}
-func (a *Adapter) SessionInfo(ctx context.Context, id string) (*platforms.SessionInfo, error) {
-	var result platforms.SessionInfo
-	err := a.call(ctx, a.Capabilities().SessionInfo, "GET", sessionPath(id, "/info"), nil, &result)
-	return &result, err
-}
 func (a *Adapter) Account(ctx context.Context) (*providerprotocol.Account, error) {
 	var result providerprotocol.Account
 	err := a.call(ctx, a.hello.Capabilities.Account, "GET", "/account", nil, &result)
@@ -302,52 +282,10 @@ func (a *Adapter) LiveStatus(id string) *platforms.LiveState {
 	return &s
 }
 
-func (a *Adapter) DirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+// LiveDirectoryCatalog reads the running CLI's agent, command and model
+// configuration for a directory. It carries no session history.
+func (a *Adapter) LiveDirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
 	var result platforms.DirectoryCatalog
 	err := a.call(ctx, true, "GET", "/catalog?"+url.Values{"directory": {req.Directory}}.Encode(), nil, &result)
 	return &result, err
-}
-
-func (a *Adapter) catalog(ctx context.Context, id string) (*platforms.DirectoryCatalog, error) {
-	a.mu.RLock()
-	s, ok := a.sessions[id]
-	a.mu.RUnlock()
-	if !ok || s.Directory == "" {
-		detail, err := a.Session(ctx, id, 1, 0)
-		if err != nil {
-			return nil, err
-		}
-		s = *detail.Session
-	}
-	return a.DirectoryCatalog(ctx, platforms.DirectoryCatalogRequest{Directory: s.Directory})
-}
-func (a *Adapter) AgentCatalog(ctx context.Context, id string) ([]platforms.AgentCatalogEntry, error) {
-	if !a.Capabilities().AgentCatalog {
-		return nil, platforms.ErrUnsupported
-	}
-	c, err := a.catalog(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return c.Agents, nil
-}
-func (a *Adapter) SlashCommands(ctx context.Context, id string) ([]platforms.SlashCommandEntry, error) {
-	if !a.Capabilities().SlashCommands {
-		return nil, platforms.ErrUnsupported
-	}
-	c, err := a.catalog(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return c.Commands, nil
-}
-func (a *Adapter) SessionModels(ctx context.Context, id string) (*platforms.SessionModelsResponse, error) {
-	if !a.Capabilities().ModelCatalog {
-		return nil, platforms.ErrUnsupported
-	}
-	c, err := a.catalog(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return c.Models, nil
 }

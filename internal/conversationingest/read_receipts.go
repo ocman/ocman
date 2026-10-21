@@ -21,10 +21,11 @@ func (w *sourceWorker) clearReadReceipt(ctx context.Context, id string) error {
 	return w.module.deps.Store.SetSourceState(ctx, w.instance.ID, "read-ready/"+id, "")
 }
 
-func (w *sourceWorker) approveRead(ctx context.Context, id, version string) error {
+func (w *sourceWorker) approveRead(ctx context.Context, id, version string, tickets ...uint64) error {
 	if err := w.module.deps.Store.SetSourceState(ctx, w.instance.ID, "read-ready/"+id, version); err != nil {
 		return err
 	}
-	w.module.publishReceipt()
+	w.module.publishReceipt(w.source.AdapterID, id, tickets...)
+	w.completePriority(id)
 	return nil
 }

@@ -11,12 +11,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // Coverage for the Platform operations that only had indirect
-// (port-resolved helper) tests: SessionModels, RunShell,
+// (port-resolved helper) tests: RunShell,
 // ExecuteCommand, Abort, RenameSession and Compact. The happy paths
 // assert the OpenCode HTTP contract (method + path + body); the
 // failure paths cover the three ways port resolution can fail and the
@@ -84,10 +85,10 @@ func newOpsFixture(t *testing.T, favorites FavoritesReader, handler http.Handler
 	t.Cleanup(srv.Close)
 
 	catalogCache = newHTTPCache(catalogCache.ttl)
-	ResetCachesForTests()
+	ResetCaches()
 
 	withTestPort(t, opsDir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
-	return New(newTestDBWithSession(t, opsSID, opsDir), favorites), rec
+	return New(newBoundTestDBWithSession(t, opsSID, opsDir), favorites), rec
 }
 
 // newOpsAdapterNoInstance returns an Adapter whose session exists in
@@ -105,7 +106,7 @@ func newOpsAdapterNoInstance(t *testing.T) *Adapter {
 		resetPortCacheForTests()
 		resetSessionPortAffinityForTests()
 	})
-	return New(newTestDBWithSession(t, opsSID, opsDir), nil)
+	return New(newBoundTestDBWithSession(t, opsSID, opsDir), nil)
 }
 
 // opsInvocation names one Platform operation and how to call it for
@@ -136,14 +137,7 @@ func mutatingOps() []opsInvocation {
 	}
 }
 
-// allOps adds SessionModels, which resolves the session itself rather
-// than going through resolvePort.
-func allOps() []opsInvocation {
-	return append(mutatingOps(), opsInvocation{"SessionModels", func(ctx context.Context, a *Adapter) error {
-		_, err := a.SessionModels(ctx, opsSID)
-		return err
-	}})
-}
+func allOps() []opsInvocation { return mutatingOps() }
 
 // TestAdapterOperations_SessionLookupFailures asserts that an adapter
 // with no OpenCode DB, or one that doesn't know the session, reports
@@ -377,8 +371,8 @@ func TestAdapterOperations_UpstreamStatusHandling(t *testing.T) {
 	}
 }
 
-// stubFavorites is a FavoritesReader that returns a fixed answer, so
-// SessionModels' favorites merge (and its soft-failure branch) can be
+// stubFavorites is a FavoritesReader that returns a fixed answer, so the
+// model picker's favorites merge (and its soft-failure branch) can be
 // driven without a state.db.
 type stubFavorites struct {
 	models []state.ModelFavorite
@@ -389,10 +383,10 @@ func (s stubFavorites) ModelFavorites(context.Context, string) ([]state.ModelFav
 	return s.models, s.err
 }
 
-// TestSessionModels_MergesLiveProviders covers the live-instance path:
+// TestStoredModels_MergesLiveProviders covers the live-instance path:
 // /provider data marks models available, and ProviderDefaults is
 // filtered down to the *connected* providers only.
-func TestSessionModels_MergesLiveProviders(t *testing.T) {
+func TestStoredModels_MergesLiveProviders(t *testing.T) {
 	const providerBody = `{
 		"all":[
 			{"id":"anthropic","name":"Anthropic","models":{
@@ -417,10 +411,7 @@ func TestSessionModels_MergesLiveProviders(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	})
 
-	resp, err := a.SessionModels(context.Background(), opsSID)
-	if err != nil {
-		t.Fatalf("SessionModels: %v", err)
-	}
+	resp, _ := a.modelsFromHistory(context.Background(), opsDir, a.rt.discoverOpenCodePortCtx(context.Background(), opsDir), nil, db.SessionDefaults{})
 	if !resp.HasProviders {
 		t.Error("HasProviders = false, want true with a live instance")
 	}
@@ -450,17 +441,14 @@ func TestSessionModels_MergesLiveProviders(t *testing.T) {
 	}
 }
 
-// TestSessionModels_NoLiveInstance covers the degraded path: with no
+// TestStoredModels_NoLiveInstance covers the degraded path: with no
 // reachable instance there is no /provider call, so HasProviders is
 // false and ProviderDefaults stays nil — but the call still succeeds.
-func TestSessionModels_NoLiveInstance(t *testing.T) {
+func TestStoredModels_NoLiveInstance(t *testing.T) {
 	a := newOpsAdapterNoInstance(t)
-	ResetCachesForTests()
+	ResetCaches()
 
-	resp, err := a.SessionModels(context.Background(), opsSID)
-	if err != nil {
-		t.Fatalf("SessionModels: %v", err)
-	}
+	resp, _ := a.modelsFromHistory(context.Background(), opsDir, "", nil, db.SessionDefaults{})
 	if resp.HasProviders {
 		t.Error("HasProviders = true, want false without a live instance")
 	}
@@ -469,14 +457,14 @@ func TestSessionModels_NoLiveInstance(t *testing.T) {
 	}
 }
 
-// TestSessionModels_FavoritesFailureIsSoft ensures a broken favorites
+// TestStoredModels_FavoritesFailureIsSoft ensures a broken favorites
 // store degrades to "no favorites" instead of failing the picker.
-func TestSessionModels_FavoritesFailureIsSoft(t *testing.T) {
+func TestStoredModels_FavoritesFailureIsSoft(t *testing.T) {
 	a, _ := newOpsFixture(t, stubFavorites{err: errors.New("state.db unavailable")}, nil)
 
-	resp, err := a.SessionModels(context.Background(), opsSID)
-	if err != nil {
-		t.Fatalf("SessionModels: %v", err)
+	resp, _ := a.modelsFromHistory(context.Background(), opsDir, "", []db.RecentModel{{Provider: "anthropic", Model: "claude-sonnet"}}, db.SessionDefaults{})
+	if len(resp.Models) == 0 {
+		t.Fatal("stored recents lost when favorites failed")
 	}
 	for _, m := range resp.Models {
 		if m.IsFavorite {

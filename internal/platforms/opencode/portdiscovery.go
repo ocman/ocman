@@ -80,25 +80,6 @@ func (d *Discovery) discoverServersImpl() []openCodeServer {
 	return d.discoverOpenCodeServersUncached()
 }
 
-// setDiscoverPortsImplForTests installs fn as the seam and returns a
-// restore func that re-installs the previous value.
-func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
-	wrapper := func(context.Context) map[string]string {
-		ports := fn()
-		if ports == nil {
-			return map[string]string{}
-		}
-		return ports
-	}
-	prev := discoverPortsOverride.Swap(&wrapper)
-	return func() { discoverPortsOverride.Store(prev) }
-}
-
-func setDiscoverServersImplForTests(fn func() []openCodeServer) func() {
-	prev := discoverServersOverride.Swap(&fn)
-	return func() { discoverServersOverride.Store(prev) }
-}
-
 // resetPortCache clears the shared port-discovery caches.
 func (d *Discovery) resetPortCache() {
 	d.portCache.mu.Lock()
@@ -418,14 +399,5 @@ func (d *Discovery) discoverOpenCodePortCtx(ctx context.Context, directory strin
 	miss := srvtiming.Begin(ctx, "runtime_ports_miss")
 	port := d.discoverOpenCodePort(directory)
 	miss.EndWithDesc("read managed runtime inventory")
-	return port
-}
-
-func (d *Discovery) resolveOpenCodePortForSessionCtx(ctx context.Context, sessionID, directory string) string {
-	if port := d.preferredSessionPort(sessionID); port != "" {
-		return port
-	}
-	port := d.discoverOpenCodePortCtx(ctx, directory)
-	d.rememberSessionPort(sessionID, port)
 	return port
 }

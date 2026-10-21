@@ -6,14 +6,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-// projectDirectory reads this machine's OpenCode database: the action broker
-// runs on the executing owner, which the hub reaches with only the opaque
-// project ID. Nil without a database, which omits the field.
+// projectDirectory resolves only ingested owner-local project metadata. Missing
+// or ambiguous evidence never falls back to the native platform database.
 func (s *Server) projectDirectory() func(context.Context, string) (string, error) {
-	if s.db == nil {
+	if s.historyAnalytics == nil || s.historyAnalytics.Store == nil {
 		return nil
 	}
-	return s.db.ProjectDirectory
+	return func(ctx context.Context, id string) (string, error) {
+		return s.historyAnalytics.Store.ProjectDirectory(ctx, s.historyOwner, id)
+	}
 }
 
 // liveCatalog is the directory catalog of the first available local

@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"context"
 	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -22,6 +23,8 @@ type livePromptRegistry struct {
 	scopePort    map[string]string
 	portGen      map[string]uint64
 	haltStore    *state.DB
+	haltToPublic func(context.Context, string) (string, error)
+	haltToNative func(context.Context, string) (string, error)
 	haltReceipts map[string]int64
 	lastHalts    map[string]int64
 }

@@ -3,17 +3,11 @@ package sessioncatalog
 import (
 	"context"
 	"errors"
-	"strings"
-
-	"github.com/google/uuid"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 )
 
 func IsID(id string) bool {
-	if !strings.HasPrefix(id, "ocm_") {
-		return false
-	}
-	parsed, err := uuid.Parse(strings.TrimPrefix(id, "ocm_"))
-	return err == nil && id == "ocm_"+parsed.String()
+	return identity.IsSessionID(id)
 }
 
 // Mirror remembers a remote owner's existing identity. The caller must first

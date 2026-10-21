@@ -27,7 +27,7 @@ func TestContinueExternalSession(t *testing.T) {
 	if _, err := h.live.idx.db.Exec("UPDATE session SET directory = ? WHERE id = ?", h.dir, mainID); err != nil {
 		t.Fatal(err)
 	}
-	detail, err := h.adapter.Session(t.Context(), mainID, 10, 0)
+	detail, err := h.adapter.RuntimeDetail(t.Context(), mainID, 10, 0)
 	if err != nil || !detail.Session.LiveConnection {
 		t.Fatalf("external session composer must be available: %+v %v", detail, err)
 	}
@@ -38,7 +38,7 @@ func TestContinueExternalSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "external session start observed", func() bool { _, _, n := h.events.get(mainID); return n == 1 })
-	if detail, err := h.adapter.Session(t.Context(), mainID, 10, 0); err != nil || len(detail.Warnings) != 1 || !detail.Session.LiveConnection {
+	if detail, err := h.adapter.RuntimeDetail(t.Context(), mainID, 10, 0); err != nil || len(detail.Warnings) != 1 || !detail.Session.LiveConnection {
 		t.Fatalf("owner warning must not lock the composer: %+v %v", detail, err)
 	}
 	if err := h.adapter.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: mainID, Message: "continue"}); err != nil {
@@ -54,20 +54,20 @@ func TestContinueExternalSession(t *testing.T) {
 	if !ok || !o.Started || o.Directory != h.dir || o.Config != h.live.opts.ConfigDir {
 		t.Fatalf("adopted ownership = %+v, %v", o, ok)
 	}
-	if detail, err := h.adapter.Session(t.Context(), mainID, 10, 0); err != nil || len(detail.Warnings) != 1 {
+	if detail, err := h.adapter.RuntimeDetail(t.Context(), mainID, 10, 0); err != nil || len(detail.Warnings) != 1 {
 		t.Fatalf("adoption erased the external-owner warning: %+v %v", detail, err)
 	}
 	if err := h.adapter.Hook(t.Context(), providerprotocol.HookEvent{Event: "SessionEnd", SessionID: mainID, PID: os.Getpid()}); err != nil {
 		t.Fatal(err)
 	}
-	if detail, err := h.adapter.Session(t.Context(), mainID, 10, 0); err != nil || len(detail.Warnings) != 0 {
+	if detail, err := h.adapter.RuntimeDetail(t.Context(), mainID, 10, 0); err != nil || len(detail.Warnings) != 0 {
 		t.Fatalf("external exit left a warning: %+v %v", detail, err)
 	}
 }
 
 func TestExternalSubagentRemainsReadOnly(t *testing.T) {
 	h := externalHarness(t)
-	detail, err := h.adapter.Session(t.Context(), childID, 10, 0)
+	detail, err := h.adapter.RuntimeDetail(t.Context(), childID, 10, 0)
 	if err != nil || detail.Session.LiveConnection {
 		t.Fatalf("subagent must not be resumed as a root: %+v %v", detail, err)
 	}
@@ -83,7 +83,7 @@ func TestExternalExitDoesNotSettleUnfinishedTurn(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	detail, err := h.adapter.Session(t.Context(), otherID, 10, 0)
+	detail, err := h.adapter.RuntimeDetail(t.Context(), otherID, 10, 0)
 	if err != nil || detail.Session.Status != db.StatusInterrupted {
 		t.Fatalf("process exit falsely settled an unfinished turn: %+v %v", detail, err)
 	}

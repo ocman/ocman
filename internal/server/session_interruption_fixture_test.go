@@ -15,6 +15,15 @@ type interruptionMembershipHost struct {
 	resolve func(context.Context, string) (string, error)
 }
 
+type runtimeLifecyclePlatform struct {
+	*interruptionLifecyclePlatform
+	platforms.RuntimeSessionReader
+}
+
+func registerRuntimeLifecycle(srv *Server, p *interruptionLifecyclePlatform) {
+	srv.registry.Register(&runtimeLifecyclePlatform{p, srv.db})
+}
+
 func (h *interruptionMembershipHost) ManagedOpencodeRoot(ctx context.Context, dir string) (string, error) {
 	return h.resolve(ctx, dir)
 }

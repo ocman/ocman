@@ -106,16 +106,19 @@ stored-message guesses.
   ownership bootstrap before headers, then replay buffered lifecycle events so
   status seeding cannot lose a shell's final idle edge.
 - Do not reintroduce `STATUS_GRACE_MS` or sticky-busy sidebar merging.
-- OpenCode list reads use one global snapshot in `models_cache.go`, not per-dir
-  or rolling-`since` caches. Filter copies in Go; never mutate the snapshot.
-  Serve expired snapshots immediately and revalidate in the background.
-- Refresh created rows before broadcasting `ocman.session.changed` when warm;
-  cold cache or failed row refresh uses synchronous invalidation. Dirty sessions
-  refresh through `GetSessionSummary`, sharing projection/scanning with
-  `GetSessions`. Keep those queries aligned.
-- Unresolvable event IDs dirty the full snapshot. Reconcile fully every five
-  minutes. `ResetCaches` on backend reload clears the one-local-DB snapshot,
-  catalog/HTTP caches and ocv2 dialect cache. Discovery stays per adapter.
+- Canonical adapters read persisted session data only from statev2;
+  `owned.New` requires the store. Native transcript/database reads belong to
+  ingestion, identity probes or explicit runtime-safety probes, never a browsing
+   fallback. Do not add browsing methods to native integrations. Sidebar lists use the compact `session_sidebar` projection and `internal/sidebar` reader, not accounting summaries. Event-cache
+  enrichment may change only live observation fields, not persisted facts.
+- Acknowledge stored refreshes before broadcasting a new row or title. Refresh
+  tickets must be captured before the source snapshot starts; unrelated receipts
+  and older in-flight reads cannot satisfy them. Creation metadata is persisted
+  before publication, and partial runtime bootstraps never authorize deletion.
+- Keep native hierarchy separate from application worktree links. Retained
+  sources remain readable without borrowing another physical source's native
+  IDs for live status or execution. There is no native session-list cache;
+  native HTTP caches hold only live configuration. Discovery stays per adapter.
 - Auto-archive sessions inactive for seven days, checked daily on all platforms.
 
 ## Sending and queues

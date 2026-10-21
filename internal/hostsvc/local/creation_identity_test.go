@@ -61,3 +61,19 @@ func TestWorktreeRetainsWorkspaceAfterFailedNativeDisposal(t *testing.T) {
 		t.Fatalf("workspace removed while native execution may still exist: %v", err)
 	}
 }
+
+func TestWorktreeRetainsWorkspaceForCanonicalCreationReconciliation(t *testing.T) {
+	repo := initRepo(t)
+	var directory string
+	h := New(Deps{Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:4242"}, CreatePlatformSession: func(_ context.Context, _ string, req platforms.CreateSessionRequest, _ []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+		directory = req.Directory
+		return nil, &platforms.CreationPendingError{SessionID: "ocm_canonical", Err: errors.New("binding commit uncertain")}
+	}})
+	_, err := h.CreateWorktreeSession(t.Context(), hostsvc.WorktreeSessionRequest{ProjectDir: repo, Branch: "canonical-recovery", NewBranch: true, MustCreateBranch: true, BaseRef: "main"})
+	if err == nil || directory == "" {
+		t.Fatalf("creation did not run: %v", err)
+	}
+	if _, err := os.Stat(directory); err != nil {
+		t.Fatalf("canonical recovery workspace removed: %v", err)
+	}
+}

@@ -17,7 +17,7 @@ func New(db *state.DB) (*Store, error) {
 }
 
 const columns = `id,owner_id,platform,directory,title,COALESCE(parent_id,''),parent_native_id,purged,origin,origin_id,
-	creation_state,creation_error,source_key,native_id,created_at,updated_at`
+	creation_state,creation_error,source_key,native_id,created_at,updated_at,legacy_keys`
 
 type scanner interface{ Scan(...any) error }
 type queryer interface {
@@ -27,7 +27,7 @@ type queryer interface {
 func scan(row scanner) (Session, error) {
 	var s Session
 	err := row.Scan(&s.ID, &s.OwnerID, &s.Platform, &s.Directory, &s.Title, &s.ParentID, &s.NativeParentID, &s.Purged,
-		&s.Origin, &s.OriginID, &s.CreationState, &s.CreationError, &s.SourceKey, &s.NativeID, &s.CreatedAt, &s.UpdatedAt)
+		&s.Origin, &s.OriginID, &s.CreationState, &s.CreationError, &s.SourceKey, &s.NativeID, &s.CreatedAt, &s.UpdatedAt, &s.LegacyKeys)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
@@ -38,9 +38,11 @@ func get(ctx context.Context, q queryer, id string) (Session, error) {
 	return scan(q.QueryRowContext(ctx, `SELECT `+columns+` FROM session_catalog WHERE id=?`, id))
 }
 
+const bindingQuery = `SELECT ` + columns + ` FROM session_catalog
+	WHERE owner_id=? AND platform=? AND source_key=? AND native_id=? AND native_id<>''`
+
 func findBinding(ctx context.Context, q queryer, b Binding) (Session, error) {
-	return scan(q.QueryRowContext(ctx, `SELECT `+columns+` FROM session_catalog
-		WHERE owner_id=? AND platform=? AND source_key=? AND native_id=?`, b.OwnerID, b.Platform, b.SourceKey, b.NativeID))
+	return scan(q.QueryRowContext(ctx, bindingQuery, b.OwnerID, b.Platform, b.SourceKey, b.NativeID))
 }
 
 func (s *Store) Get(ctx context.Context, id string) (Session, error) {

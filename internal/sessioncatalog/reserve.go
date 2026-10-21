@@ -79,9 +79,9 @@ func validReservation(r Reservation) bool {
 func insert(ctx context.Context, tx *sql.Tx, s Session, request, fingerprint string) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO session_catalog
 		(id,owner_id,platform,directory,title,parent_id,origin,origin_id,creation_state,creation_error,
-		 request_key,request_fingerprint,source_key,native_id,created_at,updated_at)
-		VALUES (?,?,?,?,?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?)`,
+		 request_key,request_fingerprint,source_key,native_id,created_at,updated_at,legacy_keys)
+		VALUES (?,?,?,?,?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?)`,
 		s.ID, s.OwnerID, s.Platform, s.Directory, s.Title, s.ParentID, s.Origin, s.OriginID, s.CreationState, s.CreationError,
-		request, fingerprint, s.SourceKey, s.NativeID, s.CreatedAt, s.UpdatedAt)
+		request, fingerprint, s.SourceKey, s.NativeID, s.CreatedAt, s.UpdatedAt, s.LegacyKeys)
 	return err
 }

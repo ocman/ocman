@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 )
 
 // ErrHistoryUnsupported means this OpenCode schema has no durable per-session
@@ -53,43 +51,6 @@ func SequenceVersion(seq int64, ok bool) string {
 		return "seq:none"
 	}
 	return fmt.Sprintf("seq:%d", seq)
-}
-
-// VersionCovers reports whether stored history validated at receipt reflects
-// the source at head. Durable sequences ("seq:N") are ordered, so newer stored
-// history also covers an older head; other versions must match exactly.
-func VersionCovers(receipt, head string) bool {
-	if receipt == head {
-		return true
-	}
-	r, rok := parseSequence(receipt)
-	if head == SequenceVersion(0, false) {
-		return rok
-	}
-	h, hok := parseSequence(head)
-	return rok && hok && r >= h
-}
-
-func parseSequence(version string) (int64, bool) {
-	raw, ok := strings.CutPrefix(version, "seq:")
-	if !ok {
-		return 0, false
-	}
-	n, err := strconv.ParseInt(raw, 10, 64)
-	return n, err == nil
-}
-
-// HistorySequence reads one session's latest durable sequence version.
-func (d *DB) HistorySequence(ctx context.Context, sessionID string) (string, error) {
-	if v2, err := d.historyV2(ctx); err != nil || !v2 {
-		return "", unsupported(err)
-	}
-	var seq int64
-	err := d.db.QueryRowContext(ctx, `SELECT seq FROM main.event_sequence WHERE aggregate_id=?`, sessionID).Scan(&seq)
-	if errors.Is(err, sql.ErrNoRows) {
-		return SequenceVersion(0, false), nil
-	}
-	return SequenceVersion(seq, true), err
 }
 
 // HistoryMessages reads session metadata and only the named messages in one

@@ -142,7 +142,11 @@ func (m *Module) applyManualToPending(ctx context.Context, adapter platforms.Pla
 		return
 	} // The saved rules still cover future requests.
 	m.eachPermission(entries, id, func(sid, pid, permission string, entry platforms.LivePrompt) {
-		_ = m.Store.EnsurePermissionInboxItem(ctx, state.InboxPermission{Platform: string(adapter.ID()), SessionID: sid, PermissionID: pid, Permission: permission, Patterns: PromptPatterns(entry), Always: promptStrings(entry["always"]), Metadata: PromptMetadata(entry)})
+		key, err := platforms.PermissionNotificationKey(ctx, adapter, string(adapter.ID()), sid, pid)
+		if err != nil {
+			return
+		}
+		_ = m.Store.EnsurePermissionInboxItem(ctx, state.InboxPermission{ItemID: key, Platform: string(adapter.ID()), SessionID: sid, PermissionID: pid, Permission: permission, Patterns: PromptPatterns(entry), Always: promptStrings(entry["always"]), Metadata: PromptMetadata(entry)})
 		asked := m.svc.rememberAsked(string(adapter.ID()), sid, pid, permission, PromptPatterns(entry), PromptMetadata(entry))
 		if m.svc.applyManualRules(ctx, adapter, sid, pid, asked) {
 			m.svc.Cancel(sid, pid)

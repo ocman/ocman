@@ -94,7 +94,7 @@ func TestProductionHostRecoversStoppedReplacementWithoutRuntimeRow(t *testing.T)
 			if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo'); INSERT INTO message(id,session_id,time_created,data) VALUES ('user','s',1,'{"role":"user"}')`); err != nil {
 				t.Fatal(err)
 			}
-			srv.registry.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 				return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "user", LatestMessageCreated: 1}, nil
 			}})
 			rt := &recoveryWiringRuntime{stop: func() error {

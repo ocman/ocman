@@ -58,11 +58,12 @@ func TestHookCommandQuotesJournalPath(t *testing.T) {
 	}
 }
 
-func TestRecordHookJournalsSessionTranscript(t *testing.T) {
+func TestHookJournalsSessionTranscript(t *testing.T) {
 	dir := t.TempDir()
 	input := `{"tool_response":{"content":"` + strings.Repeat("x", 1<<20) + `"},"session_id":"s1","transcript_path":"/t/s1.jsonl","cwd":"/w","hook_event_name":"PostToolUse"}`
-	id := RecordHook(dir, "PostToolUse", strings.NewReader(input))
-	if id != "s1" {
+	in := readHookInput(strings.NewReader(input))
+	recordHook(dir, "PostToolUse", in)
+	if id := in.SessionID; id != "s1" {
 		t.Fatalf("session = %q", id)
 	}
 	entries, err := historyjournal.Read(dir, nil, 10)
@@ -74,10 +75,14 @@ func TestRecordHookJournalsSessionTranscript(t *testing.T) {
 		t.Fatalf("record = %+v (%d bytes)", rec, len(rec.Data))
 	}
 	// Status-only events and input without a session are not history.
-	if RecordHook(dir, "PreToolUse", strings.NewReader(`{"session_id":"s1"}`)) != "s1" {
+	status := readHookInput(strings.NewReader(`{"session_id":"s1"}`))
+	recordHook(dir, "PreToolUse", status)
+	if status.SessionID != "s1" {
 		t.Fatal("status event lost its session id")
 	}
-	if RecordHook(dir, "Stop", strings.NewReader(`not json`)) != "" {
+	invalid := readHookInput(strings.NewReader(`not json`))
+	recordHook(dir, "Stop", invalid)
+	if invalid.SessionID != "" {
 		t.Fatal("invalid input produced a session")
 	}
 	if entries, _ := historyjournal.Read(dir, nil, 10); len(entries) != 1 {

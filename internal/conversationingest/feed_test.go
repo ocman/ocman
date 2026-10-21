@@ -235,7 +235,7 @@ func TestFeedRepairRequestRereadsOneSessionAtCurrentSequence(t *testing.T) {
 	}
 }
 
-func TestAwaitReturnsWhenQueuedChangeApplies(t *testing.T) {
+func TestQueuedFeedChangeAppliesWithoutFullReread(t *testing.T) {
 	f := newFakeFeed()
 	store, err := statev2.Open(t.TempDir() + "/statev2.db")
 	if err != nil {
@@ -249,37 +249,32 @@ func TestAwaitReturnsWhenQueuedChangeApplies(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done.Go(func() { m.Run(ctx) })
-	waitCtx, stop := context.WithTimeout(t.Context(), 5*time.Second)
-	defer stop()
-	if !m.Await(waitCtx, "feed", "session", "seq:3") {
-		t.Fatal("initial import never satisfied a waiting read")
+	waitReceipt := func(want string, within time.Duration) {
+		t.Helper()
+		deadline := time.Now().Add(within)
+		for {
+			receipt, err := store.SourceValue(t.Context(), m.instanceFor("feed"), "read-ready/session")
+			if err == nil && receipt == want {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("receipt %q not reached: %q %v", want, receipt, err)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
+	waitReceipt("seq:3", 5*time.Second)
 	f.mu.Lock()
 	reads := f.reads
 	f.mu.Unlock()
-	// The turn's final event is queued; a read for it must not wait for the
-	// polling-era debounce or force a full-session reread.
+	// The turn's final event is queued; it must apply without waiting for the
+	// polling-era debounce or forcing a full-session reread.
 	f.changes <- platforms.HistoryChange{SessionID: "session", Seq: 4, MessageIDs: []string{"message"}}
-	started := time.Now()
-	waitCtx, stop = context.WithTimeout(t.Context(), 5*time.Second)
-	defer stop()
-	if !m.Await(waitCtx, "feed", "session", "seq:4") {
-		t.Fatal("read did not observe the applied change")
-	}
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
-		t.Fatalf("waiting read took %s", elapsed)
-	}
+	waitReceipt("seq:4", 2*time.Second)
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.reads != reads {
-		f.mu.Unlock()
-		t.Fatal("waiting read forced a full-session reread")
-	}
-	f.mu.Unlock()
-	// Unknown sources and expired waits report false rather than blocking.
-	expired, cancelExpired := context.WithCancel(t.Context())
-	cancelExpired()
-	if m.Await(expired, "feed", "session", "seq:99") || m.Await(t.Context(), "other", "session", "seq:1") {
-		t.Fatal("await reported progress it did not observe")
+		t.Fatal("queued change forced a full-session reread")
 	}
 }
 

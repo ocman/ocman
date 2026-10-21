@@ -35,7 +35,13 @@ func (s *Server) PermissionNotificationDeferred(session, request string) bool {
 func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	all, err := s.fanOutSessionsResult(ctx, "", time.Now().Add(-7*24*time.Hour).UnixMilli(), nil)
+	var all []db.Session
+	var err error
+	if s.supportsSidebar() {
+		all, err = s.sidebarSessionRows(ctx, platforms.SidebarQuery{Since: time.Now().Add(-7 * 24 * time.Hour).UnixMilli(), Limit: 500}, true)
+	} else {
+		all, err = s.fanOutSessionsResult(ctx, "", time.Now().Add(-7*24*time.Hour).UnixMilli(), nil)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -57,13 +57,8 @@ func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Pl
 		}
 	}
 	var messages []string
-	if s.judge != nil && s.judge.openCodePort != nil {
-		if port := s.judge.openCodePort(directory); port != "" {
-			messages = s.judge.recentUserMessages(ctx, port, sessionID)
-		}
-	}
-	if len(messages) == 0 {
-		messages = recentUserMessagesFromSession(ctx, adapter, sessionID)
+	if s.deps.RecentUserMessages != nil && adapter != nil {
+		messages, _ = s.deps.RecentUserMessages(ctx, adapter.ID(), sessionID)
 	}
 	if len(messages) == 0 {
 		return sections

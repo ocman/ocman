@@ -46,11 +46,13 @@ export function SidebarSessionRow({
   archiving,
   draft,
   debugMode,
-  gitInfo,
+  gitInfo: currentGitInfo,
   onNavigateToSession,
   onArchiveSession,
   onPinSession,
 }: SidebarSessionRowProps) {
+  const gitInfo = currentGitInfo ?? (sib.branch ? { branch: sib.branch, ahead: 0, behind: 0, dirty: false } : undefined);
+  const activityAt = sib.lastMessageAt || sib.timeUpdated;
   const flat = requestedFlat && depth === 0;
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
@@ -140,8 +142,8 @@ export function SidebarSessionRow({
             <span className="session-sidebar-project-path">
               <ShortPath path={isWorktree ? projectRoot : sib.directory} />
             </span>
-            <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>
-              {relativeTime(sib.timeUpdated).replace('just now', 'now').replace(' ago', '')}
+            <span className="session-sidebar-time" title={new Date(activityAt).toLocaleString()}>
+              {relativeTime(activityAt).replace('just now', 'now').replace(' ago', '')}
             </span>
           </span>
         )}
@@ -166,8 +168,8 @@ export function SidebarSessionRow({
       </span>
       <span className="session-sidebar-meta">
         {!flat && (
-          <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>
-            {relativeTime(sib.timeUpdated).replace('just now', 'now').replace(' ago', '')}
+          <span className="session-sidebar-time" title={new Date(activityAt).toLocaleString()}>
+            {relativeTime(activityAt).replace('just now', 'now').replace(' ago', '')}
           </span>
         )}
         <span className="session-sidebar-actions">

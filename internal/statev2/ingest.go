@@ -49,6 +49,9 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 		if err := applyContent(ctx, tx, batch); err != nil {
 			return CommitResult{}, err
 		}
+		if err := refreshSidebar(ctx, tx, s.Key); err != nil {
+			return CommitResult{}, err
+		}
 		if err := projectAnalytics(ctx, tx, batch); err != nil {
 			return CommitResult{}, err
 		}
@@ -147,7 +150,7 @@ func checkpoint(ctx context.Context, q rowQuerier, instanceID, stream string) (s
 }
 
 func (d *DB) Checkpoint(ctx context.Context, instanceID, stream string) (string, error) {
-	return checkpoint(ctx, d.db, instanceID, stream)
+	return checkpoint(ctx, d.reader(), instanceID, stream)
 }
 
 func jsonValue(raw json.RawMessage) string {

@@ -79,18 +79,9 @@ type autoApproveWatcher struct {
 	// to an http.Client with no timeout (SSE streams are long-lived).
 	httpClient *http.Client
 
-	// markSessionDirty records that one session's list row may have
-	// changed, so the snapshot cache recomputes that row instead of
-	// rescanning the database. markSessionsDirty is the fail-safe for
-	// an event that changed something the watcher cannot attribute to a
-	// session. Both default to the opencode package's cache; seams for
-	// tests, which must not touch that package's global state.
-	markSessionDirty  func(sessionID string)
-	markSessionsDirty func()
-	// invalidateSessionsCache expires the shared list snapshot so the
-	// next read pays for a full scan. Seam for tests, same ceiling as
-	// the mark* seams above.
-	invalidateSessionsCache func()
+	// markSessionDirty asks history ingestion to reread one session. It is
+	// the canonical adapter's SessionCacheMaintainer when available.
+	markSessionDirty func(sessionID string)
 
 	// rescanInterval and reconnectDelay are exposed so tests can run
 	// the loops on tight timings without changing the production
@@ -137,18 +128,20 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 		auth = svc.deps.OpenCodeAuth
 	}
 	w := &autoApproveWatcher{
-		svc:                     svc,
-		discoverPorts:           svc.discoverOpenCodePorts,
-		httpClient:              &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
-		rescanInterval:          autoApproveRescanInterval,
-		reconnectDelay:          autoApproveReconnectDelay,
-		idleTimeout:             platforms.SSEIdleTimeout,
-		subs:                    make(map[string]context.CancelFunc),
-		seenSessions:            make(map[string]struct{}),
-		titles:                  make(map[string]string),
-		markSessionDirty:        opencode.MarkSessionDirty,
-		markSessionsDirty:       opencode.MarkSessionsDirty,
-		invalidateSessionsCache: opencode.InvalidateSessionsCache,
+		svc:            svc,
+		discoverPorts:  svc.discoverOpenCodePorts,
+		httpClient:     &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
+		rescanInterval: autoApproveRescanInterval,
+		reconnectDelay: autoApproveReconnectDelay,
+		idleTimeout:    platforms.SSEIdleTimeout,
+		subs:           make(map[string]context.CancelFunc),
+		seenSessions:   make(map[string]struct{}),
+		titles:         make(map[string]string),
+	}
+	if svc != nil {
+		if cache, ok := svc.OpencodeAdapter().(platforms.SessionCacheMaintainer); ok {
+			w.markSessionDirty = cache.MarkSessionDirty
+		}
 	}
 
 	// Default onPermission routes through Ensure, which
@@ -220,7 +213,7 @@ func (w *autoApproveWatcher) tick(parentCtx context.Context) {
 	for port, cancel := range w.subs {
 		if _, stillUp := live[port]; !stillUp {
 			cancel()
-			if adapter, ok := w.svc.OpencodeAdapter().(*opencode.Adapter); ok {
+			if adapter := platforms.OpenCodeObserver(w.svc.OpencodeAdapter()); adapter != nil {
 				adapter.ClearPromptsForPort(port)
 				// Forget this instance's turn states too: sessions it
 				// was running are now unobservable, which is what
@@ -335,7 +328,7 @@ func (w *autoApproveWatcher) recordTerminalPart(ctx context.Context, part termin
 	}
 }
 
-func (w *autoApproveWatcher) broadcastSessionStatus(adapter *opencode.Adapter, port, sessionID, statusType string) {
+func (w *autoApproveWatcher) broadcastSessionStatus(adapter platforms.OpenCodeEventObserver, port, sessionID, statusType string) {
 	if w.svc == nil || w.svc.deps.BroadcastSessionStatus == nil {
 		return
 	}

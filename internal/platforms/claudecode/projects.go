@@ -8,7 +8,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
@@ -30,12 +29,14 @@ type claudeProjects struct {
 	rules     *provider.Rules
 	statePath string // claude-sessions.json: which sessions ocman launched
 
-	mu       sync.Mutex
-	roots    map[string]*claudeProject
-	sink     platforms.SessionEventSink
-	handler  func(providerprotocol.Event)
-	watch    context.Context // set once WatchEvents runs
-	attached chan struct{}   // closed and replaced on every attach
+	mu             sync.Mutex
+	roots          map[string]*claudeProject
+	sessions       map[string]*provider.Adapter // native session ID -> verified live supervisor
+	sessionChanges map[string]chan struct{}
+	sink           platforms.SessionEventSink
+	handler        func(providerprotocol.Event)
+	watch          context.Context // set once WatchEvents runs
+	attached       chan struct{}   // closed and replaced on every attach
 	// draining holds roots whose supervisor is being drained for
 	// replacement: an out-of-range one reached through its version-
 	// independent routes, nil when the attached adapter still serves it.
@@ -181,18 +182,6 @@ func (c *claudeProjects) ensure(ctx context.Context, dir string) (*hostsvc.Ensur
 	return res, a, err
 }
 
-// owner is the attached adapter that has seen session id.
-func (c *claudeProjects) owner(id string) *provider.Adapter {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, p := range c.roots {
-		if p.adapter.Owns(context.Background(), id) {
-			return p.adapter
-		}
-	}
-	return nil
-}
-
 // adapters snapshots the attached adapters, for calls made without c.mu.
 func (c *claudeProjects) adapters() []*provider.Adapter {
 	var out []*provider.Adapter
@@ -206,30 +195,6 @@ func (c *claudeProjects) each(fn func(*provider.Adapter)) {
 	for _, p := range c.roots {
 		fn(p.adapter)
 	}
-}
-
-// route picks the adapter for session id. A launched session goes to its
-// project supervisor, started when launch is set; an unclaimed external
-// session stays on the browsing supervisor (nil) until its first mutation.
-func (c *claudeProjects) route(ctx context.Context, id string, launch bool) (*provider.Adapter, bool, error) {
-	dir, owned := claudeprovider.OwnedDirectory(c.statePath, id)
-	if owned && launch {
-		_, a, err := c.ensure(ctx, dir)
-		return a, true, err
-	}
-	if a := c.owner(id); a != nil {
-		return a, owned, nil
-	}
-	if owned {
-		if root, err := local.ProviderRoot(ctx, dir); err == nil {
-			c.mu.Lock()
-			defer c.mu.Unlock()
-			if p := c.roots[root]; p != nil {
-				return p.adapter, true, nil
-			}
-		}
-	}
-	return nil, owned, nil
 }
 
 // claudePlatform methods below route session work to project supervisors;
@@ -256,11 +221,11 @@ func (p *claudePlatform) CreateSession(ctx context.Context, req platforms.Create
 	if err != nil {
 		return nil, err
 	}
-	return a.CreateSession(ctx, req)
-}
-
-func (p *claudePlatform) Owns(ctx context.Context, id string) bool {
-	return p.Adapter.Owns(ctx, id) || p.projects.owner(id) != nil
+	created, err := a.CreateSession(ctx, req)
+	if err == nil {
+		p.projects.bindSession(created.ID, a)
+	}
+	return created, err
 }
 
 // Sessions lists every transcript and overlays what the project
@@ -294,17 +259,6 @@ func (p *claudePlatform) Sessions(ctx context.Context, dir string, since int64) 
 		}
 	}
 	return sessions, err
-}
-
-func (p *claudePlatform) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
-	if detail, handled, err := platforms.TryStoredConversation(ctx, p, id, limit, offset); handled || err != nil {
-		return detail, err
-	}
-	a, err := p.adapter(ctx, id, false)
-	if err != nil {
-		return nil, err
-	}
-	return a.Session(ctx, id, limit, offset)
 }
 
 func (p *claudePlatform) SessionLifecycle(ctx context.Context, id string) (*platforms.SessionLifecycle, error) {

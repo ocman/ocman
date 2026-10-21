@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
+	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -13,7 +15,8 @@ import (
 )
 
 type rejectionHistoryPlatform struct {
-	platforms.Platform
+	*provider.Adapter
+	platformtest.NoBrowsing
 	source string
 }
 
@@ -39,7 +42,7 @@ func TestRejectedClaudeForkAllowsLaterExternalDiscovery(t *testing.T) {
 	}
 	// The catalogue-backed service needs only the physical source metadata;
 	// native operations still use the real socket adapter and Claude fixture.
-	p := &rejectionHistoryPlatform{Platform: h.adapter, source: source.SourceKey}
+	p := &rejectionHistoryPlatform{Adapter: h.adapter, source: source.SourceKey}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
 	svc := sessionsvc.New(registry, sessionsvc.Hooks{})

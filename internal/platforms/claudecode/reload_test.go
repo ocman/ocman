@@ -18,7 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
-func reloadTestAdapter(t *testing.T, sessions func(http.ResponseWriter, *http.Request)) (*provider.Adapter, string) {
+func reloadTestAdapter(t *testing.T, sessions func(http.ResponseWriter, *http.Request), caps ...platforms.Capabilities) (*provider.Adapter, string) {
 	t.Helper()
 	socket := filepath.Join(providertest.Directory(t), "s")
 	listener, err := net.Listen("unix", socket)
@@ -27,7 +27,11 @@ func reloadTestAdapter(t *testing.T, sessions func(http.ResponseWriter, *http.Re
 	}
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/hello" {
-			_ = json.NewEncoder(w).Encode(providerprotocol.Hello{ProtocolVersion: providerprotocol.CurrentVersion, PlatformID: "claudecode", CLIVersion: "test"})
+			hello := providerprotocol.Hello{ProtocolVersion: providerprotocol.CurrentVersion, PlatformID: "claudecode", CLIVersion: "test"}
+			if len(caps) > 0 {
+				hello.Capabilities.Capabilities = caps[0]
+			}
+			_ = json.NewEncoder(w).Encode(hello)
 			return
 		}
 		sessions(w, r)

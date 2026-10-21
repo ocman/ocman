@@ -88,14 +88,27 @@ func (l *live) updateOwnedLocked(change func()) error {
 // OwnedDirectory reports the directory of a session ocman launched or adopted,
 // read from statePath. Such sessions route to their project supervisor.
 func OwnedDirectory(statePath, id string) (string, bool) {
+	o, ok := readOwnedSession(statePath, id)
+	return o.Directory, ok
+}
+
+// OwnedProjectRoot identifies the supervisor that owns a launched/adopted
+// session. Knowing a transcript from a shared index is not live ownership.
+// The bool still reports ownership for legacy records without a project root.
+func OwnedProjectRoot(statePath, id string) (string, bool) {
+	o, ok := readOwnedSession(statePath, id)
+	return o.ProjectRoot, ok
+}
+
+func readOwnedSession(statePath, id string) (owned, bool) {
 	data, err := os.ReadFile(statePath)
 	if err != nil {
-		return "", false
+		return owned{}, false
 	}
 	var all map[string]owned
 	if json.Unmarshal(data, &all) != nil {
-		return "", false
+		return owned{}, false
 	}
 	o, ok := all[id]
-	return o.Directory, ok
+	return o, ok
 }

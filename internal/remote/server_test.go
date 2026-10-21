@@ -371,7 +371,7 @@ func TestServer_HelloAndSessionsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Hello: %v", err)
 	}
-	if hello.InstanceId != "inst-1" || hello.ProtocolVersion != ProtocolVersion {
+	if hello.InstanceId != "inst-1" || hello.ProtocolVersion != legacySessionProtocol {
 		t.Fatalf("unexpected hello: %+v", hello)
 	}
 

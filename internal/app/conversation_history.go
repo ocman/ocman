@@ -1,6 +1,7 @@
 package app
 
 import (
+	"flag"
 	"fmt"
 	"path/filepath"
 
@@ -8,19 +9,31 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// historyDBEnv overrides the statev2.db path; the -statev2-db flag wins.
-const historyDBEnv = "OCMAN_STATEV2_DB"
+// The legacy flag and environment variable remain compatibility aliases.
+const historyDBEnv = "OCMAN_CONVERSATIONS_DB"
+
+func conversationHistoryFlag(flags *flag.FlagSet) *string {
+	path := flags.String("conversations-db", "", "conversation database path (default: $OCMAN_CONVERSATIONS_DB, else state_conv.db beside state.db)")
+	flags.StringVar(path, "statev2-db", "", "deprecated alias for -conversations-db")
+	return path
+}
+
+func conversationHistoryPath(statePath, override string, getenv func(string) string) string {
+	if override != "" {
+		return override
+	}
+	if path := getenv(historyDBEnv); path != "" {
+		return path
+	}
+	if path := getenv("OCMAN_STATEV2_DB"); path != "" {
+		return path
+	}
+	return statev2.Path(statePath)
+}
 
 // openConversationHistory opens the mandatory owner-local conversation store.
 func openConversationHistory(statePath, override string, getenv func(string) string) (*statev2.DB, error) {
-	path := override
-	if path == "" {
-		path = getenv(historyDBEnv)
-	}
-	if path == "" {
-		path = statev2.Path(statePath)
-	}
-	path, err := filepath.Abs(path)
+	path, err := filepath.Abs(conversationHistoryPath(statePath, override, getenv))
 	if err != nil {
 		return nil, err
 	}

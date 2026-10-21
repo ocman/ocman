@@ -24,7 +24,7 @@ func (d *DB) MetadataPage(ctx context.Context, owner string, after Key, limit in
 	if owner == "" || limit < 1 || limit > 500 {
 		return nil, fmt.Errorf("statev2: invalid metadata page")
 	}
-	rows, err := d.db.QueryContext(ctx, metadataInventory+`SELECT i.id,i.owner_id,i.platform,i.source_key,
+	rows, err := d.reader().QueryContext(ctx, metadataInventory+`SELECT i.id,i.owner_id,i.platform,i.source_key,
 		s.id,s.title,s.directory,s.parent_id,s.source_deleted,s.created_at,s.updated_at,s.purged FROM metadata s
 		JOIN instance i ON i.id=s.instance_id WHERE i.owner_id=? AND (s.instance_id,s.id)>(?,?)
 		ORDER BY s.instance_id,s.id LIMIT ?`, owner, after.InstanceID, after.SessionID, limit)
@@ -47,7 +47,7 @@ func (d *DB) MetadataPage(ctx context.Context, owner string, after Key, limit in
 
 func (d *DB) Metadata(ctx context.Context, key Key) (SessionMetadata, error) {
 	var m SessionMetadata
-	err := d.db.QueryRowContext(ctx, metadataInventory+`SELECT i.id,i.owner_id,i.platform,i.source_key,
+	err := d.reader().QueryRowContext(ctx, metadataInventory+`SELECT i.id,i.owner_id,i.platform,i.source_key,
 		s.id,s.title,s.directory,s.parent_id,s.source_deleted,s.created_at,s.updated_at,s.purged FROM metadata s
 		JOIN instance i ON i.id=s.instance_id WHERE s.instance_id=? AND s.id=?`, key.InstanceID, key.SessionID).
 		Scan(&m.Instance.ID, &m.Instance.OwnerID, &m.Instance.Platform, &m.Instance.SourceKey,
@@ -60,6 +60,6 @@ func (d *DB) Metadata(ctx context.Context, key Key) (SessionMetadata, error) {
 // sequence once the inventory completes, so concurrent writes cannot be lost.
 func (d *DB) ChangeHead(ctx context.Context) (int64, error) {
 	var head int64
-	err := d.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence),0) FROM change_outbox`).Scan(&head)
+	err := d.reader().QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence),0) FROM change_outbox`).Scan(&head)
 	return head, err
 }

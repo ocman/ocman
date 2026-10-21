@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
 )
 
 func TestCreateJudgeSessionHiddenAtCreation(t *testing.T) {
@@ -54,14 +54,14 @@ func TestPermissionJudgeAuthenticatesRequests(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"info":{"role":"user"},"parts":[{"type":"text","text":"hello"}]}]`))
+		_, _ = w.Write([]byte(`{"id":"judge"}`))
 	}))
 	defer server.Close()
 	u, _ := url.Parse(server.URL)
 
 	j := newPermissionJudge(ocapi.New(password))
-	if got := j.recentUserMessages(context.Background(), u.Port(), "session"); got == nil {
-		t.Fatal("authenticated judge request failed")
+	if id, err := j.createSession(context.Background(), u.Port(), "/project", "judge"); err != nil || id != "judge" {
+		t.Fatalf("authenticated judge request failed: %q %v", id, err)
 	}
 }
 
@@ -92,7 +92,7 @@ func TestServiceDiscoversThroughOpenCodeAdapter(t *testing.T) {
 	}
 	adapter := opencode.New(nil, nil)
 	adapter.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "4500"} })
-	svc := NewService(Deps{OpenCodeAuth: ocapi.New(""), OpencodePlatform: func() platforms.Platform { return adapter }})
+	svc := NewService(Deps{OpenCodeAuth: ocapi.New(""), OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	if got := svc.openCodePort("/repo"); got != "4500" {
 		t.Fatalf("openCodePort = %q, want 4500", got)
 	}
@@ -118,63 +118,9 @@ func TestFirstNonEmpty(t *testing.T) {
 	}
 }
 
-func TestExtractTextFromParts(t *testing.T) {
-	// Concatenates text parts, skips non-text and malformed entries.
-	msg := map[string]interface{}{
-		"parts": []interface{}{
-			map[string]interface{}{"type": "text", "text": "hello "},
-			map[string]interface{}{"type": "tool", "text": "ignored"},
-			map[string]interface{}{"type": "text", "text": "world"},
-			"not-a-map",
-		},
-	}
-	if got := extractTextFromParts(msg); got != "hello world" {
-		t.Errorf("extractTextFromParts = %q, want %q", got, "hello world")
-	}
-	// No parts → empty string.
-	if got := extractTextFromParts(map[string]interface{}{}); got != "" {
-		t.Errorf("extractTextFromParts(empty) = %q, want empty", got)
-	}
-}
-
-// TestRecentUserMessages drives the message fetch against a fake
-// OpenCode /message endpoint: only user-role text is returned, capped
-// at the recent limit, and a non-2xx response yields nil.
-func TestRecentUserMessages(t *testing.T) {
-	body := `[
-		{"info":{"role":"user"},"parts":[{"type":"text","text":"first"}]},
-		{"info":{"role":"assistant"},"parts":[{"type":"text","text":"skip me"}]},
-		{"info":{"role":"user"},"parts":[{"type":"text","text":"second"}]}
-	]`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/message") {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		w.Write([]byte(body))
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-
-	j := newPermissionJudge(ocapi.New(""))
-	got := j.recentUserMessages(context.Background(), port, "ses-1")
-	want := []string{"first", "second"}
-	if len(got) != len(want) {
-		t.Fatalf("recentUserMessages = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("msg[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-
-	// A server error must yield nil (caller proceeds without context).
-	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer errSrv.Close()
-	errPort := strings.TrimPrefix(errSrv.URL, "http://127.0.0.1:")
-	if got := j.recentUserMessages(context.Background(), errPort, "ses-1"); got != nil {
-		t.Errorf("recentUserMessages on error = %v, want nil", got)
-	}
+// openCodePlatform keeps the native adapter's optional capabilities visible
+// while satisfying the application contract in tests.
+type openCodePlatform struct {
+	*opencode.Adapter
+	platformtest.NoBrowsing
 }

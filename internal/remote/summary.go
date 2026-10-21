@@ -24,11 +24,11 @@ func (p *remotePlatform) SessionSummary(ctx context.Context, id string) (*db.Ses
 	row.Platform = string(p.ID())
 	row.RemoteID = p.remoteID()
 	row.RemoteName = p.nameFn()
-	return row, nil
+	return p.checkedSummary(row, id)
 }
 
 func (s *Server) SessionSummary(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
+	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}

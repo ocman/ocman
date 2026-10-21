@@ -16,7 +16,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 // handleMCPConfigStatus reports whether OpenCode's global config
@@ -145,31 +144,42 @@ func (s sessionMCPService) ListSessions(ctx context.Context, directory string) (
 	return publicSessionValue(s.server, ctx, "", sessions, true)
 }
 
-// SearchSessionText searches this machine's OpenCode database only; remote
-// sessions are never content-searched.
+// SearchSessionText searches this owner's retained platform-independent history;
+// it never opens native databases or searches remote owners.
 func (s sessionMCPService) SearchSessionText(ctx context.Context, query, directory string, since int64) ([]db.TextMatch, error) {
-	if s.server.db == nil {
-		return nil, nil
+	if !s.server.hasStoredHistory() {
+		return nil, platforms.ErrHistoryUnavailable
 	}
-	matches, err := s.server.db.SearchSessionText(ctx, query, directory, since, 500)
-	for i := range matches {
-		matches[i].Platform = string(opencode.PlatformID)
-	}
+	stored, err := s.server.historyAnalytics.Store.SearchText(ctx, s.server.historyOwner, query, directory, since, 500)
 	if err != nil {
 		return nil, err
 	}
-	return publicSessionValue(s.server, ctx, string(opencode.PlatformID), matches, false)
+	matches := make([]db.TextMatch, 0, len(stored))
+	for _, match := range stored {
+		id := match.SessionID
+		if s.server.sessionCatalogue != nil {
+			mapping, err := s.server.sessions.PublicSessionReferences(ctx, match.Platform, []string{id})
+			if err != nil {
+				return nil, err
+			}
+			id = mapping[id]
+			if id == "" {
+				continue
+			}
+		}
+		matches = append(matches, db.TextMatch{Platform: match.Platform, SessionID: id, PartID: match.PartID, MessageID: match.MessageID, Role: match.Role, Snippet: match.Snippet})
+	}
+	return matches, nil
 }
 
 func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, messageLimit int) (*platforms.SessionDetail, error) {
-	if strings.HasPrefix(id, "ocm_") {
-		info, err := s.server.sessions.LookupSessionIdentity(ctx, platform, platforms.SessionIdentityRequest{ID: id})
+	if strings.HasPrefix(id, "ocm_") || s.server.sessions.CanonicalSessionReferences(platform) {
+		info, err := s.server.sessions.LookupSessionReference(ctx, platform, id)
 		if err != nil {
 			return nil, err
 		}
-		platform, id = info.Platform, info.NativeID
+		platform, id = info.Platform, s.server.sessions.CoreSessionReference(info)
 	}
-	ctx = s.server.ConversationReadContext(ctx)
 	var adapter platforms.Platform
 	var detail *platforms.SessionDetail
 	var err error

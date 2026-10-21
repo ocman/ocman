@@ -49,6 +49,10 @@ func (h *HistoryReader) Inventory(ctx context.Context) ([]db.HistoryEntry, error
 func historyVersion(e *entry) string { return fmt.Sprintf("%d:%d", e.Mtime, e.Size) }
 
 func (h *HistoryReader) Snapshot(ctx context.Context, id string) (*db.HistorySnapshot, error) {
+	return h.snapshot(ctx, id, nil)
+}
+
+func (h *HistoryReader) snapshot(ctx context.Context, id string, resume *transcriptCursor) (*db.HistorySnapshot, error) {
 	x := h.index
 	if err := lockHistory(ctx, x); err != nil {
 		return nil, err
@@ -60,6 +64,29 @@ func (h *HistoryReader) Snapshot(ctx context.Context, id string) (*db.HistorySna
 	}
 	if e == nil {
 		return nil, sql.ErrNoRows
+	}
+	// Session-specific journal updates must not require a source-wide inventory
+	// just to refresh the index entry for this transcript.
+	if resume != nil {
+		st, err := os.Stat(e.Path)
+		if err != nil {
+			return nil, err
+		}
+		if st.ModTime().UnixNano() != e.Mtime || st.Size() != e.Size {
+			if err := x.index(ctx, e.Path); err != nil {
+				return nil, err
+			}
+			if err := x.link(ctx); err != nil {
+				return nil, err
+			}
+			e, err = x.get(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			if e == nil {
+				return nil, sql.ErrNoRows
+			}
+		}
 	}
 	f, err := os.Open(e.Path)
 	if err != nil {
@@ -77,8 +104,16 @@ func (h *HistoryReader) Snapshot(ctx context.Context, id string) (*db.HistorySna
 	if err != nil {
 		return nil, err
 	}
+	start, position := int64(0), int64(0)
+	partial := resume != nil && resume.valid(f, before, e, children)
+	if partial {
+		start, position = resume.Offset, resume.Position
+		if resume.Size == before.Size() && resume.Mtime == before.ModTime().UnixNano() {
+			start, position = e.End, int64(e.Messages)
+		}
+	}
 	c := &Converter{SessionID: id, Children: children, Messages: []db.Message{}, Parts: []db.Part{}}
-	reader := bufio.NewReaderSize(historyContextReader{ctx: ctx, reader: io.NewSectionReader(f, 0, e.End)}, 64<<10)
+	reader := bufio.NewReaderSize(historyContextReader{ctx: ctx, reader: io.NewSectionReader(f, start, e.End-start)}, 64<<10)
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -105,8 +140,12 @@ func (h *HistoryReader) Snapshot(ctx context.Context, id string) (*db.HistorySna
 		return nil, db.ErrHistoryChanged
 	}
 	// Claude subagents are transcripts under a root session's subagents/ directory.
-	return &db.HistorySnapshot{Session: e.session(time.Time{}), Messages: c.Messages, Parts: c.Parts, Version: historyVersion(e),
-		Subagent: e.ID != e.RootID}, nil
+	snapshot := &db.HistorySnapshot{Session: e.session(time.Time{}), InferredStatus: db.SessionStatus(e.Inferred), Messages: c.Messages, Parts: c.Parts, Version: historyVersion(e),
+		Subagent: e.ID != e.RootID, Partial: partial, MessageOffset: position}
+	if resume != nil {
+		snapshot.SourceCursor, err = h.nextCursor(ctx, f, before, e, children)
+	}
+	return snapshot, err
 }
 
 func lockHistory(ctx context.Context, index *Index) error {

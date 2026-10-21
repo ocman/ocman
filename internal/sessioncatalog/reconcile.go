@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/startup"
 	"github.com/google/uuid"
 )
 
@@ -32,29 +33,36 @@ func (s *Store) Reconcile(ctx context.Context, source Source, sessions []NativeS
 	defer func() { _ = tx.Rollback() }()
 	now := time.Now().UnixMilli()
 	rows := make([]Session, 0, len(sessions))
-	for _, metadata := range sessions {
+	startup.Report(ctx, "Reconciling session identities", 0, len(sessions))
+	for i, metadata := range sessions {
 		row, created, deferred, err := reconcileRow(ctx, tx, source, metadata, now)
 		if err != nil {
 			return ReconcileResult{}, err
 		}
 		if deferred {
 			result.Deferred++
+			startup.Report(ctx, "Reconciling session identities", i+1, len(sessions))
 			continue
 		}
 		if created {
 			result.Created++
 		}
 		rows = append(rows, row)
+		startup.Report(ctx, "Reconciling session identities", i+1, len(sessions))
 	}
-	for _, row := range rows {
+	startup.Report(ctx, "Linking native session parents", 0, len(rows))
+	for i, row := range rows {
 		if err := linkNativeParent(ctx, tx, row, now); err != nil {
 			return ReconcileResult{}, err
 		}
+		startup.Report(ctx, "Linking native session parents", i+1, len(rows))
 	}
-	for _, row := range rows {
+	startup.Report(ctx, "Validating session parent links", 0, len(rows))
+	for i, row := range rows {
 		if err := checkParentChain(ctx, tx, row.ID); err != nil {
 			return ReconcileResult{}, err
 		}
+		startup.Report(ctx, "Validating session parent links", i+1, len(rows))
 	}
 	if err := tx.Commit(); err != nil {
 		return ReconcileResult{}, err

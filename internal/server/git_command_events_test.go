@@ -168,11 +168,17 @@ func TestBroadcastGitCommandLocalDatabase(t *testing.T) {
 	if _, err := raw.Exec(`INSERT INTO session (id, directory, project_id) VALUES ('s1', '/repo', 'p')`); err != nil {
 		t.Fatal(err)
 	}
+	ingestRaw(t, srv, 1)
 	srv.broadcastHub = newBroadcastHub()
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
-	srv.broadcastGitCommand(t.Context(), "opencode", "s1", "push")
-	ev := <-sub.ch
+	srv.broadcastGitCommand(t.Context(), "opencode", canonicalID(t, srv, "s1"), "push")
+	var ev broadcastEvent
+	select {
+	case ev = <-sub.ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no git command event")
+	}
 	var payload map[string]string
 	if err := json.Unmarshal(ev.data, &payload); err != nil {
 		t.Fatal(err)

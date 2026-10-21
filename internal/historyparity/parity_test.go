@@ -8,10 +8,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
 )
 
 type fakeSource struct {
@@ -123,56 +120,5 @@ func TestMissingInstanceAndSourceErrors(t *testing.T) {
 	failing.err = errors.New("analytics unavailable")
 	if _, err := Compare(t.Context(), deps(failing, history(t))); err == nil {
 		t.Fatal("source failure ignored")
-	}
-}
-
-func TestRunRecordsComparisonAsTask(t *testing.T) {
-	d, err := state.Open(statetest.Path(t, tasksvc.Schema), tasksvc.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	manager := tasksvc.New(d, 1)
-	if err := manager.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	defer manager.Stop()
-	source := matchingSource()
-	source.days[1].Sessions = 2
-	dep := deps(source, history(t))
-	dep.Tasks, dep.Delay, dep.Interval = manager, time.Millisecond, time.Hour
-	m := NewModule(dep)
-	if m.Name() == "" {
-		t.Fatal("unnamed module")
-	}
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() { m.Run(ctx); close(done) }()
-	var task tasksvc.Task
-	for deadline := time.Now().Add(3 * time.Second); ; {
-		tasks, err := manager.List(t.Context(), "", TaskKind, 1)
-		if err == nil && len(tasks) == 1 && tasks[0].Status == tasksvc.Succeeded {
-			task = tasks[0]
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("comparison was not recorded")
-		}
-		time.Sleep(time.Millisecond)
-	}
-	cancel()
-	<-done
-	got := task.Progress.Counters
-	if got["days-matched"] != 1 || got["days-mismatched"] != 1 || got["models-matched"] != 1 || got["models-mismatched"] != 0 {
-		t.Fatalf("counters: %+v", got)
-	}
-}
-
-func TestStartRequiresSourceAndStore(t *testing.T) {
-	if err := NewModule(Deps{}).Start(t.Context()); err == nil {
-		t.Fatal("started without dependencies")
 	}
 }

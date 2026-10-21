@@ -6,7 +6,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -107,11 +106,8 @@ func (m *Module) openCode() bool { return m.OpenCode == nil || m.OpenCode() }
 // the provider catalog is a property of the user's OpenCode config, not of
 // the directory the instance serves.
 func (s *Service) runningModelOptions(ctx context.Context) []string {
-	for _, port := range s.discoverOpenCodePorts() {
-		_, models, err := opencode.ProjectCatalog(ctx, "http://127.0.0.1:"+port, "")
-		if err == nil && len(models) > 0 {
-			return models
-		}
+	if reader, ok := s.OpencodeAdapter().(platforms.ModelOptionsReader); ok {
+		return reader.ModelOptions(ctx)
 	}
 	return nil
 }

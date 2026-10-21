@@ -12,6 +12,8 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
+	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -96,6 +98,13 @@ func TestSpoolDownBlocksAppendAndPreservesRecords(t *testing.T) {
 
 // oneAdapter is the session service's registry for one adapter, leaving
 // the harness's lifecycle sink in place.
+// providerPlatform presents the socket adapter where application code takes a
+// Platform; persisted reads are not exercised by these protocol tests.
+type providerPlatform struct {
+	*provider.Adapter
+	platformtest.NoBrowsing
+}
+
 type oneAdapter struct{ a platforms.Platform }
 
 func (r oneAdapter) Get(id platforms.ID) (platforms.Platform, bool) { return r.a, id == r.a.ID() }
@@ -143,9 +152,9 @@ func TestConflictingReplyRetryIsRefused(t *testing.T) {
 			t.Cleanup(func() { _ = st.Close() })
 			aa := autoapprove.NewService(autoapprove.Deps{Store: st})
 			h, got := promptHarness(t, writeFixture(t, askMake), func(h *liveHarness, e providerprotocol.Event) {
-				aa.HandleProviderEvent(t.Context(), h.adapter, e)
+				aa.HandleProviderEvent(t.Context(), providerPlatform{Adapter: h.adapter}, e)
 			})
-			registry := oneAdapter{h.adapter}
+			registry := oneAdapter{providerPlatform{Adapter: h.adapter}}
 			hooks := &replyHooks{}
 			svc := sessionsvc.New(registry, sessionsvc.Hooks{PermissionReplySucceeded: func(ctx context.Context, _ platforms.ID, req platforms.RespondPermissionRequest) {
 				hooks.mu.Lock()
@@ -225,7 +234,7 @@ func TestConflictingQuestionRetryIsRefused(t *testing.T) {
 {"direction":"stdin","message":{"type":"control_response","response":{"subtype":"success","request_id":"q1"}}}
 {"direction":"stdout","message":{"type":"result","subtype":"success","is_error":false,"result":"done"}}
 `), nil)
-	registry := oneAdapter{h.adapter}
+	registry := oneAdapter{providerPlatform{Adapter: h.adapter}}
 	svc := sessionsvc.New(registry, sessionsvc.Hooks{})
 	id := h.create(t)
 	h.send(t, id, "go")

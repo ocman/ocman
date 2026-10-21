@@ -17,7 +17,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
-    bootstrap();
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const probe = async () => {
+      const confirmed = await bootstrap();
+      if (!stopped && !confirmed) timer = setTimeout(() => void probe(), 2_000);
+    };
+    void probe();
+    return () => { stopped = true; clearTimeout(timer); };
   }, [bootstrap]);
 
   useEffect(() => {

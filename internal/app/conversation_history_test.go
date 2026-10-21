@@ -31,7 +31,7 @@ func TestOpenConversationHistoryUsesIsolatedPaths(t *testing.T) {
 	root := t.TempDir()
 	flagPath, envPath := filepath.Join(root, "flag", "statev2.db"), filepath.Join(root, "env", "statev2.db")
 	for name, tc := range map[string]struct{ flag, env, want string }{
-		"derived": {want: filepath.Join(root, "statev2.db")},
+		"derived": {want: filepath.Join(root, "state_conv.db")},
 		"env":     {env: envPath, want: envPath},
 		"flag":    {flag: flagPath, env: envPath, want: flagPath},
 	} {

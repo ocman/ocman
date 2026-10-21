@@ -149,6 +149,7 @@ message SessionsReq {
   string platform = 1;
   string dir = 2;
   int64 since = 3;
+  bytes sidebar_query = 4; // optional platforms.SidebarQuery JSON; old peers retain their existing list behavior
 }
 
 message SessionReq {

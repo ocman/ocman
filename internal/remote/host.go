@@ -134,8 +134,7 @@ func (h *remoteHost) CreateWorktreeSession(ctx context.Context, req hostsvc.Work
 	if err != nil {
 		return nil, err
 	}
-	var out hostsvc.WorktreeSessionResult
-	return &out, unmarshalJSON(resp.Payload, &out)
+	return h.decodeWorktreeSession(resp.Payload)
 }
 
 func (h *remoteHost) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {

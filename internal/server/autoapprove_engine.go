@@ -39,14 +39,21 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 
 func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 	deps := autoapprove.Deps{
+		RecentUserMessages: func(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
+			if !s.hasStoredHistory() {
+				return nil, platforms.ErrHistoryUnavailable
+			}
+			owner, kind := platforms.SplitPlatformID(string(platform))
+			if owner != "" {
+				return nil, platforms.ErrUnsupported
+			}
+			return s.historyAnalytics.Store.RecentUserMessages(ctx, s.historyOwner, kind, id, 6)
+		},
 		OpenCodeAuth:     s.openCodeAuth,
 		SessionDir:       s.autoApproveSessionDir,
 		PermissionParent: permissionPolicyParent,
 		ParentSessionID: func(ctx context.Context, childID string) (string, bool) {
-			if s.db == nil {
-				return "", false
-			}
-			session, err := s.db.GetSession(ctx, childID)
+			session, err := s.sessionMetadata(ctx, string(opencode.PlatformID), childID)
 			if err != nil || session == nil || session.ParentID == "" {
 				return "", false
 			}
@@ -95,10 +102,15 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		},
 		DefaultEnabled: s.autoApproveDefault,
 	}
-	if s.db != nil {
-		deps.RefreshSession = func(ctx context.Context, sessionID string) error {
-			return opencode.RefreshSession(ctx, s.db, sessionID)
+	deps.RefreshSession = func(ctx context.Context, sessionID string) error {
+		if s.registry != nil {
+			if adapter, ok := s.registry.Get(opencode.PlatformID); ok {
+				if cache, ok := adapter.(platforms.SessionCacheMaintainer); ok {
+					return cache.RefreshSession(ctx, sessionID)
+				}
+			}
 		}
+		return platforms.ErrUnsupported
 	}
 	// Only wire the store when a state DB exists — a nil *state.DB
 	// inside a non-nil interface would defeat the service's nil checks.
@@ -136,17 +148,8 @@ func (s *Server) openCodeEnabled() bool {
 // other platform's sessions through the adapter that owns them.
 func (s *Server) autoApproveSessionDir(sessionID string) (string, error) {
 	ctx := context.Background()
-	if s.db != nil {
-		if sess, err := s.db.GetSession(ctx, sessionID); err == nil && sess != nil {
-			return sess.Directory, nil
-		}
-	}
-	if s.registry != nil {
-		if p, ok := s.registry.PlatformForSession(ctx, sessionID); ok {
-			if detail, err := p.Session(ctx, sessionID, 1, 0); err == nil && detail.Session != nil && detail.Session.Directory != "" {
-				return detail.Session.Directory, nil
-			}
-		}
+	if row, err := s.sessionMetadata(ctx, "", sessionID); err == nil && row != nil && row.Directory != "" {
+		return row.Directory, nil
 	}
 	return "", errors.New("session not found")
 }

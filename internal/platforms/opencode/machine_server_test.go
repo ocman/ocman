@@ -134,6 +134,10 @@ func TestResolvePort_UnknownDirectoryUsesMachineServer(t *testing.T) {
 	defer ocv2.SetInstalledV2(true)()
 	const sid, dir = "sess-machine-port", "/tmp/proj-machine-port"
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/api/session/"+sid {
+			writeJSONBody(w, `{"data":{"id":"sess-machine-port","location":{"directory":"/tmp/proj-machine-port"}}}`)
+			return true
+		}
 		if r.URL.Path == "/api/session/"+sid+"/inbox" {
 			writeJSONBody(w, `{"data":[{"id":"msg_1","type":"user","delivery":"queue","payload":{"text":"x"}}]}`)
 			return true

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
@@ -108,23 +107,6 @@ func TestReconciliationDoesNotResurrectConcurrentReplies(t *testing.T) {
 				t.Fatal("stale snapshot resurrected resolved prompt", pending)
 			}
 		})
-	}
-}
-
-func TestMoveUpdatesCatalogDirectory(t *testing.T) {
-	f := newFake(t, allCapabilities())
-	f.reply("GET", "/sessions", []db.Session{{ID: "s", Directory: "/old"}})
-	f.reply("GET", "/catalog", platforms.DirectoryCatalog{})
-	a := f.adapter(t)
-	_, err := a.Sessions(t.Context(), "", 0)
-	requireNoError(t, err)
-	requireNoError(t, a.MoveSession(t.Context(), platforms.MoveSessionRequest{SessionID: "s", Directory: "/new"}))
-	_, err = a.SlashCommands(t.Context(), "s")
-	requireNoError(t, err)
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.calls[len(f.calls)-1].query != "directory=%2Fnew" {
-		t.Fatal(f.calls)
 	}
 }
 

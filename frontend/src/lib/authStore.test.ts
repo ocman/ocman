@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { useAuthStore } from './authStore';
+import { installAuthIntegration, useAuthStore } from './authStore';
+import { raiseAuthError, registerAuthErrorHandler } from './api.requests';
 
 // The store is a singleton across tests; reset it between cases so
 // one test's state doesn't leak into the next. These are the same
@@ -56,11 +57,11 @@ describe('bootstrap', () => {
     expect(s.authenticated).toBe(true);
   });
 
-  it('fails open on /api/auth/me network error', async () => {
+  it('keeps checking during backend startup instead of assuming authentication is disabled', async () => {
     stubFetch(() => new Response('nope', { status: 500 }));
     await useAuthStore.getState().bootstrap();
     const s = useAuthStore.getState();
-    expect(s.checking).toBe(false);
+    expect(s.checking).toBe(true);
     expect(s.authRequired).toBe(false);
     expect(s.authenticated).toBe(true);
   });
@@ -83,10 +84,24 @@ describe('bootstrap', () => {
     expect(sessionStorage.getItem('ocman:authRequired')).toBe('false');
   });
 
-  it('writes authRequired=false to sessionStorage when /api/auth/me fails (fail-open)', async () => {
+  it('does not overwrite cached authentication requirements on a transient failure', async () => {
+    sessionStorage.setItem('ocman:authRequired', 'true');
     stubFetch(() => new Response('nope', { status: 500 }));
     await useAuthStore.getState().bootstrap();
-    expect(sessionStorage.getItem('ocman:authRequired')).toBe('false');
+    expect(sessionStorage.getItem('ocman:authRequired')).toBe('true');
+  });
+
+  it('preserves a confirmed session during a transient backend failure', async () => {
+    useAuthStore.setState({ checking: false, authRequired: true, authenticated: true });
+    stubFetch(() => new Response('starting', { status: 503 }));
+    expect(await useAuthStore.getState().bootstrap()).toBe(false);
+    expect(useAuthStore.getState()).toMatchObject({ checking: false, authRequired: true, authenticated: true });
+  });
+
+  it('retains compatibility only when a legacy auth endpoint is absent', async () => {
+    stubFetch(() => new Response('not found', { status: 404 }));
+    expect(await useAuthStore.getState().bootstrap()).toBe(true);
+    expect(useAuthStore.getState()).toMatchObject({ checking: false, authRequired: false, authenticated: true });
   });
 });
 
@@ -143,6 +158,17 @@ describe('logout', () => {
 });
 
 describe('handleAuthError', () => {
+  it('still locks a confirmed session on a real unauthorized response after startup', () => {
+    const previous = registerAuthErrorHandler(() => {});
+    try {
+      installAuthIntegration();
+      useAuthStore.setState({ checking: false, authRequired: true, authenticated: true });
+      raiseAuthError();
+      expect(useAuthStore.getState().authenticated).toBe(false);
+    } finally {
+      registerAuthErrorHandler(previous);
+    }
+  });
   it('does nothing before bootstrap reveals auth is required', () => {
     useAuthStore.setState({ authRequired: false, authenticated: true });
     useAuthStore.getState().handleAuthError();

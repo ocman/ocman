@@ -15,6 +15,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
 // Claude-only and mixed-platform user workflows (FR-1/2/4, AD-1/13).
@@ -29,7 +30,7 @@ func TestClaudeMCPCreateDefaultsAndCallingSession(t *testing.T) {
 	if err != nil || first.Platform != "claudecode" {
 		t.Fatalf("Claude-only default create = %+v, %v", first, err)
 	}
-	detail, err := adapter.Session(t.Context(), first.SessionID, 1, 0)
+	detail, err := adapter.RuntimeDetail(t.Context(), first.SessionID, 1, 0)
 	if err != nil || !detail.Session.LiveConnection {
 		t.Fatalf("launched session = %+v, %v; want a live connection", detail, err)
 	}
@@ -86,6 +87,16 @@ func TestQueueRefusesReadOnlySession(t *testing.T) {
 // their totals; subagents and sessions without a directory add nothing.
 func TestProjectsIndexMergesPlatformDirectories(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
+	history := storedProjectFixture(t, srv)
+	if _, err := history.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "fixture", SessionID: "a"}, Directory: "/work/repo", UpdatedAt: 10}, Messages: []statev2.Message{
+		{ID: "1", Role: "assistant", Extensions: json.RawMessage(`{"role":"assistant","tokens":{"input":5,"output":3},"cost":0.5}`)},
+		{ID: "2", Role: "user", Position: 1, Extensions: json.RawMessage(`{"role":"user"}`)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := history.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "fixture", SessionID: "b"}, Directory: "/work/repo", UpdatedAt: 30}, Messages: []statev2.Message{{ID: "3", Role: "user", Extensions: json.RawMessage(`{"role":"user"}`)}}}); err != nil {
+		t.Fatal(err)
+	}
 	reg.Register(&fakePlatform{id: "claudecode", sessions: []db.Session{
 		{ID: "a", Directory: "/work/repo", TimeUpdated: 10, MessageCount: 2, TotalInputTokens: 5, TotalOutputTokens: 3, TotalCost: 0.5},
 		{ID: "b", Directory: "/work/repo", TimeUpdated: 30, MessageCount: 1},

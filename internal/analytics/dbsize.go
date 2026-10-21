@@ -45,14 +45,6 @@ func (m *Module) collectDatabaseSizes(ctx context.Context, now time.Time) error 
 	bucket := now.Truncate(databaseSizeSampleInterval).UnixMilli()
 	samples := make([]state.DatabaseSizeSample, 0, 3)
 	var errs []error
-	if m.deps.DB != nil {
-		size, err := m.deps.DB.SizeBytes(ctx)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("opencode: %w", err))
-		} else {
-			samples = append(samples, state.DatabaseSizeSample{Database: "opencode", SampledAt: bucket, SizeBytes: size})
-		}
-	}
 	size, err := m.deps.Store.SizeBytes(ctx)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("ocman: %w", err))

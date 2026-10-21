@@ -50,8 +50,8 @@ func TestAllConversationAnalyticsMatchLegacyAndUseStatev2(t *testing.T) {
 		}
 	}
 	// Closing the original source must not break a selected history reader.
-	f.deps.Analytics.Close()
-	f.deps.Analytics, f.deps.DB = nil, nil
+	f.legacy.Close()
+	f.legacy = nil
 	for _, route := range conversationAnalyticsRoutes {
 		rec := f.serve(http.MethodGet, route, "")
 		if rec.Code != http.StatusOK || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
@@ -72,7 +72,7 @@ func TestAnalyticsUnavailableAndQueryErrorsNeverUseLegacy(t *testing.T) {
 	calls := 0
 	handler := f.analyticsRoute(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if f.analyticsReader(r.Context()) != f.deps.Analytics {
+		if f.analyticsReader(r.Context()) != f.legacy {
 			http.Error(w, "projection failed", http.StatusInternalServerError)
 			return
 		}
@@ -130,7 +130,7 @@ func TestAnalyticsStrictSourceErrorsAndMissingLegacyRuntime(t *testing.T) {
 	}
 	// Claude-only analytics have no OpenCode runtime DB. The selected history
 	// reader still supports concurrency and runtime queries.
-	f.deps.DB = nil
+	f.legacy = nil
 	for _, route := range []string{"/api/analytics/session-concurrency", "/api/analytics/agent-run-hours"} {
 		rec := f.serve(http.MethodGet, route, "")
 		if rec.Code != 200 || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
@@ -143,7 +143,7 @@ func TestAnalyticsStrictSourceErrorsAndMissingLegacyRuntime(t *testing.T) {
 func TestEveryAnalyticsRouteRejectsIncompleteHistory(t *testing.T) {
 	f, h, _ := analyticsParityFixture(t)
 	h.Instances = func() ([]string, bool) { return nil, false }
-	f.deps.Analytics.Close() // legacy must not be queried, even as a retry
+	f.legacy.Close() // legacy must not be queried, even as a retry
 	for _, route := range conversationAnalyticsRoutes {
 		rec := f.serve(http.MethodGet, route, "")
 		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {

@@ -202,7 +202,7 @@ func (m *Manager) dial(ctx context.Context, r state.Remote) {
 		log.WithError(err).WithField("remote", r.LocalID).Warn("remote: reading token")
 		return
 	}
-	conn := NewRemoteConn(r.Address, token)
+	conn := NewRemoteConn(r.Address, token).requiringCanonical(m.registry.CanonicalSessionIDs())
 	mr := &managedRemote{localID: r.LocalID, conn: conn, name: displayName(r)}
 
 	m.lifecycleMu.Lock()
@@ -297,7 +297,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		for _, base := range mr.conn.Platforms() {
 			adapters = append(adapters, newRemotePlatform(mr.conn, base, func() string {
 				return m.displayNameFor(localID)
-			}))
+			}).withPluginReferences(m.store))
 		}
 		host := newRemoteHost(mr.conn)
 		if !m.publishAdapters(localID, mr, adapters, host) {
@@ -371,6 +371,9 @@ func (m *Manager) publishAdapters(localID int64, mr *managedRemote, adapters []*
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.remotes[localID] != mr {
+		return false
+	}
+	if !m.canPublishSessionContract(mr.conn) {
 		return false
 	}
 	// No remote ID means the handshake gave us nothing to address the

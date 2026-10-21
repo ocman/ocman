@@ -23,8 +23,9 @@ func (s *Server) newGitModule(g module.Guards) *gitmod.Module {
 			in := s.buildInheritedPermissions(r, platform, parentSessionID)
 			return func(child string) (int, string) { return s.applyInheritedPermissions(r, in, child) }
 		},
-		SendNow: s.sendNow,
-		Guards:  g,
+		SendNow:   s.sendNow,
+		Guards:    g,
+		OnGitInfo: s.persistSidebarBranches,
 	})
 }
 

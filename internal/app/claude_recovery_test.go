@@ -63,7 +63,12 @@ func TestDashboardKillRestartComposition(t *testing.T) {
 		return l.Addr().String()
 	}
 	run := func(mcp string) (string, *exec.Cmd, func()) {
-		base, _, cmd, stop := startClaudeOcmanCmd(t, "TestDashboardKillRestartComposition", dir, append(env, "OCMAN_TEST_MCP_ADDR="+mcp)...)
+		base, output, cmd, stop := startClaudeOcmanCmd(t, "TestDashboardKillRestartComposition", dir, append(env, "OCMAN_TEST_MCP_ADDR="+mcp)...)
+		t.Cleanup(func() {
+			if t.Failed() {
+				t.Log(output.String())
+			}
+		})
 		return base, cmd, stop
 	}
 	pending := func(base, id string) []map[string]any {
@@ -72,8 +77,14 @@ func TestDashboardKillRestartComposition(t *testing.T) {
 			return nil
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Logf("pending permissions: HTTP %d", resp.StatusCode)
+			return nil
+		}
 		var prompts []map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&prompts)
+		if err := json.NewDecoder(resp.Body).Decode(&prompts); err != nil {
+			t.Logf("decode permissions: %v", err)
+		}
 		return prompts
 	}
 	start := func(base string) string {

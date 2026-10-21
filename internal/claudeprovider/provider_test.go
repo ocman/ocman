@@ -164,19 +164,15 @@ func TestProtocolRoundTrip(t *testing.T) {
 			t.Fatalf("sessions = %+v, %v", sessions, err)
 		}
 	}
-	detail, err := adapter.Session(t.Context(), mainID, 30, 0)
+	detail, err := adapter.RuntimeDetail(t.Context(), mainID, 30, 0)
 	if err != nil || len(detail.Messages) != 4 || detail.Session.Platform != PlatformID {
 		t.Fatalf("detail = %+v, %v", detail, err)
 	}
-	if !adapter.Owns(t.Context(), childID) {
-		t.Fatal("the session tree's subagent must be owned by the adapter")
+	if !adapter.Knows(childID) {
+		t.Fatal("the session tree's subagent must be known to the adapter")
 	}
 	life, err := adapter.SessionLifecycle(t.Context(), otherID)
 	if err != nil || life.Status != db.StatusInterrupted {
 		t.Fatalf("lifecycle = %+v, %v", life, err)
-	}
-	inactive, err := adapter.SessionsInactiveBefore(t.Context(), time.Now().UnixMilli())
-	if err != nil || len(inactive) != 2 {
-		t.Fatalf("auto-archive candidates = %+v, %v", inactive, err)
 	}
 }

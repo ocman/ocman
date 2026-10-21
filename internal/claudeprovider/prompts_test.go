@@ -16,11 +16,13 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
+	"github.com/NoUseFreak/ocman/internal/conversationingest"
 	"github.com/NoUseFreak/ocman/internal/permissions"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
 const markerCommand = `python3 -c "from pathlib import Path; Path('permission-marker.txt').write_text('SPIKE_PERMISSION')"`
@@ -175,7 +177,7 @@ func TestAllowAlwaysIsRecordedAndInherited(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	svc := autoapprove.NewService(autoapprove.Deps{Store: st})
 	h, got := promptHarness(t, claudetest.Fixture("permission.jsonl"), func(h *liveHarness, e providerprotocol.Event) {
-		svc.HandleProviderEvent(t.Context(), h.adapter, e)
+		svc.HandleProviderEvent(t.Context(), providerPlatform{Adapter: h.adapter}, e)
 	})
 	parent := h.create(t)
 	if err := h.adapter.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: parent, Message: "go"}); err != nil {
@@ -221,14 +223,25 @@ func TestAllowAlwaysIsRecordedAndInherited(t *testing.T) {
 
 // With no OpenCode instance, the Claude CLI judge decides the permission.
 func TestClaudeJudgeDecidesWithoutOpenCode(t *testing.T) {
+	history, err := statev2.Open(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = history.Close() })
+	if err := history.RegisterInstance(t.Context(), statev2.Instance{ID: "claude", OwnerID: "owner", Platform: "claudecode", SourceKey: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
 	judgeLog := filepath.Join(t.TempDir(), "judge.json")
 	t.Setenv("FAKE_CLAUDE_PRINT", `{"verdict":"safe","reasoning":"writes a marker in the project"}`)
 	t.Setenv("FAKE_CLAUDE_PRINT_LOG", judgeLog)
 	var svc *autoapprove.Service
 	h, got := promptHarness(t, claudetest.Fixture("permission.jsonl"), func(h *liveHarness, e providerprotocol.Event) {
-		svc.HandleProviderEvent(t.Context(), h.adapter, e)
+		svc.HandleProviderEvent(t.Context(), providerPlatform{Adapter: h.adapter}, e)
 	})
 	svc = autoapprove.NewService(autoapprove.Deps{DefaultEnabled: true,
+		RecentUserMessages: func(ctx context.Context, _ platforms.ID, id string) ([]string, error) {
+			return history.RecentUserMessages(ctx, "owner", "claudecode", id, 6)
+		},
 		SessionDir:    func(string) (string, error) { return h.dir, nil },
 		FallbackJudge: autoapprove.ClaudeJudge{CLI: h.live.opts.CLI}})
 	id := h.create(t)
@@ -243,6 +256,17 @@ func TestClaudeJudgeDecidesWithoutOpenCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := h.live.idx.Sync(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := (&HistoryReader{index: h.live.idx, live: h.live}).Snapshot(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, _, err := conversationingest.Normalize(statev2.Key{InstanceID: "claude", SessionID: id}, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := history.Commit(t.Context(), batch); err != nil {
 		t.Fatal(err)
 	}
 	h.turn(t, id, 1)

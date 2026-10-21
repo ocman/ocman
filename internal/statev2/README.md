@@ -1,7 +1,7 @@
 # Statev2 conversation storage
 
 `statev2` is Ocman's owned conversation datastore. It
-opens a **separate, durable `statev2.db`**, not tables in `state.db` or a new
+opens a **separate `state_conv.db`**, not tables in `state.db` or a new
 analytics cache. It has no platform, server, or legacy state dependency.
 
 Application startup always opens it and runs owner-local ingestion through
@@ -12,15 +12,39 @@ streaming of active sessions stay platform-owned.
 ## Opening and ownership
 
 `Open(path)` requires an explicit file path. `Path(legacyStatePath)` resolves
-`statev2.db` beside the supplied legacy state path. Tests use `t.TempDir()`;
+`state_conv.db` beside the supplied application state path. Tests use `t.TempDir()`;
 development must supply a worktree-isolated path. Do not open a live database
 for development or copy a running database file without its WAL.
 
-The application path is `-statev2-db`, else `OCMAN_STATEV2_DB`, else the
-derived path beside `state.db`. Either override changes only the conversation
+The application path is `-conversations-db`, else `OCMAN_CONVERSATIONS_DB`, else
+the derived path beside `state.db`. The old `-statev2-db` flag is an alias and
+`OCMAN_STATEV2_DB` is a fallback when the new environment variable is unset.
+Either override changes only the conversation
 database; it does not isolate legacy state, platform indexes or agent
 subprocesses. A development server must still isolate
 all of those using the development guide, not merely change this flag or port.
+
+`state.db` retains application settings, queues, permission rules, canonical
+identities and feature state. `state_conv.db` holds conversations and their
+derived project/search/analytics data, including the persisted project index.
+The internal package keeps its `statev2` name; the on-disk name is not a schema
+version.
+
+When the new default filename is first used, startup adopts an adjacent
+`statev2.db` using SQLite's consistent snapshot (including WAL), without
+removing the original or overwriting an existing destination. A marker in
+application state records adoption, so deleting the new file later does not
+resurrect retired data.
+
+### Explicit offline reset
+
+Stop Ocman first and back up both databases. Removing `state_conv.db` and any
+of its `-wal`/`-shm` sidecars starts an empty conversation store on the next
+launch; do not delete `state.db`. Available native sources will be ingested
+again with the existing canonical identities. Settings, queues and rules stay
+intact. History whose physical source has disappeared cannot be reconstructed
+without a backup. Never remove SQLite files while Ocman is running. The
+application never performs this reset automatically.
 
 The database uses WAL, full synchronous commits, enforced foreign keys, private
 database/sidecar permissions, and a serialized connection. This connection is

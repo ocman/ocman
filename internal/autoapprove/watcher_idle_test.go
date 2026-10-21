@@ -46,7 +46,7 @@ func TestWatcherIdlePairReadsStatusOnce(t *testing.T) {
 			adapter := opencode.New(database, nil)
 			reads, idle := 0, 0
 			svc := NewService(Deps{
-				OpencodePlatform:        func() platforms.Platform { return adapter },
+				OpencodePlatform:        func() platforms.Platform { return openCodePlatform{Adapter: adapter} },
 				BroadcastSessionStatus:  func(string, db.SessionStatus) {},
 				BroadcastSessionChanged: func(string) { reads++ },
 				BroadcastSessionIdle:    func(string, string) { idle++ },
@@ -96,7 +96,7 @@ func TestWatcherBroadcastsRetryNoticeChanges(t *testing.T) {
 	adapter := opencode.New(nil, nil)
 	broadcasts := 0
 	svc := NewService(Deps{
-		OpencodePlatform: func() platforms.Platform { return adapter },
+		OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} },
 		BroadcastSessionStatus: func(id string, status db.SessionStatus) {
 			if id != "ses-1" || status != db.StatusBusy {
 				t.Fatalf("unexpected status: %s %s", id, status)

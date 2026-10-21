@@ -20,7 +20,11 @@ func (s *Server) idleProjectTargets() []idleprojects.Target {
 	}
 	var targets []idleprojects.Target
 	for _, platform := range s.registry.Platforms() {
-		if runtime, ok := platform.(hostsvc.IdleProjectRuntime); ok {
+		runtime, _ := platform.(hostsvc.IdleProjectRuntime)
+		if provider, ok := platform.(hostsvc.PlatformServiceProvider); ok {
+			runtime = provider.HostServices().Idle
+		}
+		if runtime != nil {
 			targets = append(targets, idleprojects.Target{Platform: platform, Runtime: runtime})
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,10 +29,12 @@ func TestRevertAndUnrevert_ProxyOpenCodeContract(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		calls = append(calls, struct {
-			path string
-			body string
-		}{r.URL.Path, string(body)})
+		if r.Method != http.MethodGet {
+			calls = append(calls, struct {
+				path string
+				body string
+			}{r.URL.Path, string(body)})
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
 	}))
@@ -61,88 +64,6 @@ func TestRevertAndUnrevert_ProxyOpenCodeContract(t *testing.T) {
 	}
 	if got, want := calls[1].body, "{}"; got != want {
 		t.Errorf("unrevert body = %s, want %s", got, want)
-	}
-}
-
-// TestProxyEvents_SessionCacheInvalidatedOnDisconnect reproduces the
-// "missing messages after switching sessions" bug.
-//
-// Scenario:
-//  1. Fetch session A → sessionCache is populated.
-//  2. ProxyEvents runs for session A, then the client disconnects
-//     (simulating the user navigating away to another session).
-//  3. A new message arrives on session A while the user is away.
-//  4. The user returns → fetchSessionFromOpenCodeCtx is called again.
-//
-// Before the fix: step 4 returns the stale cached response (missing
-// the message from step 3) because the sessionCache TTL has not yet
-// expired.
-// After the fix: ProxyEvents invalidates the cache on disconnect so
-// step 4 hits the upstream and returns the fresh response.
-func TestProxyEvents_SessionCacheInvalidatedOnDisconnect(t *testing.T) {
-	const sid = "sess-cache-bust"
-	const dir = "/tmp/proj-cache-bust"
-
-	fake := newOpencodeFake(t)
-	fake.SetSession(sid, []byte(`{"id":"`+sid+`","title":"hello","directory":"`+dir+`","time":{"created":1000,"updated":1500}}`))
-	fake.AddMessage(sid, []byte(`{
-		"info":{"id":"m1","sessionID":"`+sid+`","role":"user","time":{"created":1100}},
-		"parts":[]
-	}`))
-
-	// Add /event endpoint to the fake — returns a minimal SSE stream
-	// that ends immediately so ProxyEvents returns.
-	var eventHits int32
-	fake.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/event" {
-			atomic.AddInt32(&eventHits, 1)
-			w.Header().Set("Content-Type", "text/event-stream")
-			// Write one keepalive comment then close — simulates the
-			// upstream closing when the session becomes idle.
-			_, _ = w.Write([]byte(": keepalive\n\n"))
-			return
-		}
-		fake.serveHTTP(w, r)
-	})
-
-	withTestPort(t, dir, fake.Port())
-	database := newTestDBWithSession(t, sid, dir)
-
-	// Reset the session cache so we start clean regardless of test
-	// ordering.
-	sessionCache = newHTTPCacheNamed(sessionCache.ttl, "opencode.session_http.test")
-
-	a := New(database, nil)
-
-	// Step 1: first fetch — populates sessionCache.
-	detail1, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
-	if !ok {
-		t.Fatalf("first fetch: ok=false")
-	}
-	if len(detail1.Messages) != 1 {
-		t.Fatalf("first fetch: got %d messages, want 1", len(detail1.Messages))
-	}
-
-	// Step 2: ProxyEvents runs then disconnects (context cancelled).
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately — simulates navigating away
-	var buf bytes.Buffer
-	_ = a.ProxyEvents(ctx, sid, &buf, nil)
-
-	// Step 3: new message arrives while the user is away.
-	fake.AddMessage(sid, []byte(`{
-		"info":{"id":"m2","sessionID":"`+sid+`","role":"assistant","time":{"created":1200}},
-		"parts":[{"id":"p2","messageID":"m2","sessionID":"`+sid+`","type":"text","text":"reply"}]
-	}`))
-
-	// Step 4: user returns — fetch again. Must NOT serve the stale
-	// one-message cache; must return both messages.
-	detail2, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
-	if !ok {
-		t.Fatalf("second fetch: ok=false")
-	}
-	if len(detail2.Messages) != 2 {
-		t.Errorf("second fetch: got %d messages, want 2 (cache was not invalidated on SSE disconnect)", len(detail2.Messages))
 	}
 }
 
@@ -187,6 +108,8 @@ func TestAdapterAuthenticatesHTTPAndSSE(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
+		case "/session/" + sid:
+			fmt.Fprintf(w, `{"id":%q}`, sid)
 		case "/event":
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = w.Write([]byte(": authenticated\n\n"))
@@ -241,7 +164,7 @@ func TestSendMessageSerializesPromptsPerSession(t *testing.T) {
 
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 	req := platforms.SendMessageRequest{SessionID: sid, Message: "steer", Model: "openai/gpt-5", Agent: "build"}
 	errs := make(chan error, 2)
 	go func() { errs <- a.SendMessage(context.Background(), req) }()
@@ -275,7 +198,7 @@ func TestAdapterProxiesUnauthenticatedSSEWhenAuthDisabled(t *testing.T) {
 
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
 	var events bytes.Buffer
 	if err := a.ProxyEvents(context.Background(), sid, &events, nil); err != nil {
@@ -306,7 +229,7 @@ func TestProxyEvents_IdleTimeoutReturnsErrSSEIdleTimeout(t *testing.T) {
 
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	database := newTestDBWithSession(t, sid, dir)
+	database := newBoundTestDBWithSession(t, sid, dir)
 
 	// Temporarily override the idle timeout constant via a subtest-scoped
 	// monkey-patch — we exercise the same code path by patching at the
@@ -338,6 +261,8 @@ func TestProxyEventsPinsPortAffinityForSendMessage(t *testing.T) {
 	var promptHits1 int32
 	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/session/"+sid:
+			fmt.Fprintf(w, `{"id":%q}`, sid)
 		case r.URL.Path == "/event":
 			atomic.AddInt32(&eventHits1, 1)
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -410,6 +335,10 @@ func TestProxyEventsRejectsNonSSEWithoutPinningPort(t *testing.T) {
 	const dir = "/tmp/proj-events-non-sse"
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/session/"+sid {
+			fmt.Fprintf(w, `{"id":%q}`, sid)
+			return
+		}
 		if r.URL.Path == "/event" {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
@@ -451,6 +380,10 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 
 	var promptHits int32
 	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/session/"+sid {
+			fmt.Fprintf(w, `{"id":%q}`, sid)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/session/"+sid+"/prompt_async" {
 			atomic.AddInt32(&promptHits, 1)
 			w.WriteHeader(http.StatusNoContent)
@@ -461,11 +394,7 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 	defer live.Close()
 	livePort := strings.TrimPrefix(live.URL, "http://127.0.0.1:")
 
-	var calls int32
 	restore := setDiscoverPortsImplForTests(func() map[string]string {
-		if atomic.AddInt32(&calls, 1) == 1 {
-			return map[string]string{dir: stalePort}
-		}
 		return map[string]string{dir: livePort}
 	})
 	defer restore()
@@ -475,6 +404,7 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 
 	database := newTestDBWithSession(t, sid, dir)
 	a := New(database, nil)
+	td.rememberSessionPort(sid, stalePort)
 
 	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
 		SessionID: sid,
@@ -1154,13 +1084,7 @@ func TestSlashCommands_ParsesSource(t *testing.T) {
 
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	database := newTestDBWithSession(t, sid, dir)
-	a := New(database, nil)
-
-	entries, err := a.SlashCommands(context.Background(), sid)
-	if err != nil {
-		t.Fatalf("SlashCommands: %v", err)
-	}
+	entries := slashCommandsAt(context.Background(), port, sid, dir)
 	bySource := map[string]string{}
 	for _, e := range entries {
 		bySource[e.Name] = e.Source
@@ -1189,7 +1113,7 @@ func TestRespondPrompt_UpstreamNotFoundDropsRegistryEntry(t *testing.T) {
 	}))
 	defer srv.Close()
 	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{"id": "per_1", "sessionID": sid})
 	a.ObservePromptAsked("", dir, "question", platforms.LivePrompt{"id": "que_1", "sessionID": sid})

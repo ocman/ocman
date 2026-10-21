@@ -10,7 +10,6 @@ import (
 )
 
 func TestSessionHaltsSurviveResolutionReplayAndAdapterRestart(t *testing.T) {
-	InvalidateSessionsCache()
 	parent, child := "parent", "child"
 	database := newTestDBWithSessions(t, []testSession{
 		{id: parent, directory: "/repo"},
@@ -31,23 +30,14 @@ func TestSessionHaltsSurviveResolutionReplayAndAdapterRestart(t *testing.T) {
 	a.ObservePromptAsked("", "/repo", "question", prompt)
 	a.ObservePromptResolved("/repo", "question", "grandchild", "q")
 	a.ObservePromptAsked("", "/repo", "question", prompt)
+	parents := map[string]string{child: parent, "grandchild": child}
 	for _, adapter := range []*Adapter{a, New(database, store)} {
-		list, err := adapter.Sessions(t.Context(), "/repo", 0)
-		if err != nil {
+		rows := []db.Session{{ID: parent, Directory: "/repo"}}
+		if err := adapter.enrichStoredHalts(t.Context(), rows, parents); err != nil {
 			t.Fatal(err)
 		}
-		summary, err := adapter.SessionSummary(t.Context(), parent)
-		if err != nil {
-			t.Fatal(err)
-		}
-		detail := &platforms.SessionDetail{Session: &db.Session{ID: parent, Directory: "/repo"}}
-		if err := adapter.attachSessionTree(t.Context(), parent, detail); err != nil {
-			t.Fatal(err)
-		}
-		for _, row := range []db.Session{list[0], *summary, *detail.Session} {
-			if row.LastHaltAt != 120002 {
-				t.Fatalf("parent halt = %d, want 120002", row.LastHaltAt)
-			}
+		if rows[0].LastHaltAt != 120002 {
+			t.Fatalf("parent halt = %d, want 120002", rows[0].LastHaltAt)
 		}
 	}
 }

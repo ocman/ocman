@@ -10,7 +10,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// Schema belongs to this service. Conversation content remains in statev2.db;
+// Schema belongs to this service. Conversation content remains in state_conv.db;
 // generic task bookkeeping uses the existing module migration/backup mechanism.
 var Schema = state.ModuleSchema{Module: "background-tasks", Tables: []string{"background_task"}, Migrations: []func(*sql.Tx) error{
 	func(tx *sql.Tx) error {

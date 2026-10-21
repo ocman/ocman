@@ -46,8 +46,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listProjects(ctx context.Context) ([]db.ProjectStats, error) {
-	// Local hub projects flow through the host seam (AD-16): OpenCode's
-	// database plus every other local platform's session directories.
+	// Local projects flow through the host seam and owner-local statev2 history.
 	projects, err := s.router().Local().Projects(ctx)
 	if err != nil {
 		return nil, err

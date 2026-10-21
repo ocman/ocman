@@ -194,14 +194,18 @@ func RunGUIWithStarter(ctx context.Context, start func(context.Context, net.List
 	return nil
 }
 
-// waitForServer polls the backend until /api/auth/me (cheap, reachable
-// without a login) answers 200, or fails once timeout expires.
+// waitForServer waits for the startup UI, not migration completion. Older
+// standalone servers without that endpoint still use /api/auth/me.
 func waitForServer(base string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	deadline := time.Now().Add(timeout)
 	last := "no response"
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(base + "/api/auth/me")
+		resp, err := client.Get(base + "/api/startup")
+		if err == nil && resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			resp, err = client.Get(base + "/api/auth/me")
+		}
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {

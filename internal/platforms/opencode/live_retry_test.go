@@ -8,46 +8,31 @@ import (
 )
 
 func TestSessionRetryNoticeFromSnapshot(t *testing.T) {
-	ResetCachesForTests()
-	t.Cleanup(ResetCachesForTests)
+	ResetCaches()
+	t.Cleanup(ResetCaches)
 	const sid, dir = "retry-session", "/tmp/retry-project"
 	fake := newOpencodeFake(t)
 	fake.turnStatusJSON = json.RawMessage(`{"retry-session":{"type":"retry","attempt":1,"message":"This request would exceed your account's rate limit. Please try again later.","next":1791456599677}}`)
-	fake.SetSession(sid, []byte(`{"id":"retry-session","directory":"/tmp/retry-project","time":{"created":1000,"updated":1500}}`))
-	fake.AddMessage(sid, []byte(`{"info":{"id":"m1","sessionID":"retry-session","role":"assistant","time":{"created":1100}},"parts":[]}`))
 	withTestPort(t, dir, fake.Port())
 	a := New(newTestDBWithSession(t, sid, dir), nil)
 	if !a.SeedSessionStatusFromInstance(t.Context(), fake.Port(), 0, nil) {
 		t.Fatal("status snapshot failed")
 	}
-	detail, err := a.Session(t.Context(), sid, 30, 0)
-	if err != nil {
+	// The retry notice is a live observation overlaid on stored metadata.
+	rows := []db.Session{{ID: sid, Directory: dir, Title: "stored", Status: db.StatusDone}}
+	if err := a.EnrichStoredSessions(t.Context(), rows, nil); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Session.Status != db.StatusBusy {
-		t.Fatalf("status = %s, want busy", detail.Session.Status)
+	notice := rows[0].Notice
+	if rows[0].Status != db.StatusBusy || rows[0].Title != "stored" {
+		t.Fatalf("overlay = %+v, want busy with the stored title", rows[0])
 	}
-	notice := detail.Session.Notice
 	if notice == nil || notice.Kind != "rate_limit" || notice.Attempt != 1 || notice.RetryAt != 1791456599677 {
-		t.Fatalf("rate-limit notice missing from conversation/composer session: %+v", notice)
+		t.Fatalf("rate-limit notice missing from the stored row: %+v", notice)
 	}
-	for _, live := range []bool{true, false} {
-		if !live {
-			fake.SetSession(sid, nil)
-			sessionCache.invalidate(fake.Port(), "/session/"+sid)
-		}
-		detail, err = a.Session(t.Context(), sid, 30, 0)
-		if err != nil || detail.Session.Notice == nil || *detail.Session.Notice != *notice {
-			t.Fatalf("live=%v detail notice lost: %+v, %v", live, detail, err)
-		}
-	}
-	rows, err := a.Sessions(t.Context(), dir, 0)
-	if err != nil || len(rows) != 1 || rows[0].Notice == nil || *rows[0].Notice != *notice {
-		t.Fatalf("list notice lost: %+v, %v", rows, err)
-	}
-	summary, err := a.SessionSummary(t.Context(), sid)
-	if err != nil || summary.Notice == nil || *summary.Notice != *notice {
-		t.Fatalf("summary notice lost: %+v, %v", summary, err)
+	inventory, err := a.Sessions(t.Context(), dir, 0)
+	if err != nil || len(inventory) != 1 || inventory[0].Status != db.StatusBusy {
+		t.Fatalf("runtime inventory lost the live turn: %+v, %v", inventory, err)
 	}
 }
 

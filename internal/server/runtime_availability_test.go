@@ -29,6 +29,7 @@ func TestHostCapsNativeProviderPrerequisites(t *testing.T) {
 				}
 				t.Setenv("PATH", dir)
 				srv, reg := newSessionsTestServer(t)
+				storedProjectFixture(t, srv)
 				adapter := nativeRuntimeAdapter{runtimeAdapter{&fakePlatform{id: "claudecode"}}}
 				reg.Register(adapter)
 				if mixed {

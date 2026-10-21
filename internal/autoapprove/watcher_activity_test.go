@@ -30,7 +30,7 @@ func TestSessionDataBroadcastsActivity(t *testing.T) {
 	if payload.SessionID != "background" || payload.TimeUpdated < before {
 		t.Fatalf("bad activity payload: %+v", payload)
 	}
-	if len(rec.sortedIDs()) != 1 || rec.fullMarks() != 1 {
-		t.Fatal("activity broadcast must retain cache invalidation")
+	if ids := rec.sortedIDs(); len(ids) != 1 || ids[0] != "background" {
+		t.Fatalf("activity broadcast must still request an ingestion reread: %v", ids)
 	}
 }

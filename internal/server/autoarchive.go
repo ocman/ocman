@@ -145,7 +145,7 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 func (s *Server) autoArchiveInactiveProjects(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	if s.stateDB == nil || s.db == nil {
+	if s.stateDB == nil || !s.hasStoredHistory() {
 		return
 	}
 	ctx, span := telemetry.Tracer().Start(ctx, "ocman.auto_archive_projects.tick")

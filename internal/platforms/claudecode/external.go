@@ -10,7 +10,7 @@ import (
 // externalAdapter launches on the transcript's owner-local directory, never in
 // the browsing supervisor. The provider records adoption on the first send.
 func (p *claudePlatform) externalAdapter(ctx context.Context, id string) (*provider.Adapter, error) {
-	detail, err := p.Adapter.Session(ctx, id, 1, 0)
+	detail, err := p.RuntimeDetail(ctx, id, 1, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -23,12 +23,9 @@ func (p *claudePlatform) externalAdapter(ctx context.Context, id string) (*provi
 	}
 	// Seed session routing before waking browser streams. attach's earlier
 	// notification can race the first browser reconnect, before adoption.
-	if _, err := a.Session(ctx, id, 1, 0); err != nil {
+	if _, err := a.RuntimeDetail(ctx, id, 1, 0); err != nil {
 		return nil, err
 	}
-	p.projects.mu.Lock()
-	close(p.projects.attached)
-	p.projects.attached = make(chan struct{})
-	p.projects.mu.Unlock()
+	p.projects.bindSession(id, a)
 	return a, nil
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 )
 
 // Registry is the consumer-side subset of *platforms.Registry the
@@ -71,7 +73,8 @@ type Service struct {
 	cooldowns          cooldowns
 	routinePublication routinePublication
 	firstPrompts       sync.Map
-	identities         *creationIdentities
+	identities         *owned.IdentityGateway
+	creations          creationLocks
 }
 
 // New builds a Service over the given registry.
@@ -124,6 +127,12 @@ func (e *ConfiguredSessionCleanupError) Unwrap() error { return e.Err }
 // sessions must be addressed by their compound platform key); otherwise
 // the registry's reverse lookup decides ownership.
 func (s *Service) resolve(ctx context.Context, sessionID, platformID string) (platforms.Platform, error) {
+	if identity.IsPendingReference(sessionID) {
+		return nil, platforms.ErrPlatformUnreachable
+	}
+	if canonical, ok := s.registry.(interface{ CanonicalSessionIDs() bool }); ok && canonical.CanonicalSessionIDs() {
+		return s.identities.OwnerPlatform(ctx, sessionID, platformID)
+	}
 	if platformID != "" {
 		p, ok := s.registry.Get(platforms.ID(platformID))
 		if !ok {
@@ -270,7 +279,7 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 	if err := p.MoveSession(ctx, req); err != nil {
 		return err
 	}
-	s.sessionDirs.Delete(nativeSessionKey{p.ID(), req.SessionID})
+	s.sessionDirs.Delete(sessionCacheKey{p.ID(), req.SessionID})
 	// A move changes which project row the session belongs to; refresh
 	// the projects index just like session creation does.
 	if s.hooks.SessionCreated != nil {

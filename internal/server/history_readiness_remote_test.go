@@ -56,11 +56,11 @@ func TestConnectedRemoteDoesNotBlockLocalHistoryAnalytics(t *testing.T) {
 	if w.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
 		t.Fatal(w.Header())
 	}
-	// A newly enabled local platform without ingestion must still fail closed.
+	// A newly enabled local platform makes analytics partial, not unavailable.
 	registry.Register(&fakePlatform{id: "missing-local"})
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/models", nil))
-	if w.Code != http.StatusServiceUnavailable {
+	if w.Code != http.StatusOK || w.Header().Get("X-Ocman-Analytics-Partial") != "true" {
 		t.Fatalf("omitted local platform: %d %s", w.Code, w.Body)
 	}
 }

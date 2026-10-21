@@ -84,6 +84,10 @@ func (l PlanningLauncher) launchReadOnlySession(ctx context.Context, req factory
 		if errors.As(err, &cleanup) {
 			return factory.PlanningSession{Platform: platformID, ID: cleanup.SessionID}, fmt.Errorf("create bounded Planning Session: %w", err)
 		}
+		var pending *platforms.CreationPendingError
+		if errors.As(err, &pending) {
+			return factory.PlanningSession{Platform: platformID, ID: pending.SessionID}, fmt.Errorf("create bounded Planning Session: %w", err)
+		}
 		return factory.PlanningSession{}, fmt.Errorf("create bounded Planning Session: %w", err)
 	}
 	return factory.PlanningSession{Platform: platformID, ID: created.ID}, nil

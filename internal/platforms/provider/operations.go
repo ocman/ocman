@@ -122,11 +122,7 @@ func (a *Adapter) MoveSession(ctx context.Context, req platforms.MoveSessionRequ
 	err := a.call(ctx, a.Capabilities().Move, "POST", sessionPath(req.SessionID, "/move"), req, nil)
 	if err == nil {
 		a.mu.Lock()
-		s := a.sessions[req.SessionID]
-		s.ID = req.SessionID
-		s.Directory = req.Directory
-		s.Platform = string(a.ID())
-		a.sessions[req.SessionID] = s
+		a.known[req.SessionID] = true
 		a.mu.Unlock()
 	}
 	return err
@@ -169,5 +165,25 @@ func (a *Adapter) CancelNativeQueued(ctx context.Context, req platforms.CancelNa
 func (a *Adapter) LiveSessions(ctx context.Context) ([]db.Session, error) {
 	var sessions []db.Session
 	err := a.call(ctx, true, "GET", "/sessions?live=1", nil, &sessions)
+	if err == nil {
+		for _, session := range sessions {
+			a.remember(session)
+		}
+	}
+	return sessions, err
+}
+
+// RuntimeSessions enumerates sessions owned by the supervisor, including ones
+// without transcripts. Status-only observations of old helpers are not an
+// ingestion inventory. Older supervisors fall back to their ordinary session
+// list for this unknown query parameter, which also excludes those helpers.
+func (a *Adapter) RuntimeSessions(ctx context.Context) ([]db.Session, error) {
+	var sessions []db.Session
+	err := a.call(ctx, true, "GET", "/sessions?runtime=1", nil, &sessions)
+	if err == nil {
+		for _, session := range sessions {
+			a.remember(session)
+		}
+	}
 	return sessions, err
 }

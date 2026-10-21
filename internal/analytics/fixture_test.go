@@ -14,14 +14,16 @@ import (
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
 // fixture is a module over a fresh OpenCode database (raw is its writable
 // handle, for seeding) and a fresh state database.
 type fixture struct {
 	*Module
-	raw *sql.DB
-	mux *http.ServeMux
+	raw    *sql.DB
+	legacy *db.DB
+	mux    *http.ServeMux
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -72,8 +74,17 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	f := &fixture{Module: newTestModule(Deps{DB: database, Store: store}), raw: raw}
-	f.mux = calculationRoutes(f.Module)
+	history, err := statev2.Open(filepath.Join(dir, "history.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = history.Close() })
+	if err := history.RegisterInstance(t.Context(), statev2.Instance{ID: "fixture", OwnerID: "owner", Platform: "test", SourceKey: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	h := &HistoryAnalytics{Store: history, Instances: func() ([]string, bool) { return []string{"fixture"}, true }}
+	f := &fixture{Module: newTestModule(Deps{Store: store, HistoryAnalytics: func() *HistoryAnalytics { return h }}), raw: raw, legacy: database}
+	f.mux = calculationRoutes(f.Module, f.legacy)
 	return f
 }
 

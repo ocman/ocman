@@ -2,22 +2,26 @@ package platforms
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
+	log "github.com/sirupsen/logrus"
 )
 
 // Registry holds registered platform adapters and maintains a reverse
 // lookup from session ID to owning platform for endpoints that don't
 // carry the ?platform= query param.
 type Registry struct {
-	mu    sync.RWMutex
-	order []ID // registration order for stable Platforms() output
-	byID  map[ID]Platform
-	bySID map[string]ID // session-id -> owning platform (populated by RememberSessions)
-	sink  SessionEventSink
+	mu        sync.RWMutex
+	order     []ID // registration order for stable Platforms() output
+	byID      map[ID]Platform
+	bySID     map[string]ID // session-id -> owning platform (populated by RememberSessions)
+	sink      SessionEventSink
+	canonical bool
 }
 
 // NewRegistry returns an empty registry.
@@ -38,6 +42,10 @@ func (r *Registry) Register(p Platform) {
 	defer r.mu.Unlock()
 
 	id := p.ID()
+	if r.canonical && !canonicalAdapter(p) {
+		log.WithField("platform", id).Error("refusing non-canonical session adapter after identity cutover")
+		return
+	}
 	if _, exists := r.byID[id]; !exists {
 		r.order = append(r.order, id)
 	}
@@ -45,6 +53,33 @@ func (r *Registry) Register(p Platform) {
 	if source, ok := p.(SessionEventSource); ok {
 		source.SetSessionEventSink(r.sink)
 	}
+}
+
+func canonicalAdapter(p Platform) bool {
+	canonical, ok := p.(interface{ CanonicalSessionIDs() bool })
+	return ok && canonical.CanonicalSessionIDs()
+}
+
+// EnableCanonicalSessions is called once after migration and adapter wrapping,
+// before serving. Later registrations and reverse lookups cannot reintroduce
+// native execution keys. Pending references are not executable session IDs.
+func (r *Registry) EnableCanonicalSessions() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.byID {
+		if !canonicalAdapter(p) {
+			return fmt.Errorf("platform %s has no canonical session boundary", p.ID())
+		}
+	}
+	r.canonical = true
+	clear(r.bySID)
+	return nil
+}
+
+func (r *Registry) CanonicalSessionIDs() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.canonical
 }
 
 // SetSessionEventSink wires existing adapters and any registered later.
@@ -115,7 +150,7 @@ func (r *Registry) RememberSessions(platformID ID, sessions []db.Session) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, s := range sessions {
-		if s.ID == "" {
+		if s.ID == "" || (r.canonical && !identity.IsSessionID(s.ID)) {
 			continue
 		}
 		r.bySID[s.ID] = platformID
@@ -137,6 +172,10 @@ func (r *Registry) RememberSessions(platformID ID, sessions []db.Session) {
 // owner — adding hundreds of milliseconds to every cold-cache request.
 func (r *Registry) PlatformForSession(ctx context.Context, sessionID string) (Platform, bool) {
 	r.mu.RLock()
+	if r.canonical && !identity.IsSessionID(sessionID) {
+		r.mu.RUnlock()
+		return nil, false
+	}
 	id, ok := r.bySID[sessionID]
 	r.mu.RUnlock()
 

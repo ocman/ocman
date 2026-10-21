@@ -125,6 +125,7 @@ func (a *Adapter) ObserveSessionStatus(port string, generation uint64, sessionID
 		notice: notice,
 		seq:    a.turns.seq,
 	}
+	a.bindActiveSessionPort(sessionID, port, statusType)
 	return !observed || previous.port != port || previous.busy != turnRunning(statusType) || !sameNotice(previous.notice, notice)
 }
 
@@ -175,6 +176,7 @@ func (a *Adapter) SeedSessionStatus(port string, generation, seq uint64, statuse
 			entry.notice = notices[0][sessionID]
 		}
 		a.turns.entries[sessionID] = entry
+		a.bindActiveSessionPort(sessionID, port, statusType)
 	}
 	a.turns.seeded[port] = a.turns.portGen[port]
 }
@@ -188,6 +190,9 @@ func (a *Adapter) ClearSessionStatusForPort(port string) {
 	}
 	a.turns.mu.Lock()
 	defer a.turns.mu.Unlock()
+	if a.rt != nil {
+		a.rt.forgetSessionsForPort(port)
+	}
 	a.turns.portGen[port]++
 	delete(a.turns.seeded, port)
 	for sessionID, entry := range a.turns.entries {

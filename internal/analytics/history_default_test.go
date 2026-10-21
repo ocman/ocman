@@ -7,6 +7,7 @@ import (
 
 func TestMissingHistoryNeverSelectsLegacyAnalytics(t *testing.T) {
 	f := newFixture(t)
+	f.deps.HistoryAnalytics = nil
 	for _, route := range conversationAnalyticsRoutes {
 		rec := serve(routes(f.Module), http.MethodGet, route, "")
 		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {

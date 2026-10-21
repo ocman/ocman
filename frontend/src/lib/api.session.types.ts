@@ -11,6 +11,10 @@ export interface Session {
   directory: string;
   timeCreated: number;
   timeUpdated: number;
+  lastMessageAt?: number;
+  branch?: string;
+  origin?: 'user' | 'external' | 'routine' | 'factory';
+  originId?: string;
   /** Last terminal assistant turn, including errors; absent on older remotes. */
   lastTurnCompletedAt?: number;
   /** Latest accepted user prompt and permission/question halt. Unix milliseconds. */

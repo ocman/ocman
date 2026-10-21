@@ -13,12 +13,11 @@ import (
 func (s *Server) analyticsModule() *analytics.Module {
 	return s.analyticsMod.get(func() *analytics.Module {
 		return analytics.NewModule(analytics.Deps{
-			DB:               s.db,
-			Analytics:        s.analytics,
-			HistoryAnalytics: func() *analytics.HistoryAnalytics { return s.historyAnalytics },
-			SessionIdentity:  s.historySessionPublicID,
-			Store:            s.stateDB,
-			Version:          func() string { return s.version },
+			SubscriptionCredentials: s.subscriptionCredentials,
+			HistoryAnalytics:        func() *analytics.HistoryAnalytics { return s.historyAnalytics },
+			SessionIdentity:         s.historySessionPublicID,
+			Store:                   s.stateDB,
+			Version:                 func() string { return s.version },
 			TypeSafeConfigured: func(ctx context.Context) (bool, error) {
 				if s.stateDB == nil {
 					return false, nil

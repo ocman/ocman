@@ -7,12 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -156,7 +156,6 @@ func (a *Adapter) ClearPromptsForPort(port string) {
 	a.rt.forgetSessionsForPort(port)
 	catalogCache.invalidatePort(port)
 	fetchFailureLogs.invalidatePort(port)
-	sessionCache.invalidatePort(port)
 	a.prompts.mu.Lock()
 	a.prompts.portGen[port]++
 	directories := make(map[string]bool)
@@ -202,25 +201,25 @@ func (a *Adapter) promptDirectories(port string, discovered []string) []string {
 	if a.db == nil {
 		return out
 	}
-	// Read through the cache: the raw query is a full scan with
-	// json_extract over every message, and this runs on every SSE
-	// reconnect for every discovered instance. Uncached it pinned a
-	// core and starved the 4-connection read pool, which is what made
-	// message sends and permission replies time out.
-	sessions, err := getSessionsCached(context.Background(), a.db, "", 0)
+	// Worktree sessions run on their project's instance, so a worktree whose
+	// turn may be open needs its own scope: one whose stored turn is
+	// unfinished, or whose turn this port's event stream reports running.
+	candidates, err := a.db.UnfinishedTurnDirectories(context.Background())
 	if err != nil {
 		return out
 	}
-	for _, session := range sessions {
-		if session.Status != db.StatusBusy && a.turns.turnStateForPort(session.ID, port) != db.TurnRunning {
+	for _, id := range a.turns.runningOnPort(port) {
+		if row, err := a.db.GetSession(context.Background(), id); err == nil && row != nil {
+			candidates = append(candidates, row.Directory)
+		}
+	}
+	for _, directory := range candidates {
+		root := normalizePortDirectory(foldWorktreeToProjectRoot(directory))
+		if !seen[root] || seen[normalizePortDirectory(directory)] {
 			continue
 		}
-		root := normalizePortDirectory(foldWorktreeToProjectRoot(session.Directory))
-		if !seen[root] || seen[normalizePortDirectory(session.Directory)] {
-			continue
-		}
-		seen[normalizePortDirectory(session.Directory)] = true
-		out = append(out, session.Directory)
+		seen[normalizePortDirectory(directory)] = true
+		out = append(out, directory)
 	}
 	return out
 }
@@ -289,9 +288,9 @@ func fetchPromptSnapshot(ctx context.Context, port, directory, kind string) ([]p
 
 func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64, prompts []platforms.LivePrompt, onPrompt func(platforms.LivePrompt)) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	scope := promptScope(directory, kind)
 	if token < r.applied[scope] {
+		r.mu.Unlock()
 		return false
 	}
 	r.applied[scope] = token
@@ -300,6 +299,7 @@ func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64,
 			delete(r.entries, key)
 		}
 	}
+	var callbacks []platforms.LivePrompt
 	for _, prompt := range prompts {
 		sessionID := promptString(prompt, "sessionID")
 		requestID := promptString(prompt, "id")
@@ -309,7 +309,7 @@ func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64,
 			cloned := clonePrompt(prompt)
 			r.entries[key] = livePromptEntry{directory: directory, prompt: cloned}
 			if onPrompt != nil {
-				onPrompt(clonePrompt(cloned))
+				callbacks = append(callbacks, clonePrompt(cloned))
 			}
 		}
 	}
@@ -318,6 +318,11 @@ func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64,
 			delete(r.changed, key)
 			delete(r.changeScope, key)
 		}
+	}
+	r.mu.Unlock()
+	// Observers may read session summaries, which consult this registry.
+	for _, prompt := range callbacks {
+		onPrompt(prompt)
 	}
 	return true
 }
@@ -358,5 +363,20 @@ func (r *livePromptRegistry) listEntries(kind string) []livePromptEntry {
 			out = append(out, livePromptEntry{directory: entry.directory, prompt: clonePrompt(entry.prompt)})
 		}
 	}
+	return out
+}
+
+// runningOnPort lists sessions whose latest event on port reports a turn in
+// flight.
+func (r *liveStatusRegistry) runningOnPort(port string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []string
+	for id, entry := range r.entries {
+		if entry.port == port && entry.busy {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
 	return out
 }

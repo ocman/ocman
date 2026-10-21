@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+
+	"github.com/NoUseFreak/ocman/internal/db"
 )
 
 // Legacy calculations remain test references for parity and query unit tests,
@@ -11,10 +13,12 @@ import (
 type calculationRouter struct {
 	muxRouter
 	module *Module
+	source *db.DB
 }
 
 func (r calculationRouter) Handle(path string, h http.HandlerFunc) {
 	m := r.module
+	source := r.source
 	reference := map[string]http.HandlerFunc{
 		"/api/stats": m.handleStats, "/api/activity": m.handleActivity, "/api/models": m.handleModels,
 		"/api/hourly": m.handleHourly, "/api/hourly-tokens": m.handleHourlyTokens,
@@ -25,8 +29,8 @@ func (r calculationRouter) Handle(path string, h http.HandlerFunc) {
 	if next, ok := reference[path]; ok {
 		h = method(http.MethodGet, m.deps.Guards.Auth(func(w http.ResponseWriter, r *http.Request) {
 			setAnalyticsSource(w.Header(), "legacy", "")
-			if m.deps.Analytics != nil {
-				r = r.WithContext(context.WithValue(r.Context(), analyticsSourceKey{}, m.deps.Analytics))
+			if source != nil {
+				r = r.WithContext(context.WithValue(r.Context(), analyticsSourceKey{}, source))
 			}
 			next(w, r)
 		}))
@@ -34,12 +38,12 @@ func (r calculationRouter) Handle(path string, h http.HandlerFunc) {
 	r.muxRouter.Handle(path, h)
 }
 
-func calculationRoutes(m *Module) *http.ServeMux {
+func calculationRoutes(m *Module, source *db.DB) *http.ServeMux {
 	mux := http.NewServeMux()
-	m.Routes(calculationRouter{muxRouter{mux}, m})
+	m.Routes(calculationRouter{muxRouter{mux}, m, source})
 	return mux
 }
 
 func (f *fixture) serveLegacy(method, target, body string) *httptest.ResponseRecorder {
-	return serve(calculationRoutes(f.Module), method, target, body)
+	return serve(calculationRoutes(f.Module, f.legacy), method, target, body)
 }

@@ -9,7 +9,7 @@ import (
 // v101 adds artifacts and their relay shares (artifacts.go).
 // v102 adds viewer-scoped Inbox item pins.
 // v113 indexes running routine runs in scheduler polling order.
-const latestSchemaVersion = 124
+const latestSchemaVersion = 125
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -392,6 +392,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateSnooze(tx)
 	case 124:
 		return migrateHistoryDatabaseSize(tx)
+	case 125:
+		return migrateConversationProjectCache(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

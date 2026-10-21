@@ -38,6 +38,9 @@ func (w *sourceWorker) runJournal(ctx context.Context, dir string) {
 	w.journaled = true
 	consumer := &journalConsumer{store: w.module.deps.Store, dir: dir, translator: journalRefresh{w}, pruneIdle: journalIdle,
 		onGap: func(string) { w.module.Notify(w.source.AdapterID, "") }}
+	if reader, ok := w.source.Reader.(platforms.HistoryJournalReader); ok {
+		consumer.read = reader.HistoryJournalEntries
+	}
 	sizes := map[string]int64{}
 	// Readiness expires after two poll intervals, so check at least that often.
 	check := time.NewTicker(min(journalCheck, w.module.deps.PollInterval))
@@ -148,9 +151,12 @@ func (e *journalTranslationError) Unwrap() error { return e.error }
 func (r journalRefresh) Translate(ctx context.Context, _ string, records []historyjournal.Record) ([]statev2.StreamBatch, error) {
 	dirty := map[string]bool{}
 	for _, rec := range records {
-		dirty[rec.Session] = true
+		dirty[rec.Session] = rec.Session == ""
+		if rec.Type == "SubagentStop" {
+			dirty[""] = true
+		}
 	}
-	err := r.w.runPass(ctx, dirty)
+	err := r.w.runJournalPass(ctx, dirty)
 	if err == nil && r.w.last.Counters["deferred"] > 0 {
 		err = errDeferred
 	}

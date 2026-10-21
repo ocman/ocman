@@ -40,7 +40,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 	if got := read(t, d, b.Session.Key); got.Parts[0].Text != "retained content" || got.Session.Revision != 1 {
 		t.Fatal("history lost on reopen")
 	}
-	if Path(filepath.Join("isolated", "state.db")) != filepath.Join("isolated", "statev2.db") {
+	if Path(filepath.Join("isolated", "state.db")) != filepath.Join("isolated", "state_conv.db") {
 		t.Fatal("statev2 path escaped the supplied state directory")
 	}
 }

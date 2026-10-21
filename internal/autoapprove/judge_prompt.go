@@ -100,24 +100,6 @@ func formatMetadataSection(metadata map[string]any) string {
 	return b.String()
 }
 
-func extractTextFromParts(msg map[string]interface{}) string {
-	parts, _ := msg["parts"].([]interface{})
-	var b strings.Builder
-	for _, p := range parts {
-		part, ok := p.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if pt, _ := part["type"].(string); pt != "text" {
-			continue
-		}
-		if txt, _ := part["text"].(string); txt != "" {
-			b.WriteString(txt)
-		}
-	}
-	return b.String()
-}
-
 // Never infer a verdict from keywords in prose: an invalid reply fails closed.
 func parseJudgeResponse(text string) (judgeVerdict, string, bool) {
 	jsonText := strings.TrimSpace(text)

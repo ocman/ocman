@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/historyjournal"
 )
 
 // HistoryIdentity describes a physical, owner-local history source. It does not
@@ -49,8 +50,23 @@ type HistoryJournal interface {
 	HistoryJournalDir() string
 }
 
+// HistoryJournalReader resolves hook records inside the owning integration.
+// Session references are canonical; an empty Session requests a source-wide
+// refresh when a hook cannot yet be associated with one retained session.
+// Entry offsets and opaque provider payloads retain their source representation.
+type HistoryJournalReader interface {
+	HistoryJournalEntries(context.Context, string, int64, int) ([]historyjournal.Entry, error)
+}
+
 type HistoryReader interface {
 	HistoryIdentity(context.Context) (HistoryIdentity, error)
 	HistoryInventory(context.Context) ([]db.HistoryEntry, error)
 	HistorySnapshot(context.Context, string) (*db.HistorySnapshot, error)
+}
+
+// HistoryDeltaReader resumes an append-only transcript at an opaque cursor.
+// An empty cursor requests a full snapshot. A replaced/truncated source must
+// return a full snapshot instead of silently skipping history.
+type HistoryDeltaReader interface {
+	HistoryDelta(context.Context, string, string) (*db.HistorySnapshot, error)
 }

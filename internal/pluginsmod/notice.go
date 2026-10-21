@@ -154,6 +154,10 @@ func (m *Module) PromptNeedsUser(platformID, sessionID, kind, requestID string) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), conversationNoticeTimeout)
 	defer cancel()
+	prefix, err := m.pluginWireSession(ctx, platformID, sessionID)
+	if err != nil {
+		return
+	}
 	m.notifyConversationSession(ctx, platformID, sessionID,
-		sessionID+conversationNoticeAttention+kind+":"+requestID, kind)
+		prefix+conversationNoticeAttention+kind+":"+requestID, kind)
 }

@@ -91,6 +91,14 @@ func writeV2DB(t *testing.T) string {
 	return path
 }
 
+func keys(m map[string]map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 func TestOpenV2ViewsReadV2Schema(t *testing.T) {
 	defer ocv2.SetInstalledV2(true)()
 	d, err := Open(writeV2DB(t))
@@ -118,14 +126,17 @@ func TestOpenV2ViewsReadV2Schema(t *testing.T) {
 		t.Errorf("ses_b title = %q (listed %v), want '' for NULL", got, ok)
 	}
 
-	msgs, err := d.GetSessionMessages(ctx, "ses_a")
+	snapshot, err := d.HistorySnapshot(ctx, "ses_a")
 	if err != nil {
-		t.Fatalf("GetSessionMessages: %v", err)
+		t.Fatalf("HistorySnapshot: %v", err)
 	}
-	if len(msgs) != 2 {
-		t.Fatalf("got %d messages, want 2 (system hidden): %+v", len(msgs), msgs)
+	msgs := snapshot.Messages
+	// The system message is retained as an opaque row; the read model, not
+	// the source reader, hides it from conversations.
+	if len(msgs) != 3 {
+		t.Fatalf("got %d messages, want 3: %+v", len(msgs), msgs)
 	}
-	wantRoles := map[string]string{"msg_0002": "user", "msg_0003": "assistant"}
+	wantRoles := map[string]string{"msg_0001": "unknown", "msg_0002": "user", "msg_0003": "assistant"}
 	for _, m := range msgs {
 		var info struct {
 			Role   string `json:"role"`
@@ -142,10 +153,7 @@ func TestOpenV2ViewsReadV2Schema(t *testing.T) {
 		}
 	}
 
-	parts, err := d.GetSessionParts(ctx, "ses_a")
-	if err != nil {
-		t.Fatalf("GetSessionParts: %v", err)
-	}
+	parts := snapshot.Parts
 	byID := map[string]map[string]any{}
 	for _, p := range parts {
 		var body map[string]any
@@ -173,14 +181,6 @@ func TestOpenV2ViewsReadV2Schema(t *testing.T) {
 	if len(byID) != len(checks) {
 		t.Errorf("got %d parts, want %d: %v", len(byID), len(checks), keys(byID))
 	}
-}
-
-func keys(m map[string]map[string]any) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }
 
 func TestOpenV1InstalledSkipsV2Views(t *testing.T) {
@@ -233,10 +233,6 @@ func TestOpenV2InstalledOnV1SchemaDoesNotError(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].Title != "v1 title" {
 		t.Fatalf("sessions = %+v, want the v1 row", sessions)
 	}
-	msgs, err := d.GetSessionMessages(t.Context(), "s1")
-	if err != nil || len(msgs) != 1 {
-		t.Fatalf("GetSessionMessages = %v, %v; want 1 message", msgs, err)
-	}
 	// History readers follow the physical schema, not the installed version.
 	snapshot, err := d.HistorySnapshot(t.Context(), "s1")
 	if err != nil || len(snapshot.Messages) != 1 || snapshot.Messages[0].ID != "m1" {
@@ -247,9 +243,6 @@ func TestOpenV2InstalledOnV1SchemaDoesNotError(t *testing.T) {
 	}
 	if _, err := d.HistorySequences(t.Context()); !errors.Is(err, ErrHistoryUnsupported) {
 		t.Fatalf("HistorySequences on v1 schema = %v, want ErrHistoryUnsupported", err)
-	}
-	if _, err := d.HistorySequence(t.Context(), "s1"); !errors.Is(err, ErrHistoryUnsupported) {
-		t.Fatalf("HistorySequence on v1 schema = %v, want ErrHistoryUnsupported", err)
 	}
 	if _, err := d.HistoryMessages(t.Context(), "s1", nil); !errors.Is(err, ErrHistoryUnsupported) {
 		t.Fatalf("HistoryMessages on v1 schema = %v, want ErrHistoryUnsupported", err)

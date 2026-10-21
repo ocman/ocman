@@ -37,10 +37,7 @@ func TestSkillsListAndRunOnV2(t *testing.T) {
 	a := nativeQueueAdapter(t, sid, dir, f)
 	catalogCache.invalidatePort(f.Port())
 
-	entries, err := a.SlashCommands(context.Background(), sid)
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := slashCommandsAt(context.Background(), f.Port(), sid, dir)
 	bySource := map[string]string{}
 	for _, e := range entries {
 		bySource[e.Name] = e.Source

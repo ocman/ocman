@@ -122,33 +122,6 @@ func TestSessionLifecycleBoundedByTranscript(t *testing.T) {
 	}
 }
 
-// BenchmarkSessionQueueRead compares the queue's old per-decision read,
-// Session(id, 1, 0), with SessionLifecycle on the DB path.
-func BenchmarkSessionQueueRead(b *testing.B) {
-	restore := setDiscoverPortsImplForTests(func() map[string]string { return map[string]string{} })
-	resetPortCacheForTests()
-	b.Cleanup(func() { restore(); resetPortCacheForTests() })
-	for _, n := range []int{10, 1000, 10000} {
-		a := New(newLifecycleFixtureDB(b, n, true), nil)
-		b.Run(fmt.Sprintf("Session/%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := a.Session(b.Context(), "s", 1, 0); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-		b.Run(fmt.Sprintf("SessionLifecycle/%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := a.SessionLifecycle(b.Context(), "s"); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
 // newLifecycleFixtureDB seeds session "s" (with two subagent children) and
 // n messages in a temp DB. valid=false writes malformed history and no part
 // table; valid=true writes parseable history with one part per message.

@@ -69,30 +69,6 @@ func readLimited(r io.Reader, limit int64) ([]byte, error) {
 // concurrent misses for the same key.
 var catalogCache = newHTTPCacheNamed(30*time.Second, "opencode.catalog_http")
 
-// sessionCache is a process-wide TTL cache for session-scoped
-// OpenCode endpoints — currently /session/{id} and
-// /session/{id}/message. It exists to absorb the multi-handler
-// fan-out that happens when the user opens a session detail page:
-// /api/session/{id} fetches both endpoints, and /api/session/{id}/info
-// fetches /session/{id}/message a second time, in parallel. Without
-// caching that's 3 simultaneous round-trips for the same session.
-//
-// 5s TTL is the trade-off between freshness and the bursty
-// "user clicks around" pattern: the dashboard fires several
-// per-session requests within a short window when the panel mounts,
-// then nothing for a few seconds, then another burst when the user
-// clicks somewhere new. Below ~3s the cache expires *between*
-// bursts, which is the worst of both worlds (we pay full cost on
-// the burst's first call, every time). Above ~5s we start serving
-// noticeably stale messages while the agent is mid-stream.
-//
-// Real-time updates for the *currently-viewed* session still come
-// through the SSE event stream, which doesn't go through this
-// cache. So the cache only affects refreshes triggered by route
-// transitions, focus events, etc. — exactly the cases where 5s of
-// staleness is invisible. Failures are not cached (see httpcache.go).
-var sessionCache = newHTTPCacheNamed(5*time.Second, "opencode.session_http")
-
 // getJSON performs a GET to the OpenCode instance and returns the body
 // bytes, or an error describing why the call did not yield a 200 OK
 // JSON response. The error exists purely for logging: callers that

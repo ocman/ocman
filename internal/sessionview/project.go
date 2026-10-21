@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 )
 
 type Lookup func(context.Context, string, []string) (map[string]string, error)
@@ -18,8 +20,11 @@ type Projector struct {
 	// OmitUnresolvedRows filters incomplete identities from top-level arrays.
 	// Shape alone determines which fields are session references.
 	OmitUnresolvedRows bool
-	Shape              *Shape
-	cache              map[key]string
+	// RequireCanonical validates a peer contract without translating references
+	// or applying the public-view quarantine/link-clearing policy.
+	RequireCanonical bool
+	Shape            *Shape
+	cache            map[key]string
 }
 
 type key struct{ platform, native string }
@@ -40,10 +45,32 @@ func (p *Projector) JSON(ctx context.Context, raw []byte) ([]byte, error) {
 	if shape == nil {
 		shape = ConversationShape
 	}
-	collect(value, p.Platform, shape, &refs)
+	collectOwned(value, p.Platform, "", shape, &refs, p.RequireCanonical)
+	if p.RequireCanonical {
+		for _, ref := range refs {
+			if !identity.IsSessionID(ref.key.native) {
+				return nil, fmt.Errorf("canonical session reference required")
+			}
+		}
+		return raw, nil
+	}
 	_, list := value.([]any)
 	list = list && p.OmitUnresolvedRows
+	active := refs[:0]
+	cleared := false
+	for _, ref := range refs {
+		if !list && identity.IsPendingReference(ref.key.native) {
+			ref.set("")
+			cleared = true
+			continue
+		}
+		active = append(active, ref)
+	}
+	refs = active
 	if len(refs) == 0 {
+		if cleared {
+			return json.Marshal(value)
+		}
 		return raw, nil
 	}
 	if p.cache == nil {
@@ -52,6 +79,9 @@ func (p *Projector) JSON(ctx context.Context, raw []byte) ([]byte, error) {
 	missing := map[string][]string{}
 	seen := map[key]bool{}
 	for _, ref := range refs {
+		if identity.IsPendingReference(ref.key.native) {
+			continue
+		}
 		if p.cache[ref.key] == "" && !seen[ref.key] {
 			missing[ref.key.platform] = append(missing[ref.key.platform], ref.key.native)
 			seen[ref.key] = true

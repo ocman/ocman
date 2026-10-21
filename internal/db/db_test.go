@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"runtime"
-	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -249,29 +247,6 @@ func TestSettleSessionStatus_EmptySessionIsNotInterrupted(t *testing.T) {
 	}
 }
 
-func TestFilterInactiveChildren(t *testing.T) {
-	in := []Session{
-		{ID: "parent", Status: StatusWaiting},
-		{ID: "child-busy", ParentID: "parent", Status: StatusBusy},
-		{ID: "child-done", ParentID: "parent", Status: StatusDone},
-		{ID: "child-interrupted", ParentID: "parent", Status: StatusInterrupted},
-	}
-	got := FilterInactiveChildren(in)
-	want := []string{"parent", "child-busy"}
-	if len(got) != len(want) {
-		t.Fatalf("got %d sessions, want %d", len(got), len(want))
-	}
-	for i, id := range want {
-		if got[i].ID != id {
-			t.Errorf("session %d = %q, want %q", i, got[i].ID, id)
-		}
-	}
-	// The input must survive untouched: callers may pass a cached slice.
-	if len(in) != 4 || in[2].ID != "child-done" {
-		t.Errorf("FilterInactiveChildren mutated its input: %+v", in)
-	}
-}
-
 // --- GetSessions tests ---
 
 func TestGetSessions_Empty(t *testing.T) {
@@ -358,7 +333,6 @@ func TestGetSessions_UsesSessionTotalsWhenPresent(t *testing.T) {
 			}
 			return ss[0], nil
 		}},
-		{"GetSessionSummary", func() (Session, error) { return db.GetSessionSummary(t.Context(), "s1") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, err := tc.get()
@@ -440,53 +414,6 @@ func TestGetSessions_FilterBySince(t *testing.T) {
 	}
 	if sessions[0].ID != "s2" {
 		t.Errorf("expected s2, got %s", sessions[0].ID)
-	}
-}
-
-// TestGetSessions_IncludesActiveSubagents verifies that active subagents
-// survive FilterInactiveChildren for nesting under their parent while
-// completed ones are dropped. GetSessions itself returns every row: the
-// filter runs in the adapter, after the status has been settled against
-// the live turn signal.
-func TestGetSessions_IncludesActiveSubagents(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "parent", "Normal Session", "/project", now, now)
-
-	// A completed subagent: no messages → InferSessionStatus == "done".
-	insertSubagent(t, db, "child-done", "parent", "Task (code subagent)", "/project", now, now)
-
-	// An active subagent: last message is an assistant turn with no
-	// finish → status "busy". It must remain visible.
-	insertSubagent(t, db, "child-busy", "parent", "Task (build subagent)", "/project", now, now)
-	insertMessage(t, db, "m1", "child-busy", now, map[string]interface{}{"role": "assistant"})
-
-	raw, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
-	}
-	if len(raw) != 3 {
-		t.Fatalf("GetSessions should return every row unfiltered, got %d", len(raw))
-	}
-	sessions := FilterInactiveChildren(raw)
-
-	got := map[string]Session{}
-	for _, s := range sessions {
-		got[s.ID] = s
-	}
-	if _, ok := got["parent"]; !ok {
-		t.Errorf("expected top-level session 'parent' to be returned")
-	}
-	if _, ok := got["child-done"]; ok {
-		t.Errorf("completed subagent 'child-done' should be excluded")
-	}
-	if _, ok := got["child-busy"]; !ok {
-		t.Errorf("active subagent 'child-busy' should be returned")
-	}
-	if len(sessions) != 2 {
-		t.Fatalf("expected parent and active child, got %d sessions", len(sessions))
 	}
 }
 
@@ -766,173 +693,13 @@ func TestGetSession_NotFound(t *testing.T) {
 
 // --- GetSessionMessages tests ---
 
-func TestGetSessionMessages(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now-2000, map[string]interface{}{"role": "user"})
-	insertMessage(t, db, "m2", "s1", now-1000, map[string]interface{}{"role": "assistant"})
-	insertMessage(t, db, "m3", "s2", now, map[string]interface{}{"role": "user"}) // different session
-
-	messages, err := db.GetSessionMessages(t.Context(), "s1")
-	if err != nil {
-		t.Fatalf("GetSessionMessages: %v", err)
-	}
-	if len(messages) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(messages))
-	}
-	if messages[0].ID != "m1" || messages[1].ID != "m2" {
-		t.Errorf("messages out of order: %s, %s", messages[0].ID, messages[1].ID)
-	}
-}
-
-// A user message's summary.diffs holds full file patches and can reach
-// hundreds of MB; nothing renders it, so it must not leave the DB. The
-// boolean summary flag on compaction messages must survive.
-func TestGetSessionMessages_DropsSummaryDiffs(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now-1000, map[string]interface{}{
-		"role":    "user",
-		"summary": map[string]interface{}{"title": "t", "diffs": []interface{}{map[string]interface{}{"file": "a", "patch": "huge"}}},
-	})
-	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{"role": "assistant", "summary": true})
-
-	messages, err := db.GetSessionMessages(t.Context(), "s1")
-	if err != nil {
-		t.Fatalf("GetSessionMessages: %v", err)
-	}
-	if got := string(messages[0].Data); strings.Contains(got, "diffs") || !strings.Contains(got, `"title":"t"`) {
-		t.Errorf("m1 data = %s, want summary without diffs", got)
-	}
-	if got := string(messages[1].Data); !strings.Contains(got, `"summary":true`) {
-		t.Errorf("m2 data = %s, want summary flag kept", got)
-	}
-}
-
 // --- GetSessionParts tests ---
-
-func TestGetSessionParts(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
-	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{"type": "text", "text": "hello"})
-	insertPart(t, db, "p2", "m1", "s1", now+1, map[string]interface{}{"type": "text", "text": "world"})
-	insertPart(t, db, "p3", "m1", "s2", now+2, map[string]interface{}{"type": "text"}) // different session
-
-	parts, err := db.GetSessionParts(t.Context(), "s1")
-	if err != nil {
-		t.Fatalf("GetSessionParts: %v", err)
-	}
-	if len(parts) != 2 {
-		t.Fatalf("expected 2 parts, got %d", len(parts))
-	}
-}
 
 // --- PaginateMessages tests ---
 
-func TestPaginateMessages(t *testing.T) {
-	msgs := []Message{
-		{ID: "m1"}, {ID: "m2"}, {ID: "m3"}, {ID: "m4"}, {ID: "m5"},
-	}
-
-	tests := []struct {
-		name      string
-		limit     int
-		offset    int
-		wantIDs   []string
-		wantTotal int
-	}{
-		{"last 2", 2, 0, []string{"m4", "m5"}, 5},
-		{"last 2, offset 1", 2, 1, []string{"m3", "m4"}, 5},
-		{"all", 10, 0, []string{"m1", "m2", "m3", "m4", "m5"}, 5},
-		{"offset beyond", 2, 10, nil, 5},
-		{"empty input", 5, 0, nil, 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			input := msgs
-			if tt.name == "empty input" {
-				input = nil
-			}
-			result, total := PaginateMessages(input, tt.limit, tt.offset)
-			if total != tt.wantTotal {
-				t.Errorf("total = %d, want %d", total, tt.wantTotal)
-			}
-			if len(result) != len(tt.wantIDs) {
-				t.Fatalf("got %d results, want %d", len(result), len(tt.wantIDs))
-			}
-			for i, id := range tt.wantIDs {
-				if result[i].ID != id {
-					t.Errorf("result[%d].ID = %q, want %q", i, result[i].ID, id)
-				}
-			}
-		})
-	}
-}
-
 // --- FilterPartsForMessages tests ---
 
-func TestFilterPartsForMessages(t *testing.T) {
-	parts := []Part{
-		{ID: "p1", MessageID: "m1"},
-		{ID: "p2", MessageID: "m2"},
-		{ID: "p3", MessageID: "m1"},
-		{ID: "p4", MessageID: "m3"},
-	}
-	messages := []Message{{ID: "m1"}, {ID: "m3"}}
-
-	result := FilterPartsForMessages(parts, messages)
-	if len(result) != 3 {
-		t.Fatalf("expected 3 filtered parts, got %d", len(result))
-	}
-	expectedIDs := map[string]bool{"p1": true, "p3": true, "p4": true}
-	for _, p := range result {
-		if !expectedIDs[p.ID] {
-			t.Errorf("unexpected part %s", p.ID)
-		}
-	}
-}
-
-func TestFilterPartsForMessages_Empty(t *testing.T) {
-	result := FilterPartsForMessages(nil, nil)
-	if len(result) != 0 {
-		t.Errorf("expected 0 parts, got %d", len(result))
-	}
-}
-
 // --- GetSessionsInactiveBefore tests ---
-
-func TestGetSessionsInactiveBefore(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Old", "/project", now-200000, now-200000)
-	insertSession(t, db, "s2", "Recent", "/project", now, now)
-	insertSession(t, db, "s3", "Subagent (code subagent)", "/project", now-200000, now-200000)
-
-	cutoff := now - 100000
-	candidates, err := db.GetSessionsInactiveBefore(t.Context(), cutoff)
-	if err != nil {
-		t.Fatalf("GetSessionsInactiveBefore: %v", err)
-	}
-	// s1 should be returned, s2 is too recent, s3 is a subagent (excluded)
-	if len(candidates) != 1 {
-		t.Fatalf("expected 1 candidate, got %d", len(candidates))
-	}
-	if candidates[0].ID != "s1" {
-		t.Errorf("expected s1, got %s", candidates[0].ID)
-	}
-}
 
 // --- GetSessionDefaults tests ---
 
@@ -978,45 +745,6 @@ func TestGetSessionDefaults_WithMessages(t *testing.T) {
 }
 
 // --- GetContextTokenCount tests ---
-
-func TestGetContextTokenCount_NoMessages(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	count, err := db.GetContextTokenCount(t.Context(), "nonexistent")
-	if err == nil {
-		t.Fatal("expected error for non-existent session")
-	}
-	if count != 0 {
-		t.Errorf("expected 0, got %d", count)
-	}
-}
-
-func TestGetContextTokenCount_WithTokens(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
-		"role": "assistant",
-		"tokens": map[string]interface{}{
-			"input":     100,
-			"output":    50,
-			"reasoning": 10,
-			"cache":     map[string]interface{}{"read": 5, "write": 3},
-		},
-	})
-
-	count, err := db.GetContextTokenCount(t.Context(), "s1")
-	if err != nil {
-		t.Fatalf("GetContextTokenCount: %v", err)
-	}
-	expected := int64(100 + 50 + 10 + 5 + 3)
-	if count != expected {
-		t.Errorf("expected %d, got %d", expected, count)
-	}
-}
 
 // --- Stats tests ---
 
@@ -1986,25 +1714,6 @@ func TestGetSessionParentIDs_ResolvesTopLevelAncestor(t *testing.T) {
 	}
 }
 
-func TestGetSessionDescendantIDs(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "top", "Top", "/project", now, now)
-	insertSession(t, db, "other", "Other", "/project", now, now)
-	insertSubagent(t, db, "mid", "top", "Task", "/project", now, now)
-	insertSubagent(t, db, "leaf", "mid", "Task", "/project", now, now)
-
-	got, err := db.GetSessionDescendantIDs(t.Context(), "mid")
-	slices.Sort(got)
-	if err != nil || !slices.Equal(got, []string{"leaf", "mid"}) {
-		t.Fatalf("descendants(mid) = %v, %v", got, err)
-	}
-	if got, err := db.GetSessionDescendantIDs(t.Context(), "missing"); err != nil || !slices.Equal(got, []string{"missing"}) {
-		t.Fatalf("descendants(missing) = %v, %v", got, err)
-	}
-}
-
 func TestGetSessionTree_ReturnsDeepTreeWithoutUnrelatedSessions(t *testing.T) {
 	database := openTestDB(t)
 	defer database.Close()
@@ -2228,94 +1937,3 @@ func TestGetSessionParentIDs_Empty(t *testing.T) {
 }
 
 // --- MessageCountsSince tests ---
-
-func TestMessageCountsSince_EmptyInput(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	got, err := db.MessageCountsSince(t.Context(), nil)
-	if err != nil {
-		t.Fatalf("MessageCountsSince(nil): %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("expected empty map for nil input, got %v", got)
-	}
-}
-
-func TestMessageCountsSince_Basic(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	// s1 has 3 messages at t=100, 200, 300.
-	// s2 has 2 messages at t=150, 250.
-	// s3 has no messages.
-	insertSession(t, db, "s1", "S1", "/d", 100, 300)
-	insertSession(t, db, "s2", "S2", "/d", 150, 250)
-	insertSession(t, db, "s3", "S3", "/d", 100, 100)
-	insertMessage(t, db, "s1-m1", "s1", 100, nil)
-	insertMessage(t, db, "s1-m2", "s1", 200, nil)
-	insertMessage(t, db, "s1-m3", "s1", 300, nil)
-	insertMessage(t, db, "s2-m1", "s2", 150, nil)
-	insertMessage(t, db, "s2-m2", "s2", 250, nil)
-
-	tests := []struct {
-		name    string
-		cutoffs map[string]int64
-		want    map[string]int
-	}{
-		{
-			name:    "cutoff zero counts everything",
-			cutoffs: map[string]int64{"s1": 0, "s2": 0, "s3": 0},
-			want:    map[string]int{"s1": 3, "s2": 2}, // s3 omitted (zero)
-		},
-		{
-			name:    "partial cutoff",
-			cutoffs: map[string]int64{"s1": 150, "s2": 200},
-			want:    map[string]int{"s1": 2, "s2": 1},
-		},
-		{
-			name:    "cutoff at or past last message",
-			cutoffs: map[string]int64{"s1": 300, "s2": 250},
-			want:    map[string]int{}, // both fully read, omitted
-		},
-		{
-			name:    "unknown session id returns no row",
-			cutoffs: map[string]int64{"nope": 0},
-			want:    map[string]int{},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := db.MessageCountsSince(t.Context(), tc.cutoffs)
-			if err != nil {
-				t.Fatalf("MessageCountsSince: %v", err)
-			}
-			if len(got) != len(tc.want) {
-				t.Fatalf("len: want %d, got %d (%v)", len(tc.want), len(got), got)
-			}
-			for k, v := range tc.want {
-				if got[k] != v {
-					t.Errorf("%s: want %d, got %d", k, v, got[k])
-				}
-			}
-		})
-	}
-}
-
-func TestMessageCountsSince_StrictlyGreater(t *testing.T) {
-	// The cutoff uses strict > so a session that has exactly one
-	// message at time_created == cutoff reports zero unread.
-	db := openTestDB(t)
-	defer db.Close()
-
-	insertSession(t, db, "s1", "S1", "/d", 100, 100)
-	insertMessage(t, db, "m1", "s1", 100, nil)
-
-	got, err := db.MessageCountsSince(t.Context(), map[string]int64{"s1": 100})
-	if err != nil {
-		t.Fatalf("MessageCountsSince: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("expected no unread when cutoff equals last message time, got %v", got)
-	}
-}

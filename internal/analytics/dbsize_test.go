@@ -70,14 +70,14 @@ func TestHistorySizeFailureDoesNotSuppressOtherDatabaseSamples(t *testing.T) {
 		t.Fatal("closed history size did not report error")
 	}
 	samples, err := srv.deps.Store.DatabaseSizeSamples(t.Context(), 0)
-	if err != nil || len(samples) != 2 {
+	if err != nil || len(samples) != 1 {
 		t.Fatalf("other samples lost: %+v, %v", samples, err)
 	}
 }
 
 func TestCollectDatabaseSizesWithoutOpenCode(t *testing.T) {
 	srv := newFixture(t)
-	srv.deps.DB = nil
+	srv.deps.HistoryAnalytics = nil
 
 	if err := srv.collectDatabaseSizes(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)

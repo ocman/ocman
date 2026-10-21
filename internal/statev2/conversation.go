@@ -12,7 +12,7 @@ func (d *DB) ReadConversation(ctx context.Context, key Key, limit, offset int) (
 	if limit < 0 || offset < 0 {
 		return nil, fmt.Errorf("statev2: conversation page requires nonnegative limit and offset")
 	}
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.reader().BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

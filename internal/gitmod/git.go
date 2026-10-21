@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -84,11 +85,15 @@ func (m *Module) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	observedAt := time.Now().UnixMilli()
 	infos, err := host.GitInfo(r.Context(), dirs)
 	if err != nil {
 		log.WithError(err).Warn("git info failed")
 		http.Error(w, "git info failed", http.StatusBadGateway)
 		return
+	}
+	if m.OnGitInfo != nil {
+		m.OnGitInfo(r.Context(), host.RemoteID(), infos, observedAt)
 	}
 	httpx.WriteJSON(w, infos)
 }

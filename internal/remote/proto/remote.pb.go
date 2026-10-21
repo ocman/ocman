@@ -280,6 +280,7 @@ type SessionsReq struct {
 	Platform      string                 `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
 	Dir           string                 `protobuf:"bytes,2,opt,name=dir,proto3" json:"dir,omitempty"`
 	Since         int64                  `protobuf:"varint,3,opt,name=since,proto3" json:"since,omitempty"`
+	SidebarQuery  []byte                 `protobuf:"bytes,4,opt,name=sidebar_query,json=sidebarQuery,proto3" json:"sidebar_query,omitempty"` // optional platforms.SidebarQuery JSON; old peers retain their existing list behavior
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -333,6 +334,13 @@ func (x *SessionsReq) GetSince() int64 {
 		return x.Since
 	}
 	return 0
+}
+
+func (x *SessionsReq) GetSidebarQuery() []byte {
+	if x != nil {
+		return x.SidebarQuery
+	}
+	return nil
 }
 
 type SessionReq struct {
@@ -935,11 +943,12 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"SessionRef\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\"Q\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"v\n" +
 	"\vSessionsReq\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x10\n" +
 	"\x03dir\x18\x02 \x01(\tR\x03dir\x12\x14\n" +
-	"\x05since\x18\x03 \x01(\x03R\x05since\"\x91\x01\n" +
+	"\x05since\x18\x03 \x01(\x03R\x05since\x12#\n" +
+	"\rsidebar_query\x18\x04 \x01(\fR\fsidebarQuery\"\x91\x01\n" +
 	"\n" +
 	"SessionReq\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1d\n" +

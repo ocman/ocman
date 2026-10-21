@@ -28,6 +28,7 @@ vi.mock('./ProviderAccountSettings', () => ({ ProviderAccountSettings: () => nul
 vi.mock('../../components/HookPluginSettings', () => ({ HookPluginSettings: () => null }));
 vi.mock('../../components/PlatformSettings', () => ({ PlatformSettings: () => null }));
 vi.mock('../../components/IdleProjectSettings', () => ({ IdleProjectSettings: () => null }));
+vi.mock('../../components/ApplicationHealthSettings', () => ({ ApplicationHealthSettings: () => <p>Application health controls</p> }));
 vi.mock('../../components/SpeechSettings', () => ({ SpeechSettings: () => null }));
 vi.mock('../../components/DefaultAgentSetting', () => ({ DefaultAgentSetting: () => null }));
 vi.mock('./SessionAgentSettings', () => ({ ModelFallbackSettings: () => null, WorktreePermissionSettings: () => null }));
@@ -66,6 +67,13 @@ function render(ui: ReactElement, url = '/settings') {
 }
 
 describe('SettingsTab actions', () => {
+  it('keeps application health in the System group instead of a global overlay', () => {
+    render(<SettingsTab />);
+    expect(screen.queryByText('Application health controls')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'System' }));
+    expect(screen.getByRole('heading', { name: 'Application health', level: 3 })).toBeVisible();
+    expect(screen.getByText('Application health controls')).toBeVisible();
+  });
   it('groups settings into seven categories with visible sections', () => {
     render(<SettingsTab />);
     const navigation = screen.getByRole('navigation', { name: 'Settings groups' });

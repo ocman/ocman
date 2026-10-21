@@ -31,6 +31,7 @@ type journalConsumer struct {
 	translator JournalTranslator
 	batchSize  int
 	pruneIdle  time.Duration
+	read       func(context.Context, string, int64, int) ([]historyjournal.Entry, error)
 	// onGap requests a source repair when a segment lost unread events.
 	onGap func(segment string)
 }
@@ -62,7 +63,13 @@ func (c *journalConsumer) drainSegment(ctx context.Context, segment string) (int
 			return applied, err
 		}
 		offset, _ := strconv.ParseInt(stored, 10, 64)
-		entries, err := historyjournal.ReadSegment(c.dir, segment, offset, c.size())
+		read := c.read
+		if read == nil {
+			read = func(_ context.Context, segment string, offset int64, limit int) ([]historyjournal.Entry, error) {
+				return historyjournal.ReadSegment(c.dir, segment, offset, limit)
+			}
+		}
+		entries, err := read(ctx, segment, offset, c.size())
 		if errors.Is(err, historyjournal.ErrGap) {
 			if err := c.restart(ctx, segment, stored); err != nil {
 				return applied, err

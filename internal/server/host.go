@@ -91,6 +91,15 @@ func (s *Server) hostTmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, e
 
 // hostProjects returns stale data immediately while a dirty index refreshes.
 func (s *Server) hostProjects(ctx context.Context) ([]db.ProjectStats, error) {
+	version, err := s.projectHistoryVersion(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.projects.mu.Lock()
+	if version != s.projects.historyVersion {
+		s.projects.dirty = true
+	}
+	s.projects.mu.Unlock()
 	projects, loaded, dirty := s.projectsSnapshotState()
 	if !loaded {
 		if err := s.refreshProjectsIndex(ctx); err != nil {
@@ -146,7 +155,7 @@ func (s *Server) hostCaps() hostsvc.HostCaps {
 		Worktrees: gitOK && launch,
 		Tmux:      tmuxOK,
 		// The projects index merges every local platform's directories.
-		Projects: s.db != nil || len(s.localPlatformIDs()) > 0,
+		Projects: s.hasStoredHistory(),
 		Whisper:  whisper.Available(),
 		// Launch availability is opencode-on-PATH plus the native runtime's
 		// prerequisite (tmux) today; a future container runtime drops the
@@ -165,7 +174,11 @@ func (s *Server) providerRuntime() bool {
 		return false
 	}
 	for _, adapter := range s.registry.Platforms() {
-		if _, ok := adapter.(hostsvc.RuntimeEnsurer); ok {
+		_, hasRuntime := adapter.(hostsvc.RuntimeEnsurer)
+		if provider, ok := adapter.(hostsvc.PlatformServiceProvider); ok {
+			hasRuntime = provider.HostServices().Runtime != nil
+		}
+		if hasRuntime {
 			if availability, ok := adapter.(hostsvc.RuntimeAvailability); ok && !availability.RuntimeAvailable() {
 				continue
 			}

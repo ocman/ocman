@@ -31,6 +31,7 @@ import { MaintenanceSettings } from '../components/MaintenanceSettings';
 import { PluginPage } from '../pages/PluginPage';
 import { PluginPageNav } from '../components/PluginPageNav';
 import { BackgroundTasks } from '../pages/BackgroundTasks';
+import { ApplicationHealthSettings } from '../components/ApplicationHealthSettings';
 
 // Factory pages pull in the epic graph (@xyflow, dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
@@ -130,6 +131,7 @@ export const FEATURES: Feature[] = [
   { id: 'sharing', settings: { id: 'sharing', category: 'connections', label: 'Public sharing', mount: 'always', Section: SharingSettings } },
   { id: 'webhooks', settings: { id: 'webhooks', category: 'connections', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },
   { id: 'idle-projects', settings: { id: 'idle-projects', category: 'system', label: 'Resource management', mount: 'active', Section: IdleProjectSettings } },
+  { id: 'application-health', settings: { id: 'application-health', category: 'system', label: 'Application health', mount: 'active', Section: ApplicationHealthSettings } },
   { id: 'maintenance', settings: { id: 'maintenance', category: 'system', label: 'Database maintenance', mount: 'active', Section: MaintenanceSettings, visible: 'maintenance' } },
 ];
 

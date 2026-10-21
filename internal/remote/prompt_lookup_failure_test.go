@@ -8,6 +8,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
 )
 
 func TestPromptLookupFailureCrossesRealRemoteRPC(t *testing.T) {
@@ -34,7 +35,7 @@ func TestPromptLookupFailureCrossesRealRemoteRPC(t *testing.T) {
 	adapter.ObservePromptAsked("", "/isolated-prompt-test", "permission", platforms.LivePrompt{"id": "p1", "sessionID": "child"})
 	adapter.ObservePromptAsked("", "/isolated-prompt-test", "question", platforms.LivePrompt{"id": "q1", "sessionID": "child"})
 	reg := platforms.NewRegistry()
-	reg.Register(adapter)
+	reg.Register(openCodeOwner{Adapter: adapter})
 	conn := NewRemoteConn(startRealRemote(t, "tok", "rid", reg), "tok")
 	if err := conn.Connect(t.Context()); err != nil {
 		t.Fatal(err)
@@ -54,4 +55,10 @@ func TestPromptLookupFailureCrossesRealRemoteRPC(t *testing.T) {
 	if _, err := remote.ListQuestions(t.Context(), "parent"); err == nil {
 		t.Fatal("owner ancestor failure became an authoritative empty question snapshot")
 	}
+}
+
+// openCodeOwner registers the owner's native adapter for prompt-routing tests.
+type openCodeOwner struct {
+	*opencode.Adapter
+	platformtest.NoBrowsing
 }

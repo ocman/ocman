@@ -4,14 +4,13 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-func (s *Server) publicSessionURL(ctx context.Context, platform, nativeID string) (string, error) {
-	id := nativeID
+func (s *Server) publicSessionURL(ctx context.Context, platform, reference string) (string, error) {
+	id := reference
 	if s.sessionCatalogue != nil {
-		info, err := s.sessions.LookupSessionIdentity(ctx, platform, platforms.SessionIdentityRequest{NativeID: nativeID})
+		info, err := s.sessions.LookupSessionReference(ctx, platform, reference)
 		if err != nil {
 			return "", err
 		}
@@ -20,8 +19,8 @@ func (s *Server) publicSessionURL(ctx context.Context, platform, nativeID string
 	return s.publicURL("/session/" + url.PathEscape(id) + "?platform=" + url.QueryEscape(platform)), nil
 }
 
-// The push worker keeps native deduplication/lifecycle keys but sends canonical
-// browser destinations. Resolve each owner in batches, not once per push row.
+// Resolve old notification references through the compatibility integration;
+// canonical references need no owner RPC or native-key processing here.
 func (s *Server) notificationPublicIDs(ctx context.Context, entries []notifyEntry) (map[state.Key]string, error) {
 	out := make(map[state.Key]string, len(entries))
 	groups := map[string][]string{}
@@ -34,12 +33,12 @@ func (s *Server) notificationPublicIDs(ctx context.Context, entries []notifyEntr
 	}
 	for platform, ids := range groups {
 		for start := 0; start < len(ids); start += 500 {
-			rows, err := s.sessions.LookupSessionIdentities(ctx, platform, ids[start:min(start+500, len(ids))])
+			rows, err := s.sessions.PublicSessionReferences(ctx, platform, ids[start:min(start+500, len(ids))])
 			if err != nil {
 				return nil, err
 			}
-			for _, row := range rows {
-				out[state.Key{Platform: platform, SessionID: row.NativeID}] = row.ID
+			for reference, id := range rows {
+				out[state.Key{Platform: platform, SessionID: reference}] = id
 			}
 		}
 	}

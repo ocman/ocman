@@ -232,10 +232,11 @@ func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool) e
 	readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)
 	defer cancel()
 	sequences, err := w.feed.HistorySequences(readCtx)
+	sequenceDeferred, err := inventoryDeferrals(err)
 	if err != nil {
 		return err
 	}
-	inventory, err := w.source.Reader.HistoryInventory(readCtx)
+	inventory, deferred, err := readInventory(readCtx, w.source.Reader)
 	if err != nil {
 		return err
 	}
@@ -255,7 +256,7 @@ func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool) e
 	for _, s := range known {
 		stored[s.SessionID] = s
 	}
-	var p pass
+	p := pass{deferred: max(sequenceDeferred, deferred)}
 	present := map[string]bool{}
 	for _, entry := range inventory {
 		if entry.ID == "" || present[entry.ID] {
@@ -272,12 +273,12 @@ func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool) e
 		p.reads = append(p.reads, db.HistoryEntry{ID: entry.ID, Version: version})
 	}
 	for _, s := range known {
-		if !s.SourceDeleted && !present[s.SessionID] {
+		if p.deferred == 0 && !s.SourceDeleted && !present[s.SessionID] {
 			p.deletions = append(p.deletions, s)
 		}
 	}
 	for id := range w.failing {
-		if !present[id] {
+		if p.deferred == 0 && !present[id] {
 			delete(w.failing, id)
 		}
 	}
@@ -286,7 +287,7 @@ func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool) e
 			delete(dirty, id)
 		}
 	}
-	if len(p.reads) == 0 && len(p.deletions) == 0 {
+	if len(p.reads) == 0 && len(p.deletions) == 0 && p.deferred == 0 {
 		return nil
 	}
 	return w.requireComplete(w.runPrepared(ctx, p))
@@ -308,11 +309,7 @@ func (w *sourceWorker) applyChanges(ctx context.Context, pending map[string]*pla
 		if id == "" || pending[id] != nil {
 			continue
 		}
-		version, err := w.sessionVersion(ctx, id)
-		if err != nil {
-			return err
-		}
-		if err := w.requireComplete(w.execute(ctx, pass{reads: []db.HistoryEntry{{ID: id, Version: version}}}, nil)); err != nil {
+		if err := w.refreshFeedSession(ctx, id, dirty[id]); err != nil {
 			return err
 		}
 	}
@@ -328,6 +325,15 @@ func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChang
 		return err
 	}
 	exists := stored.Revision > 0
+	if exists && !stored.SourceDeleted && stored.ReadFormat == statev2.ConversationReadFormat {
+		applied, err := store.Checkpoint(ctx, w.instance.ID, sequencePrefix+c.SessionID)
+		if err != nil {
+			return err
+		}
+		if applied == version && !w.explicitReadPending(c.SessionID) {
+			return nil
+		}
+	}
 	switch {
 	case c.Deleted:
 		if exists && !stored.SourceDeleted {
@@ -340,6 +346,7 @@ func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChang
 		return w.requireComplete(w.execute(ctx, pass{reads: []db.HistoryEntry{{ID: c.SessionID, Version: version}}}, nil))
 	}
 	readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)
+	ticket := w.module.readTicket(w.source.AdapterID, c.SessionID)
 	snapshot, err := w.feed.HistoryMessages(readCtx, c.SessionID, uniqueSorted(c.MessageIDs))
 	cancel()
 	if err != nil {
@@ -350,15 +357,18 @@ func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChang
 		return err
 	}
 	current, err := store.Checkpoint(ctx, w.instance.ID, sequencePrefix+c.SessionID)
-	if err != nil || current == version {
+	if err != nil {
 		return err
+	}
+	if current == version {
+		return w.approveRead(ctx, c.SessionID, version, ticket)
 	}
 	if _, err := store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: w.instance.ID,
 		Checkpoint: statev2.CheckpointUpdate{Stream: sequencePrefix + c.SessionID, ExpectedCursor: current, Cursor: version},
 		Batches:    []statev2.StreamBatch{{Session: &batch.Session, Messages: batch.Messages, Parts: batch.Parts}}}); err != nil {
 		return err
 	}
-	return w.approveRead(ctx, c.SessionID, version)
+	return w.approveRead(ctx, c.SessionID, version, ticket)
 }
 
 // advanceSequence records the sequence a session's stored history reflects.

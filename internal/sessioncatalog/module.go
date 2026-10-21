@@ -202,6 +202,13 @@ func (m *Module) project(ctx context.Context, metadata []statev2.SessionMetadata
 			continue
 		}
 		source := Source{OwnerID: row.Instance.OwnerID, Platform: row.Instance.Platform, SourceKey: row.Instance.SourceKey}
+		if IsID(row.Session.SessionID) {
+			if err := m.validateCanonicalMetadata(ctx, source, row); err != nil {
+				return err
+			}
+			delete(m.pending, row.Session.Key)
+			continue
+		}
 		if row.Purged {
 			err := m.deps.Store.Scrub(ctx, source, row.Session.SessionID)
 			if errors.Is(err, ErrCreating) {

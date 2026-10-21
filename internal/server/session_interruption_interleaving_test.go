@@ -20,7 +20,7 @@ func TestStopSnapshotRefreshesAdvancedIdentityAndLiveStatusTogether(t *testing.T
 		t.Fatal(err)
 	}
 	calls := 0
-	srv.registry.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		calls++
 		if calls == 2 {
 			// Arrives after the authoritative read but before the raw abort check.
@@ -68,7 +68,7 @@ func TestStopSnapshotContinuousAdvanceFailsBeforeStop(t *testing.T) {
 	}
 	calls := 0
 	advance := false
-	srv.registry.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		id := fmt.Sprintf("m%d", calls)
 		if advance {
 			calls++

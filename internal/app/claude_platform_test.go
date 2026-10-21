@@ -124,12 +124,19 @@ func assertClaudeOnlyWorkflows(t *testing.T, base string, terminal platforms.Ses
 	}
 	assertClaudeOnlyAnalytics(t, base)
 	var projects []db.ProjectStats
-	getJSON(t, base+"/api/projects", &projects)
-	if len(projects) == 0 || projects[0].Directory != "/work/repo" {
-		t.Fatalf("projects = %+v, want the Claude project", projects)
+	// Project browsing is available before the background import and cached
+	// index refresh complete. Wait for the data, not merely a successful HTTP read.
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		getJSON(t, base+"/api/projects", &projects)
+		if len(projects) > 0 && projects[0].Directory == "/work/repo" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("projects = %+v, want the Claude project", projects)
+		}
 	}
 	var queued []json.RawMessage
-	getJSON(t, base+"/api/session/"+claudeFixtureSession+"/queue?platform=claudecode", &queued)
+	getJSON(t, base+"/api/session/"+terminal.Session.ID+"/queue?platform=claudecode", &queued)
 	if len(queued) != 0 {
 		t.Fatalf("terminal session queued %d messages", len(queued))
 	}
@@ -182,7 +189,23 @@ func assertClaudeOnlyAnalytics(t *testing.T, base string) {
 		if time.Now().After(deadline) {
 			t.Fatalf("stats = %+v, want the transcripts' 31 input tokens", stats)
 		}
-		getJSON(t, base+"/api/stats", &stats)
+		// Fast conversation reads can now finish before the independent history
+		// import. Retry only its explicit not-ready response, not other errors.
+		resp, err := http.Get(base + "/api/stats")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if resp.StatusCode == http.StatusServiceUnavailable && bytes.Contains(body, []byte("import-incomplete")) {
+			continue
+		}
+		if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &stats) != nil {
+			t.Fatalf("stats status=%d body=%s", resp.StatusCode, body)
+		}
 	}
 	if stats.TotalSessions != 3 || stats.TotalTokensOut != 13 || stats.TotalCost != 0 {
 		t.Fatalf("stats = %+v", stats)

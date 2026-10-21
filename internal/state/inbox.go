@@ -26,6 +26,9 @@ const (
 )
 
 type InboxPermission struct {
+	// ItemID is an adapter-provided opaque deduplication identity during
+	// native-key cutover. It is never accepted from or returned in JSON.
+	ItemID       string         `json:"-"`
 	Platform     string         `json:"platform"`
 	SessionID    string         `json:"sessionId"`
 	PermissionID string         `json:"permissionId"`
@@ -151,21 +154,34 @@ func (d *DB) EnsurePermissionInboxItem(ctx context.Context, permission InboxPerm
 	if err != nil {
 		return err
 	}
+	itemID := permission.ItemID
+	if itemID == "" {
+		itemID = permissionInboxID(permission.Platform, permission.SessionID, permission.PermissionID)
+	}
 	title := "Permission requested: " + permission.Permission
 	body := "A session is waiting for your permission. Review the request below before responding."
 	// A fast reply can create a tombstone before the asked event is observed.
 	// Retain the original request for history without reopening its notification.
 	_, err = d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, ?, ?, ?, NULL, NULL, 'permission', ?, '')
 		ON CONFLICT(id) DO UPDATE SET permission_json = excluded.permission_json
-		WHERE inbox_item.permission_json = ''`, permissionInboxID(permission.Platform, permission.SessionID, permission.PermissionID), title, body, time.Now().UnixMilli(), string(payload))
+		WHERE inbox_item.permission_json = ''`, itemID, title, body, time.Now().UnixMilli(), string(payload))
 	return err
 }
 
 // A tombstone also handles a reply arriving before the corresponding asked event.
 func (d *DB) ResolvePermissionInboxItem(ctx context.Context, platform, sessionID, permissionID string) error {
+	return d.ResolvePermissionInboxItemKey(ctx, permissionInboxID(platform, sessionID, permissionID), platform, sessionID, permissionID)
+}
+
+// ResolvePermissionInboxItemKey preserves an adapter's stable opaque key while
+// storing only the canonical session reference in the notification itself.
+func (d *DB) ResolvePermissionInboxItemKey(ctx context.Context, key, platform, sessionID, permissionID string) error {
+	if key == "" {
+		return errors.New("permission Inbox key is required")
+	}
 	now := time.Now().UnixMilli()
 	_, err := d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, 'Permission resolved', 'This permission request has been handled.', ?, NULL, ?, 'permission', '', json_object('platform', ?, 'sessionId', ?))
-		ON CONFLICT(id) DO UPDATE SET archived_at = COALESCE(inbox_item.archived_at, excluded.archived_at)`, permissionInboxID(platform, sessionID, permissionID), now, now, platform, sessionID)
+		ON CONFLICT(id) DO UPDATE SET archived_at = COALESCE(inbox_item.archived_at, excluded.archived_at)`, key, now, now, platform, sessionID)
 	if err != nil {
 		return err
 	}

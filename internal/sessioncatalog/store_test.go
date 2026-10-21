@@ -10,7 +10,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
-func openStore(t *testing.T) (*Store, *state.DB) {
+func openStore(t testing.TB) (*Store, *state.DB) {
 	t.Helper()
 	db, err := state.Open(statetest.Path(t, Schema), Schema)
 	if err != nil {

@@ -37,7 +37,7 @@ func TestCullClaudePreservesRunningTurnAndWakesOnSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "completed turn", func() bool {
-		d, err := p.Session(t.Context(), created.ID, 0, 0)
+		d, err := runtimeDetail(t.Context(), p, created.ID, 0, 0)
 		return err == nil && d.Session.Status == db.StatusDone
 	})
 	roots, err := p.ManagedIdleProjects(t.Context())
@@ -58,7 +58,7 @@ func TestCullClaudePreservesRunningTurnAndWakesOnSend(t *testing.T) {
 		t.Fatal("supervisor did not wake")
 	}
 	eventually(t, "resumed turn", func() bool {
-		d, err := p.Session(t.Context(), created.ID, 0, 0)
+		d, err := runtimeDetail(t.Context(), p, created.ID, 0, 0)
 		return err == nil && d.Session.Status == db.StatusDone
 	})
 }

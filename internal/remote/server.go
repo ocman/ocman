@@ -28,7 +28,6 @@ type Server struct {
 	instanceID                     string
 	version                        string
 	enrichSession                  func(context.Context, string, string, *platforms.SessionDetail)
-	conversationContext            func(context.Context) context.Context
 	proxyEvents                    func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
 	permissionNotificationDeferred func(string, string) bool
 	webhooks                       WebhookInboxes
@@ -50,10 +49,6 @@ func (s *Server) UseSessionEnricher(fn func(context.Context, string, string, *pl
 	return s
 }
 
-func (s *Server) UseConversationContext(fn func(context.Context) context.Context) *Server {
-	s.conversationContext = fn
-	return s
-}
 func (s *Server) UseEventProxy(fn func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error) *Server {
 	s.proxyEvents = fn
 	return s
@@ -86,6 +81,9 @@ func svcErr(err error) (out error) {
 	return err
 }
 func (s *Server) platformFor(id string) (platforms.Platform, error) {
+	if remote, _ := platforms.SplitPlatformID(id); s.registry.CanonicalSessionIDs() && remote != "" {
+		return nil, status.Error(codes.InvalidArgument, "remote RPC requires an owner-local platform")
+	}
 	p, ok := s.registry.Get(platforms.ID(id))
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "unknown platform %q", id)
@@ -107,17 +105,21 @@ func jsonResp(v any, err error) (*pb.JsonResp, error) {
 }
 func (s *Server) Hello(_ context.Context, _ *pb.HelloReq) (*pb.HelloResp, error) {
 	hostname, _ := os.Hostname()
+	protocol := ProtocolVersion
+	if !s.registry.CanonicalSessionIDs() {
+		protocol = legacySessionProtocol
+	}
 	var enabled []string
 	for _, p := range s.registry.Platforms() {
 		if owner, _ := platforms.SplitPlatformID(string(p.ID())); owner == "" {
 			enabled = append(enabled, string(p.ID()))
 		}
 	}
-	return &pb.HelloResp{ProtocolVersion: ProtocolVersion, InstanceId: s.instanceID, Hostname: hostname, OcmanVersion: s.version, Platforms: enabled}, nil
+	return &pb.HelloResp{ProtocolVersion: protocol, InstanceId: s.instanceID, Hostname: hostname, OcmanVersion: s.version, Platforms: enabled}, nil
 }
 
 func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsServer) error {
-	p, err := s.platformFor(req.Platform)
+	p, err := s.eventPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return err
 	}

@@ -49,7 +49,11 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	var out []notifyEntry
 	var err error
 	if r.URL.Query().Get("includeDone") == "1" {
-		all := sortAndLimitSessions(s.fanOutSessions(r.Context(), "", since, nil), limit)
+		all, readErr := s.notificationSessionRows(r.Context(), since, limit)
+		if readErr != nil {
+			serverError(w, "reading compact notification sessions", readErr)
+			return
+		}
 		out, err = s.notificationEntriesForSessions(r.Context(), all, false, true)
 	} else {
 		out, err = s.notificationEntries(r.Context(), since, limit)
@@ -62,8 +66,18 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) notificationEntries(ctx context.Context, since int64, limit int) ([]notifyEntry, error) {
-	all := sortAndLimitSessions(s.fanOutSessions(ctx, "", since, nil), limit)
+	all, err := s.notificationSessionRows(ctx, since, limit)
+	if err != nil {
+		return nil, err
+	}
 	return s.notificationEntriesForSessions(ctx, all, false, false)
+}
+
+func (s *Server) notificationSessionRows(ctx context.Context, since int64, limit int) ([]db.Session, error) {
+	if s.supportsSidebar() {
+		return s.sidebarSessionRows(ctx, platforms.SidebarQuery{Since: since, Limit: limit}, false)
+	}
+	return sortAndLimitSessions(s.fanOutSessions(ctx, "", since, nil), limit), nil
 }
 
 func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Session, push, includeDone bool) ([]notifyEntry, error) {

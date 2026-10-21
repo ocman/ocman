@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 )
 
 // Only process launch is faked. Readiness probes, runtime inventory, session
@@ -119,7 +120,7 @@ func TestStartSessionWaitsForSlowOpenCodeAndSucceedsFirstTime(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatalf("response %d %s: %v", w.Code, w.Body.String(), err)
 	}
-	if w.Code != http.StatusOK || response.SessionID != "slow-start-session" || !response.FirstMessageSent || response.FirstMessageError != "" {
+	if w.Code != http.StatusOK || !sessioncatalog.IsID(response.SessionID) || !response.FirstMessageSent || response.FirstMessageError != "" {
 		t.Fatalf("first submission failed: %d %s", w.Code, w.Body.String())
 	}
 	if runtime.launches.Load() != 1 || creates.Load() != 1 || prompts.Load() != 1 {

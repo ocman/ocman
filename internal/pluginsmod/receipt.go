@@ -29,5 +29,9 @@ func (m *Module) conversationReplyAlreadyRecorded(ctx context.Context, adapter p
 	if lifecycle.Status == db.StatusError || lifecycle.LatestMessageRole != "assistant" || lifecycle.LatestMessageID == "" {
 		return false, nil
 	}
-	return m.store.HasPluginConversationReply(ctx, key, sessionID+":"+lifecycle.LatestMessageID)
+	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
+	if err != nil {
+		return false, err
+	}
+	return m.store.HasPluginConversationReply(ctx, key, prefix+":"+lifecycle.LatestMessageID)
 }

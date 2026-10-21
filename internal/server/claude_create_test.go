@@ -15,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/claudeprovider"
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -24,10 +25,60 @@ import (
 )
 
 // claudeTestPlatform mirrors main's claudePlatform: the generic adapter plus
-// the in-process runtime ensure and the `claude -p` worktree namer.
+// the in-process runtime ensure and the `claude -p` worktree namer. These
+// workflow tests run without ingestion, so the double answers browsing from
+// the supervisor's own pages; production reads them from statev2.
 type claudeTestPlatform struct {
 	*provider.Adapter
 	cli string
+}
+
+func (p claudeTestPlatform) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
+	return p.RuntimeDetail(ctx, id, limit, offset)
+}
+func (p claudeTestPlatform) Owns(_ context.Context, id string) bool { return p.Knows(id) }
+func (p claudeTestPlatform) SessionsInactiveBefore(ctx context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error) {
+	rows, err := p.Sessions(ctx, "", 0)
+	var out []db.SessionArchiveCandidate
+	for _, row := range rows {
+		if row.TimeUpdated < cutoff {
+			out = append(out, db.SessionArchiveCandidate{ID: row.ID, TimeUpdated: row.TimeUpdated})
+		}
+	}
+	return out, err
+}
+func (claudeTestPlatform) SessionChanges(context.Context, string) (*platforms.SessionChanges, error) {
+	return nil, platforms.ErrUnsupported
+}
+func (claudeTestPlatform) SessionInfo(context.Context, string) (*platforms.SessionInfo, error) {
+	return nil, platforms.ErrUnsupported
+}
+func (p claudeTestPlatform) DirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	return p.LiveDirectoryCatalog(ctx, req)
+}
+func (p claudeTestPlatform) sessionCatalog(ctx context.Context, id string) (*platforms.DirectoryCatalog, error) {
+	detail, err := p.RuntimeDetail(ctx, id, 1, 0)
+	if err != nil {
+		return nil, err
+	}
+	return p.LiveDirectoryCatalog(ctx, platforms.DirectoryCatalogRequest{Directory: detail.Session.Directory})
+}
+func (p claudeTestPlatform) AgentCatalog(context.Context, string) ([]platforms.AgentCatalogEntry, error) {
+	return nil, platforms.ErrUnsupported
+}
+func (p claudeTestPlatform) SlashCommands(ctx context.Context, id string) ([]platforms.SlashCommandEntry, error) {
+	catalog, err := p.sessionCatalog(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return catalog.Commands, nil
+}
+func (p claudeTestPlatform) SessionModels(ctx context.Context, id string) (*platforms.SessionModelsResponse, error) {
+	catalog, err := p.sessionCatalog(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return catalog.Models, nil
 }
 
 func (claudeTestPlatform) EnsureRuntime(_ context.Context, dir string) (*hostsvc.EnsureRuntimeResult, error) {
@@ -76,7 +127,7 @@ func newClaudeServer(t *testing.T) (*Server, *provider.Adapter, string) {
 	}
 	adapter.SetRules(rules)
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(claudeTestPlatform{adapter, bin})
+	reg.Register(claudeTestPlatform{Adapter: adapter, cli: bin})
 	srv.hostRouter = hostsvc.NewRouter(srv.newLocalHost())
 	srv.watchProviderPrompts(t.Context(), new(sync.WaitGroup))
 	return srv, adapter, bin
@@ -104,7 +155,7 @@ func waitClaude(t *testing.T, what string, ok func() bool) {
 
 func claudeSessionDir(t *testing.T, adapter *provider.Adapter, id string) string {
 	t.Helper()
-	detail, err := adapter.Session(t.Context(), id, 0, 0)
+	detail, err := adapter.RuntimeDetail(t.Context(), id, 0, 0)
 	if err != nil || detail == nil || detail.Session == nil {
 		t.Fatalf("session %s: %+v, %v", id, detail, err)
 	}

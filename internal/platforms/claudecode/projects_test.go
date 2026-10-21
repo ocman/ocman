@@ -207,6 +207,19 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "permission asked", func() bool { return len(pending(p1, id)) == 1 })
+	eventually(t, "permission in cache-only sidebar snapshot", func() bool { return p1.CachedSessionObservations()[id].PendingPermission })
+	stored := []db.Session{{ID: id, Directory: worktree, Title: "stored title", TotalCost: 7, Status: db.StatusDone}}
+	if err := p1.EnrichStoredSessions(t.Context(), stored, map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if stored[0].Status != db.StatusWaiting || !stored[0].PendingPermission || stored[0].Title != "stored title" || stored[0].TotalCost != 7 {
+		t.Fatalf("stored platform overlay replaced facts or lost permission: %+v", stored)
+	}
+	canceled, cancelOverlay := context.WithCancel(t.Context())
+	cancelOverlay()
+	if err := p1.EnrichStoredSessions(canceled, stored, nil); err == nil {
+		t.Fatal("canceled overlay accepted")
+	}
 	rows, err := p1.Sessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -275,11 +288,8 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 	// Launched sessions read from their project supervisor; terminal
 	// sessions stay with the browsing supervisor until their first send.
 	ctx := t.Context()
-	if !p3.Owns(ctx, main.ID) || p3.Owns(ctx, "terminal") {
+	if p3.projects.owner(main.ID) == nil || p3.projects.owner("terminal") != nil {
 		t.Fatal("ownership")
-	}
-	if d, err := p3.Session(ctx, main.ID, 10, 0); err != nil || d.Session.ID != main.ID {
-		t.Fatal(d, err)
 	}
 	if l, err := p3.SessionLifecycle(ctx, main.ID); err != nil || l.Status != db.StatusBusy {
 		t.Fatal(l, err)

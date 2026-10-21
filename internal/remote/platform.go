@@ -26,7 +26,8 @@ type remotePlatform struct {
 	// nameFn returns the current display name for the remote (the
 	// hub-assigned label, or hostname when unnamed). Looked up live so a
 	// rename takes effect without re-registering the adapter.
-	nameFn func() string
+	nameFn          func() string
+	pluginReference func(context.Context, string) (string, error)
 
 	mu       sync.RWMutex
 	caps     platforms.Capabilities
@@ -95,19 +96,19 @@ func (p *remotePlatform) Capabilities() platforms.Capabilities {
 func (p *remotePlatform) Sessions(ctx context.Context, dir string, since int64) ([]db.Session, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return p.staleSessions(dir, since), nil
+		return p.checkedStaleSessions(dir, since)
 	}
 	resp, err := client.Sessions(ctx, &pb.SessionsReq{Platform: p.base, Dir: dir, Since: since})
 	if err != nil {
 		p.conn.markOffline()
-		return p.staleSessions(dir, since), nil
+		return p.checkedStaleSessions(dir, since)
 	}
 	p.conn.markSeen()
 	var sessions []db.Session
 	if err := unmarshalJSON(resp.Payload, &sessions); err != nil {
 		return nil, err
 	}
-	return p.stamp(sessions, dir, since), nil
+	return p.checkedSessions(sessions, dir, since)
 }
 
 func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
@@ -115,7 +116,7 @@ func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset i
 	if client == nil {
 		return nil, platforms.ErrRemoteOffline
 	}
-	resp, err := client.Session(ctx, &pb.SessionReq{Platform: p.base, SessionId: id, Limit: int32(limit), Offset: int32(offset), Browsing: platforms.IsConversationRead(ctx)})
+	resp, err := client.Session(ctx, &pb.SessionReq{Platform: p.base, SessionId: id, Limit: int32(limit), Offset: int32(offset)})
 	if err != nil {
 		return nil, conversationReadError(p.conn, err)
 	}
@@ -136,7 +137,7 @@ func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset i
 		detail.SessionTree[i].RemoteName = p.nameFn()
 		detail.SessionTree[i].LiveConnection = p.live(detail.SessionTree[i].LiveConnection)
 	}
-	return &detail, nil
+	return p.checkedDetail(&detail, id)
 }
 
 // live reports a remote session's write availability. A connected remote
@@ -169,7 +170,7 @@ func (p *remotePlatform) SessionsInactiveBefore(ctx context.Context, cutoff int6
 	if err := unmarshalJSON(resp.Payload, &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return p.checkedArchive(out)
 }
 
 func (p *remotePlatform) SessionChanges(ctx context.Context, sessionID string) (*platforms.SessionChanges, error) {
@@ -351,7 +352,7 @@ func (p *remotePlatform) ForkSession(ctx context.Context, req platforms.ForkSess
 		return nil, remotePlatformError(err)
 	}
 	var out platforms.CreateSessionResponse
-	return &out, unmarshalJSON(resp.Payload, &out)
+	return canonicalDecodeResult(p, resp.Payload, &out)
 }
 
 func (p *remotePlatform) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
@@ -368,10 +369,10 @@ func (p *remotePlatform) CreateSession(ctx context.Context, req platforms.Create
 		return nil, remotePlatformError(err)
 	}
 	var out platforms.CreateSessionResponse
-	return &out, unmarshalJSON(resp.Payload, &out)
+	return canonicalDecodeResult(p, resp.Payload, &out)
 }
 
-func (p *remotePlatform) ProxyEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error {
+func (p *remotePlatform) proxySessionEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error {
 	client := p.conn.Client()
 	if client == nil {
 		return platforms.ErrRemoteOffline
@@ -426,7 +427,7 @@ func sliceCall[T any](p *remotePlatform, fn func(pb.OcmanClient) (*pb.JsonResp, 
 	if err := unmarshalJSON(resp.Payload, &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return canonicalSliceResult(p, out)
 }
 
 // jsonCall runs a unary JsonResp RPC and decodes into dst.
@@ -442,7 +443,7 @@ func jsonCall[T any](_ context.Context, p *remotePlatform, fn func(pb.OcmanClien
 	if err := unmarshalJSON(resp.Payload, dst); err != nil {
 		return nil, err
 	}
-	return dst, nil
+	return canonicalJSONResult(p, dst)
 }
 
 func remotePlatformError(err error) (out error) {

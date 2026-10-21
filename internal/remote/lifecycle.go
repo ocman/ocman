@@ -26,7 +26,7 @@ func (p *remotePlatform) SessionLifecycle(ctx context.Context, sessionID string)
 
 // SessionLifecycle serves the owner's bounded lifecycle read.
 func (s *Server) SessionLifecycle(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
+	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}

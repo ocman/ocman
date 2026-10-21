@@ -47,13 +47,14 @@ func loadJudgeModel(ctx context.Context, db judgeModelStore) (provider, modelID 
 // PermissionJudge uses OpenCode by default, or a configured external endpoint.
 // Every transport or parsing failure falls through to human review.
 type PermissionJudge struct {
-	openCodePort  func(directory string) string
-	httpClient    *http.Client
-	store         judgeModelStore
-	recordUsage   func(context.Context, string, *int64, *int64) error
-	modelMu       sync.RWMutex
-	modelProvider string
-	modelID       string
+	sessionIdentity func(context.Context, string) (string, error)
+	openCodePort    func(directory string) string
+	httpClient      *http.Client
+	store           judgeModelStore
+	recordUsage     func(context.Context, string, *int64, *int64) error
+	modelMu         sync.RWMutex
+	modelProvider   string
+	modelID         string
 }
 
 func (j *PermissionJudge) model() (provider, modelID string) {
@@ -134,8 +135,15 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 			log.WithError(err).WithField("judgeSessionID", sessionID).Warn("auto-approve judge: failed to delete judge session")
 		}
 	}()
+	publicID := sessionID
+	if j.sessionIdentity != nil {
+		publicID, err = j.sessionIdentity(ctx, sessionID)
+		if err != nil {
+			return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
+		}
+	}
 	if onSessionCreated != nil {
-		onSessionCreated(sessionID)
+		onSessionCreated(publicID)
 	}
 	if err := j.sendPrompt(ctx, port, sessionID, permission, patterns, metadata, customSections); err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to send prompt")

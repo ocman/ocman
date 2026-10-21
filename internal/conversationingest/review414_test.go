@@ -24,18 +24,21 @@ func TestQuietFeedRetriesBeforePoll(t *testing.T) {
 	eventually(t, "initial import not ready", func() bool { _, ready := w.module.ReadyInstances(); return ready })
 	f.mu.Lock()
 	f.messageErr = errors.New("offline")
+	f.snapshotErr = f.messageErr // reconnect catch-up may win the live-event race
+	initialReads := f.reads
 	f.sequences["session"] = 4
 	f.mu.Unlock()
 	f.changes <- platforms.HistoryChange{SessionID: "session", Seq: 4, MessageIDs: []string{"message"}}
 	eventually(t, "live read did not fail", func() bool {
 		f.mu.Lock()
-		read := len(f.messageReads) > 0
+		read := len(f.messageReads) > 0 || f.reads > initialReads
 		f.mu.Unlock()
 		_, ready := w.module.ReadyInstances()
 		return read && !ready
 	})
 	f.mu.Lock()
 	f.messageErr = nil
+	f.snapshotErr = nil
 	f.mu.Unlock()
 	eventually(t, "quiet feed never retried", func() bool { _, ready := w.module.ReadyInstances(); return ready })
 }

@@ -84,7 +84,8 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
         const checkout = sessions[0];
         const dir = checkout?.directory || group.directory;
         const isWorktree = projectRootForDirectory(dir) !== dir;
-        const info = siblingGitInfos[checkoutKey(dir, checkout?.remoteId)] ?? siblingGitInfos[dir];
+        const info = siblingGitInfos[checkoutKey(dir, checkout?.remoteId)] ?? siblingGitInfos[dir]
+          ?? (checkout?.branch ? { branch: checkout.branch, ahead: 0, behind: 0, dirty: false } : undefined);
         const slug = dir.split('/').filter(Boolean).pop() || dir;
         const dirLabel = info?.branch ?? slug;
         return (

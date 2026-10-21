@@ -18,11 +18,22 @@ type HistoryEntry struct {
 }
 
 type HistorySnapshot struct {
-	Session        Session
-	Messages       []Message
-	Parts          []Part
-	Version        string
-	NativeMessages map[string]json.RawMessage // original v2 payloads, including unsupported native message types
+	// InferredStatus is static transcript evidence, never a live running signal.
+	InferredStatus SessionStatus
+	// Partial snapshots may add metadata/content but never authorize removals.
+	Partial bool
+	// MessageOffset is the absolute position of the first message in a tail read.
+	MessageOffset int64
+	// SourceCursor is opaque resumable source progress, committed with the content.
+	SourceCursor string
+	// SourceChild distinguishes native descendants from application child links.
+	SourceChild      *bool
+	ProjectDirectory string
+	Session          Session
+	Messages         []Message
+	Parts            []Part
+	Version          string
+	NativeMessages   map[string]json.RawMessage // original v2 payloads, including unsupported native message types
 	// Subagent marks a helper session the agent spawned. Each adapter
 	// decides it by its own convention; analytics leaves it out of session
 	// and prompt counts.

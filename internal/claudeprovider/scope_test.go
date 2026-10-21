@@ -39,7 +39,7 @@ func TestAllowAlwaysWithWildcardCharactersIsExact(t *testing.T) {
 			t.Cleanup(func() { _ = st.Close() })
 			svc := autoapprove.NewService(autoapprove.Deps{Store: st})
 			h, got := promptHarness(t, askFixture(t, c.tool, c.approved), func(h *liveHarness, e providerprotocol.Event) {
-				svc.HandleProviderEvent(t.Context(), h.adapter, e)
+				svc.HandleProviderEvent(t.Context(), providerPlatform{Adapter: h.adapter}, e)
 			})
 			parent := h.create(t)
 			h.send(t, parent, "go")

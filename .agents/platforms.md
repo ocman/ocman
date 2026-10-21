@@ -9,7 +9,10 @@
 
 Preserve legacy provider names in commands, packages, wire fields and databases.
 `Hello.PlatformID` and `BackendRuntime.PlatformID` identify the platform.
-Adding a platform means a new `platforms.Platform` adapter and registry entry.
+Adding a platform means a new `platforms.Integration` (execution, live
+observation, `HistoryReader` ingestion and `SessionIdentityProbe`) composed by
+`owned.PrepareCore`. Integrations never serve browsing reads; the canonical
+adapter serves those from statev2.
 See `spec/multi-agent-support/architecture.md`.
 
 `-platforms` defaults to `opencode,claudecode`. Only selected adapters register;
@@ -25,7 +28,7 @@ changing the protocol. It is internal, with no stability promise until a second
 provider exists. HTTP and SSE use an owner-local Unix socket, `/hello` versions
 and capabilities, and OpenCode v1 event shapes plus `limited` with `resetsAt`.
 
-- `internal/platforms/provider` owns per-adapter session, status and prompt
+- `internal/platforms/provider` owns per-adapter known-session, status and prompt
   caches, never package globals. Its headless watcher reconnects and acknowledges
   completed turns; browser streams replay from leased snapshots.
 - `providersupervisor.Supervisor` sequences events and syncs them to a per-session

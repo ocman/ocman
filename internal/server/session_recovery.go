@@ -17,8 +17,10 @@ import (
 // or startup replace the registry, database or local host.
 func (s *Server) sessionRecovery() *sessionrecovery.Service {
 	var sessions sessionrecovery.SessionReader
-	if s.db != nil {
-		sessions = s.db
+	if s.registry != nil {
+		if adapter, ok := s.registry.Get(opencode.PlatformID); ok {
+			sessions, _ = adapter.(platforms.RuntimeSessionReader)
+		}
 	}
 	return sessionrecovery.New(sessionrecovery.Deps{
 		State: s.stateDB, Sessions: sessions,

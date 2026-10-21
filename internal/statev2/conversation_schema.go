@@ -10,7 +10,15 @@ ALTER TABLE part ADD COLUMN text_present INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX message_conversation_page ON message(instance_id,session_id,source_deleted,conversation_visible,position,id);
 `
 
-const ConversationReadFormat = 1
+const SourceHierarchyReadFormat = 3
+const ConversationReadFormat = SourceHierarchyReadFormat
+
+// Formats 2 and 3 add optional project, source-hierarchy and static-status
+// metadata. Older formats retain the same content encoding and stay readable
+// when an unavailable source cannot be reimported.
+func ReadableConversationFormat(format int) bool {
+	return format >= 1 && format <= ConversationReadFormat
+}
 
 // Adapters now mark subagent sessions during ingestion. Rows imported before
 // carry the title rule analytics filtered on until then, so counts do not

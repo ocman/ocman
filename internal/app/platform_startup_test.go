@@ -46,7 +46,7 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 		if _, err := host.ManagedOpencodes(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		knownPlatforms["test-provider"] = func(context.Context, *db.DB, *state.DB, ocapi.Auth) platforms.Platform { return startupPlatform{} }
+		knownPlatforms["test-provider"] = func(context.Context, *db.DB, *state.DB, ocapi.Auth) platforms.Integration { return startupPlatform{} }
 		flag.CommandLine = flag.NewFlagSet("ocman", flag.ExitOnError)
 		addr := os.Getenv("OCMAN_TEST_STARTUP_ADDR")
 		os.Args = []string{"ocman", "-platforms=test-provider", "-addr=" + addr, "-mcp-addr=", "-log-file=off"}

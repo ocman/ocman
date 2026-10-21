@@ -7,28 +7,24 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // This file holds the Platform-interface operation methods that were
 // formerly inlined in internal/server. Each method resolves the running
-// OpenCode port from the session's working directory and proxies the
+// OpenCode port from the native session binding and proxies the
 // call to the OpenCode HTTP API.
 
 // resolvePort looks up the running OpenCode HTTP port for the given
@@ -54,12 +50,9 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 	if err != nil {
 		return "", nil, platforms.ErrNotFound
 	}
-	port = a.rt.resolveOpenCodePortForSessionCtx(ctx, sessionID, s.Directory)
-	if port == "" {
-		port, err = a.rt.resolveOpenCodePortBySession(ctx, sessionID)
-		if err != nil {
-			return "", s, err
-		}
+	port, err = a.rt.resolveSessionPortCtx(ctx, sessionID, s.Directory)
+	if err != nil {
+		return "", s, err
 	}
 	if port == "" {
 		return "", s, fmt.Errorf("no running OpenCode instance for session %s: %w", sessionID, platforms.ErrPlatformUnreachable)
@@ -69,25 +62,15 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 }
 
 func (d *Discovery) resolveOpenCodePortBySession(ctx context.Context, sessionID string) (string, error) {
-	client := http.Client{Timeout: 500 * time.Millisecond, Transport: openCodeClient.Transport}
 	for _, server := range d.discoverOpenCodeServers() {
 		if server.port == "" {
 			continue
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%s/session/%s", server.port, sessionID), nil)
+		found, err := probeSessionPort(ctx, server.port, sessionID)
 		if err != nil {
-			continue
+			return "", err
 		}
-		resp, err := client.Do(req)
-		if err != nil {
-			if errors.Is(err, ocapi.ErrAuthentication) {
-				return "", err
-			}
-			continue
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if found {
 			return server.port, nil
 		}
 	}
@@ -140,33 +123,8 @@ func ProjectCatalog(ctx context.Context, endpoint, directory string) (agents, mo
 	return agents, models, nil
 }
 
-// AgentCatalog returns the OpenCode /agent catalog for the session's
-// running instance. Returns an empty slice when no instance is reachable.
-//
-// Cached via catalogCache: agents.json edits propagate after at most
-// catalogCache's TTL, in exchange for not paying ~1s on every
-// SessionDetail mount.
-//
-// Upstream failures (no live instance, /agent fetch fails, JSON
-// decode fails) intentionally surface as `(nil, nil)` so the
-// frontend keeps rendering an empty catalog. To make those failures
-// observable to the maintainer, each branch logs a single WARN line
-// (FR-9) including the upstream port + the underlying error.
-func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platforms.AgentCatalogEntry, error) {
-	port, session, err := a.resolvePortCtx(ctx, sessionID)
-	if err != nil {
-		// Common: no live OpenCode instance for this session's
-		// directory. Logged at DEBUG to avoid spamming the noise
-		// every poll.
-		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
-			Debug("opencode: agent catalog unavailable (no live port)")
-		return nil, nil
-	}
-	return agentCatalogAt(ctx, port, sessionID, session.Directory), nil
-}
-
 // agentCatalogAt reads /agent from one instance. Failures return nil so
-// the frontend keeps rendering an empty catalog; see AgentCatalog.
+// the frontend keeps rendering an empty catalog.
 func agentCatalogAt(ctx context.Context, port, sessionID, directory string) []platforms.AgentCatalogEntry {
 	body, fetchErr := getJSONCached(ctx, port, scopedPath(ctx, port, "/agent", directory))
 	if fetchErr != nil {
@@ -197,22 +155,6 @@ func agentCatalogAt(ctx context.Context, port, sessionID, directory string) []pl
 	return entries
 }
 
-// SlashCommands returns the OpenCode /command catalog for the session.
-//
-// Cached via catalogCache for the same reason AgentCatalog is.
-//
-// Like [AgentCatalog], upstream failures return `(nil, nil)` for
-// frontend compat but emit a single WARN line per failure (FR-9).
-func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platforms.SlashCommandEntry, error) {
-	port, session, err := a.resolvePortCtx(ctx, sessionID)
-	if err != nil {
-		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
-			Debug("opencode: slash commands unavailable (no live port)")
-		return nil, nil
-	}
-	return slashCommandsAt(ctx, port, sessionID, session.Directory), nil
-}
-
 // slashCommandsAt reads /command from one instance; failures return nil.
 func slashCommandsAt(ctx context.Context, port, sessionID, directory string) []platforms.SlashCommandEntry {
 	body, fetchErr := getJSONCached(ctx, port, scopedPath(ctx, port, "/command", directory))
@@ -237,121 +179,6 @@ func slashCommandsAt(ctx context.Context, port, sessionID, directory string) []p
 		})
 	}
 	return entries
-}
-
-// DirectoryCatalog serves the new-conversation composer: the catalogs of
-// the directory's instance (worktree paths fold to the project's single
-// instance) plus the directory's most recent agent/model as defaults.
-func (a *Adapter) DirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
-	if a.db == nil {
-		return nil, platforms.ErrNotFound
-	}
-	directory := req.Directory
-	port := req.Port
-	if port == "" {
-		port = a.rt.discoverOpenCodePortCtx(ctx, directory)
-	}
-	models, defaults := a.modelsFor(ctx, "", directory, port)
-	out := &platforms.DirectoryCatalog{
-		Agents:         []platforms.AgentCatalogEntry{},
-		Commands:       []platforms.SlashCommandEntry{},
-		Models:         models,
-		DefaultAgent:   defaults.Agent,
-		DefaultModel:   defaults.Model,
-		LiveConnection: port != "",
-	}
-	if port == "" {
-		return out, nil
-	}
-	if agents := agentCatalogAt(ctx, port, "", directory); agents != nil {
-		out.Agents = agents
-	}
-	if commands := slashCommandsAt(ctx, port, "", directory); commands != nil {
-		out.Commands = commands
-	}
-	return out, nil
-}
-
-// SessionModels builds the per-session model picker list, merging
-// recents from the DB with live /provider data from the running
-// instance when available.
-func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platforms.SessionModelsResponse, error) {
-	if a.db == nil {
-		return nil, platforms.ErrNotFound
-	}
-	dbPhase := srvtiming.Begin(ctx, "db_get_session")
-	session, err := a.db.GetSession(ctx, sessionID)
-	dbPhase.End()
-	if err != nil {
-		return nil, platforms.ErrNotFound
-	}
-	port := a.rt.resolveOpenCodePortForSessionCtx(ctx, sessionID, session.Directory)
-	models, _ := a.modelsFor(ctx, sessionID, session.Directory, port)
-	return models, nil
-}
-
-// modelsFor merges DB recents, favorites, the instance's /provider data
-// (when port is non-empty) and the directory's defaults, excluding
-// excludeSessionID from the default lookup. Shared by SessionModels and
-// DirectoryCatalog so the two lists cannot drift.
-func (a *Adapter) modelsFor(ctx context.Context, excludeSessionID, directory, port string) (*platforms.SessionModelsResponse, db.SessionDefaults) {
-	sessionID := excludeSessionID
-	// recents and favorites are global (same answer regardless of
-	// which session is open) and slowly-changing, so we route them
-	// through process-global TTL caches with singleflight. See
-	// models_cache.go for the rationale and TTL choices. The
-	// session-default lookup below stays uncached because it's
-	// per-session and already cheap.
-	recentsPhase := srvtiming.Begin(ctx, "db_recent_models")
-	recents, err := getRecentModelsCached(ctx, a.db)
-	recentsPhase.End()
-	if err != nil {
-		log.WithError(err).Warn("opencode: fetching recent models")
-	}
-	defaultsPhase := srvtiming.Begin(ctx, "db_session_defaults")
-	defaults, err := getSessionDefaultsCached(ctx, a.db, sessionID, directory)
-	defaultsPhase.End()
-	if err != nil {
-		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("opencode: fetching session defaults")
-	}
-	sessionDefault := defaults.Model
-
-	var favorites []state.ModelFavorite
-	if a.favorites != nil {
-		favPhase := srvtiming.Begin(ctx, "db_favorites")
-		favorites, err = a.favorites.ModelFavorites(ctx, string(PlatformID))
-		favPhase.End()
-		if err != nil {
-			log.WithError(err).Warn("opencode: fetching model favorites")
-		}
-	}
-
-	var providers OpenCodeProvidersResponse
-	hasProviders := false
-	if port != "" {
-		providersPhase := srvtiming.Begin(ctx, "http_provider")
-		providers, hasProviders = fetchOpenCodeProviders(ctx, port, directory)
-		providersPhase.EndWithDesc("GET /provider")
-	}
-
-	entries := buildSessionModelEntries(recents, favorites, providers, hasProviders, sessionDefault)
-
-	var connectedDefaults map[string]string
-	if hasProviders && len(providers.Default) > 0 {
-		connectedDefaults = make(map[string]string, len(providers.Connected))
-		for _, id := range providers.Connected {
-			if m, ok := providers.Default[id]; ok {
-				connectedDefaults[id] = m
-			}
-		}
-	}
-
-	return &platforms.SessionModelsResponse{
-		SessionDefault:   sessionDefault,
-		ProviderDefaults: connectedDefaults,
-		HasProviders:     hasProviders,
-		Models:           entries,
-	}, defaults
 }
 
 // --- Mutating operations ---
@@ -622,8 +449,6 @@ func (a *Adapter) DisposeSession(ctx context.Context, req platforms.DisposeSessi
 		return err
 	}
 	a.rt.forgetSessionPort(req.SessionID, port)
-	sessionCache.invalidate(port, path)
-	sessionCache.invalidate(port, path+"/message")
 	return nil
 }
 
@@ -640,8 +465,6 @@ func (a *Adapter) Revert(ctx context.Context, req platforms.RevertSessionRequest
 	if err := postJSON(ctx, port, fmt.Sprintf("/session/%s/revert", req.SessionID), payload); err != nil {
 		return err
 	}
-	sessionCache.invalidate(port, "/session/"+req.SessionID)
-	sessionCache.invalidate(port, "/session/"+req.SessionID+"/message")
 	return nil
 }
 
@@ -654,8 +477,6 @@ func (a *Adapter) Unrevert(ctx context.Context, req platforms.UnrevertSessionReq
 	if err := postJSON(ctx, port, fmt.Sprintf("/session/%s/unrevert", req.SessionID), []byte("{}")); err != nil {
 		return err
 	}
-	sessionCache.invalidate(port, "/session/"+req.SessionID)
-	sessionCache.invalidate(port, "/session/"+req.SessionID+"/message")
 	return nil
 }
 
@@ -685,7 +506,7 @@ func (a *Adapter) PermissionRules(_ context.Context, sessionID string) ([]platfo
 }
 
 func permissionRulesOnPort(port, sessionID string) ([]platforms.PermissionRule, error) {
-	// Bypass sessionCache: the toggle UI needs read-after-write freshness.
+	// Uncached: the toggle UI needs read-after-write freshness.
 	body, ok := rawGet(port, "/session/"+sessionID)
 	if !ok {
 		return nil, fmt.Errorf("opencode session fetch failed: %w", platforms.ErrPlatformUnreachable)
@@ -725,7 +546,6 @@ func setPermissionRulesOnPort(ctx context.Context, port string, req platforms.Se
 	if err := patchJSON(ctx, port, fmt.Sprintf("/session/%s", req.SessionID), payload); err != nil {
 		return err
 	}
-	sessionCache.invalidate(port, "/session/"+req.SessionID)
 	return nil
 }
 
@@ -798,7 +618,6 @@ func (a *Adapter) MoveSession(ctx context.Context, req platforms.MoveSessionRequ
 	if err := postJSON(ctx, port, "/experimental/control-plane/move-session", payload); err != nil {
 		return err
 	}
-	sessionCache.invalidate(port, "/session/"+req.SessionID)
 	return nil
 }
 
@@ -835,6 +654,9 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	createPhase := srvtiming.Begin(ctx, "http_create")
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session", port)
 	create := map[string]string{}
+	if req.NativeID != "" {
+		create["id"] = req.NativeID
+	}
 	if req.Title != "" {
 		// OpenCode accepts the title at creation; no follow-up PATCH.
 		create["title"] = req.Title
@@ -910,7 +732,6 @@ func setSessionTitle(ctx context.Context, port, sessionID, title string) error {
 	if err := patchJSON(ctx, port, "/session/"+url.PathEscape(sessionID), payload); err != nil {
 		return err
 	}
-	sessionCache.invalidate(port, "/session/"+sessionID)
 	return nil
 }
 

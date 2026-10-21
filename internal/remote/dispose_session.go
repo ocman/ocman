@@ -18,7 +18,7 @@ func (p *remotePlatform) DisposeSession(ctx context.Context, req platforms.Dispo
 
 func (s *Server) DisposeSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
 	var dispose platforms.DisposeSessionRequest
-	if err := unmarshalJSON(req.Payload, &dispose); err != nil {
+	if err := s.decodeSessionRequest(req, &dispose); err != nil {
 		return nil, err
 	}
 	return &pb.Empty{}, svcErr(s.sessions.Dispose(ctx, req.Platform, dispose))

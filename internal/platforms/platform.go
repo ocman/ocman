@@ -154,6 +154,7 @@ type Capabilities struct {
 // live state return nil from LiveStatus.
 type LiveState struct {
 	Status            string    `json:"status"` // "busy", "waiting", "done", "error"
+	ResetsAt          int64     `json:"resetsAt,omitempty"`
 	PendingPermission bool      `json:"pendingPermission"`
 	PendingQuestion   bool      `json:"pendingQuestion"`
 	LastEventAt       time.Time `json:"lastEventAt"`
@@ -189,16 +190,6 @@ type LiveTool struct {
 	StartedAt time.Time `json:"startedAt"`
 }
 
-// Platform is the contract every adapter must satisfy.
-//
-// Methods are called from HTTP handlers; implementations should be
-// goroutine-safe and responsive to context cancellation.
-//
-// Capability-gated methods (those whose availability is reported by
-// Capabilities()) should return ErrUnsupported when called on a
-// platform that doesn't support them. Handlers will have already
-// filtered these by consulting Capabilities(), but the adapter is
-// still expected to fail safely if they don't.
 // PermissionRefresher is implemented by platforms that can re-read the
 // owner's live permission list. Unlike ListPermissions, which may serve an
 // observed cache, a successful result's absence means the prompt resolved.
@@ -215,85 +206,35 @@ type ReplyOutcomeReporter interface {
 	ReplyOutcomes(ctx context.Context, sessionID string) bool
 }
 
-type Platform interface {
+// Integration is what a native platform module provides: identity, capability
+// flags, a runtime inventory for migration and safety probes, live observation,
+// prompts and execution. It has no persisted browsing reads; those belong to the
+// canonical adapter, which serves them from statev2.
+//
+// Methods must be goroutine-safe and responsive to context cancellation.
+// Capability-gated methods return ErrUnsupported when unsupported.
+type Integration interface {
 	// ID returns the stable string identifier used in URLs and state.db.
 	ID() ID
 
 	// DisplayName returns a human-readable name for UI.
 	DisplayName() string
 
-	// Available reports whether this adapter has any usable data or
-	// running instances. The registry uses this to skip adapters whose
-	// backing stores don't exist on disk.
+	// Available reports whether this integration has a usable source or
+	// running instances.
 	Available(ctx context.Context) bool
 
 	// Capabilities returns the capability flags for this platform.
 	Capabilities() Capabilities
 
-	// --- Read-only session data ---
-
-	// Sessions lists all sessions for this platform, filtered by dir
-	// (empty = all) and updated-after timestamp (0 = all).
+	// Sessions is the native runtime inventory, filtered by dir (empty = all)
+	// and updated-after timestamp (0 = all). Only identity migration and
+	// runtime-safety probes read it; it is never a browsing source.
 	Sessions(ctx context.Context, dir string, since int64) ([]db.Session, error)
-
-	// Session returns full detail for a single session.
-	Session(ctx context.Context, id string, limit, offset int) (*SessionDetail, error)
-
-	// Owns reports whether this adapter is the owning platform for
-	// the given session ID. It must be cheap — a single DB hit, an
-	// in-memory cache lookup, or a filesystem stat at most. The
-	// registry calls Owns from the cold-cache path of
-	// PlatformForSession to avoid the heavy Session fetch (HTTP
-	// round-trip + lsof port discovery on OpenCode) just to identify
-	// the session's owner.
-	//
-	// Implementations must NOT make HTTP calls or run external
-	// processes. Returning false on any error is acceptable; the
-	// registry treats both "not mine" and "I couldn't tell" as
-	// non-ownership and moves on to the next adapter.
-	Owns(ctx context.Context, sessionID string) bool
-
-	// SessionsInactiveBefore returns archive candidates for the
-	// background auto-archive job.
-	SessionsInactiveBefore(ctx context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error)
-
-	// SessionChanges aggregates every file-touching tool call in the
-	// session into a per-file changes summary. Adapters that don't
-	// support this return ErrUnsupported; the HTTP layer translates
-	// that into Supported=false on the wire.
-	SessionChanges(ctx context.Context, sessionID string) (*SessionChanges, error)
-
-	// SessionInfo returns a snapshot of session-level metadata for
-	// the right-hand "Session info" panel: context-window usage,
-	// configured MCP servers and their connection status, and
-	// configured LSP servers and their status. Adapters that don't
-	// expose this data return ErrUnsupported; the HTTP layer
-	// translates that into Supported=false on the wire so the UI
-	// has a single shape to render.
-	SessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error)
 
 	// LiveStatus returns in-memory live status for a session (nil if
 	// none). Cheap: does not touch disk.
 	LiveStatus(sessionID string) *LiveState
-
-	// --- Session-scoped catalogs ---
-
-	// AgentCatalog returns the platform's composer-agent catalog for
-	// the given session (OpenCode: "build", "plan", subagents).
-	// Platforms without the concept return nil, nil (empty slice).
-	AgentCatalog(ctx context.Context, sessionID string) ([]AgentCatalogEntry, error)
-
-	// SlashCommands returns available slash commands for the session.
-	SlashCommands(ctx context.Context, sessionID string) ([]SlashCommandEntry, error)
-
-	// SessionModels returns the session's model picker list.
-	SessionModels(ctx context.Context, sessionID string) (*SessionModelsResponse, error)
-
-	// DirectoryCatalog returns the agent, command and model catalogs for
-	// a directory that has no session yet (the new-conversation
-	// composer). Platforms without live catalogs return the historical
-	// model list with LiveConnection=false.
-	DirectoryCatalog(ctx context.Context, req DirectoryCatalogRequest) (*DirectoryCatalog, error)
 
 	// ListPermissions returns pending permission prompts for the session.
 	ListPermissions(ctx context.Context, sessionID string) ([]LivePrompt, error)
@@ -353,9 +294,7 @@ type Platform interface {
 
 	// CreateSession creates a new session and returns its ID. The
 	// directory comes from the request; the adapter is free to apply
-	// platform-specific defaults. CreateSession is called from the
-	// platform-scoped /api/sessions endpoint rather than from a
-	// session-scoped route.
+	// platform-specific defaults.
 	CreateSession(ctx context.Context, req CreateSessionRequest) (*CreateSessionResponse, error)
 
 	// --- Streaming ---
@@ -364,6 +303,60 @@ type Platform interface {
 	// Events format is the caller's responsibility). Blocks until
 	// the upstream connection closes or ctx is cancelled.
 	ProxyEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error
+}
+
+// Platform is the application-facing session contract served by the
+// registry: canonical adapters and remote proxies. Sessions here are the
+// persisted browsing list.
+type Platform interface {
+	Integration
+	Browsing
+}
+
+// Browsing is the persisted read surface served from statev2 by canonical
+// adapters, or by an authenticated owner for remote proxies.
+type Browsing interface {
+	// Session returns full detail for a single session.
+	Session(ctx context.Context, id string, limit, offset int) (*SessionDetail, error)
+
+	// Owns reports whether this adapter is the owning platform for the
+	// given session ID. It must be cheap and must not make HTTP calls or
+	// run external processes. Returning false on any error is acceptable.
+	Owns(ctx context.Context, sessionID string) bool
+
+	// SessionsInactiveBefore returns archive candidates for the
+	// background auto-archive job.
+	SessionsInactiveBefore(ctx context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error)
+
+	// SessionChanges aggregates every file-touching tool call in the
+	// session into a per-file changes summary. Adapters that don't
+	// support this return ErrUnsupported; the HTTP layer translates
+	// that into Supported=false on the wire.
+	SessionChanges(ctx context.Context, sessionID string) (*SessionChanges, error)
+
+	// SessionInfo returns the "Session info" panel snapshot: context-window
+	// usage, MCP servers and LSP servers. Adapters that don't expose this
+	// return ErrUnsupported.
+	SessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error)
+
+	// --- Session-scoped catalogs ---
+
+	// AgentCatalog returns the platform's composer-agent catalog for
+	// the given session (OpenCode: "build", "plan", subagents).
+	// Platforms without the concept return nil, nil (empty slice).
+	AgentCatalog(ctx context.Context, sessionID string) ([]AgentCatalogEntry, error)
+
+	// SlashCommands returns available slash commands for the session.
+	SlashCommands(ctx context.Context, sessionID string) ([]SlashCommandEntry, error)
+
+	// SessionModels returns the session's model picker list.
+	SessionModels(ctx context.Context, sessionID string) (*SessionModelsResponse, error)
+
+	// DirectoryCatalog returns the agent, command and model catalogs for
+	// a directory that has no session yet (the new-conversation
+	// composer). Platforms without live catalogs return the historical
+	// model list with LiveConnection=false.
+	DirectoryCatalog(ctx context.Context, req DirectoryCatalogRequest) (*DirectoryCatalog, error)
 }
 
 // UnreadCounter is optional: adapters that can cheaply count messages

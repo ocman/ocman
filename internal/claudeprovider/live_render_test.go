@@ -222,7 +222,7 @@ func TestDirectoryCatalogFromCLI(t *testing.T) {
 	cwds := filepath.Join(t.TempDir(), "cwd.log")
 	t.Setenv("FAKE_CLAUDE_CWD_LOG", cwds)
 	h.live.system(&proc{dir: h.dir}, []byte(`{"type":"system","subtype":"init","skills":["ocman:ocman-sessions"],"slash_commands":["review"]}`))
-	cat, err := h.adapter.DirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir})
+	cat, err := h.adapter.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestDirectoryCatalogFromCLI(t *testing.T) {
 	if args := h.launchArgs(t); !strings.Contains(strings.Join(args, " "), "--plugin-dir "+plugin) || strings.Contains(strings.Join(args, " "), "--session-id") {
 		t.Fatalf("initialize args = %q", args)
 	}
-	if _, err := h.adapter.DirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir}); err != nil {
+	if _, err := h.adapter.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir}); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.TrimSpace(string(must(os.ReadFile(cwds)))); got != h.dir && !strings.HasSuffix(got, h.dir) || strings.Count(got, "\n") != 0 {
@@ -253,7 +253,7 @@ func TestDirectoryCatalogFromCLI(t *testing.T) {
 
 	// A CLI that cannot answer leaves commands empty; models stay.
 	t.Setenv("FAKE_CLAUDE_FIXTURE", claudetest.Fixture("plain.jsonl"))
-	cat, err = h.adapter.DirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: t.TempDir()})
+	cat, err = h.adapter.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: t.TempDir()})
 	if err != nil || len(cat.Commands) != 0 || len(cat.Models.Models) != 3 {
 		t.Fatalf("fallback catalog = %+v %v", cat, err)
 	}

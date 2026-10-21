@@ -62,6 +62,7 @@ describe('useSidebarSessions project visibility', () => {
       sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
     try {
       await act(async () => { await view.result.current.loadRecentSessions(); });
+      expect(getSessions).toHaveBeenCalledWith(expect.objectContaining({ view: 'sidebar', limit: 0 }), expect.any(AbortSignal));
       getSessions.mockResolvedValue([{ ...row, pendingPermission: true }]);
       act(() => inboxChanged?.());
       await act(async () => { await vi.advanceTimersByTimeAsync(150); });
@@ -685,7 +686,7 @@ describe('useSidebarSessions live refresh', () => {
     expect(first.result.current.recentSessions).toEqual([row]);
     await act(async () => { await first.result.current.loadRecentSessions(); });
     expect(first.result.current.recentSessions).toEqual([row]);
-    expect(getSessions).toHaveBeenCalledWith({ since: expect.any(Number), limit: 0 }, expect.anything());
+    expect(getSessions).toHaveBeenCalledWith({ since: expect.any(Number), limit: 0, view: 'sidebar' }, expect.anything());
     first.unmount();
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
     const fresh = renderHook(() => useSidebarSessions({ ...options, sessionId: 'ready' }));

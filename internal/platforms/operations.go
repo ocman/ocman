@@ -203,6 +203,7 @@ type SetPermissionRulesRequest struct {
 // existing session — the handler picks the platform from the
 // ?platform= query or defaults to a single registered one.
 type CreateSessionRequest struct {
+	NativeID  string            `json:"-"` // Integration-local, never accepted from REST/RPC or included in intent fingerprints.
 	Creation  *CreationIdentity `json:"creation,omitempty"`
 	Directory string
 	Title     string // Optional custom title for the new session
@@ -218,6 +219,7 @@ type CreateSessionRequest struct {
 type CreateSessionResponse struct {
 	ID                   string `json:"id"`
 	ConfigurationApplied bool   `json:"configurationApplied,omitempty"`
+	Replayed             bool   `json:"replayed,omitempty"`
 }
 
 // AgentCatalogEntry is one entry in a platform's composer-agent

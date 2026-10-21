@@ -27,5 +27,22 @@ func (a *Adapter) HistorySnapshot(ctx context.Context, id string) (*db.HistorySn
 	if a.db == nil {
 		return nil, fmt.Errorf("opencode history source unavailable")
 	}
-	return a.db.HistorySnapshot(ctx, id)
+	snapshot, err := a.db.HistorySnapshot(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("reading OpenCode source snapshot: %w", err)
+	}
+	return a.historyProject(ctx, snapshot, err)
+}
+
+func (a *Adapter) historyProject(ctx context.Context, snapshot *db.HistorySnapshot, err error) (*db.HistorySnapshot, error) {
+	if err != nil || snapshot == nil {
+		return snapshot, err
+	}
+	if snapshot.Session.ProjectID != "" {
+		snapshot.ProjectDirectory, err = a.db.ProjectDirectory(ctx, snapshot.Session.ProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("reading OpenCode project evidence: %w", err)
+		}
+	}
+	return snapshot, err
 }

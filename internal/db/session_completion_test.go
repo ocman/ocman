@@ -29,7 +29,7 @@ func TestV2SyntheticMessageDoesNotAdvanceUserPromptTimestamp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	row, err := d.GetSessionSummary(t.Context(), "ses_a")
+	row, err := summaryRow(t, d, t.Context(), "ses_a"), error(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestSessionCompletionTimestamp(t *testing.T) {
 		if err != nil || len(list) != 1 {
 			t.Fatalf("list = %v, error = %v", list, err)
 		}
-		summary, err := d.GetSessionSummary(t.Context(), "session")
+		summary, err := summaryRow(t, d, t.Context(), "session"), error(nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +129,7 @@ func TestSessionCompletionTimestampV2(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	row, err := d.GetSessionSummary(t.Context(), "ses_a")
+	row, err := summaryRow(t, d, t.Context(), "ses_a"), error(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestLastUserPromptTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	summary, err := d.GetSessionSummary(t.Context(), "prompted")
+	summary, err := summaryRow(t, d, t.Context(), "prompted"), error(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

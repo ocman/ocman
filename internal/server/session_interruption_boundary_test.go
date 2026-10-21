@@ -222,7 +222,7 @@ func TestStopBoundaryAbortEvidence(t *testing.T) {
 }
 
 func registerBoundaryLifecycle(srv *Server, raw *sql.DB, statuses map[string]db.SessionStatus) {
-	srv.registry.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 		var message string
 		var created int64
 		err := raw.QueryRow(`SELECT id,time_created FROM message WHERE session_id=? ORDER BY time_created DESC,id DESC LIMIT 1`, id).Scan(&message, &created)

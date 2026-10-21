@@ -16,7 +16,7 @@ type Usage struct {
 
 func (d *DB) Usage(ctx context.Context, key Key) (Usage, error) {
 	var u Usage
-	err := d.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(cost),0), COALESCE(sum(tokens_input),0),
+	err := d.reader().QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(cost),0), COALESCE(sum(tokens_input),0),
 		COALESCE(sum(tokens_output),0), COALESCE(sum(tokens_reasoning),0), COALESCE(sum(tokens_cache_read),0),
 		COALESCE(sum(tokens_cache_write),0) FROM message WHERE instance_id=? AND session_id=? AND source_deleted=0`,
 		key.InstanceID, key.SessionID).

@@ -47,7 +47,7 @@ func TestSubscriptionUsageV2Credentials(t *testing.T) {
 		_, _ = w.Write([]byte(`{"five_hour":{"utilization":12},"seven_day":{"utilization":34}}`))
 	}))
 	defer upstream.Close()
-	m := newTestModule(Deps{DB: database})
+	m := newTestModule(Deps{SubscriptionCredentials: database.SubscriptionCredentials})
 	m.subscription.authPath = filepath.Join(t.TempDir(), "auth.json")
 	m.subscription.anthropicURL = upstream.URL
 	for _, legacy := range []string{"", `{"anthropic":{"type":"oauth","access":"stale-secret","expires":1}}`} {

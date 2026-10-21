@@ -46,7 +46,7 @@ func TestGetSettingCancelledContext(t *testing.T) {
 
 // openTestStateDB opens a fresh state database with the schema migrated
 // to the latest version.
-func openTestStateDB(t *testing.T) *DB {
+func openTestStateDB(t testing.TB) *DB {
 	t.Helper()
 	stateDB, err := Open(templateDBPath(t))
 	if err != nil {

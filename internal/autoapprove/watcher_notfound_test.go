@@ -28,16 +28,14 @@ func captureSessionRefreshLogs(t *testing.T) *logtest.Hook {
 // ocman creates and deletes short-lived helper sessions (the auto-approve
 // judge, worktree naming) whose rows GetSessionSummary reports as
 // db.ErrSessionNotFound — hidden "… subagent)" rows or deleted rows. Those
-// must finalize the first sighting rather than be retried as failures:
-// retrying busts the sessions snapshot on every event and makes the next
-// list read pay for a full scan.
+// must finalize the first sighting rather than be retried as failures, or
+// every later event would request another ingestion reread.
 
 func TestHandleSessionChangedFinalizesSessionWithNoListRow(t *testing.T) {
 	hook := captureSessionRefreshLogs(t)
 	refreshCalls := make(chan string, 4)
 	release := make(chan struct{})
 	broadcasts := make(chan string, 4)
-	invalidations := make(chan struct{}, 4)
 	svc := &Service{}
 	svc.deps.RefreshSession = func(_ context.Context, sessionID string) error {
 		refreshCalls <- sessionID
@@ -49,17 +47,10 @@ func TestHandleSessionChangedFinalizesSessionWithNoListRow(t *testing.T) {
 
 	w := newAutoApproveWatcher(svc)
 	w.markSessionDirty = func(string) {}
-	w.invalidateSessionsCache = func() { invalidations <- struct{}{} }
 
 	w.handleSessionChanged(t.Context(), "ses-sub")
 	<-refreshCalls
 	close(release)
-
-	select {
-	case <-invalidations:
-		t.Fatal("a session with no list row invalidated the sessions cache")
-	case <-time.After(100 * time.Millisecond):
-	}
 
 	w.seenMu.Lock()
 	_, seen := w.seenSessions["ses-sub"]
@@ -84,11 +75,10 @@ func TestHandleSessionChangedFinalizesSessionWithNoListRow(t *testing.T) {
 	}
 }
 
-func TestHandleSessionChangedStillInvalidatesOnGenuineError(t *testing.T) {
+func TestHandleSessionChangedRetriesGenuineRefreshError(t *testing.T) {
 	hook := captureSessionRefreshLogs(t)
 	refreshCalls := make(chan string, 4)
 	broadcasts := make(chan string, 4)
-	invalidations := make(chan struct{}, 4)
 	svc := &Service{}
 	svc.deps.RefreshSession = func(_ context.Context, sessionID string) error {
 		refreshCalls <- sessionID
@@ -98,15 +88,9 @@ func TestHandleSessionChangedStillInvalidatesOnGenuineError(t *testing.T) {
 
 	w := newAutoApproveWatcher(svc)
 	w.markSessionDirty = func(string) {}
-	w.invalidateSessionsCache = func() { invalidations <- struct{}{} }
 
 	w.handleSessionChanged(t.Context(), "ses-1")
 	<-refreshCalls
-	select {
-	case <-invalidations:
-	case <-time.After(time.Second):
-		t.Fatal("a genuine refresh error did not invalidate the sessions cache")
-	}
 	select {
 	case id := <-broadcasts:
 		if id != "ses-1" {

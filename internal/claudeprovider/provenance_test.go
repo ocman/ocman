@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/permissions"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -26,6 +27,7 @@ import (
 // record it.
 type spoolDownOnReply struct {
 	*provider.Adapter
+	platformtest.NoBrowsing
 	down func()
 }
 
@@ -64,7 +66,7 @@ func TestDelayedAIApprovalKeepsProvenance(t *testing.T) {
 				FallbackJudge: autoapprove.ClaudeJudge{CLI: cli},
 				SessionDir:    func(string) (string, error) { return h.dir, nil }})
 			h, got := promptHarness(t, writeFixture(t, askMake), func(h *liveHarness, e providerprotocol.Event) {
-				aa.HandleProviderEvent(t.Context(), spoolDownOnReply{h.adapter, func() {
+				aa.HandleProviderEvent(t.Context(), spoolDownOnReply{Adapter: h.adapter, down: func() {
 					if armed.CompareAndSwap(true, false) {
 						restores <- h.spoolDown(t, id.Load().(string))
 					}
@@ -100,7 +102,7 @@ func TestDelayedAIApprovalKeepsProvenance(t *testing.T) {
 			for _, typ := range []string{"permission.asked", "permission.replied"} {
 				for _, e := range events {
 					if e.Type == typ {
-						restarted.HandleProviderEvent(t.Context(), h.adapter, e)
+						restarted.HandleProviderEvent(t.Context(), providerPlatform{Adapter: h.adapter}, e)
 					}
 				}
 			}
@@ -192,7 +194,7 @@ func TestLegacySupervisorLeavesApprovalToUser(t *testing.T) {
 		FallbackJudge: autoapprove.ClaudeJudge{CLI: cli},
 		SessionDir:    func(string) (string, error) { return h.dir, nil }})
 	h, _ = promptHarness(t, writeFixture(t, askMake), func(h *liveHarness, e providerprotocol.Event) {
-		aa.HandleProviderEvent(t.Context(), legacyReplies{spoolDownOnReply{h.adapter, func() {
+		aa.HandleProviderEvent(t.Context(), legacyReplies{spoolDownOnReply{Adapter: h.adapter, down: func() {
 			if restore.Load() == nil {
 				r := h.spoolDown(t, id.Load().(string))
 				restore.Store(&r)

@@ -23,6 +23,16 @@ func (s *Server) newLocalHost() hostsvc.Host {
 	namers := map[string]func(context.Context, string, string) (string, error){}
 	if s.registry != nil {
 		for _, adapter := range s.registry.Platforms() {
+			if provider, ok := adapter.(hostsvc.PlatformServiceProvider); ok {
+				services := provider.HostServices()
+				if services.Runtime != nil {
+					runtimes[string(adapter.ID())] = services.Runtime.EnsureRuntime
+				}
+				if services.Namer != nil {
+					namers[string(adapter.ID())] = services.Namer.WorktreeName
+				}
+				continue
+			}
 			if runtime, ok := adapter.(hostsvc.RuntimeEnsurer); ok {
 				runtimes[string(adapter.ID())] = runtime.EnsureRuntime
 			}
@@ -96,8 +106,9 @@ func (s *Server) openCodeDiscovery() *opencode.Discovery {
 		return nil
 	}
 	p, _ := s.registry.Get(opencode.PlatformID)
-	if a, ok := p.(*opencode.Adapter); ok && a != nil {
-		return a.Discovery()
+	if a, ok := p.(platforms.InstancePortProvider); ok {
+		discovery, _ := a.InstancePorts().(*opencode.Discovery)
+		return discovery
 	}
 	return nil
 }

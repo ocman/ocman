@@ -67,7 +67,7 @@ func TestEventContractAndReplay(t *testing.T) {
 	requireNoError(t, err)
 	questions, err := a.ListQuestions(t.Context(), "s")
 	requireNoError(t, err)
-	if len(permissions) != 1 || len(questions) != 1 || !a.Owns(t.Context(), "s") {
+	if len(permissions) != 1 || len(questions) != 1 || !a.Knows("s") {
 		t.Fatal(permissions, questions)
 	}
 	permissions[0]["metadata"].(map[string]any)["command"] = "corrupted"
@@ -165,19 +165,19 @@ func TestProviderInstancesAreIsolated(t *testing.T) {
 	requireNoError(t, err)
 	requireNoError(t, a1.ProxyEvents(t.Context(), "", io.Discard, nil))
 	requireNoError(t, a2.ProxyEvents(t.Context(), "", io.Discard, nil))
-	if a1.Owns(t.Context(), "only-second") || a2.Owns(t.Context(), "only-first") {
+	if a1.Knows("only-second") || a2.Knows("only-first") {
 		t.Fatal("ownership leaked")
 	}
 	if a1.LiveStatus("shared").Status != "busy" || a2.LiveStatus("shared").Status != "limited" {
 		t.Fatal("live cache or event cursor leaked")
 	}
+	if a2.LiveStatus("shared").ResetsAt != 456 {
+		t.Fatal("limited reset time missing from event cache")
+	}
 	p1, _ := a1.ListPermissions(t.Context(), "shared")
 	p2, _ := a2.ListPermissions(t.Context(), "shared")
 	if len(p1) != 1 || len(p2) != 0 {
 		t.Fatal("pending cache leaked")
-	}
-	if a1.sessions["shared"].Directory != "/first" || a2.sessions["shared"].Directory != "/second" {
-		t.Fatal("directory cache leaked")
 	}
 }
 

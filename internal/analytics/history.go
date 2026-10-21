@@ -7,7 +7,8 @@ import (
 )
 
 // HistoryAnalytics configures the conversation analytics reader. Instances must
-// describe every source contributing to the legacy analytics mirror.
+// describe initialized, configured local sources. The bool reports completeness;
+// an incomplete import still serves committed data without a native fallback.
 type HistoryAnalytics struct {
 	Store       *statev2.DB
 	Instances   func() ([]string, bool)

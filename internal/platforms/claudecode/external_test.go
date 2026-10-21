@@ -56,7 +56,7 @@ func TestContinueExternalSessionOnProjectSupervisor(t *testing.T) {
 	go func() { _ = p.WatchEvents(ctx) }()
 	var detail *platforms.SessionDetail
 	eventually(t, "external transcript indexed", func() bool {
-		detail, err = p.Session(ctx, id, 10, 0)
+		detail, err = runtimeDetail(ctx, p, id, 10, 0)
 		return err == nil && detail.Session != nil
 	})
 	if !detail.Session.LiveConnection {
@@ -105,3 +105,13 @@ func TestContinueExternalSessionOnProjectSupervisor(t *testing.T) {
 type discardStream struct{}
 
 func (*discardStream) Write(p []byte) (int, error) { return len(p), nil }
+
+// runtimeDetail reads the supervisor page that serves id: the project
+// supervisor for a launched session, else the browsing supervisor.
+func runtimeDetail(ctx context.Context, p *claudePlatform, id string, limit, offset int) (*platforms.SessionDetail, error) {
+	a, err := p.adapter(ctx, id, false)
+	if err != nil {
+		return nil, err
+	}
+	return a.RuntimeDetail(ctx, id, limit, offset)
+}

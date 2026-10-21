@@ -10,7 +10,7 @@ import (
 // without one query per session.
 func (d *DB) Checkpoints(ctx context.Context, instanceID, prefix string) (map[string]string, error) {
 	// substr() avoids LIKE wildcards in caller-supplied prefixes.
-	rows, err := d.db.QueryContext(ctx, `SELECT stream,cursor FROM checkpoint WHERE instance_id=? AND substr(stream,1,?)=?`,
+	rows, err := d.reader().QueryContext(ctx, `SELECT stream,cursor FROM checkpoint WHERE instance_id=? AND substr(stream,1,?)=?`,
 		instanceID, len(prefix), prefix)
 	if err != nil {
 		return nil, err

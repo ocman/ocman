@@ -122,7 +122,8 @@ func TestStatsMetrics_NilDB(t *testing.T) {
 // collections must still report the computed values, proving the export path
 // no longer runs GetStats (finding: 120 mirror syncs per hour came from here).
 func TestStatsMetricsCallbackDoesNotQueryDB(t *testing.T) {
-	srv := newFixture(t).Module
+	fixture := newFixture(t)
+	srv := fixture.Module
 	var calls atomic.Int64
 	srv.getStats = func(context.Context) (*db.Stats, error) {
 		calls.Add(1)
@@ -135,7 +136,7 @@ func TestStatsMetricsCallbackDoesNotQueryDB(t *testing.T) {
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("refresh calls = %d, want 1", got)
 	}
-	if err := srv.deps.DB.Close(); err != nil {
+	if err := fixture.legacy.Close(); err != nil {
 		t.Fatal(err)
 	}
 

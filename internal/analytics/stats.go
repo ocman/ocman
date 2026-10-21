@@ -19,7 +19,7 @@ const statsRefreshInterval = 2 * time.Minute
 // computations never overlap and the OTel export path does no database work.
 // It returns when ctx ends.
 func (m *Module) runStatsRefreshLoop(ctx context.Context) {
-	if m.deps.DB == nil || ctx.Err() != nil {
+	if m.deps.HistoryAnalytics == nil && m.getStats == nil || ctx.Err() != nil {
 		return
 	}
 	interval := m.statsRefreshEvery
@@ -50,7 +50,10 @@ func (m *Module) runStatsRefreshLoop(ctx context.Context) {
 func (m *Module) refreshStats(ctx context.Context) {
 	getStats := m.getStats
 	if getStats == nil {
-		getStats = m.deps.DB.GetStats
+		getStats = func(ctx context.Context) (stats *db.Stats, err error) {
+			err = m.withStoredAnalytics(ctx, func(reader *db.DB) error { stats, err = reader.GetStats(ctx); return err })
+			return stats, err
+		}
 	}
 	stats, err := getStats(ctx)
 	if err != nil {
@@ -71,16 +74,15 @@ func (m *Module) cachedStats() *db.Stats {
 }
 
 // registerStatsMetrics creates observable gauges for the top-line stats
-// from the OpenCode database (session/message/project counts, lifetime
+// from statev2 (session/message/project counts, lifetime
 // tokens and cost). The callback only observes the last snapshot computed
 // by runStatsRefreshLoop — collecting metrics never touches the database.
 // Nothing is observed until the first successful computation.
 //
-// Returns nil registration (and nil error) when the OpenCode DB is nil, which
-// happens when the OpenCode platform is not enabled. Callers should
+// Returns nil registration (and nil error) without a history reader. Callers should
 // treat a nil return as "nothing to clean up".
 func (m *Module) registerStatsMetrics(ctx context.Context, meter metric.Meter) (metric.Registration, error) {
-	if m.deps.DB == nil {
+	if m.deps.HistoryAnalytics == nil && m.getStats == nil {
 		return nil, nil
 	}
 

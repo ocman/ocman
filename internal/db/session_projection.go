@@ -1,8 +1,6 @@
 package db
 
 import (
-	"context"
-	"database/sql"
 	"errors"
 	"strings"
 )
@@ -124,20 +122,4 @@ func scanSessionRow(scan func(dest ...any) error) (s Session, keep bool, err err
 		return s, false, nil
 	}
 	return s, true, nil
-}
-
-// GetSessionSummary incrementally refreshes exactly the list's projection.
-func (d *DB) GetSessionSummary(ctx context.Context, sessionID string) (Session, error) {
-	row := d.db.QueryRowContext(ctx, sessionListSelection+` WHERE s.id = ?`+d.sessionListProjection(), sessionID)
-	s, keep, err := scanSessionRow(row.Scan)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Session{}, ErrSessionNotFound
-		}
-		return Session{}, err
-	}
-	if !keep {
-		return Session{}, ErrSessionNotFound
-	}
-	return s, nil
 }

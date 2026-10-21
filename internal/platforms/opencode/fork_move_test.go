@@ -36,7 +36,7 @@ func TestAdapterForkSession_EndToEnd(t *testing.T) {
 
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
 	resp, err := a.ForkSession(context.Background(), platforms.ForkSessionRequest{
 		SessionID: sid,
@@ -74,7 +74,7 @@ func TestAdapterForkSession_NoMessageIDOmitsField(t *testing.T) {
 
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
 	if _, err := a.ForkSession(context.Background(), platforms.ForkSessionRequest{SessionID: sid}); err != nil {
 		t.Fatalf("ForkSession: %v", err)
@@ -96,7 +96,7 @@ func TestAdapterForkSession_BadResponse(t *testing.T) {
 
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
 	if _, err := a.ForkSession(context.Background(), platforms.ForkSessionRequest{SessionID: sid}); err == nil {
 		t.Error("ForkSession: expected error for response with no id")
@@ -128,7 +128,7 @@ func TestAdapterMoveSession_EndToEnd(t *testing.T) {
 
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
 	if err := a.MoveSession(context.Background(), platforms.MoveSessionRequest{
 		SessionID: sid,
@@ -164,7 +164,7 @@ func TestAdapterMoveSession_UpstreamRejection(t *testing.T) {
 
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
 	err := a.MoveSession(context.Background(), platforms.MoveSessionRequest{
 		SessionID: sid,

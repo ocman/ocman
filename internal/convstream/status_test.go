@@ -40,6 +40,9 @@ func TestIdleEdgeSettlesThroughLifecycle(t *testing.T) {
 			}
 			sink.Emit(idle(), Meta{})
 			got := await(t, sub, convevents.TypeTurnEnded)
+			if tc.lc != nil {
+				got = append(got, await(t, sub, convevents.TypeSessionStatus)...)
+			}
 			got = append(got, decodeAll(t, drain(sub))...)
 			if !slices.Equal(types(got), tc.want) {
 				t.Fatalf("idle edge = %v, want %v", types(got), tc.want)

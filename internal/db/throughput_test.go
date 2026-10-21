@@ -7,33 +7,6 @@ import (
 	"time"
 )
 
-func TestModelDuration(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		start, end int64
-		tools      []toolTiming
-		want       int64
-	}{
-		{"plain", 1000, 11000, nil, 10000},
-		{"invalid start", 0, 11000, nil, 0},
-		{"invalid end", 1000, 1000, nil, 0},
-		{"overlap", 1000, 11000, []toolTiming{{Start: 5000, End: 11000}, {Start: 3000, End: 9000}}, 2000},
-		{"disjoint", 1000, 11000, []toolTiming{{Start: 2000, End: 3000}, {Start: 5000, End: 6000}}, 8000},
-		{"clipped", 1000, 11000, []toolTiming{{Start: 100, End: 2000}, {Start: 10000, End: 15000}}, 8000},
-		{"outside", 1000, 11000, []toolTiming{{Start: 100, End: 500}, {Start: 12000, End: 15000}}, 10000},
-		{"missing", 1000, 11000, []toolTiming{{End: 5000}}, 0},
-		{"unfinished", 1000, 11000, []toolTiming{{Start: 2000}}, 0},
-		{"reversed", 1000, 11000, []toolTiming{{Start: 5000, End: 2000}}, 0},
-		{"all wait", 1000, 11000, []toolTiming{{Start: 1000, End: 11000}}, 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := modelDuration(tc.start, tc.end, tc.tools); got != tc.want {
-				t.Fatalf("got %d, want %d", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestThroughputMissingTimingDoesNotDeflateAverages(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

@@ -136,7 +136,8 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	if err != nil {
 		var uncertain *sessionsvc.CreationUncertainError
 		var cleanup *sessionsvc.ConfiguredSessionCleanupError
-		if !errors.As(err, &uncertain) && !errors.As(err, &cleanup) {
+		var pending *platforms.CreationPendingError
+		if !errors.As(err, &uncertain) && !errors.As(err, &cleanup) && !errors.As(err, &pending) {
 			rollback()
 		}
 		return nil, fmt.Errorf("creating worktree session: %w", err)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -18,31 +17,23 @@ import (
 func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error {
 	streamCtx, cancelStream := context.WithCancel(ctx)
 	defer cancelStream()
-	apiURL := fmt.Sprintf("http://127.0.0.1:%s/global/event", port)
-	req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return fmt.Errorf("build /global/event request: %w", err)
-	}
 	// Discovery leaves a listed port's stream alone, so a stream that
 	// stops producing bytes (heartbeats included) without closing must end
 	// here, or the reconnect that reseeds status and prompts never runs.
 	// Armed before Do, so it also bounds the wait for headers.
 	idle := platforms.NewIdleWatchdog(w.idleTimeout, cancelStream)
 	defer idle.Stop()
-	resp, err := w.httpClient.Do(req)
+	body, err := opencode.OpenGlobalEvents(streamCtx, w.httpClient, port)
 	if err != nil {
 		if idle.Expired() {
 			return fmt.Errorf("connect /global/event: %w", platforms.ErrSSEIdleTimeout)
 		}
 		return fmt.Errorf("connect /global/event: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("/global/event upstream HTTP %d", resp.StatusCode)
-	}
+	defer body.Close()
 
 	adapter := w.svc.OpencodeAdapter()
-	ocAdapter, _ := adapter.(*opencode.Adapter)
+	ocAdapter := platforms.OpenCodeObserver(adapter)
 	portGeneration := uint64(0)
 	statusGeneration := uint64(0)
 	firstReconciliationFinished := make(chan struct{})
@@ -215,7 +206,11 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			}
 		},
 	}
-	_, err = io.Copy(tee, idle.Reader(resp.Body))
+	var eventWriter io.Writer = tee
+	if projector, ok := adapter.(platforms.SessionEventProjector); ok {
+		eventWriter = projector.SessionEventWriter(streamCtx, tee)
+	}
+	_, err = io.Copy(eventWriter, idle.Reader(body))
 	close(commitParts)
 	<-commitDone
 	<-firstReconciliationFinished

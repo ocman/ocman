@@ -124,12 +124,15 @@ func (c *claudeProjects) drainingFor(ctx context.Context, id string) *drained {
 	if !owned {
 		return nil
 	}
-	root, err := local.ProviderRoot(ctx, dir)
-	if err != nil {
-		return nil
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	_, root := c.boundOwnerLocked(id)
+	if root == "" {
+		root, _ = claudeprovider.OwnedProjectRoot(c.statePath, id)
+	}
+	if root == "" {
+		root, _ = local.ProviderRoot(ctx, dir)
+	}
 	return c.draining[root]
 }
 

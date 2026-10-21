@@ -51,7 +51,7 @@ func settledAs(t *testing.T, a *provider.Adapter, id string, want db.SessionStat
 	if life, err := a.SessionLifecycle(t.Context(), id); err != nil || life.Status != want {
 		t.Fatalf("lifecycle = %+v %v, want %s", life, err, want)
 	}
-	if d, err := a.Session(t.Context(), id, 1, 0); err != nil || d.Session.Status != want {
+	if d, err := a.RuntimeDetail(t.Context(), id, 1, 0); err != nil || d.Session.Status != want {
 		t.Fatalf("detail = %+v %v, want %s", d, err, want)
 	}
 }

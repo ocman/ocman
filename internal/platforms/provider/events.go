@@ -91,6 +91,12 @@ func (a *Adapter) streamURL(ctx context.Context, id string, after uint64, w io.W
 	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		return fmt.Errorf("provider /events is not SSE")
 	}
+	if acknowledge {
+		a.mu.Lock()
+		a.headlessConnected = true
+		a.mu.Unlock()
+		defer func() { a.mu.Lock(); a.headlessConnected = false; a.mu.Unlock() }()
+	}
 	scanner := bufio.NewScanner(watchdog.Reader(resp.Body))
 	scanner.Buffer(make([]byte, 4096), providerprotocol.MaxEventBytes)
 	var data strings.Builder
@@ -251,10 +257,7 @@ func (a *Adapter) observe(seq uint64, event providerprotocol.Event) (string, err
 		return id, nil
 	}
 	if id != "" {
-		s := a.sessions[id]
-		s.ID = id
-		s.Platform = string(a.ID())
-		a.sessions[id] = s
+		a.known[id] = true
 	}
 	var status db.SessionStatus
 	var resetsAt int64
@@ -343,12 +346,12 @@ func (a *Adapter) observe(seq uint64, event providerprotocol.Event) (string, err
 		}
 		live := a.live[id]
 		live.Status = string(status)
+		live.ResetsAt = 0
+		if status == db.StatusLimited {
+			live.ResetsAt = resetsAt
+		}
 		live.LastEventAt = time.Now()
 		a.live[id] = live
-		s := a.sessions[id]
-		s.Status = status
-		s.ResetsAt = resetsAt
-		a.sessions[id] = s
 	}
 	a.seq = seq
 	sink := a.sink

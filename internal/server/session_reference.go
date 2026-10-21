@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 )
 
 // sessionReferenceScope is the common owner policy for REST bodies, queries and
@@ -19,15 +20,21 @@ func newSessionReferenceScope(platform, remote string) sessionReferenceScope {
 }
 
 func (scope *sessionReferenceScope) resolve(ctx context.Context, s *Server, id string, inheritedParent bool) (string, error) {
-	if !strings.HasPrefix(id, "ocm_") {
-		return id, nil
+	if id == "" {
+		return "", nil
+	}
+	if identity.IsPendingReference(id) {
+		return "", platforms.ErrPlatformUnreachable
 	}
 	platform := scope.platform
 	// Permission inheritance names a source, not the new session's target.
 	if inheritedParent {
 		platform = ""
 	}
-	info, err := s.sessions.LookupSessionIdentity(ctx, platform, platforms.SessionIdentityRequest{ID: id})
+	if !strings.HasPrefix(id, "ocm_") && (s == nil || s.sessions == nil || !s.sessions.CanonicalSessionReferences(platform)) {
+		return id, nil
+	}
+	info, err := s.sessions.LookupSessionReference(ctx, platform, id)
 	if err != nil {
 		return "", err
 	}
@@ -38,5 +45,5 @@ func (scope *sessionReferenceScope) resolve(ctx context.Context, s *Server, id s
 		}
 		scope.platform = info.Platform
 	}
-	return info.NativeID, nil
+	return s.sessions.CoreSessionReference(info), nil
 }

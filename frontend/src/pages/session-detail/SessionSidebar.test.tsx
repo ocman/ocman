@@ -149,6 +149,15 @@ describe('SessionSidebar', () => {
     }
   });
 
+  it('renders the stored branch before git info is available', () => {
+    render(<MemoryRouter><SidebarSessionRow session={session({ branch: 'fix/sidebar', lastMessageAt: 1000000, timeUpdated: 2000000 })}
+      inGroup={false} flat active={false} activeId="other" activeDisplayStatus="done" archiving={false}
+      draft={false} debugMode={false} gitInfo={undefined} onNavigateToSession={vi.fn()}
+      onArchiveSession={vi.fn()} onPinSession={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByText('fix/sidebar')).toBeInTheDocument();
+    expect(screen.getByTitle(new Date(1000000).toLocaleString())).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     useNewConversationDrafts.setState({ drafts: [] });

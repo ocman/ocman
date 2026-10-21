@@ -42,13 +42,16 @@ func TestRemoteConnRequiresExplicitPlaintextOptIn(t *testing.T) {
 }
 
 func TestProtocolCompatible(t *testing.T) {
-	if ProtocolVersion != 8 {
-		t.Fatalf("ProtocolVersion = %d, want 8 for owner-allocated session identities", ProtocolVersion)
+	if ProtocolVersion != 9 {
+		t.Fatalf("ProtocolVersion = %d, want 9 for canonical core session references", ProtocolVersion)
 	}
 	if !protocolCompatible(ProtocolVersion) {
 		t.Error("current protocol version should be compatible")
 	}
-	for _, version := range []int32{ProtocolVersion - 1, ProtocolVersion + 1} {
+	if !protocolCompatible(legacySessionProtocol) {
+		t.Fatal("legacy integration transport was rejected")
+	}
+	for _, version := range []int32{legacySessionProtocol - 1, ProtocolVersion + 1} {
 		if protocolCompatible(version) {
 			t.Errorf("protocol version %d must be incompatible (exact match)", version)
 		}

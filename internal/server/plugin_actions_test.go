@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/statev2"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
@@ -222,27 +221,14 @@ func TestPluginActionProjectPathGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sdb.Close() })
-	// The project inventory the resolver reads: OpenCode's project table holds
-	// the one root per ID, and the sibling-worktree session (inserted first)
-	// shares prd_1 without changing which directory resolves.
-	odb := filepath.Join(dir, "opencode.db")
-	rw, err := sql.Open("sqlite", "file:"+odb)
-	if err != nil {
-		t.Fatal(err)
+	s := &Server{stateDB: sdb, auth: newTestAuth(t, "secret")}
+	history := storedProjectFixture(t, s)
+	for _, directory := range []string{"/home/dev/.worktrees/project-a/b", "/home/dev/project-a"} {
+		if _, err := history.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "fixture", SessionID: directory}, ProjectID: "prd_1", Directory: directory, Extensions: json.RawMessage(`{"ProjectDirectory":"/home/dev/project-a"}`)}}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := rw.Exec(`CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
-		CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, directory TEXT);
-		INSERT INTO project VALUES ('prd_1','/home/dev/project-a');
-		INSERT INTO session VALUES ('ses-0','prd_1','/home/dev/.worktrees/project-a/b'), ('ses-1','prd_1','/home/dev/project-a')`); err != nil {
-		t.Fatal(err)
-	}
-	_ = rw.Close()
-	ocdb, err := db.Open(odb)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = ocdb.Close() })
-	s := bindPlugins(&Server{stateDB: sdb, db: ocdb, auth: newTestAuth(t, "secret")}, t.Context())
+	bindPlugins(s, t.Context())
 	t.Cleanup(s.stopPluginProcesses)
 	d := plugins.Description{ID: "org.example.path", Name: "Path", Version: "1", Protocol: plugins.Version{Major: 1}, Scope: plugins.ScopeOwner, MaxConcurrency: 1,
 		Capabilities: []plugins.Capability{plugins.ActionCapability}, RequestedGrants: []string{"context.project", "context.project.path"},

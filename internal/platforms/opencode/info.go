@@ -1,15 +1,12 @@
 package opencode
 
 import (
-	"context"
 	"encoding/json"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
 // rawMCPEntry mirrors a single value in OpenCode's `GET /mcp`
@@ -31,132 +28,6 @@ type rawLSPEntry struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
-}
-
-// SessionInfo collects the per-session info snapshot consumed by the
-// "Session info" right-hand panel.
-//
-// Two tiers of work:
-//
-//   - Always: the lifetime token totals (input/output/cache.read/
-//     cache.write) and the latest todowrite list. Both come from the
-//     read-only DB so they're available even when no OpenCode
-//     instance is currently running for this session's directory.
-//
-//   - Live (only when a port is discovered): the per-model context
-//     window, configured MCP servers + status, and configured LSP
-//     servers + status. These require an HTTP round-trip to the
-//     running OpenCode instance.
-//
-// `Supported` reflects the live tier specifically: when false, the
-// frontend hides the live sections but still renders the always-on
-// data (tokens / todos) and the cross-platform Session metadata
-// (project / branch / messages / duration / changes / cost) it gets
-// from the regular session payload.
-func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms.SessionInfo, error) {
-	if a.db == nil {
-		return nil, platforms.ErrNotFound
-	}
-	dbSession, err := a.db.GetSession(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	defaults, _ := getSessionDefaultsCached(ctx, a.db, sessionID, dbSession.Directory)
-	modelRef := defaults.Model
-
-	port := a.rt.resolveOpenCodePortForSessionCtx(ctx, sessionID, dbSession.Directory)
-	if port == "" {
-		// No live channel — compute the always-on tier from the
-		// read-only DB and return Supported=false so the frontend
-		// hides MCP/LSP/context-window while still rendering tokens
-		// and todos.
-		tier := alwaysOnTierFromDB(ctx, a.db, sessionID, a.pricing)
-		return &platforms.SessionInfo{
-			SessionID:  sessionID,
-			Supported:  false,
-			Tokens:     tier.tokens,
-			Messages:   tier.messages,
-			Todos:      tier.todos,
-			MCPServers: []platforms.MCPServer{},
-			LSPServers: []platforms.LSPServer{},
-			Context: platforms.ContextInfo{
-				Tokens:  tier.ctxTokens,
-				Cost:    tier.cost,
-				EstCost: tier.estCost,
-				Model:   modelRef,
-			},
-		}, nil
-	}
-
-	// Live tier: fan out four independent fetches in parallel. Each
-	// failure is tolerated — the builder fills in zero values for
-	// whatever we couldn't fetch.
-	//
-	// The fourth slot used to fetch /session/{id}/message *just for*
-	// the context-token rollup, on top of an unconditional DB read
-	// for the other always-on data (tokens / messages / todos / cost).
-	// We now reuse that single live fetch as the source of truth for
-	// the entire always-on tier, falling back to the DB only if the
-	// live fetch fails. Net effect: live-path SessionInfo drops three
-	// DB queries (GetSessionMessages, GetSessionParts,
-	// GetContextTokenCount) and goes from "DB walk + live walk" to
-	// "live walk only".
-	var (
-		mcp      map[string]rawMCPEntry
-		lsp      []rawLSPEntry
-		prov     OpenCodeProvidersResponse
-		hasPrv   bool
-		liveOK   bool
-		liveTier alwaysOnTier
-		wg       sync.WaitGroup
-	)
-	parallelPhase := srvtiming.Begin(ctx, "http_parallel")
-	wg.Add(4)
-	go func() {
-		defer wg.Done()
-		p := srvtiming.Begin(ctx, "http_mcp")
-		mcp = fetchOpenCodeMCP(port)
-		p.EndWithDesc("GET /mcp")
-	}()
-	go func() {
-		defer wg.Done()
-		p := srvtiming.Begin(ctx, "http_lsp")
-		lsp = fetchOpenCodeLSP(port)
-		p.EndWithDesc("GET /lsp")
-	}()
-	go func() {
-		defer wg.Done()
-		p := srvtiming.Begin(ctx, "http_provider")
-		prov, hasPrv = fetchOpenCodeProviders(ctx, port, dbSession.Directory)
-		p.EndWithDesc("GET /provider")
-	}()
-	go func() {
-		defer wg.Done()
-		p := srvtiming.Begin(ctx, "live_tier")
-		liveTier, liveOK = alwaysOnTierFromOpenCode(ctx, port, sessionID, a.pricing)
-		p.EndWithDesc("GET /session/{id}/message + aggregate")
-	}()
-	wg.Wait()
-	parallelPhase.EndWithDesc("info 4-way fan-out")
-
-	var provPtr *OpenCodeProvidersResponse
-	if hasPrv {
-		provPtr = &prov
-	}
-	// Pick the tier we'll surface. The live fetch is preferred when
-	// it succeeds; on upstream failure we fall back to the DB so
-	// transient OpenCode problems don't blank the panel.
-	tier := liveTier
-	if !liveOK {
-		tier = alwaysOnTierFromDB(ctx, a.db, sessionID, a.pricing)
-	}
-
-	info := buildSessionInfo(sessionID, tier.ctxTokens, tier.cost, tier.estCost, modelRef, mcp, lsp, provPtr)
-	info.Tokens = tier.tokens
-	info.Messages = tier.messages
-	info.Todos = tier.todos
-	return info, nil
 }
 
 // alwaysOnTier collects the per-session data the SessionInfo panel
@@ -226,36 +97,6 @@ func contextTokensFromMessages(messages []db.Message) int64 {
 		return total
 	}
 	return 0
-}
-
-// alwaysOnTierFromDB pulls messages + parts from the read-only DB
-// and runs computeAlwaysOnTier. DB errors are non-fatal (the panel
-// still renders, just with zero values for whatever failed) which
-// matches the prior best-effort behaviour.
-func alwaysOnTierFromDB(ctx context.Context, database *db.DB, sessionID string, pricing CostCalculator) alwaysOnTier {
-	messages, _ := database.GetSessionMessages(ctx, sessionID)
-	parts, _ := database.GetSessionParts(ctx, sessionID)
-	return computeAlwaysOnTier(messages, parts, pricing)
-}
-
-// alwaysOnTierFromOpenCode fetches the running session's full message
-// history once over HTTP, converts it to the typed Message+Part shape
-// the aggregators expect, and runs computeAlwaysOnTier. Returns
-// (zero, false) on any upstream failure so the caller falls back to
-// the DB.
-//
-// This is the consolidated single fetch that replaces the legacy
-// pattern (DB walk for tokens/messages/todos/cost + a separate live
-// fetch only for the context-token rollup). One round-trip, one walk.
-func alwaysOnTierFromOpenCode(ctx context.Context, port, sessionID string, pricing CostCalculator) (alwaysOnTier, bool) {
-	raw, err := fetchOpenCodeMessages(ctx, port, sessionID)
-	if err != nil {
-		return alwaysOnTier{}, false
-	}
-	untypedMsgs, untypedParts := convertOpenCodeMessages(raw)
-	messages := typedMessagesFromUntyped(untypedMsgs)
-	parts := typedPartsFromUntyped(untypedParts)
-	return computeAlwaysOnTier(messages, parts, pricing), true
 }
 
 // tokenTotalsFromMessages sums the lifetime token usage for a session

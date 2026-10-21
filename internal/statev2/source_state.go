@@ -11,7 +11,7 @@ import (
 // version hints and verification times. It is advisory: losing it only causes
 // extra source reads, never lost or duplicated history.
 func (d *DB) SourceState(ctx context.Context, instanceID string) (map[string]string, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT key,value FROM source_state WHERE instance_id=?`, instanceID)
+	rows, err := d.reader().QueryContext(ctx, `SELECT key,value FROM source_state WHERE instance_id=?`, instanceID)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func (d *DB) SourceState(ctx context.Context, instanceID string) (map[string]str
 // SourceValue reads one bookkeeping value; a missing key is empty.
 func (d *DB) SourceValue(ctx context.Context, instanceID, key string) (string, error) {
 	var value string
-	err := d.db.QueryRowContext(ctx, `SELECT value FROM source_state WHERE instance_id=? AND key=?`, instanceID, key).Scan(&value)
+	err := d.reader().QueryRowContext(ctx, `SELECT value FROM source_state WHERE instance_id=? AND key=?`, instanceID, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 // WithOpenCodeDBPath enables OpenCode database maintenance for the
@@ -38,7 +37,6 @@ func (s *Server) WithOpenCodeDBPath(path string) *Server {
 		},
 		Holders:   ocmaint.LsofHolders,
 		FreeBytes: ocmaint.FreeBytes,
-		OnChanged: opencode.InvalidateSessionsCache,
 	}), module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost})
 	return s
 }

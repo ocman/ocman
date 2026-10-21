@@ -145,6 +145,9 @@ func applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (int64, er
 	if err := retainRemovals(ctx, tx, key, b); err != nil {
 		return 0, err
 	}
+	if err := refreshSidebar(ctx, tx, key); err != nil {
+		return 0, err
+	}
 	if err := refreshAnalyticsSummary(ctx, tx, key, changedAnalyticsMessages(b)); err != nil {
 		return 0, err
 	}

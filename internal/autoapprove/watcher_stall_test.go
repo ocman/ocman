@@ -64,7 +64,7 @@ func TestAutoApproveWatcherReconnectsSilentStreamOnListedPort(t *testing.T) {
 	adapter := opencode.New(nil, nil)
 	statuses := make(chan db.SessionStatus, 4)
 	svc := NewService(Deps{
-		OpencodePlatform:       func() platforms.Platform { return adapter },
+		OpencodePlatform:       func() platforms.Platform { return openCodePlatform{Adapter: adapter} },
 		BroadcastSessionStatus: func(_ string, s db.SessionStatus) { statuses <- s },
 	})
 	w := newAutoApproveWatcher(svc)

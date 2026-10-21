@@ -138,6 +138,12 @@ func (s *Service) applyManualAction(ctx context.Context, adapter platforms.Platf
 		_ = s.deps.Store.UpsertPermissionLifecycle(ctx, state.PermissionLifecycle{Platform: string(adapter.ID()), SessionID: sessionID, PermissionID: permissionID, ResolvedAt: time.Now().UnixMilli(), Resolution: state.PermissionResolution("rule-" + action)})
 	}
 	if store, ok := s.deps.Store.(interface {
+		ResolvePermissionInboxItemKey(context.Context, string, string, string, string) error
+	}); ok {
+		if key, err := platforms.PermissionNotificationKey(ctx, adapter, string(adapter.ID()), sessionID, permissionID); err == nil {
+			_ = store.ResolvePermissionInboxItemKey(ctx, key, string(adapter.ID()), sessionID, permissionID)
+		}
+	} else if store, ok := s.deps.Store.(interface {
 		ResolvePermissionInboxItem(context.Context, string, string, string) error
 	}); ok {
 		_ = store.ResolvePermissionInboxItem(ctx, string(adapter.ID()), sessionID, permissionID)

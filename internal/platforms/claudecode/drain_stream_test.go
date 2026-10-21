@@ -44,6 +44,10 @@ func sseSocket(t *testing.T, session string, opened chan<- struct{}) string {
 				Capabilities: providerprotocol.Capabilities{Capabilities: platforms.Capabilities{Events: true}}})
 			return
 		}
+		if r.URL.Path == "/sessions" {
+			_ = json.NewEncoder(w).Encode([]any{})
+			return
+		}
 		if !strings.HasPrefix(r.URL.Path, "/events") {
 			w.WriteHeader(http.StatusNotFound)
 			return

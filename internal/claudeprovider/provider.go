@@ -234,6 +234,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) list(r *http.Request) ([]db.Session, error) {
+	if r.URL.Query().Get("runtime") != "" {
+		return h.live.pending(nil, r.URL.Query().Get("directory")), nil
+	}
 	if r.URL.Query().Get("live") != "" {
 		return h.live.statuses(), nil
 	}

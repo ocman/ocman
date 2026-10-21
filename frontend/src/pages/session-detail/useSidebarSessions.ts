@@ -153,7 +153,7 @@ export function useSidebarSessions({
         const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
         // /api/sessions can serialize a Go nil slice as JSON `null`;
         // coerce here so .find() / filterVisibleSessions never see null.
-        const result = (await getSessions({ since, limit: 0 }, signal)) ?? [];
+        const result = (await getSessions({ since, limit: 0, view: 'sidebar' }, signal)) ?? [];
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         // Child sessions are useful while active; completed output has
         // already bubbled up to the parent.

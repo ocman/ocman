@@ -42,10 +42,6 @@ type httpCache struct {
 
 	flight singleflight.Group
 
-	sharedMu  sync.Mutex
-	shared    map[string]*sharedFetch
-	sharedSeq uint64
-
 	// metrics is the per-cache instrumentation handle. Zero value
 	// (empty Name) makes every Record* call a no-op so the cache
 	// works fine in tests that construct it via newHTTPCache without
@@ -113,12 +109,6 @@ func (c *httpCache) get(port, path string) ([]byte, bool) {
 	return e.body, true
 }
 
-// put stores a successful response. Overwrites any existing entry for
-// the same key.
-func (c *httpCache) put(port, path string, body []byte) {
-	c.putForGeneration(port, path, body, c.generation(port))
-}
-
 func (c *httpCache) generation(port string) uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -155,19 +145,6 @@ func (c *httpCache) putForGeneration(port, path string, body []byte, generation 
 	}
 	c.mu.Unlock()
 	c.metrics.RecordEvictions(context.Background(), dropped)
-}
-
-// invalidate drops a single (port, path) entry. Useful after a
-// mutating op that would change the upstream response. Currently
-// unused; provided for future call sites.
-func (c *httpCache) invalidate(port, path string) {
-	c.mu.Lock()
-	_, existed := c.entries[httpCacheKey{port, path}]
-	delete(c.entries, httpCacheKey{port, path})
-	c.mu.Unlock()
-	if existed {
-		c.metrics.RecordEvictions(context.Background(), 1)
-	}
 }
 
 // invalidatePort drops every entry for a port. ClearPromptsForPort calls it
@@ -220,33 +197,6 @@ func (c *httpCache) getOrFetchContext(ctx context.Context, port, path string, fe
 	return c.fetchFlight(ctx, port, path, "", fetcher)
 }
 
-// sharedFetch is one upstream request shared by every caller waiting on
-// it. It runs on its own context, cancelled only when the last waiter
-// leaves: one caller's cancellation never fails the others, while an
-// abandoned request still stops its upstream work.
-type sharedFetch struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	waiters int
-	id      uint64
-}
-
-// getOrFetchShared is getOrFetchContext for fetchers that honour a
-// context; fetch receives the shared request's context, not ctx.
-func (c *httpCache) getOrFetchShared(ctx context.Context, port, path string, fetch func(context.Context) ([]byte, bool)) ([]byte, bool) {
-	if ctx.Err() != nil {
-		return nil, false
-	}
-	key := port + "|" + path
-	shared := c.joinShared(ctx, key)
-	defer c.leaveShared(key, shared)
-	// The id keeps a newcomer off a flight whose waiters all left (and
-	// which is therefore being cancelled).
-	return c.fetchFlight(ctx, port, path, fmt.Sprintf("#%d", shared.id), func() ([]byte, bool) {
-		return fetch(shared.ctx)
-	})
-}
-
 func (c *httpCache) fetchFlight(ctx context.Context, port, path, flightSuffix string, fetcher func() ([]byte, bool)) ([]byte, bool) {
 	if ctx.Err() != nil {
 		return nil, false
@@ -287,36 +237,6 @@ func (c *httpCache) fetchFlight(ctx context.Context, port, path, flightSuffix st
 		}
 		body, _ := result.Val.([]byte)
 		return body, body != nil
-	}
-}
-
-func (c *httpCache) joinShared(ctx context.Context, key string) *sharedFetch {
-	c.sharedMu.Lock()
-	defer c.sharedMu.Unlock()
-	if c.shared == nil {
-		c.shared = map[string]*sharedFetch{}
-	}
-	shared := c.shared[key]
-	if shared == nil {
-		c.sharedSeq++
-		// WithoutCancel keeps the first caller's trace parent.
-		sharedCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-		shared = &sharedFetch{ctx: sharedCtx, cancel: cancel, id: c.sharedSeq}
-		c.shared[key] = shared
-	}
-	shared.waiters++
-	return shared
-}
-
-func (c *httpCache) leaveShared(key string, shared *sharedFetch) {
-	c.sharedMu.Lock()
-	defer c.sharedMu.Unlock()
-	if shared.waiters--; shared.waiters > 0 {
-		return
-	}
-	shared.cancel()
-	if c.shared[key] == shared {
-		delete(c.shared, key)
 	}
 }
 

@@ -29,15 +29,11 @@ import (
 
 // Deps is what the server supplies.
 type Deps struct {
-	// DB is OpenCode's read-only database; nil when the platform is off.
-	DB *db.DB
-	// Analytics serves the usage views: the analytics mirror, which other
-	// platforms feed too. Defaults to DB.
-	Analytics *db.DB
 	// HistoryAnalytics is resolved per request so startup wiring can finish
 	// before the module's lazy dependencies are used.
-	HistoryAnalytics func() *HistoryAnalytics
-	SessionIdentity  func(context.Context, string, string) (string, error)
+	HistoryAnalytics        func() *HistoryAnalytics
+	SubscriptionCredentials func(context.Context) (map[string]db.SubscriptionOAuth, error)
+	SessionIdentity         func(context.Context, string, string) (string, error)
 	// Store is ocman's state database; may be nil.
 	Store *state.DB
 	// Version is the build version reported by /api/stats, read per request.
@@ -65,16 +61,11 @@ type Module struct {
 }
 
 func NewModule(deps Deps) *Module {
-	if deps.Analytics == nil {
-		deps.Analytics = deps.DB
-	}
 	if deps.Version == nil {
 		deps.Version = func() string { return "" }
 	}
 	client := newSubscriptionUsageClient()
-	if deps.DB != nil && deps.DB.V2() {
-		client.credentials = deps.DB.SubscriptionCredentials
-	}
+	client.credentials = deps.SubscriptionCredentials
 	return &Module{deps: deps, subscription: client}
 }
 
@@ -88,6 +79,7 @@ func (m *Module) Routes(r module.Router) {
 	post := func(h http.HandlerFunc) http.HandlerFunc { return method(http.MethodPost, m.deps.Guards.Auth(h)) }
 	r.Handle("/api/stats", data(m.handleStats))
 	r.Handle("/api/analytics/overview", data(m.handleAnalyticsOverview))
+	r.Handle("/api/analytics/history-health", get(m.handleHistoryHealth))
 	r.Handle("/api/analytics/session-concurrency", data(m.handleSessionConcurrency))
 	r.Handle("/api/analytics/database-sizes", get(m.handleDatabaseSizes))
 	r.Handle("/api/analytics/ui-usage", get(m.handleUIUsageDays))

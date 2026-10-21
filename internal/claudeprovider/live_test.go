@@ -285,11 +285,11 @@ func TestForkRenameAndCommands(t *testing.T) {
 	if _, err := h.adapter.ForkSession(t.Context(), platforms.ForkSessionRequest{SessionID: pending.ID}); err == nil {
 		t.Fatal("forking a session without messages must fail")
 	}
-	detail, err := h.adapter.Session(t.Context(), pending.ID, 10, 0)
+	detail, err := h.adapter.RuntimeDetail(t.Context(), pending.ID, 10, 0)
 	if err != nil || detail.Session.ID != pending.ID || len(detail.Messages) != 0 {
 		t.Fatalf("unindexed detail = %+v %v", detail, err)
 	}
-	catalog, err := h.adapter.DirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir})
+	catalog, err := h.adapter.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir})
 	if err != nil || len(catalog.Models.Models) != 3 {
 		t.Fatalf("catalog = %+v %v", catalog, err)
 	}

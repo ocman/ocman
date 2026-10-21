@@ -30,7 +30,7 @@ func originalCatalogue(tx *sql.Tx) error {
 
 func TestUpgradeOriginalCataloguePreservesIdentitiesAndAddsMetadataColumns(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.db")
-	legacy := state.ModuleSchema{Module: Schema.Module, Tables: Schema.Tables, Migrations: []func(*sql.Tx) error{originalCatalogue}}
+	legacy := state.ModuleSchema{Module: Schema.Module, Tables: []string{"session_catalog"}, Migrations: []func(*sql.Tx) error{originalCatalogue}}
 	db, err := state.Open(path, legacy)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestUpgradeOriginalCataloguePreservesIdentitiesAndAddsMetadataColumns(t *te
 	if err != nil {
 		t.Fatalf("original catalogue cannot be read after upgrade: %v", err)
 	}
-	if row.ParentID != parent || row.NativeID != "native-child" || row.Title != "child" || row.CreatedAt != 3 || row.UpdatedAt != 4 {
+	if row.ParentID != parent || row.NativeID != "native-child" || row.Title != "child" || row.CreatedAt != 3 || row.UpdatedAt != 4 || !row.LegacyKeys {
 		t.Fatalf("upgrade changed identity: %+v", row)
 	}
 	var request, fingerprint string
@@ -80,6 +80,9 @@ func TestUpgradeOriginalCataloguePreservesIdentitiesAndAddsMetadataColumns(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	if reserved.LegacyKeys {
+		t.Fatal("new reservation inherited legacy deduplication identities")
+	}
 	if _, err := s.Attach(t.Context(), reserved.ID, binding()); err != nil {
 		t.Fatalf("upgraded constraint rejects configuring state: %v", err)
 	}
@@ -92,7 +95,7 @@ func TestUpgradeDevelopmentParentColumnSpellings(t *testing.T) {
 	for _, column := range []string{"parent_native_id", "native_parent_id"} {
 		t.Run(column, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "state.db")
-			legacy := state.ModuleSchema{Module: Schema.Module, Tables: Schema.Tables, Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
+			legacy := state.ModuleSchema{Module: Schema.Module, Tables: []string{"session_catalog"}, Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 				if err := originalCatalogue(tx); err != nil {
 					return err
 				}
@@ -134,7 +137,7 @@ func TestUpgradeDevelopmentParentColumnSpellings(t *testing.T) {
 			if err := db.SQL().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil {
 				t.Fatal(err)
 			}
-			if version != 2 || violations != 0 {
+			if version != len(Schema.Migrations) || violations != 0 {
 				t.Fatalf("upgrade incomplete: v%d, %d FK violations", version, violations)
 			}
 		})

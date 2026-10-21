@@ -282,13 +282,17 @@ func (m *Module) ReplyToConversation(ctx context.Context, platformID, sessionID 
 	if detail.Session == nil || !conversationReplyReady(detail.Session.Status) {
 		return
 	}
+	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
+	if err != nil {
+		return
+	}
 	// A failed turn produces no answer, or a partial one, so the thread needs
 	// telling that this is where it stopped. Keyed on the message the error is
 	// recorded against — an error always lands on the last assistant message —
 	// so a repeated idle edge for the same failed turn reports once, while the
 	// next turn's failure is a new notice.
 	if messageID != "" && detail.Session.Status == db.StatusError {
-		m.appendConversationNotice(ctx, key, sessionID+conversationNoticeOutcome+"error:"+messageID,
+		m.appendConversationNotice(ctx, key, prefix+conversationNoticeOutcome+"error:"+messageID,
 			m.conversationNoticeFor(ctx, "error", platformID, sessionID))
 	}
 	if text == "" {
@@ -297,7 +301,7 @@ func (m *Module) ReplyToConversation(ctx context.Context, platformID, sessionID 
 	// The message ID keys the append, so a repeated idle edge for the same
 	// completed turn adds no second delivery. The receipt outlives the
 	// delivery, so this holds after the reply has been acknowledged.
-	delivery, err := m.store.AppendPluginConversationReply(ctx, key, sessionID+":"+messageID, text)
+	delivery, err := m.store.AppendPluginConversationReply(ctx, key, prefix+":"+messageID, text)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": key.PluginID, "session_id": sessionID}).
 			Error("recording completed reply for delivery")

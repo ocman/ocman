@@ -372,7 +372,7 @@ func TestPluginUpgradeFromMain(t *testing.T) {
 	for version := 1; version <= 90; version++ {
 		requirePluginOK(t, applyMigration(tx, version))
 	}
-	_, err = tx.Exec(`INSERT INTO schema_version VALUES(90,0); INSERT INTO projects_cache VALUES(1,'[]',123)`)
+	_, err = tx.Exec(`INSERT INTO schema_version VALUES(90,0); INSERT INTO setting(key,value,updated_at) VALUES('upgrade-sentinel','kept',0)`)
 	requirePluginOK(t, err)
 	requirePluginOK(t, tx.Commit())
 	requirePluginOK(t, db.Close())
@@ -384,11 +384,10 @@ func TestPluginUpgradeFromMain(t *testing.T) {
 	if version != latestSchemaVersion {
 		t.Fatalf("schema = %d, want %d", version, latestSchemaVersion)
 	}
-	var projects string
-	var refreshed int
-	requirePluginOK(t, d.db.QueryRow(`SELECT projects_json,refreshed_at FROM projects_cache WHERE id=1`).Scan(&projects, &refreshed))
-	if projects != "[]" || refreshed != 123 {
-		t.Fatal("main project cache changed during upgrade")
+	value, ok, err := d.GetSetting(t.Context(), "upgrade-sentinel")
+	requirePluginOK(t, err)
+	if !ok || value != "kept" {
+		t.Fatal("main application state changed during upgrade")
 	}
 	registrations, err := d.ListPlugins(t.Context())
 	requirePluginOK(t, err)

@@ -56,7 +56,7 @@ export function BackgroundTasks() {
   const active = tasks.filter((task) => task.status === 'queued' || task.status === 'running');
   const recent = tasks.filter((task) => task.status !== 'queued' && task.status !== 'running');
   return <section className="background-tasks" aria-label="Ocman background tasks">
-    <p>Ocman work on this instance, separate from coding-agent tasks. History scans report sessions checked; failed sessions still need repair.</p>
+    <p>Ocman work on this instance, separate from coding-agent tasks. History sync retries failed sessions automatically; analytics continues using imported data.</p>
     <div className="background-tasks-controls">
       <SelectField aria-label="Task status" value={status} onChange={(event) => setStatus(event.target.value as BackgroundTaskStatus | '')}>
         <option value="">All statuses</option>

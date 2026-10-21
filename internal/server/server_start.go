@@ -12,7 +12,9 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/startup"
 )
 
 // Start starts the HTTP server. It blocks until the context is cancelled,
@@ -43,12 +45,16 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		if running {
 			<-done
 		}
+		finalizeModules(s.modules())
 	}()
-	defer ln.Close()
+	if !startup.OwnsListener(ctx) {
+		defer ln.Close()
+	}
 	// Build the host router on this goroutine, before any background loop
 	// or handler can reach it. router() assigns lazily, and the loops
 	// started below race that assignment otherwise.
 	s.router()
+	startup.Report(ctx, "Loading project index", 0, 0)
 	s.loadProjectsIndexCache(context.WithoutCancel(ctx))
 	s.lifetimeMu.Lock()
 	s.lifetimeCtx = ctx
@@ -59,13 +65,14 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if s.remotes != nil {
 		s.remotes.SetWebhookInboxes(s.localWebhookInboxes())
 	}
-	if s.db != nil {
-		if _, ok := s.registry.Get(opencode.PlatformID); ok {
-			opencode.StartSessionsRefresher(ctx, s.db, s.HasDemand)
+	for _, adapter := range s.registry.Platforms() {
+		if starter, ok := adapter.(platforms.SessionCacheStarter); ok {
+			starter.StartSessionCache(ctx, s.HasDemand)
 		}
 	}
 	// The auto-approve module seeds the judge delay before the other
 	// modules start and runs the headless watcher among their workers.
+	startup.Report(ctx, "Starting application modules", 0, 0)
 	if err := s.startModules(ctx, &workers); err != nil {
 		return err
 	}
@@ -118,6 +125,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Both listeners are closed (forcibly past their grace) before admitted
 	// handlers are joined, and those finish before module teardown.
 	defer func() { stopMCP(); s.requests.close() }()
+	httpServer = startup.ApplicationServer(ctx, httpServer)
 
 	// Start the server in a goroutine so we can wait for the context.
 	errCh := make(chan error, 1)
@@ -136,14 +144,21 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			"addr": ln.Addr().String(),
 			"auth": authMode,
 		}).Info("ocman server started")
-		if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := startup.Serve(ctx, httpServer, ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 		close(errCh)
 	})
 	// Wait for context cancellation (signal) or server error.
+	return awaitHTTP(ctx, httpServer, errCh)
+}
+
+func awaitHTTP(ctx context.Context, httpServer *http.Server, errCh <-chan error) error {
 	select {
 	case err := <-errCh:
+		if ctx.Err() != nil {
+			return shutdownHTTP(httpServer, shutdownTimeout)
+		}
 		return err
 	case <-ctx.Done():
 		log.Info("shutting down server...")

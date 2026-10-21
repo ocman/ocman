@@ -28,6 +28,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   Session: flags<Session>()({
     id: false, platform: false, projectId: false, parentId: true, title: false, directory: false,
     timeCreated: false, timeUpdated: false, lastTurnCompletedAt: true, lastUserPromptAt: true, lastHaltAt: true,
+    lastMessageAt: true, branch: true, origin: true, originId: true,
     summaryAdditions: false, summaryDeletions: false, summaryFiles: false, shareUrl: false, messageCount: false,
     durationMs: false, activeDurationMs: false, totalInputTokens: false, totalOutputTokens: false, totalCost: false,
     totalEstCost: true, totalEffectiveCost: true, status: false, resetsAt: true, liveConnection: false,

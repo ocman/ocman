@@ -20,6 +20,10 @@ import (
 // handleSessions fans out to every registered Platform adapter for
 // session data, then applies local state (archived / seen).
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("view") == "sidebar" || (r.URL.Query().Get("view") == "running-count" && s.supportsSidebar()) {
+		s.handleSidebarSessions(w, r)
+		return
+	}
 	dir := r.URL.Query().Get("dir")
 	since := parseInt64Param(r, "since", 0)
 	limit := parseIntParam(r, "limit", 500)
@@ -135,7 +139,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := adapter.Session(s.ConversationReadContext(r.Context()), sessionID, limit, offset)
+	detail, err := adapter.Session(r.Context(), sessionID, limit, offset)
 	if err != nil {
 		writePlatformError(w, "fetching session", err)
 		return
@@ -266,14 +270,14 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		nativeID, platform := taskID, r.URL.Query().Get("platform")
-		if strings.HasPrefix(taskID, "ocm_") {
-			identity, err := s.sessions.LookupSessionIdentity(r.Context(), platform, platforms.SessionIdentityRequest{ID: taskID})
+		sessionID, platform := taskID, r.URL.Query().Get("platform")
+		if strings.HasPrefix(taskID, "ocm_") || s.sessions.CanonicalSessionReferences(platform) {
+			identity, err := s.sessions.LookupSessionReference(r.Context(), platform, taskID)
 			if err != nil {
 				writeIdentityError(w, err)
 				return
 			}
-			nativeID, platform = identity.NativeID, identity.Platform
+			sessionID, platform = s.sessions.CoreSessionReference(identity), identity.Platform
 		}
 		var adapter platforms.Platform
 		var ok bool
@@ -284,13 +288,13 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			adapter, ok = s.registry.PlatformForSession(r.Context(), nativeID)
+			adapter, ok = s.registry.PlatformForSession(r.Context(), sessionID)
 		}
 		if !ok {
 			continue
 		}
 
-		detail, err := adapter.Session(s.ConversationReadContext(r.Context()), nativeID, limit, 0)
+		detail, err := adapter.Session(r.Context(), sessionID, limit, 0)
 		if err != nil {
 			if errors.Is(err, platforms.ErrHistoryUnavailable) {
 				writePlatformError(w, "fetching stored task conversation", err)

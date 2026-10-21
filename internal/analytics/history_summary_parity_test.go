@@ -69,7 +69,7 @@ func testSummaryCutoffsInZone(t *testing.T, zone string) {
 			t.Fatal(reason)
 		}
 		defer release()
-		compareSummaryReaders(t, f.deps.DB, history, boundary)
+		compareSummaryReaders(t, f.legacy, history, boundary)
 	})
 	for _, route := range []string{
 		"/api/hourly-tokens?days=7&model=nested%2F%20model%20",

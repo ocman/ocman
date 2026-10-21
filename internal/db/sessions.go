@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -102,29 +101,6 @@ func (d *DB) GetSessionTree(ctx context.Context, sessionID string) ([]Session, e
 	return sessions, rows.Err()
 }
 
-// FilterInactiveChildren drops subagent sessions that are not currently
-// running a turn. Active subagents are kept so the UI can nest them under
-// their parent; finished ones have already bubbled their useful output up
-// and only add noise to the session list.
-//
-// It keys off the platform's own parent id (OpenCode's session.parent_id),
-// so it must run before ocman's MCP/worktree child links are stamped onto
-// ParentID — those children are ordinary top-level sessions and must never
-// be hidden. It must also run *after* SettleSessionStatus: filtering on the
-// un-settled guess drops a child whose turn just started (its last message
-// is still the user prompt, which infers as "done").
-// The input slice is never mutated: callers may hold a cached, shared one.
-func FilterInactiveChildren(sessions []Session) []Session {
-	out := make([]Session, 0, len(sessions))
-	for _, s := range sessions {
-		if s.ParentID != "" && s.Status != StatusBusy {
-			continue
-		}
-		out = append(out, s)
-	}
-	return out
-}
-
 // GetSession returns session metadata by ID without reading message history.
 func (d *DB) GetSession(ctx context.Context, sessionID string) (*Session, error) {
 	var s Session
@@ -184,9 +160,9 @@ func (d *DB) GetSubagentSessionIDs(ctx context.Context, parentID string) ([]stri
 // ambiguous; OpenCode's project table holds exactly one root per ID
 // (`worktree`, the main checkout), which makes the answer deterministic.
 // The session rows gate it: only a project with at least one session is
-// known. Unknown IDs, OpenCode's non-git "global" project (root "/"), and a
-// database without a project table all return "" so callers fail closed by
-// omission.
+// known. Unknown IDs and OpenCode's non-git "global" project (root "/")
+// return "", omitting the evidence. A database without a project table is an
+// error, so a snapshot never silently drops project metadata.
 func (d *DB) ProjectDirectory(ctx context.Context, projectID string) (string, error) {
 	if projectID == "" {
 		return "", nil
@@ -258,186 +234,6 @@ func (d *DB) GetSessionParentIDs(ctx context.Context, childIDs []string) (map[st
 	return out, rows.Err()
 }
 
-// GetSessionDescendantIDs returns sessionID plus every session below it in
-// the native parent_id tree (subagents of subagents included).
-func (d *DB) GetSessionDescendantIDs(ctx context.Context, sessionID string) ([]string, error) {
-	rows, err := d.db.QueryContext(ctx,
-		`WITH RECURSIVE tree(id) AS (
-			SELECT ?
-			UNION
-			SELECT s.id FROM session s JOIN tree t ON s.parent_id = t.id
-		)
-		SELECT id FROM tree`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
-// GetSessionsInactiveBefore returns non-subagent sessions last updated before the cutoff.
-func (d *DB) GetSessionsInactiveBefore(ctx context.Context, cutoff int64) ([]SessionArchiveCandidate, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT s.id, s.time_updated
-		FROM session s
-		WHERE s.title NOT LIKE '%(% subagent)'
-		  AND s.time_updated < ?
-	`, cutoff)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var sessions []SessionArchiveCandidate
-	for rows.Next() {
-		var session SessionArchiveCandidate
-		if err := rows.Scan(&session.ID, &session.TimeUpdated); err != nil {
-			log.WithError(err).Warn("failed to scan inactive session row")
-			continue
-		}
-		sessions = append(sessions, session)
-	}
-	return sessions, rows.Err()
-}
-
-// MessageCountsSince returns, for each (sessionID, cutoff) pair in
-// cutoffs, the number of messages in that session with
-// time_created > cutoff. Sessions absent from the input map are
-// absent from the output; sessions with zero unread are omitted to
-// keep the response small.
-//
-// Implementation: a single CTE built from a VALUES clause batches
-// every session into one query. The message table's covering index
-// (session_id, time_created, id) makes each row a pure index range
-// scan — no table reads, no JSON parsing. Measured at ~4 ms for
-// 200 sessions on a 92k-message DB; see spec investigation in the
-// PR for #70.
-//
-// Empty input returns an empty map and no error without touching
-// the DB.
-func (d *DB) MessageCountsSince(ctx context.Context, cutoffs map[string]int64) (map[string]int, error) {
-	if len(cutoffs) == 0 {
-		return map[string]int{}, nil
-	}
-
-	// Build a (?, ?), (?, ?), ... VALUES clause. We can't use a
-	// table-valued subquery from Go-side bindings cleanly, so we
-	// generate the placeholder list and bind the flattened args.
-	var sb strings.Builder
-	sb.WriteString(`
-		WITH cutoffs(sid, cutoff) AS (VALUES `)
-	args := make([]interface{}, 0, len(cutoffs)*2)
-	first := true
-	for sid, cutoff := range cutoffs {
-		if !first {
-			sb.WriteString(`,`)
-		}
-		sb.WriteString(`(?, ?)`)
-		args = append(args, sid, cutoff)
-		first = false
-	}
-	sb.WriteString(`)
-		SELECT c.sid, COALESCE((
-			SELECT count(*) FROM message m
-			WHERE m.session_id = c.sid AND m.time_created > c.cutoff
-		), 0) AS unread
-		FROM cutoffs c
-	`)
-
-	rows, err := d.db.QueryContext(ctx, sb.String(), args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make(map[string]int, len(cutoffs))
-	for rows.Next() {
-		var sid string
-		var unread int
-		if err := rows.Scan(&sid, &unread); err != nil {
-			log.WithError(err).Warn("failed to scan unread count row")
-			continue
-		}
-		if unread > 0 {
-			out[sid] = unread
-		}
-	}
-	return out, rows.Err()
-}
-
-// GetSessionMessages returns all messages for a session.
-func (d *DB) GetSessionMessages(ctx context.Context, sessionID string) ([]Message, error) {
-	// summary.diffs carries a full patch per changed file (hundreds of MB
-	// after a large checkout move) and nothing reads it; the live path
-	// drops summary too (convertOpenCodeMessages).
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT id, session_id, time_created, json_remove(data, '$.summary.diffs')
-		FROM message
-		WHERE session_id = ?
-		ORDER BY time_created
-	`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var messages []Message
-	for rows.Next() {
-		var m Message
-		var rawData string
-		err := rows.Scan(&m.ID, &m.SessionID, &m.TimeCreated, &rawData)
-		if err != nil {
-			log.WithError(err).Warn("failed to scan message row")
-			continue
-		}
-		m.Data = json.RawMessage(rawData)
-		messages = append(messages, m)
-	}
-	if err := rows.Err(); err != nil {
-		return messages, err
-	}
-	return messages, nil
-}
-
-// GetSessionParts returns all parts for a session.
-func (d *DB) GetSessionParts(ctx context.Context, sessionID string) ([]Part, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT id, message_id, session_id, time_created, data
-		FROM part
-		WHERE session_id = ?
-		ORDER BY time_created
-	`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var parts []Part
-	for rows.Next() {
-		var p Part
-		var rawData string
-		err := rows.Scan(&p.ID, &p.MessageID, &p.SessionID, &p.TimeCreated, &rawData)
-		if err != nil {
-			log.WithError(err).Warn("failed to scan part row")
-			continue
-		}
-		p.Data = json.RawMessage(rawData)
-		parts = append(parts, p)
-	}
-	if err := rows.Err(); err != nil {
-		return parts, err
-	}
-	return parts, nil
-}
-
 // ErrAmbiguousRunningTool prevents guessing when multiple sessions match.
 var ErrAmbiguousRunningTool = errors.New("multiple sessions are invoking the tool")
 
@@ -475,53 +271,9 @@ func (d *DB) FindRunningToolSessionID(ctx context.Context, tool, directory strin
 	return sessionID, nil
 }
 
-// paginateMessages returns a page of messages from the end.
-// offset is the number of messages to skip from the end, limit is the page size.
-// Returns the paginated slice and the total count.
-func PaginateMessages(messages []Message, limit, offset int) ([]Message, int) {
-	total := len(messages)
-	start := total - offset - limit
-	end := total - offset
-	if start < 0 {
-		start = 0
-	}
-	if end < 0 {
-		end = 0
-	}
-	if end > total {
-		end = total
-	}
-	if start >= end {
-		return nil, total
-	}
-	return messages[start:end], total
-}
-
-// FilterPartsForMessages returns only parts whose MessageID appears in the given messages.
-func FilterPartsForMessages(parts []Part, messages []Message) []Part {
-	msgIDs := make(map[string]bool, len(messages))
-	for _, m := range messages {
-		msgIDs[m.ID] = true
-	}
-	var filtered []Part
-	for _, p := range parts {
-		if msgIDs[p.MessageID] {
-			filtered = append(filtered, p)
-		}
-	}
-	return filtered
-}
-
 // GetSessionDefaults returns the most recent agent/model pair to seed a new or
 // empty session's composer. It prefers another session in the same directory and
 // falls back to the most recent session overall.
-//
-// Implementation note. The original query joined every message
-// against every session and applied six json_extract filters in the
-// WHERE clause, which on a real DB (~60k messages, ~1.4k sessions)
-// burned 500–1400 ms per call. Since this function is called on
-// every SessionDetail mount and Models / Info fetch, that single
-// query dominated end-to-end latency.
 //
 // We now do a two-step lookup that uses the existing
 // (session_id, time_created) message index:
@@ -563,6 +315,9 @@ func (d *DB) GetSessionDefaults(ctx context.Context, sessionID, directory string
 // Returns (defaults, found, err): found=false means "no qualifying
 // row" (sql.ErrNoRows). All other errors propagate as err.
 func (d *DB) lookupSessionDefaults(ctx context.Context, sessionID, directory string) (SessionDefaults, bool, error) {
+	if d.historyScope != nil {
+		return d.historySessionDefaults(ctx, sessionID, directory)
+	}
 	const candidatesLimit = 5
 
 	// The only difference between the directory-scoped and global
@@ -629,7 +384,7 @@ func (d *DB) lookupSessionDefaults(ctx context.Context, sessionID, directory str
 	}
 
 	var defaults SessionDefaults
-	err := d.db.QueryRowContext(ctx, cte+sessionDefaultsTail, args...).
+	err := d.reads().QueryRowContext(ctx, cte+sessionDefaultsTail, args...).
 		Scan(&defaults.Agent, &defaults.Model)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -638,39 +393,4 @@ func (d *DB) lookupSessionDefaults(ctx context.Context, sessionID, directory str
 		return SessionDefaults{}, false, err
 	}
 	return defaults, true, nil
-}
-
-// GetContextTokenCount returns the token usage shown in OpenCode's prompt bar:
-// the last assistant message with output > 0, using
-// input + output + reasoning + cache.read + cache.write.
-func (d *DB) GetContextTokenCount(ctx context.Context, sessionID string) (int64, error) {
-	var count int64
-	err := d.db.QueryRowContext(ctx, `
-		SELECT COALESCE(
-		  json_extract(data, '$.tokens.input'),
-		  0
-		) + COALESCE(
-		  json_extract(data, '$.tokens.output'),
-		  0
-		) + COALESCE(
-		  json_extract(data, '$.tokens.reasoning'),
-		  0
-		) + COALESCE(
-		  json_extract(data, '$.tokens.cache.read'),
-		  0
-		) + COALESCE(
-		  json_extract(data, '$.tokens.cache.write'),
-		  0
-		)
-		FROM message
-		WHERE session_id = ?
-		  AND json_extract(data, '$.role') = 'assistant'
-		  AND COALESCE(json_extract(data, '$.tokens.output'), 0) > 0
-		ORDER BY time_created DESC
-		LIMIT 1
-	`, sessionID).Scan(&count)
-	if err != nil {
-		return 0, err
-	}
-	return count, nil
 }

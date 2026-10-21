@@ -13,7 +13,7 @@ func (d *DB) Read(ctx context.Context, key Key, limit, offset int) (*Detail, err
 	if limit < 1 || limit > 500 || offset < 0 {
 		return nil, fmt.Errorf("statev2: page requires limit 1..500 and nonnegative offset")
 	}
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.reader().BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (d *DB) Changes(ctx context.Context, after int64, limit int) ([]Change, err
 	if after < 0 || limit < 1 || limit > 500 {
 		return nil, fmt.Errorf("statev2: invalid change cursor or limit")
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT sequence,instance_id,session_id,revision,kind
+	rows, err := d.reader().QueryContext(ctx, `SELECT sequence,instance_id,session_id,revision,kind
 		FROM change_outbox WHERE sequence>? ORDER BY sequence LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, err

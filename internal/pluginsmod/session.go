@@ -134,7 +134,10 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	}
 	id, claimed, err := m.plugins.reserveSessionRun(ctx, pluginID, operationID, config.Project, params)
 	if err != nil || !claimed {
-		return id, err
+		if err != nil {
+			return id, err
+		}
+		return m.pluginWireSession(ctx, "opencode", id)
 	}
 	defer func() {
 		if err := m.plugins.finishSessionRun(ctx, pluginID, operationID, sessionID, runErr); err != nil {

@@ -8,8 +8,13 @@ import (
 
 var Schema = state.ModuleSchema{
 	Module:     "sessioncatalog",
-	Tables:     []string{"session_catalog"},
-	Migrations: []func(*sql.Tx) error{migrateIdentity, migrateCatalogueMetadata},
+	Tables:     []string{"session_catalog", "session_remote_metadata", "session_source_cutover"},
+	Migrations: []func(*sql.Tx) error{migrateIdentity, migrateCatalogueMetadata, migrateLegacyKeys, migrateRemoteMetadata, migrateSourceCutover, migrateLegacyBindingIndex, migrateConfiguringState},
+}
+
+func migrateLegacyKeys(tx *sql.Tx) error {
+	_, err := tx.Exec(`ALTER TABLE session_catalog ADD COLUMN legacy_keys INTEGER NOT NULL DEFAULT 1 CHECK(legacy_keys IN (0,1))`)
+	return err
 }
 
 func migrateIdentity(tx *sql.Tx) error {

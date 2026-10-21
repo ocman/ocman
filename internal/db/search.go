@@ -3,7 +3,8 @@ package db
 import (
 	"context"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/NoUseFreak/ocman/internal/textsearch"
 )
 
 // TextMatch is one text part whose prose contains a searched string.
@@ -15,8 +16,6 @@ type TextMatch struct {
 	Role      string `json:"role"`
 	Snippet   string `json:"snippet"`
 }
-
-const snippetContext = 80
 
 // SearchSessionText finds user and assistant text parts containing query
 // (ASCII case-insensitive) in sessions updated at or after since (unix ms).
@@ -58,34 +57,10 @@ func (d *DB) SearchSessionText(ctx context.Context, query, directory string, sin
 // snippet returns the text around the first occurrence of needle, trimmed to
 // rune boundaries, with ellipses where it was cut.
 func snippet(text, needle string) string {
-	i := strings.Index(asciiLower(text), needle)
-	if i < 0 {
-		i = 0
-	}
-	start, end := max(i-snippetContext, 0), min(i+len(needle)+snippetContext, len(text))
-	for start > 0 && !utf8.RuneStart(text[start]) {
-		start--
-	}
-	for end < len(text) && !utf8.RuneStart(text[end]) {
-		end++
-	}
-	out := strings.Join(strings.Fields(text[start:end]), " ")
-	if start > 0 {
-		out = "…" + out
-	}
-	if end < len(text) {
-		out += "…"
-	}
-	return out
+	return textsearch.Snippet(text, needle)
 }
 
 // asciiLower mirrors SQLite's lower(): ASCII only, so byte offsets match.
 func asciiLower(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'A' <= c && c <= 'Z' {
-			b[i] = c + 'a' - 'A'
-		}
-	}
-	return string(b)
+	return textsearch.Lower(s)
 }

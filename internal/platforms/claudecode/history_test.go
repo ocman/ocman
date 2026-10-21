@@ -38,8 +38,8 @@ func TestHistoryAdapterUsesBrowsingSourceWithoutLaunchingSession(t *testing.T) {
 		t.Fatal("accepted nonexistent history")
 	}
 	p.configDir = filepath.Join(root, "unavailable")
-	if _, err := p.HistoryIdentity(t.Context()); err == nil {
-		t.Fatal("accepted nonexistent configuration")
+	if identity, err := p.HistoryIdentity(t.Context()); err != nil || identity.SourceKey == "" {
+		t.Fatalf("fresh configuration has no stable identity: %+v %v", identity, err)
 	}
 	p.history = nil
 	if _, err := p.HistoryIdentity(t.Context()); err == nil {

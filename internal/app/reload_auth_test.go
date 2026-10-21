@@ -23,15 +23,22 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
+type reloadAuthPlatform struct{ startupPlatform }
+
+func (reloadAuthPlatform) HistoryIdentity(context.Context) (platforms.HistoryIdentity, error) {
+	return platforms.HistoryIdentity{Platform: "claudecode", SourceKey: "auth-test"}, nil
+}
+func (reloadAuthPlatform) ReloadIdle(context.Context) (bool, error) { return true, nil }
+
 func TestGeneratedOpenCodePasswordSurvivesReload(t *testing.T) {
 	if os.Getenv("OCMAN_TEST_RELOAD_AUTH") == "1" {
-		knownPlatforms["claudecode"] = func(ctx context.Context, _ *db.DB, _ *state.DB, auth ocapi.Auth) platforms.Platform {
+		knownPlatforms["claudecode"] = func(ctx context.Context, _ *db.DB, _ *state.DB, auth ocapi.Auth) platforms.Integration {
 			client := &http.Client{Transport: auth.Transport(nil), Timeout: time.Second}
 			resp, err := client.Get(os.Getenv("OCMAN_TEST_AUTH_ENDPOINT"))
 			if err == nil {
 				_ = resp.Body.Close()
 			}
-			return startupPlatform{}
+			return reloadAuthPlatform{}
 		}
 		flag.CommandLine = flag.NewFlagSet("ocman", flag.ExitOnError)
 		os.Args = []string{"ocman", "-addr=" + os.Getenv("OCMAN_TEST_AUTH_ADDR"), "-db=" + filepath.Join(os.Getenv("HOME"), "missing.db"), "-mcp-addr=", "-log-file=off", "-opencode-server-generate-password"}
@@ -94,6 +101,9 @@ func TestGeneratedOpenCodePasswordSurvivesReload(t *testing.T) {
 		}
 		select {
 		case r := <-done:
+			if t.Failed() {
+				t.Logf("child output:\n%s", r.output)
+			}
 			if r.err != nil {
 				t.Errorf("child: %v\n%s", r.err, r.output)
 			}

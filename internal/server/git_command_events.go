@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // broadcastGitCommand sends identity and a refresh hint, never shell arguments
@@ -18,17 +17,13 @@ func (s *Server) broadcastGitCommand(ctx context.Context, platformID, sessionID,
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var session *db.Session
-	if !isRemotePlatformID(platformID) && s.db != nil {
-		session, _ = s.db.GetSession(ctx, sessionID)
-	} else if s.registry != nil {
-		if adapter, ok := s.registry.Get(platforms.ID(platformID)); ok {
-			// Hints must never trigger transcript reads or RPCs in the stream.
-			if cached, ok := adapter.(interface {
-				CachedSession(string) (db.Session, bool)
-			}); ok {
-				if row, found := cached.CachedSession(sessionID); found {
-					session = &row
-				}
+	if adapter, ok := s.metadataAdapter(ctx, platformID, sessionID); ok {
+		// Hints must never trigger transcript reads or RPCs in the stream.
+		if cached, ok := adapter.(interface {
+			CachedSession(string) (db.Session, bool)
+		}); ok {
+			if row, found := cached.CachedSession(sessionID); found {
+				session = &row
 			}
 		}
 	}

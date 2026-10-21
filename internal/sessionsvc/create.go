@@ -123,6 +123,11 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if err != nil {
 		return nil, err
 	}
+	unlock, err := s.lockCreation(ctx, adapter.ID(), req.Creation.RequestKey)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	finish, err := s.admit(ctx, adapter)
 	if err != nil {
 		return nil, err
@@ -144,12 +149,15 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	resp, err := adapter.CreateSession(ctx, req)
 	createPhase.EndWithDesc("adapter.CreateSession")
 	if err != nil {
-		return nil, attempt.nativeFailure(ctx, err)
+		return nil, attempt.NativeFailure(ctx, err)
 	}
 	if resp == nil || strings.TrimSpace(resp.ID) == "" {
-		return nil, attempt.uncertain("", fmt.Errorf("platform %s returned no session", adapter.ID()))
+		return nil, attempt.Uncertain("", fmt.Errorf("platform %s returned no session", adapter.ID()))
 	}
-	if err := attempt.attach(ctx, resp.ID); err != nil {
+	if _, canonical := adapter.(platforms.SessionCreationCommitter); canonical && resp.Replayed {
+		return resp, nil
+	}
+	if err := attempt.Attach(ctx, resp.ID); err != nil {
 		return nil, err
 	}
 	if rules != nil && !resp.ConfigurationApplied {
@@ -163,18 +171,21 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		defer cancel()
 		cleanupErr := disposer.DisposeSession(cleanupCtx, platforms.DisposeSessionRequest{SessionID: resp.ID, Port: req.Port})
 		if cleanupErr != nil {
-			return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: attempt.uncertain(resp.ID, errors.Join(err, cleanupErr))}
+			return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: attempt.Uncertain(resp.ID, errors.Join(err, cleanupErr))}
 		}
-		return nil, attempt.failed(ctx, err)
+		return nil, attempt.Failed(ctx, err)
 	}
-	if err := attempt.bind(ctx, resp.ID); err != nil {
+	if err := attempt.Bind(ctx, resp.ID); err != nil {
+		return nil, err
+	}
+	if err := commitCreation(ctx, adapter, resp.ID); err != nil {
 		return nil, err
 	}
 	copy := *resp
 	resp = &copy
 	resp.ConfigurationApplied = resp.ConfigurationApplied || rules != nil
 	// The first send looks up project defaults by directory; we already know it.
-	s.sessionDirs.Store(nativeSessionKey{adapter.ID(), resp.ID}, req.Directory)
+	s.sessionDirs.Store(sessionCacheKey{adapter.ID(), resp.ID}, req.Directory)
 	s.rememberFirstPrompt(adapter, resp.ID, req.Directory, req.Title)
 	if s.hooks.SessionCreated != nil {
 		routineID := routine.id

@@ -75,11 +75,15 @@ type Session struct {
 	Platform  string `json:"platform"`
 	ProjectID string `json:"projectId"`
 	// ParentID is the native parent, or an ocman child link stamped by the server.
-	ParentID    string `json:"parentId,omitempty"`
-	Title       string `json:"title"`
-	Directory   string `json:"directory"`
-	TimeCreated int64  `json:"timeCreated"`
-	TimeUpdated int64  `json:"timeUpdated"`
+	ParentID      string `json:"parentId,omitempty"`
+	Title         string `json:"title"`
+	Directory     string `json:"directory"`
+	TimeCreated   int64  `json:"timeCreated"`
+	TimeUpdated   int64  `json:"timeUpdated"`
+	LastMessageAt int64  `json:"lastMessageAt,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	Origin        string `json:"origin,omitempty"`
+	OriginID      string `json:"originId,omitempty"`
 	// Latest terminal assistant turn, including errors. Streaming does not advance it.
 	LastTurnCompletedAt int64   `json:"lastTurnCompletedAt"`
 	LastUserPromptAt    int64   `json:"lastUserPromptAt"`
@@ -124,6 +128,7 @@ type Session struct {
 	LastErrorName    string `json:"-"`
 	LastErrorMessage string `json:"-"`
 	LastErrorAt      int64  `json:"-"`
+	SourceChild      bool   `json:"-"` // native hierarchy, distinct from application child links
 }
 
 // SessionNotice explains transient conditions without exposing platform details.

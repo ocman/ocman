@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -27,7 +28,7 @@ func (h *HistoryAnalytics) projection(ctx context.Context) (*db.DB, func(), stri
 		return nil, nil, "history-unavailable"
 	}
 	ids, ready := h.Instances()
-	if !ready || len(ids) == 0 {
+	if len(ids) == 0 {
 		return nil, nil, "import-incomplete"
 	}
 	ids = append([]string(nil), ids...)
@@ -52,6 +53,9 @@ func (h *HistoryAnalytics) projection(ctx context.Context) (*db.DB, func(), stri
 	snapshot, release, err := reader.ScopedHistoryReader(ctx)
 	if err != nil {
 		return nil, nil, "history-scope-error"
+	}
+	if !ready {
+		return snapshot, release, "import-incomplete"
 	}
 	return snapshot, release, ""
 }
@@ -78,7 +82,7 @@ func (m *Module) requireRuntimeAnalytics(w http.ResponseWriter, r *http.Request)
 	return false
 }
 
-// analyticsRoute makes one strict source decision for the entire response.
+// analyticsRoute makes one scoped source decision for the entire response.
 // Missing history never silently falls back to platform analytics.
 func (m *Module) analyticsRoute(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +101,7 @@ func (m *Module) analyticsRoute(next http.HandlerFunc) http.HandlerFunc {
 			history.validated()
 		}
 		setAnalyticsSource(w.Header(), "statev2", "")
+		w.Header().Set("X-Ocman-Analytics-Partial", strconv.FormatBool(reason != ""))
 		if history.CheckedAt != nil {
 			if at := history.CheckedAt(); !at.IsZero() {
 				w.Header().Set("X-Ocman-Analytics-Checked-At", at.UTC().Format(time.RFC3339))

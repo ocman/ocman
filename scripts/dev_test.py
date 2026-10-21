@@ -7,7 +7,29 @@ import signal
 import subprocess
 import tempfile
 import time
+import tomllib
 import unittest
+
+
+class DevDataConfigTest(unittest.TestCase):
+    def test_dev_history_default_is_outside_air_temporary_directory(self):
+        root = Path(__file__).resolve().parent.parent
+        makefile = (root / "Makefile").read_text()
+        self.assertTrue("$(CURDIR)/state_conv.db)" in makefile,
+                        "dev history must default to the checkout root")
+        self.assertTrue("$(CURDIR)/tmp/state_conv.db)" not in makefile,
+                        "dev history must not default to Air's build directory")
+
+    def test_air_preserves_conversation_checkpoints_on_exit(self):
+        root = Path(__file__).resolve().parent.parent
+        for filename in (".air.toml", ".air.remote.toml"):
+            with self.subTest(config=filename):
+                with (root / filename).open("rb") as handle:
+                    config = tomllib.load(handle)
+                self.assertFalse(
+                    config.get("misc", {}).get("clean_on_exit", False),
+                    "Air must not delete tmp/: it contains state_conv.db and ingestion checkpoints",
+                )
 
 
 class DevLogsTest(unittest.TestCase):

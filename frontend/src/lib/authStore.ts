@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, AuthError, registerAuthErrorHandler } from './api';
+import { APIError } from './api.requests';
 
 /**
  * AuthStore tracks whether the server requires a password for this
@@ -78,7 +79,7 @@ type AuthStore = {
   /** True while a /api/auth/login request is in flight. */
   submitting: boolean;
 
-  bootstrap: () => Promise<void>;
+  bootstrap: () => Promise<boolean>;
   login: (password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   /** Internal: flip to unauthenticated after observing a 401 mid-session. */
@@ -101,12 +102,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         authRequired: me.authRequired,
         authenticated: me.authenticated,
       });
-    } catch {
-      // If /api/auth/me itself fails we fail open: assume no auth is
-      // required so the app still loads on a legacy backend. The next
-      // real API call will surface any 401 via handleAuthError.
+      return true;
+    } catch (error) {
+      // A starting/restarting backend is not evidence that auth is disabled.
+      // Keep confirmed sessions mounted and initial clients behind auth until
+      // a retry succeeds. Only a missing legacy endpoint allows auth-off mode.
+      if (!(error instanceof APIError && error.status === 404)) return false;
       writeCachedAuthRequired(false);
       set({ checking: false, authRequired: false, authenticated: true });
+      return true;
     }
   },
 

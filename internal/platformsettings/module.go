@@ -23,6 +23,7 @@ type Module struct {
 	store               *state.DB
 	mu                  sync.Mutex
 	pending, overridden bool
+	recoveryPending     bool
 	active              []string
 	reload              func()
 	idle                func(context.Context) (bool, error)
@@ -51,7 +52,7 @@ func DrainContext(ctx context.Context) context.Context {
 func (m *Module) Begin(ctx context.Context) (func(), error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.pending && ctx.Value(drainKey{}) != true {
+	if (m.pending || m.recoveryPending) && ctx.Value(drainKey{}) != true {
 		return nil, fmt.Errorf("platform configuration is reloading after active work finishes: %w", platforms.ErrBusy)
 	}
 	m.inFlight++
@@ -78,7 +79,7 @@ func (m *Module) Run(ctx context.Context) {
 // then reloads only if nothing was admitted meanwhile.
 func (m *Module) tryReload(ctx context.Context) bool {
 	m.mu.Lock()
-	if !m.pending || m.reload == nil || m.inFlight != 0 {
+	if (!m.pending && !m.recoveryPending) || m.reload == nil || m.inFlight != 0 {
 		m.mu.Unlock()
 		return false
 	}
@@ -92,7 +93,7 @@ func (m *Module) tryReload(ctx context.Context) bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.pending || m.inFlight != 0 || m.admitted != admitted {
+	if (!m.pending && !m.recoveryPending) || m.inFlight != 0 || m.admitted != admitted {
 		return false
 	}
 	m.reload()
@@ -172,5 +173,5 @@ func (m *Module) settings(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "reading platform settings", err)
 		return
 	}
-	httpx.WriteJSON(w, map[string]any{"enabled": enabled, "reloadPending": m.pending, "overridden": m.overridden})
+	httpx.WriteJSON(w, map[string]any{"enabled": enabled, "reloadPending": m.pending || m.recoveryPending, "overridden": m.overridden})
 }

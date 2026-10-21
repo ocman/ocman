@@ -211,7 +211,7 @@ func TestLoadProjectsIndexCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	refreshedAt := time.UnixMilli(1234)
-	if err := srv.stateDB.SaveProjectsCache(t.Context(), data, refreshedAt); err != nil {
+	if err := srv.historyAnalytics.Store.SaveProjectsCache(t.Context(), srv.historyOwner, data, refreshedAt); err != nil {
 		t.Fatal(err)
 	}
 

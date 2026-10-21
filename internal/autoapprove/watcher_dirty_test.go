@@ -9,25 +9,17 @@ import (
 	"time"
 )
 
-// dirtyRecorder captures what the watcher marked dirty, replacing the
-// package-level cache seams so the assertions don't depend on the
-// opencode package's global snapshot state.
+// dirtyRecorder captures which sessions the watcher asked ingestion to
+// reread.
 type dirtyRecorder struct {
-	mu   sync.Mutex
-	ids  []string
-	full int
+	mu  sync.Mutex
+	ids []string
 }
 
 func (r *dirtyRecorder) markSession(sessionID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ids = append(r.ids, sessionID)
-}
-
-func (r *dirtyRecorder) markAll() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.full++
 }
 
 func (r *dirtyRecorder) sortedIDs() []string {
@@ -38,18 +30,11 @@ func (r *dirtyRecorder) sortedIDs() []string {
 	return out
 }
 
-func (r *dirtyRecorder) fullMarks() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.full
-}
-
 func newRecordingWatcher(t *testing.T) (*autoApproveWatcher, *dirtyRecorder) {
 	t.Helper()
 	rec := &dirtyRecorder{}
 	w := newAutoApproveWatcher(nil)
 	w.markSessionDirty = rec.markSession
-	w.markSessionsDirty = rec.markAll
 	return w, rec
 }
 
@@ -69,9 +54,6 @@ func TestHandleSessionChangedMarksEveryUpdateDirty(t *testing.T) {
 	if got := rec.sortedIDs(); len(got) != len(want) {
 		t.Fatalf("dirty marks = %v, want %v (every update, empty id ignored)", got, want)
 	}
-	if rec.fullMarks() != 0 {
-		t.Errorf("full snapshot marked dirty %d times, want 0", rec.fullMarks())
-	}
 }
 
 // TestHandleSessionChangedBroadcastUnchanged pins that adding dirty
@@ -90,7 +72,6 @@ func TestHandleSessionChangedBroadcastUnchanged(t *testing.T) {
 	rec := &dirtyRecorder{}
 	w := newAutoApproveWatcher(svc)
 	w.markSessionDirty = rec.markSession
-	w.markSessionsDirty = rec.markAll
 
 	w.handleSessionChanged(t.Context(), "ses-1")
 	w.handleSessionChanged(t.Context(), "ses-1")
@@ -363,8 +344,8 @@ func TestHandleSessionTitleNeverPublishesAnOlderTitleLast(t *testing.T) {
 }
 
 // TestHandleSessionDataChangedMarksDirty covers the message/part and
-// deletion events: an identified session marks just that session, and an
-// unattributable one marks the whole snapshot rather than approximating.
+// deletion events: an identified session asks ingestion to reread just that
+// session; an unattributable one is left to periodic reconciliation.
 func TestHandleSessionDataChangedMarksDirty(t *testing.T) {
 	w, rec := newRecordingWatcher(t)
 
@@ -373,9 +354,6 @@ func TestHandleSessionDataChangedMarksDirty(t *testing.T) {
 
 	if got := rec.sortedIDs(); len(got) != 1 || got[0] != "ses-1" {
 		t.Errorf("dirty ids = %v, want [ses-1]", got)
-	}
-	if rec.fullMarks() != 1 {
-		t.Errorf("full snapshot marks = %d, want 1 for the unattributable event", rec.fullMarks())
 	}
 }
 
@@ -390,8 +368,5 @@ func TestHandleSessionTurnMarksDirty(t *testing.T) {
 
 	if got := rec.sortedIDs(); len(got) != 1 || got[0] != "ses-1" {
 		t.Errorf("dirty ids = %v, want [ses-1] (empty id ignored)", got)
-	}
-	if rec.fullMarks() != 0 {
-		t.Errorf("full snapshot marks = %d, want 0", rec.fullMarks())
 	}
 }

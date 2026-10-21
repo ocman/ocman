@@ -26,8 +26,9 @@ func (w *sourceWorker) runPass(ctx context.Context, dirty map[string]bool) error
 }
 
 func (w *sourceWorker) runPrepared(ctx context.Context, p pass) error {
+	p.background = !p.routine
 	w.last = tasksvc.Progress{}
-	if len(p.reads) == 0 && len(p.deletions) == 0 && !p.verify {
+	if len(p.reads) == 0 && len(p.deletions) == 0 && !p.verify && p.deferred == 0 {
 		w.lastFailure = ""
 		return nil
 	}
@@ -36,7 +37,8 @@ func (w *sourceWorker) runPrepared(ctx context.Context, p pass) error {
 	}
 	// Retrying only sessions that already failed is not new work: it is
 	// recorded again only if the failure changes.
-	if p.routine || w.retrying(p) {
+	deferredOnly := p.deferred > 0 && len(p.reads) == 0 && len(p.deletions) == 0 && !p.verify
+	if p.routine || deferredOnly || w.retrying(p) {
 		err := w.executePrepared(ctx, p, nil)
 		if err == nil {
 			w.lastFailure = ""
@@ -62,7 +64,7 @@ func (w *sourceWorker) runPrepared(ctx context.Context, p pass) error {
 
 func (w *sourceWorker) executePrepared(ctx context.Context, p pass, report func(tasksvc.Progress) error) error {
 	err := w.execute(ctx, p, report)
-	if w.feed != nil || w.journaled {
+	if w.feed != nil || w.journaled || p.deferred > 0 {
 		return w.requireComplete(err)
 	}
 	return err

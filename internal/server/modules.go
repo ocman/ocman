@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/notifications"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/pluginsmod"
 	"github.com/NoUseFreak/ocman/internal/projectforge"
@@ -39,14 +40,12 @@ func (s *Server) modules() []module.Module {
 	// other startup step. Plugins next: their discovery came after it.
 	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
 	mods = append(mods, s.backgroundTasksModule())
+	mods = append(mods, s.sidebarModules()...)
 	if s.historyIngest != nil {
 		mods = append(mods, s.historyIngest)
 	}
 	if s.sessionCatalogue != nil {
 		mods = append(mods, s.sessionCatalogue)
-	}
-	if s.historyParity != nil {
-		mods = append(mods, s.historyParity)
 	}
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
@@ -67,6 +66,9 @@ func (s *Server) modules() []module.Module {
 		mods = append(mods, m)
 	}
 	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule())
+	if recovery := s.sessionRecoveryModule(); recovery != nil {
+		mods = append(mods, recovery)
+	}
 	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule(), s.remotesModule(), s.sessionLifecycleModule(), s.queueModule(), s.convStreamModule())
 }
 
@@ -111,7 +113,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve
@@ -221,17 +223,9 @@ func (s *Server) newInboxModule(remotes func() inbox.Remotes) *inbox.Module {
 		EnsurePending: func(adapter platforms.Platform, sessionID string, prompts []platforms.LivePrompt) {
 			s.autoapproveModule().EnsurePending(adapter, sessionID, prompts)
 		},
-		SessionTitle: func(ctx context.Context, id string) string {
-			if s.db == nil {
-				return ""
-			}
-			if row, err := s.db.GetSession(ctx, id); err == nil {
-				return row.Title
-			}
-			return ""
-		},
-		Guards:    module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
-		Broadcast: s.broadcastGlobalEvent,
+		SessionTitle: s.sessionTitle,
+		Guards:       module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+		Broadcast:    s.broadcastGlobalEvent,
 	})
 }
 
@@ -260,18 +254,13 @@ func (s *Server) artifactsModule() *artifacts.Module {
 			Store:          s.stateDB,
 			ResolveProject: factoryProjectResolver{s}.ResolveLocalProject,
 			Projects:       func(ctx context.Context) ([]db.ProjectStats, error) { return s.router().Local().Projects(ctx) },
-			Descendants: func(ctx context.Context, id string) ([]string, error) {
-				if s.db == nil {
-					return []string{id}, nil
-				}
-				return s.db.GetSessionDescendantIDs(ctx, id)
-			},
-			Guards:      module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
-			FileAuth:    s.requireArtifactFileAuth,
-			SignFileURL: s.signArtifactFileURL,
-			PublicURL:   s.publicURL,
-			RelayURL:    func() string { return s.relayURL },
-			Broadcast:   s.broadcastGlobalEvent,
+			Descendants:    s.sessionDescendants,
+			Guards:         module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+			FileAuth:       s.requireArtifactFileAuth,
+			SignFileURL:    s.signArtifactFileURL,
+			PublicURL:      s.publicURL,
+			RelayURL:       func() string { return s.relayURL },
+			Broadcast:      s.broadcastGlobalEvent,
 		})
 	})
 }

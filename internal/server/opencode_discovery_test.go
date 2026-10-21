@@ -19,7 +19,7 @@ func TestHostHooksPublishToRegisteredAdapter(t *testing.T) {
 
 	adapter := opencode.New(nil, nil)
 	registry := platforms.NewRegistry()
-	registry.Register(adapter)
+	registry.Register(nativeOpenCode{Adapter: adapter})
 	srv := &Server{registry: registry}
 	srv.setOpenCodeMachineServer("4600")
 	srv.openCodeInventoryChanged()

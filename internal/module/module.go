@@ -72,6 +72,13 @@ type Closer interface {
 	Close()
 }
 
+// Finalizer releases resources opened during Start after handlers are fenced
+// and all workers joined, including failed startup before Run or Launch. It
+// must tolerate unopened resources and repeated calls.
+type Finalizer interface {
+	Finalize()
+}
+
 // ToolProvider contributes MCP tools to the server's MCP endpoint.
 type ToolProvider interface {
 	Tools() []mcpserver.ServerTool

@@ -105,6 +105,9 @@ func (d *DB) GetRecentModels(ctx context.Context, sessionLimit, maxResults int) 
 	if maxResults <= 0 {
 		maxResults = 10
 	}
+	if d.historyScope != nil {
+		return d.historyRecentModels(ctx, sessionLimit, maxResults)
+	}
 	// Per-model: max timestamp of an assistant message, scoped to the N most
 	// recently-updated sessions. Rely on SQL for the grouping/sort — way
 	// cheaper than decoding N JSON blobs in Go just to pluck out a string.

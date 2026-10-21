@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 )
 
@@ -97,7 +98,11 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 	if detail.TotalMessages > len(detail.Messages) {
 		usage = nil
 	}
-	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, sessionID+":"+messageID, text, usage)
+	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
+	if err != nil {
+		return
+	}
+	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, prefix+":"+messageID, text, usage)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": pluginID, "session_id": sessionID}).
 			Error("recording completed session turn for delivery")
@@ -128,7 +133,11 @@ func (m *Module) sessionCompletionAlreadyRecorded(ctx context.Context, adapter p
 	if lifecycle.LatestMessageRole != "assistant" || lifecycle.LatestMessageID == "" {
 		return false, nil
 	}
-	return m.plugins.HasPluginSessionCompletion(ctx, pluginID, sessionID+":"+lifecycle.LatestMessageID)
+	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
+	if err != nil {
+		return false, err
+	}
+	return m.plugins.HasPluginSessionCompletion(ctx, pluginID, prefix+":"+lifecycle.LatestMessageID)
 }
 
 // pumpSessionOutbox enqueues every due head completion that is not already in
@@ -148,6 +157,9 @@ func (m *Module) pumpSessionOutbox(ctx context.Context) {
 		}
 		for _, completion := range claimed {
 			after = completion.ID
+			if identity.IsPendingReference(completion.SessionID) {
+				continue
+			}
 			id := completion.PluginID
 			if _, asked := allowed[id]; !asked {
 				allowed[id] = m.sessionDeliveryAllowed(ctx, id)
@@ -248,6 +260,9 @@ func (m *Module) DeliverSessionCompletion(completion PluginSessionCompletion) {
 }
 
 func (m *Module) deliverSessionCompletion(ctx context.Context, completion PluginSessionCompletion) {
+	if identity.IsPendingReference(completion.SessionID) {
+		return
+	}
 	fields := log.Fields{"plugin_id": completion.PluginID, "delivery_id": completion.ID, "attempts": completion.Attempts}
 	current, err := m.plugins.PluginSessionCompletionCurrent(ctx, completion.ID, completion.Attempts)
 	if err != nil {
@@ -256,8 +271,11 @@ func (m *Module) deliverSessionCompletion(ctx context.Context, completion Plugin
 	if !current {
 		return
 	}
-	err = m.SessionBroker().Completed(ctx, completion.PluginID, sessionOutboxOperation(completion.ID),
-		plugins.SessionCompleted{SessionID: completion.SessionID, Text: completion.Text, Usage: completion.Usage})
+	wireID, err := m.pluginWireSession(ctx, completion.PlatformID, completion.SessionID)
+	if err != nil {
+		return
+	} // No broker delivery was attempted.
+	err = m.completePluginSession(ctx, completion, wireID)
 	// Settle an admitted attempt durably even if shutdown cancelled the call.
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()

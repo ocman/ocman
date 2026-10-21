@@ -32,9 +32,9 @@ export OTEL_SERVICE_NAME ?= ocman-dev
 export OCMAN_RELAY_URL ?= http://localhost:$(RELAY_PORT)
 
 # --- Conversation history -------------------------------------------------
-# Dev targets keep their mandatory conversation store checkout-local.
+# Keep history checkout-local, outside Air's disposable build directory.
 DEV_TARGETS := dev dev-prod dev-prod-watch dev-backend dev-remote
-$(DEV_TARGETS): export OCMAN_STATEV2_DB ?= $(CURDIR)/tmp/statev2.db
+$(DEV_TARGETS): export OCMAN_CONVERSATIONS_DB ?= $(if $(OCMAN_STATEV2_DB),$(OCMAN_STATEV2_DB),$(CURDIR)/state_conv.db)
 
 # --- dev targets ----------------------------------------------------------
 #

@@ -872,6 +872,10 @@
         "omitempty": false
       },
       {
+        "name": "branch",
+        "omitempty": true
+      },
+      {
         "name": "directory",
         "omitempty": false
       },
@@ -892,6 +896,10 @@
         "omitempty": false
       },
       {
+        "name": "lastMessageAt",
+        "omitempty": true
+      },
+      {
         "name": "lastTurnCompletedAt",
         "omitempty": false
       },
@@ -909,6 +917,14 @@
       },
       {
         "name": "notice",
+        "omitempty": true
+      },
+      {
+        "name": "origin",
+        "omitempty": true
+      },
+      {
+        "name": "originId",
         "omitempty": true
       },
       {

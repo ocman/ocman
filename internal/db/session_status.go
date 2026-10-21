@@ -6,7 +6,7 @@ import "context"
 // display list's cache or inactive-child filters. Lifecycle reads decide which
 // turns a shared-server replacement would interrupt.
 func (d *DB) GetSessionIdentities(ctx context.Context) ([]Session, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT id, directory FROM session ORDER BY id`)
+	rows, err := d.db.QueryContext(ctx, `SELECT id, directory, title, COALESCE(parent_id,''), time_created FROM session ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -14,7 +14,7 @@ func (d *DB) GetSessionIdentities(ctx context.Context) ([]Session, error) {
 	var sessions []Session
 	for rows.Next() {
 		var session Session
-		if err := rows.Scan(&session.ID, &session.Directory); err != nil {
+		if err := rows.Scan(&session.ID, &session.Directory, &session.Title, &session.ParentID, &session.TimeCreated); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, session)
@@ -103,6 +103,37 @@ func (d *DB) StatusCandidateDirectories(ctx context.Context, sinceMs int64) ([]s
 			WHERE m.session_id = s.id
 			ORDER BY m.time_created DESC, m.id DESC LIMIT 1
 		   ) IN ('tool-calls', 'unknown'))`, sinceMs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var directory string
+		if err := rows.Scan(&directory); err != nil {
+			return nil, err
+		}
+		out = append(out, directory)
+	}
+	return out, rows.Err()
+}
+
+// UnfinishedTurnDirectories returns the distinct worktree directories whose
+// sessions' latest message infers busy (InferSessionStatus): an assistant
+// message with neither a finish nor an error. It may include a synthesized
+// shell envelope; callers only widen a scope with it. Root directories are
+// read unscoped, so only worktree paths are checked.
+func (d *DB) UnfinishedTurnDirectories(ctx context.Context) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx, `
+		SELECT DISTINCT s.directory FROM session s
+		JOIN message m ON m.id = (
+			SELECT id FROM message WHERE session_id = s.id
+			ORDER BY time_created DESC, id DESC LIMIT 1
+		)
+		WHERE s.directory LIKE '%/.worktrees/%'
+			AND json_extract(m.data, '$.role') = 'assistant'
+			AND COALESCE(json_extract(m.data, '$.finish'), '') = ''
+			AND json_extract(m.data, '$.error') IS NULL`)
 	if err != nil {
 		return nil, err
 	}

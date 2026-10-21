@@ -10,6 +10,7 @@ package gitmod
 
 import (
 	"context"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -35,8 +36,9 @@ type Deps struct {
 	// the child, reporting the rule count and a soft-fail note.
 	InheritPermissions func(r *http.Request, platform, parentSessionID string) func(childSessionID string) (int, string)
 	// SendNow delivers the first message immediately, never queued.
-	SendNow func(ctx context.Context, platformID string, req platforms.SendMessageRequest) error
-	Guards  module.Guards
+	SendNow   func(ctx context.Context, platformID string, req platforms.SendMessageRequest) error
+	Guards    module.Guards
+	OnGitInfo func(context.Context, string, map[string]git.Info, int64)
 }
 
 // Module serves /api/git/{info,branches,checkout,diff} and

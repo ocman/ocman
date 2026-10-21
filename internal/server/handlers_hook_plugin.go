@@ -20,6 +20,11 @@ type hookPlugin interface {
 
 func (s *Server) hookPlugin() hookPlugin {
 	for _, p := range s.registry.Platforms() {
+		if provider, ok := p.(hostsvc.PlatformServiceProvider); ok {
+			if hooks := provider.HostServices().Hooks; hooks != nil {
+				return hooks
+			}
+		}
 		if h, ok := p.(hookPlugin); ok {
 			return h
 		}

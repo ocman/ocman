@@ -14,7 +14,7 @@ type SessionIdentity struct {
 	OwnerID        string `json:"ownerId"`
 	Platform       string `json:"platform"`
 	SourceKey      string `json:"sourceKey,omitempty"`
-	NativeID       string `json:"nativeId"`
+	NativeID       string `json:"nativeId,omitempty"`
 	ParentID       string `json:"parentId,omitempty"`
 	NativeParentID string `json:"nativeParentId,omitempty"`
 	Origin         string `json:"origin"`
@@ -31,4 +31,11 @@ type SessionIdentityResolver interface {
 	SessionIdentity(context.Context, SessionIdentityRequest) (*SessionIdentity, error)
 	SessionIdentities(context.Context, []string) ([]SessionIdentity, error)
 	SessionOwnerID() string
+}
+
+// LegacySessionResolver is used only by platform compatibility migrations. The
+// authenticated owner maps old references to canonical metadata in one batch;
+// missing or unfinished references are omitted, never allocated by a hub.
+type LegacySessionResolver interface {
+	ResolveLegacyReferences(context.Context, []string) (map[string]SessionIdentity, error)
 }

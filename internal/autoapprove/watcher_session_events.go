@@ -18,13 +18,10 @@ func (w *autoApproveWatcher) markSessionDirtyIfKnown(sessionID string) {
 	w.markSessionDirty(sessionID)
 }
 
-// handleSessionDataChanged invalidates message/part aggregates or a deleted row.
-// Unattributable events require a full reconciliation.
+// handleSessionDataChanged asks ingestion to reread a changed session.
+// Unattributable events are left to ingestion's periodic reconciliation.
 func (w *autoApproveWatcher) handleSessionDataChanged(sessionID string) {
 	if sessionID == "" {
-		if w.markSessionsDirty != nil {
-			w.markSessionsDirty()
-		}
 		return
 	}
 	w.markSessionDirtyIfKnown(sessionID)
@@ -67,7 +64,6 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 				}
 				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh new session")
 				w.forgetSession(sessionID)
-				w.invalidateSessionsCache()
 			}
 			if w.svc.deps.BroadcastSessionChanged != nil {
 				w.svc.deps.BroadcastSessionChanged(sessionID)
@@ -75,7 +71,6 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 		}()
 		return
 	}
-	w.invalidateSessionsCache()
 	if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
 		w.svc.deps.BroadcastSessionChanged(sessionID)
 	}

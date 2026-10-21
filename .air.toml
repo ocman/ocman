@@ -20,4 +20,5 @@ tmp_dir = "tmp"
   time = false
 
 [misc]
-  clean_on_exit = true
+# Older dev runs may still keep conversation history and cursors in tmp/.
+clean_on_exit = false

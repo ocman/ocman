@@ -113,6 +113,7 @@ func (c *compat) session(ctx context.Context, id string) (map[string]any, error)
 
 func createSession(c *compat, r *http.Request, _ []string) (*http.Response, error) {
 	var in struct {
+		ID         string `json:"id"`
 		Title      string `json:"title"`
 		Directory  string `json:"directory"`
 		ParentID   string `json:"parentID"`
@@ -122,6 +123,9 @@ func createSession(c *compat, r *http.Request, _ []string) (*http.Response, erro
 		return nil, err
 	}
 	body := map[string]any{}
+	if in.ID != "" {
+		body["id"] = in.ID
+	}
 	if in.Title != "" {
 		body["title"] = in.Title
 	}

@@ -35,7 +35,7 @@ func (a *Adapter) HistoryMessages(ctx context.Context, sessionID string, message
 	if errors.Is(err, db.ErrHistoryUnsupported) {
 		return nil, platforms.ErrUnsupported
 	}
-	return snap, err
+	return a.historyProject(ctx, snap, err)
 }
 
 // WatchHistory follows the v2 machine server's /api/event firehose, which

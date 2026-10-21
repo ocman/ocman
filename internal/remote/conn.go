@@ -43,15 +43,16 @@ type RemoteConn struct {
 	address string
 	token   string
 
-	mu              sync.RWMutex
-	conn            *grpc.ClientConn
-	client          pb.OcmanClient
-	health          Health
-	remoteID        string
-	hostname        string
-	protocolVersion int
-	lastSeen        time.Time
-	platforms       []string
+	mu               sync.RWMutex
+	conn             *grpc.ClientConn
+	client           pb.OcmanClient
+	health           Health
+	remoteID         string
+	hostname         string
+	protocolVersion  int
+	requireCanonical bool
+	lastSeen         time.Time
+	platforms        []string
 }
 
 // NewRemoteConn creates a RemoteConn for the given address and token.
@@ -124,7 +125,7 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 		c.setHealth(classifyHandshakeError(err))
 		return fmt.Errorf("remote: hello %s: %w", c.address, err)
 	}
-	if !protocolCompatible(hello.ProtocolVersion) {
+	if !c.acceptsSessionProtocol(hello.ProtocolVersion) {
 		conn.Close()
 		c.setHealth(HealthIncompatible)
 		return fmt.Errorf("remote: incompatible protocol version %d (hub requires %d); upgrade ocman on both machines", hello.ProtocolVersion, ProtocolVersion)
@@ -190,7 +191,7 @@ func (c *RemoteConn) WaitForDrop(ctx context.Context) {
 				c.markOffline()
 				return
 			}
-			if !protocolCompatible(hello.ProtocolVersion) {
+			if !c.acceptsSessionProtocol(hello.ProtocolVersion) {
 				c.setHealth(HealthIncompatible)
 				return
 			}
@@ -281,7 +282,7 @@ func (c *RemoteConn) setHealth(h Health) {
 
 // protocolCompatible reports whether a remote's protocol version is in
 // the hub's supported range. v1 requires an exact match (AD-12).
-func protocolCompatible(v int32) bool { return v == ProtocolVersion }
+func protocolCompatible(v int32) bool { return v == ProtocolVersion || v == legacySessionProtocol }
 
 // classifyHandshakeError maps a Hello error to a health state: an
 // Unauthenticated code means a bad token; anything else is treated as a

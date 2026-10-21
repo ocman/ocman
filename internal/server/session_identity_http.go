@@ -7,6 +7,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
@@ -35,9 +36,8 @@ func (s *Server) handleSessionIdentity(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, public)
 }
 
-// withOwnedSessionPath translates only the public session-key segment. Native
-// handlers keep their state/permission/queue keys and source message IDs. It is
-// applied to both the core dispatcher and more-specific module routes.
+// withOwnedSessionPath validates ownership before the core dispatcher and
+// more-specific module routes. Canonical adapters retain the Ocman path key.
 func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const prefix = "/api/session/"
@@ -46,24 +46,35 @@ func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		id, suffix, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, prefix), "/")
-		if !strings.HasPrefix(id, "ocm_") {
+		for _, route := range sessionSubRoutes {
+			if !strings.Contains(route.pattern, "{") && route.pattern == strings.TrimPrefix(r.URL.Path, prefix) {
+				next(w, r)
+				return
+			}
+		}
+		if identity.IsPendingReference(id) {
+			s.requireAuth(func(w http.ResponseWriter, _ *http.Request) { writeIdentityError(w, platforms.ErrPlatformUnreachable) })(w, r)
+			return
+		}
+		if !strings.HasPrefix(id, "ocm_") && !s.sessions.CanonicalSessionReferences(r.URL.Query().Get("platform")) {
 			next(w, r)
 			return
 		}
 		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-			info, err := s.sessions.LookupSessionIdentity(r.Context(), r.URL.Query().Get("platform"), platforms.SessionIdentityRequest{ID: id})
+			info, err := s.sessions.LookupSessionReference(r.Context(), r.URL.Query().Get("platform"), id)
 			if err != nil {
 				writeIdentityError(w, err)
 				return
 			}
-			if !httpx.ValidID(info.NativeID) {
-				http.Error(w, "invalid native session binding", http.StatusConflict)
+			coreID := s.sessions.CoreSessionReference(info)
+			if !httpx.ValidID(coreID) {
+				http.Error(w, "invalid session binding", http.StatusConflict)
 				return
 			}
 			copy := r.Clone(r.Context())
 			u := *r.URL
 			copy.URL = &u
-			u.Path = prefix + info.NativeID
+			u.Path = prefix + coreID
 			if suffix != "" {
 				u.Path += "/" + suffix
 			}
@@ -73,7 +84,7 @@ func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 			u.RawQuery = q.Encode()
 			for _, name := range []string{"id", "sessionId", "sessionID"} {
 				if copy.PathValue(name) == id {
-					copy.SetPathValue(name, info.NativeID)
+					copy.SetPathValue(name, coreID)
 				}
 			}
 			w.Header().Set("X-Ocman-Session-ID", info.ID)

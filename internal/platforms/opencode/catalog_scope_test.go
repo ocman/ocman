@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -13,7 +14,7 @@ import (
 // two checkouts on that server must each be read in their own directory
 // (and cached separately) to pick up project-local agents, commands
 // and model configuration.
-func TestDirectoryCatalogScopesV2RequestsByDirectory(t *testing.T) {
+func TestStoredDirectoryCatalogScopesV2RequestsByDirectory(t *testing.T) {
 	defer ocv2.SetInstalledV2(true)()
 	t.Cleanup(func() { catalogCache.invalidatePort("") })
 	agents := map[string]string{"/src/alpha": "alpha-agent", "/src/beta": "beta-agent"}
@@ -36,7 +37,7 @@ func TestDirectoryCatalogScopesV2RequestsByDirectory(t *testing.T) {
 	a := nativeQueueAdapter(t, "sess-scope", "/src/alpha", f)
 	catalogCache.invalidatePort(f.Port())
 	for dir, want := range agents {
-		got, err := a.DirectoryCatalog(context.Background(), platforms.DirectoryCatalogRequest{Directory: dir, Port: f.Port()})
+		got, err := a.DirectoryCatalogFromStored(context.Background(), platforms.DirectoryCatalogRequest{Directory: dir, Port: f.Port()}, nil, db.SessionDefaults{}, true)
 		if err != nil {
 			t.Fatal(err)
 		}

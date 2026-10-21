@@ -153,6 +153,9 @@ func (s *Server) CreateWorktreeSession(ctx context.Context, req *pb.JsonReq) (*p
 	if wr.Platform == "" {
 		wr.Platform = string(platforms.OpenCodeID)
 	}
+	if err := s.validateWorktreeIdentity(wr.Platform, wr.Creation); err != nil {
+		return nil, err
+	}
 	return jsonResp(s.host.CreateWorktreeSession(ctx, wr))
 }
 func (s *Server) RemoveWorktree(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {

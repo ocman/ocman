@@ -48,7 +48,7 @@ export function ProjectDetail() {
   const projectsQ = useProjects();
   const identity = useMemo(() => projectIdentityIndex(projectsQ.data ?? []), [projectsQ.data]);
   const sessionsQ = useSessions(
-    { sinceHours, limit: 0 },
+    { sinceHours, limit: 0, accounting: true },
     { poll: true, enabled: !!directory },
   );
   const projectKey = identity(directory ?? '', ownerId ?? undefined).key;

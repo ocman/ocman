@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 )
 
@@ -69,7 +70,7 @@ func startClaudeRemote(t *testing.T, fixture string) (platforms.Platform, string
 	go func() { _ = adapter.WatchEvents(ctx) }()
 
 	reg := platforms.NewRegistry()
-	reg.Register(adapter)
+	reg.Register(providerOwner{Adapter: adapter})
 	conn := NewRemoteConn(startRealRemote(t, "tok", "box", reg), "tok")
 	if err := conn.Connect(t.Context()); err != nil {
 		t.Fatal(err)
@@ -210,3 +211,16 @@ func TestHubAnswersRemoteClaudePermission(t *testing.T) {
 		t.Fatalf("prompt still pending: %+v", left)
 	}
 }
+
+// providerOwner registers the owner's socket adapter for protocol tests. The
+// remote RPCs under test forward session pages, which the double answers from
+// the supervisor; a production owner reads them from statev2.
+type providerOwner struct {
+	*provider.Adapter
+	platformtest.NoBrowsing
+}
+
+func (p providerOwner) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
+	return p.RuntimeDetail(ctx, id, limit, offset)
+}
+func (p providerOwner) Owns(_ context.Context, id string) bool { return p.Knows(id) }

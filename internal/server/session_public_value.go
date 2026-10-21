@@ -34,14 +34,6 @@ func publicSessionValue[T any](s *Server, ctx context.Context, platform string, 
 
 func (s *Server) publicSessionProjector(platform string, shape *sessionview.Shape, omitUnresolvedRows bool) sessionview.Projector {
 	return sessionview.Projector{Platform: platform, Shape: shape, OmitUnresolvedRows: omitUnresolvedRows, Lookup: func(ctx context.Context, platform string, ids []string) (map[string]string, error) {
-		rows, err := s.sessions.LookupSessionIdentities(ctx, platform, ids)
-		if err != nil {
-			return nil, err
-		}
-		out := make(map[string]string, len(rows))
-		for _, row := range rows {
-			out[row.NativeID] = row.ID
-		}
-		return out, nil
+		return s.sessions.PublicSessionReferences(ctx, platform, ids)
 	}}
 }

@@ -65,9 +65,6 @@ func TestConversationHistoryModuleWiringAndInvalidation(t *testing.T) {
 	if !registered {
 		t.Fatal("history worker missing from server module registry")
 	}
-	if s.historyParity != nil {
-		t.Fatal("parity enabled without an OpenCode analytics source")
-	}
 	if err := s.historyIngest.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +99,7 @@ func TestConversationHistoryModuleWiringAndInvalidation(t *testing.T) {
 	(&Server{}).observeHistoryChange("ocman.session.changed", nil)
 }
 
-func TestConversationHistoryRegistersParityWithOpenCode(t *testing.T) {
+func TestConversationHistoryDoesNotRegisterNativeAnalyticsParity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode.db")
 	rw, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
@@ -123,15 +120,13 @@ func TestConversationHistoryRegistersParityWithOpenCode(t *testing.T) {
 	}
 	defer store.Close()
 	s := New(source, nil, "127.0.0.1:0", platforms.NewRegistry(), nil).WithConversationHistory(store, "owner")
-	if s.historyAnalytics.Store != store || s.conversationReader.Store != store {
+	if s.historyAnalytics.Store != store {
 		t.Fatal("mandatory readers were not connected to ingestion")
 	}
-	registered := false
 	for _, m := range s.modules() {
-		registered = registered || m == s.historyParity
-	}
-	if s.historyParity == nil || !registered {
-		t.Fatal("analytics parity not registered alongside an OpenCode source")
+		if m.Name() == "conversation-parity" {
+			t.Fatal("native parity reader registered in application modules")
+		}
 	}
 }
 

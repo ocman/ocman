@@ -43,7 +43,7 @@ func TestReplacementReviewSettledBaseline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			srv.registry.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 				return &platforms.SessionLifecycle{Status: status, LatestMessageID: "m"}, nil
 			}})
 			if err := recordStoppedReplacement(t, srv, "/repo", "requested restart"); err != nil {
@@ -80,7 +80,7 @@ func TestReplacementReviewFailedStopRefreshesTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, message := db.StatusBusy, "old"
-	srv.registry.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: status, LatestMessageID: message}, nil
 	}})
 	stopErr := errors.New("stop failed")
@@ -129,7 +129,7 @@ func TestReplacementReviewAbortDuringStopAndRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			status := db.StatusBusy
-			srv.registry.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 				return &platforms.SessionLifecycle{Status: status, LatestMessageID: "m"}, nil
 			}})
 			aborted := ""

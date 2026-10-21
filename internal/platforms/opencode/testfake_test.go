@@ -229,6 +229,15 @@ func newTestDBWithSession(t *testing.T, sessionID, directory string) *db.DB {
 	return newTestDBWithSessions(t, []testSession{{id: sessionID, directory: directory}})
 }
 
+// Operation-contract tests start after creation has bound a native session to
+// its runtime. Discovery tests deliberately use the unbound fixture above.
+func newBoundTestDBWithSession(t *testing.T, sessionID, directory string) *db.DB {
+	t.Helper()
+	database := newTestDBWithSession(t, sessionID, directory)
+	td.rememberSessionPort(sessionID, td.discoverOpenCodePort(directory))
+	return database
+}
+
 type testSession struct {
 	id          string
 	directory   string

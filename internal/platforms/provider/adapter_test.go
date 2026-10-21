@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -133,28 +132,23 @@ func TestSessionContract(t *testing.T) {
 	if !a.Capabilities().ExactPatterns {
 		t.Fatal("provider capabilities must report ExactPatterns")
 	}
-	if a.Owns(t.Context(), "s") {
+	if a.Knows("s") {
 		t.Fatal("ownership before observation")
 	}
 	sessions, err := a.Sessions(t.Context(), "/work tree", 7)
 	requireNoError(t, err)
-	if len(sessions) != 2 || sessions[0].Platform != "fake" || !a.Owns(t.Context(), "s") {
+	if len(sessions) != 2 || sessions[0].Platform != "fake" || !a.Knows("s") {
 		t.Fatal(sessions)
 	}
-	detail, err := a.Session(t.Context(), "s", 20, 40)
+	detail, err := a.RuntimeDetail(t.Context(), "s", 20, 40)
 	requireNoError(t, err)
-	if detail.TotalMessages != 100 || len(detail.Parts) != 1 || detail.SessionTree[0].Platform != "fake" || !a.Owns(t.Context(), "child") {
+	if detail.TotalMessages != 100 || len(detail.Parts) != 1 || detail.SessionTree[0].Platform != "fake" || !a.Knows("child") {
 		t.Fatal(detail)
 	}
 	lifecycle, err := a.SessionLifecycle(t.Context(), "s")
 	requireNoError(t, err)
 	if lifecycle.Status != db.StatusBusy || lifecycle.LatestMessageID != "m" {
 		t.Fatal(lifecycle)
-	}
-	candidates, err := a.SessionsInactiveBefore(t.Context(), 20)
-	requireNoError(t, err)
-	if !reflect.DeepEqual(candidates, []db.SessionArchiveCandidate{{ID: "s", TimeUpdated: 10}}) {
-		t.Fatal(candidates)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -170,12 +164,12 @@ func TestMutationContract(t *testing.T) {
 	a := f.adapter(t)
 	created, err := a.CreateSession(t.Context(), platforms.CreateSessionRequest{Directory: "/repo", Title: "new"})
 	requireNoError(t, err)
-	if created.ID != "created" || !a.Owns(t.Context(), "created") {
+	if created.ID != "created" || !a.Knows("created") {
 		t.Fatal(created)
 	}
 	forked, err := a.ForkSession(t.Context(), platforms.ForkSessionRequest{SessionID: "s", MessageID: "m"})
 	requireNoError(t, err)
-	if forked.ID != "forked" || !a.Owns(t.Context(), "forked") {
+	if forked.ID != "forked" || !a.Knows("forked") {
 		t.Fatal(forked)
 	}
 	send := platforms.SendMessageRequest{SessionID: "s", Message: "hello", Images: []platforms.ImageAttachment{{URL: "data:image/png;base64,AA==", Mime: "image/png"}}, Model: "model", Agent: "build", Reasoning: "high"}
@@ -240,28 +234,11 @@ func TestCatalogAndOptionalReadContract(t *testing.T) {
 	f.reply("GET", "/catalog", catalog)
 	f.reply("GET", "/sessions/s/rules", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "ask"}})
 	f.reply("GET", "/sessions/s/held", []platforms.NativeQueuedMessage{{ID: "h", Text: "followup"}})
-	f.reply("GET", "/sessions/s/info", platforms.SessionInfo{})
-	f.reply("GET", "/sessions/s/changes", platforms.SessionChanges{})
 	f.reply("GET", "/account", providerprotocol.Account{SubscriptionType: "max", RateLimits: []providerprotocol.RateLimit{{Name: "weekly", Utilization: 0.5, ResetsAt: 100}}})
 	a := f.adapter(t)
-	agents, err := a.AgentCatalog(t.Context(), "s")
+	direct, err := a.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: "/repo"})
 	requireNoError(t, err)
-	if agents[0].Name != "build" {
-		t.Fatal(agents)
-	}
-	commands, err := a.SlashCommands(t.Context(), "s")
-	requireNoError(t, err)
-	if commands[0].Name != "skill" {
-		t.Fatal(commands)
-	}
-	models, err := a.SessionModels(t.Context(), "s")
-	requireNoError(t, err)
-	if models.Models[0].Model != "model" {
-		t.Fatal(models)
-	}
-	direct, err := a.DirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: "/repo"})
-	requireNoError(t, err)
-	if !direct.LiveConnection {
+	if !direct.LiveConnection || direct.Agents[0].Name != "build" || direct.Commands[0].Name != "skill" || direct.Models.Models[0].Model != "model" {
 		t.Fatal(direct)
 	}
 	rules, err := a.PermissionRules(t.Context(), "s")
@@ -274,10 +251,6 @@ func TestCatalogAndOptionalReadContract(t *testing.T) {
 	if held[0].Text != "followup" {
 		t.Fatal(held)
 	}
-	_, err = a.SessionInfo(t.Context(), "s")
-	requireNoError(t, err)
-	_, err = a.SessionChanges(t.Context(), "s")
-	requireNoError(t, err)
 	account, err := a.Account(t.Context())
 	requireNoError(t, err)
 	if account.SubscriptionType != "max" || account.RateLimits[0].Utilization != .5 {
@@ -306,11 +279,6 @@ func TestCapabilitiesGateEveryOptionalMethod(t *testing.T) {
 		func() error { _, err := a.ForkSession(t.Context(), platforms.ForkSessionRequest{}); return err },
 		func() error { _, err := a.NativeQueued(t.Context(), "s"); return err },
 		func() error { return a.CancelNativeQueued(t.Context(), platforms.CancelNativeQueuedRequest{}) },
-		func() error { _, err := a.AgentCatalog(t.Context(), "s"); return err },
-		func() error { _, err := a.SlashCommands(t.Context(), "s"); return err },
-		func() error { _, err := a.SessionModels(t.Context(), "s"); return err },
-		func() error { _, err := a.SessionInfo(t.Context(), "s"); return err },
-		func() error { _, err := a.SessionChanges(t.Context(), "s"); return err },
 		func() error { _, err := a.Account(t.Context()); return err },
 		func() error { _, err := a.ListPermissions(t.Context(), "s"); return err },
 		func() error { _, err := a.ListQuestions(t.Context(), "s"); return err },
@@ -379,7 +347,7 @@ func TestHTTPErrorContract(t *testing.T) {
 		}
 	}
 	f.reply("GET", "/sessions/s", platforms.SessionDetail{})
-	if _, err := a.Session(t.Context(), "s", 1, 0); err == nil {
+	if _, err := a.RuntimeDetail(t.Context(), "s", 1, 0); err == nil {
 		t.Fatal("accepted missing detail")
 	}
 	f.reply("POST", "/sessions", platforms.CreateSessionResponse{})
@@ -466,7 +434,7 @@ func TestDrainingAdapterUsesOnlyVersionIndependentRoutes(t *testing.T) {
 	for _, err := range []error{
 		a.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: "s", Message: "x"}),
 		func() error { _, err := a.Sessions(t.Context(), "", 0); return err }(),
-		func() error { _, err := a.Session(t.Context(), "s", 1, 0); return err }(),
+		func() error { _, err := a.RuntimeDetail(t.Context(), "s", 1, 0); return err }(),
 		func() error { _, err := a.LiveSessions(t.Context()); return err }(),
 		a.ProxyEvents(t.Context(), "s", io.Discard, nil),
 	} {

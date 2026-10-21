@@ -12,16 +12,16 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 type projectsIndexState struct {
-	mu          sync.RWMutex
-	data        []db.ProjectStats
-	loaded      bool
-	refreshedAt time.Time
+	mu             sync.RWMutex
+	data           []db.ProjectStats
+	loaded         bool
+	refreshedAt    time.Time
+	historyVersion int64
 
 	// running/dirty/done/err implement FR-8's per-owner singleflight
 	// with a dirty follow-up: at most one refresh runs, concurrent
@@ -33,7 +33,7 @@ type projectsIndexState struct {
 	done    chan struct{}
 	err     error
 
-	// fetch overrides the db.GetProjects query. Nil in production;
+	// fetch overrides the stored project query. Nil in production;
 	// tests set it to control timing, failures, and call counts.
 	fetch  func() ([]db.ProjectStats, error)
 	enrich func(context.Context, []db.ProjectStats) error // nil uses owner-local discovery
@@ -59,7 +59,7 @@ func (s *Server) runProjectsIndexTick(ctx context.Context) {
 }
 
 func (s *Server) runProjectsIndexLoop(ctx context.Context) {
-	if s.db == nil && len(s.localPlatformIDs()) == 0 {
+	if !s.hasStoredHistory() && s.projects.fetch == nil {
 		return
 	}
 
@@ -98,7 +98,7 @@ var errProjectsRefreshAborted = errors.New("projects index refresh aborted")
 func (s *Server) refreshProjectsIndex(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	if s.db == nil && s.projects.fetch == nil && len(s.localPlatformIDs()) == 0 {
+	if !s.hasStoredHistory() && s.projects.fetch == nil {
 		return nil
 	}
 
@@ -186,6 +186,10 @@ func (s *Server) refreshProjectsIndexOnce(ctx context.Context) error {
 	defer span.End()
 
 	start := time.Now()
+	version, err := s.projectHistoryVersion(ctx)
+	if err != nil {
+		return err
+	}
 	projects, err := s.getProjects(ctx)
 	if err == nil {
 		enrich := s.projects.enrich
@@ -212,6 +216,7 @@ func (s *Server) refreshProjectsIndexOnce(ctx context.Context) error {
 	s.projects.data = cloneProjectStats(projects)
 	s.projects.loaded = true
 	s.projects.refreshedAt = refreshedAt
+	s.projects.historyVersion = version
 	s.projects.mu.Unlock()
 
 	s.persistProjectsIndex(ctx, projects, refreshedAt)
@@ -223,10 +228,10 @@ func (s *Server) refreshProjectsIndexOnce(ctx context.Context) error {
 }
 
 func (s *Server) loadProjectsIndexCache(ctx context.Context) {
-	if s.stateDB == nil {
+	if s.historyAnalytics == nil || s.historyAnalytics.Store == nil {
 		return
 	}
-	data, refreshedAt, err := s.stateDB.ProjectsCache(ctx)
+	data, refreshedAt, err := s.historyAnalytics.Store.ProjectsCache(ctx, s.historyOwner)
 	if err != nil {
 		log.WithError(err).Warn("loading projects cache")
 		return
@@ -248,12 +253,12 @@ func (s *Server) loadProjectsIndexCache(ctx context.Context) {
 }
 
 func (s *Server) persistProjectsIndex(ctx context.Context, projects []db.ProjectStats, refreshedAt time.Time) {
-	if s.stateDB == nil {
+	if s.historyAnalytics == nil || s.historyAnalytics.Store == nil {
 		return
 	}
 	data, err := json.Marshal(projects)
 	if err == nil {
-		err = s.stateDB.SaveProjectsCache(ctx, data, refreshedAt)
+		err = s.historyAnalytics.Store.SaveProjectsCache(ctx, s.historyOwner, data, refreshedAt)
 	}
 	if err != nil {
 		log.WithError(err).Warn("saving projects cache")
@@ -264,56 +269,7 @@ func (s *Server) getProjects(ctx context.Context) ([]db.ProjectStats, error) {
 	if fetch := s.projects.fetch; fetch != nil {
 		return fetch()
 	}
-	var projects []db.ProjectStats
-	if s.db != nil {
-		var err error
-		if projects, err = s.db.GetProjects(ctx); err != nil {
-			return nil, err
-		}
-	}
-	return s.mergePlatformProjects(ctx, projects), nil
-}
-
-// mergePlatformProjects adds the directories of every other local platform's
-// sessions, so pickers offer projects that have only Claude sessions (FR-2).
-// OpenCode's rows come from its database; a failing adapter is skipped.
-// ponytail: lists every session per refresh; add a per-adapter projects
-// operation if a platform's list gets slow.
-func (s *Server) mergePlatformProjects(ctx context.Context, projects []db.ProjectStats) []db.ProjectStats {
-	index := map[string]int{}
-	for i, p := range projects {
-		index[p.Directory] = i
-	}
-	for _, adapter := range s.registry.Platforms() {
-		id := string(adapter.ID())
-		if isRemotePlatformID(id) || (id == string(platforms.OpenCodeID) && s.db != nil) {
-			continue
-		}
-		sessions, err := adapter.Sessions(ctx, "", 0)
-		if err != nil {
-			log.WithError(err).WithField("platform", id).Warn("projects index: listing sessions")
-			continue
-		}
-		for _, session := range sessions {
-			if session.Directory == "" || session.ParentID != "" {
-				continue
-			}
-			i, ok := index[session.Directory]
-			if !ok {
-				i = len(projects)
-				index[session.Directory] = i
-				projects = append(projects, db.ProjectStats{Directory: session.Directory})
-			}
-			p := &projects[i]
-			p.SessionCount++
-			p.MessageCount += session.MessageCount
-			p.LastUsed = max(p.LastUsed, session.TimeUpdated)
-			p.TotalTokensIn += session.TotalInputTokens
-			p.TotalTokensOut += session.TotalOutputTokens
-			p.TotalCost += session.TotalCost
-		}
-	}
-	return projects
+	return s.storedProjects(ctx)
 }
 
 func (s *Server) projectsSnapshot() ([]db.ProjectStats, bool) {

@@ -12,13 +12,6 @@ import (
 
 type toolTiming = analyticsdata.ToolTiming
 
-// modelDuration excludes the union of tool intervals, including time tools
-// spend awaiting permission/question answers. Startup/prefill still count:
-// these timestamps support request throughput, not provider-side decode TPS.
-func modelDuration(start, end int64, tools []toolTiming) int64 {
-	return analyticsdata.ModelDuration(start, end, tools)
-}
-
 // Read the compact mirror projection, falling back to OpenCode's parts only
 // when the message scan also reads OpenCode (e.g. before the initial build).
 func (d *DB) applyThroughput(ctx context.Context, source querier, requests []requestRow) error {

@@ -1,6 +1,6 @@
 # Conversation ingestion
 
-This owner-local module populates the separate durable `statev2.db`, which
+This owner-local module populates the separate `state_conv.db`, which
 serves settled conversation reads and analytics. Live command routing and
 active-session streaming are unchanged.
 
@@ -33,6 +33,16 @@ source gets one independent serialized worker. A failed source cannot rebind
 another source or prevent its worker progressing. Source reads have deadlines and
 shutdown cancellation; notifications perform no platform/database I/O.
 
+Historical passes share one background slot across sources. The default
+`BackfillDutyPercent` is 20: after each session, the importer rests for four times
+the measured work duration, with a minimum 10 ms pause. This is a wall-time duty
+cycle, not a machine-wide CPU cap. No transaction is held during the pause.
+Live updates and requested conversation reads bypass the background budget;
+waiting readers can interrupt the cooldown or another source's slot wait.
+Already committed snapshots keep their checkpoints if the worker is cancelled.
+A single snapshot still runs atomically, so its individual cost can cause a
+short burst before the importer yields.
+
 Detailed multi-instance discovery/configuration and UI remain separate work.
 Current startup binds the local adapters already configured for this owner.
 
@@ -45,7 +55,13 @@ Each worker picks one mode for its source:
   per-session event sequences with those already applied; live events read only
   the messages they name. It does not poll content.
 - **Journal** (Claude, `journal_mode.go`) compares version hints once at
-  startup, then rereads the sessions named by hook journal records.
+  startup, then targets the sessions named by hook journal records and their
+  retained descendants, without inventorying unrelated transcripts. Claude
+  resumes conversion at the last message group's byte offset, replaying that
+  group for appended tool results and upserting only the transcript tail.
+  Transcript progress and content commit atomically. Invalid cursors or
+  detected replacements/truncations fall back to a full snapshot. The shared
+  Claude index may still reindex the changed file to refresh its metadata.
 - **Polling** (OpenCode v1, `worker.go`) compares inventory version hints every
   30 seconds and reads only invalidated, new or re-hinted sessions. A full
   verification rereads every session every six hours (`VerifyInterval`).
@@ -55,6 +71,10 @@ Full verification is manual-only for feed and journal sources. In every mode,
 coalesced with a debounce. Invalidations that arrive during an import remain
 queued. Queue overflow requests a repair of every session instead of losing
 identities or allowing unbounded growth.
+
+Live activity hints are separate from explicit repairs. Feed sources skip hints
+and replayed events whose durable sequence is already applied; explicit repair
+requests still validate the source even when its sequence has not advanced.
 
 Inventory versions are only hints. Verification catches old-message changes and
 late imports that do not advance a session's timestamp. Persistent
@@ -75,6 +95,17 @@ inventory. Missing messages/parts are marked only from a successful complete
 snapshot. All content remains retained. Explicitly purged identities are skipped
 before their source content is read, and statev2 checks the tombstone again at
 commit if a purge raced an in-flight snapshot.
+
+Unresolved creation reservations defer only the affected identities. Adapters
+return the resolvable inventory with `platforms.HistoryDeferred`; workers import
+those sessions and report a deferred counter. Such an inventory cannot authorize
+source-deletion markers or complete-history verification. Ordinary source
+errors still reject the inventory entirely. Project browsing uses committed
+history immediately. Analytics also uses committed projections from initialized
+local sources during incomplete or failing imports, without native fallbacks.
+Its partial-data response header is diagnostic only; users inspect sync health
+in Settings → System → Application health or Background tasks. Retrying ingestion
+does not produce global import toasts or replace the application shell.
 
 ## Limits of this increment
 

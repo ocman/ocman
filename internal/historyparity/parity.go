@@ -141,17 +141,6 @@ func (r *Report) add(kind, key, field string, source, history int64) {
 	}
 }
 
-// mismatched returns the distinct keys of one kind that differ.
-func (r *Report) mismatched(kind string) int {
-	keys := map[string]bool{}
-	for _, m := range r.Mismatches {
-		if m.Kind == kind {
-			keys[m.Key] = true
-		}
-	}
-	return len(keys)
-}
-
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {

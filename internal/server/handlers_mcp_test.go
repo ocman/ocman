@@ -13,6 +13,7 @@ import (
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
 // The dedicated MCP listener is the credential-free path for local MCP
@@ -154,30 +155,24 @@ func TestSessionMCPGetEnrichesDetailWithoutMutatingState(t *testing.T) {
 }
 
 func TestSessionMCPSearchSessionTextTagsLocalPlatform(t *testing.T) {
-	srv, rawDB := testServerWithRawDB(t)
-	defer rawDB.Close()
-	for _, stmt := range []string{
-		`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s1', 't', '/work', 1, 500)`,
-		`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 1, '{"role":"assistant"}')`,
-		`INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('p1', 'm1', 's1', 1, '{"type":"text","text":"used weave-cli"}')`,
-	} {
-		if _, err := rawDB.Exec(stmt); err != nil {
-			t.Fatal(err)
-		}
+	srv, _ := newSessionsTestServer(t)
+	history := storedProjectFixture(t, srv)
+	if _, err := history.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "fixture", SessionID: "s1"}, Title: "t", Directory: "/work", CreatedAt: 1, UpdatedAt: 500}, Messages: []statev2.Message{{ID: "m1", Role: "assistant"}}, Parts: []statev2.Part{{ID: "p1", MessageID: "m1", Kind: "text", Text: "used weave-cli"}}}); err != nil {
+		t.Fatal(err)
 	}
 	matches, err := (sessionMCPService{srv}).SearchSessionText(t.Context(), "weave-cli", "", 100)
-	if err != nil || len(matches) != 1 || matches[0].Platform != "opencode" || matches[0].SessionID != "s1" || matches[0].Role != "assistant" {
+	if err != nil || len(matches) != 1 || matches[0].Platform != "test" || matches[0].SessionID != "s1" || matches[0].Role != "assistant" {
 		t.Fatalf("matches = %#v, %v", matches, err)
 	}
 
-	srv.db = nil
-	if matches, err := (sessionMCPService{srv}).SearchSessionText(t.Context(), "weave-cli", "", 100); err != nil || matches != nil {
+	srv.historyAnalytics = nil
+	if matches, err := (sessionMCPService{srv}).SearchSessionText(t.Context(), "weave-cli", "", 100); !errors.Is(err, platforms.ErrHistoryUnavailable) || matches != nil {
 		t.Fatalf("no-db matches = %#v, %v", matches, err)
 	}
 }
 
 func TestSessionMCPGetWithoutPlatformSearchesAllPlatforms(t *testing.T) {
-	srv := testServer(t)
+	srv, _ := newSessionsTestServer(t)
 	detailFor := func(platform string, ids ...string) func(string) (*platforms.SessionDetail, error) {
 		return func(id string) (*platforms.SessionDetail, error) {
 			for _, known := range ids {

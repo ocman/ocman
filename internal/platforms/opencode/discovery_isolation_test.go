@@ -39,16 +39,12 @@ func TestAdaptersOwnTheirDiscovery(t *testing.T) {
 // backend reload runs before the new registry is built.
 func TestResetCachesClearsPackageHTTPCaches(t *testing.T) {
 	catalogCache.put("4300", "/agent", []byte(`[]`))
-	sessionCache.put("4300", "/session/x", []byte(`{}`))
 	gen := catalogCache.generation("4300")
 
 	ResetCaches()
 
 	if _, ok := catalogCache.get("4300", "/agent"); ok {
 		t.Fatal("catalog cache survived reset")
-	}
-	if _, ok := sessionCache.get("4300", "/session/x"); ok {
-		t.Fatal("session cache survived reset")
 	}
 	// A fetch that started before the reset must not repopulate it.
 	catalogCache.putForGeneration("4300", "/agent", []byte(`[]`), gen)

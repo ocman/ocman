@@ -3,6 +3,7 @@ package statev2
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,16 +14,17 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// DB owns a separate statev2.db. Callers supply the path explicitly so tests
+// DB owns a separate state_conv.db. Callers supply the path explicitly so tests
 // and development never silently fall back to a live or another checkout's DB.
 type DB struct {
 	db   *sql.DB
+	read *sql.DB
 	path string
 }
 
-// Path places statev2.db beside an explicitly resolved legacy state database.
+// Path places state_conv.db beside an explicitly resolved application database.
 func Path(statePath string) string {
-	return filepath.Join(filepath.Dir(statePath), "statev2.db")
+	return filepath.Join(filepath.Dir(statePath), "state_conv.db")
 }
 
 func Open(path string) (*DB, error) {
@@ -53,10 +55,39 @@ func Open(path string) (*DB, error) {
 		conn.Close()
 		return nil, err
 	}
+	u.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"busy_timeout(1000)", "foreign_keys(1)", "query_only(1)"}}.Encode()
+	read, err := telemetry.OpenSQL(u.String(), "statev2-read")
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	read.SetMaxOpenConns(4)
+	read.SetMaxIdleConns(4)
+	if err := read.Ping(); err != nil {
+		_ = read.Close()
+		_ = conn.Close()
+		return nil, err
+	}
+	d.read = read
 	return d, nil
 }
 
-func (d *DB) Close() error { return d.db.Close() }
+func (d *DB) Close() error {
+	var readErr error
+	if d.read != nil {
+		readErr = d.read.Close()
+	}
+	return errors.Join(readErr, d.db.Close())
+}
+
+// Interactive readers must not wait for the writer's database/sql connection.
+// The read-only pool observes committed WAL snapshots, never partial imports.
+func (d *DB) reader() *sql.DB {
+	if d.read != nil {
+		return d.read
+	}
+	return d.db
+}
 
 // FilePath identifies this store for independently owned, read-only readers.
 func (d *DB) FilePath() string { return d.path }
@@ -139,7 +170,7 @@ func (d *DB) migrate() error {
 		}
 	}
 	if version < 6 {
-		log.Info("statev2: building analytics summaries from retained compact projections")
+		log.Info("conversations: building analytics summaries from retained compact projections")
 		if err := backfillAnalyticsSummaries(context.Background(), tx); err != nil {
 			return fmt.Errorf("backfilling analytics summaries: %w", err)
 		}

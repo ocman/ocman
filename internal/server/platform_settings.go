@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/platformsettings"
 )
 
@@ -40,6 +41,9 @@ func (s *Server) configIdle(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	for _, q := range queued {
+		if identity.IsPendingReference(q.SessionID) {
+			continue
+		}
 		if !isRemotePlatformID(q.Platform) {
 			return false, nil
 		}

@@ -21,18 +21,25 @@ func Normalize(key statev2.Key, snapshot *db.HistorySnapshot) (statev2.Batch, st
 		return batch, "", fmt.Errorf("history snapshot identity mismatch")
 	}
 	s := snapshot.Session
+	sourceChild := s.ParentID != ""
+	if snapshot.SourceChild != nil {
+		sourceChild = *snapshot.SourceChild
+	}
 	ext, err := json.Marshal(struct {
+		SourceChild      bool
+		InferredStatus   db.SessionStatus
+		ProjectDirectory string
 		ProjectID        string
 		ParentID         string
 		SummaryAdditions *int
 		SummaryDeletions *int
 		SummaryFiles     *int
 		ShareURL         *string
-	}{s.ProjectID, s.ParentID, s.SummaryAdditions, s.SummaryDeletions, s.SummaryFiles, s.ShareURL})
+	}{sourceChild, snapshot.InferredStatus, snapshot.ProjectDirectory, s.ProjectID, s.ParentID, s.SummaryAdditions, s.SummaryDeletions, s.SummaryFiles, s.ShareURL})
 	if err != nil {
 		return batch, "", err
 	}
-	batch = statev2.Batch{Complete: true, Session: statev2.Session{Key: key, Title: s.Title, Directory: s.Directory,
+	batch = statev2.Batch{Complete: !snapshot.Partial, Session: statev2.Session{Key: key, Title: s.Title, Directory: s.Directory,
 		ParentID: s.ParentID, ProjectID: s.ProjectID, CreatedAt: s.TimeCreated, UpdatedAt: s.TimeUpdated, Extensions: ext, ReadFormat: statev2.ConversationReadFormat,
 		Subagent: snapshot.Subagent}}
 	messages := map[string]bool{}
@@ -66,7 +73,7 @@ func Normalize(key statev2.Key, snapshot *db.HistorySnapshot) (statev2.Batch, st
 		if provider != "" && model != "" {
 			model = provider + "/" + model
 		}
-		message := statev2.Message{ID: m.ID, Position: int64(i), Role: data.Role, Agent: data.Agent, Provider: provider, Model: model,
+		message := statev2.Message{ID: m.ID, Position: snapshot.MessageOffset + int64(i), Role: data.Role, Agent: data.Agent, Provider: provider, Model: model,
 			CreatedAt: m.TimeCreated, Cost: data.Cost, Finish: data.Finish, Extensions: ext}
 		_, native := snapshot.NativeMessages[m.ID]
 		message.ConversationVisible = !native || data.Role != "unknown"

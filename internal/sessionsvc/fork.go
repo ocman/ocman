@@ -26,9 +26,15 @@ func (s *Service) Fork(ctx context.Context, platformID string, req platforms.For
 	if intent.Creation.Configured || len(intent.Creation.PermissionRules) > 0 {
 		return nil, validation("fork configuration is inherited from its parent")
 	}
+	unlock, err := s.lockCreation(ctx, p.ID(), intent.Creation.RequestKey)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	var attempt *creationAttempt
-	if remoteID, _ := platforms.SplitPlatformID(string(p.ID())); s.identities != nil && remoteID == "" {
-		parent, err := s.catalogueParent(ctx, p, req.SessionID)
+	_, canonical := p.(platforms.SessionCreationCommitter)
+	if remoteID, _ := platforms.SplitPlatformID(string(p.ID())); !canonical && s.identities != nil && remoteID == "" {
+		parent, err := s.identities.Parent(ctx, p, req.SessionID)
 		if err != nil {
 			return nil, err
 		}
@@ -46,19 +52,25 @@ func (s *Service) Fork(ctx context.Context, platformID string, req platforms.For
 	req.Creation = intent.Creation
 	resp, err := p.ForkSession(ctx, req)
 	if err != nil {
-		return nil, attempt.nativeFailure(ctx, err)
+		return nil, attempt.NativeFailure(ctx, err)
 	}
 	if resp == nil || strings.TrimSpace(resp.ID) == "" {
-		return nil, attempt.uncertain("", fmt.Errorf("platform %s returned no forked session", p.ID()))
+		return nil, attempt.Uncertain("", fmt.Errorf("platform %s returned no forked session", p.ID()))
 	}
-	if err := attempt.attach(ctx, resp.ID); err != nil {
+	if canonical && resp.Replayed {
+		return resp, nil
+	}
+	if err := attempt.Attach(ctx, resp.ID); err != nil {
 		return nil, err
 	}
-	if err := attempt.bind(ctx, resp.ID); err != nil {
+	if err := attempt.Bind(ctx, resp.ID); err != nil {
+		return nil, err
+	}
+	if err := commitCreation(ctx, p, resp.ID); err != nil {
 		return nil, err
 	}
 	if intent.Directory != "" {
-		s.sessionDirs.Store(nativeSessionKey{p.ID(), resp.ID}, intent.Directory)
+		s.sessionDirs.Store(sessionCacheKey{p.ID(), resp.ID}, intent.Directory)
 	}
 	if s.hooks.SessionCreated != nil {
 		s.hooks.SessionCreated(CreatedSession{ID: resp.ID, Platform: string(p.ID()), Directory: intent.Directory})

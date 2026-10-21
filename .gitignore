@@ -37,6 +37,9 @@ graphify-out/
 
 # Local databases
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 
 # Hugo site build output (site/)
 site/public/

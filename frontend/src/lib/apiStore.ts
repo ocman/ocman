@@ -87,7 +87,7 @@ type ApiStore = {
   getProjects: (signal?: AbortSignal) => Promise<Project[]>;
   browseDirectories: (directory?: string, signal?: AbortSignal) => Promise<DirectoryBrowseResponse>;
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => Promise<DirectorySearchResponse>;
-  getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
+  getSessions: (params?: { dir?: string; since?: number; limit?: number; view?: 'sidebar' }, signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
   /** Reads a session without opening it, so it is not unarchived. */
   peekSession: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionDetail>;

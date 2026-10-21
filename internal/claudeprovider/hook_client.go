@@ -17,16 +17,9 @@ import (
 // HookTimeout bounds `ocman hook` end to end (AD-11).
 const HookTimeout = time.Second
 
-// RunHook posts one hook event, read from Claude's hook input on stdin, to
-// ocman's loopback listener at addr. It never fails or blocks Claude:
-// errors are dropped and the whole call returns within timeout.
-func RunHook(addr, event string, stdin io.Reader, timeout time.Duration) {
-	HandleHook(addr, "", event, true, stdin, timeout)
-}
-
 // HandleHook reads Claude's hook input once, appends history events to the
-// journal in every session, and posts status to addr only when managed. Like
-// RunHook it never fails or blocks Claude beyond timeout.
+// journal in every session, and posts status to addr only when managed. It
+// never fails or blocks Claude beyond timeout.
 func HandleHook(addr, journal, event string, managed bool, stdin io.Reader, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -52,14 +45,6 @@ func HandleHook(addr, journal, event string, managed bool, stdin io.Reader, time
 	case <-done:
 	case <-ctx.Done():
 	}
-}
-
-// RecordHook appends a history record for event when it is a history hook
-// and returns the input's session id.
-func RecordHook(journal, event string, stdin io.Reader) string {
-	in := readHookInput(stdin)
-	recordHook(journal, event, in)
-	return in.SessionID
 }
 
 func recordHook(journal, event string, in hookInput) {

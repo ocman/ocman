@@ -14,6 +14,8 @@ module under `internal/module`, not a collection of `*Server` methods.
   for work whose agents call MCP. `Runner` workers are joined at shutdown.
 - `Closer` runs in reverse order after HTTP/MCP listeners stop and before workers
   are joined. `ToolProvider` supplies MCP tools; `Subscriber` uses the typed bus.
+  `Finalizer` releases startup resources after workers join, even when startup
+  fails before `Run` or `Launch`; cleanup must tolerate unopened resources.
 - Factory is the Launcher/Closer and verifies launched sessions' MCP connection.
   Auto-approve comes first to seed judge delay and run the headless watcher.
   Plugins come next, binding their lifetime and discovering in `Start`, then

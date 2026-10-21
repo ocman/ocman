@@ -6,6 +6,14 @@ and lives in `state.db`. It does not launch agents or call platform adapters.
 The original v1 schema is frozen. The append-only v2 migration preserves IDs,
 bindings and creation receipts while upgrading earlier development layouts.
 
+The canonical-core branch adds v3 legacy-deduplication markers and v4 canonical
+remote metadata. `MirrorCanonical` stores an authenticated owner's ID without a
+native execution binding on the hub. `GetCanonical` can read that metadata, but
+`Resolve` cannot turn it into local execution authority. Native-link compatibility
+and old creation receipts now live in `internal/platforms/owned`, not services.
+The application-wide canonical cutover is still being wired; these helpers do
+not by themselves replace startup's existing native-keyed state paths.
+
 ## Current implementation
 
 - `Reserve` persists `ocm_<uuid>`, the stable owning-machine ID, platform,
@@ -21,6 +29,13 @@ bindings and creation receipts while upgrading earlier development layouts.
   linkage run. `Bind` completes it to `ready`. Interrupted configuration retains
   the native ID for recovery; confirmed disposal records a failure without
   releasing the native binding for reassignment.
+  For integrations with `SessionCreationPlanner`, `Attach` records the planned
+  ID before native creation instead. OpenCode V2 accepts that ID atomically;
+  a lost response or a crash before POST can resume through an explicit keyed
+  retry without allocating a different session. Configuration and application
+  linkage must still finish before `Bind`; startup does not publish unfinished
+  sessions or automatically retry prompts. Older unplanned creates and forks
+  retain their explicit-reconciliation requirement.
 - `Discover` imports external sessions idempotently. Existing bindings retain
    their origin. It defers unknown sessions in directories with pending creates,
    because native events may arrive before creation returns its ID. Metadata
@@ -51,6 +66,9 @@ outcome stays `creating` or `configuring`; automatically replaying the platform 
 a duplicate. Recovery must find the native execution and bind it, or establish
 that creation did not happen before recording a definite failure. A failed
 reservation does not authorize another execution with the same request key.
+Migration v7 repairs databases whose earlier metadata migration was recorded
+without the `configuring` constraint, preserving identities, native bindings,
+parent links, purge markers and creation receipts.
 
 Adapters can report `ErrCreationRejected` only when rejection precedes native
 allocation. Those reservations become `creation-failed` and stop deferring later

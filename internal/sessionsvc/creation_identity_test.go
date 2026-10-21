@@ -224,7 +224,7 @@ func TestCreationFailsClosedWithoutSourceOrCatalogue(t *testing.T) {
 			svc, p, _, _ := identityService(t)
 			switch reason {
 			case "catalogue":
-				svc.identities.store = nil
+				svc.WithSessionCatalogue(nil, "owner")
 			case "source":
 				p.sourceErr = errors.New("source unavailable")
 			case "source-key":

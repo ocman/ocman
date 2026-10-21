@@ -72,7 +72,7 @@ func analyticsSummaryFixture(t *testing.T, seed func(*fixture, time.Time)) (*fix
 		t.Fatal(err)
 	}
 	for _, id := range []string{"root", "child", "other"} {
-		snapshot, err := f.deps.DB.HistorySnapshot(t.Context(), id)
+		snapshot, err := f.legacy.HistorySnapshot(t.Context(), id)
 		if err != nil {
 			t.Fatal(err)
 		}

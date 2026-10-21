@@ -2,93 +2,33 @@ package server
 
 import (
 	"context"
-	"maps"
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	log "github.com/sirupsen/logrus"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 const defaultAgentKey = "session.default_agent"
 
 var defaultAgentOptions = knownAgentOptions
-var defaultAgentCatalog = opencode.AgentNames
 
-// defaultAgentPorts and defaultAgentPort are test seams; nil reads the
-// server's OpenCode discovery.
-var defaultAgentPorts func(context.Context) map[string]string
-var defaultAgentPort func(context.Context, string) string
-
-// defaultAgentTargetTimeout bounds one target's catalog read inside the
-// overall lookup budget; a variable so tests need not wait it out.
-var defaultAgentTargetTimeout = 4 * time.Second
-
-func knownAgentOptions(ctx context.Context, disc *opencode.Discovery, directories []string) []string {
+func knownAgentOptions(ctx context.Context, adapters []platforms.Platform, directories []string) []string {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	portsFn, portFn := defaultAgentPorts, defaultAgentPort
-	if portsFn == nil {
-		portsFn = disc.DiscoverOpenCodePortsContext
-	}
-	if portFn == nil {
-		portFn = disc.DiscoverOpenCodePortContext
-	}
 	known := map[string]bool{"build": true, "plan": true}
-	targets := maps.Clone(portsFn(ctx))
-	if targets == nil {
-		targets = make(map[string]string)
-	}
-	for _, directory := range directories {
-		if ctx.Err() != nil {
-			break
+	for _, adapter := range adapters {
+		if owner, _ := platforms.SplitPlatformID(string(adapter.ID())); owner != "" {
+			continue
 		}
-		if port := portFn(ctx, directory); port != "" {
-			targets[directory] = port
-		}
-	}
-	jobs := make(chan string)
-	var mu sync.Mutex
-	var workers sync.WaitGroup
-	// ponytail: eight workers bound local catalog fan-out without letting one
-	// stalled target consume the whole lookup budget for healthy instances.
-	for range min(8, len(targets)) {
-		workers.Go(func() {
-			for directory := range jobs {
-				if ctx.Err() != nil {
-					return
-				}
-				targetCtx, cancelTarget := context.WithTimeout(ctx, defaultAgentTargetTimeout)
-				agents := defaultAgentCatalog(targetCtx, targets[directory], directory)
-				cancelTarget()
-				mu.Lock()
-				for _, agent := range agents {
-					known[agent] = true
-				}
-				mu.Unlock()
+		if reader, ok := adapter.(platforms.AgentOptionsReader); ok {
+			for _, agent := range reader.AgentOptions(ctx, directories) {
+				known[agent] = true
 			}
-		})
-	}
-	catalogDirectories := make([]string, 0, len(targets))
-	for directory := range targets {
-		catalogDirectories = append(catalogDirectories, directory)
-	}
-	sort.Strings(catalogDirectories)
-	for _, directory := range catalogDirectories {
-		if ctx.Err() != nil {
-			break
-		}
-		select {
-		case jobs <- directory:
-		case <-ctx.Done():
 		}
 	}
-	close(jobs)
-	workers.Wait()
 	agents := make([]string, 0, len(known))
 	for agent := range known {
 		agents = append(agents, agent)
@@ -117,14 +57,12 @@ func (s *Server) handleDefaultAgent(w http.ResponseWriter, r *http.Request) {
 			serverError(w, "reading default agent", err)
 			return
 		}
-		var directories []string
-		if s.db != nil {
-			directories, err = s.db.StatusCandidateDirectories(r.Context(), 0)
-			if err != nil {
-				log.WithError(err).Warn("reading local directories for default-agent options")
-			}
+		directories := s.storedDirectories(r.Context())
+		var adapters []platforms.Platform
+		if s.registry != nil {
+			adapters = s.registry.Platforms()
 		}
-		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context(), s.openCodeDiscovery(), directories)})
+		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context(), adapters, directories)})
 	case http.MethodPost:
 		var body struct {
 			DefaultAgent string `json:"defaultAgent"`

@@ -2,79 +2,34 @@ package opencode
 
 import (
 	"context"
-	"slices"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
-// Sessions returns sessions filtered by directory and updated-after timestamp.
-// Live permission/question prompts bypass the time window until resolved.
+// Sessions is the native runtime inventory used by identity migration and
+// reload safety. It reads the OpenCode database directly, settles each status
+// against the live turn signal and marks pending prompts. Browsing lists come
+// from statev2 through the canonical adapter.
 func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.Session, error) {
 	if a.db == nil {
 		return nil, nil
 	}
-	dbPhase := srvtiming.Begin(ctx, "db_get_sessions")
-	// Prompt flags come from live events, so apply the time window after enrichment.
-	sessions, err := getSessionsCached(ctx, a.db, dir, 0)
-	dbPhase.End()
+	sessions, err := a.db.GetSessions(ctx, dir, since)
 	if err != nil {
 		return nil, err
 	}
-	// The cached slice is shared across concurrent readers; the
-	// per-session overlay below mutates entries by index, so we
-	// need our own slice. A shallow copy is enough — Session is a
-	// value type with no pointer-shared mutable state we'd care
-	// about here.
-	sessions = append([]db.Session(nil), sessions...)
-	// Discover live instances for connection flags. Pending prompts come
-	// from the global event watcher, so session listing never fans out to
-	// every instance's /permission and /question endpoints.
-	portsPhase := srvtiming.Begin(ctx, "runtime_ports")
-	ports := a.rt.discoverOpenCodePorts()
-	portsPhase.End()
-
-	// Settle every status against the live turn signal before anything
-	// else reads it, then drop the children that turn out to be idle.
-	resolvedPorts := make(map[string]string)
-	for i := range sessions {
-		directory := sessions[i].Directory
-		port, ok := resolvedPorts[directory]
-		if !ok {
-			port = a.rt.portForDirectory(ports, directory)
-			resolvedPorts[directory] = port
-		}
-		sessions[i].Status = a.settleStatusOnPort(sessions[i].ID, port, sessions[i].Status)
-		sessions[i].Notice = a.sessionNoticeOnPort(sessions[i].ID, port)
-		sessions[i].LiveConnection = port != ""
-	}
-	sessions = db.FilterInactiveChildren(sessions)
-
-	pendingPerms, pendingQuestions := a.prompts.pendingSessionIDs()
-
-	// OpenCode emits subagent prompts with the subagent's session ID,
-	// not the parent's. The listing only contains parent sessions
-	// (subagents are filtered out by SQL), so we resolve each prompted
-	// subagent to its parent and apply the flag there. Parent prompts
-	// pass through unchanged (their id maps to themselves).
-	bubblePhase := srvtiming.Begin(ctx, "bubble_parents")
-	pendingPerms = bubbleUpPromptsToParent(ctx, pendingPerms, a.db)
-	pendingQuestions = bubbleUpPromptsToParent(ctx, pendingQuestions, a.db)
-	bubblePhase.End()
-
-	for i := range sessions {
-		sessions[i].Platform = string(PlatformID)
-		if pendingPerms[sessions[i].ID] {
-			sessions[i].PendingPermission = true
-		}
-		if pendingQuestions[sessions[i].ID] {
-			sessions[i].PendingQuestion = true
-		}
-	}
-	if err := a.attachSessionHalts(ctx, sessions); err != nil {
+	ports := a.rt.DiscoverOpenCodePortsContext(ctx)
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return slices.DeleteFunc(sessions, func(session db.Session) bool {
-		return since > 0 && session.TimeUpdated < since && !session.PendingPermission && !session.PendingQuestion
-	}), nil
+	permissions, questions := a.prompts.pendingSessionIDs()
+	for i := range sessions {
+		row := &sessions[i]
+		port := a.rt.portForDirectory(ports, row.Directory)
+		row.Platform = string(PlatformID)
+		row.Status = a.settleStatusOnPort(row.ID, port, row.Status)
+		row.LiveConnection = port != ""
+		row.PendingPermission, row.PendingQuestion = permissions[row.ID], questions[row.ID]
+	}
+	return sessions, nil
 }

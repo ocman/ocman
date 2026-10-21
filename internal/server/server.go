@@ -14,12 +14,10 @@ import (
 	"github.com/NoUseFreak/ocman/internal/artifacts"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/conversationingest"
-	"github.com/NoUseFreak/ocman/internal/conversationread"
 	"github.com/NoUseFreak/ocman/internal/convstream"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/filesystem"
-	"github.com/NoUseFreak/ocman/internal/historyparity"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/idleprojects"
 	"github.com/NoUseFreak/ocman/internal/inbox"
@@ -37,6 +35,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/NoUseFreak/ocman/internal/sessionrefrecovery"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/sessiontitles"
 	"github.com/NoUseFreak/ocman/internal/sharing"
@@ -52,23 +51,23 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
-	tasks              lazy[*tasksvc.Manager]
-	historyIngest      *conversationingest.Module
-	sessionCatalogue   *sessioncatalog.Module
-	historyAnalytics   *analytics.HistoryAnalytics
-	conversationReader *conversationread.Service
-	historyParity      *historyparity.Module
-	analytics          *db.DB
-	db                 *db.DB
-	stateDB            *state.DB
-	addr               string
-	registry           *platforms.Registry
-	sessions           *sessionsvc.Service
-	auth               *Auth
-	integrations       *forgeClients
-	startTime          time.Time
-	projects           projectsIndexState
-	autoApproveDefault bool
+	tasks                   lazy[*tasksvc.Manager]
+	historyIngest           *conversationingest.Module
+	sessionCatalogue        *sessioncatalog.Module
+	historyAnalytics        *analytics.HistoryAnalytics
+	historyOwner            string
+	analytics               *db.DB
+	db                      *db.DB
+	subscriptionCredentials func(context.Context) (map[string]db.SubscriptionOAuth, error)
+	stateDB                 *state.DB
+	addr                    string
+	registry                *platforms.Registry
+	sessions                *sessionsvc.Service
+	auth                    *Auth
+	integrations            *forgeClients
+	startTime               time.Time
+	projects                projectsIndexState
+	autoApproveDefault      bool
 	// publicBaseURL is the externally reachable base URL used to build
 	// absolute share links (e.g. "https://ocman.example.com"). Empty
 	// means "derive from the incoming request's scheme + Host header",
@@ -180,6 +179,7 @@ type Server struct {
 	projectForgeMod     lazy[*projectforge.Module]
 	previewsMod         lazy[*previews.Module]
 	platformSettingsMod lazy[*platformsettings.Module]
+	sessionRecoveryMod  lazy[*sessionrefrecovery.Module]
 	convStreamMod       lazy[*convstream.Module]
 }
 
@@ -221,6 +221,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		runtime: ocruntime.NewNativeRuntime(),
 	}
 	registry.SetSessionEventSink(s.sessionEventSink())
+	if database != nil && database.V2() {
+		s.subscriptionCredentials = database.SubscriptionCredentials
+	}
 	stateDB.SetEnabledPlatforms(s.localPlatformIDs)
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.
@@ -313,7 +316,7 @@ func (s *Server) refreshProjectsIndexAsync() {
 }
 
 func (s *Server) triggerProjectsIndexRefresh() {
-	if s.db == nil && s.projects.fetch == nil {
+	if !s.hasStoredHistory() && s.projects.fetch == nil {
 		return
 	}
 	st := &s.projects

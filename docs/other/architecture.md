@@ -53,7 +53,7 @@ flowchart LR
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only sessions + v2 OAuth credentials<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox, state + provider cost ledger| StateDB[(state.db)]
-    Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
+    Ocman -->|ingested history, projects,<br/>search and analytics| History[(state_conv.db)]
     Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode instances<br/>or registered v2 service]
     Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
     Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
@@ -109,49 +109,36 @@ flowchart LR
   every query keeps its v1 SQL (`internal/db/v2views.go`).
 - **state.db.** Ocman's own state: archive flags, routines and run history,
   permission approval provenance, live session commit observations, settings,
-  Factory records, Inbox items, artifact metadata, remote tokens, and the last
-  local projects-index snapshot. Artifact file bytes sit beside it in a
+  Factory records, Inbox items, artifact metadata, remote tokens, and canonical
+  session identity bindings. Artifact file bytes sit beside it in a
   SHA-256 content-addressed `artifacts/blobs/` directory. Inbox sends are owner-local and persist until recalled or archived
   by the user. Legacy `workflow_*` rows remain inert for manual recovery.
-- **statev2.db.** `internal/statev2` owns a separate durable
+- **state_conv.db.** `internal/statev2` owns a separate
   conversation schema with immutable platform-instance identities, historical
   sessions/messages/parts, ingestion checkpoints, purge tombstones, and a change
   outbox. Storage, ingestion and historical reads are always enabled;
   development targets in the Makefile use isolated paths. The file sits beside
-  `state.db` unless `-statev2-db` or `OCMAN_STATEV2_DB` names another path.
-  Owner-local ingestion supplies settled conversation reads and analytics.
-  Source deletion retains history; only an explicit Ocman purge removes
-  queryable content. Supported upgrades apply append-only migrations;
+  `state.db` unless `-conversations-db` or `OCMAN_CONVERSATIONS_DB` names another
+  path. `-statev2-db` and `OCMAN_STATEV2_DB` remain compatibility aliases.
+  Owner-local ingestion supplies settled conversations, project statistics,
+  plugin project-directory evidence, local text search and analytics. Native
+  reads belong to platform ingestion or live execution, never application
+  fallback readers. Agent and model catalogues are live configuration and go
+  through platform capabilities rather than native database queries.
+  The persisted project-list cache lives here too, not in application state.
+  On first use of this filename, startup preserves an adjacent `statev2.db`
+  through a SQLite-consistent snapshot, retaining the original. A per-path
+  adoption marker in `state.db` prevents a later explicit reset from importing
+  the retired file again. An existing destination always wins.
+  Source deletion retains history. Supported upgrades apply append-only migrations;
   unsupported schema versions fail closed and never reset stored history.
   Database-size analytics include this store as a separate conversation-history
   series, including while its initial import is pending.
-- **analytics-cache.db.** A disposable copy of opencode.db's message and
-  session rows, stored beside state.db, which the analytics queries read.
-  User-message attachments are stripped from the copy. A minimal tool-timing
-  projection is refreshed in the same sync transaction as its messages, so
-  warm analytics reads do not parse historical tool outputs. Tool names let
-  hourly agent run minutes exclude question-tool waits. That graph unions
-  completed assistant intervals per session, includes other tools, subtracts
-  recorded human waits from state.db, and sums subagents separately. Human
-  waits are observed after the approval decision, even with autoapproval off;
-  resolution and idle edges close them. Each analytics read bounds a wait to
-  its originating completed assistant interval before applying the date filter,
-  so missed reply/idle events across a restart cannot remove later turns. Timing
-  read failures stay errors rather than reconciling against an empty snapshot.
-  Older permission lifecycle records
-  fill in history when available. Missing historical observations remain unknown.
-  TPS divides
-  output tokens by completed message time minus the union of tool intervals,
-  including recorded permission/question waits. Missing tool timing excludes
-  the sample. This is request throughput, including startup/prefill latency,
-  rather than provider-side decode speed; elapsed-duration metrics keep tool time.
-  Session message metadata, turn summaries, and the composer use the same
-  calculation on loaded messages and parts. A stale copy gets a
-  quick incremental sync before an analytics read; a read never waits on a
-  sync already running. The first build and the 6-hourly full rebuild run in
-  the background, and the rebuild time is persisted so restarts cannot
-  postpone it. Delete the file and it is rebuilt
-  (`internal/db/analytics_mirror.go`).
+- **analytics-cache.db.** A disposable compatibility mirror retained during
+  the cutover. Application analytics and background token/cost metrics do not
+  read it or fall back to OpenCode's database. Both use validated statev2
+  snapshots. Database-size sampling measures Ocman's state and conversation
+  stores, not foreign platform files.
 - **Claude Code** (`-platforms claudecode`). Ocman reads the transcripts under
   `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`) into the disposable
   `claude-index.db` beside state.db and drives sessions it starts or adopts by
@@ -252,29 +239,52 @@ platform-owned.
 
 ```mermaid
 flowchart LR
-    Import[conversationingest module<br/>independent source workers]
-    Adapters[Local platform adapters<br/>complete history snapshots] --> Import
+    Import[conversationingest module<br/>source workers + paced backfill]
+    Adapters[Local platform adapters<br/>snapshots + resumable tails] --> Import
     Events[Session invalidations<br/>periodic repair] --> Import
-    Import -->|snapshots or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
+    Import -->|health + task progress APIs| UI[Settings application health<br/>and Background tasks]
+    Import -->|snapshots, deltas or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
     Rules[internal/analyticsdata<br/>shared accounting and timing] --> Commit
     Rules --> Analytics
-    Commit -->|one transaction| History[(statev2.db<br/>history, checkpoint, change outbox)]
-    History --> Reader[conversationread<br/>settled conversation browsing]
+    Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox)]
+    History --> Reader[conversationread<br/>read-only WAL snapshots]
     Adapters -->|bounded lifecycle and version only| Reader
     Reader -->|bounded wait for initial import or stale snapshot| Import
     Reader -->|active sessions only| Live[Platform live transcript]
-    History -->|affected facts and UTC-hour summaries| Analytics[Conversation analytics APIs]
+    History -->|owner-scoped metadata, affected facts<br/>and UTC-hour summaries| Analytics[Projects, text search,<br/>analytics and telemetry]
     History --> Changes[Durable invalidation stream<br/>no lifecycle actions]
     Purge[Explicit Ocman purge] -->|remove queryable content<br/>retain identity tombstone| History
 ```
 
 - Platform type and platform instance are separate. Native session identities
   belong to an immutable source instance, so identical IDs cannot cross sources.
+- Session lists and conversation status enrichment batch canonical catalogue
+  lookups, including the parent map used for nested live prompts. Query count
+  does not grow with the retained inventory. Every batch still validates owner,
+  platform, publication and purge state; identities are not cached across reads.
 - Content and ingestion progress commit together before upstream acknowledgment
   or outward publication. Conflicting repair writes fail instead of overwriting
   another ingestion revision.
+- Historical imports share one active background slot and default to a 20%
+  work/rest duty cycle. They yield between snapshots without holding database
+  transactions during the pause. Requested conversation reads interrupt the
+  background wait and bypass its budget; live updates are not CPU-throttled.
+  Shutdown cancels the wait, preserving each completed snapshot's checkpoint.
 - Source deletion never removes retained history. Purged identities suppress
   later imports while still allowing source checkpoints to advance.
+- Unresolved creation reservations defer affected identities, not the entire
+  import. Partial inventories never authorize deletion or complete verification.
+  Claude supervisor discovery failures return available transcript/runtime rows
+  with the same incomplete-inventory fence, so unrelated transcripts still sync.
+  Subagent completion hooks request inventory discovery for newly created child
+  files before targeted reads. A transcript removed during refresh is unavailable,
+  not an ingestion-worker panic.
+  Analytics keeps reading atomic committed projections from initialized local
+  sources even when another session fails. Responses identify partial scope in
+  a diagnostic header; charts do not display a warning or use native fallback
+  readers. Ingestion retries silently. Settings → System → Application health
+  shows history sync and backend status, with details in Background tasks.
+  Neither import toasts nor startup pages interrupt the application shell.
 - History is not live execution authority. Future collectors must keep runtime
   freshness and idempotent action reconciliation separate from historical replay.
 - `platforms.HistoryReader` bypasses UI filtering without bypassing owner/platform
@@ -299,13 +309,19 @@ flowchart LR
   their sequence did not change, and retry with a backoff timer independent of
   new feed events. A successful inventory retires repairs for deleted sessions.
   Incremental mutations invalidate full-snapshot digests atomically.
+  Live activity hints and replayed events whose sequence is already applied do
+  not force full-session reads. Explicit repairs still validate the source.
 - Claude follows its hook journal (`internal/historyjournal`). Hooks append a
   record pointing at the changed transcript in every session, including
   terminal sessions and while ocman is stopped. At startup the worker compares
-  transcript version hints once; afterwards each journal record rereads its
-  session (Claude's converter needs the whole transcript) and compares hints so
-  subagent transcripts follow their parent. The journal offset advances only
-  after that succeeds. Checking for records costs one directory read; there is
+  transcript version hints once; afterwards each journal record targets its
+  session and retained descendants without a source-wide inventory.
+  `platforms.HistoryDeltaReader` resumes conversion at the last message group's
+  byte offset, replaying that group to capture appended tool results. The
+  transcript cursor and tail upserts commit atomically; detected replacements
+  and truncations request full snapshots. The shared Claude index can still
+  reindex the changed transcript for metadata. The journal offset advances only
+  after ingestion succeeds. Checking for records costs one directory read; there is
   no periodic polling or automatic full verification. The journal is
   machine-wide under the XDG data directory; each statev2 store keeps its own
   offsets, and consumed segments are pruned after a week idle.
@@ -332,14 +348,25 @@ flowchart LR
   compares each session's stored accounting with totals recomputed from the
   snapshot it just read; a `usage-mismatch` counter means a normalization or
   column mapping bug.
-- `internal/historyparity` compares the current OpenCode analytics reader with
-  the same reports computed from statev2: daily sessions, assistant messages
-  and user prompts, and per-model message and token totals. It runs ten
-  minutes after startup and then daily as a background task, and logs each
-  differing date or model with both values. It reads only. Today and model totals for sessions still being
-  written can differ by in-flight activity. This
-  checks the change hints against the same history readers, not against the
-  existing UI readers.
+- OpenCode's explicit `CompareHistory` diagnostic uses `internal/historyparity`
+  to compare native daily and model totals with statev2. It is integration-owned
+  and is not registered as an application worker or analytics source.
+- Project totals aggregate stored sessions across local platform instances and
+  exclude helpers only from visible session counts. Plugin directory grants
+  require ingested project-root evidence; conflicting roots fail closed. Local
+  text search reads retained user/assistant text blocks, excluding tool payloads
+  and other owners. `internal/textsearch` shares literal matching and UTF-8
+  snippet rules with integration diagnostics.
+  Project refreshes use committed history while ingestion catches up and use the owner's
+  durable history-change watermark to invalidate cached statistics after stored
+  commits, even when no native event reaches the application.
+- Native event connections and agent/model catalogue transport live in the
+  OpenCode adapter. The permission watcher retains reconnect, watchdog and
+  completion-drain ordering, and platform projection runs before callbacks.
+  Native discovery cache workers start through a platform lifetime capability.
+  Judge conversation context comes from statev2; temporary judge-session
+  creation, prompting and response collection use the integration's helper
+  client. Missing stored context never triggers a native transcript read.
 - This is committed-history ingestion, not lossless raw-event capture. Supervisor
   acknowledgments and active streaming stay on their existing paths until direct
   durable event ingestion is implemented. Hub replication is not enabled.
@@ -349,26 +376,21 @@ flowchart LR
 Settled OpenCode and Claude conversations always use validated statev2
 snapshots. No opt-in or legacy opt-out is available.
 
-- `internal/conversationread` runs through `platforms.Platform`, only in explicit
-  browsing contexts. HTTP session/task reads, MCP session reads and owner-side
-  remote Session RPCs marked `browsing` use it. Operational Session RPCs,
-  mutations, lifecycle queries and streams do not.
-- Adapters read bounded lifecycle/version metadata, not transcript content.
-  Busy, limited and approval-waiting sessions retain the platform
-  path, as do attached live runtimes before their first persisted transcript.
-  Missing imports of an existing transcript never qualify for that live-only
-  path. Settled snapshots require the same physical source, a matching source
-  version and a successful background accounting check. A second metadata check
-  rejects concurrent source changes.
-- Missing, outdated or unvalidated snapshots first wait for bounded ingestion
-  catch-up, including the initial source registration and validation receipt.
-  If a turn starts during either wait, its live status selects the platform
-  path. Otherwise snapshots still unavailable after the wait return HTTP 503,
-  never an automatic platform transcript retry. These reads notify ingestion to repair
-  the snapshot. `X-Ocman-Conversation-Error: history-unavailable` identifies the
-  failure; successful local reads expose `X-Ocman-Conversation-Source` as
-  `statev2` or `platform-live`. Remote reads expose `remote`; the owner selects
-  its own reader and fails closed when its selected snapshot is unavailable.
+- Canonical adapters serve every persisted read (lists, summaries, metadata,
+  conversation pages, usage, unread counts, descendants, archive candidates,
+  panels and catalogues) from statev2. `internal/conversationread` only
+  converts a stored page to the wire format. There is no per-request choice
+  between native and stored reads, and no native fallback.
+- Running, limited and approval-waiting sessions also read their transcript
+  from statev2; live turns reach the browser through platform SSE, and the
+  event cache overlays only live fields (status, prompts, connection, notices).
+  Directory warnings, such as duplicate OpenCode servers, come from the live
+  integration and only for its current physical source.
+- A session without a stored snapshot waits, bounded, for ingestion's first
+  read of that session, then returns HTTP 503 with
+  `X-Ocman-Conversation-Error: history-unavailable`, never a native transcript.
+  Successful local reads expose `X-Ocman-Conversation-Source: statev2`; remote
+  reads expose `remote`, and the owner fails closed the same way.
 - Schema v8 preserves part timestamps, text-field presence and displayable
   message markers. Existing snapshots stay retained but require a background
   metadata refresh before normal browsing. Paging counts backward from the
@@ -463,6 +485,40 @@ including pricing, metrics and runtime. It must not use a changing live store.
 The scheduled real-data parity task still checks
 daily and per-model totals; it is not a full production-data dashboard audit.
 
+### Compact session sidebar
+
+```mermaid
+flowchart LR
+    Import[Conversation ingestion] -->|same transaction| List[(state_conv.db<br/>compact list + attention projections)]
+    Events[Platform event caches] -->|generation and expiring lease| List
+    Git[Owner Git-info samples] -->|branch observations| List
+    List --> Query[internal/sidebar<br/>one read-only SQL query]
+    Core[(state.db<br/>catalogue and user flags)] -->|read-only attachment| Query
+    Query -->|filtered and paginated metadata| UI[Conversation sidebar]
+```
+
+- Sidebar reads do not invoke accounting summaries or platform/supervisor RPCs.
+  The projection carries title, project, directory, hierarchy, prompt/completion
+  attention timestamps and
+  cached branch data. Catalogue joins preserve authoritative owner/source,
+  publication, purge and routine/Factory origin checks without copying authority.
+- An owner-local worker persists event-cache observations every 500 ms. Runtime
+  generations and expiring leases prevent stale busy flags after disconnect or
+  restart. Pending prompts and persisted halt receipts use source-scoped native
+  ancestor walks, never application worktree links. An idle observation settles
+  against the retained outcome rather than replacing waiting/error with done.
+- Seen, archive, snooze and pin state join in the same query. Unread ranges use
+  a covering timestamp index; conversation JSON and accounting facts are not
+  scanned. Running-count and notification polling use the compact path as well.
+- Conversation headers reuse already-loaded metadata and totals. Full accounting
+  summaries remain separate, for views that actually display them. Cached native
+  child prompts bubble to the same root in conversation and sidebar reads.
+- Interactive history reads use a separate read-only pool from ingestion's
+  serialized writer. A long import cannot reserve their database connection;
+  they see a consistent committed WAL snapshot while ingestion is in flight.
+  Module finalizers close attached readers after handlers and workers finish,
+  including failed startup before workers launch.
+
 ### Session identity catalogue
 
 `internal/sessioncatalog` owns an append-only module schema in `state.db` for
@@ -475,20 +531,31 @@ existing permission/queue/bookkeeping keys remain behind the boundary.
 ```mermaid
 flowchart LR
     Remote[Remote creation intent + initial rules] --> Sessions[sessionsvc<br/>owning machine]
-    Sessions -->|reserve before create; bind before publication| Catalogue[sessioncatalog]
-    Sessions -->|native execution| Platform[platforms.Platform]
+    Sessions -->|owner/request-key lease through<br/>configuration, linkage + publication| Catalogue[sessioncatalog]
+    Sessions -->|native execution| Platform[platforms.Integration]
     Browser[Browser + MCP session reads] --> View[sessionview wire contracts + identity resolution]
     View -->|public IDs; opaque payloads unchanged| Catalogue
-    History[(statev2.db<br/>metadata + durable outbox)] --> Indexer[sessioncatalog module<br/>startup inventory + changes]
+    History[(state_conv.db<br/>metadata + durable outbox)] --> Indexer[sessioncatalog module<br/>startup inventory + changes]
     Indexer --> Catalogue
     Catalogue --> State[(state.db<br/>session_catalog)]
     Resolve[Resolve within explicit owner] --> Catalogue
 ```
 
 - Request keys deduplicate creation intent within a stable owning machine.
+  A cancellable owner/request-key lease serializes creation and recovery through
+  native configuration, application linkage and publication. Waiters reread the
+  durable receipt after acquiring the lease; independent requests do not block.
   Origin and routine/factory metadata exist before a native session can be
   bound. An uncertain creation outcome remains pending rather than permitting
   another execution.
+- Integrations supporting client-chosen IDs expose `SessionCreationPlanner`.
+  OpenCode V2 creation persists the planned native binding before HTTP, then
+  sends that exact ID through the compatibility transport. An explicit retry
+  with the same request key probes that ID, reapplies initial configuration and
+  completes application linkage before publication. A retry before allocation
+  uses the same native ID, never a replacement. Legacy creates and forks without
+  this capability remain pending for explicit reconciliation; startup never
+  guesses bindings from titles or timestamps or replays a prompt.
 - Native bindings are unique across owner, platform, physical source and native
   ID. Early native announcements defer while creation in their directory is
   unbound, avoiding a second Ocman identity with missing origin metadata.
@@ -548,6 +615,212 @@ flowchart LR
   reservations stop blocking external discovery. Configuring metadata remains
   queued for bounded retry until binding completes.
 
+#### Canonical session core
+
+The HTTP listener serves the embedded UI and a read-only `/api/startup` before
+opening databases. `internal/startup` reports the phase, elapsed seconds and
+phase-local completed/total counts. Updates and five-second heartbeats go to
+the logs. React's `StartupMonitor` records these facts for application health
+without gating application views; authentication remains enforced by `AuthGate`.
+The shell, composer state and focus survive backend restarts. The desktop
+bootstrap also accepts startup responsiveness. Counts are never presented as
+an overall percentage. Initialization failures remain visible in application
+health, with full details in server logs.
+
+```mermaid
+flowchart LR
+    Browser[Browser or desktop] --> Gateway[startup HTTP gateway]
+    Gateway --> Progress[Read-only startup status<br/>application health diagnostics]
+    Composition[Database opening + migrations] -->|phases and counts| Progress
+    Composition -->|only after success| Application[Guarded application handler]
+    Gateway -->|atomic handoff on same listener| Application
+```
+
+During startup normal API calls return 503 with a retry hint. Migrations still
+finish before any application routes, remote listener or workers can access
+state. Once application modules are initialized, the same listener dispatches
+to the normal guarded handler; its authentication and request tracking are
+unchanged. The progress endpoint stays available for reloads and contains no
+paths, session identifiers or raw errors. Shutdown joins the HTTP server and
+heartbeat before database teardown.
+
+`internal/platforms/owned` is the session identity integration boundary. Startup
+migrates core, history and plugin references before registering canonical adapters
+and starting servers or workers. Native session IDs remain inside integrations
+and compatibility adapters.
+
+```mermaid
+flowchart LR
+    Core[Core services<br/>Ocman session IDs] --> Owned[platforms/owned<br/>optional ownedjudge bridge]
+    Owned -->|resolve immutable owner/source binding| Catalogue[sessioncatalog<br/>source cutover markers]
+    Owned -->|execution and runtime-safety probes| Native[Native platform adapters]
+    Native -->|history, feed and journal records| Owned
+    Native -->|owner-global SSE| Watcher[Headless permission watcher]
+    Watcher -->|project session references before callbacks| Owned
+    Owned -->|canonical history envelopes| Ingest[conversationingest]
+    Ingest --> History[(state_conv.db)]
+    History -->|persisted session reads and indexed accounting| Owned
+    Migration[app.prepareCanonicalSessionCore<br/>owned.PrepareCore] -->|backup and atomic rekey| History
+    Migration -->|backup and atomic rekey| State[(state.db)]
+    Recovery[sessionrefrecovery] -->|authenticated owner proofs| Owned
+    Recovery -->|drained reload, then pre-serving migration| Migration
+```
+
+- Execution rejects native caller IDs, unknown Ocman IDs, purged
+  sessions and inactive physical bindings. Creation reserves before allocation
+  and remains unpublishable until application linkage completes. Receipt hashes
+  preserve keyed creation requests written before the cutover.
+- Native modules implement `platforms.Integration`: identity, capabilities, a
+  runtime inventory for migration and reload safety, live observation, prompts,
+  execution and streaming. Only canonical adapters and remote proxies implement
+  the browsing half of `platforms.Platform`. `owned.New` requires the statev2
+  store, so there is no adapter without it. Session lists, metadata, summaries,
+  conversation pages, usage, unread counts and archive candidates read that
+  store. An unknown native ID gets an identity only after the integration's
+  `SessionIdentityProbe` proves its source has it; that probe returns binding
+  metadata, never transcript content. Info/change panels reuse platform converters with
+  stored DTOs; historical catalogue defaults and recents use scoped statev2
+  readers. Optional live catalogue calls require an explicit configuration-only
+  capability. A missing or closed store never falls back to native history.
+- Event caches overlay status, pending prompts, connection state and retry/reset
+  observations without replacing persisted titles, directories or accounting.
+  Native descendants and user-created worktree links remain distinct, so an idle
+  worktree conversation stays visible and its prompts cannot bubble to another
+  conversation. Running authority never comes from a stored message guess.
+- Retained physical sources remain readable under their owner/platform scope
+  after a source disappears or is replaced. Their native IDs cannot borrow live
+  observations or execution authority from a different source. Older compatible
+  conversation encodings remain readable while ingestion upgrades optional
+  project, hierarchy and static-status metadata.
+- Publication stores acknowledged creation metadata even before a transcript
+  exists. Runtime-only source snapshots are partial and cannot delete retained
+  messages or overwrite them with an empty complete snapshot. Ingestion owns the
+  bounded first-read wait and refresh acknowledgements. A refresh ticket is
+  captured before its source snapshot starts; an earlier in-flight snapshot or
+  another session's receipt cannot satisfy it. The native session-list cache
+  and its refresher were removed.
+- Halt receipts use canonical keys for post-cutover identities. The authenticated
+  source's frozen legacy-key policy preserves older receipts and their first
+  observation timestamps across prompt replays. Unattributed native receipt keys
+  never attach to a newly discovered identity or another physical source.
+- History inventory includes hidden helpers. Snapshots and feeds translate
+  normalized session references while retaining message/part IDs and opaque
+  payloads. Journal conversion preserves byte offsets. Unassociated hooks request
+  a source-wide refresh rather than assigning an unverified native ID.
+  Canonical startup omits the legacy native indexer. A source-deleted conversation
+  retains its validated physical head so settled reads can use retained history
+  without falling back to a missing native transcript. Aggregate parity is tested
+  before and after rekeying and needs no identity translator.
+- History rekeying preserves revisions, change-outbox sequences, source-deletion
+  state, analytics rows, purge tombstones and session-scoped receipts. Core-state
+  rekeying covers declared columns, Inbox/control-session JSON, packed unarchive
+  keys, conversation-plugin mappings and replacement-baseline map keys. Conflicts roll back without merging or
+  dropping durable records. Both stores take restorable backups before mutation.
+  Routine run snapshots remain immutable outside rekeying: the transaction saves,
+  suspends and restores the original snapshot trigger, including on rollback.
+  `owned.PrepareCore` freezes legacy routine/Factory provenance, inventories active
+  and retained local sources, and returns wrapped adapters only after migrating
+  history and core references. Source-less local state resolves only against a
+  unique catalogue binding across all physical sources. Active/inactive source
+  collisions remain quarantined. Replaying legacy indexing validates canonical
+  history keys instead of adopting them as new native execution bindings.
+- Catalogue v3 records which sessions need legacy opaque deduplication tokens.
+  Existing records retain them; new identities use canonical tokens. Permission
+  Inbox hashes are derived inside the adapter, so re-observing a migrated prompt
+  can keep its resolved tombstone without exposing a native session ID to Inbox.
+  A durable per-source cutover marker freezes which inventoried identities need
+  legacy keys. Later startups cannot change modern wire or completion receipt
+  identities. Permission notifications, replies and manual rules all request the
+  same integration-provided Inbox key, including reply-before-asked tombstones.
+- Offline and unattributed legacy associations use `ocref_<uuid>` lookup tokens.
+  These are not session identities and cannot execute. Native references stay
+  only in `platforms/owned`'s compatibility table. Queues and feature records keep
+  their relationships while waiting for an authenticated owner to supply an
+  `ocm_<uuid>` identity. Unknown owners are never inferred to be local. Repeating
+  migration preserves the same tokens, and resolved tokens cannot be rebound.
+  The restoration helper resolves batches through the authenticated owner gateway,
+  persists immutable bindings before rekeying state, and reuses them without
+  contacting the owner on replay. It requires quiescent state users.
+  The canonical-only `sessionrefrecovery` module polls connected canonical owners
+  for unresolved proofs. It persists bindings without rekeying live application
+  tables, then requests the existing admission drain and authoritative idle check.
+  A graceful backend reload applies those bindings through pre-serving migration
+  and rebuilds caches and workers. Held quarantine queues remain durable and do
+  not block the reload. Saving unchanged platform settings cannot cancel it.
+- `sessionsvc` supports adapter-owned creation/configuration followed by a
+  canonical linkage callback and explicit commit before publication. Replayed
+  completed local creations do not repeat linkage or publication. Canonical
+  reconciliation errors retain worktrees just like earlier uncertain outcomes.
+- Native-link and old-receipt handling now lives in `platforms/owned`'s gateway.
+  Canonical HTTP/MCP request paths retain the Ocman ID, and pending feature
+  references lose their executable links without losing the surrounding record.
+  Catalogue v4 mirrors remote canonical metadata without a native binding on the
+  hub. Production negotiation requires protocol v9. Raw compatibility servers
+  advertise v8; canonical managers reject them before publishing either their
+  platform adapters or host execution routes.
+  Declared v9 mutation contracts reject native and pending session references
+  before side effects. Canonical peer responses are checked before caching
+  ownership, including offline snapshots; uncertain creation replies remain
+  non-replayable even when their payload is malformed.
+  Read, ownership, usage, policy and per-session stream RPCs also validate session
+  references before invoking adapters. Owner-global streams remain supported.
+  The remote stream receiver validates complete declared event frames and rejects
+  native, malformed or pending session references without allocating identities
+  or applying the public-view link-clearing policy. Opaque provider data and
+  native message/part/request IDs retain their wire representation.
+  Local event projection includes diff and compaction notifications. Unpublished
+  creation frames are withheld without disconnecting an owner-global stream or
+  suppressing a ready sibling's events; unrelated projection failures stay fatal.
+- The headless OpenCode watcher projects named and directory-wrapped events before
+  application callbacks. Adapter bridges preserve port-generation fencing, native
+  prompt/status caches, instance discovery and session-cache refreshes. Prompt
+  snapshot callbacks run outside the prompt lock so canonical discovery can read
+  session metadata without deadlocking. Opaque prompt metadata is unchanged.
+  Host discovery hooks also survive wrapping. Parent/directory/title lookups,
+  artifact and stream descendant checks, and git refresh hints now use adapter
+  metadata/relationship capabilities rather than querying native session keys in
+  the server. Canonical and explicitly remote references cannot fall back to a
+  local raw database adapter.
+  The wrapper preserves authoritative reload-idle checks and isolated title
+  helpers. OpenCode judge callbacks adopt helper identities before entering
+  application state while prompt execution and cleanup retain native IDs inside
+  the judge integration. The typed `ownedjudge` decorator preserves other
+  platforms' fallback judges without exposing their raw adapters.
+  Runtime-replacement candidate scans and persisted lifecycle evidence also use
+  canonical adapter methods. Hidden rows remain visible to the stop fence;
+  unattributed in-flight creations fail closed instead of disappearing from the
+  candidate inventory. Minimal identity scans cannot erase catalogue metadata.
+  Recovery scans carry unfiltered title and parent metadata, so hidden helpers
+  never depend on the display-filtered summary reader for identity adoption.
+  Optional host runtime, worktree naming, hook and MCP-listener services survive
+  wrapping. Claude's headless watcher projects session references before permission
+  callbacks, preserving native prompt IDs and its joined shutdown lifetime.
+  Live-only conversation heads need no transcript fingerprint. Settled heads
+  still require the immutable physical source. Claude config fingerprints resolve
+  existing physical ancestors so first-run directory creation does not change them.
+- The plugin store has a separate backed-up, atomic pre-serving migration for
+  `session.v1` mappings, run results and completion outbox references. Fingerprints,
+  unsettled admission fences, delivery sequence numbers and operation keys stay
+  unchanged. Source-less run receipts use only the same plugin's unambiguous
+  durable mappings, otherwise they remain quarantined. Platform-owned compatibility
+  projection preserves legacy run-result/completion wire correlations and notice
+  deduplication prefixes without using them for execution or public links.
+  Quarantined completions pause without consuming their retry budget. Pre-serving
+  migration also applies owner proofs saved before a reconnect-triggered reload.
+  Restored remote wire/deduplication correlations come from the same scoped,
+  immutable proof store. No native execution binding is mirrored onto the hub,
+  and ambiguous correlations fail rather than changing receipt identity.
+  An unavailable identity projection pauses completion delivery without spending
+  attempts. Only calls that reach the plugin broker consume the retry budget.
+- The app coordinator runs core and plugin migrations before installing
+  wrapped adapters, preserving fallback judge capabilities and finally enabling
+  canonical registry enforcement. Unavailable selected sources remain fail-closed
+  adapters and their legacy references stay quarantined. Runtime-owned reload
+  idleness remains authoritative even when browsing is unavailable. Disposable-home
+  startup tests cover creation, streaming, prompts and supervisor recovery.
+  Existing databases are backed up and migrated on the next startup or drained
+  reload, never by a live rekey of active core services.
+
 ### Background task status
 
 `internal/tasksvc` runs bounded owner-local work inside Ocman's process.
@@ -560,7 +833,7 @@ flowchart LR
     Manager -->|module-owned schema| State[(state.db<br/>task records)]
     Browser[Background tasks page] -->|authenticated GET| API[taskmod]
     API --> State
-    Manager -->|snapshots and repairs| History[(statev2.db)]
+    Manager -->|snapshots and repairs| History[(state_conv.db)]
 ```
 
 - Records distinguish queued, running, succeeded, failed, cancelled and interrupted
@@ -602,7 +875,7 @@ flowchart TD
     Server --> AutoApprove[internal/autoapprove<br/>session rules, safe-command cache + Judge seam]
     Browser -->|/permissions: session policy + request history| AutoApprove
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod, platformsettings]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, Finalize, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod, platformsettings]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Modules -->|"queuemod: bounded preparation, then admitted delivery"| Sessions
@@ -629,7 +902,7 @@ flowchart TD
     Modules -->|snooze: archive deadlines + atomic wake-up| State
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
-    Registry --> ClaudePlatform[platforms/claudecode<br/>browsing + project routing]
+    Registry --> ClaudePlatform[platforms/claudecode<br/>native-session runtime bindings]
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
     Provider -->|providerprotocol: HTTP + SSE over unix socket, leased snapshot + replay| Supervisor[providersupervisor<br/>sequenced spool, ack, drain]
     Local -.->|ocruntime.BackendRuntime in tmux, one per project| Supervisor
@@ -643,7 +916,7 @@ flowchart TD
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
     Modules --> HistoryImport[internal/conversationingest<br/>owner-local import + repairs]
-    HistoryImport --> HistoryStore[internal/statev2<br/>statev2.db]
+    HistoryImport --> HistoryStore[internal/statev2<br/>state_conv.db]
     Inbox --> State
     Inbox -.->|remote RPC| Router
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
@@ -661,9 +934,24 @@ flowchart TD
   authentication, logging, platform registration and HTTP/desktop composition.
   The root entrypoint only supplies embedded skills and the build version.
 - **platforms/claudecode.** The Claude adapter composes the browsing and
-  per-project supervisors, routes session operations, and recovers/drains
-  project runtimes. Its constructor receives skills and the MCP address
+  per-project supervisors, routes session operations by native session ID, and
+  recovers/drains project runtimes. Creation chooses a project runtime; after
+  binding, SSE, sends and prompt replies use the same session-to-supervisor
+  association, even when the working directory changes. Recovery discovers
+  active native IDs from process-owned status, never shared transcript listings,
+  and rejects conflicting active claims or incomplete discovery. Failed probes
+  permit recovery only when an independent check proves the tracked supervisor
+  is dead. Local deadlines never authorize fallback execution. Verified
+  corrections persist under the shared ownership lock without changing session
+  metadata, so restarts keep the
+  corrected association. Correcting a binding ends that session's
+  old stream so it reconnects. Its constructor receives skills and the MCP address
   explicitly. Provider and hook subcommands live in the same module.
+- **platforms/opencode.** Creation or a successful native-ID probe pins the
+  session's runtime port. Reconstruction checks the native session identity before
+  using a runtime; directory metadata alone cannot select an SSE or mutation
+  target. Both platforms retain the owner/source-scoped Ocman-to-native mapping
+  in `platforms/owned`; a project change never allocates another identity.
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux launcher and terminal host wiring, and whisper. Its session paths (SSE tee,
   notify, permission replies) still drive the auto-approve pipeline. It is the
@@ -811,15 +1099,15 @@ flowchart TD
   to the owner over `SessionPermissionPolicy` RPC. Rules and rule-based replies
   never enter native agent settings or worktree permission inheritance.
 - **Session summary reads.** Pinned sessions outside the recent window use
-  `platforms.SummaryReader`, backed by `db.GetSessionSummary`. Remotes
+  `platforms.SummaryReader`, served from the statev2 list projection. Remotes
   return the owner-local row through `SessionSummary` and stamp its compound
   platform on the hub. Older owners fall back to session detail. Session-list
   SSE invalidations trail by 150 ms with a 500 ms maximum wait, finish existing
   reads before refreshing, and retain one follow-up when another event arrives
   during the refresh.
 - **Factory usage.** `/api/factory/epics/{id}/usage` joins durable attempt
-  identities to `platforms.UsageReader`. The local OpenCode adapter reads
-  descendant message metadata and reuses token and pricing calculations.
+  identities to `platforms.UsageReader`. Canonical adapters sum descendant
+  usage from statev2 and reuse token and pricing calculations.
   The Factory module deduplicates owner-qualified session IDs for Epic phase totals,
   retains retry history per Attempt, and flags unavailable reads as incomplete.
   Epic and Queue views poll these totals every ten seconds.

@@ -45,28 +45,28 @@ var ConversationShape = &Shape{
 }
 
 func collect(value any, platform string, shape *Shape, refs *[]reference) {
-	collectOwned(value, platform, "", shape, refs)
+	collectOwned(value, platform, "", shape, refs, false)
 }
 
-func collectOwned(value any, platform, owner string, shape *Shape, refs *[]reference) {
+func collectOwned(value any, platform, owner string, shape *Shape, refs *[]reference, all bool) {
 	if shape == nil {
 		return
 	}
 	switch item := value.(type) {
 	case []any:
 		for _, child := range item {
-			collectOwned(child, platform, owner, shape, refs)
+			collectOwned(child, platform, owner, shape, refs, all)
 		}
 	case map[string]any:
 		if shape.Dictionary != nil {
 			for _, child := range item {
-				collectOwned(child, platform, owner, shape.Dictionary, refs)
+				collectOwned(child, platform, owner, shape.Dictionary, refs, all)
 			}
 			return
 		}
 		if len(shape.Variants) > 0 {
 			kind, _ := item["type"].(string)
-			collectOwned(item, platform, owner, shape.Variants[kind], refs)
+			collectOwned(item, platform, owner, shape.Variants[kind], refs, all)
 			return
 		}
 		if explicit, ok := item["platform"].(string); ok && explicit != "" {
@@ -90,7 +90,7 @@ func collectOwned(value any, platform, owner string, shape *Shape, refs *[]refer
 		}
 		for _, name := range shape.References {
 			add := func(id string, set func(string)) {
-				if id != "" && !strings.HasPrefix(id, "ocm_") {
+				if id != "" && (all || !strings.HasPrefix(id, "ocm_")) {
 					*refs = append(*refs, reference{key{platform, id}, set})
 				}
 			}
@@ -106,7 +106,7 @@ func collectOwned(value any, platform, owner string, shape *Shape, refs *[]refer
 			}
 		}
 		for name, child := range shape.Children {
-			collectOwned(item[name], platform, owner, child, refs)
+			collectOwned(item[name], platform, owner, child, refs, all)
 		}
 	}
 }

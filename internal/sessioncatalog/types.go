@@ -39,22 +39,24 @@ const (
 )
 
 type Session struct {
-	ID             string        `json:"id"`
-	OwnerID        string        `json:"ownerId"`
-	Platform       string        `json:"platform"`
-	Directory      string        `json:"directory"`
-	Title          string        `json:"title"`
-	ParentID       string        `json:"parentId,omitempty"`
-	NativeParentID string        `json:"nativeParentId,omitempty"`
-	Purged         bool          `json:"purged,omitempty"`
-	Origin         Origin        `json:"origin"`
-	OriginID       string        `json:"originId,omitempty"`
-	CreationState  CreationState `json:"creationState"`
-	CreationError  string        `json:"creationError,omitempty"`
-	SourceKey      string        `json:"sourceKey,omitempty"`
-	NativeID       string        `json:"nativeId,omitempty"`
-	CreatedAt      int64         `json:"createdAt"`
-	UpdatedAt      int64         `json:"updatedAt"`
+	ID             string `json:"id"`
+	OwnerID        string `json:"ownerId"`
+	Platform       string `json:"platform"`
+	Directory      string `json:"directory"`
+	Title          string `json:"title"`
+	ParentID       string `json:"parentId,omitempty"`
+	NativeParentID string `json:"nativeParentId,omitempty"`
+	Purged         bool   `json:"purged,omitempty"`
+	// LegacyKeys keeps pre-cutover deduplication identities inside adapters.
+	LegacyKeys    bool          `json:"-"`
+	Origin        Origin        `json:"origin"`
+	OriginID      string        `json:"originId,omitempty"`
+	CreationState CreationState `json:"creationState"`
+	CreationError string        `json:"creationError,omitempty"`
+	SourceKey     string        `json:"sourceKey,omitempty"`
+	NativeID      string        `json:"nativeId,omitempty"`
+	CreatedAt     int64         `json:"createdAt"`
+	UpdatedAt     int64         `json:"updatedAt"`
 }
 
 type Reservation struct {

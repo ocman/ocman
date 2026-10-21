@@ -244,33 +244,38 @@ func TestDiscoverDuplicateOpenCodeServerPorts_CachesServerDiscovery(t *testing.T
 }
 
 func TestResolveOpenCodePortForSessionCtx_PinsSessionPort(t *testing.T) {
+	first, second := newOpencodeFake(t), newOpencodeFake(t)
+	first.SetSession("sess-1", []byte(`{"id":"sess-1"}`))
+	second.SetSession("sess-2", []byte(`{"id":"sess-2"}`))
+	restoreServers := setDiscoverServersImplForTests(func() []openCodeServer { return nil })
+	defer restoreServers()
 	var calls int32
 	restore := setDiscoverPortsImplForTests(func() map[string]string {
 		call := atomic.AddInt32(&calls, 1)
 		if call == 1 {
-			return map[string]string{"/repo/a": "1111"}
+			return map[string]string{"/repo/a": first.Port()}
 		}
-		return map[string]string{"/repo/a": "2222"}
+		return map[string]string{"/repo/a": second.Port()}
 	})
 	defer restore()
 	resetPortCacheForTests()
 	resetSessionPortAffinityForTests()
 	defer resetSessionPortAffinityForTests()
 
-	if got := td.resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
-		t.Fatalf("first lookup got port %q, want 1111", got)
+	if got, err := td.resolveSessionPortCtx(context.Background(), "sess-1", "/repo/a"); err != nil || got != first.Port() {
+		t.Fatalf("first lookup got port %q, want %s", got, first.Port())
 	}
 
 	td.InvalidateOpenCodePortCache()
-	if got := td.resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
-		t.Fatalf("same-session lookup after cache invalidation got port %q, want pinned 1111", got)
+	if got, err := td.resolveSessionPortCtx(context.Background(), "sess-1", "/repo/a"); err != nil || got != first.Port() {
+		t.Fatalf("same-session lookup after cache invalidation got port %q, want pinned %s", got, first.Port())
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("same-session affinity invoked lsof %d times, want 1", got)
 	}
 
-	if got := td.resolveOpenCodePortForSessionCtx(context.Background(), "sess-2", "/repo/a"); got != "2222" {
-		t.Fatalf("different session lookup got port %q, want fresh 2222", got)
+	if got, err := td.resolveSessionPortCtx(context.Background(), "sess-2", "/repo/a"); err != nil || got != second.Port() {
+		t.Fatalf("different session lookup got port %q, want fresh %s", got, second.Port())
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Fatalf("fresh session invoked lsof %d times, want 2", got)

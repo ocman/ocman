@@ -15,7 +15,7 @@ func TestDirectoryCatalogReasoningEffort(t *testing.T) {
 		`{"value":"haiku","displayName":"Claude Haiku","supportsEffort":false}]}}`
 	h := serveLive(t, initFixture(t, response), nil)
 	for range 2 { // The cached catalog must keep the same effort options.
-		cat, err := h.adapter.DirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir})
+		cat, err := h.adapter.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir})
 		if err != nil {
 			t.Fatal(err)
 		}

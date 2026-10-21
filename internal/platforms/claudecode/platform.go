@@ -25,9 +25,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
-// New serves the machine's Claude transcripts for browsing
-// and drives the sessions ocman launches through per-project supervisors.
-func New(ctx context.Context, database *db.DB, stateDB *state.DB, skills map[string][]byte, mcpAddr string) platforms.Platform {
+// New serves the machine's Claude transcripts to history ingestion and drives the sessions ocman launches through per-project supervisors.
+func New(ctx context.Context, database *db.DB, stateDB *state.DB, skills map[string][]byte, mcpAddr string) platforms.Integration {
 	exe, err := os.Executable()
 	if err != nil {
 		log.WithError(err).Warn("Claude Code sessions unavailable")

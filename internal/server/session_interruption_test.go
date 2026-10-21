@@ -270,7 +270,7 @@ func TestReplacementFindsFreshChildrenOmittedByDisplayList(t *testing.T) {
 		INSERT INTO part(id,message_id,session_id,data) VALUES ('child-step','child-turn','hidden-child','{"type":"step-start"}')`); err != nil {
 		t.Fatal(err)
 	}
-	srv.registry.Register(&interruptionLifecyclePlatform{
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{
 		fakePlatform: &fakePlatform{id: "opencode", sessions: nil},
 		lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 			if id == "parent" {
@@ -307,15 +307,15 @@ func TestCompletedShellEnvelopeDoesNotGetInterruptionHistory(t *testing.T) {
 	if err := recordStoppedReplacement(t, srv, "/repo", "requested restart"); err != nil {
 		t.Fatal(err)
 	}
-	shell, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", "shell")
+	shell, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", canonicalID(t, srv, "shell"))
 	if err != nil || len(shell) != 0 {
 		t.Fatalf("completed shell got permanent false history: %v %v", shell, err)
 	}
-	active, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", "open-turn")
+	active, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", canonicalID(t, srv, "open-turn"))
 	if err != nil || len(active) != 1 {
 		t.Fatalf("real unfinished turn lost its notice: %v %v", active, err)
 	}
-	running, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", "running-shell")
+	running, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", canonicalID(t, srv, "running-shell"))
 	if err != nil || len(running) != 1 {
 		t.Fatalf("unfinished shell lost its notice: %v %v", running, err)
 	}
@@ -342,11 +342,11 @@ func TestConfirmationDropsCompletedTurnAndCapturesNewTurn(t *testing.T) {
 	if err := srv.confirmOpencodeReplacement(t.Context(), "/repo"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", "s")
+	got, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", canonicalID(t, srv, "s"))
 	if err != nil || len(got) != 1 || got[0].MessageID != "new" {
 		t.Fatalf("pre-stop snapshot blindly confirmed: %v %v", got, err)
 	}
-	newSession, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", "new-session")
+	newSession, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", canonicalID(t, srv, "new-session"))
 	if err != nil || len(newSession) != 1 || newSession[0].MessageID != "first-prompt" {
 		t.Fatalf("submission during preparation lost its history: %v %v", newSession, err)
 	}
@@ -369,7 +369,7 @@ func TestConfirmationDoesNotMarkTurnThatFinishedBeforeStop(t *testing.T) {
 	if err := srv.confirmOpencodeReplacement(t.Context(), "/repo"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", "s")
+	got, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", canonicalID(t, srv, "s"))
 	if err != nil || len(got) != 0 {
 		t.Fatalf("normally completed turn got interruption history: %v %v", got, err)
 	}

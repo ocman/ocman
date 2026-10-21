@@ -26,7 +26,7 @@ func waitSessionIdentity(t *testing.T, base, platform, nativeID string) platform
 		var identity platforms.SessionIdentity
 		err = json.NewDecoder(resp.Body).Decode(&identity)
 		_ = resp.Body.Close()
-		if err == nil && resp.StatusCode == http.StatusOK && strings.HasPrefix(identity.ID, "ocm_") && identity.NativeID == nativeID && identity.Platform == platform {
+		if err == nil && resp.StatusCode == http.StatusOK && strings.HasPrefix(identity.ID, "ocm_") && identity.NativeID == "" && identity.SourceKey == "" && identity.Platform == platform {
 			return identity
 		}
 		lastErr = fmt.Errorf("identity response: status %d, identity %+v", resp.StatusCode, identity)

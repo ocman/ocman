@@ -2,6 +2,22 @@ package conversationingest
 
 import "time"
 
+// AnalyticsInstances includes initialized local sources even while a scan is
+// incomplete. Only committed projections are read; completeness is diagnostic,
+// not permission to discard unrelated metrics. ReadyInstances remains strict.
+func (m *Module) AnalyticsInstances() ([]string, bool) {
+	_, complete := m.ReadyInstances()
+	m.receiptMu.Lock()
+	defer m.receiptMu.Unlock()
+	ids := make([]string, 0, len(m.workers))
+	for _, w := range m.workers {
+		if id := m.instances[w.source.AdapterID]; id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, complete
+}
+
 type readySource struct {
 	instance string
 	at       time.Time
