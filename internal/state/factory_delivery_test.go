@@ -80,7 +80,7 @@ func TestFactoryDeliveryRefreshesThenCreatesSuccessor(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := t.Context()
-	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Delivery lineage", "", "/repo", "", nativeTracerFormula(t), []string{"/app"})
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivery lineage", "", "/repo", "", nativeTracerFormula(t), []string{"/app"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestFactoryMergeGateUsesForgeObservation(t *testing.T) {
 			db := openTestStateDB(t)
 			defer db.Close()
 			ctx := t.Context()
-			epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Merge gate", "", "/app", "", nativeTracerFormula(t), []string{"/sdk"})
+			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Merge gate", "", "/app", "", nativeTracerFormula(t), []string{"/sdk"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -354,7 +354,7 @@ func TestFactoryDeliveryTracksProjectsProgressively(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := t.Context()
-	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Delivery", "", "/repo", "", nativeTracerFormula(t), []string{"/other", "/optional", "/reference", "/idle"})
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivery", "", "/repo", "", nativeTracerFormula(t), []string{"/other", "/optional", "/reference", "/idle"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

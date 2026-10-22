@@ -102,7 +102,8 @@ func TestAutoArchivePreservesSnoozeThatWakesDuringScan(t *testing.T) {
 	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
 	srv.registry.Register(&snoozeDuringArchivePlatform{fakePlatform: fakePlatform{id: "fake"}, store: srv.stateDB, until: time.Now().Add(time.Hour).UnixMilli(), wake: true})
 	srv.autoArchiveInactiveSessions(t.Context())
-	archived, err := srv.stateDB.IsSessionArchived(t.Context(), "fake", "s1")
+	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
+	_, archived := archivedSessions[state.Key{Platform: "fake", SessionID: "s1"}]
 	if err != nil || archived {
 		t.Fatalf("auto-archive re-hid awake session: %v %v", archived, err)
 	}

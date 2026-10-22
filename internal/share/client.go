@@ -118,32 +118,6 @@ func (c RelayClient) Delete(ctx context.Context, allocation RelayAllocation) err
 	return nil
 }
 
-func (c RelayClient) RegisterInbox(ctx context.Context, recipient, enrollmentToken string) (InboxAllocation, error) {
-	body, err := json.Marshal(map[string]string{"recipient": recipient})
-	if err != nil {
-		return InboxAllocation{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes", bytes.NewReader(body))
-	if err != nil {
-		return InboxAllocation{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+enrollmentToken)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return InboxAllocation{}, relayTransportError("registering", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		return InboxAllocation{}, relayStatusError("registering", resp)
-	}
-	var out InboxAllocation
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
-		return InboxAllocation{}, fmt.Errorf("decoding inbox registration: %w", err)
-	}
-	return out, nil
-}
-
 func (c RelayClient) RegisterInboxWithSecret(ctx context.Context, recipient, enrollmentToken, secret, secretHeader string) (InboxAllocation, error) {
 	body, err := json.Marshal(map[string]string{"recipient": recipient, "secret": secret, "secretHeader": secretHeader})
 	if err != nil {

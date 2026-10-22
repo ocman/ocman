@@ -122,7 +122,7 @@ func TestMissingStateRecoveryHooks(t *testing.T) {
 	ctx := t.Context()
 	for name, err := range map[string]error{
 		"record":  s.RecordOpencodeReplacement(ctx, "/repo", "restart"),
-		"begin":   s.BeginOpencodeReplacementStop(ctx, "/repo"),
+		"begin":   s.BeginOpencodeReplacementStopWithInstance(ctx, "/repo", nil),
 		"confirm": s.ConfirmOpencodeReplacement(ctx, "/repo"),
 		"cancel":  s.CancelOpencodeReplacementStop(ctx, "/repo"),
 	} {

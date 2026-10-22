@@ -27,7 +27,7 @@ func TestFormulaPromptAncestry(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	child, err := svc.SaveFormula(t.Context(), FormulaSaveRequest{ID: "custom/child", Source: "prompt_implementation = \"Child instructions\"\n" + tracerFormulaSource})
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestFormulaPromptsCompilation(t *testing.T) {
 }
 
 func TestBuiltInFormulaContainsItsPrompts(t *testing.T) {
-	svc := NewNative(&nativeStoreFake{})
+	svc := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil)
 	current := BuiltInTracerFormula()
 	view, err := svc.GetFormula(t.Context(), current.ID, current.Version)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestPlanningUsesPinnedFormulaPrompt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	first, err := svc.SaveFormula(t.Context(), FormulaSaveRequest{ID: "custom/prompts", Source: "prompt_planning = \"First revision instructions\"\n" + tracerFormulaSource})
 	if err != nil {
 		t.Fatal(err)

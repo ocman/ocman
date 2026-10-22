@@ -15,18 +15,7 @@ import (
 // on a machine (or minimal CI image) without git installed.
 func RequireGit(t *testing.T) {
 	t.Helper()
-	requireBinary(t, "git")
-}
-
-// RequireTmux skips the test when the `tmux` binary isn't on PATH.
-func RequireTmux(t *testing.T) {
-	t.Helper()
-	requireBinary(t, "tmux")
-}
-
-func requireBinary(t *testing.T, name string) {
-	t.Helper()
-	if _, err := exec.LookPath(name); err != nil {
-		t.Skipf("%s not installed", name)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
 	}
 }

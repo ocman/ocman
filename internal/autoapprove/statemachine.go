@@ -16,7 +16,7 @@ import (
 // goroutine is still running; a non-empty verdict means the judge
 // finished. The two are mutually exclusive only in steady state — a
 // running judge transitions from (cancel non-nil, verdict "") to
-// (cancel nil, verdict non-empty) when recordJudged is called.
+// (cancel nil, verdict non-empty) when recordJudgedWithReasoning is called.
 //
 // judgeStartsAt and checking exist so a freshly-connected SSE sink
 // (the headless-watcher case where the watcher claimed the permission
@@ -74,22 +74,13 @@ func autoApproveKey(sessionID, permissionID string) string {
 	return sessionID + "|" + permissionID
 }
 
-// claimAutoApprove atomically registers a new judge run for
+// claimAutoApproveWithStart atomically registers a new judge run for
 // (sessionID, permissionID) and returns a cancellable context derived
 // from parent. The second return value is true if the claim was
 // granted; false if another goroutine is already handling this
 // permission, OR a verdict for it has already been recorded.
 //
-// Callers that already know the judgeStartsAt anchor (the standard
-// Ensure path) should use claimAutoApproveWithStart so the
-// anchor is stored for later replay. This helper exists for symmetry
-// with the pre-watcher API and defaults judgeStartsAt to 0.
-func (s *Service) claimAutoApprove(parent context.Context, sessionID, permissionID string) (context.Context, bool) {
-	return s.claimAutoApproveWithStart(parent, sessionID, permissionID, 0)
-}
-
-// claimAutoApproveWithStart is claimAutoApprove plus a judgeStartsAt
-// anchor. The anchor is stored on the status record so a later
+// The judgeStartsAt anchor is stored on the status record so a later
 // short-circuit replay can re-emit ocman.permission.pending with the
 // same value, letting the frontend resume the countdown without a
 // fresh clock.
@@ -226,21 +217,13 @@ func (s *Service) Cancel(sessionID, permissionID string) bool {
 	return true
 }
 
-// recordJudged persists the verdict for (sessionID, permissionID) so a
-// later Ensure call for the same OpenCode permission ID
-// short-circuits instead of running the judge again. Called by
-// backgroundAutoApprove on every terminal path (safe or unsafe).
-//
-// Equivalent to recordJudgedWithReasoning with reasoning="". Retained
-// so call-sites that don't have reasoning handy stay readable.
-func (s *Service) recordJudged(sessionID, permissionID string, verdict judgeVerdict) {
-	s.recordJudgedWithReasoning(sessionID, permissionID, verdict, "")
-}
-
-// recordJudgedWithReasoning is recordJudged plus the one-line reasoning
-// extracted from the judge's response. Surfaced to the UI on the
-// ocman.permission.flagged event during replay so users see *why* the
-// judge said unsafe.
+// recordJudgedWithReasoning persists the verdict for (sessionID,
+// permissionID) so a later Ensure call for the same OpenCode permission
+// ID short-circuits instead of running the judge again. Called by
+// backgroundAutoApprove on every terminal path (safe or unsafe). The
+// one-line reasoning extracted from the judge's response is surfaced to
+// the UI on the ocman.permission.flagged event during replay so users
+// see *why* the judge said unsafe.
 func (s *Service) recordJudgedWithReasoning(sessionID, permissionID string, verdict judgeVerdict, reasoning string) {
 	if s == nil || permissionID == "" {
 		return
@@ -266,24 +249,6 @@ const (
 	maxSafeCommandSessions    = 1024
 	maxSafeCommandsPerSession = 256
 )
-
-// lookupJudged returns the cached verdict for (sessionID, permissionID)
-// and ok=true if the judge already produced a verdict in this process.
-// Pure read of the verdict field; the status may still be in flight if
-// verdict is empty (in which case ok is false).
-func (s *Service) lookupJudged(sessionID, permissionID string) (judgeVerdict, bool) {
-	if s == nil {
-		return "", false
-	}
-	key := autoApproveKey(sessionID, permissionID)
-	s.autoApproveMu.Lock()
-	defer s.autoApproveMu.Unlock()
-	st := s.autoApprove[key]
-	if st == nil || st.verdict == "" {
-		return "", false
-	}
-	return st.verdict, true
-}
 
 // lookupAutoApproveStatus returns a snapshot copy of the current status
 // for (sessionID, permissionID) and ok=true if any state is recorded

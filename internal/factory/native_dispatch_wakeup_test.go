@@ -52,7 +52,7 @@ func TestFactoryDoesNotScanEverySecond(t *testing.T) {
 }
 
 func TestFactoryIdleWakeIsScopedAndCoalesced(t *testing.T) {
-	svc := NewNative(nil)
+	svc := NewNativeWithExecution(nil, nil, nil, nil)
 	session := PlanningSession{Platform: "opencode", ID: "implementation"}
 	svc.rememberImplementationSessions([]model.FactoryAttempt{{Session: session, Phase: model.FactoryAttemptActive, FrozenPolicy: model.FactoryAttemptPolicy{Profile: "factory-implement/v1"}}})
 	for _, platform := range []string{"", "r-other:opencode"} {
@@ -117,14 +117,14 @@ func TestFactoryNextDispatchDelay(t *testing.T) {
 		{name: "read failed", err: errors.New("deadline failed"), wantMin: 15 * time.Second, wantMax: 15 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := NewNative(&dispatchCountingStore{deadline: tc.next, deadlineErr: tc.err})
+			svc := NewNativeWithExecution(&dispatchCountingStore{deadline: tc.next, deadlineErr: tc.err}, nil, nil, nil)
 			got := svc.nextDispatchDelay(t.Context(), 5*time.Minute)
 			if got < tc.wantMin || got > tc.wantMax {
 				t.Fatalf("delay = %v, want [%v,%v]", got, tc.wantMin, tc.wantMax)
 			}
 		})
 	}
-	if got := NewNative(&nativeStoreFake{}).nextDispatchDelay(t.Context(), time.Minute); got != time.Minute {
+	if got := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).nextDispatchDelay(t.Context(), time.Minute); got != time.Minute {
 		t.Fatalf("fallback delay = %v", got)
 	}
 }

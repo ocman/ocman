@@ -219,11 +219,6 @@ func (d *DB) ListWebhookInboxes(ctx context.Context) ([]WebhookInbox, error) {
 	return result, rows.Err()
 }
 
-func (d *DB) DeleteWebhookInbox(ctx context.Context, routineID string) error {
-	_, err := d.db.ExecContext(ctx, `DELETE FROM webhook_inbox WHERE routine_id = ?`, routineID)
-	return err
-}
-
 // RenameWebhookInbox and UpdateWebhookInboxSecret each change only their own
 // columns, so neither can overwrite a key rotated concurrently, a secret or
 // name changed meanwhile, or resurrect a revoked inbox.
@@ -251,11 +246,6 @@ func (d *DB) DeleteWebhookInboxByID(ctx context.Context, id string) error {
 	}
 	_, err := d.db.ExecContext(ctx, `DELETE FROM webhook_inbox WHERE id = ?`, id)
 	return err
-}
-
-// ListRoutineWebhookSubscriptions returns every inbox subscription of one routine.
-func (d *DB) ListRoutineWebhookSubscriptions(ctx context.Context, routineID string) ([]WebhookSubscription, error) {
-	return d.listWebhookSubscriptions(ctx, "routine_id", routineID)
 }
 
 func (d *DB) WebhookDispatchCounts(ctx context.Context, inboxID string) (map[string]int, error) {

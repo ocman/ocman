@@ -354,18 +354,6 @@ var factoryMergeGatePollInterval = 30 * time.Second
 
 type CapacityPolicy = model.FactoryCapacityPolicy
 
-func NewNative(store nativeStore, resolvers ...nativeProjectResolver) *NativeService {
-	var projects nativeProjectResolver
-	if len(resolvers) > 0 {
-		projects = resolvers[0]
-	}
-	return &NativeService{store: store, projects: projects, dispatchWake: make(chan struct{}, 1), stop: make(chan struct{})}
-}
-
-func NewNativeWithPlanning(store nativeStore, projects nativeProjectResolver, planning PlanningLauncher) *NativeService {
-	return &NativeService{store: store, projects: projects, planning: planning, dispatchWake: make(chan struct{}, 1), stop: make(chan struct{})}
-}
-
 func NewNativeWithExecution(store nativeStore, projects nativeProjectResolver, planning PlanningLauncher, implementation ImplementationLauncher) *NativeService {
 	return &NativeService{store: store, projects: projects, planning: planning, implementation: implementation, dispatchWake: make(chan struct{}, 1), stop: make(chan struct{})}
 }

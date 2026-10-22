@@ -29,11 +29,13 @@ func TestCompletedRoutineSessionNeedsNoArchive(t *testing.T) {
 	m, _, _ := setup(t)
 	routine := state.Routine{ID: "r", Platform: "test", Name: "routine", Directory: "/repo", RemoteID: "local", SessionMode: "reuse"}
 	must(t, m.deps.Store.CreateRoutine(t.Context(), routine))
-	run, _, err := m.deps.Store.ClaimRoutineRun(t.Context(), state.RoutineRun{ID: "run", RoutineID: "r", State: "running", OccurrenceAt: 1})
+	_, _, err := m.deps.Store.ClaimRoutineRun(t.Context(), state.RoutineRun{ID: "run", RoutineID: "r", State: "running", OccurrenceAt: 1})
 	must(t, err)
 	must(t, m.deps.Store.LinkRoutineRun(t.Context(), "run", "test", "s", 1, true))
-	run.State, run.Platform, run.SessionID = "success", "test", "s"
-	must(t, m.deps.Store.UpdateRoutineRun(t.Context(), run))
+	finished, err := m.deps.Store.FinishRoutineRun(t.Context(), "run", "success", "", "", 1, 0, false, false)
+	if err != nil || !finished {
+		t.Fatal("finish routine run", finished, err)
+	}
 	must(t, m.deps.Store.UnarchiveSession(t.Context(), "test", "s"))
 	_, _, idle, err := m.eligible(t.Context(), m.deps.Targets()[0], "/repo", false)
 	if err != nil || !idle {

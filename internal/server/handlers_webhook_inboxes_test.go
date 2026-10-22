@@ -122,7 +122,7 @@ func TestWebhookInboxesLifecycle(t *testing.T) {
 	if rec := doRoutineRequest(t, handler, http.MethodGet, subs, ""); !strings.Contains(rec.Body.String(), `"routineId":"`+routine.ID+`"`) {
 		t.Fatalf("list subs: %s", rec.Body.String())
 	}
-	if got, _ := srv.stateDB.ListRoutineWebhookSubscriptions(t.Context(), routine.ID); len(got) != 1 || got[0].InboxID != "inbox" {
+	if got, _ := srv.stateDB.ListWebhookSubscriptions(t.Context(), "inbox"); len(got) != 1 || got[0].RoutineID != routine.ID {
 		t.Fatalf("routine subs = %+v", got)
 	}
 
@@ -185,8 +185,9 @@ func TestWebhookInboxesLifecycle(t *testing.T) {
 	if rec := doRoutineRequest(t, handler, http.MethodDelete, base+"/inbox", ""); rec.Code != http.StatusNoContent {
 		t.Fatalf("revoke: %d %s", rec.Code, rec.Body.String())
 	}
-	if got, _ := db.ListRoutineWebhookSubscriptions(t.Context(), routine.ID); len(got) != 0 {
-		t.Fatalf("subscriptions survived revoke: %+v", got)
+	var survived int
+	if err := db.SQL().QueryRowContext(t.Context(), `SELECT count(*) FROM webhook_subscription WHERE routine_id = ?`, routine.ID).Scan(&survived); err != nil || survived != 0 {
+		t.Fatalf("subscriptions survived revoke: %d, %v", survived, err)
 	}
 	if rec := doRoutineRequest(t, handler, http.MethodGet, base+"/inbox", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("after revoke: %d", rec.Code)

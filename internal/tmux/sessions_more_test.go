@@ -1,7 +1,6 @@
 package tmux
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -366,7 +365,7 @@ func TestLaunchOpencodeEnvCmd(t *testing.T) {
 				dir = filepath.Join(home, "src/repo")
 			}
 
-			name, launched, err := LaunchOpencodeEnv(t.Context(), dir, map[string]string{"OPENCODE_PERMISSION": "{}"})
+			name, launched, err := LaunchOpencodeCmdEnvWith(t.Context(), DefaultRunner, dir, OpencodeCommand, true, map[string]string{"OPENCODE_PERMISSION": "{}"})
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v; want it to contain %q", err, tt.wantErr)
@@ -391,78 +390,6 @@ func TestLaunchOpencodeEnvCmd(t *testing.T) {
 			}
 			if !tt.wantLaunched && strings.Contains(log, "new-session") {
 				t.Errorf("tmux argv log = %q; want no new-session on the idempotent path", log)
-			}
-		})
-	}
-}
-
-func TestRestartOpencodeCmd(t *testing.T) {
-	sessions := "if [ \"$1\" = list-sessions ]; then\ncat <<'EOF'\nrepo	2\nEOF\nfi\n"
-
-	tests := []struct {
-		name       string
-		body       string
-		wantTarget string
-		wantErr    string
-		wantErrIs  error
-		wantArgs   []string
-	}{
-		{
-			name:       "restarts the matching opencode window",
-			body:       sessions + "if [ \"$1\" = list-windows ]; then\ncat <<'EOF'\nshell	/tmp/repo	zsh\noc	/tmp/repo	opencode	exec opencode --port 0\nEOF\nfi\nexit 0",
-			wantTarget: "repo:oc",
-			wantArgs:   []string{"kill-window -t repo:oc", "new-window -d -t repo -n oc"},
-		},
-		{
-			name:      "no managed pane",
-			body:      sessions + "if [ \"$1\" = list-windows ]; then\ncat <<'EOF'\nshell	/tmp/repo	zsh\nEOF\nfi\nexit 0",
-			wantErrIs: ErrNoManagedOpencodePane,
-		},
-		{
-			name:    "list-sessions failure propagates",
-			body:    "if [ \"$1\" = list-sessions ]; then exit 1; fi\nexit 0",
-			wantErr: "listing tmux sessions",
-		},
-		{
-			name:    "list-windows failure propagates",
-			body:    sessions + "if [ \"$1\" = list-windows ]; then exit 1; fi\nexit 0",
-			wantErr: "listing tmux windows",
-		},
-		{
-			name:    "kill-window failure propagates",
-			body:    sessions + "if [ \"$1\" = list-windows ]; then\ncat <<'EOF'\noc	/tmp/repo	opencode\nEOF\nfi\nif [ \"$1\" = kill-window ]; then exit 1; fi\nexit 0",
-			wantErr: "tmux kill-window",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			readLog := fakeTmux(t, tt.body)
-
-			target, err := RestartOpencode(t.Context(), "/tmp/repo")
-			switch {
-			case tt.wantErrIs != nil:
-				if !errors.Is(err, tt.wantErrIs) {
-					t.Fatalf("error = %v, want %v", err, tt.wantErrIs)
-				}
-				return
-			case tt.wantErr != "":
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("error = %v; want it to contain %q", err, tt.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if target != tt.wantTarget {
-				t.Errorf("target = %q, want %q", target, tt.wantTarget)
-			}
-			log := readLog()
-			for _, want := range tt.wantArgs {
-				if !strings.Contains(log, want) {
-					t.Errorf("tmux argv log = %q; want it to contain %q", log, want)
-				}
 			}
 		})
 	}

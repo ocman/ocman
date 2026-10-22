@@ -16,7 +16,7 @@ func TestNativeGraphApprovalSurvivesRestartWithoutDuplicatingWork(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, svc, "Fill a gap")
 	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, RationaleMarkdown: "Original design", Manifest: ProposalManifest{
 		EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo",
@@ -88,7 +88,7 @@ func TestNativeGraphApprovalSurvivesRestartWithoutDuplicatingWork(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc = NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc = NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	detail, err = svc.GetWorkEpic(t.Context(), epic.ID)
 	if err != nil || detail.PlanGate.Resolution != "open" {
 		t.Fatalf("restarted graph = %#v, %v", detail, err)

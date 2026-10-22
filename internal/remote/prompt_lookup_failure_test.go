@@ -32,8 +32,8 @@ func TestPromptLookupFailureCrossesRealRemoteRPC(t *testing.T) {
 	}
 	defer database.Close()
 	adapter := opencode.New(database, nil)
-	adapter.ObservePromptAsked("", "/isolated-prompt-test", "permission", platforms.LivePrompt{"id": "p1", "sessionID": "child"})
-	adapter.ObservePromptAsked("", "/isolated-prompt-test", "question", platforms.LivePrompt{"id": "q1", "sessionID": "child"})
+	adapter.ObservePromptAskedFromPort("", 0, "/isolated-prompt-test", "permission", platforms.LivePrompt{"id": "p1", "sessionID": "child"})
+	adapter.ObservePromptAskedFromPort("", 0, "/isolated-prompt-test", "question", platforms.LivePrompt{"id": "q1", "sessionID": "child"})
 	reg := platforms.NewRegistry()
 	reg.Register(openCodeOwner{Adapter: adapter})
 	conn := NewRemoteConn(startRealRemote(t, "tok", "rid", reg), "tok")

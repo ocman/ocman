@@ -253,7 +253,7 @@ func TestAIResponseEventIsNotCapturedAsUser(t *testing.T) {
 	store := &recordingStore{}
 	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
 	asked := s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
-	s.recordJudged("s1", "p1", verdictSafe)
+	s.recordJudgedWithReasoning("s1", "p1", verdictSafe, "")
 	adapter := &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
 		s.HandlePermissionReplied(t.Context(), "s1", "p1", "once")
 		return nil
@@ -278,7 +278,7 @@ func TestObservedAlwaysDuringAIResponseIsCapturedAsUser(t *testing.T) {
 			store := &recordingStore{}
 			s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
 			asked := s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
-			s.recordJudged("s1", "p1", verdictSafe)
+			s.recordJudgedWithReasoning("s1", "p1", verdictSafe, "")
 			adapter := &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
 				s.HandlePermissionReplied(t.Context(), "s1", "p1", "always")
 				return tc.adapterErr
@@ -297,7 +297,7 @@ func TestObservedRejectDuringAIResponsePreventsAIAudit(t *testing.T) {
 	store := &recordingStore{}
 	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
 	asked := s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
-	s.recordJudged("s1", "p1", verdictSafe)
+	s.recordJudgedWithReasoning("s1", "p1", verdictSafe, "")
 	adapter := &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
 		s.HandlePermissionReplied(t.Context(), "s1", "p1", "reject")
 		return nil
@@ -314,7 +314,7 @@ func TestFailedAIOnceResponseDoesNotGuessObservedReplySource(t *testing.T) {
 	store := &recordingStore{}
 	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
 	asked := s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
-	s.recordJudged("s1", "p1", verdictSafe)
+	s.recordJudgedWithReasoning("s1", "p1", verdictSafe, "")
 	adapter := &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
 		s.HandlePermissionReplied(t.Context(), "s1", "p1", "once")
 		return errors.New("transport failed")
@@ -331,7 +331,7 @@ func TestDirectUserSuccessCapturedDespiteSafeVerdict(t *testing.T) {
 	store := &recordingStore{}
 	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
 	s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
-	s.recordJudged("s1", "p1", verdictSafe)
+	s.recordJudgedWithReasoning("s1", "p1", verdictSafe, "")
 
 	s.HandleDirectPermissionReply(t.Context(), "s1", "p1", "once")
 	records := waitForRecords(t, store, 1)

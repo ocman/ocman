@@ -18,7 +18,7 @@ func TestNativeImportedPlanKeepsApprovalGate(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Use existing plan")
 	planID := pouredIssueID(t, svc, epic.ID, "plan")
 	materializationID := pouredIssueID(t, svc, epic.ID, "materialization")
@@ -62,7 +62,7 @@ func TestNativeImportedPlanKeepsApprovalGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc = NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc = NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	detail, err := svc.GetWorkEpic(t.Context(), epic.ID)
 	if err != nil || detail.PlanGate == nil || detail.PlanGate.Resolution != "open" || detail.PlanGate.ProposalHash != first.ContentHash {
 		t.Fatalf("persisted gate = %#v, %v", detail.PlanGate, err)
@@ -118,7 +118,7 @@ func TestNativeImportRejectsOwnedOrInvalidPlans(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = db.Close() })
-			svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{})
+			svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, nil)
 			epic := createPouredWorkEpic(t, svc, "Import constraints")
 			req := SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}}
 			wantErr := ErrInvalidRequest

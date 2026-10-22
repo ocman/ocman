@@ -252,9 +252,6 @@ func TestRoutineMissingRows(t *testing.T) {
 	if _, err := db.GetRoutineRun(t.Context(), "missing"); !errors.Is(err, ErrRoutineRunNotFound) {
 		t.Fatalf("GetRoutineRun error = %v", err)
 	}
-	if err := db.UpdateRoutineRun(t.Context(), RoutineRun{ID: "missing"}); !errors.Is(err, ErrRoutineRunNotFound) {
-		t.Fatalf("UpdateRoutineRun error = %v", err)
-	}
 	if err := db.LinkRoutineRun(t.Context(), "missing", "opencode", "session", 3, false); !errors.Is(err, ErrRoutineRunNotFound) {
 		t.Fatalf("LinkRoutineRun error = %v", err)
 	}
@@ -331,7 +328,6 @@ func TestRoutineStoreErrorsAfterClose(t *testing.T) {
 		{"claim run", func() error { _, _, err := db.ClaimRoutineRun(t.Context(), run); return err }},
 		{"get run", func() error { _, err := db.GetRoutineRun(t.Context(), run.ID); return err }},
 		{"list runs", func() error { _, err := db.ListRoutineRuns(t.Context(), routine.ID); return err }},
-		{"update run", func() error { return db.UpdateRoutineRun(t.Context(), run) }},
 		{"list due", func() error { _, err := db.ListDueRoutines(t.Context(), 2); return err }},
 		{"list running", func() error { _, err := db.ListRunningRoutineRuns(t.Context()); return err }},
 		{"link run", func() error { return db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 2, false) }},

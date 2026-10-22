@@ -74,7 +74,7 @@ func TestProviderEnsureFailureStopsCreate(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","platform":"fake-provider"}`))
 			switch path {
 			case "start":
-				srv.handleStartSession(w, r)
+				srv.sessionLifecycleModule().HandleStartSession(w, r)
 			case "mcp":
 				_, err := (sessionMCPService{server: srv}).CreateSession(t.Context(), internalmcp.CreateSessionRequest{Platform: "fake-provider", Directory: "/repo", Prompt: "hello"})
 				if !errors.Is(err, host.ensureErr) {
@@ -117,12 +117,12 @@ func TestCreatePathsCarryPlatform(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","projectDir":"/repo","branch":"branch","platform":"fake-provider"}`))
 			switch path {
 			case "start":
-				srv.handleStartSession(w, r)
+				srv.sessionLifecycleModule().HandleStartSession(w, r)
 			case "create":
 				srv.handleCreateSession(w, r)
 			case "start-worktree":
 				r = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","worktree":true,"platform":"fake-provider"}`))
-				srv.handleStartSession(w, r)
+				srv.sessionLifecycleModule().HandleStartSession(w, r)
 			case "wt":
 				r = httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(`{"projectDir":"/repo","branch":"branch","platform":"fake-provider"}`))
 				srv.handleWorktreeCreateAndLaunch(w, r)
@@ -177,7 +177,7 @@ func TestCreateDefaultAndOwner(t *testing.T) {
 	for _, body := range []string{`{"directory":"/repo"}`, `{"directory":"/repo","platform":"fake-provider","send":{"message":"hello","model":"openai/test"}}`} {
 		srv.hostRouter = hostsvc.NewRouter(&createPathHost{})
 		w := httptest.NewRecorder()
-		srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+		srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
 		var result map[string]any
 		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result["platform"] != "fake-provider" {
 			t.Fatalf("default start = %s, %v", w.Body.String(), err)
@@ -203,13 +203,13 @@ func TestStartPlatformFollowsModel(t *testing.T) {
 		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
 	w := httptest.NewRecorder()
-	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","send":{"message":"hi","model":"fake-provider:acme/m"}}`)))
+	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","send":{"message":"hi","model":"fake-provider:acme/m"}}`)))
 	if !strings.Contains(w.Body.String(), `"platform":"fake-provider"`) || host.ensured != "fake-provider" || sent.Model != "acme/m" {
 		t.Fatalf("start = %d %s, ensured %q, sent %+v", w.Code, w.Body.String(), host.ensured, sent)
 	}
 	host.ensured = ""
 	w = httptest.NewRecorder()
-	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","platform":"opencode","send":{"message":"hi","model":"fake-provider:acme/m"}}`)))
+	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","platform":"opencode","send":{"message":"hi","model":"fake-provider:acme/m"}}`)))
 	if w.Code != http.StatusBadRequest || host.ensured != "" {
 		t.Fatalf("mismatch = %d %s, ensured %q", w.Code, w.Body.String(), host.ensured)
 	}

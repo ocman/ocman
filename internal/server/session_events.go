@@ -58,10 +58,6 @@ func (s *Server) broadcastSessionChanged(platform, sessionID string) {
 	s.replyToSession(s.lifetime(), platform, sessionID)
 }
 
-func (s *Server) broadcastSessionStatus(platform, sessionID string, status db.SessionStatus) {
-	s.broadcastSessionPatch(platform, sessionID, map[string]interface{}{"status": status})
-}
-
 func (s *Server) broadcastSessionTitle(platform, sessionID, title string) {
 	s.broadcastSessionPatch(platform, sessionID, map[string]interface{}{"title": title})
 }

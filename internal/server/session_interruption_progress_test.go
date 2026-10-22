@@ -39,7 +39,7 @@ func TestConfirmationDrainsAllPagesWithoutCountCutoff(t *testing.T) {
 	if err := srv.recordOpencodeReplacement(t.Context(), "/repo", "restart"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+	if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 		t.Fatal(err)
 	}
 	confirming = true
@@ -77,7 +77,7 @@ func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	if err := srv.recordOpencodeReplacement(t.Context(), "/repo", "restart"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+	if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 		t.Fatal(err)
 	}
 	sessions = append(sessions, db.Session{ID: "b", Directory: "/new-dir"})
@@ -138,7 +138,7 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 			if err := srv.recordOpencodeReplacement(t.Context(), "/repo", "original restart"); err != nil {
 				t.Fatal(err)
 			}
-			if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+			if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 				t.Fatal(err)
 			}
 			stopAt, original, err := srv.stateDB.SessionReplacementStopEvidence(t.Context(), "opencode", "/repo")

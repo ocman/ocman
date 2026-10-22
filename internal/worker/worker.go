@@ -21,10 +21,6 @@ type Worker[T any] struct {
 	stopOnce    sync.Once
 }
 
-func New[T any](handle func(T)) *Worker[T] {
-	return NewKeyed(handle, func(T) string { return "" })
-}
-
 // NewKeyed runs different keys independently while preserving serial order
 // within each key. Drain still waits for every queued and active item.
 func NewKeyed[T any](handle func(T), key func(T) string) *Worker[T] {

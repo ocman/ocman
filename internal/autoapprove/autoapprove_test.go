@@ -22,22 +22,22 @@ import (
 func TestClaimAutoApprove(t *testing.T) {
 	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
 
-	ctx1, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1")
+	ctx1, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", 0)
 	if !ok {
 		t.Fatalf("first claim should succeed")
 	}
 	if ctx1 == nil {
 		t.Fatalf("claim returned nil context")
 	}
-	if _, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1"); ok {
+	if _, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", 0); ok {
 		t.Errorf("duplicate claim should return ok=false")
 	}
 	// Different permission ID is independent.
-	if _, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-2"); !ok {
+	if _, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-2", 0); !ok {
 		t.Errorf("different permissionID should be allowed")
 	}
 	// Different session ID is independent.
-	if _, ok := s.claimAutoApprove(context.Background(), "ses-2", "perm-1"); !ok {
+	if _, ok := s.claimAutoApproveWithStart(context.Background(), "ses-2", "perm-1", 0); !ok {
 		t.Errorf("different sessionID should be allowed")
 	}
 
@@ -47,7 +47,7 @@ func TestClaimAutoApprove(t *testing.T) {
 	if ctx1.Err() == nil {
 		t.Errorf("release should cancel the claim's context")
 	}
-	if _, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1"); !ok {
+	if _, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", 0); !ok {
 		t.Errorf("after release, the same permission should be allowed again")
 	}
 }
@@ -64,7 +64,7 @@ func TestClaimAutoApproveConcurrent(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			if _, ok := s.claimAutoApprove(context.Background(), "ses-x", "perm-x"); ok {
+			if _, ok := s.claimAutoApproveWithStart(context.Background(), "ses-x", "perm-x", 0); ok {
 				winnersMu.Lock()
 				winners++
 				winnersMu.Unlock()
@@ -88,7 +88,7 @@ func TestCancelAutoApprove(t *testing.T) {
 		t.Errorf("cancel with no claim should return false")
 	}
 
-	ctx, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1")
+	ctx, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", 0)
 	if !ok {
 		t.Fatalf("claim failed")
 	}
@@ -102,7 +102,7 @@ func TestCancelAutoApprove(t *testing.T) {
 	// finishes its work and calls release. This prevents a race where
 	// a new permission with the same id arrives mid-cancel and gets
 	// silently dropped.
-	if _, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1"); ok {
+	if _, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", 0); ok {
 		t.Errorf("re-claim before release should be blocked")
 	}
 
@@ -112,53 +112,53 @@ func TestCancelAutoApprove(t *testing.T) {
 
 	// Release frees the slot.
 	s.releaseAutoApprove("ses-1", "perm-1")
-	if _, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1"); !ok {
+	if _, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", 0); !ok {
 		t.Errorf("re-claim after release should succeed")
 	}
 }
 
-// TestJudgedPermissionsCache verifies that recordJudged / lookupJudged
+// TestJudgedPermissionsCache verifies that recordJudgedWithReasoning / lookupJudged
 // roundtrip correctly and that the key is (sessionID, permissionID).
 func TestJudgedPermissionsCache(t *testing.T) {
 	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
 
-	if _, ok := s.lookupJudged("ses-1", "perm-1"); ok {
+	if _, ok := lookupJudged(s, "ses-1", "perm-1"); ok {
 		t.Errorf("lookup before record should miss")
 	}
 
-	s.recordJudged("ses-1", "perm-1", verdictUnsafe)
-	v, ok := s.lookupJudged("ses-1", "perm-1")
+	s.recordJudgedWithReasoning("ses-1", "perm-1", verdictUnsafe, "")
+	v, ok := lookupJudged(s, "ses-1", "perm-1")
 	if !ok || v != verdictUnsafe {
 		t.Errorf("lookup after record: got (%q, %v), want (unsafe, true)", v, ok)
 	}
 
 	// Different permissionID is independent.
-	if _, ok := s.lookupJudged("ses-1", "perm-2"); ok {
+	if _, ok := lookupJudged(s, "ses-1", "perm-2"); ok {
 		t.Errorf("different permissionID should miss")
 	}
 	// Different sessionID is independent.
-	if _, ok := s.lookupJudged("ses-2", "perm-1"); ok {
+	if _, ok := lookupJudged(s, "ses-2", "perm-1"); ok {
 		t.Errorf("different sessionID should miss")
 	}
 
 	// Re-record overwrites (e.g. if we ever evolve to allow re-judging).
-	s.recordJudged("ses-1", "perm-1", verdictSafe)
-	v, _ = s.lookupJudged("ses-1", "perm-1")
+	s.recordJudgedWithReasoning("ses-1", "perm-1", verdictSafe, "")
+	v, _ = lookupJudged(s, "ses-1", "perm-1")
 	if v != verdictSafe {
 		t.Errorf("re-record should overwrite; got %q, want safe", v)
 	}
 
 	// Empty permissionID is rejected silently (defensive; never happens
 	// in practice but a buggy caller mustn't poison the cache key space).
-	s.recordJudged("ses-1", "", verdictSafe)
-	if _, ok := s.lookupJudged("ses-1", ""); ok {
+	s.recordJudgedWithReasoning("ses-1", "", verdictSafe, "")
+	if _, ok := lookupJudged(s, "ses-1", ""); ok {
 		t.Errorf("empty permissionID should not be cached")
 	}
 
 	// nil-receiver short-circuit (defensive).
 	var nilS *Service
-	nilS.recordJudged("ses-1", "perm-1", verdictSafe)
-	if _, ok := nilS.lookupJudged("ses-1", "perm-1"); ok {
+	nilS.recordJudgedWithReasoning("ses-1", "perm-1", verdictSafe, "")
+	if _, ok := lookupJudged(nilS, "ses-1", "perm-1"); ok {
 		t.Errorf("nil-receiver lookup should miss")
 	}
 }
@@ -173,13 +173,13 @@ func TestDeferPermissionNotification(t *testing.T) {
 			}
 		}},
 	}
-	_, ok := s.claimAutoApprove(t.Context(), "session", "checking")
+	_, ok := s.claimAutoApproveWithStart(t.Context(), "session", "checking", 0)
 	if !ok {
 		t.Fatal("claim checking permission")
 	}
 	defer s.Cancel("session", "checking")
-	s.recordJudged("session", "safe", verdictSafe)
-	s.recordJudged("session", "unsafe", verdictUnsafe)
+	s.recordJudgedWithReasoning("session", "safe", verdictSafe, "")
+	s.recordJudgedWithReasoning("session", "unsafe", verdictUnsafe, "")
 
 	if !s.DeferPermissionNotification("session", "checking") || !s.DeferPermissionNotification("session", "safe") {
 		t.Error("checking and safe permissions should remain deferred")
@@ -197,11 +197,11 @@ func TestDeferPermissionNotification(t *testing.T) {
 // TestEnsureAutoApproveSkipsAlreadyJudged is the regression for the
 // reported bug: after the judge has already evaluated a permissionID,
 // a subsequent Ensure call for the SAME (sessionID,
-// permissionID) must short-circuit before claimAutoApprove — no second
+// permissionID) must short-circuit before claimAutoApproveWithStart — no second
 // claim, no second goroutine, no second LLM call.
 //
 // This is exercised purely at the helper level (no real adapter) by
-// verifying claimAutoApprove never grabs the slot when the cache
+// verifying claimAutoApproveWithStart never grabs the slot when the cache
 // already contains a verdict.
 func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 	s := &Service{
@@ -213,7 +213,7 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 	// reproduction case: judge said "unsafe", permission still pending,
 	// user re-opens the session and REST polling re-fires
 	// Ensure).
-	s.recordJudged("ses-1", "perm-1", verdictUnsafe)
+	s.recordJudgedWithReasoning("ses-1", "perm-1", verdictUnsafe, "")
 
 	// Call Ensure. It should short-circuit before claiming,
 	// so no goroutine starts (cancel stays nil for the cached entry).
@@ -225,7 +225,7 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 
 	// A different permissionID for the same session must still run
 	// (the cache is keyed on the exact OpenCode-generated ID).
-	// We expect claimAutoApprove to succeed inside Ensure
+	// We expect claimAutoApproveWithStart to succeed inside Ensure
 	// and a goroutine to start; since we passed a nil adapter,
 	// backgroundAutoApprove will warn-and-return immediately because
 	// deps.SessionDir is nil in this test, but the claim
@@ -243,7 +243,7 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 
 	// Now record the new permission as judged too, and verify the
 	// short-circuit kicks in for it as well.
-	s.recordJudged("ses-1", "perm-DIFFERENT", verdictSafe)
+	s.recordJudgedWithReasoning("ses-1", "perm-DIFFERENT", verdictSafe, "")
 	s.Ensure("opencode", nil, "ses-1", "perm-DIFFERENT", "Bash command", nil, nil)
 	if n := countInFlight(s); n != 0 {
 		t.Errorf("cached safe verdict should also short-circuit; got %d in-flight entries", n)
@@ -1006,7 +1006,7 @@ func TestSsePermissionTeeRepliedDispatch(t *testing.T) {
 // short-circuit before RespondPermission is called.
 func TestEnsureAutoApproveCancellation(t *testing.T) {
 	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
-	ctx, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1")
+	ctx, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", 0)
 	if !ok {
 		t.Fatalf("claim failed")
 	}
@@ -1074,7 +1074,7 @@ func TestPermissionHash(t *testing.T) {
 //   - empty hash is rejected (defensive — permissionHash returns "" for
 //     non-cacheable inputs, callers must not record empty keys).
 //   - nil receiver is a no-op (defensive — matches the pattern used
-//     by recordJudged / lookupJudged).
+//     by recordJudgedWithReasoning / lookupJudged).
 func TestSafeCommandCache(t *testing.T) {
 	s := &Service{}
 
@@ -1135,16 +1135,16 @@ func TestAutoApproveCachesAreBounded(t *testing.T) {
 	s := &Service{}
 	for i := 0; i < 5000; i++ {
 		permissionID := fmt.Sprintf("permission-%d", i)
-		if _, ok := s.claimAutoApprove(t.Context(), "session", permissionID); !ok {
+		if _, ok := s.claimAutoApproveWithStart(t.Context(), "session", permissionID, 0); !ok {
 			t.Fatalf("claim %s rejected", permissionID)
 		}
-		s.recordJudged("session", permissionID, verdictSafe)
+		s.recordJudgedWithReasoning("session", permissionID, verdictSafe, "")
 		s.releaseAutoApprove("session", permissionID)
 	}
 	if len(s.autoApprove) > maxAutoApproveVerdicts {
 		t.Fatalf("auto-approve verdicts = %d, want at most %d", len(s.autoApprove), maxAutoApproveVerdicts)
 	}
-	if verdict, ok := s.lookupJudged("session", "permission-4999"); !ok || verdict != verdictSafe {
+	if verdict, ok := lookupJudged(s, "session", "permission-4999"); !ok || verdict != verdictSafe {
 		t.Fatalf("latest bounded verdict = (%q, %v), want safe replay", verdict, ok)
 	}
 
@@ -1176,10 +1176,10 @@ func TestAutoApproveCacheShrinksAfterOverlappingClaimsSettle(t *testing.T) {
 	permissionIDs := make([]string, maxAutoApproveVerdicts+10)
 	for i := range permissionIDs {
 		permissionIDs[i] = fmt.Sprintf("permission-%d", i)
-		if _, ok := s.claimAutoApprove(t.Context(), "session", permissionIDs[i]); !ok {
+		if _, ok := s.claimAutoApproveWithStart(t.Context(), "session", permissionIDs[i], 0); !ok {
 			t.Fatalf("claim %s rejected", permissionIDs[i])
 		}
-		s.recordJudged("session", permissionIDs[i], verdictSafe)
+		s.recordJudgedWithReasoning("session", permissionIDs[i], verdictSafe, "")
 	}
 	if len(s.autoApprove) <= maxAutoApproveVerdicts {
 		t.Fatalf("overlapping claims = %d, want temporary overflow", len(s.autoApprove))
@@ -1339,7 +1339,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 	// 4. recordJudgedWithReasoning must have stamped the per-permissionID
 	//    cache so a later REST resurrection short-circuits without
 	//    even checking the safe-command cache again.
-	verdict, ok := s.lookupJudged(sessionID, permissionID)
+	verdict, ok := lookupJudged(s, sessionID, permissionID)
 	if !ok {
 		t.Errorf("lookupJudged should hit after cache-driven approval")
 	}
@@ -1462,7 +1462,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 	if respondCalls != 0 {
 		t.Errorf("session B should NOT have been auto-approved from session A's cache; RespondPermission called %d times", respondCalls)
 	}
-	if verdict, ok := s.lookupJudged("ses-B", "perm-B"); !ok || verdict != verdictUnsafe {
+	if verdict, ok := lookupJudged(s, "ses-B", "perm-B"); !ok || verdict != verdictUnsafe {
 		t.Errorf("session B verdict = (%q, %v), want unsafe", verdict, ok)
 	}
 	if s.DeferPermissionNotification("ses-B", "perm-B") {

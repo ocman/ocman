@@ -67,7 +67,6 @@ func TestRelayInboxClientRejectsBadStatus(t *testing.T) {
 	c := RelayClient{BaseURL: srv.URL}
 
 	tests := map[string]func() error{
-		"register": func() error { _, err := c.RegisterInbox(t.Context(), "recipient", "token"); return err },
 		"register with secret": func() error {
 			_, err := c.RegisterInboxWithSecret(t.Context(), "recipient", "token", "secret", "X-Secret")
 			return err

@@ -6,11 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -41,8 +42,6 @@ type Window struct {
 	Command      string `json:"command,omitempty"`
 	StartCommand string `json:"startCommand,omitempty"`
 }
-
-var ErrNoManagedOpencodePane = errors.New("no tmux-managed opencode pane found for session directory")
 
 // ResolveSessionPath expands a tmux session name (which may use ~ and
 // underscores in place of dots) into an absolute filesystem path for matching
@@ -231,10 +230,6 @@ func ListWindows(ctx context.Context, sessionName string) ([]Window, error) {
 	return windows, nil
 }
 
-func WindowRunsOpencode(win Window) bool {
-	return win.Command == "opencode" || strings.Contains(win.StartCommand, "opencode")
-}
-
 // SwitchClient switches the given tmux client to the given session.
 func SwitchClient(ctx context.Context, clientTTY, targetSession string) error {
 	return runCommand(ctx, commandTimeout, "switch-client", "-c", clientTTY, "-t", targetSession)
@@ -290,67 +285,29 @@ func SessionNameForPath(directory string) string {
 // Runner abstracts the tmux side-effects so unit tests can stub
 // them. Production code uses DefaultRunner; tests inject a fake.
 //
-// `command` arguments to NewSession/NewWindow/NewNamedWindow are passed
-// to tmux as the positional shell-command argument: tmux runs that
-// command directly in the new pane *in place of the user's shell*. We
-// use this for opencode launches because the user's shell rc files
-// (mise, starship, etc.) can otherwise consume keystrokes from
-// `send-keys` via interactive prompts ("mise: trust this config?")
-// and silently mangle the command (e.g. eating the leading "open" of
-// "opencode" so the shell only sees "code --port 0" — see the bug
-// referenced in the comment below).
+// `command` arguments to NewSessionEnv/NewWindowEnv are passed to tmux
+// as the positional shell-command argument: tmux runs that command
+// directly in the new pane *in place of the user's shell*. We use this
+// for opencode launches because the user's shell rc files (mise,
+// starship, etc.) can otherwise consume keystrokes from `send-keys` via
+// interactive prompts ("mise: trust this config?") and silently mangle
+// the command (e.g. eating the leading "open" of "opencode" so the
+// shell only sees "code --port 0").
 //
 // Pass an empty `command` to start an ordinary login shell.
 type Runner struct {
-	ListSessions   func(context.Context) ([]Session, error)
-	ListWindows    func(context.Context, string) ([]Window, error)
-	NewSession     func(context.Context, string, string, string) error
-	NewWindow      func(context.Context, string, string, string) error
-	NewNamedWindow func(context.Context, string, string, string, string) error
-	KillSession    func(context.Context, string) error
-	KillWindow     func(context.Context, string) error
+	ListSessions func(context.Context) ([]Session, error)
+	KillSession  func(context.Context, string) error
 
-	// NewSessionEnv / NewWindowEnv mirror NewSession / NewWindow but seed
-	// the pane with the given environment (tmux `-e KEY=VAL`). Used by the
-	// one-opencode-per-project launcher to pass OPENCODE_PERMISSION at
-	// launch. Optional: only the env-aware launcher path uses them.
+	// NewSessionEnv / NewWindowEnv create a session or window and seed the
+	// pane with the given environment (tmux `-e KEY=VAL`); a nil env adds
+	// no -e arguments.
 	NewSessionEnv func(context.Context, string, string, string, map[string]string) error
 	NewWindowEnv  func(context.Context, string, string, string, map[string]string) error
 }
 
 var DefaultRunner = Runner{
 	ListSessions: ListSessions,
-	ListWindows:  ListWindows,
-	NewSession: func(ctx context.Context, name, directory, command string) error {
-		args := []string{"new-session", "-d", "-s", name, "-c", directory}
-		if command != "" {
-			args = append(args, command)
-		}
-		return runCommand(ctx, commandTimeout, args...)
-	},
-	NewWindow: func(ctx context.Context, name, directory, command string) error {
-		// -d: create the window without switching the session's active
-		// window, so a client already attached to this session keeps its
-		// current view instead of jumping to the freshly launched window.
-		args := []string{"new-window", "-d", "-t", name, "-c", directory}
-		if command != "" {
-			args = append(args, command)
-		}
-		return runCommand(ctx, commandTimeout, args...)
-	},
-	NewNamedWindow: func(ctx context.Context, sessionName, windowName, directory, command string) error {
-		args := []string{"new-window", "-d", "-t", sessionName, "-n", windowName, "-c", directory}
-		if command != "" {
-			args = append(args, command)
-		}
-		return runCommand(ctx, commandTimeout, args...)
-	},
-	KillSession: func(ctx context.Context, name string) error {
-		return runCommand(ctx, commandTimeout, "kill-session", "-t", name)
-	},
-	KillWindow: func(ctx context.Context, target string) error {
-		return runCommand(ctx, commandTimeout, "kill-window", "-t", target)
-	},
 	NewSessionEnv: func(ctx context.Context, name, directory, command string, env map[string]string) error {
 		args := []string{"new-session", "-d", "-s", name, "-c", directory}
 		args = append(args, envArgs(env)...)
@@ -360,6 +317,9 @@ var DefaultRunner = Runner{
 		return runCommand(ctx, commandTimeout, args...)
 	},
 	NewWindowEnv: func(ctx context.Context, name, directory, command string, env map[string]string) error {
+		// -d: create the window without switching the session's active
+		// window, so a client already attached to this session keeps its
+		// current view instead of jumping to the freshly launched window.
 		args := []string{"new-window", "-d", "-t", name, "-c", directory}
 		args = append(args, envArgs(env)...)
 		if command != "" {
@@ -375,13 +335,8 @@ func envArgs(env map[string]string) []string {
 	if len(env) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	args := make([]string, 0, len(env)*2)
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(env)) {
 		args = append(args, "-e", k+"="+env[k])
 	}
 	return args
@@ -417,20 +372,10 @@ const opencodeNoWarnings = "env NODE_NO_WARNINGS=1"
 // nothing in the rc file (mise, starship, …) can race for keystrokes.
 //
 // The env var goes in the command rather than tmux's `-e` because the
-// non-env launchers (LaunchOpencodeWith, NewNamedWindow) share only this
-// string, making it the single choke point every launch path passes
+// command string is the single choke point every launch path passes
 // through. `exec env` still replaces the shell, so no extra process
 // lingers in the pane.
 const OpencodeCommand = "exec " + opencodeNoWarnings + " opencode --port 0"
-
-// OpencodeCommandForPort builds the pane command for a specific,
-// caller-allocated port (used by internal/ocruntime, which allocates a
-// free loopback port itself instead of letting opencode pick with
-// `--port 0`). Same `exec env … opencode` shape as OpencodeCommand so
-// the pane behaves identically otherwise.
-func OpencodeCommandForPort(port int) string {
-	return fmt.Sprintf("exec %s opencode --port %d", opencodeNoWarnings, port)
-}
 
 // OpencodeServeCommandForPort is the OpenCode v2 equivalent: v2 dropped
 // `--port` from the TUI, and `opencode serve` runs the headless server
@@ -439,12 +384,11 @@ func OpencodeServeCommandForPort(port int) string {
 	return fmt.Sprintf("exec %s opencode serve --port %d", opencodeNoWarnings, port)
 }
 
-// LaunchOpencodeCmdEnvWith is the env-aware, idempotent launcher that
-// runs an explicit pane command (e.g. one carrying a specific --port).
-// It is the port-threading analogue of LaunchOpencodeEnvWith: same
-// session matching (dot/underscore skew aware), same idempotent
-// short-circuit, but the caller supplies the command instead of the
-// hardcoded --port 0 one.
+// LaunchOpencodeCmdEnvWith finds or creates the tmux session for
+// directory and runs command there, seeding the pane with env. It matches
+// a session by resolved directory (dot/underscore skew aware) and
+// short-circuits when idempotent=true and the session exists, returning
+// launched=false.
 func LaunchOpencodeCmdEnvWith(ctx context.Context, r Runner, directory, command string, idempotent bool, env map[string]string) (string, bool, error) {
 	sessionName := SessionNameForPath(directory)
 	if !ValidComponent.MatchString(sessionName) {
@@ -520,77 +464,6 @@ func sessionForDirectory(existing []Session, derived, dir string) (string, bool,
 // This is the original (non-idempotent) launcher kept for callers that
 // explicitly want a fresh window every time.
 func LaunchOpencode(ctx context.Context, directory string) (string, error) {
-	name, _, err := LaunchOpencodeWith(ctx, DefaultRunner, directory, false)
+	name, _, err := LaunchOpencodeCmdEnvWith(ctx, DefaultRunner, directory, OpencodeCommand, false, nil)
 	return name, err
-}
-
-// LaunchOpencodeWith launches opencode without seeding tmux environment
-// variables. The callback adapters preserve the non-env Runner seam used by
-// callers and tests while sharing the launch and session-matching logic.
-func LaunchOpencodeWith(ctx context.Context, r Runner, directory string, idempotent bool) (string, bool, error) {
-	r.NewSessionEnv = func(ctx context.Context, name, directory, command string, _ map[string]string) error {
-		return r.NewSession(ctx, name, directory, command)
-	}
-	r.NewWindowEnv = func(ctx context.Context, name, directory, command string, _ map[string]string) error {
-		return r.NewWindow(ctx, name, directory, command)
-	}
-	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeCommand, idempotent, nil)
-}
-
-// LaunchOpencodeEnv finds or creates a tmux session named after directory
-// and runs `opencode --port 0` there, seeding the pane with env (e.g.
-// OPENCODE_PERMISSION). It is the env-aware, idempotent launcher used by
-// the one-opencode-per-project host primitive: when a session for the
-// directory already exists it returns launched=false and touches nothing.
-func LaunchOpencodeEnv(ctx context.Context, directory string, env map[string]string) (string, bool, error) {
-	return LaunchOpencodeEnvWith(ctx, DefaultRunner, directory, true, env)
-}
-
-// LaunchOpencodeEnvWith is the env-aware analogue of LaunchOpencodeWith.
-// It matches a session by resolved directory (dot/underscore skew aware),
-// short-circuits when idempotent=true and the session exists, and
-// otherwise creates the session (or opens a window in an existing one)
-// with opencode as the pane's foreground command and env seeded via
-// tmux `-e`.
-func LaunchOpencodeEnvWith(ctx context.Context, r Runner, directory string, idempotent bool, env map[string]string) (string, bool, error) {
-	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeCommand, idempotent, env)
-}
-
-func RestartOpencode(ctx context.Context, directory string) (string, error) {
-	return RestartOpencodeWith(ctx, DefaultRunner, directory)
-}
-
-func RestartOpencodeWith(ctx context.Context, r Runner, directory string) (string, error) {
-	existingSessions, err := r.ListSessions(ctx)
-	if err != nil {
-		return "", fmt.Errorf("listing tmux sessions: %w", err)
-	}
-	want := filepath.Clean(directory)
-	for _, ts := range existingSessions {
-		windows, err := r.ListWindows(ctx, ts.Name)
-		if err != nil {
-			return "", fmt.Errorf("listing tmux windows: %w", err)
-		}
-		for _, win := range windows {
-			if filepath.Clean(win.Path) != want || !WindowRunsOpencode(win) {
-				continue
-			}
-			target := ts.Name + ":" + win.Name
-			if ts.Windows <= 1 {
-				if err := r.KillSession(ctx, ts.Name); err != nil {
-					return "", fmt.Errorf("tmux kill-session: %w", err)
-				}
-				name, _, err := LaunchOpencodeWith(ctx, r, directory, false)
-				return name, err
-			}
-			if err := r.KillWindow(ctx, target); err != nil {
-				return "", fmt.Errorf("tmux kill-window: %w", err)
-			}
-			if err := r.NewNamedWindow(ctx, ts.Name, win.Name, directory, OpencodeCommand); err != nil {
-				return "", fmt.Errorf("tmux new-window: %w", err)
-			}
-			return target, nil
-		}
-	}
-	return "", ErrNoManagedOpencodePane
 }

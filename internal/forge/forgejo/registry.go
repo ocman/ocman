@@ -1,6 +1,9 @@
 package forgejo
 
 import (
+	"maps"
+	"slices"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -80,16 +83,5 @@ func (r *Registry) Hosts() []string {
 	if r == nil {
 		return nil
 	}
-	out := make([]string, 0, len(r.clients))
-	for h := range r.clients {
-		out = append(out, h)
-	}
-	// Tiny insertion sort — len(out) is the number of Forgejo hosts
-	// configured, which is realistically 0-2.
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
+	return slices.Sorted(maps.Keys(r.clients))
 }

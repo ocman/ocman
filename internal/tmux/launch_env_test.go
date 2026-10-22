@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// TestLaunchOpencodeEnvWith_SeedsEnvOnNewSession verifies that env vars
+// TestLaunchOpencodeCmdEnvWith_SeedsEnvOnNewSession verifies that env vars
 // are threaded to the pane at session-creation time (so OpenCode can read
 // OPENCODE_PERMISSION at launch) and that the idempotent path is honoured.
-func TestLaunchOpencodeEnvWith_SeedsEnvOnNewSession(t *testing.T) {
+func TestLaunchOpencodeCmdEnvWith_SeedsEnvOnNewSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -18,7 +18,7 @@ func TestLaunchOpencodeEnvWith_SeedsEnvOnNewSession(t *testing.T) {
 
 	f := &fakeEnvRunner{}
 
-	name, launched, err := LaunchOpencodeEnvWith(t.Context(), f.toRunner(), dir, true,
+	name, launched, err := LaunchOpencodeCmdEnvWith(t.Context(), f.toRunner(), dir, OpencodeCommand, true,
 		map[string]string{"OPENCODE_PERMISSION": `{"external_directory":{}}`})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -40,9 +40,9 @@ func TestLaunchOpencodeEnvWith_SeedsEnvOnNewSession(t *testing.T) {
 	}
 }
 
-// TestLaunchOpencodeEnvWith_IdempotentReuse confirms that when a session
+// TestLaunchOpencodeCmdEnvWith_IdempotentReuse confirms that when a session
 // for the directory already exists, no launch (and no env seeding) fires.
-func TestLaunchOpencodeEnvWith_IdempotentReuse(t *testing.T) {
+func TestLaunchOpencodeCmdEnvWith_IdempotentReuse(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -51,7 +51,7 @@ func TestLaunchOpencodeEnvWith_IdempotentReuse(t *testing.T) {
 
 	f := &fakeEnvRunner{existing: []Session{{Name: wantName, ResolvedPath: dir}}}
 
-	name, launched, err := LaunchOpencodeEnvWith(t.Context(), f.toRunner(), dir, true,
+	name, launched, err := LaunchOpencodeCmdEnvWith(t.Context(), f.toRunner(), dir, OpencodeCommand, true,
 		map[string]string{"OPENCODE_PERMISSION": "{}"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -67,9 +67,9 @@ func TestLaunchOpencodeEnvWith_IdempotentReuse(t *testing.T) {
 	}
 }
 
-// TestLaunchOpencodeEnvWith_EnvOnNewWindow verifies the env is threaded on
+// TestLaunchOpencodeCmdEnvWith_EnvOnNewWindow verifies the env is threaded on
 // the new-window path (existing session, non-idempotent).
-func TestLaunchOpencodeEnvWith_EnvOnNewWindow(t *testing.T) {
+func TestLaunchOpencodeCmdEnvWith_EnvOnNewWindow(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -78,7 +78,7 @@ func TestLaunchOpencodeEnvWith_EnvOnNewWindow(t *testing.T) {
 
 	f := &fakeEnvRunner{existing: []Session{{Name: wantName, ResolvedPath: dir}}}
 
-	_, launched, err := LaunchOpencodeEnvWith(t.Context(), f.toRunner(), dir, false,
+	_, launched, err := LaunchOpencodeCmdEnvWith(t.Context(), f.toRunner(), dir, OpencodeCommand, false,
 		map[string]string{"OPENCODE_PERMISSION": "{}"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -111,7 +111,6 @@ type fakeEnvRunner struct {
 func (f *fakeEnvRunner) toRunner() Runner {
 	return Runner{
 		ListSessions: func(context.Context) ([]Session, error) { return f.existing, f.listErr },
-		ListWindows:  func(context.Context, string) ([]Window, error) { return nil, nil },
 		NewSessionEnv: func(_ context.Context, name, _, command string, env map[string]string) error {
 			if f.newEnvErr != nil {
 				return f.newEnvErr

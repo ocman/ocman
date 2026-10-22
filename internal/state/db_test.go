@@ -253,15 +253,15 @@ func TestMarkSessionSeen(t *testing.T) {
 		t.Fatalf("MarkSessionSeen: %v", err)
 	}
 
-	seen, err := db.SeenSessions(t.Context())
+	seen, err := db.SeenSessionStates(t.Context())
 	if err != nil {
-		t.Fatalf("SeenSessions: %v", err)
+		t.Fatalf("SeenSessionStates: %v", err)
 	}
 	if len(seen) != 1 {
 		t.Fatalf("expected 1 seen session, got %d", len(seen))
 	}
-	if seen[k("opencode", "s1")] != 1000 {
-		t.Errorf("expected timeUpdated=1000, got %d", seen[k("opencode", "s1")])
+	if seen[k("opencode", "s1")].TimeUpdated != 1000 {
+		t.Errorf("expected timeUpdated=1000, got %d", seen[k("opencode", "s1")].TimeUpdated)
 	}
 }
 
@@ -277,12 +277,12 @@ func TestMarkSessionSeen_OnlyUpdatesIfNewer(t *testing.T) {
 		t.Fatalf("MarkSessionSeen (older): %v", err)
 	}
 
-	seen, err := db.SeenSessions(t.Context())
+	seen, err := db.SeenSessionStates(t.Context())
 	if err != nil {
-		t.Fatalf("SeenSessions: %v", err)
+		t.Fatalf("SeenSessionStates: %v", err)
 	}
-	if seen[k("opencode", "s1")] != 2000 {
-		t.Errorf("expected timeUpdated=2000 (not downgraded), got %d", seen[k("opencode", "s1")])
+	if seen[k("opencode", "s1")].TimeUpdated != 2000 {
+		t.Errorf("expected timeUpdated=2000 (not downgraded), got %d", seen[k("opencode", "s1")].TimeUpdated)
 	}
 }
 
@@ -297,12 +297,12 @@ func TestMarkSessionSeen_UpdatesIfNewer(t *testing.T) {
 		t.Fatalf("MarkSessionSeen (newer): %v", err)
 	}
 
-	seen, err := db.SeenSessions(t.Context())
+	seen, err := db.SeenSessionStates(t.Context())
 	if err != nil {
-		t.Fatalf("SeenSessions: %v", err)
+		t.Fatalf("SeenSessionStates: %v", err)
 	}
-	if seen[k("opencode", "s1")] != 3000 {
-		t.Errorf("expected timeUpdated=3000 (upgraded), got %d", seen[k("opencode", "s1")])
+	if seen[k("opencode", "s1")].TimeUpdated != 3000 {
+		t.Errorf("expected timeUpdated=3000 (upgraded), got %d", seen[k("opencode", "s1")].TimeUpdated)
 	}
 }
 
@@ -328,9 +328,9 @@ func TestMultipleSessions(t *testing.T) {
 		t.Errorf("expected 2 archived sessions, got %d", len(archived))
 	}
 
-	seen, err := db.SeenSessions(t.Context())
+	seen, err := db.SeenSessionStates(t.Context())
 	if err != nil {
-		t.Fatalf("SeenSessions: %v", err)
+		t.Fatalf("SeenSessionStates: %v", err)
 	}
 	if len(seen) != 1 {
 		t.Errorf("expected 1 seen session, got %d", len(seen))

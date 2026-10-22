@@ -68,7 +68,7 @@ func TestJudgeWithoutBackendNeedsUser(t *testing.T) {
 				return nil
 			}}
 			s.backgroundAutoApprove(t.Context(), "other", adapter, "session", "permission", askedPermission{platformID: "other", permission: "read"})
-			verdict, ok := s.lookupJudged("session", "permission")
+			verdict, ok := lookupJudged(s, "session", "permission")
 			if !ok || verdict != verdictNeedsUser || len(recorder.calls) != 1 {
 				t.Fatalf("verdict=%s, ok=%v, needs-user=%v", verdict, ok, recorder.calls)
 			}
@@ -165,7 +165,7 @@ func TestPanickingJudgeLeavesThePromptForTheUser(t *testing.T) {
 	if len(needs) != 1 || needs[0] != "other|session|permission|permission" {
 		t.Fatalf("needs-user = %v", needs)
 	}
-	if verdict, ok := s.lookupJudged("session", "permission"); !ok || verdict != verdictUnsafe {
+	if verdict, ok := lookupJudged(s, "session", "permission"); !ok || verdict != verdictUnsafe {
 		t.Fatalf("verdict = %q, %v; want the failure recorded", verdict, ok)
 	}
 	if !strings.Contains(sink.String(), "event: ocman.permission.flagged") {

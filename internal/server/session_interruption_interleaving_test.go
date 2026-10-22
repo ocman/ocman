@@ -36,7 +36,7 @@ func TestStopSnapshotRefreshesAdvancedIdentityAndLiveStatusTogether(t *testing.T
 	if err := srv.recordOpencodeReplacement(t.Context(), "/repo", "restart"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+	if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 		t.Fatal(err)
 	}
 	at, baseline, err := srv.stateDB.SessionReplacementStopEvidence(t.Context(), "opencode", "/repo")
@@ -82,7 +82,7 @@ func TestStopSnapshotContinuousAdvanceFailsBeforeStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	advance = true
-	if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err == nil {
+	if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err == nil {
 		t.Fatal("unstable snapshot permitted Stop")
 	}
 	if calls != 3 {
@@ -170,7 +170,7 @@ func TestStoppingCallbacksNilAndValidatedAliveRelease(t *testing.T) {
 	if err := srv.stateDB.PrepareSessionInterruptions(t.Context(), "opencode", "/repo", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.stateDB.BeginSessionReplacementStop(t.Context(), "opencode", "/repo", nil, 1, state.ReplacementRuntime{ManagedInstance: state.ManagedInstance{Endpoint: "http://127.0.0.1:1234", RuntimeID: "original"}}); err != nil {
+	if err := srv.stateDB.BeginSessionReplacementStopSnapshot(t.Context(), "opencode", "/repo", state.ReplacementStopSnapshot{StartedAt: 1, AdmissionStartedAt: 1, Runtime: state.ReplacementRuntime{ManagedInstance: state.ManagedInstance{Endpoint: "http://127.0.0.1:1234", RuntimeID: "original"}}}); err != nil {
 		t.Fatal(err)
 	}
 	// The host has positively validated the original instance is still alive.

@@ -93,7 +93,7 @@ func TestStartSessionWaitsForSlowOpenCodeAndSucceedsFirstTime(t *testing.T) {
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(string(body))).WithContext(ctx))
+		srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(string(body))).WithContext(ctx))
 		close(done)
 	}()
 	select {

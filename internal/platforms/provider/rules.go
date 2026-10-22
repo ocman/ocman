@@ -140,14 +140,6 @@ func (r *Rules) set(id string, rules []platforms.PermissionRule) error {
 	})
 }
 
-func (r *Rules) approve(id string, rules []platforms.PermissionRule) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.commitLocked(func() {
-		r.data.Approved[id] = append(r.data.Approved[id], rules...)
-	})
-}
-
 // approveTentatively saves rules for permission pid's "always" reply before
 // it is sent. They grant nothing until settle confirms the reply claude
 // received was "always".

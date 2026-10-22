@@ -78,13 +78,9 @@ func TestSanitiseName_DropsInvalidCharacters(t *testing.T) {
 }
 
 func TestRecord_NoopWhenContextHasNoCollector(t *testing.T) {
-	// Must not panic, and must still run the timed function.
+	// Must not panic.
 	Record(context.Background(), "x", time.Millisecond, "")
-	ran := false
-	TimeIt(context.Background(), "y", func() { ran = true })
-	if !ran {
-		t.Fatal("TimeIt dropped the function when no collector is attached")
-	}
+	Begin(context.Background(), "y").End()
 	if c := FromContext(context.Background()); c != nil {
 		t.Fatalf("bare context should carry no collector, got %#v", c)
 	}
@@ -100,12 +96,12 @@ func TestRecord_RoundTripThroughContext(t *testing.T) {
 	}
 }
 
-func TestTimeIt_RecordsDuration(t *testing.T) {
+func TestBegin_RecordsDuration(t *testing.T) {
 	c := NewCollector()
 	ctx := WithCollector(context.Background(), c)
-	TimeIt(ctx, "sleep", func() {
-		time.Sleep(2 * time.Millisecond)
-	})
+	p := Begin(ctx, "sleep")
+	time.Sleep(2 * time.Millisecond)
+	p.End()
 	got := c.Header()
 	if !strings.HasPrefix(got, "sleep;dur=") {
 		t.Fatalf("expected sleep entry, got %q", got)

@@ -17,7 +17,7 @@ func TestEpicPlanModelOverridesPlanningDefault(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	planner := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "plan"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, planner)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, planner, nil)
 	epic := createPouredWorkEpic(t, svc, "Plan with a chosen model")
 	if _, err := svc.SetEpicModels(t.Context(), epic.ID, model.EpicModels{Plan: "bad"}); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("invalid model err = %v", err)

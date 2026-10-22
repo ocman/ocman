@@ -44,7 +44,7 @@ func TestPrepareSessionReturnsCatalogWithoutLaunching(t *testing.T) {
 		}, nil
 	}})
 	w := httptest.NewRecorder()
-	srv.handlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare",
+	srv.sessionLifecycleModule().HandlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare",
 		strings.NewReader(`{"platform":"opencode","directory":"/src/.worktrees/repo/feat"}`)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
@@ -80,7 +80,7 @@ func TestPrepareSessionRejectsBadInput(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			srv.handlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare", strings.NewReader(body)))
+			srv.sessionLifecycleModule().HandlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare", strings.NewReader(body)))
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status %d: %s", w.Code, w.Body.String())
 			}
@@ -115,7 +115,7 @@ func TestStartSessionCurrentCheckoutSendsFirstMessage(t *testing.T) {
 			// The platform is auto-picked when omitted, exactly like Create.
 			body := `{"directory":"/repo","title":"hello","prompt":"Fix login","send":{"message":"Fix login","agent":"build","model":"m","images":[{"url":"data:x","mime":"image/png"}]}}`
 			w := httptest.NewRecorder()
-			srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(body)))
+			srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(body)))
 			if w.Code != http.StatusOK {
 				t.Fatalf("status %d: %s", w.Code, w.Body.String())
 			}
@@ -161,7 +161,7 @@ func TestStartSessionWorktreeRoutesToOwner(t *testing.T) {
 	})
 	body := `{"platform":"r-machine:opencode","directory":"/remote/repo","worktree":true,"prompt":"/review main","send":{"message":"/review main"}}`
 	w := httptest.NewRecorder()
-	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(body)))
+	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(body)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -190,7 +190,7 @@ func TestStartSessionWorktreeFailsClosedForDisconnectedOwner(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 	srv.hostRouter = hostsvc.NewRouter(nil)
 	w := httptest.NewRecorder()
-	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start",
+	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start",
 		strings.NewReader(`{"platform":"r-gone:opencode","directory":"/remote/repo","worktree":true}`)))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
@@ -200,7 +200,7 @@ func TestStartSessionWorktreeFailsClosedForDisconnectedOwner(t *testing.T) {
 func TestStartSessionWorktreeRejectsUnknownPlatformBeforeCreation(t *testing.T) {
 	srv, _ := startTestServer(t, nil)
 	w := httptest.NewRecorder()
-	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start",
+	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start",
 		strings.NewReader(`{"platform":"unknown","directory":"/repo","worktree":true}`)))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
@@ -250,9 +250,9 @@ func TestLocalSessionLaunchWithConnectedRemote(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo"}`))
 			if prepare {
-				srv.handlePrepareSession(w, r)
+				srv.sessionLifecycleModule().HandlePrepareSession(w, r)
 			} else {
-				srv.handleStartSession(w, r)
+				srv.sessionLifecycleModule().HandleStartSession(w, r)
 			}
 			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"platform":"opencode"`) {
 				t.Fatalf("status %d: %s", w.Code, w.Body.String())
@@ -272,9 +272,9 @@ func TestClaudeRemoteFailsClosedWhenDisconnected(t *testing.T) {
 		path    string
 		body    string
 	}{
-		{"prepare", srv.handlePrepareSession, "/api/sessions/prepare", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo"}`},
-		{"start", srv.handleStartSession, "/api/sessions/start", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo","prompt":"hi"}`},
-		{"start worktree", srv.handleStartSession, "/api/sessions/start", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo","worktree":true}`},
+		{"prepare", srv.sessionLifecycleModule().HandlePrepareSession, "/api/sessions/prepare", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo"}`},
+		{"start", srv.sessionLifecycleModule().HandleStartSession, "/api/sessions/start", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo","prompt":"hi"}`},
+		{"start worktree", srv.sessionLifecycleModule().HandleStartSession, "/api/sessions/start", `{"platform":"r-gone:claudecode","remoteId":"gone","directory":"/remote/repo","worktree":true}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -301,7 +301,7 @@ func TestStartSessionBroadcastsProgress(t *testing.T) {
 	defer unsub()
 	body := `{"directory":"/repo","startId":"st1","send":{"message":"hi"}}`
 	w := httptest.NewRecorder()
-	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(body)))
+	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(body)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
@@ -339,7 +339,7 @@ func TestPrepareSessionMergesPlatformModels(t *testing.T) {
 	reg.Register(&fakePlatform{id: "r-box:claudecode", caps: composer, directoryCatalogFn: catalog("anthropic", "remote")})
 	reg.Register(&fakePlatform{id: "browse-only", directoryCatalogFn: catalog("x", "y")})
 	w := httptest.NewRecorder()
-	srv.handlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare",
+	srv.sessionLifecycleModule().HandlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare",
 		strings.NewReader(`{"platform":"opencode","directory":"/repo"}`)))
 	var resp struct {
 		Models platforms.SessionModelsResponse `json:"models"`

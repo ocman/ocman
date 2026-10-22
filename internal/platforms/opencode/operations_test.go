@@ -1115,8 +1115,8 @@ func TestRespondPrompt_UpstreamNotFoundDropsRegistryEntry(t *testing.T) {
 	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
 
-	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{"id": "per_1", "sessionID": sid})
-	a.ObservePromptAsked("", dir, "question", platforms.LivePrompt{"id": "que_1", "sessionID": sid})
+	a.ObservePromptAskedFromPort("", 0, dir, "permission", platforms.LivePrompt{"id": "per_1", "sessionID": sid})
+	a.ObservePromptAskedFromPort("", 0, dir, "question", platforms.LivePrompt{"id": "que_1", "sessionID": sid})
 
 	err := a.RespondPermission(context.Background(), platforms.RespondPermissionRequest{SessionID: sid, PermissionID: "per_1", Reply: "once"})
 	if !errors.Is(err, platforms.ErrUpstreamRejected) {

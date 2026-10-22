@@ -17,6 +17,16 @@ import (
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
 
+// approve grants rules to session id through the production "always"
+// path: a tentative approval settled as always.
+func (r *Rules) approve(id string, rules []platforms.PermissionRule) error {
+	pid := "approve-" + id
+	if err := r.approveTentatively(id, pid, rules); err != nil {
+		return err
+	}
+	return r.settle(pid, true)
+}
+
 func asked(id, permission string, patterns ...string) platforms.LivePrompt {
 	p := platforms.LivePrompt{"id": id, "sessionID": "s", "permission": permission}
 	if patterns != nil {

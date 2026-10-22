@@ -44,19 +44,19 @@ func TestCreateInboxItemValidatesAndTrims(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	for _, input := range []struct{ title, body string }{{"", "body"}, {"title", " \n\t"}} {
-		if _, err := db.CreateInboxItem(t.Context(), input.title, input.body); err == nil {
-			t.Fatalf("CreateInboxItem(%q, %q) accepted blank input", input.title, input.body)
+		if _, err := db.CreateCategorizedInboxItem(t.Context(), input.title, input.body, InboxGeneral); err == nil {
+			t.Fatalf("CreateCategorizedInboxItem(%q, %q) accepted blank input", input.title, input.body)
 		}
 	}
 
-	item, err := db.CreateInboxItem(t.Context(), "  title  ", "\n body \t")
+	item, err := db.CreateCategorizedInboxItem(t.Context(), "  title  ", "\n body \t", InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.ID == "" || item.Title != "title" || item.Body != "body" || item.CreatedAt <= 0 {
 		t.Fatalf("created item = %+v", item)
 	}
-	other, err := db.CreateInboxItem(t.Context(), "other", "body")
+	other, err := db.CreateCategorizedInboxItem(t.Context(), "other", "body", InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,11 +242,11 @@ func TestInboxCategoriesAndPermissionLifecycle(t *testing.T) {
 func TestArchivedInboxListingPreservesReadState(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
-	active, err := db.CreateInboxItem(t.Context(), "Active", "body")
+	active, err := db.CreateCategorizedInboxItem(t.Context(), "Active", "body", InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
-	archived, err := db.CreateInboxItem(t.Context(), "Archived", "body")
+	archived, err := db.CreateCategorizedInboxItem(t.Context(), "Archived", "body", InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,6 @@ func TestWebhookStoreReportsClosedDatabase(t *testing.T) {
 		},
 		"get inbox":    func() error { _, err := db.GetWebhookInbox(ctx, "routine"); return err },
 		"list inboxes": func() error { _, err := db.ListWebhookInboxes(ctx); return err },
-		"delete inbox": func() error { return db.DeleteWebhookInbox(ctx, "routine") },
 		"counts":       func() error { _, err := db.WebhookDispatchCounts(ctx, "inbox"); return err },
 		"accept": func() error {
 			_, err := db.AcceptWebhookDelivery(ctx, "inbox", "delivery", "title", "body", "{}", "", 1)

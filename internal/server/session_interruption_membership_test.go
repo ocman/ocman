@@ -119,12 +119,12 @@ func TestReplacementMembershipResolvesDistinctDirectoriesOnce(t *testing.T) {
 		return dir, nil
 	}})
 	sessions := []db.Session{{Directory: "/repo"}, {Directory: "/repo"}, {Directory: "/non-repo"}, {Directory: "/non-repo"}}
-	members, err := srv.replacementMembership(t.Context(), "/repo", sessions)
+	members, err := srv.sessionRecovery().ReplacementMembership(t.Context(), "/repo", sessions)
 	if err != nil || !members["/repo"] || members["/non-repo"] || calls["/repo"] != 1 || calls["/non-repo"] != 1 {
 		t.Fatalf("membership=%v calls=%v err=%v", members, calls, err)
 	}
 	defer ocv2.SetInstalledV2(true)()
-	members, err = srv.replacementMembership(t.Context(), "machine", sessions)
+	members, err = srv.sessionRecovery().ReplacementMembership(t.Context(), "machine", sessions)
 	if err != nil || !members["/non-repo"] || calls["/repo"] != 1 {
 		t.Fatalf("v2 used per-project membership: %v %v %v", members, calls, err)
 	}
@@ -134,20 +134,20 @@ func TestReplacementMembershipFailsClosedOnResolverFailure(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 	resolverErr := errors.New("root lookup failed")
 	srv.hostRouter = hostsvc.NewRouter(&interruptionMembershipHost{resolve: func(context.Context, string) (string, error) { return "", resolverErr }})
-	if _, err := srv.replacementMembership(t.Context(), "/repo", []db.Session{{Directory: "/repo"}}); !errors.Is(err, resolverErr) {
+	if _, err := srv.sessionRecovery().ReplacementMembership(t.Context(), "/repo", []db.Session{{Directory: "/repo"}}); !errors.Is(err, resolverErr) {
 		t.Fatalf("lost resolution failure: %v", err)
 	}
 	srv.hostRouter = hostsvc.NewRouter(&interruptionMembershipHost{resolve: func(context.Context, string) (string, error) { return "", fs.ErrPermission }})
-	if _, err := srv.replacementMembership(t.Context(), "/repo", []db.Session{{Directory: "/repo"}}); !errors.Is(err, fs.ErrPermission) {
+	if _, err := srv.sessionRecovery().ReplacementMembership(t.Context(), "/repo", []db.Session{{Directory: "/repo"}}); !errors.Is(err, fs.ErrPermission) {
 		t.Fatalf("permission failure was ignored: %v", err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := srv.replacementMembership(ctx, "/repo", []db.Session{{Directory: "/repo"}}); !errors.Is(err, context.Canceled) {
+	if _, err := srv.sessionRecovery().ReplacementMembership(ctx, "/repo", []db.Session{{Directory: "/repo"}}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("lost cancellation: %v", err)
 	}
 	srv.hostRouter = hostsvc.NewRouter(&struct{ hostsvc.Host }{})
-	if _, err := srv.replacementMembership(t.Context(), "/repo", nil); err == nil {
+	if _, err := srv.sessionRecovery().ReplacementMembership(t.Context(), "/repo", nil); err == nil {
 		t.Fatal("unsupported owner silently inferred membership")
 	}
 }

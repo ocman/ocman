@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
-	"github.com/uptrace/opentelemetry-go-extra/otellogrus"
 	otlplogrus "go.opentelemetry.io/contrib/bridges/otellogrus"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
@@ -120,20 +119,9 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 		log.WithError(err).Warn("OTel runtime instrumentation failed to start")
 	}
 
-	// Bridge logrus -> OTel logs (via span events). Once installed,
-	// every logrus call inside an active span gets surfaced as a
-	// span event with the level and message attached, and the log
-	// line itself is decorated with trace_id/span_id so external
-	// tooling (Loki, etc.) can correlate them.
-	log.AddHook(otellogrus.NewHook(otellogrus.WithLevels(
-		log.PanicLevel,
-		log.FatalLevel,
-		log.ErrorLevel,
-		log.WarnLevel,
-		log.InfoLevel,
-	)))
-	// Export ordinary logrus records too, including logs outside active spans.
-	// A hook preserves the existing console output and logger's level filtering.
+	// Export logrus records as OTel logs, correlated with the active span
+	// when the entry carries a context. A hook preserves the existing
+	// console output and logger's level filtering.
 	log.AddHook(otlplogrus.NewHook("github.com/NoUseFreak/ocman",
 		otlplogrus.WithLoggerProvider(lp),
 	))

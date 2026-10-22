@@ -23,6 +23,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/sessionlifecycle"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
@@ -268,7 +269,7 @@ func TestHandleSessions_StateOverlay_TagsFactorySessions(t *testing.T) {
 		{ID: "child", Platform: "fake", ParentID: "factory", TimeUpdated: 1000},
 		{ID: "orphan", Platform: "fake", ParentID: "gone", TimeUpdated: 1000},
 	}})
-	attempt, err := srv.stateDB.CreatePreparedFactoryAttempt(t.Context(), "epic", "work", model.FactoryAttemptPolicy{Repository: "/a", Profile: "factory-implement/v1"}, time.UnixMilli(1))
+	attempt, err := createPreparedFactoryAttempt(t.Context(), srv.stateDB, "epic", "work", model.FactoryAttemptPolicy{Repository: "/a", Profile: "factory-implement/v1"}, time.UnixMilli(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -912,7 +913,7 @@ func TestHandleSession_TagsFactoryAttempt(t *testing.T) {
 	if body := get(); strings.Contains(body, "factoryAttemptId") {
 		t.Fatalf("untagged session body = %s", body)
 	}
-	attempt, err := srv.stateDB.CreatePreparedFactoryAttempt(t.Context(), "epic", "work", model.FactoryAttemptPolicy{Repository: "/src/foo", Profile: "factory-implement/v1"}, time.UnixMilli(1))
+	attempt, err := createPreparedFactoryAttempt(t.Context(), srv.stateDB, "epic", "work", model.FactoryAttemptPolicy{Repository: "/src/foo", Profile: "factory-implement/v1"}, time.UnixMilli(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -933,7 +934,7 @@ func TestHandleSession_TagsFactoryChildDetailsAndPeeks(t *testing.T) {
 				cp := child
 				return &platforms.SessionDetail{Session: &cp}, nil
 			}})
-			attempt, err := srv.stateDB.CreatePreparedFactoryAttempt(t.Context(), "epic", "work", model.FactoryAttemptPolicy{Repository: "/repo", Profile: "factory-implement/v1"}, time.UnixMilli(1))
+			attempt, err := createPreparedFactoryAttempt(t.Context(), srv.stateDB, "epic", "work", model.FactoryAttemptPolicy{Repository: "/repo", Profile: "factory-implement/v1"}, time.UnixMilli(1))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1251,7 +1252,7 @@ func (h *restartTestHost) RestartProjectOpencode(_ context.Context, req hostsvc.
 }
 
 func TestSameProject_IncludesOcmanWorktrees(t *testing.T) {
-	if !sameProject("/projects/ocman", "/projects/.worktrees/ocman/restart-mode") {
+	if !sessionlifecycle.SameProject("/projects/ocman", "/projects/.worktrees/ocman/restart-mode") {
 		t.Fatal("ocman worktree should belong to its main project")
 	}
 }
@@ -1750,8 +1751,8 @@ func TestRestartTargets_MachineServerIsTheOnlyTarget(t *testing.T) {
 	}}
 	srv.hostRouter = hostsvc.NewRouter(host)
 	for _, all := range []bool{false, true} {
-		targets, err := srv.restartTargets(context.Background(), "/src/repo", "", all)
-		if err != nil || len(targets) != 1 || !targets[0].machine {
+		targets, err := srv.sessionLifecycleModule().RestartTargets(context.Background(), "/src/repo", "", all)
+		if err != nil || len(targets) != 1 || !targets[0].Machine {
 			t.Fatalf("all=%v: targets = %+v, %v; want only the machine server", all, targets, err)
 		}
 	}

@@ -1,6 +1,6 @@
 // Package gui provides the Wails desktop-app wrapper for ocman.
 //
-// When ocman is started with --gui, RunGUI is called instead of the plain
+// When ocman is started with --gui, RunGUIWithStarter is called instead of the plain
 // HTTP server. It starts the full server stack on a random loopback port and
 // then opens a native WebView window pointing at it.  The existing HTTP
 // handler (including the embedded static FS and all API routes) is reused
@@ -25,8 +25,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-
-	"github.com/NoUseFreak/ocman/internal/server"
 )
 
 // bootstrapHandler answers the WebView's initial wails:// load. It does not
@@ -126,14 +124,9 @@ func (a *App) shutdown(context.Context) {
 	}
 }
 
-// RunGUI starts the ocman HTTP server on an ephemeral loopback port and opens
-// a Wails window that loads it.  srv must already be fully constructed
-// (New + registered adapters + auth) but not yet started.
-func RunGUI(ctx context.Context, srv *server.Server, listenAddr, stateDBPath string, bootTimeout time.Duration) error {
-	return RunGUIWithStarter(ctx, srv.StartOnListener, listenAddr, stateDBPath, bootTimeout)
-}
-
-// RunGUIWithStarter keeps the window alive while its backend reloads in place.
+// RunGUIWithStarter starts the ocman HTTP server via start on an ephemeral
+// loopback port and opens a Wails window that loads it. The window stays
+// alive while its backend reloads in place.
 func RunGUIWithStarter(ctx context.Context, start func(context.Context, net.Listener) error, listenAddr, stateDBPath string, bootTimeout time.Duration) error {
 	// Pick an ephemeral port for the backend so the GUI can point at it.
 	// We override the address to 127.0.0.1:0 via a net.Listener, then

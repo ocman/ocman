@@ -164,7 +164,7 @@ func TestRemovingAskRuleResumesPendingRequest(t *testing.T) {
 			svc := NewService(Deps{Store: store})
 			t.Cleanup(svc.Shutdown)
 			if running {
-				_, _ = svc.claimAutoApprove(t.Context(), "s", "p")
+				_, _ = svc.claimAutoApproveWithStart(t.Context(), "s", "p", 0)
 			}
 			asked := askedPermission{permission: "bash", patterns: []string{"tea do something"}}
 			svc.applyManualRules(t.Context(), adapter, "s", "p", asked)

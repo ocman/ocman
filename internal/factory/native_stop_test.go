@@ -128,7 +128,7 @@ func TestStopEpicFencesALateWorkerLaunch(t *testing.T) {
 }
 
 func TestStopEpicUnavailable(t *testing.T) {
-	if err := NewNative(&nativeStoreFake{}).StopEpic(t.Context(), "epic"); !errors.Is(err, ErrFactoryUnavailable) {
+	if err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).StopEpic(t.Context(), "epic"); !errors.Is(err, ErrFactoryUnavailable) {
 		t.Fatalf("unavailable stop = %v", err)
 	}
 }
@@ -140,7 +140,7 @@ func TestStopEpicBeforePlanApproval(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "planner"}}
-	svc := NewNativeWithPlanning(store, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Stop planning")
 	if _, err := svc.ClaimPlan(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan")); err != nil {
 		t.Fatal(err)

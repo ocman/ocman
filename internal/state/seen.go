@@ -33,21 +33,6 @@ func (d *DB) MarkSessionSeen(ctx context.Context, platform, sessionID string, se
 	return nil
 }
 
-// SeenSessions returns every seen session's time_updated, keyed by
-// (platform, session-id). Callers doing a per-platform lookup can
-// construct a Key directly.
-func (d *DB) SeenSessions(ctx context.Context) (map[Key]int64, error) {
-	records, err := d.SeenSessionStates(ctx)
-	if err != nil {
-		return nil, err
-	}
-	seen := make(map[Key]int64, len(records))
-	for key, record := range records {
-		seen[key] = record.TimeUpdated
-	}
-	return seen, nil
-}
-
 // SeenSessionState distinguishes reading a running turn from seeing it crash.
 type SeenSessionState struct {
 	TimeUpdated int64

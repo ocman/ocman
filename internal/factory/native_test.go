@@ -157,7 +157,7 @@ func (s *nativeStoreFake) RemoveFactoryEpicProject(_ context.Context, _ string, 
 
 func TestNativeServiceCanonicalizesProjectAndRejectsResolverFailure(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	if _, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo/subdir"}); !errors.Is(err, ErrAcknowledgementRequired) {
 		t.Fatalf("missing acknowledgement error = %v", err)
 	}
@@ -165,7 +165,7 @@ func TestNativeServiceCanonicalizesProjectAndRejectsResolverFailure(t *testing.T
 	if err != nil || created.InitialProject != "/repo" || store.acknowledged != "local//repo/factory-implement/v1" {
 		t.Fatalf("CreateWorkEpic = %#v, %v", created, err)
 	}
-	svc = NewNative(store, testProjectResolver{err: errors.New("not a repo")})
+	svc = NewNativeWithExecution(store, testProjectResolver{err: errors.New("not a repo")}, nil, nil)
 	if _, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true}); !errors.Is(err, ErrProjectNotLocalGit) {
 		t.Fatalf("CreateWorkEpic error = %v, want ErrProjectNotLocalGit", err)
 	}
@@ -173,7 +173,7 @@ func TestNativeServiceCanonicalizesProjectAndRejectsResolverFailure(t *testing.T
 
 func TestCreateWorkEpicAdmitsCanonicalLocalProjects(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{roots: map[string]string{"/main/subdir": "/main", "/other/subdir": "/other"}})
+	svc := NewNativeWithExecution(store, testProjectResolver{roots: map[string]string{"/main/subdir": "/main", "/other/subdir": "/other"}}, nil, nil)
 	created, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{
 		Goal: "Ship", InitialProject: "/main/subdir", AcknowledgeLocalExecution: true,
 		Projects: []ProjectAdmission{{Path: "/other/subdir", AcknowledgeLocalExecution: true}},
@@ -192,7 +192,7 @@ func TestCreateWorkEpicAdmitsCanonicalLocalProjects(t *testing.T) {
 
 func TestCreateWorkEpicStoresPermissionRulesDuringCreation(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	rules := []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
 	if _, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, PermissionRules: rules}); err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestCreateWorkEpicRejectsInvalidSecondaryProjects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewNative(&nativeStoreFake{}, testProjectResolver{roots: map[string]string{"/main": "/main", "/main/subdir": "/main", "/other": "/other", "/other*": "/other*", "/other[repo": "/other[repo"}})
+			svc := NewNativeWithExecution(&nativeStoreFake{}, testProjectResolver{roots: map[string]string{"/main": "/main", "/main/subdir": "/main", "/other": "/other", "/other*": "/other*", "/other[repo": "/other[repo"}}, nil, nil)
 			_, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/main", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{tt.project}})
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("error = %v, want %v", err, tt.want)
@@ -228,7 +228,7 @@ func TestCreateWorkEpicRejectsInvalidSecondaryProjects(t *testing.T) {
 
 func TestRemoveWorkEpicProjectCanonicalizesAndPreservesRemovalErrors(t *testing.T) {
 	store := &nativeStoreFake{removeProjectErr: model.ErrEpicProjectHistory}
-	svc := NewNative(store, testProjectResolver{root: "/other"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/other"}, nil, nil)
 	if err := svc.RemoveWorkEpicProject(t.Context(), "epic", "/other/subdir"); !errors.Is(err, model.ErrEpicProjectHistory) {
 		t.Fatalf("error = %v", err)
 	}
@@ -239,7 +239,7 @@ func TestRemoveWorkEpicProjectCanonicalizesAndPreservesRemovalErrors(t *testing.
 
 func TestRemoveWorkEpicProjectAllowsAStoredRepositoryThatNoLongerResolves(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{err: errors.New("missing")})
+	svc := NewNativeWithExecution(store, testProjectResolver{err: errors.New("missing")}, nil, nil)
 	if err := svc.RemoveWorkEpicProject(t.Context(), "epic", "/gone/../other"); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestRemoveWorkEpicProjectAllowsAStoredRepositoryThatNoLongerResolves(t *tes
 
 func TestCreateWorkEpicPassesHumanFriendlyIDAndRejectsBadOrTakenOnes(t *testing.T) {
 	store := &nativeStoreFake{takenEpicIDs: map[string]bool{"taken-name": true}}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	create := func(id string) (WorkEpic, error) {
 		return svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{EpicID: id, Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true})
 	}
@@ -273,7 +273,7 @@ func TestCreateWorkEpicPassesHumanFriendlyIDAndRejectsBadOrTakenOnes(t *testing.
 
 func TestCreateWorkEpicKeepsGoalAShortTitle(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	create := func(goal string) (WorkEpic, error) {
 		return svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: goal, InitialProject: "/repo", AcknowledgeLocalExecution: true})
 	}
@@ -291,17 +291,17 @@ func TestCreateWorkEpicKeepsGoalAShortTitle(t *testing.T) {
 func TestNativeServiceMutatesGraphThroughTypedStore(t *testing.T) {
 	store := &nativeStoreFake{}
 	mutation := GraphMutation{Action: "edit", EpicID: "epic-1", IssueID: "epic-1.1", Title: "Rename"}
-	if err := NewNative(store).MutateGraph(context.Background(), mutation); err != nil || !reflect.DeepEqual(store.mutation, mutation) {
+	if err := NewNativeWithExecution(store, nil, nil, nil).MutateGraph(context.Background(), mutation); err != nil || !reflect.DeepEqual(store.mutation, mutation) {
 		t.Fatalf("MutateGraph = %#v, %v", store.mutation, err)
 	}
-	if err := NewNative(struct{ nativeStore }{&nativeStoreFake{}}).MutateGraph(context.Background(), mutation); !errors.Is(err, ErrFactoryUnavailable) {
+	if err := NewNativeWithExecution(struct{ nativeStore }{&nativeStoreFake{}}, nil, nil, nil).MutateGraph(context.Background(), mutation); !errors.Is(err, ErrFactoryUnavailable) {
 		t.Fatalf("MutateGraph unavailable error = %v", err)
 	}
 }
 
 func TestNativeServiceRejectsUnavailableOptionalStores(t *testing.T) {
 	ctx := context.Background()
-	svc := NewNative(struct{ nativeStore }{&nativeStoreFake{}})
+	svc := NewNativeWithExecution(struct{ nativeStore }{&nativeStoreFake{}}, nil, nil, nil)
 
 	tests := []struct {
 		name string
@@ -348,7 +348,7 @@ func TestNativeServiceRejectsUnavailableOptionalStores(t *testing.T) {
 
 func TestNativeServiceSetsValidatedCanonicalCapacityPolicy(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	policy, err := svc.SetCapacityPolicy(context.Background(), CapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4, ProjectOverrides: map[string]int{"/repo/worktree": 2}})
 	if err != nil || policy.ProjectOverrides["/repo"] != 2 {
 		t.Fatalf("SetCapacityPolicy = %#v, %v", policy, err)
@@ -365,7 +365,7 @@ func TestNativeServiceSetsValidatedCanonicalCapacityPolicy(t *testing.T) {
 }
 
 func TestNativeServiceInspectsBuiltInTracerFormula(t *testing.T) {
-	formula, err := NewNative(&nativeStoreFake{}).GetFormula(context.Background(), "ocman/tracer", 1)
+	formula, err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).GetFormula(context.Background(), "ocman/tracer", 1)
 	if err != nil {
 		t.Fatalf("GetFormula: %v", err)
 	}
@@ -381,17 +381,17 @@ func TestNativeServiceInspectsBuiltInTracerFormula(t *testing.T) {
 	if len(formula.Inputs) != 2 || len(formula.Nodes) != 3 || len(formula.Edges) != 2 {
 		t.Fatalf("Formula graph = %#v", formula)
 	}
-	if _, err := NewNative(&nativeStoreFake{}).GetFormula(context.Background(), "missing", 1); !errors.Is(err, ErrFormulaNotFound) {
+	if _, err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).GetFormula(context.Background(), "missing", 1); !errors.Is(err, ErrFormulaNotFound) {
 		t.Fatalf("missing Formula error = %v", err)
 	}
-	if _, err := NewNative(&nativeStoreFake{}).GetFormula(context.Background(), "ocman/tracer", 5); !errors.Is(err, ErrFormulaNotFound) {
+	if _, err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).GetFormula(context.Background(), "ocman/tracer", 5); !errors.Is(err, ErrFormulaNotFound) {
 		t.Fatalf("unknown Formula version error = %v", err)
 	}
 }
 
 func TestNativeFormulaRevisionsAreTOMLOnlyAndContentAddressed(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 	source := `version = 1
 name = "Team"
 
@@ -443,7 +443,7 @@ func formulaCompiled(t *testing.T, source string) []byte {
 
 func TestNativeFormulaCompositionValidationAndSave(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 	child := `version = 1
 name = "Child"
 
@@ -541,7 +541,7 @@ bind_initial_project = "initial_project"
 
 func TestNativeFormulaCompositionAllowsEarlierRevisionOfParent(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 	base := `version = 1
 name = "Formula"
 
@@ -577,7 +577,7 @@ bind_initial_project = "initial_project"
 
 func TestNativeFormulaCompositionValidation(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 	child := `version = 1
 name = "Child"
 
@@ -636,7 +636,7 @@ bind_initial_project = "initial_project"
 
 func TestNativeFormulaValidationReportsSyntaxAndInvalidComposition(t *testing.T) {
 	store := &nativeStoreFake{formulas: []model.NativeFormulaRevision{{FormulaID: "custom/broken", Revision: 1, SourceTOML: "version = 1", CompiledJSON: "{}", ContentHash: "broken"}}}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 
 	if view, err := svc.ValidateFormula(context.Background(), "version = 1\nname = \"Bad\"\n[[unknown]]", "custom/bad"); err != nil || view.Valid || !strings.Contains(strings.Join(view.Errors, "\n"), "unsupported TOML table") {
 		t.Fatalf("ValidateFormula malformed source = %#v, %v", view, err)
@@ -668,7 +668,7 @@ bind_initial_project = "initial_project"
 
 func TestNativeFormulaRejectsCorruptStoredCompiledJSON(t *testing.T) {
 	store := &nativeStoreFake{formulas: []model.NativeFormulaRevision{{FormulaID: "custom/team", Revision: 1, SourceTOML: "version = 1", ContentHash: "hash", CompiledJSON: "{"}}}
-	if _, err := NewNative(store).GetFormula(context.Background(), "custom/team", 1); !errors.Is(err, ErrFormulaCorrupt) {
+	if _, err := NewNativeWithExecution(store, nil, nil, nil).GetFormula(context.Background(), "custom/team", 1); !errors.Is(err, ErrFormulaCorrupt) {
 		t.Fatalf("GetFormula corrupt revision error = %v", err)
 	}
 }
@@ -694,7 +694,7 @@ kind = "plan"
 	stored := strings.Replace(compiled.JSON, `"name":"Team"`, `"name":"Other"`, 1)
 	sum := sha256.Sum256([]byte(stored))
 	store := &nativeStoreFake{formulas: []model.NativeFormulaRevision{{FormulaID: "custom/team", Revision: 1, SourceTOML: source, ContentHash: hex.EncodeToString(sum[:]), CompiledJSON: stored}}}
-	if _, err := NewNative(store).GetFormula(context.Background(), "custom/team", 1); !errors.Is(err, ErrFormulaCorrupt) {
+	if _, err := NewNativeWithExecution(store, nil, nil, nil).GetFormula(context.Background(), "custom/team", 1); !errors.Is(err, ErrFormulaCorrupt) {
 		t.Fatalf("GetFormula mismatched revision error = %v", err)
 	}
 }
@@ -714,7 +714,7 @@ func (s *nativeStoreFake) PourFactoryEpic(_ context.Context, id string, formula 
 
 func TestNativeServiceResolvesPinnedNestedFormulaBeforePour(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	child := `version = 1
 name = "Child"
 [[input]]
@@ -769,7 +769,7 @@ bind_initial_project = "initial_project"
 
 func TestNativeServiceCreatesEpicFromPinnedCustomFormula(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	source := `version = 1
 name = "Custom"
 [[input]]
@@ -810,7 +810,7 @@ func TestNativeIssuesExposeCreationTime(t *testing.T) {
 
 func TestNativeServiceIssueComments(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 	comment, err := svc.AddIssueComment(t.Context(), "epic-1", "issue-1", "mcp", "Reviewed")
 	if err != nil || comment.Actor != "mcp" || comment.Body != "Reviewed" {
 		t.Fatalf("AddIssueComment = %#v, %v", comment, err)
@@ -827,7 +827,7 @@ func TestNativeServiceIssueComments(t *testing.T) {
 
 func TestNativeServiceCreatesReadsAndPoursTracer(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	created, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: "Ship it", InitialProject: "/repo", AcknowledgeLocalExecution: true})
 	if err != nil || created.ID != "epic-1" {
 		t.Fatalf("CreateWorkEpic = %#v, %v", created, err)
@@ -845,7 +845,7 @@ func TestNativeServiceCreatesReadsAndPoursTracer(t *testing.T) {
 }
 
 func TestNativeQueueRequiresAttemptStore(t *testing.T) {
-	_, err := NewNative(&nativeStoreFake{}).Queue(context.Background())
+	_, err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).Queue(context.Background())
 	if !errors.Is(err, ErrFactoryUnavailable) {
 		t.Fatalf("Queue error = %v", err)
 	}
@@ -853,7 +853,7 @@ func TestNativeQueueRequiresAttemptStore(t *testing.T) {
 
 func TestNativeFormulaListAndProgressReflectBehavior(t *testing.T) {
 	store := &nativeStoreFake{}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 	if _, err := svc.SaveFormula(context.Background(), FormulaSaveRequest{ID: "custom/team", Source: `version = 1
 name = "Team"
 [[input]]
@@ -964,7 +964,7 @@ kind = "plan"`}); err != nil {
 
 func TestNativeClosureAndRemovedIssueAccessors(t *testing.T) {
 	store := &nativeClosureStoreFake{removed: []model.NativeIssue{{ID: "removed", Kind: "implementation", Status: "closed"}}}
-	svc := NewNative(store)
+	svc := NewNativeWithExecution(store, nil, nil, nil)
 	if err := svc.CloseMol(context.Background(), "epic", "mol"); err != nil || store.closedMol != "epic/mol" {
 		t.Fatalf("CloseMol = %v, %q", err, store.closedMol)
 	}
@@ -983,7 +983,7 @@ func TestSaveFormulaRejectsInvalidIDAsInvalidFormula(t *testing.T) {
 	for _, id := range []string{"", "team", "custom/", "custom/Team", "builtin/plan"} {
 		t.Run(id, func(t *testing.T) {
 			store := &nativeStoreFake{}
-			_, err := NewNative(store).SaveFormula(context.Background(), FormulaSaveRequest{ID: id})
+			_, err := NewNativeWithExecution(store, nil, nil, nil).SaveFormula(context.Background(), FormulaSaveRequest{ID: id})
 			if !errors.Is(err, ErrInvalidFormula) || !strings.Contains(err.Error(), "custom/<stable-name>") || len(store.formulas) != 0 {
 				t.Fatalf("SaveFormula(%q) = %v; formulas = %#v", id, err, store.formulas)
 			}

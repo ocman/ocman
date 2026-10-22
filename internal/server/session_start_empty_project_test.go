@@ -50,7 +50,7 @@ func TestStartSessionEmptyProjectLaunchesInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(string(body))))
+	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(string(body))))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}

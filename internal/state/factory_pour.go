@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
@@ -191,20 +192,11 @@ func resolveMolBindings(formula model.NativeFormula, bindings, inputs map[string
 		resolved[input] = value
 	}
 	for input := range bindings {
-		if !containsFormulaInput(formula.Inputs, input) {
+		if !slices.Contains(formula.Inputs, input) {
 			return nil, fmt.Errorf("nested Mol binding %s is unresolved", input)
 		}
 	}
 	return resolved, nil
-}
-
-func containsFormulaInput(inputs []string, want string) bool {
-	for _, input := range inputs {
-		if input == want {
-			return true
-		}
-	}
-	return false
 }
 
 func validateNativeFormula(formula model.NativeFormula, ancestors map[string]bool) error {
@@ -242,7 +234,7 @@ func validateNativeFormula(formula model.NativeFormula, ancestors map[string]boo
 		nodes[composition.Key] = true
 		for _, input := range composition.Formula.Inputs {
 			binding, ok := composition.Bindings[input]
-			if !ok || !containsFormulaInput(formula.Inputs, binding) {
+			if !ok || !slices.Contains(formula.Inputs, binding) {
 				return fmt.Errorf("nested Mol binding %s is unresolved", input)
 			}
 		}

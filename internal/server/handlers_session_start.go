@@ -10,14 +10,6 @@ import (
 
 type newSessionTarget = sessionlifecycle.Target
 
-func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
-	s.sessionLifecycleModule().HandlePrepareSession(w, r)
-}
-
-func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
-	s.sessionLifecycleModule().HandleStartSession(w, r)
-}
-
 func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, platform, directory string) (hostsvc.Host, string, bool) {
 	return s.sessionLifecycleModule().EnsureProjectForCreate(w, r, platform, directory)
 }

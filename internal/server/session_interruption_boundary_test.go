@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/sessionrecovery"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -49,7 +50,7 @@ func TestStopBoundaryAdvancingAborts(t *testing.T) {
 				}
 				statuses[id] = db.StatusBusy
 			}
-			if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+			if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 				t.Fatal(err)
 			}
 			if kind == "new-session-during-stop" {
@@ -93,7 +94,7 @@ func TestStopBoundaryExcludesManualAbortDuringPreparation(t *testing.T) {
 			if !laggingLive {
 				statuses["s"] = db.StatusWaiting
 			}
-			if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+			if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 				t.Fatal(err)
 			}
 			if err := srv.confirmOpencodeReplacement(t.Context(), "/repo"); err != nil {
@@ -121,7 +122,7 @@ func TestStopBoundaryRevalidationFailurePreventsPartialEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	fail = true
-	if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); !errors.Is(err, readErr) {
+	if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); !errors.Is(err, readErr) {
 		t.Fatalf("lost stop revalidation error: %v", err)
 	}
 	at, _, err := srv.stateDB.SessionReplacementStopEvidence(t.Context(), "opencode", "/repo")
@@ -130,7 +131,7 @@ func TestStopBoundaryRevalidationFailurePreventsPartialEvidence(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := srv.beginOpencodeReplacementStop(ctx, "/repo"); !errors.Is(err, context.Canceled) {
+	if err := beginStoredReplacementStop(ctx, srv, "/repo"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled revalidation proceeded: %v", err)
 	}
 }
@@ -153,7 +154,7 @@ func TestStopBoundaryAdvancingAbortRecovery(t *testing.T) {
 	if err := srv.recordOpencodeReplacement(t.Context(), "/repo", "restart"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+	if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 		t.Fatal(err)
 	}
 	at, _, err := srv.stateDB.SessionReplacementStopEvidence(t.Context(), "opencode", "/repo")
@@ -175,7 +176,7 @@ func TestStopBoundaryAdvancingAbortRecovery(t *testing.T) {
 	}
 	// Recovery must not resample the waiting view or change the original boundary.
 	statuses["s"] = db.StatusWaiting
-	if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+	if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 		t.Fatal(err)
 	}
 	recoveredAt, _, err := srv.stateDB.SessionReplacementStopEvidence(t.Context(), "opencode", "/repo")
@@ -211,10 +212,10 @@ func TestStopBoundaryAbortEvidence(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := db.SessionLifecycle{LatestMessageID: "m", LatestMessageCreated: tc.created, LatestCompleted: tc.completed, LatestErrorName: "AbortError"}
-			if got := replacementAbortDuringStop(l, tc.prior, tc.sampled, 100); got != tc.want {
+			if got := sessionrecovery.ReplacementAbortDuringStop(l, tc.prior, tc.sampled, 100); got != tc.want {
 				t.Fatalf("abort evidence=%t want=%t", got, tc.want)
 			}
-			if replacementAbortDuringStop(l, tc.prior, tc.sampled, 0) {
+			if sessionrecovery.ReplacementAbortDuringStop(l, tc.prior, tc.sampled, 0) {
 				t.Fatal("preparation without a stop boundary attributed abort")
 			}
 		})

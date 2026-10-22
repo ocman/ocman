@@ -17,10 +17,6 @@ func (d *DB) CreateFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, nil, nil)
 }
 
-func (d *DB) CreateFactoryEpicWithProjects(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string) (model.NativeEpic, error) {
-	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, nil)
-}
-
 func (d *DB) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule, platform ...string) (model.NativeEpic, error) {
 	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, rules, platform...)
 }

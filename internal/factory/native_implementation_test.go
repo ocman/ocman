@@ -1324,7 +1324,7 @@ func TestNativeProjectRequestRequiresOwnerAndLaunchesScopePlan(t *testing.T) {
 		t.Fatalf("approval = %#v, %v, requests %#v", resolved, err, planning.calls)
 	}
 	restartedPlanning := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "scope-plan-2"}, dead: map[string]bool{"scope-plan": true}}
-	restarted := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, restartedPlanning)
+	restarted := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, restartedPlanning, nil)
 	if err := restarted.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -1715,7 +1715,7 @@ func TestNativeStuckEpicRecoversThroughReopenIssue(t *testing.T) {
 	if err != nil || got.Progress.Stuck {
 		t.Fatalf("running epic reported stuck: %#v, %v", got.Progress, err)
 	}
-	if NewNative(&nativeStoreFake{}).ReopenIssue(context.Background(), epic.ID, taskID) == nil {
+	if NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).ReopenIssue(context.Background(), epic.ID, taskID) == nil {
 		t.Fatal("reopen without store succeeded")
 	}
 }

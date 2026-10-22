@@ -147,7 +147,8 @@ func TestGateVerificationPendingWhileRunningAndUnavailableWithoutChecker(t *test
 }
 
 func TestVerificationCriteriaListsOnlyProjectImplementationWork(t *testing.T) {
-	got := verificationService(nil, nil).verificationCriteria(t.Context(), "e1", "/repo")
+	issues := verificationService(nil, nil).store.(verificationStoreFake).issues
+	got := verificationCriteriaFromIssues(issues, "/repo")
 	if !strings.Contains(got, "impl-1 — API (closed)") || !strings.Contains(got, "returns 200") {
 		t.Fatalf("criteria = %s", got)
 	}
@@ -156,12 +157,8 @@ func TestVerificationCriteriaListsOnlyProjectImplementationWork(t *testing.T) {
 			t.Errorf("criteria include %s:\n%s", excluded, got)
 		}
 	}
-	if got := verificationService(nil, nil).verificationCriteria(t.Context(), "e1", "/none"); got != "(none recorded)" {
+	if got := verificationCriteriaFromIssues(issues, "/none"); got != "(none recorded)" {
 		t.Fatalf("empty criteria = %q", got)
-	}
-	failing := &NativeService{store: verificationStoreFake{err: errors.New("db down")}}
-	if got := failing.verificationCriteria(t.Context(), "e1", "/repo"); !strings.Contains(got, "db down") {
-		t.Fatalf("store failure = %q", got)
 	}
 }
 
@@ -443,7 +440,7 @@ func TestNudgeRestartedValidators(t *testing.T) {
 // the worker, including its result message, is gone, even when a first caller
 // gave up waiting and a second one cancels again.
 func TestCancelVerificationChecksWaitsForTheRun(t *testing.T) {
-	s := NewNative(&nativeStoreFake{})
+	s := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil)
 	<-s.cancelVerificationChecks("none")
 	cancelled := false
 	exited := make(chan struct{})

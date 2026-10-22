@@ -50,7 +50,7 @@ func TestRemovedVerificationKeepsUsagePhase(t *testing.T) {
 	if workID == "" {
 		t.Fatal("missing verification fixture")
 	}
-	attempt, err := store.CreatePreparedFactoryAttempt(t.Context(), ep.ID, workID, model.FactoryAttemptPolicy{Profile: "factory-implement/v1"}, time.Now())
+	attempt, err := createPreparedFactoryAttempt(t.Context(), store, ep.ID, workID, model.FactoryAttemptPolicy{Profile: "factory-implement/v1"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

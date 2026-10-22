@@ -17,10 +17,8 @@ import (
 // passed to tmux as the pane's foreground process.
 type fakeTmuxRunner struct {
 	existing []Session
-	windows  map[string][]Window
 
-	listErr        error
-	listWindowsErr error
+	listErr error
 
 	newSessionCalls    []string
 	newSessionCommands []string
@@ -29,16 +27,6 @@ type fakeTmuxRunner struct {
 	newWindowCalls    []string
 	newWindowCommands []string
 	newWindowErr      error
-
-	newNamedWindowCalls    []string
-	newNamedWindowCommands []string
-	newNamedWindowErr      error
-
-	killSessionCalls []string
-	killSessionErr   error
-
-	killWindowCalls []string
-	killWindowErr   error
 }
 
 func (f *fakeTmuxRunner) toRunner() Runner {
@@ -49,36 +37,22 @@ func (f *fakeTmuxRunner) toRunner() Runner {
 			}
 			return f.existing, nil
 		},
-		ListWindows: func(_ context.Context, sessionName string) ([]Window, error) {
-			if f.listWindowsErr != nil {
-				return nil, f.listWindowsErr
-			}
-			return f.windows[sessionName], nil
-		},
-		NewSession: func(_ context.Context, name, _, command string) error {
+		NewSessionEnv: func(_ context.Context, name, _, command string, _ map[string]string) error {
 			f.newSessionCalls = append(f.newSessionCalls, name)
 			f.newSessionCommands = append(f.newSessionCommands, command)
 			return f.newSessionErr
 		},
-		NewWindow: func(_ context.Context, name, _, command string) error {
+		NewWindowEnv: func(_ context.Context, name, _, command string, _ map[string]string) error {
 			f.newWindowCalls = append(f.newWindowCalls, name)
 			f.newWindowCommands = append(f.newWindowCommands, command)
 			return f.newWindowErr
 		},
-		NewNamedWindow: func(_ context.Context, sessionName, windowName, _, command string) error {
-			f.newNamedWindowCalls = append(f.newNamedWindowCalls, sessionName+":"+windowName)
-			f.newNamedWindowCommands = append(f.newNamedWindowCommands, command)
-			return f.newNamedWindowErr
-		},
-		KillSession: func(_ context.Context, name string) error {
-			f.killSessionCalls = append(f.killSessionCalls, name)
-			return f.killSessionErr
-		},
-		KillWindow: func(_ context.Context, target string) error {
-			f.killWindowCalls = append(f.killWindowCalls, target)
-			return f.killWindowErr
-		},
 	}
+}
+
+// launchWith runs the launcher LaunchOpencode uses, with a fake runner.
+func launchWith(ctx context.Context, r Runner, directory string, idempotent bool) (string, bool, error) {
+	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeCommand, idempotent, nil)
 }
 
 // TestLaunchOpencodeInTmuxWith_Idempotent_ReusesExisting verifies the
@@ -95,7 +69,7 @@ func TestLaunchOpencodeInTmuxWith_Idempotent_ReusesExisting(t *testing.T) {
 		existing: []Session{{Name: wantName, ResolvedPath: dir}},
 	}
 
-	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
+	name, launched, err := launchWith(t.Context(), f.toRunner(), dir, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +99,7 @@ func TestLaunchOpencodeInTmuxWith_Idempotent_CreatesWhenAbsent(t *testing.T) {
 
 	f := &fakeTmuxRunner{} // no existing sessions
 
-	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
+	name, launched, err := launchWith(t.Context(), f.toRunner(), dir, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -161,7 +135,7 @@ func TestLaunchOpencodeInTmuxWith_NonIdempotent_OpensNewWindow(t *testing.T) {
 		existing: []Session{{Name: wantName, ResolvedPath: dir}},
 	}
 
-	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, false)
+	name, launched, err := launchWith(t.Context(), f.toRunner(), dir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,7 +171,7 @@ func TestLaunchOpencodeInTmuxWith_MatchesDottedPathAgainstUnderscoreName(t *test
 		existing: []Session{{Name: underscoreName, ResolvedPath: dir}},
 	}
 
-	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, false)
+	name, launched, err := launchWith(t.Context(), f.toRunner(), dir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +222,7 @@ func TestLaunchOpencodeInTmuxWith_MatchesMixedUnderscoreDotSegment(t *testing.T)
 				// As listSessions would report it.
 				existing: []Session{{Name: existing, ResolvedPath: ResolveSessionPath(existing), Path: dir}},
 			}
-			name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, tc.idempotent)
+			name, launched, err := launchWith(t.Context(), f.toRunner(), dir, tc.idempotent)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -298,7 +272,7 @@ func TestLaunchOpencodeInTmuxWith_IsolatesCollidingDerivedNames(t *testing.T) {
 				}
 				f := &fakeTmuxRunner{existing: []Session{{Name: taken, ResolvedPath: ResolveSessionPath(taken), Path: owner, Windows: 1}}}
 
-				name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), target, idempotent)
+				name, launched, err := launchWith(t.Context(), f.toRunner(), target, idempotent)
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -315,11 +289,11 @@ func TestLaunchOpencodeInTmuxWith_IsolatesCollidingDerivedNames(t *testing.T) {
 				// Relaunching the target finds its own session again by
 				// the same stable name, and the owner still finds its own.
 				f.existing = append(f.existing, Session{Name: name, ResolvedPath: ResolveSessionPath(name), Path: target, Windows: 1})
-				again, _, err := LaunchOpencodeWith(t.Context(), f.toRunner(), target, true)
+				again, _, err := launchWith(t.Context(), f.toRunner(), target, true)
 				if err != nil || again != name {
 					t.Fatalf("relaunch = %q, %v; want %q", again, err, name)
 				}
-				mine, _, err := LaunchOpencodeWith(t.Context(), f.toRunner(), owner, true)
+				mine, _, err := launchWith(t.Context(), f.toRunner(), owner, true)
 				if err != nil || mine != taken {
 					t.Fatalf("owner relaunch = %q, %v; want %q", mine, err, taken)
 				}
@@ -342,7 +316,7 @@ func TestLaunchOpencodeInTmuxWith_PropagatesNewSessionError(t *testing.T) {
 	wantErr := errors.New("boom")
 	f := &fakeTmuxRunner{newSessionErr: wantErr}
 
-	_, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
+	_, launched, err := launchWith(t.Context(), f.toRunner(), dir, true)
 	if err == nil {
 		t.Fatalf("want error, got nil")
 	}
@@ -366,7 +340,7 @@ func TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName(t *testing.T) {
 
 	f := &fakeTmuxRunner{}
 
-	_, _, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
+	_, _, err := launchWith(t.Context(), f.toRunner(), dir, true)
 	if err == nil {
 		t.Fatal("expected error for derived name with invalid characters")
 	}
@@ -375,96 +349,6 @@ func TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName(t *testing.T) {
 	}
 	if len(f.newSessionCalls) != 0 || len(f.newWindowCalls) != 0 {
 		t.Error("no tmux command should fire when the derived name fails validation")
-	}
-}
-
-func TestRestartOpencodeInTmuxWith_RestartsMatchingOpencodeWindow(t *testing.T) {
-	dir := "/tmp/repo"
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: "repo", Windows: 2}},
-		windows: map[string][]Window{"repo": {
-			{Name: "editor", Path: dir, Command: "zsh"},
-			{Name: "oc", Path: dir, Command: "opencode"},
-		}},
-	}
-
-	target, err := RestartOpencodeWith(t.Context(), f.toRunner(), dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if target != "repo:oc" {
-		t.Errorf("target = %q, want repo:oc", target)
-	}
-	if len(f.killWindowCalls) != 1 || f.killWindowCalls[0] != "repo:oc" {
-		t.Errorf("killWindowCalls = %v, want [repo:oc]", f.killWindowCalls)
-	}
-	if len(f.newNamedWindowCalls) != 1 || f.newNamedWindowCalls[0] != "repo:oc" {
-		t.Errorf("newNamedWindowCalls = %v, want [repo:oc]", f.newNamedWindowCalls)
-	}
-}
-
-func TestRestartOpencodeInTmuxWith_RejectsUnmanagedWindow(t *testing.T) {
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: "repo", Windows: 1}},
-		windows:  map[string][]Window{"repo": {{Name: "shell", Path: "/tmp/repo", Command: "zsh"}}},
-	}
-
-	_, err := RestartOpencodeWith(t.Context(), f.toRunner(), "/tmp/repo")
-	if !errors.Is(err, ErrNoManagedOpencodePane) {
-		t.Fatalf("err = %v, want ErrNoManagedOpencodePane", err)
-	}
-	if len(f.killWindowCalls) != 0 || len(f.killSessionCalls) != 0 {
-		t.Fatalf("unexpected kill calls: window=%v session=%v", f.killWindowCalls, f.killSessionCalls)
-	}
-}
-
-// When the opencode pane is the session's only window, the whole
-// session is killed and a fresh one launched (kill-window would also
-// kill the session, so this avoids a transient empty session).
-func TestRestartOpencodeInTmuxWith_SingleWindowKillsSession(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dir := filepath.Join(home, "src/repo")
-	name := SessionNameForPath(dir)
-
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: name, Windows: 1}},
-		windows:  map[string][]Window{name: {{Name: "oc", Path: dir, Command: "opencode"}}},
-	}
-
-	if _, err := RestartOpencodeWith(t.Context(), f.toRunner(), dir); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(f.killSessionCalls) != 1 || f.killSessionCalls[0] != name {
-		t.Errorf("killSessionCalls = %v, want [%s]", f.killSessionCalls, name)
-	}
-	if len(f.killWindowCalls) != 0 {
-		t.Errorf("killWindowCalls = %v, want none (single-window path kills the session)", f.killWindowCalls)
-	}
-}
-
-// A pane whose foreground process isn't "opencode" but whose tmux
-// start command launched opencode (e.g. wrapped in a shell) still
-// counts as a managed pane.
-func TestRestartOpencodeInTmuxWith_MatchesViaStartCommand(t *testing.T) {
-	dir := "/tmp/repo"
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: "repo", Windows: 2}},
-		windows: map[string][]Window{"repo": {
-			{Name: "editor", Path: dir, Command: "zsh"},
-			{Name: "oc", Path: dir, Command: "node", StartCommand: "opencode --port 0"},
-		}},
-	}
-
-	target, err := RestartOpencodeWith(t.Context(), f.toRunner(), dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if target != "repo:oc" {
-		t.Errorf("target = %q, want repo:oc", target)
-	}
-	if len(f.killWindowCalls) != 1 || f.killWindowCalls[0] != "repo:oc" {
-		t.Errorf("killWindowCalls = %v, want [repo:oc]", f.killWindowCalls)
 	}
 }
 

@@ -87,11 +87,6 @@ func scanInboxItem(scanner interface{ Scan(...any) error }) (InboxItem, error) {
 	return item, err
 }
 
-// CreateInboxItem validates and stores a new unread item.
-func (d *DB) CreateInboxItem(ctx context.Context, title, body string) (InboxItem, error) {
-	return d.CreateCategorizedInboxItem(ctx, title, body, InboxGeneral)
-}
-
 func (d *DB) CreateCategorizedInboxItem(ctx context.Context, title, body, category string) (InboxItem, error) {
 	return d.CreateSessionInboxItem(ctx, title, body, category, nil)
 }
@@ -124,13 +119,6 @@ func (d *DB) CreateSessionInboxItem(ctx context.Context, title, body, category s
 		return InboxItem{}, fmt.Errorf("creating Inbox item: %w", err)
 	}
 	return item, nil
-}
-
-// NotifyInbox is CreateInboxItem for callers that only need the error, so
-// packages like factory can assert the capability without importing state.
-func (d *DB) NotifyInbox(ctx context.Context, title, body, category string) error {
-	_, err := d.CreateCategorizedInboxItem(ctx, title, body, category)
-	return err
 }
 
 func (d *DB) NotifySessionInbox(ctx context.Context, title, body, category, platform, sessionID string) error {
@@ -219,14 +207,6 @@ func (d *DB) listInboxItems(ctx context.Context, archived bool) ([]InboxItem, er
 		return nil, fmt.Errorf("reading Inbox items: %w", err)
 	}
 	return items, nil
-}
-
-func (d *DB) CountUnreadInboxItems(ctx context.Context) (int, error) {
-	var count int
-	if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM inbox_item WHERE read_at IS NULL AND archived_at IS NULL`).Scan(&count); err != nil {
-		return 0, fmt.Errorf("counting unread Inbox items: %w", err)
-	}
-	return count, nil
 }
 
 func (d *DB) PinInboxItem(ctx context.Context, remoteID, itemID string) error {

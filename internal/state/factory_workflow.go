@@ -5,7 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
@@ -165,11 +166,7 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 			}
 		}
 	}
-	paths := make([]string, 0, len(projects))
-	for path := range projects {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
+	paths := slices.Sorted(maps.Keys(projects))
 	// Optional work that never runs must not leave a mandatory PR for an unchanged project.
 	// Pending removals cannot retire Delivery or release another Epic's merge gate.
 	for _, issue := range issues {

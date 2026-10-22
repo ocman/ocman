@@ -2,9 +2,7 @@ package state
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,42 +65,6 @@ func (d *DB) SetFactoryCapacityPolicy(ctx context.Context, policy model.FactoryC
 		return fmt.Errorf("committing Factory capacity policy update: %w", err)
 	}
 	return nil
-}
-
-// CreatePreparedFactoryAttempt durably allocates the next sequence for a Work Item.
-func (d *DB) CreatePreparedFactoryAttempt(ctx context.Context, epicID, workID string, policy model.FactoryAttemptPolicy, at time.Time) (model.FactoryAttempt, error) {
-	policyJSON, err := json.Marshal(policy)
-	if err != nil {
-		return model.FactoryAttempt{}, fmt.Errorf("encoding Factory attempt policy: %w", err)
-	}
-	var random [16]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return model.FactoryAttempt{}, fmt.Errorf("generating Factory attempt ID: %w", err)
-	}
-	id := "fa_" + hex.EncodeToString(random[:])
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return model.FactoryAttempt{}, fmt.Errorf("beginning Factory attempt creation: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	var sequence int
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence), 0) + 1 FROM factory_attempt WHERE work_item_id = ?`, workID).Scan(&sequence); err != nil {
-		return model.FactoryAttempt{}, fmt.Errorf("allocating Factory attempt sequence: %w", err)
-	}
-	now := at.UnixMilli()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_attempt
-		(id, epic_id, work_item_id, sequence, phase, frozen_policy_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'prepared', ?, ?, ?)`, id, epicID, workID, sequence, string(policyJSON), now, now); err != nil {
-		return model.FactoryAttempt{}, fmt.Errorf("creating prepared Factory attempt: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return model.FactoryAttempt{}, fmt.Errorf("committing prepared Factory attempt: %w", err)
-	}
-	return model.FactoryAttempt{
-		ID: id, EpicID: epicID, WorkID: workID, Sequence: sequence,
-		Phase: model.FactoryAttemptPrepared, FrozenPolicy: policy,
-		CreatedAt: now, UpdatedAt: now,
-	}, nil
 }
 
 // GetFactoryAttempt returns one durable attempt by ID.
@@ -207,19 +169,6 @@ func (d *DB) SetFactoryAttemptDeliveryTarget(ctx context.Context, id, remoteType
 		return errors.New("factory attempt is not prepared")
 	}
 	return tx.Commit()
-}
-
-// CompleteFactoryAttempt conditionally records immutable successful evidence.
-func (d *DB) CompleteFactoryAttempt(ctx context.Context, id string, result model.FactoryAttemptResult, at time.Time) (bool, error) {
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		return false, fmt.Errorf("encoding Factory attempt result: %w", err)
-	}
-	updated, err := d.db.ExecContext(ctx, `UPDATE factory_attempt
-		SET phase = 'terminal', terminal_outcome = 'succeeded', result_json = ?, finished_at = ?, updated_at = ?
-		WHERE id = ? AND phase = 'active'
-		AND NOT EXISTS (SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('approved', 'rejected'))`, string(resultJSON), at.UnixMilli(), at.UnixMilli(), id, id)
-	return factoryAttemptChanged(updated, err, "completing Factory attempt")
 }
 
 // CompleteFactoryImplementationAttempt records success and closes its work item atomically.
@@ -881,22 +830,6 @@ func factoryAttemptChanged(result sql.Result, err error, action string) (bool, e
 	return changed != 0, nil
 }
 
-// HasFactoryLocalExecutionAck reports whether the operator has acknowledged
-// one host, repository, and permission profile tuple.
-func (d *DB) HasFactoryLocalExecutionAck(ctx context.Context, hostID, repoRoot, profileID, profileVersion string) (bool, error) {
-	var acknowledged int
-	err := d.db.QueryRowContext(ctx, `SELECT 1 FROM factory_local_execution_ack
-		WHERE host_id = ? AND repo_root = ? AND profile_id = ? AND profile_version = ?`,
-		hostID, repoRoot, profileID, profileVersion).Scan(&acknowledged)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("checking Factory local execution acknowledgement: %w", err)
-	}
-	return true, nil
-}
-
 // UpsertFactoryLocalExecutionAck records the operator's acknowledgement for
 // one host, repository, and permission profile tuple.
 func (d *DB) UpsertFactoryLocalExecutionAck(ctx context.Context, hostID, repoRoot, profileID, profileVersion, actor string, at time.Time) error {
@@ -910,133 +843,6 @@ func (d *DB) UpsertFactoryLocalExecutionAck(ctx context.Context, hostID, repoRoo
 	`, hostID, repoRoot, profileID, profileVersion, actor, at.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("upserting Factory local execution acknowledgement: %w", err)
-	}
-	return nil
-}
-
-// GetFactoryPlanningSession returns the durable session bound to one Planning Work item.
-func (d *DB) GetFactoryPlanningSession(ctx context.Context, workID string) (model.PlanningSession, bool, error) {
-	var session model.PlanningSession
-	var metadata string
-	err := d.db.QueryRowContext(ctx, `
-		SELECT external_id, metadata_json
-		FROM factory_external_mapping
-		WHERE system = 'session' AND external_kind = 'planning' AND entity_kind = 'planning_work' AND entity_id = ?
-	`, workID).Scan(&session.ID, &metadata)
-	if err == sql.ErrNoRows {
-		return model.PlanningSession{}, false, nil
-	}
-	if err != nil {
-		return model.PlanningSession{}, false, fmt.Errorf("getting Factory Planning Session: %w", err)
-	}
-	var stored struct {
-		Platform string `json:"platform"`
-	}
-	if err := json.Unmarshal([]byte(metadata), &stored); err != nil || stored.Platform == "" {
-		return model.PlanningSession{}, false, errors.New("getting Factory Planning Session: invalid metadata")
-	}
-	session.Platform = stored.Platform
-	return session, true, nil
-}
-
-// PutFactoryPlanningSession binds one Planning Work item to exactly one session.
-func (d *DB) PutFactoryPlanningSession(ctx context.Context, epicID, workID string, session model.PlanningSession) error {
-	metadata, err := json.Marshal(map[string]string{"epicId": epicID, "platform": session.Platform})
-	if err != nil {
-		return err
-	}
-	_, err = d.db.ExecContext(ctx, `
-		INSERT INTO factory_external_mapping
-			(system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at)
-		VALUES ('session', 'planning', ?, 'planning_work', ?, ?, ?)
-		ON CONFLICT(system, external_kind, entity_kind, entity_id) DO NOTHING
-	`, session.ID, workID, string(metadata), time.Now().UnixMilli())
-	if err != nil {
-		return fmt.Errorf("putting Factory Planning Session: %w", err)
-	}
-	stored, ok, err := d.GetFactoryPlanningSession(ctx, workID)
-	if err != nil {
-		return err
-	}
-	if !ok || stored != session {
-		return errors.New("putting Factory Planning Session: Planning Work is already bound to another session")
-	}
-	return nil
-}
-
-// DeleteFactoryPlanningSession clears a dead Planning Session binding.
-func (d *DB) DeleteFactoryPlanningSession(ctx context.Context, workID string) error {
-	_, err := d.db.ExecContext(ctx, `
-		DELETE FROM factory_external_mapping
-		WHERE system = 'session' AND external_kind = 'planning' AND entity_kind = 'planning_work' AND entity_id = ?
-	`, workID)
-	if err != nil {
-		return fmt.Errorf("deleting Factory Planning Session: %w", err)
-	}
-	return nil
-}
-
-// PutFactoryPlanningSessionCleanup records a session that must be disposed
-// before Factory can admit another mutation.
-func (d *DB) PutFactoryPlanningSessionCleanup(ctx context.Context, epicID, workID string, session model.PlanningSession) error {
-	metadata, err := json.Marshal(map[string]string{"epicId": epicID, "platform": session.Platform})
-	if err != nil {
-		return err
-	}
-	_, err = d.db.ExecContext(ctx, `
-		INSERT INTO factory_external_mapping
-			(system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at)
-		VALUES ('session', 'planning_cleanup', ?, 'planning_work', ?, ?, ?)
-		ON CONFLICT(system, external_kind, entity_kind, entity_id) DO UPDATE SET
-			external_id = excluded.external_id, metadata_json = excluded.metadata_json
-	`, session.ID, workID, string(metadata), time.Now().UnixMilli())
-	if err != nil {
-		return fmt.Errorf("putting Factory Planning Session cleanup: %w", err)
-	}
-	return nil
-}
-
-// ListFactoryPlanningSessionCleanups returns every pending restricted-session cleanup.
-func (d *DB) ListFactoryPlanningSessionCleanups(ctx context.Context) (map[string]model.PlanningSession, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT entity_id, external_id, metadata_json
-		FROM factory_external_mapping
-		WHERE system = 'session' AND external_kind = 'planning_cleanup' AND entity_kind = 'planning_work'
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("listing Factory Planning Session cleanups: %w", err)
-	}
-	defer rows.Close()
-	cleanups := map[string]model.PlanningSession{}
-	for rows.Next() {
-		var workID, metadata string
-		var session model.PlanningSession
-		if err := rows.Scan(&workID, &session.ID, &metadata); err != nil {
-			return nil, fmt.Errorf("listing Factory Planning Session cleanups: %w", err)
-		}
-		var stored struct {
-			Platform string `json:"platform"`
-		}
-		if err := json.Unmarshal([]byte(metadata), &stored); err != nil || stored.Platform == "" {
-			return nil, errors.New("listing Factory Planning Session cleanups: invalid metadata")
-		}
-		session.Platform = stored.Platform
-		cleanups[workID] = session
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("listing Factory Planning Session cleanups: %w", err)
-	}
-	return cleanups, nil
-}
-
-// DeleteFactoryPlanningSessionCleanup clears a completed cleanup intent.
-func (d *DB) DeleteFactoryPlanningSessionCleanup(ctx context.Context, workID string) error {
-	_, err := d.db.ExecContext(ctx, `
-		DELETE FROM factory_external_mapping
-		WHERE system = 'session' AND external_kind = 'planning_cleanup' AND entity_kind = 'planning_work' AND entity_id = ?
-	`, workID)
-	if err != nil {
-		return fmt.Errorf("deleting Factory Planning Session cleanup: %w", err)
 	}
 	return nil
 }
@@ -1057,30 +863,6 @@ func (d *DB) AppendFactoryAudit(ctx context.Context, record model.AuditRecord) e
 	`, record.EpicID, record.WorkID, attemptID, record.Actor, record.Action, string(details), record.At.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("appending Factory audit: %w", err)
-	}
-	return nil
-}
-
-// AppendFactoryAuditOnce records a transition once across retries and recovery.
-func (d *DB) AppendFactoryAuditOnce(ctx context.Context, record model.AuditRecord) error {
-	details, err := json.Marshal(record.Details)
-	if err != nil {
-		return fmt.Errorf("encoding Factory audit: %w", err)
-	}
-	var attemptID any
-	if record.AttemptID != "" {
-		attemptID = record.AttemptID
-	}
-	_, err = d.db.ExecContext(ctx, `
-		INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at)
-		SELECT ?, ?, ?, ?, ?, ?, ?
-		WHERE NOT EXISTS (
-			SELECT 1 FROM factory_audit_record
-			WHERE epic_id = ? AND work_item_id = ? AND attempt_id IS ? AND actor = ? AND action = ? AND details_json = ?
-		)
-	`, record.EpicID, record.WorkID, attemptID, record.Actor, record.Action, string(details), record.At.UnixMilli(), record.EpicID, record.WorkID, attemptID, record.Actor, record.Action, string(details))
-	if err != nil {
-		return fmt.Errorf("appending Factory audit once: %w", err)
 	}
 	return nil
 }

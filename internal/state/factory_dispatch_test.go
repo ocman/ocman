@@ -12,7 +12,7 @@ func TestFactoryDispatchEpicsExcludeHistory(t *testing.T) {
 	d := openTestStateDB(t)
 	t.Cleanup(func() { _ = d.Close() })
 	for _, status := range []string{"open", "paused", "closed"} {
-		ep, err := d.CreateFactoryEpicWithProjects(t.Context(), "", status, "", "/repo", "", nativeTracerFormula(t), []string{"/secondary"})
+		ep, err := d.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", status, "", "/repo", "", nativeTracerFormula(t), []string{"/secondary"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -244,17 +244,9 @@ func verificationResultMessage(attemptID, head string, passed bool, report strin
 	return fmt.Sprintf("Factory verification checks at %s: %s\n\n%s\n\n%s", head, verdict, report, next)
 }
 
-// verificationCriteria lists the project's implementation Issues so the
-// validator checks the contract written at planning time, not its own idea
+// verificationCriteriaFromIssues lists the project's implementation Issues so
+// the validator checks the contract written at planning time, not its own idea
 // of done. Descriptions carry the acceptance criteria folded in at submit.
-func (s *NativeService) verificationCriteria(ctx context.Context, epicID, project string) string {
-	issues, err := s.store.ListFactoryIssues(ctx, epicID)
-	if err != nil {
-		return "(unavailable: " + err.Error() + ")"
-	}
-	return verificationCriteriaFromIssues(issues, project)
-}
-
 func verificationCriteriaFromIssues(issues []model.NativeIssue, project string) string {
 	var out strings.Builder
 	for _, issue := range issues {

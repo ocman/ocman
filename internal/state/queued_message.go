@@ -235,21 +235,6 @@ func (d *DB) RecordQueuedMessageFailure(ctx context.Context, id, reason string) 
 	return blocked, nil
 }
 
-// ClearQueuedMessagesForSession drops a session's whole queue. Used when
-// the user archives a session: the follow-ups they queued are part of the
-// work being abandoned.
-func (d *DB) ClearQueuedMessagesForSession(ctx context.Context, platform, sessionID string) (int64, error) {
-	res, err := d.db.ExecContext(ctx,
-		`DELETE FROM queued_message WHERE platform = ? AND session_id = ?`,
-		platform, sessionID,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("clearing queued messages: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	return n, nil
-}
-
 // DeleteQueuedMessage removes a single queued message by id. Returns
 // whether a row was actually deleted.
 func (d *DB) DeleteQueuedMessage(ctx context.Context, id string) (bool, error) {

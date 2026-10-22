@@ -192,20 +192,3 @@ func lookPathOK(bin string) bool {
 	_, err := exec.LookPath(bin)
 	return err == nil
 }
-
-// ensureProjectOpencodePort guarantees the project's single opencode
-// instance is running for dir and returns its port, routed through the
-// owning host (ForDir) so a remote's project never launches on the hub
-// (#268 multi-remote requirement, same as CreateWorktreeSession).
-//
-// dir is folded to the project root first (#532): a parent session
-// living in a managed worktree must reuse the main checkout's single
-// instance, not launch a second one keyed on the worktree's toplevel.
-func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (string, error) {
-	dir = projectRootForDirectory(dir)
-	res, err := s.router().ForDir(dir).EnsureRuntime(ctx, string(platforms.OpenCodeID), dir)
-	if err != nil {
-		return "", err
-	}
-	return res.Port(), nil
-}

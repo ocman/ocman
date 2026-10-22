@@ -56,9 +56,9 @@ func TestDraftLaunchExplicitOwner(t *testing.T) {
 				w := httptest.NewRecorder()
 				r := httptest.NewRequest(http.MethodPost, "/api/sessions/"+endpoint, strings.NewReader(string(body)))
 				if endpoint == "prepare" {
-					srv.handlePrepareSession(w, r)
+					srv.sessionLifecycleModule().HandlePrepareSession(w, r)
 				} else {
-					srv.handleStartSession(w, r)
+					srv.sessionLifecycleModule().HandleStartSession(w, r)
 				}
 				if w.Code != tc.status {
 					t.Fatalf("status %d, want %d: %s", w.Code, tc.status, w.Body.String())

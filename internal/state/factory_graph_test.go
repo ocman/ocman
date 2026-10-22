@@ -98,7 +98,7 @@ func TestFactoryEpicPermissionRulesAreAtomicAndPropagate(t *testing.T) {
 func TestFactoryEpicProjectRemovalRules(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
-	epic, err := db.CreateFactoryEpicWithProjects(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), []string{"/busy", "/clean", "/delivered", "/target"})
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), []string{"/busy", "/clean", "/delivered", "/target"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -912,7 +912,7 @@ func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t), []string{"/sdk"})
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t), []string{"/sdk"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1175,7 +1175,7 @@ func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Ship", "Brief", "/repo", "claim-and-proposals", nativeTracerFormula(t), []string{"/other"})
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "claim-and-proposals", nativeTracerFormula(t), []string{"/other"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

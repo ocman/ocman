@@ -15,7 +15,7 @@ func TestAgentCannotReplaceUnmaterializedInitialProposal(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, svc, "Preserve initial tickets")
 	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{
 		EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo",
@@ -71,7 +71,7 @@ func TestAgentCannotReplaceUnmaterializedInitialProposal(t *testing.T) {
 }
 
 func TestProposalSubmissionCannotForgeFrozenGraphRevision(t *testing.T) {
-	svc := NewNative(&nativeStoreFake{})
+	svc := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil)
 	baseline := 1
 	for _, manifest := range []ProposalManifest{
 		{Issues: []Issue{}},
@@ -91,7 +91,7 @@ func TestGraphProposalResponsePreservesHierarchyAndExternalReferences(t *testing
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	// The legacy graph supports editable nested Mols and cross-Epic dependencies.
 	create := func(name string) string {
 		formula, err := svc.nativeFormula(t.Context(), "ocman/tracer", 2)

@@ -1,12 +1,6 @@
 package server
 
-import (
-	"context"
-	"net/http"
-
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/sessionlifecycle"
-)
+import "net/http"
 
 func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 	s.sessionLifecycleModule().HandleSessionCommand(w, r)
@@ -63,23 +57,3 @@ func (s *Server) handleSessionPermissionRulesGet(w http.ResponseWriter, r *http.
 func (s *Server) handleSessionPermissionRulesSet(w http.ResponseWriter, r *http.Request) {
 	s.sessionLifecycleModule().HandleSessionPermissionRulesSet(w, r)
 }
-
-type restartTarget struct {
-	host    hostsvc.Host
-	root    string
-	machine bool
-}
-
-func (s *Server) restartTargets(ctx context.Context, dir, remoteID string, all bool) ([]restartTarget, error) {
-	targets, err := s.sessionLifecycleModule().RestartTargets(ctx, dir, remoteID, all)
-	if err != nil {
-		return nil, err
-	}
-	var out []restartTarget
-	for _, target := range targets {
-		out = append(out, restartTarget{host: target.Host, root: target.Root, machine: target.Machine})
-	}
-	return out, nil
-}
-
-func sameProject(root, dir string) bool { return sessionlifecycle.SameProject(root, dir) }

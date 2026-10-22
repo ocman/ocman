@@ -7,11 +7,16 @@ import (
 	"time"
 )
 
+// newSerial runs every item on one key, so items are handled in order.
+func newSerial[T any](handle func(T)) *Worker[T] {
+	return NewKeyed(handle, func(T) string { return "" })
+}
+
 func TestDrainWaitsForWorkEnqueuedWhileHandlerRuns(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	processed := make(chan int, 2)
-	w := New(func(v int) {
+	w := newSerial(func(v int) {
 		if v == 1 {
 			close(started)
 			<-release
@@ -47,7 +52,7 @@ func TestDrainWaitsForWorkEnqueuedWhileHandlerRuns(t *testing.T) {
 func TestDrainHonorsContext(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
-	w := New(func(struct{}) {
+	w := newSerial(func(struct{}) {
 		close(started)
 		<-release
 	})

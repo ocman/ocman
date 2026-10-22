@@ -72,7 +72,7 @@ func TestPollerContinuesPastPoisonAndDeduplicatesAfterAckLoss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allocation, err := (share.RelayClient{BaseURL: relayServer.URL}).RegisterInbox(t.Context(), identity.Recipient().String(), "enroll")
+	allocation, err := (share.RelayClient{BaseURL: relayServer.URL}).RegisterInboxWithSecret(t.Context(), identity.Recipient().String(), "enroll", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

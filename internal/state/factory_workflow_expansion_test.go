@@ -5,7 +5,7 @@ import "testing"
 func TestFactoryExpandedWorkflowPersistsEveryPrerequisite(t *testing.T) {
 	d := openTestStateDB(t)
 	t.Cleanup(func() { _ = d.Close() })
-	ep, err := d.CreateFactoryEpicWithProjects(t.Context(), "", "Expand workflow", "", "/repo", "", nativeTracerFormula(t), []string{"/other"})
+	ep, err := d.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Expand workflow", "", "/repo", "", nativeTracerFormula(t), []string{"/other"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

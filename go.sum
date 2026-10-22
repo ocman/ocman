@@ -112,10 +112,6 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/tkrajina/go-reflector v0.5.8 h1:yPADHrwmUbMq4RGEyaOUpz2H90sRsETNVpjzo3DLVQQ=
 github.com/tkrajina/go-reflector v0.5.8/go.mod h1:ECbqLgccecY5kPmPmXg1MrHW585yMcDkVl6IvJe64T4=
-github.com/uptrace/opentelemetry-go-extra/otellogrus v0.4.0 h1:7J/8KjFhYbVFAGTLs68CCbfWLKGPRtEXPQb7pSYaRsY=
-github.com/uptrace/opentelemetry-go-extra/otellogrus v0.4.0/go.mod h1:1TZcrOZV4dQ1i4BMGWRptsgrODLuznqmgQCd6Bq9Ktk=
-github.com/uptrace/opentelemetry-go-extra/otelutil v0.4.0 h1:ZC08i0whcTGacAS7iDFxYL5D/bHdtdzxAjMJD8M15Pg=
-github.com/uptrace/opentelemetry-go-extra/otelutil v0.4.0/go.mod h1:j5Tnr2zA8UTDRzfIAZUaseE5/QPQCRv8JShSuGZek1A=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasttemplate v1.2.2 h1:lxLXG0uE3Qnshl9QyaK6XJxMXlQZELvChBOCmQD0Loo=

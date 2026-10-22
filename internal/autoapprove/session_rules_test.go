@@ -111,7 +111,7 @@ func TestApplySessionRulesCancelsRunningJudge(t *testing.T) {
 	rec := &replyRecorder{}
 	fp := &fakePlatform{id: "opencode", rules: map[string][]platforms.PermissionRule{"s": yoloRules}, respondPermissionFn: rec.record}
 	svc := NewService(Deps{})
-	ctx, ok := svc.claimAutoApprove(context.Background(), "s", "perm")
+	ctx, ok := svc.claimAutoApproveWithStart(context.Background(), "s", "perm", 0)
 	if !ok {
 		t.Fatal("claim failed")
 	}

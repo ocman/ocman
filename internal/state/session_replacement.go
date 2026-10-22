@@ -85,17 +85,6 @@ func (d *DB) PrepareSessionInterruptions(ctx context.Context, platform, root str
 	return nil
 }
 
-// BeginSessionReplacementStop persists the refreshed evidence and Stop's entry
-// boundary together. Only a host-validated live original can release an unresolved
-// stopping attempt; crash recovery keeps the boundary, handle and baseline.
-func (d *DB) BeginSessionReplacementStop(ctx context.Context, platform, root string, baseline map[string]SessionInterruption, startedAt int64, handles ...ReplacementRuntime) error {
-	snapshot := ReplacementStopSnapshot{Baseline: baseline, StartedAt: startedAt, AdmissionStartedAt: startedAt}
-	if len(handles) > 0 {
-		snapshot.Runtime = handles[0]
-	}
-	return d.BeginSessionReplacementStopSnapshot(ctx, platform, root, snapshot)
-}
-
 func (d *DB) BeginSessionReplacementStopSnapshot(ctx context.Context, platform, root string, snapshot ReplacementStopSnapshot) error {
 	data, err := json.Marshal(snapshot.Baseline)
 	if err != nil {

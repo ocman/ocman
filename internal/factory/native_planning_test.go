@@ -93,7 +93,7 @@ func TestNativePlanClaimPersistsAttemptBeforeLaunching(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, launcher, nil)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestNativePlanClaimFailureDoesNotDuplicateAttempt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{err: errors.New("unavailable")}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	if _, err := svc.ClaimPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan")); !errors.Is(err, ErrFactoryUnavailable) {
 		t.Fatalf("ClaimPlan error = %v", err)
@@ -161,7 +161,7 @@ func TestNativePlanPromptFailureReopensPlan(t *testing.T) {
 		result:    PlanningSession{Platform: "agent", ID: "plan-1"},
 		promptErr: errors.New("unavailable"),
 	}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	planID := pouredIssueID(t, svc, epic.ID, "plan")
 	if _, err := svc.ClaimPlan(context.Background(), epic.ID, planID); !errors.Is(err, ErrFactoryUnavailable) {
@@ -185,7 +185,7 @@ func TestNativePlanClaimRaceLaunchesOneSession(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	start := make(chan struct{})
 	errs := make(chan error, 2)
@@ -216,7 +216,7 @@ func TestNativePlanClaimDisposesSessionWhenAttemptCannotBeActivated(t *testing.T
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(failingActivationStore{db}, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(failingActivationStore{db}, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	if _, err := svc.ClaimPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan")); err == nil {
 		t.Fatal("ClaimPlan unexpectedly succeeded")
@@ -237,7 +237,7 @@ func TestNativeStartPreservesLivePlanningSessionAndTerminatesUnstartedClaim(t *t
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	liveEpic := createPouredWorkEpic(t, svc, "Live")
 	if _, err := svc.ClaimPlan(context.Background(), liveEpic.ID, pouredIssueID(t, svc, liveEpic.ID, "plan")); err != nil {
 		t.Fatal(err)
@@ -276,7 +276,7 @@ func TestNativeStartTerminatesUnavailablePlanningSession(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = db.Close() })
 			launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}, dead: map[string]bool{"plan-1": tt.dead}}
-			svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 			epic := createPouredWorkEpic(t, svc, "Ship")
 			if _, err := svc.ClaimPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan")); err != nil {
 				t.Fatal(err)
@@ -301,7 +301,7 @@ func TestNativeStartAndClaimRaceDoesNotLaunchPreparedPlan(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	if _, _, err := db.ClaimFactoryPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan"), planningProfile, time.Now()); err != nil {
 		t.Fatal(err)
@@ -329,7 +329,7 @@ func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/wrong": "/wrong"}}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/wrong": "/wrong"}}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	first, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest, RationaleMarkdown: "# Why"})
@@ -376,7 +376,7 @@ func TestNativeProposalCanonicalizesNodeProjectsAndRejectsUndeclaredTargets(t *t
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other/subdir": "/other", "/unknown": "/unknown"}}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other/subdir": "/other", "/unknown": "/unknown"}}, &fakePlanningLauncher{}, nil)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other/subdir", AcknowledgeLocalExecution: true}}})
 	if err != nil {
 		t.Fatal(err)
@@ -407,7 +407,7 @@ func TestNativeProposalAcceptsMultipleImplementationIssuesAndRejectsDependencyCy
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	manifest := ProposalManifest{
 		EpicID:  epic.ID,
@@ -456,7 +456,7 @@ func TestNativeProposalMergeGateRequiresDeliveryPlaceholder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/sdk": "/sdk"}}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/sdk": "/sdk"}}, &fakePlanningLauncher{}, nil)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Merge gate", InitialProject: "/repo", FormulaID: "ocman/tracer", FormulaRevision: 2, AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/sdk", AcknowledgeLocalExecution: true}}})
 	if err != nil {
 		t.Fatal(err)
@@ -498,7 +498,7 @@ func TestNativeProposalWithAttemptTokenIsBoundToItsEpic(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}, nil)
 	mine, other := createPouredWorkEpic(t, svc, "Mine"), createPouredWorkEpic(t, svc, "Other")
 	claimed, err := svc.ClaimPlan(context.Background(), mine.ID, pouredIssueID(t, svc, mine.ID, "plan"))
 	if err != nil {
@@ -536,7 +536,7 @@ func TestNativeProposalAttemptTokenExpiresAfterTerminalDecision(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = db.Close() })
-			svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}})
+			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}, nil)
 			epic := createPouredWorkEpic(t, svc, "Terminal")
 			claimed, err := svc.ClaimPlan(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan"))
 			if err != nil {
@@ -564,7 +564,7 @@ func TestNativeProposalReclassificationNeedsApprovalAndPreservesHistory(t *testi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	base := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "first", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "bad", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Pinned: true}}}}); err == nil {
@@ -633,7 +633,7 @@ func TestNativePlanGateRequiresExactNewProposalAfterRevisionRequest(t *testing.T
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	first, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest})
@@ -672,7 +672,7 @@ func TestNativePlanGateRejectCancelsOnlyUnstartedWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest})
@@ -704,7 +704,7 @@ func TestNativeMaterializationCreatesApprovedImplementationAtomically(t *testing
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {
@@ -743,7 +743,7 @@ func TestNativeMaterializationCreatesApprovedImplementationAtomically(t *testing
 }
 
 func TestNativeMaterializeRequiresPlanningStoreAndApproval(t *testing.T) {
-	if _, err := NewNative(&nativeStoreFake{}).Materialize(context.Background(), "missing", "issue"); !errors.Is(err, ErrFactoryUnavailable) {
+	if _, err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).Materialize(context.Background(), "missing", "issue"); !errors.Is(err, ErrFactoryUnavailable) {
 		t.Fatalf("Materialize without planning store = %v", err)
 	}
 	db, err := state.Open(statetest.Path(t))
@@ -751,10 +751,10 @@ func TestNativeMaterializeRequiresPlanningStoreAndApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if _, err := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}).Materialize(context.Background(), "missing", "issue"); err == nil {
+	if _, err := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil).Materialize(context.Background(), "missing", "issue"); err == nil {
 		t.Fatal("Materialize missing approval unexpectedly succeeded")
 	}
-	if _, err := NewNativeWithPlanning(materializationNotFoundStore{db}, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}).Materialize(context.Background(), "missing-epic", "issue"); !errors.Is(err, ErrWorkEpicNotFound) {
+	if _, err := NewNativeWithExecution(materializationNotFoundStore{db}, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil).Materialize(context.Background(), "missing-epic", "issue"); !errors.Is(err, ErrWorkEpicNotFound) {
 		t.Fatalf("Materialize missing Epic error = %v", err)
 	}
 }
@@ -765,7 +765,7 @@ func TestNativePlanGateRejectsInvalidAndUnavailableProposals(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	if _, err := svc.DecidePlanGate(context.Background(), "epic", "approve", PlanGateDecisionRequest{}); err == nil {
 		t.Fatal("DecidePlanGate accepted missing proposal identity")
 	}
@@ -780,7 +780,7 @@ func TestNativeServiceIssueControlsAndQueueState(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	if status := svc.Status(context.Background()); status.Health != HealthHealthy || !status.Idle || !status.DispatchOwner {
 		t.Fatalf("Status = %#v", status)
 	}
@@ -827,7 +827,7 @@ func TestNativeEpicDetailIncludesPlanningAttempt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	if _, err := svc.ClaimPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan")); err != nil {
 		t.Fatal(err)

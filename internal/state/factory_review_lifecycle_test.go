@@ -13,7 +13,7 @@ func TestGraphAmendmentReopensOnlyTheDurablePlanGate(t *testing.T) {
 	db := openTestStateDB(t)
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := t.Context()
-	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Gate identity", "", "/repo", "", nativeTracerFormula(t), []string{"/other"})
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Gate identity", "", "/repo", "", nativeTracerFormula(t), []string{"/other"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

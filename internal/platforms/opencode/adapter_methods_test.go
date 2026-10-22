@@ -3,6 +3,8 @@ package opencode
 import (
 	"context"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 // These tests cover the otherwise-uncovered Adapter delegation
@@ -12,7 +14,7 @@ import (
 // and seed data stay in one place.
 
 func TestAdapter_NewWithPricing(t *testing.T) {
-	a := NewWithPricing(nil, nil, nil)
+	a := NewWithPricingAndAuth(nil, nil, nil, ocapi.New(""))
 	if a == nil {
 		t.Fatalf("NewWithPricing returned nil")
 	}

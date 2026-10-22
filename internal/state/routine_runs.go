@@ -129,24 +129,6 @@ func (d *DB) queryRoutineRuns(ctx context.Context, query string, args ...any) ([
 	return runs, rows.Err()
 }
 
-func (d *DB) UpdateRoutineRun(ctx context.Context, run RoutineRun) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE routine_run SET platform = ?, session_id = ?, state = ?, error = ?,
-		started_at = CASE WHEN ? = 0 THEN started_at ELSE ? END,
-		finished_at = CASE WHEN ? = 0 THEN finished_at ELSE ? END WHERE id = ?`,
-		run.Platform, run.SessionID, run.State, run.Error, run.StartedAt, run.StartedAt, run.FinishedAt, run.FinishedAt, run.ID)
-	if err != nil {
-		return fmt.Errorf("updating routine run: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if changed == 0 {
-		return ErrRoutineRunNotFound
-	}
-	return nil
-}
-
 func (d *DB) ListRunningRoutineRuns(ctx context.Context) ([]RoutineRun, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE state = 'running' ORDER BY created_at, id`)
 	if err != nil {

@@ -3,7 +3,9 @@ package opencode
 import (
 	"context"
 	"errors"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -283,12 +285,7 @@ func duplicateOpenCodeServerPortsForDirectory(directory string, servers []openCo
 	if len(seen) < 2 {
 		return nil
 	}
-	ports := make([]string, 0, len(seen))
-	for port := range seen {
-		ports = append(ports, port)
-	}
-	sort.Strings(ports)
-	return ports
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func (d *Discovery) discoverDuplicateOpenCodeServerPorts(directory string) []string {
@@ -367,13 +364,6 @@ func (d *Discovery) DiscoverOpenCodePortContext(ctx context.Context, directory s
 		return ""
 	}
 	return d.lookupPortWithWorktreeFold(ports, directory)
-}
-
-// DiscoverOpenCodePortFresh is the exported equivalent of
-// discoverOpenCodePortFresh for launch/wait flows that must not cache a
-// transient miss while a just-started OpenCode process is still binding.
-func (d *Discovery) DiscoverOpenCodePortFresh(directory string) string {
-	return d.discoverOpenCodePortFresh(directory)
 }
 
 // DiscoverOpenCodePorts returns a fresh snapshot of every running

@@ -141,10 +141,6 @@ func (d *DB) ReplacementReconciliationBatch(ctx context.Context, platform, root 
 	return candidates, rows.Err()
 }
 
-func (d *DB) CheckpointReplacementCandidate(ctx context.Context, platform, root string, candidate ReplacementCandidate, member bool, notice SessionInterruption) error {
-	return d.CheckpointReplacementBatch(ctx, platform, root, []ReplacementCheckpoint{{Candidate: candidate, Member: member, Notice: notice}})
-}
-
 type ReplacementCheckpoint struct {
 	Candidate ReplacementCandidate
 	Member    bool

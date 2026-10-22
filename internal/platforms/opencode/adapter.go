@@ -60,22 +60,15 @@ type Adapter struct {
 // A nil favorites reader is also permitted; SessionModels will then
 // skip the favorites merge step.
 //
-// Use NewWithPricing in production to pass a pricing table; New keeps
-// the legacy two-arg shape for tests and call sites that don't need
-// calculated cost.
+// Use NewWithPricingAndAuth in production to pass a pricing table and the
+// OpenCode API credential; New keeps the two-arg shape for tests.
 func New(database *db.DB, favorites FavoritesReader) *Adapter {
 	return newAdapter(database, favorites, nil, ocapi.New(""))
 }
 
-// NewWithPricing is like New but also wires in a pricing table used to
-// estimate cost for assistant messages whose upstream `cost` field is
-// zero (typical of subscription-plan sessions: the API was hit but the
-// message metadata records cost=0).
-func NewWithPricing(database *db.DB, favorites FavoritesReader, pricing CostCalculator) *Adapter {
-	return newAdapter(database, favorites, pricing, ocapi.New(""))
-}
-
-// NewWithPricingAndAuth wires the host-local OpenCode API credential.
+// NewWithPricingAndAuth wires in a pricing table, used to estimate cost
+// for assistant messages whose upstream `cost` field is zero (typical of
+// subscription-plan sessions), and the host-local OpenCode API credential.
 func NewWithPricingAndAuth(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
 	return newAdapter(database, favorites, pricing, auth)
 }

@@ -13,25 +13,11 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// BeginOpencodeReplacementStop is the last callback before runtime.Stop. The
-// earlier preparation is not evidence that a turn was still active at Stop.
-func (s *Service) BeginOpencodeReplacementStop(ctx context.Context, root string) error {
-	var inst *ocruntime.Instance
-	if s.deps.State != nil {
-		stored, found, err := s.deps.State.GetManagedOpencode(ctx, root)
-		if err != nil {
-			return err
-		}
-		if found {
-			inst = &ocruntime.Instance{Endpoint: stored.Endpoint, Kind: stored.Kind, ID: stored.RuntimeID, PID: stored.PID, RepoRoot: root}
-		}
-	}
-	return s.BeginOpencodeReplacementStopWithInstance(ctx, root, inst)
-}
-
-// The host should pass the actual cleanup handle, including adopted instances
-// that have no managed_opencode row. The two-argument wrapper supports older
-// callback wiring, but recovery fails closed if it could not capture a handle.
+// BeginOpencodeReplacementStopWithInstance is the last callback before
+// runtime.Stop. The earlier preparation is not evidence that a turn was still
+// active at Stop. The host should pass the actual cleanup handle, including
+// adopted instances that have no managed_opencode row; recovery fails closed
+// if it could not capture a handle.
 func (s *Service) BeginOpencodeReplacementStopWithInstance(ctx context.Context, root string, inst *ocruntime.Instance) error {
 	adapter, ok := s.deps.Platform("opencode")
 	if !ok || s.deps.State == nil {

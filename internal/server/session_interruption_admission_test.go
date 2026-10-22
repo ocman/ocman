@@ -50,7 +50,7 @@ func TestStopScanAdmissionWindow(t *testing.T) {
 					t.Fatal(err)
 				}
 				scanning = true
-				if err := srv.beginOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
+				if err := beginStoredReplacementStop(t.Context(), srv, "/repo"); err != nil {
 					t.Fatal(err)
 				}
 				stopAt, _, err := srv.stateDB.SessionReplacementStopEvidence(t.Context(), "opencode", "/repo")

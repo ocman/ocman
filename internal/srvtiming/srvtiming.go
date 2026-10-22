@@ -4,7 +4,7 @@
 // Use it from anywhere reachable from an HTTP handler — middleware,
 // adapter methods, helpers — to record how long a named phase took.
 // The HTTP middleware (internal/server) attaches a Collector to the
-// request context; everything else just calls Record / TimeIt
+// request context; everything else just calls Record / Begin
 // without taking a dependency on the server package.
 //
 // When called outside an HTTP request (tests, background jobs) all
@@ -86,15 +86,6 @@ func Record(ctx context.Context, name string, dur time.Duration, description str
 	c.add(name, dur, description)
 }
 
-// TimeIt times the execution of fn and records the result. Convenience
-// wrapper for the common case of "time this single call". Equivalent
-// to a Begin/End pair around fn().
-func TimeIt(ctx context.Context, name string, fn func()) {
-	p := Begin(ctx, name)
-	defer p.End()
-	fn()
-}
-
 // Phase is the handle returned by Begin. Call End (or EndWithDesc)
 // when the work being timed has finished. Phases are zero-cost when
 // no collector and no recording span are present, so wrapping
@@ -104,7 +95,6 @@ func TimeIt(ctx context.Context, name string, fn func()) {
 // return early without making the caller's `defer phase.End()` line
 // nil-panic.
 type Phase struct {
-	ctx       context.Context
 	collector *Collector
 	span      trace.Span // child span; set when tracing is active
 	name      string
@@ -125,13 +115,9 @@ type Phase struct {
 //
 //	p := srvtiming.Begin(ctx, "db_get_session")
 //	defer p.End()
-//	row, err := d.db.QueryRowContext(p.Context(), ...)
-//
-// Pass `p.Context()` to downstream calls so any spans they create
-// nest under this phase span.
+//	row, err := d.db.QueryRowContext(ctx, ...)
 func Begin(ctx context.Context, name string) Phase {
 	p := Phase{
-		ctx:       ctx,
 		collector: FromContext(ctx),
 		name:      name,
 		start:     time.Now(),
@@ -141,23 +127,12 @@ func Begin(ctx context.Context, name string) Phase {
 	// with parent-less zero-duration spans for every srvtiming
 	// call that happens outside an HTTP request (tests, boot, ...).
 	if parent := trace.SpanFromContext(ctx); parent.IsRecording() {
-		p.ctx, p.span = parent.TracerProvider().Tracer(tracerName).
+		_, p.span = parent.TracerProvider().Tracer(tracerName).
 			Start(ctx, "phase:"+name, trace.WithAttributes(
 				attribute.String("ocman.phase", name),
 			))
 	}
 	return p
-}
-
-// Context returns the context that should be used for downstream
-// work inside the phase. When a child span was started this carries
-// it, so spans created via the returned context nest correctly.
-// Falls back to the original parent context when tracing is off.
-func (p Phase) Context() context.Context {
-	if p.ctx == nil {
-		return context.Background()
-	}
-	return p.ctx
 }
 
 // End closes the phase. Records the elapsed time on the

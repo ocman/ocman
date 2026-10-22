@@ -33,7 +33,7 @@ func TestReplacementCheckpointPublishIsAtomicAcrossReopen(t *testing.T) {
 		t.Fatalf("batch=%v err=%v", batch, err)
 	}
 	first := SessionInterruption{MessageID: "assistant", ObservedAt: 101, Message: "original cause"}
-	if err := database.CheckpointReplacementCandidate(t.Context(), "opencode", "/root", batch[0], true, first); err != nil {
+	if err := database.CheckpointReplacementBatch(t.Context(), "opencode", "/root", []ReplacementCheckpoint{{Candidate: batch[0], Member: true, Notice: first}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.PublishReplacementReconciliation(t.Context(), "opencode", "/root"); !errors.Is(err, ErrReplacementReconciliationPending) {
@@ -54,7 +54,7 @@ func TestReplacementCheckpointPublishIsAtomicAcrossReopen(t *testing.T) {
 	if err != nil || len(batch) != 1 || batch[0].SessionID != "b" {
 		t.Fatalf("processed read restarted: %v %v", batch, err)
 	}
-	if err := database.CheckpointReplacementCandidate(t.Context(), "opencode", "/root", batch[0], true, SessionInterruption{}); err != nil {
+	if err := database.CheckpointReplacementBatch(t.Context(), "opencode", "/root", []ReplacementCheckpoint{{Candidate: batch[0], Member: true, Notice: SessionInterruption{}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.db.Exec(`CREATE TRIGGER reject_progress_publication BEFORE INSERT ON session_interruption BEGIN SELECT RAISE(ABORT,'publication failed'); END`); err != nil {
@@ -101,7 +101,7 @@ func TestReplacementProgressStorageCancellationAndUnknownRoot(t *testing.T) {
 			return err
 		},
 		func() error {
-			return database.CheckpointReplacementCandidate(ctx, "opencode", "/root", ReplacementCandidate{SessionID: "s", Directory: "/repo"}, true, SessionInterruption{})
+			return database.CheckpointReplacementBatch(ctx, "opencode", "/root", []ReplacementCheckpoint{{Candidate: ReplacementCandidate{SessionID: "s", Directory: "/repo"}, Member: true, Notice: SessionInterruption{}}})
 		},
 		func() error { return database.CheckpointReplacementMembership(ctx, "opencode", "/root", "/repo", true) },
 		func() error {
@@ -200,7 +200,7 @@ func TestReplacementCheckpointFailureRollsBackMembershipAndResult(t *testing.T) 
 	if _, err := database.db.Exec(`CREATE TRIGGER reject_checkpoint BEFORE UPDATE ON session_replacement_candidate BEGIN SELECT RAISE(ABORT,'checkpoint failed'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.CheckpointReplacementCandidate(t.Context(), "opencode", "/root", batch[0], true, SessionInterruption{MessageID: "m"}); err == nil {
+	if err := database.CheckpointReplacementBatch(t.Context(), "opencode", "/root", []ReplacementCheckpoint{{Candidate: batch[0], Member: true, Notice: SessionInterruption{MessageID: "m"}}}); err == nil {
 		t.Fatal("checkpoint failure ignored")
 	}
 	batch, err = database.ReplacementReconciliationBatch(t.Context(), "opencode", "/root", 1)

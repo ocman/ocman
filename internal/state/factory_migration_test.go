@@ -217,13 +217,9 @@ func TestFactoryLocalExecutionAckIsDurableAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	acknowledged, err := db.HasFactoryLocalExecutionAck(context.Background(), "local", "/repo", "factory-plan", "v1")
-	if err != nil || !acknowledged {
-		t.Fatalf("HasFactoryLocalExecutionAck = %v, %v", acknowledged, err)
-	}
-	acknowledged, err = db.HasFactoryLocalExecutionAck(context.Background(), "local", "/repo", "factory-plan", "v2")
-	if err != nil || acknowledged {
-		t.Fatalf("HasFactoryLocalExecutionAck for new profile = %v, %v", acknowledged, err)
+	var otherProfile int
+	if err := db.db.QueryRow(`SELECT count(*) FROM factory_local_execution_ack WHERE profile_version = 'v2'`).Scan(&otherProfile); err != nil || otherProfile != 0 {
+		t.Fatalf("ack for new profile = %d, %v", otherProfile, err)
 	}
 	var count int
 	var actor string
@@ -333,7 +329,7 @@ func TestFactoryGraphMigrationResetsOpaqueGraphIDs(t *testing.T) {
 	}
 }
 
-func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
+func TestFactoryAuditIsDurable(t *testing.T) {
 	raw, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -344,36 +340,6 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
-	session := model.PlanningSession{Platform: "agent", ID: "session-1"}
-	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", session); err != nil {
-		t.Fatal(err)
-	}
-	got, ok, err := db.GetFactoryPlanningSession(ctx, "work-1")
-	if err != nil || !ok || got != session {
-		t.Fatalf("planning session = %#v, %v, %v", got, ok, err)
-	}
-	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", model.PlanningSession{Platform: "agent", ID: "session-2"}); err == nil {
-		t.Fatal("Planning Session mapping was overwritten")
-	}
-	if err := db.DeleteFactoryPlanningSession(ctx, "work-1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := db.GetFactoryPlanningSession(ctx, "work-1"); err != nil || ok {
-		t.Fatalf("deleted Planning Session still present: ok=%v err=%v", ok, err)
-	}
-	if err := db.PutFactoryPlanningSessionCleanup(ctx, "epic-1", "work-1", session); err != nil {
-		t.Fatal(err)
-	}
-	cleanups, err := db.ListFactoryPlanningSessionCleanups(ctx)
-	if err != nil || cleanups["work-1"] != session {
-		t.Fatalf("planning cleanup = %#v, %v", cleanups, err)
-	}
-	if err := db.DeleteFactoryPlanningSessionCleanup(ctx, "work-1"); err != nil {
-		t.Fatal(err)
-	}
-	if cleanups, err := db.ListFactoryPlanningSessionCleanups(ctx); err != nil || len(cleanups) != 0 {
-		t.Fatalf("deleted planning cleanup = %#v, %v", cleanups, err)
-	}
 	if err := db.AppendFactoryAudit(ctx, model.AuditRecord{EpicID: "epic-1", WorkID: "work-1", Actor: "dries", Action: "plan.approved", Details: map[string]int{"revision": 2}, At: time.Unix(10, 0)}); err != nil {
 		t.Fatal(err)
 	}
@@ -383,17 +349,6 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	}
 	if action != "plan.approved" || details != `{"revision":2}` {
 		t.Fatalf("audit = %q, %s", action, details)
-	}
-	record := model.AuditRecord{EpicID: "epic-1", Actor: "dries", Action: "plan.cancelled", Details: map[string]string{"reason": "duplicate"}, At: time.Unix(20, 0)}
-	if err := db.AppendFactoryAuditOnce(ctx, record); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AppendFactoryAuditOnce(ctx, record); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err := raw.QueryRow(`SELECT count(*) FROM factory_audit_record WHERE action = 'plan.cancelled'`).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("deduplicated audit count = %d, err=%v", count, err)
 	}
 }
 

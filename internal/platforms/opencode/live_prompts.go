@@ -16,13 +16,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-// ObservePromptAsked upserts one permission or question observed on the
-// process-wide event stream.
-func (a *Adapter) ObservePromptAsked(port, directory, kind string, prompt platforms.LivePrompt) {
-	a.observePromptAsked(port, 0, directory, kind, prompt)
-}
-
-// ObservePromptAskedFromPort ignores events from a stream invalidated by
+// ObservePromptAskedFromPort upserts one permission or question observed on
+// the process-wide event stream. It ignores events from a stream invalidated by
 // process removal while its final buffered event was still dispatching.
 func (a *Adapter) ObservePromptAskedFromPort(port string, generation uint64, directory, kind string, prompt platforms.LivePrompt) {
 	a.observePromptAsked(port, generation, directory, kind, prompt)

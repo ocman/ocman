@@ -108,36 +108,6 @@ func TestInterruptionBatchRollsBackWhenSecondWriteFails(t *testing.T) {
 	}
 }
 
-func TestPreparedInterruptionIsHiddenUntilStopConfirmation(t *testing.T) {
-	database := openTestStateDB(t)
-	defer database.Close()
-	notice := SessionInterruption{MessageID: "m", ObservedAt: 1, Message: "server stopped"}
-	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", map[string]SessionInterruption{"s": notice}); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := database.SessionInterruptions(t.Context(), "opencode", "s"); err != nil || len(got) != 0 {
-		t.Fatalf("prepared history visible: %v %v", got, err)
-	}
-	ids, err := database.ConfirmSessionInterruptions(t.Context(), "opencode", "/other", nil)
-	if err != nil || len(ids) != 0 {
-		t.Fatal("confirmation crossed server roots")
-	}
-	confirmed := notice
-	confirmed.ObservedAt = 3
-	ids, err = database.ConfirmSessionInterruptions(t.Context(), "opencode", "/root", map[string]SessionInterruption{"s": confirmed})
-	if err != nil || len(ids) != 1 || ids[0] != "s" {
-		t.Fatalf("confirmation=%v %v", ids, err)
-	}
-	got, err := database.SessionInterruptions(t.Context(), "opencode", "s")
-	if err != nil || len(got) != 1 || got[0].ObservedAt != 3 {
-		t.Fatalf("confirmed history=%v %v", got, err)
-	}
-	ids, err = database.ConfirmSessionInterruptions(t.Context(), "opencode", "/root", nil)
-	if err != nil || len(ids) != 0 {
-		t.Fatal("confirmation not idempotent")
-	}
-}
-
 func TestObservedInterruptionCanConfirmAnAbandonedPreparation(t *testing.T) {
 	database := openTestStateDB(t)
 	defer database.Close()
@@ -194,45 +164,6 @@ func TestFailedReplacementPreparationRefreshesCompleteBaseline(t *testing.T) {
 	var attempt int
 	if err := database.db.QueryRow(`SELECT attempt FROM session_replacement`).Scan(&attempt); err != nil || attempt != 2 {
 		t.Fatalf("attempt=%d err=%v", attempt, err)
-	}
-}
-
-func TestFailedConfirmationPreservesStoppedAttempt(t *testing.T) {
-	database := openTestStateDB(t)
-	defer database.Close()
-	baseline := map[string]SessionInterruption{"s": {MessageID: "m", BaselineStatus: "busy"}}
-	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", baseline); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.MarkReplacementStopped(t.Context(), "opencode", "/root"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.db.Exec(`CREATE TRIGGER fail_confirmation BEFORE INSERT ON session_interruption BEGIN SELECT RAISE(ABORT, 'confirmation failed'); END`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.ConfirmSessionInterruptions(t.Context(), "opencode", "/root", baseline); err == nil {
-		t.Fatal("confirmation succeeded")
-	}
-	stopped, err := database.ReplacementStopped(t.Context(), "opencode", "/root")
-	if err != nil || !stopped {
-		t.Fatalf("lost stopped phase: %t %v", stopped, err)
-	}
-	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
-		t.Fatal(err)
-	}
-	got, err := database.PreparedSessionInterruptions(t.Context(), "opencode", "/root")
-	if err != nil || got["s"] != baseline["s"] {
-		t.Fatalf("lost stopped baseline: %v %v", got, err)
-	}
-	if _, err := database.db.Exec(`DROP TRIGGER fail_confirmation`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.ConfirmSessionInterruptions(t.Context(), "opencode", "/root", baseline); err != nil {
-		t.Fatal(err)
-	}
-	stopped, err = database.ReplacementStopped(t.Context(), "opencode", "/root")
-	if err != nil || stopped {
-		t.Fatalf("confirmation did not settle operation: %t %v", stopped, err)
 	}
 }
 

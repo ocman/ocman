@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func TestSnoozeSessionAndWakeBroadcast(t *testing.T) {
@@ -151,7 +152,8 @@ func TestSnoozeActivityDoesNotResurface(t *testing.T) {
 		if err := apply(t.Context(), sessions); err != nil {
 			t.Fatal(err)
 		}
-		archived, err := srv.stateDB.IsSessionArchived(t.Context(), "fake", "s1")
+		archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
+		_, archived := archivedSessions[state.Key{Platform: "fake", SessionID: "s1"}]
 		if err != nil || !archived {
 			t.Fatalf("activity cancelled snooze: %v %v", archived, err)
 		}

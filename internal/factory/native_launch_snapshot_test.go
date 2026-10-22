@@ -38,7 +38,7 @@ func TestDispatchFailsUnusableClaimSnapshot(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = db.Close() })
-			planner := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+			planner := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 			epic := createPouredWorkEpic(t, planner, "Unusable claim")
 			proposal, err := planner.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 			if err != nil {
@@ -73,7 +73,7 @@ func TestClaimSnapshotResolvesAncestryAndCriteriaWithoutLiveReads(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNative(db)
+	svc := NewNativeWithExecution(db, nil, nil, nil)
 	formula, err := svc.SaveFormula(t.Context(), FormulaSaveRequest{ID: "custom/claim", Source: "prompt_implementation = \"Claimed ancestry\"\n" + tracerFormulaSource})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestDispatchLaunchesInputsFromTheClaimedRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	planner := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	planner := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, planner, "Consistent launch")
 	proposal, err := planner.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", Title: "Original title", Description: "Original requirements", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {

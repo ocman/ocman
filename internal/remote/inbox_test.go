@@ -55,11 +55,11 @@ func connectInboxRemote(t *testing.T, id string, store *state.DB) *RemoteConn {
 
 func TestRemoteConnInboxRoundTrip(t *testing.T) {
 	store := openInboxStore(t)
-	first, err := store.CreateInboxItem(t.Context(), "first", "body one")
+	first, err := store.CreateCategorizedInboxItem(t.Context(), "first", "body one", state.InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.CreateInboxItem(t.Context(), "second", "body two")
+	second, err := store.CreateCategorizedInboxItem(t.Context(), "second", "body two", state.InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +154,11 @@ func TestServerInboxRejectsMissingStoreAndMalformedJSON(t *testing.T) {
 func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	localStore := openInboxStore(t)
 	remoteStore := openInboxStore(t)
-	localItem, err := localStore.CreateInboxItem(t.Context(), "local", "local body")
+	localItem, err := localStore.CreateCategorizedInboxItem(t.Context(), "local", "local body", state.InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
-	remoteItem, err := remoteStore.CreateInboxItem(t.Context(), "remote", "remote body")
+	remoteItem, err := remoteStore.CreateCategorizedInboxItem(t.Context(), "remote", "remote body", state.InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	if archived, err := mgr.ArchivedInboxItems(t.Context(), "remote-1"); err != nil || len(archived) != 1 || archived[0].ID != remoteItem.ID {
 		t.Fatalf("remote archive = %+v, %v", archived, err)
 	}
-	read, err := localStore.CreateInboxItem(t.Context(), "read", "body")
+	read, err := localStore.CreateCategorizedInboxItem(t.Context(), "read", "body", state.InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 
 func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 	store := openInboxStore(t)
-	item, err := store.CreateInboxItem(t.Context(), "keep unread", "body")
+	item, err := store.CreateCategorizedInboxItem(t.Context(), "keep unread", "body", state.InboxGeneral)
 	if err != nil {
 		t.Fatal(err)
 	}

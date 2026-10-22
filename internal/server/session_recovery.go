@@ -3,14 +3,12 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/sessionrecovery"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // Runtime hooks resolve these dependencies when called, including after tests
@@ -39,10 +37,6 @@ func (s *Server) recordOpencodeReplacement(ctx context.Context, root, reason str
 	return s.sessionRecovery().RecordOpencodeReplacement(ctx, root, reason)
 }
 
-func (s *Server) beginOpencodeReplacementStop(ctx context.Context, root string) error {
-	return s.sessionRecovery().BeginOpencodeReplacementStop(ctx, root)
-}
-
 func (s *Server) beginOpencodeReplacementStopWithInstance(ctx context.Context, root string, inst *ocruntime.Instance) error {
 	return s.sessionRecovery().BeginOpencodeReplacementStopWithInstance(ctx, root, inst)
 }
@@ -61,12 +55,4 @@ func (s *Server) cancelOpencodeReplacementStop(ctx context.Context, root string)
 
 func (s *Server) enrichInterruptionHistory(ctx context.Context, platform, sessionID string, detail *platforms.SessionDetail) {
 	s.sessionRecovery().EnrichInterruptionHistory(ctx, platform, sessionID, detail)
-}
-
-func (s *Server) replacementMembership(ctx context.Context, root string, sessions []db.Session) (map[string]bool, error) {
-	return s.sessionRecovery().ReplacementMembership(ctx, root, sessions)
-}
-
-func replacementAbortDuringStop(l db.SessionLifecycle, prior state.SessionInterruption, sampled bool, stopAt int64, admissionAt ...int64) bool {
-	return sessionrecovery.ReplacementAbortDuringStop(l, prior, sampled, stopAt, admissionAt...)
 }

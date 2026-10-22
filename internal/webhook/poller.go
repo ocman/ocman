@@ -16,10 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-const (
-	BatchSize    = 50
-	PollInterval = 15 * time.Second
-)
+const PollInterval = 15 * time.Second
 
 type Poller struct {
 	Store    *state.DB

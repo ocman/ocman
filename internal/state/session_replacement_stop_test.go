@@ -55,7 +55,10 @@ func TestStopEvidenceSurvivesRecoveryAndFailedStopRefreshes(t *testing.T) {
 	if err := database.BeginSessionReplacementStop(t.Context(), "opencode", "/root", nil, 300); err == nil {
 		t.Fatal("stopped evidence was resampled")
 	}
-	if _, err := database.ConfirmSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
+	if err := database.InitializeReplacementReconciliation(t.Context(), "opencode", "/root", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.PublishReplacementReconciliation(t.Context(), "opencode", "/root"); err != nil {
 		t.Fatal(err)
 	}
 	at, got, err = database.SessionReplacementStopEvidence(t.Context(), "opencode", "/root")

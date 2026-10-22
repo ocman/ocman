@@ -86,7 +86,7 @@ func TestFactoryAttentionRetiresObsoleteRequestsWhilePaused(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	store := &attentionSnapshotStore{DB: db}
-	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	ep, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{EpicID: "ship", Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true})
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func (s *attentionErrorStore) SyncFactoryActionInbox(context.Context, string, st
 	return nil, s.syncErr
 }
 func TestFactoryAttentionReadErrorsPreserveInbox(t *testing.T) {
-	NewNative(&nativeStoreFake{}).reconcileAttention(t.Context())
+	NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).reconcileAttention(t.Context())
 	for _, tc := range []struct {
 		name                       string
 		listErr, issueErr, syncErr error
@@ -142,7 +142,7 @@ func TestFactoryAttentionReadErrorsPreserveInbox(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &attentionErrorStore{listErr: tc.listErr, issueErr: tc.issueErr, syncErr: tc.syncErr}
-			NewNative(store).reconcileAttention(t.Context())
+			NewNativeWithExecution(store, nil, nil, nil).reconcileAttention(t.Context())
 			if store.syncs != tc.syncs {
 				t.Fatalf("syncs = %d, want %d", store.syncs, tc.syncs)
 			}
@@ -156,7 +156,7 @@ func TestReconcileFactoryAttention(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNative(db, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, nil, nil)
 	var heard []string
 	svc.OnAttention(func(_ context.Context, epicID string, actions []string) {
 		heard = append(heard, epicID+": "+strings.Join(actions, ","))
@@ -190,7 +190,7 @@ func TestFactoryAttentionSurvivesPauseResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNative(db, testProjectResolver{root: "/repo"})
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, nil, nil)
 	ep, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{EpicID: "ship", Goal: "Ship", InitialProject: "/repo", InstantiationID: "pause-resume", AcknowledgeLocalExecution: true})
 	if err != nil {
 		t.Fatal(err)

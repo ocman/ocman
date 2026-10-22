@@ -48,7 +48,7 @@ func TestFactoryServicePoursCreatedBuiltInEpic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := factory.NewNative(db).Pour(context.Background(), epic.ID); err != nil {
+	if _, err := factory.NewNativeWithExecution(db, nil, nil, nil).Pour(context.Background(), epic.ID); err != nil {
 		t.Fatalf("service Pour created built-in Epic: %v", err)
 	}
 }
@@ -58,7 +58,7 @@ func TestFactoryPourNormalizesLegacyBuiltInSourceHash(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	formula := nativeTracerFormulaExternal()
-	legacy, err := factory.NewNative(db).GetFormula(ctx, "ocman/tracer", 1)
+	legacy, err := factory.NewNativeWithExecution(db, nil, nil, nil).GetFormula(ctx, "ocman/tracer", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

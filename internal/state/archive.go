@@ -2,8 +2,6 @@ package state
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -193,23 +191,6 @@ func (d *DB) unarchivedSince(ctx context.Context, kind string, cutoff int64) (ma
 		return nil, fmt.Errorf("reading unarchived entities: %w", err)
 	}
 	return out, nil
-}
-
-// IsSessionArchived reports whether a single session currently carries
-// an archive marker.
-func (d *DB) IsSessionArchived(ctx context.Context, platform, sessionID string) (bool, error) {
-	var one int
-	err := d.db.QueryRowContext(ctx,
-		`SELECT 1 FROM archived_session WHERE platform = ? AND session_id = ?`,
-		platform, sessionID,
-	).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("checking archived session: %w", err)
-	}
-	return true, nil
 }
 
 // ArchivedSessions returns every archived session's time_updated,
