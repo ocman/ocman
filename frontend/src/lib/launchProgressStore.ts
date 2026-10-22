@@ -121,11 +121,3 @@ export const launchProgressReporter: LaunchProgressReporter = {
   succeed: () => useLaunchProgressStore.getState().succeed(),
   fail: (message) => useLaunchProgressStore.getState().fail(message),
 };
-
-export const noopLaunchProgressReporter: LaunchProgressReporter = {
-  begin: () => {},
-  step: () => {},
-  attempt: () => {},
-  succeed: () => {},
-  fail: () => {},
-};

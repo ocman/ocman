@@ -123,34 +123,6 @@
 .gh-preview__state--closed { color: var(--gh-red); }
 .gh-preview__state--commit { color: var(--gh-blue); }
 
-.gh-preview__sep {
-  color: var(--surface2);
-}
-
-.gh-preview__repo {
-  color: var(--text-dim);
-}
-
-.gh-preview__sha {
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 11px;
-  color: var(--overlay0);
-}
-
-.gh-preview__avatar {
-  border-radius: 50%;
-  vertical-align: middle;
-  flex-shrink: 0;
-}
-
-.gh-preview__author {
-  color: var(--text-dim);
-}
-
-.gh-preview__date {
-  color: var(--overlay0);
-}
-
 /* External link chevron */
 .gh-preview__external {
   flex-shrink: 0;

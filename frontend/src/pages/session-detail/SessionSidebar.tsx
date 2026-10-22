@@ -19,7 +19,8 @@ import {
 import type { Session } from '../../lib/api';
 import { cleanTitle, fuzzyMatch } from '../../lib/format';
 import { BackendStats } from '../../components/BackendStats';
-import { SidebarResizer } from '../../components/SidebarResizer';
+import { Resizer } from '../../components/Resizer';
+import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useUiStore } from '../../lib/uiStore';
 import { SessionSidebarListSkeleton } from '../../components/Skeleton';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus, visibleSidebarSessions } from '../../lib/sidebarHelpers';
@@ -130,6 +131,7 @@ export function SessionSidebar({
 }: SessionSidebarProps) {
   trackRender('SessionSidebar');
   const phone = useIsPhone();
+  const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const [searchQuery, setSearchQuery] = useState('');
   const draftGroups = useSidebarDraftGroups(allProjectGroups, searchQuery);
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
@@ -326,7 +328,14 @@ export function SessionSidebar({
 
   return (
     <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
-      <SidebarResizer />
+      <Resizer
+        width={sidebarWidth}
+        setWidth={setSidebarWidth}
+        min={SIDEBAR_MIN_WIDTH}
+        max={SIDEBAR_MAX_WIDTH}
+        defaultWidth={SIDEBAR_DEFAULT_WIDTH}
+        ariaLabel="Resize sidebar"
+      />
       <SidebarHeader
         projects={projects}
         projectFilter={projectFilter}

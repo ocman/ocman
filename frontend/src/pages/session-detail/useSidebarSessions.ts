@@ -8,7 +8,7 @@ import { filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchi
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
-import { useSidebarFilter } from './useSidebarFilter';
+import { useSessionFilterPreference } from '../../lib/useSessionFilterPreference';
 import { SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
 import { useIsPhone } from '../../lib/useIsPhone';
 import { flushSync } from 'react-dom';
@@ -55,8 +55,6 @@ export interface UseSidebarSessionsResult {
   archiveError: string | null;
   showArchivedRecent: boolean;
   setShowArchivedRecent: Dispatch<SetStateAction<boolean>>;
-  /** Ref-mirror of `showArchivedRecent` for the polling closure. */
-  showArchivedRecentRef: MutableRefObject<boolean>;
   /** force is for explicit conversation navigation, never background polling. */
   loadRecentSessions: (signal?: AbortSignal, force?: boolean) => Promise<void>;
   handleArchiveSession: (e: React.MouseEvent, target: Session) => void;
@@ -118,7 +116,7 @@ export function useSidebarSessions({
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [archiveError, setArchiveError] = useState<string | null>(null);
-  const [showArchivedRecent, setShowArchivedRecent] = useSidebarFilter('archived', SESSION_FILTER_DEFAULTS.showArchived);
+  const [showArchivedRecent, setShowArchivedRecent] = useSessionFilterPreference('archived', SESSION_FILTER_DEFAULTS.showArchived);
 
   const archiveTimeoutsRef = useRef<Record<string, number>>({});
   const showArchivedRecentRef = useRef(showArchivedRecent);
@@ -375,7 +373,6 @@ export function useSidebarSessions({
     archiveError,
     showArchivedRecent,
     setShowArchivedRecent,
-    showArchivedRecentRef,
     loadRecentSessions,
     handleArchiveSession,
     handlePinSession,

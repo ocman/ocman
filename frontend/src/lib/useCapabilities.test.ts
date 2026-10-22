@@ -116,7 +116,6 @@ describe('useCapabilities module surface', () => {
     expect(typeof mod.useCapabilities).toBe('function');
     expect(typeof mod.usePlatformCapabilities).toBe('function');
     expect(typeof mod.useMultiPlatform).toBe('function');
-    expect(typeof mod.useWorktreeSessions).toBe('function');
     expect(typeof mod.useOpencodeLaunch).toBe('function');
   });
 });
@@ -248,7 +247,7 @@ describe('usePlatformCapabilities lookup', () => {
   });
 });
 
-describe('useMultiPlatform / useWorktreeSessions', () => {
+describe('useMultiPlatform', () => {
   beforeEach(() => { vi.resetModules(); });
   afterEach(() => { vi.restoreAllMocks(); });
 
@@ -295,20 +294,6 @@ describe('useMultiPlatform / useWorktreeSessions', () => {
     tickHook(() => mod.useCapabilities());
     await flush();
     expect(tickHook(() => mod.useMultiPlatform())).toBe(false);
-  });
-
-  it('useWorktreeSessions reflects the response flag exactly', async () => {
-    const off = await loadFreshModule(makeResponse({ worktreeSessions: false }));
-    off.tickHook(() => off.mod.useCapabilities());
-    await off.flush();
-    expect(off.tickHook(() => off.mod.useWorktreeSessions())).toBe(false);
-
-    vi.resetModules();
-
-    const on = await loadFreshModule(makeResponse({ worktreeSessions: true }));
-    on.tickHook(() => on.mod.useCapabilities());
-    await on.flush();
-    expect(on.tickHook(() => on.mod.useWorktreeSessions())).toBe(true);
   });
 
   // AD-8 / #393: launch affordances gate on the local host's

@@ -49,7 +49,7 @@ export function chromeURL(href: string, base: string): string | null {
  * ponytail: no window.open call sites exist today; route any new one
  * through this before opening.
  */
-export function rewriteExternal(href: string): string | null {
+function rewriteExternal(href: string): string | null {
   if (!isIOS() || !getOpenInChrome()) return null
   return chromeURL(href, location.href)
 }

@@ -81,7 +81,6 @@ export interface UsePromptHandlersResult {
   answeringQuestion: boolean;
   /** Surfaced under the prompt when respondQuestion rejects. */
   questionError: string | null;
-  setQuestionError: Dispatch<SetStateAction<string | null>>;
   /** Submit a reply to the pending permission. Idempotent against
    *  rapid clicks (gated by `answeringPermission`). */
   handlePermissionReply: (reply: 'once' | 'always' | 'reject') => Promise<void>;
@@ -194,7 +193,6 @@ export function usePromptHandlers({
     setPermissionError,
     answeringQuestion,
     questionError,
-    setQuestionError,
     handlePermissionReply,
     handleQuestionReply,
     handleQuestionReject,

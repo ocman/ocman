@@ -121,9 +121,4 @@ export function useSessionShortcuts({
   }), []);
 
   useShortcut(messageJumpShortcut);
-
-  // Expose the synced refs so the page can use them where it
-  // currently passes them to other code (e.g. SSE handler reading
-  // sessionRef / portAvailableRef).
-  return { sessionRef, portAvailableRef };
 }

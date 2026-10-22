@@ -22,7 +22,7 @@ let opening: Promise<IDBDatabase> | undefined;
 // Tests replace the database between cases; work started before that never settles.
 let epoch = 0;
 
-export function openDraftDb(): Promise<IDBDatabase> {
+function openDraftDb(): Promise<IDBDatabase> {
   if (connection) return Promise.resolve(connection);
   if (opening) return opening;
   opening = new Promise<IDBDatabase>((resolve, reject) => {

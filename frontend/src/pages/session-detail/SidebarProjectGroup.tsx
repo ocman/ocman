@@ -1,6 +1,5 @@
 import type { ReactNode, CSSProperties } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import type { GitInfo, Session } from '../../lib/api';
 import { shortPath } from '../../lib/format';
 import { nestSessions } from '../../lib/nestSessions';
@@ -30,7 +29,8 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: group.key ?? (group.directory || '__empty__') });
   const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform), transition,
+    transform: transform ? `translate3d(${transform.x ? Math.round(transform.x) : 0}px, ${transform.y ? Math.round(transform.y) : 0}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})` : undefined,
+    transition,
     opacity: isDragging ? 0.4 : undefined,
   };
   const remoteSession = group.sessions.find((s) => s.remoteId && s.remoteId !== 'local');

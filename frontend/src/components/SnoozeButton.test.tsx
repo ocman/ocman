@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Session } from '../lib/api';
 import { SnoozeButton } from './SnoozeButton';
-import { snoozeDeadline, SNOOZE_OPTIONS } from '../lib/snooze';
+import { snoozeDeadline, snoozeLabel } from '../lib/snooze';
 import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists } from '../lib/sessionsCache';
 import { queryClient } from '../lib/queryClient';
 import { useSnoozePreferences } from '../lib/snoozePreferences';
@@ -72,7 +72,7 @@ describe('SnoozeButton', () => {
   it('offers every preset and snoozes without opening the row', async () => {
     const { user, click } = setup();
     await user.click(screen.getByRole('button', { name: 'Snooze conversation' }));
-    for (const label of SNOOZE_OPTIONS) expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
+    for (const label of DEFAULT_SNOOZE_CHOICES.map(snoozeLabel)) expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: 'In 30 mins' }));
     await waitFor(() => expect(api.snoozeSession).toHaveBeenCalledWith(session.platform, 's1', expect.any(Number)));
     // State is delivered by SSE, not overwritten by the unordered HTTP response.

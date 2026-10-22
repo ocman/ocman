@@ -14,7 +14,6 @@ import {
   summarizeToolArgs,
   parsePatchSections,
   applyPatchToUnifiedFileDiffs,
-  applyPatchToUnifiedDiff,
   shortenPatchPath,
   summarizePatch,
   parseQuestionAnswers,
@@ -364,7 +363,9 @@ describe('summarizePatch', () => {
   });
 });
 
-describe('applyPatchToUnifiedDiff', () => {
+describe('applyPatchToUnifiedFileDiffs', () => {
+  const unifiedDiff = (patch: string) => applyPatchToUnifiedFileDiffs(patch).map((file) => file.patch).join('\n');
+
   it('preserves per-file actions for patch rendering', () => {
     const patch = [
       '*** Begin Patch',
@@ -400,7 +401,7 @@ describe('applyPatchToUnifiedDiff', () => {
       '*** End Patch',
     ].join('\n');
 
-    expect(applyPatchToUnifiedDiff(patch)).toBe([
+    expect(unifiedDiff(patch)).toBe([
       'diff --git a/internal/a.go b/internal/a.go',
       '--- a/internal/a.go',
       '+++ b/internal/a.go',
@@ -419,7 +420,7 @@ describe('applyPatchToUnifiedDiff', () => {
   });
 
   it('returns null when no apply_patch sections are present', () => {
-    expect(applyPatchToUnifiedDiff('no patch here')).toBeNull();
+    expect(applyPatchToUnifiedFileDiffs('no patch here')).toEqual([]);
   });
 
   it('does not add phantom context after the end marker', () => {
@@ -431,7 +432,7 @@ describe('applyPatchToUnifiedDiff', () => {
       '',
     ].join('\n');
 
-    expect(applyPatchToUnifiedDiff(patch)).toBe([
+    expect(unifiedDiff(patch)).toBe([
       'diff --git a/a.txt b/a.txt',
       '--- /dev/null',
       '+++ b/a.txt',
@@ -451,7 +452,7 @@ describe('applyPatchToUnifiedDiff', () => {
       '  *** End Patch',
     ].join('\n');
 
-    expect(applyPatchToUnifiedDiff(patch)).toBe([
+    expect(unifiedDiff(patch)).toBe([
       'diff --git a/internal/a.go b/internal/a.go',
       '--- a/internal/a.go',
       '+++ b/internal/a.go',

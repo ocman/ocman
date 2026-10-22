@@ -11,14 +11,13 @@ import {
   BAR_OPTIONS_SESSIONS,
   BAR_OPTIONS_TOKENS_BY_MODEL,
   BAR_OPTIONS_HOURLY_TOKENS,
-  LINE_OPTIONS_COST,
   LINE_OPTIONS_CACHE,
   LINE_OPTIONS_DATABASE_SIZE,
   DOUGHNUT_OPTIONS,
 } from './chartConfig';
 
 describe('chartConfig', () => {
-  it.each([LINE_OPTIONS_COST, LINE_OPTIONS_CACHE, LINE_OPTIONS_DATABASE_SIZE])('inspects line charts by horizontal position without hitting a point', (options) => {
+  it.each([LINE_OPTIONS_CACHE, LINE_OPTIONS_DATABASE_SIZE])('inspects line charts by horizontal position without hitting a point', (options) => {
     expect(options).toHaveProperty('interaction', { mode: 'nearest', axis: 'x', intersect: false });
   });
 
@@ -34,7 +33,6 @@ describe('chartConfig', () => {
     expect(BAR_OPTIONS_TOKS.scales.x.ticks).toBe(CHART_X_TICKS);
     expect(BAR_OPTIONS_DURATION.scales.x.ticks).toBe(CHART_X_TICKS);
     expect(BAR_OPTIONS_COST_BY_MODEL.scales.x.ticks).toBe(CHART_X_TICKS);
-    expect(LINE_OPTIONS_COST.scales.x.ticks).toBe(CHART_X_TICKS);
     expect(LINE_OPTIONS_CACHE.scales.x.ticks).toBe(CHART_X_TICKS);
   });
 
@@ -107,8 +105,7 @@ describe('chartConfig', () => {
       BAR_OPTIONS_STACKED,
       BAR_OPTIONS_COST_BY_MODEL,
       BAR_OPTIONS_HOURLY_TOKENS,
-      LINE_OPTIONS_COST,
-      LINE_OPTIONS_CACHE,
+          LINE_OPTIONS_CACHE,
       DOUGHNUT_OPTIONS,
     ]) {
       expect(opts.animation).toBe(false);

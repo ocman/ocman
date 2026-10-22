@@ -1,8 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
 import './SessionChangesSidebar.css';
 import './RightPanel.css';
-import { useUiStore, type ChangesSidebarTab } from '../lib/uiStore';
-import { ChangesSidebarResizer } from './ChangesSidebarResizer';
+import {
+  CHANGES_SIDEBAR_DEFAULT_WIDTH,
+  CHANGES_SIDEBAR_MAX_WIDTH,
+  CHANGES_SIDEBAR_MIN_WIDTH,
+  useUiStore,
+  type ChangesSidebarTab,
+} from '../lib/uiStore';
+import { Resizer } from './Resizer';
 import { useUpstreams } from '../lib/useUpstreams';
 import { useProjectTarget } from '../lib/useProjectTarget';
 import type { Session, SessionInfoCommit } from '../lib/api';
@@ -35,7 +41,6 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 interface RightPanelProps {
   visible?: boolean;
@@ -106,6 +111,7 @@ export function RightPanel({
   // User-controlled width for the panel as a whole. The resizer lives
   // on the LEFT edge of the panel and writes back to the store.
   const width = useUiStore((s) => s.changesSidebarWidth);
+  const setWidth = useUiStore((s) => s.setChangesSidebarWidth);
 
   // Detect supported upstreams for the current project. The
   // 'upstream' pane is always available in the strip — when no
@@ -252,7 +258,16 @@ export function RightPanel({
       aria-label="Changes"
       style={{ width }}
     >
-      <ChangesSidebarResizer />
+      {/* Mirrored: the panel is anchored right, so dragging left grows it. */}
+      <Resizer
+        width={width}
+        setWidth={setWidth}
+        min={CHANGES_SIDEBAR_MIN_WIDTH}
+        max={CHANGES_SIDEBAR_MAX_WIDTH}
+        defaultWidth={CHANGES_SIDEBAR_DEFAULT_WIDTH}
+        mirrored
+        ariaLabel="Resize changes sidebar"
+      />
       <div className="oc-changes-sidebar-content">
         {phone && <PhoneSessionTools key={sessionId} session={session} />}
         {pluginPanesResult.isError && (
@@ -327,7 +342,7 @@ function SortableStripIcon({
     isDragging,
   } = useSortable({ id: tab });
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: transform ? `translate3d(${transform.x ? Math.round(transform.x) : 0}px, ${transform.y ? Math.round(transform.y) : 0}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})` : undefined,
     transition,
     // The DragOverlay renders the floating preview at the document
     // root; the in-place icon fades while the drag is active so the

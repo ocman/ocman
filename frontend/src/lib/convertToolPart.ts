@@ -12,7 +12,7 @@ import { SHELL_DESC_META, type ToolApproval } from './threadHelpers';
 import { isImageMime, isSynthesizedTerminal, relativizePath, truncate } from './convertMessages';
 
 export const USER_TOOL_EXECUTION_NOTICE = 'The following tool was executed by the user';
-export const USER_EXECUTED_TOOL_META = '@user-executed-tool';
+const USER_EXECUTED_TOOL_META = '@user-executed-tool';
 
 export interface ToolCallItem {
   type: 'tool-call';
@@ -71,7 +71,7 @@ function toolTimeSuffix(ctx: ToolPartContext, partIdx: number): string {
   return `\n@time:${started},${ended || 0}`;
 }
 
-export function toolStatus(ctx: ToolPartContext, status: unknown, partIdx: number): string {
+function toolStatus(ctx: ToolPartContext, status: unknown, partIdx: number): string {
   if (typeof status === 'string' && status) return status;
   if (isSynthesizedTerminal(ctx.msgPartsRaw)) return 'completed';
   return toolCompletedAt(ctx, partIdx) ? 'completed' : 'running';

@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
+import { defineConfig, type ProxyOptions } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 
@@ -12,29 +12,6 @@ const extraAllowedHosts = (process.env.OCMAN_ALLOWED_HOSTS ?? '')
   .split(',')
   .map((h) => h.trim())
   .filter(Boolean)
-
-// When STRIP_TESTIDS=1, strip data-testid (and related test-only attrs) from
-// JSX source at build time so they don't ship to end users. E2E tests run
-// against `vite preview` without this flag so selectors keep working.
-//
-// The production `make build-frontend` target sets STRIP_TESTIDS=1; local
-// dev, the e2e preview build, and any plain `vite build` keep the attributes.
-//
-// Implementation note: `@vitejs/plugin-react` v6 switched from Babel to Oxc
-// and no longer exposes a `babel.plugins` hook, so we can't use
-// babel-plugin-jsx-remove-data-test-id. Instead this regex-based transform
-// strips test-only attributes before the compiler sees them.
-// Intentional limitations:
-//   - Only literal JSX attributes (data-testid="x" or data-testid={"x"}) are
-//     matched. Attributes added via spread props or computed keys are NOT
-//     stripped here.
-//   - Template strings / comments containing "data-testid=" would be rewritten
-//     too, which is acceptable for this codebase (no such strings exist) and
-//     easy to audit.
-const stripTestIds = process.env.STRIP_TESTIDS === '1'
-
-const TEST_ATTR_RE =
-  /\s(?:data-testid|data-test-id|data-test)\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]*\})/g
 
 // Shared proxy `configure` for /api and /mcp. The `error` handler is the
 // important part: when the Go backend on :8229 is down (e.g. the e2e
@@ -71,18 +48,26 @@ const configureApiProxy: ProxyOptions['configure'] = (proxy) => {
   })
 }
 
-function stripTestIdsPlugin(): Plugin {
-  return {
-    name: 'ocman:strip-test-ids',
-    enforce: 'pre',
-    transform(code, id) {
-      if (!/\.(tsx|jsx)$/.test(id)) return null
-      if (!TEST_ATTR_RE.test(code)) return null
-      // RegExp with /g retains lastIndex across .test() calls; reset it.
-      TEST_ATTR_RE.lastIndex = 0
-      return { code: code.replace(TEST_ATTR_RE, ''), map: null }
-    },
-  }
+// Shared by the dev and preview servers.
+const apiProxy: Record<string, ProxyOptions> = {
+  // Disable response buffering for /api so SSE event streams
+  // (e.g. /api/session/{id}/events) are forwarded to the client
+  // immediately rather than held until the stream closes.
+  //
+  // `ws: true` is required so WebSocket upgrade requests (the live
+  // terminal at /api/term/ws) are proxied to the Go backend.
+  // Without it Vite silently drops the upgrade and the socket hangs
+  // in "Connecting…".
+  '/api': {
+    target: 'http://localhost:8229',
+    ws: true,
+    configure: configureApiProxy,
+  },
+  // MCP server — Streamable HTTP transport (POST + GET/SSE).
+  '/mcp': {
+    target: 'http://localhost:8229',
+    configure: configureApiProxy,
+  },
 }
 
 // When building for the Wails desktop bundle, output into the standard
@@ -97,7 +82,6 @@ const buildOutDir = isWailsBuild ? '../frontend/dist' : '../internal/webui/stati
 
 export default defineConfig({
   plugins: [
-    ...(stripTestIds ? [stripTestIdsPlugin()] : []),
     react(),
     // React Compiler — auto-memoizes components and hooks at build
     // time so we don't have to remember useMemo/useCallback for every
@@ -117,42 +101,13 @@ export default defineConfig({
     port: 8228,
     strictPort: true,
     allowedHosts: extraAllowedHosts,
-     proxy: {
-       // Disable response buffering for /api so SSE event streams
-       // (e.g. /api/session/{id}/stream) are forwarded to the client
-       // immediately rather than held until the stream closes.
-       //
-       // `ws: true` is required so WebSocket upgrade requests (the live
-       // terminal at /api/term/ws) are proxied to the Go backend.
-       // Without it Vite silently drops the upgrade and the socket hangs
-       // in "Connecting…".
-       '/api': {
-         target: 'http://localhost:8229',
-         ws: true,
-         configure: configureApiProxy,
-       },
-        // MCP server — Streamable HTTP transport (POST + GET/SSE).
-        '/mcp': {
-          target: 'http://localhost:8229',
-          configure: configureApiProxy,
-        },
-     },
-   },
-   preview: {
-     host: '127.0.0.1',
-     port: 8228,
-     strictPort: true,
-     allowedHosts: extraAllowedHosts,
-      proxy: {
-        '/api': {
-          target: 'http://localhost:8229',
-          ws: true,
-          configure: configureApiProxy,
-        },
-        '/mcp': {
-          target: 'http://localhost:8229',
-          configure: configureApiProxy,
-        },
-      },
-    },
+    proxy: apiProxy,
+  },
+  preview: {
+    host: '127.0.0.1',
+    port: 8228,
+    strictPort: true,
+    allowedHosts: extraAllowedHosts,
+    proxy: apiProxy,
+  },
 })

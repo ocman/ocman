@@ -6,7 +6,7 @@ import type { WebhookInbox } from './api.types';
 /** How often the Routines page refreshes run state while visible. */
 export const ROUTINES_POLL_MS = 5000;
 
-export function useRoutines() {
+function useRoutines() {
   return useQuery<Routine[]>({
     queryKey: ['routines'],
     queryFn: ({ signal }) => api.routines.list(signal),
@@ -16,7 +16,7 @@ export function useRoutines() {
   });
 }
 
-export function useWebhookInboxes() {
+function useWebhookInboxes() {
   return useQuery<WebhookInbox[]>({
     queryKey: ['webhook-inboxes'],
     queryFn: ({ signal }) => api.webhookInboxes.list(signal),
@@ -26,7 +26,7 @@ export function useWebhookInboxes() {
 }
 
 /** A query or action failure as user-facing text. */
-export function errorText(error: unknown, fallback: string): string {
+function errorText(error: unknown, fallback: string): string {
   if (!error) return '';
   return error instanceof Error ? error.message : fallback;
 }

@@ -476,16 +476,6 @@ export function applyPatchToUnifiedFileDiffs(patchText: string): ApplyPatchFileD
   });
 }
 
-export function applyPatchToUnifiedDiffs(patchText: string): string[] {
-  return applyPatchToUnifiedFileDiffs(patchText).map((file) => file.patch);
-}
-
-export function applyPatchToUnifiedDiff(patchText: string): string | null {
-  const files = applyPatchToUnifiedDiffs(patchText);
-  if (files.length === 0) return null;
-  return files.join('\n');
-}
-
 /**
  * Trim absolute paths down to a project-relative form so they fit on
  * a single tool-card line. Recognised prefixes (`/frontend/`,

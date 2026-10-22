@@ -14,9 +14,6 @@ import { rememberConversationDraft, useNewConversationDrafts } from '../../lib/n
 vi.mock('../../components/BackendStats', () => ({
   BackendStats: () => null,
 }));
-vi.mock('../../components/SidebarResizer', () => ({
-  SidebarResizer: () => null,
-}));
 vi.mock('@dnd-kit/core', async (importOriginal) => {
   const original = await importOriginal<typeof import('@dnd-kit/core')>();
   return { ...original, DndContext: vi.fn((props: React.ComponentProps<typeof original.DndContext>) => <original.DndContext {...props} />) };

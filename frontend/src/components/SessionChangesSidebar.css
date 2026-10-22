@@ -91,44 +91,6 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
   background: var(--bg-active);
 }
 
-.oc-changes-sidebar-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--overlay0);
-  cursor: pointer;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.oc-changes-sidebar-toggle:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-/* (legacy collapsed-summary styles kept below in case other components
-   reference them; the new strip uses .oc-changes-strip instead.) */
-.oc-changes-sidebar-collapsed-summary {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 10px;
-  color: var(--overlay0);
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  margin-top: 4px;
-}
-
-.oc-changes-sidebar-collapsed-summary .oc-changes-add { color: var(--accent2); }
-.oc-changes-sidebar-collapsed-summary .oc-changes-del { color: var(--danger); }
-
 .oc-changes-sidebar-header {
   display: flex;
   align-items: center;
@@ -167,7 +129,6 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
 }
 
 .oc-changes-sidebar-empty,
-.oc-changes-sidebar-loading,
 .oc-changes-sidebar-error,
 .oc-changes-sidebar-unsupported {
   padding: 24px 14px;
@@ -178,72 +139,6 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
 
 .oc-changes-sidebar-error {
   color: var(--danger);
-}
-
-/* Per-file group */
-.oc-change-group {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 8px;
-  overflow: hidden;
-  background: var(--bg-card);
-}
-
-.oc-change-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  user-select: none;
-  background: var(--bg-hover);
-}
-
-.oc-change-group-header:hover {
-  background: var(--bg-active);
-}
-
-.oc-change-group-name {
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 12px;
-  color: var(--accent);
-  word-break: break-all;
-  flex: 1;
-}
-
-.oc-change-group-counts {
-  display: inline-flex;
-  gap: 6px;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.oc-change-group-counts .oc-changes-add { color: var(--accent2); }
-.oc-change-group-counts .oc-changes-del { color: var(--danger); }
-
-.oc-change-group-body {
-  padding: 8px 4px;
-  border-top: 1px solid var(--border);
-  overflow-x: auto;
-}
-
-.oc-change-group-edits-toggle {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 6px 12px;
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--border);
-  color: var(--overlay0);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.oc-change-group-edits-toggle:hover {
-  color: var(--text);
 }
 
 .oc-change-edit {

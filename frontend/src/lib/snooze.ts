@@ -12,8 +12,6 @@ export function snoozeLabel(choice: SnoozeChoice): string {
   return `${choice.kind === 'tomorrow' ? 'Tomorrow' : 'Monday'} at ${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
 }
 
-export const SNOOZE_OPTIONS = DEFAULT_SNOOZE_CHOICES.map(snoozeLabel);
-
 export function snoozeDeadline(option: number | SnoozeChoice, now = new Date()): number {
   const choice = typeof option === 'number' ? DEFAULT_SNOOZE_CHOICES[option] : option;
   if (choice.kind === 'duration') return now.getTime() + choice.minutes * 60_000;

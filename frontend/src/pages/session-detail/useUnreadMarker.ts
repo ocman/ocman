@@ -3,11 +3,6 @@ import type { Message } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { countUnreadMessages, findFirstUnreadMessageId } from './unreadMarker';
 
-export interface UseUnreadMarkerResult {
-  firstUnreadMessageId: string | null;
-  unreadMessageCount: number;
-}
-
 /**
  * Snapshot of the user's last-seen cutoff for the current session,
  * captured once per session id. Later updates (markSessionSeen, SSE)
@@ -18,7 +13,7 @@ export interface UseUnreadMarkerResult {
  * pattern) rather than a ref so it resets on navigation without an
  * effect and render-time reads stay lint-clean.
  */
-export function useUnreadMarker(session: SessionMetadata | null, messages: Message[]): UseUnreadMarkerResult {
+export function useUnreadMarker(session: SessionMetadata | null, messages: Message[]) {
   const [cutoffState, setCutoffState] = useState<{ sessionId: string; cutoff: number } | null>(null);
   if (session && cutoffState?.sessionId !== session.id) {
     setCutoffState({ sessionId: session.id, cutoff: session.seenTimeUpdated || 0 });

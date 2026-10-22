@@ -6,8 +6,8 @@ import { RawDiffView } from './RawDiffView';
 // The diff body for one session-changes file, shown in the fullscreen
 // diff browser. Modern OpenCode parts ship a unified-diff `patch`
 // string per edit (RawDiffView); legacy parts only provide
-// before/after snapshots, rendered with DiffView (client-side
-// simpleDiff). When a file has multiple edits, a disclosure under the
+// before/after snapshots, rendered with DiffView (client-side via
+// @pierre/diffs). When a file has multiple edits, a disclosure under the
 // diff fans them out into per-edit diffs.
 
 interface FileChangeGroupProps {

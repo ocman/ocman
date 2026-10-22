@@ -95,19 +95,6 @@ export const BAR_OPTIONS_STACKED = {
   },
 } as const;
 
-/** Cumulative cost line chart with currency formatting. */
-export const LINE_OPTIONS_COST = {
-  interaction: LINE_INTERACTION,
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
-    y: { beginAtZero: true, ticks: { callback: (v: string | number) => formatCurrency(Number(v), 2) } },
-  },
-} as const;
-
 /**
  * Stacked estimated cost-per-day chart split by model.
  */

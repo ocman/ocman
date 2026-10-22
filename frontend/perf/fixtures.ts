@@ -3,8 +3,8 @@
  * No randomness: two runs (or two branches) see identical data.
  */
 
-export const NOW = 1_780_000_000_000;
-export const DIR = '/home/user/projects/bench';
+const NOW = 1_780_000_000_000;
+const DIR = '/home/user/projects/bench';
 
 export interface Fixture {
   session: Record<string, unknown>;
@@ -12,7 +12,7 @@ export interface Fixture {
   parts: Record<string, unknown>[];
 }
 
-export function sessionRow(i: number, over: Record<string, unknown> = {}) {
+function sessionRow(i: number, over: Record<string, unknown> = {}) {
   return {
     id: `ses_bench${String(i).padStart(4, '0')}`,
     platform: 'opencode',
@@ -77,7 +77,7 @@ function block(i: number): string {
   }
 }
 
-export function markdown(blocks: number, offset = 0): string {
+function markdown(blocks: number, offset = 0): string {
   return Array.from({ length: blocks }, (_, i) => block(i + offset)).join('\n\n');
 }
 

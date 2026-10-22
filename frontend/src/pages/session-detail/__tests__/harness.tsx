@@ -240,7 +240,6 @@ vi.mock('../../../lib/useCapabilities', () => ({
   usePlatformCapabilities: () => mockState.caps,
   useMultiPlatform: () => false,
   useMultiHost: () => false,
-  useWorktreeSessions: () => false,
   useOpencodeLaunch: () => false,
 }));
 

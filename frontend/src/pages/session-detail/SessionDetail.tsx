@@ -387,7 +387,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     archiveError,
     showArchivedRecent,
     setShowArchivedRecent,
-    showArchivedRecentRef,
     handleArchiveSession,
     handlePinSession,
     collapsedProjectSet,
@@ -519,10 +518,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 
   const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
-
-  useEffect(() => {
-    showArchivedRecentRef.current = showArchivedRecent;
-  }, [showArchivedRecent, showArchivedRecentRef]);
 
   // Per-session-change side effects: rehydrate failed sends,
   // refresh whisper, reset model/agent selection.

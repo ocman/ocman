@@ -13,11 +13,6 @@ export interface UseFailedSendRehydrateOptions {
   pending: UsePendingSendResult;
 }
 
-export interface UseFailedSendRehydrateResult {
-  failedSends: FailedSend[];
-  setFailedSends: Dispatch<SetStateAction<FailedSend[]>>;
-}
-
 /**
  * Owns the per-session list of failed sends (persisted in localStorage
  * by `useSessionActions`) and replays the first un-delivered one into
@@ -31,7 +26,7 @@ export function useFailedSendRehydrate({
   messages,
   parts,
   pending,
-}: UseFailedSendRehydrateOptions): UseFailedSendRehydrateResult {
+}: UseFailedSendRehydrateOptions) {
   // Keyed on `id` and reset during render (derived-state pattern) so
   // switching sessions never shows the previous session's failures.
   const [state, setState] = useState<{ id: string | undefined; list: FailedSend[] }>(() => ({

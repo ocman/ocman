@@ -6,13 +6,8 @@ export function sessionWarningKey(sessionId: string, warning: SessionWarning): s
   return `${sessionId}:${warning.kind}:${warning.message}:${(warning.ports ?? []).join(',')}`;
 }
 
-export interface UseSessionWarningsResult {
-  visibleSessionWarnings: SessionWarning[];
-  dismissSessionWarning: (warning: SessionWarning) => void;
-}
-
 /** Session warnings minus the ones the user dismissed this page lifetime. */
-export function useSessionWarnings(session: SessionMetadata | null): UseSessionWarningsResult {
+export function useSessionWarnings(session: SessionMetadata | null) {
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const visibleSessionWarnings = useMemo(() => {
     if (!session) return [];

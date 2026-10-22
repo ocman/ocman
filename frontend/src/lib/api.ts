@@ -29,7 +29,7 @@ export interface SessionConcurrency {
   series: { timestamp: number; sessions: number }[];
 }
 export { APIError, AuthError, BackendUnavailableError, fetchJSON, postJSON,
-  registerAuthErrorHandler, raiseAuthError, raiseForUnauthorized } from './api.requests';
+  registerAuthErrorHandler, raiseAuthError } from './api.requests';
 
 export function sessionExportMarkdownUrl(id: string): string {
   return `/api/session/${encodeURIComponent(id)}/export.md`;

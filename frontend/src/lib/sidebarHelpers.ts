@@ -7,7 +7,7 @@ export function compareSidebarActivity(a: Pick<Session, 'timeUpdated'>, b: Pick<
 }
 
 /** Exact attention time. Streaming and read-state changes never advance it. */
-export function sidebarAttentionTime(s: Session): number {
+function sidebarAttentionTime(s: Session): number {
   return Math.max(s.lastUserPromptAt ?? 0, s.lastHaltAt ?? 0, s.lastTurnCompletedAt ?? 0) || s.timeCreated || 0;
 }
 

@@ -18,12 +18,6 @@ export interface UseSessionCreationOptions {
   navigate: (path: string) => void;
 }
 
-export interface UseSessionCreationResult {
-  handleNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string, title?: string) => void;
-  handleNewSession: (title?: string) => Promise<void>;
-  handleCompact: () => Promise<void>;
-}
-
 /**
  * Resolves the session's main checkout from the owner's worktree list, so
  * worktrees outside ocman's `.worktrees/<repo>/<slug>` layout are covered.
@@ -51,7 +45,7 @@ export function useSessionCreation({
   activeAgent,
   setSelectedAgent,
   navigate,
-}: UseSessionCreationOptions): UseSessionCreationResult {
+}: UseSessionCreationOptions) {
   // A new conversation is a route, not a session: nothing is created until
   // its first prompt, so the machine and target can still change freely.
   const handleNewSessionInDirectory = useCallback((directory: string, remoteId?: string, platform?: string, title?: string) => {

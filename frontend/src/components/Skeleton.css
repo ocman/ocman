@@ -33,12 +33,6 @@
   height: 16px;
 }
 
-/* A full table-row-height block */
-.oc-skeleton-row {
-  height: 38px;
-  border-radius: 0;
-}
-
 /* Small badge / pill */
 .oc-skeleton-badge {
   height: 18px;

@@ -81,13 +81,6 @@
   margin-top: 4px;
 }
 
-/* Interactive option buttons */
-.oc-question-options-interactive {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin-bottom: 12px;
-}
 .oc-question-opt-btn {
   display: flex;
   align-items: flex-start;
@@ -184,13 +177,6 @@
   color: var(--text-dim);
 }
 
-/* Submit / Dismiss actions */
-.oc-question-actions {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  margin-top: 4px;
-}
 .oc-question-submit-btn,
 .oc-question-dismiss-btn {
   background: transparent;

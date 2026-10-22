@@ -27,7 +27,7 @@ export const TAB_ICONS: Record<string, string> = {
 // Default strip order, used as a fallback when the persisted order
 // is missing entries (e.g. a new tab was added in a later ocman
 // version). The user's drag-reordered list lives in the ui store.
-export const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
+const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
   'info',
   'session',
   'working-tree',

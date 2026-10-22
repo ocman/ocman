@@ -8,46 +8,6 @@
 
 /* --- Single mode tab switcher --- */
 
-.oc-right-panel-tabs {
-  /* Override the existing .oc-changes-sidebar-header alignment so
-   * the tab buttons hug the left and the actions hug the right. */
-  justify-content: space-between;
-}
-
-.oc-right-panel-tab-buttons {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.oc-right-panel-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: transparent;
-  border: 0;
-  border-radius: 4px;
-  color: var(--overlay0);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.oc-right-panel-tab:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.oc-right-panel-tab.active {
-  background: var(--bg-active);
-  color: var(--accent);
-}
-
-.oc-right-panel-actions {
-  display: inline-flex;
-  gap: 2px;
-}
-
 /* --- Split mode --- */
 
 /* The outer aside stays a row (content | strip); the column-flow for
