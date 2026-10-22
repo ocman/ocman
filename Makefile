@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -264,32 +264,6 @@ installer-mac: ## Build macOS DMG installer (requires create-dmg)
 	fi
 	@echo ""
 	@echo "  Installer: dist/ocman.dmg"
-
-# ---- Linux AppImage / tar.gz ----------------------------------------------
-#
-# The Wails Linux build produces a standalone binary (no bundled WebKit —
-# the system GTK WebKitGTK is used). We package it as both:
-#   dist/ocman-linux-amd64.tar.gz   — plain archive, no runtime deps listed
-#   (AppImage support requires appimagetool; see the comment below)
-#
-# Usage:
-#   make installer-linux
-
-installer-linux: ## Build Linux binary archive (cross-compiled from any host)
-	@mkdir -p dist
-	# Frontend must land in internal/webui/static so go:embed picks it up.
-	# See the build-desktop comment for why WAILS_BUILD=1 (frontend/dist) is
-	# wrong for this proxy-based architecture.
-	cd frontend && pnpm install --frozen-lockfile && pnpm build
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
-		go build -ldflags="-s -w" -tags desktop,exclude_graphdriver_devicemapper \
-		-o dist/ocman-linux-amd64 .
-	tar -czf dist/ocman-linux-amd64.tar.gz -C dist ocman-linux-amd64
-	@echo ""
-	@echo "  Archive: dist/ocman-linux-amd64.tar.gz"
-	@echo ""
-	@echo "  Note: --gui on Linux requires libwebkit2gtk-4.0 and libgtk-3."
-	@echo "  Without them, run without --gui for the browser-based UI."
 
 run: build
 	./ocman -addr 127.0.0.1:8228

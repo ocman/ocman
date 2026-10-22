@@ -65,7 +65,6 @@ PATTERNS=(
 	"tmux\\.ListWindows\\("
 	"tmux\\.SwitchClient\\("
 	"tmux\\.LaunchOpencode[A-Za-z]*\\("
-	"tmux\\.RestartOpencode[A-Za-z]*\\("
 	# internal/term — in-app terminal windows and PTYs
 	"term\\.AttachLocalPTY\\("
 	"term\\.CreateWindow\\("
