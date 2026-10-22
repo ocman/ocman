@@ -16,7 +16,7 @@ type AgentRunHour struct {
 // GetAgentRunHours unions completed assistant intervals per session, including
 // tools, then subtracts the union of human waits. Subagents remain separate.
 func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir string, waits map[string][]RunInterval) ([]AgentRunHour, error) {
-	source := d.analytics(ctx)
+	source := d.reads()
 	query := d.runIntervalsQuery()
 	args := []any{since, until}
 	if clause, values := directoryWhere(dir); clause != "" {
@@ -42,13 +42,7 @@ func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir strin
 	if err != nil {
 		return nil, err
 	}
-	// Read only compact question timings from the same source as the message
-	// scan. Before the mirror is warm, the equivalent source projection works.
-	questionTable, questionTime, questionTool := "part", "json_extract(p.data, '$.state.time')", "json_extract(p.data, '$.tool')"
-	if source != d.reads() {
-		questionTable, questionTime, questionTool = "tool_timing", "p.time", "p.tool"
-	}
-	questionQuery := d.questionIntervalsQuery(questionTable, questionTime, questionTool)
+	questionQuery := d.questionIntervalsQuery()
 	if clause, _ := directoryWhere(dir); clause != "" {
 		questionQuery += " AND " + clause
 	}

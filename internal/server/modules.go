@@ -44,9 +44,6 @@ func (s *Server) modules() []module.Module {
 	if s.historyIngest != nil {
 		mods = append(mods, s.historyIngest)
 	}
-	if s.sessionCatalogue != nil {
-		mods = append(mods, s.sessionCatalogue)
-	}
 	if m := s.routinesModule(); m != nil {
 		mods = append(mods, m)
 	}

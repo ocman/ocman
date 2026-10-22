@@ -54,12 +54,8 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 		return nil, err
 	}
 	var out []notifications.Candidate
-	publicIDs, err := s.notificationPublicIDs(ctx, entries)
-	if err != nil {
-		return nil, err
-	}
 	for _, entry := range entries {
-		id := publicIDs[state.Key{Platform: entry.platform, SessionID: entry.ID}]
+		id := entry.ID
 		if id == "" {
 			continue
 		}

@@ -50,7 +50,7 @@ describe('review 414 recovery', () => {
     const recover = vi.fn(async () => true);
     const stream = createConversationStream({ sessionId: 's', dispatch: vi.fn(), recover, reconcile: vi.fn(), dirty: vi.fn() });
     let listener!: (message: MessageEvent) => void;
-    stream.attach({ addEventListener: (_: string, fn: typeof listener) => { listener = fn; } } as unknown as EventSource, false);
+    stream.attach({ addEventListener: (_: string, fn: typeof listener) => { listener = fn; } } as unknown as EventSource);
     listener({ data: JSON.stringify(oceEnvelope('s', hello(false))) } as MessageEvent);
     expect(recover).toHaveBeenCalledOnce();
     stream.dispose();

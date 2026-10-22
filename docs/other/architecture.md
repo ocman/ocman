@@ -134,11 +134,10 @@ flowchart LR
   unsupported schema versions fail closed and never reset stored history.
   Database-size analytics include this store as a separate conversation-history
   series, including while its initial import is pending.
-- **analytics-cache.db.** A disposable compatibility mirror retained during
-  the cutover. Application analytics and background token/cost metrics do not
-  read it or fall back to OpenCode's database. Both use validated statev2
-  snapshots. Database-size sampling measures Ocman's state and conversation
-  stores, not foreign platform files.
+- Application analytics and background token/cost metrics use validated
+  statev2 snapshots. Startup no longer creates or syncs `analytics-cache.db`;
+  existing cache files are unused and left untouched. Database-size sampling
+  measures Ocman's state and conversation stores, not foreign platform files.
 - **Claude Code** (`-platforms claudecode`). Ocman reads the transcripts under
   `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`) into the disposable
   `claude-index.db` beside state.db and drives sessions it starts or adopts by
@@ -348,9 +347,9 @@ flowchart LR
   compares each session's stored accounting with totals recomputed from the
   snapshot it just read; a `usage-mismatch` counter means a normalization or
   column mapping bug.
-- OpenCode's explicit `CompareHistory` diagnostic uses `internal/historyparity`
-  to compare native daily and model totals with statev2. It is integration-owned
-  and is not registered as an application worker or analytics source.
+- Integration tests use `internal/testutil/historyparity` to compare native
+  OpenCode daily and model totals with statev2. Production adapters do not
+  expose the comparison or import this test helper.
 - Project totals aggregate stored sessions across local platform instances and
   exclude helpers only from visible session counts. Plugin directory grants
   require ingested project-root evidence; conflicting roots fail closed. Local
@@ -533,10 +532,11 @@ flowchart LR
     Remote[Remote creation intent + initial rules] --> Sessions[sessionsvc<br/>owning machine]
     Sessions -->|owner/request-key lease through<br/>configuration, linkage + publication| Catalogue[sessioncatalog]
     Sessions -->|native execution| Platform[platforms.Integration]
-    Browser[Browser + MCP session reads] --> View[sessionview wire contracts + identity resolution]
-    View -->|public IDs; opaque payloads unchanged| Catalogue
-    History[(state_conv.db<br/>metadata + durable outbox)] --> Indexer[sessioncatalog module<br/>startup inventory + changes]
-    Indexer --> Catalogue
+    Browser[Browser + MCP session reads] --> Adapter[owned canonical adapter]
+    Adapter -->|persisted reads| History[(state_conv.db)]
+    Adapter -->|identity + native execution binding| Catalogue
+    History --> Migration[Startup legacy metadata migration]
+    Migration --> Catalogue
     Catalogue --> State[(state.db<br/>session_catalog)]
     Resolve[Resolve within explicit owner] --> Catalogue
 ```
@@ -567,36 +567,30 @@ flowchart LR
   them again on replay. Remote disposal uses a dedicated RPC through sessionsvc;
   uncertain creation or cleanup retains the workspace for reconciliation.
 - Forks reserve the child and its Ocman parent link before native history copy.
-  The catalogue module backfills retained metadata and follows statev2's durable
-  change stream, without platform content reads or historical message-ID changes.
-  A startup sequence fence catches concurrent writes, and late parents repair
-  existing child links. Pin/seen/archive and other native-keyed state remain
-  intact. Native-only provenance is attributed only to the selected physical
-  source, never guessed across inactive sources with colliding native IDs.
+  Startup migration backfills legacy metadata before serving; canonical ingestion
+  adopts later metadata directly. There is no parallel native-ID HTTP/MCP
+  translation mode or background legacy catalogue indexer. Adapter event
+  projection still preserves opaque payloads. Migration preserves pin/seen/archive
+  associations, and attributes native-only provenance only to the selected
+  physical source, never inactive sources with colliding native IDs.
 - Explicit purge tombstones clear catalogue display metadata without recycling
   identities, including after downtime. Source deletion alone does not delete
   an identity. Pending native announcements use bounded metadata retries and
   overflow to a fenced inventory; healthy source content is never polled.
-- Public projection batches owner lookups, mirrors remote IDs without allocating
-  hub-specific identities, and preserves stream cursors and native message/part
-  IDs. Public paths and structured request references translate before native
-  handlers touch existing state. Legacy browser links canonicalize before
-  opening streams; unknown IDs never fall back to native probing. Inactive
-  source bindings return unavailable instead of targeting a new installation.
+- Canonical adapters project native events and preserve opaque payloads, stream
+  cursors and message/part IDs. Core handlers and feature stores use canonical
+  session IDs directly. Legacy browser links canonicalize through the identity
+  gateway before opening streams; unknown IDs never fall back to native probing.
+  Inactive source bindings return unavailable instead of targeting a new installation.
 - Catalogue v1 is frozen. The append-only v2 upgrade preserves development
   databases, including both intermediate native-parent column spellings.
-- Explicit response contracts cover notifications, routine/Factory references,
-  Inbox, artifacts, webhook dispatches, sharing and launch results. MCP tools
-  apply the same owner/source validation to structured arguments and results.
-  REST request contracts declare fields by route and method, without inspecting
-  Go fields. REST bodies, query parameters and MCP arguments share the owner
-  policy in `internal/server/session_reference.go`.
-  Cold/reconnected hello overlays use the same projection contracts. Task reads
-  retain canonical references until owner selection and annotate each result's
-  platform rather than resolving native IDs through a cross-owner cache.
-  Push and plugin notice links use owned destinations while retaining native
-  durable deduplication keys. Plugin `session.v1` remains a native execution
-  protocol so existing run/completion correlation does not change mid-flight.
+- Notifications, routine/Factory references, Inbox, artifacts, webhook
+  dispatches, sharing and launch results carry canonical session references
+  without transport-level JSON rewriting. Task reads retain those references
+  until owner selection and annotate each result's platform, never resolving
+  native IDs through a cross-owner cache. Push and plugin notice links use the
+  same canonical destinations as their durable keys. Startup migrations retain
+  existing notification and plugin correlation records.
 - Analytics resolves session identities using the physical statev2 instance
   before grouping request/session logs. Titles and directories come from the
   same validated read snapshot, not a native lookup using a public ID.
@@ -854,7 +848,7 @@ flowchart LR
   are retained. Reads return at most 200 records, active work first. Remote task
   queries fail closed; hub aggregation is not implemented.
 - Only history ingestion currently uses the manager. Other candidates are
-  analytics mirror rebuilds, project inventory refreshes, database cleanup and
+  project inventory refreshes, database cleanup and
   restore, artifact/share publishing, auto-archive and attachment cleanup, and
   plugin discovery or reconciliation. These can report rows, checkouts, named
   steps, files/bytes, items or deliveries, respectively. Integration must preserve
@@ -1005,8 +999,8 @@ flowchart TD
   after the HTTP and MCP listeners stop. Analytics (`internal/analytics`) owns
   the Stats/Usage endpoints, UI-usage recording, provider usage and its cost ledger, and the
   database-size sampler, stats gauges and LLM-turn scanner, all joined in its
-  `Run`. It reads OpenCode only through `internal/db`; the analytics mirror,
-  session snapshot, client-activity demand leases, `/api/system/stats` and the
+  `Run`. Accounting reads use statev2 projections through `internal/db`.
+  The session snapshot, client-activity demand leases, `/api/system/stats` and the
   server's own OTel instruments stay in core.
 - **Platform settings** (`internal/platformsettings`). Settings → Platforms saves
   the local startup selection in state.db. Application startup reads it before

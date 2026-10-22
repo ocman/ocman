@@ -19,22 +19,24 @@ func TestRemoteHelloPromptReplyKeepsOwnerAfterReconnect(t *testing.T) {
 		return nil
 	}
 	ownedID := "ocm_" + uuid.NewString()
-	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{id: "r-remote:test"}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", NativeID: "native", Origin: "external", CreationState: "ready"}}
+	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{id: "r-remote:test"}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}}
 	replies := 0
 	remote.respondPermissionFn = func(req platforms.RespondPermissionRequest) error {
-		if req.SessionID != "native" || req.PermissionID != "permission" {
-			t.Fatalf("wrong native prompt reply: %+v", req)
+		if req.SessionID != ownedID || req.PermissionID != "permission" {
+			t.Fatalf("wrong canonical prompt reply: %+v", req)
 		}
 		replies++
 		return nil
 	}
 	s.registry.Register(remote)
 	s.registry.RememberSessions("test", []db.Session{{ID: "native"}})
+	s.registry.RememberSessions("r-remote:test", []db.Session{{ID: ownedID}})
 	for range 2 {
 		w := httptest.NewRecorder()
 		s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = fmt.Fprint(w, `event: oce`+"\n"+`data: {"platform":"r-remote:test","sessionId":"native","event":{"type":"stream.hello","overlay":{"prompts":[{"id":"permission","sessionId":"native"}],"inflight":{"messages":[{"id":"message","sessionId":"native"}],"parts":[{"id":"part","messageId":"message","sessionId":"native","data":{"text":"native"}}]}}}}`+"\n\n")
+			frame := `event: oce` + "\n" + `data: {"platform":"r-remote:test","sessionId":"SESSION","event":{"type":"stream.hello","overlay":{"prompts":[{"id":"permission","sessionId":"SESSION"}],"inflight":{"messages":[{"id":"message","sessionId":"SESSION"}],"parts":[{"id":"part","messageId":"message","sessionId":"SESSION","data":{"text":"native"}}]}}}}` + "\n\n"
+			_, _ = fmt.Fprint(w, strings.ReplaceAll(frame, "SESSION", ownedID))
 		})(w, httptest.NewRequest(http.MethodGet, "/api/session/native/stream?platform=r-remote:test", nil))
 		if strings.Contains(w.Body.String(), `"sessionId":"native"`) || !strings.Contains(w.Body.String(), `"id":"part"`) || !strings.Contains(w.Body.String(), `"sessionId":"`+ownedID+`"`) {
 			t.Fatalf("native hello overlay: %s", w.Body.String())

@@ -33,7 +33,7 @@ func (d *DB) GetSessionConcurrency(ctx context.Context, since, until int64, dir 
 		args = append(args, values...)
 	}
 	query += ` ORDER BY m.session_id, 2, 3`
-	rows, err := d.analytics(ctx).QueryContext(ctx, query, args...)
+	rows, err := d.reads().QueryContext(ctx, query, args...)
 	if err != nil {
 		return result, err
 	}

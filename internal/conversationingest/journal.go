@@ -13,22 +13,14 @@ import (
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
-// JournalTranslator converts one segment's ordered records into incremental
-// session updates. It applies payloads directly and may read only what a
-// record lacks (for example missing session metadata) from its own source.
-// An error is transient: the records are retried, never skipped.
-type JournalTranslator interface {
-	Translate(ctx context.Context, instanceID string, records []historyjournal.Record) ([]statev2.StreamBatch, error)
-}
-
-// journalConsumer applies hook-written journal segments. Each segment's offset
-// commits in the same transaction as the history it produced, so a restart
-// resumes exactly where the last commit stopped.
+// journalConsumer refreshes sessions named by hook records before advancing
+// each segment's offset. A crash between refresh and checkpoint safely repeats
+// the refresh; errors leave the records available for retry.
 type journalConsumer struct {
 	store      *statev2.DB
 	instanceID string
 	dir        string
-	translator JournalTranslator
+	refresh    func(context.Context, []historyjournal.Record) error
 	batchSize  int
 	pruneIdle  time.Duration
 	read       func(context.Context, string, int64, int) ([]historyjournal.Entry, error)
@@ -92,13 +84,12 @@ func (c *journalConsumer) drainSegment(ctx context.Context, segment string) (int
 		if end == offset {
 			return applied, nil
 		}
-		var batches []statev2.StreamBatch
 		if len(records) > 0 {
-			if batches, err = c.translator.Translate(ctx, c.instanceID, records); err != nil {
+			if err = c.refresh(ctx, records); err != nil {
 				return applied, fmt.Errorf("translating %s: %w", segment, err)
 			}
 		}
-		if _, err := c.store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: c.instanceID, Batches: batches,
+		if _, err := c.store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: c.instanceID,
 			Checkpoint: statev2.CheckpointUpdate{Stream: journalStream(segment), ExpectedCursor: stored, Cursor: strconv.FormatInt(end, 10)}}); err != nil {
 			return applied, err
 		}

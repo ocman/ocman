@@ -10,7 +10,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/historyjournal"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
 const (
@@ -36,7 +35,7 @@ func journalDir(reader platforms.HistoryReader) string {
 // trigger reads, each refreshing its session; there is no periodic polling.
 func (w *sourceWorker) runJournal(ctx context.Context, dir string) {
 	w.journaled = true
-	consumer := &journalConsumer{store: w.module.deps.Store, dir: dir, translator: journalRefresh{w}, pruneIdle: journalIdle,
+	consumer := &journalConsumer{store: w.module.deps.Store, dir: dir, refresh: w.refreshJournal, pruneIdle: journalIdle,
 		onGap: func(string) { w.module.Notify(w.source.AdapterID, "") }}
 	if reader, ok := w.source.Reader.(platforms.HistoryJournalReader); ok {
 		consumer.read = reader.HistoryJournalEntries
@@ -137,18 +136,15 @@ func journalGrew(dir string, sizes map[string]int64) (bool, error) {
 	return grew, nil
 }
 
-// journalRefresh rereads the sessions named by hook records. The records only
-// point at transcripts, Claude's own durable log; the refresh also compares
-// version hints, so changed subagent transcripts are read with their parent.
-type journalRefresh struct{ w *sourceWorker }
-
 // runPass owns translation receipts. Wrapping for segment context must not
 // create a second signature that alternates with it on every retry.
 type journalTranslationError struct{ error }
 
 func (e *journalTranslationError) Unwrap() error { return e.error }
 
-func (r journalRefresh) Translate(ctx context.Context, _ string, records []historyjournal.Record) ([]statev2.StreamBatch, error) {
+// refreshJournal rereads the sessions named by hooks, including changed
+// subagent transcripts. The source transcript remains the durable content.
+func (w *sourceWorker) refreshJournal(ctx context.Context, records []historyjournal.Record) error {
 	dirty := map[string]bool{}
 	for _, rec := range records {
 		dirty[rec.Session] = rec.Session == ""
@@ -156,12 +152,12 @@ func (r journalRefresh) Translate(ctx context.Context, _ string, records []histo
 			dirty[""] = true
 		}
 	}
-	err := r.w.runJournalPass(ctx, dirty)
-	if err == nil && r.w.last.Counters["deferred"] > 0 {
+	err := w.runJournalPass(ctx, dirty)
+	if err == nil && w.last.Counters["deferred"] > 0 {
 		err = errDeferred
 	}
 	if err != nil {
-		return nil, &journalTranslationError{err}
+		return &journalTranslationError{err}
 	}
-	return nil, nil
+	return nil
 }

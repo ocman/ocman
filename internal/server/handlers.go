@@ -73,9 +73,6 @@ func (s *Server) resolvePlatformForSession(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "session not found", http.StatusNotFound)
 		return nil
 	}
-	if view, ok := w.(*sessionViewWriter); ok {
-		view.projector.Platform = string(p.ID())
-	}
 	return p
 }
 
@@ -278,7 +275,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]interface{}{
 		"platforms":        out,
-		"ownedSessionIds":  s.sessionCatalogue != nil,
+		"ownedSessionIds":  s.registry.CanonicalSessionIDs(),
 		"hosts":            hosts,
 		"worktreeSessions": gitmod.SessionsAvailable(s.registry),
 		"mcpServer": map[string]interface{}{

@@ -88,9 +88,6 @@ func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 				}
 			}
 			w.Header().Set("X-Ocman-Session-ID", info.ID)
-			if view, ok := w.(*sessionViewWriter); ok {
-				view.projector.Platform = info.Platform
-			}
 			next(w, copy)
 		})(w, r)
 	}

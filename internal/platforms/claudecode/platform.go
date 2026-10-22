@@ -102,11 +102,6 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 		rules.EscapeInheritedApprovals(approvals)
 	}
 	adapter.SetRules(rules)
-	if database != nil {
-		// Claude rows join analytics-cache.db (AD-12): OpenCode's mirror,
-		// or the analytics store of an ocman without OpenCode.
-		database.AddAnalyticsSource(claudeprovider.AnalyticsSource(opts.IndexPath))
-	}
 	p := &claudePlatform{Adapter: adapter, cli: opts.CLI, configDir: opts.ConfigDir, marketplace: marketplace, hooks: statusAddr != "", journal: journal, launchPath: opts.LaunchPath, slots: opts.SlotDir}
 	p.history = history
 	runtime := ocruntime.NewBackendRuntime(claudeprovider.PlatformID, exe, filepath.Join(dataDir, "p"))

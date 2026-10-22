@@ -87,8 +87,6 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     let stopWatch = () => {};
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
-    let hasConnectedOnce = false;
-    let reconnectingAfterError = false;
     let recoveryEvents: OceEnvelope[] | null = null;
     let upstreamFailed = false;
     const hasContent = () => viewRef.current.sessionId === sessionId && viewRef.current.session !== null;
@@ -178,7 +176,6 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       evtSource = new EventSource(conversationStreamUrl(sessionId, routedPlatform, events.cursor()));
       stopWatch = watchKeepalive(evtSource, () => {
         // Even a stream that never opened may have missed events.
-        reconnectingAfterError = true;
         retryNowRef.current();
       });
       evtSource.onopen = () => {
@@ -188,16 +185,13 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         setSseReconnecting(upstreamFailed);
         setSseReconnectAttempt(0);
         setSseNextRetryAt(null);
-        hasConnectedOnce = true;
-        reconnectingAfterError = false;
       };
       // Reconciling waits for the hello: a resumed stream needs no refetch.
-      events.attach(evtSource, hasConnectedOnce || reconnectingAfterError);
+      events.attach(evtSource);
       evtSource.onerror = () => {
         if (cancelled) return;
         events.flush();
         stopWatch();
-        reconnectingAfterError = true;
         evtSource?.close();
         evtSource = null;
         const delay = reconnectDelay(attempt);

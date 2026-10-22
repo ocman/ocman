@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -16,25 +17,35 @@ import (
 // recordTranslator turns each record into one message for its session. A
 // record of type "fail" makes translation fail transiently.
 type recordTranslator struct {
+	store  *statev2.DB
 	calls  int
 	failed bool
 }
 
-func (r *recordTranslator) Translate(_ context.Context, instanceID string, records []historyjournal.Record) ([]statev2.StreamBatch, error) {
+func (r *recordTranslator) refresh(ctx context.Context, records []historyjournal.Record) error {
 	r.calls++
-	var out []statev2.StreamBatch
 	for _, rec := range records {
 		if rec.Type == "fail" && !r.failed {
 			r.failed = true
-			return nil, errors.New("source temporarily unavailable")
+			return errors.New("source temporarily unavailable")
 		}
-		key := statev2.Key{InstanceID: instanceID, SessionID: rec.Session}
-		out = append(out, statev2.StreamBatch{
-			Session:  &statev2.Session{Key: key, Title: rec.Session, Extensions: json.RawMessage(`{}`), ReadFormat: statev2.ConversationReadFormat},
-			Messages: []statev2.Message{{ID: rec.Type, Role: "assistant", ConversationVisible: true, Extensions: json.RawMessage(`{"role":"assistant"}`)}},
-		})
+		key := statev2.Key{InstanceID: "source", SessionID: rec.Session}
+		stream := "test-refresh/" + rec.Session
+		previous, err := r.store.Checkpoint(ctx, key.InstanceID, stream)
+		if err != nil {
+			return err
+		}
+		cursor, _ := strconv.Atoi(previous)
+		_, err = r.store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: key.InstanceID,
+			Checkpoint: statev2.CheckpointUpdate{Stream: stream, ExpectedCursor: previous, Cursor: strconv.Itoa(cursor + 1)}, Batches: []statev2.StreamBatch{{
+				Session:  &statev2.Session{Key: key, Title: rec.Session, Extensions: json.RawMessage(`{}`), ReadFormat: statev2.ConversationReadFormat},
+				Messages: []statev2.Message{{ID: rec.Type, Role: "assistant", ConversationVisible: true, Extensions: json.RawMessage(`{"role":"assistant"}`)}},
+			}}})
+		if err != nil {
+			return err
+		}
 	}
-	return out, nil
+	return nil
 }
 
 func journalFixture(t *testing.T) (*journalConsumer, *statev2.DB, *recordTranslator, string, *[]string) {
@@ -49,9 +60,9 @@ func journalFixture(t *testing.T) (*journalConsumer, *statev2.DB, *recordTransla
 		t.Fatal(err)
 	}
 	dir := filepath.Join(t.TempDir(), "journal")
-	translator := &recordTranslator{}
+	translator := &recordTranslator{store: store}
 	gaps := &[]string{}
-	c := &journalConsumer{store: store, instanceID: instance.ID, dir: dir, translator: translator, batchSize: 2,
+	c := &journalConsumer{store: store, instanceID: instance.ID, dir: dir, refresh: translator.refresh, batchSize: 2,
 		onGap: func(segment string) { *gaps = append(*gaps, segment) }}
 	return c, store, translator, dir, gaps
 }
@@ -93,7 +104,7 @@ func TestJournalConsumerAppliesAndResumesAfterRestart(t *testing.T) {
 		t.Fatalf("session one = %v", got)
 	}
 	// A new consumer, as after a restart, resumes at the committed offsets.
-	restarted := &journalConsumer{store: store, instanceID: "source", dir: dir, translator: &recordTranslator{}, batchSize: 10}
+	restarted := &journalConsumer{store: store, instanceID: "source", dir: dir, refresh: (&recordTranslator{store: store}).refresh, batchSize: 10}
 	appendRecord(t, dir, "a.jsonl", "one", "m4")
 	if applied, err := restarted.drain(t.Context()); err != nil || applied != 1 {
 		t.Fatalf("resume = %d, %v", applied, err)
@@ -115,6 +126,29 @@ func TestJournalConsumerRetriesTransientFailuresWithoutSkipping(t *testing.T) {
 	}
 	if applied, err := c.drain(t.Context()); err != nil || applied != 2 || translator.calls < 2 {
 		t.Fatalf("retry = %d, %v", applied, err)
+	}
+}
+
+func TestJournalConsumerReplaysRefreshCommittedBeforeFailure(t *testing.T) {
+	c, store, _, dir, _ := journalFixture(t)
+	appendRecord(t, dir, "a.jsonl", "one", "m1")
+	appendRecord(t, dir, "a.jsonl", "one", "fail")
+	if _, err := c.drain(t.Context()); err == nil {
+		t.Fatal("expected failure after the first content commit")
+	}
+	if got := messageIDs(t, store, "one"); len(got) != 1 || got[0] != "m1" {
+		t.Fatalf("refresh did not commit before failure: %v", got)
+	}
+	if cursor, err := store.Checkpoint(t.Context(), "source", journalStream("a.jsonl")); err != nil || cursor != "" {
+		t.Fatalf("failed refresh advanced journal checkpoint: %q %v", cursor, err)
+	}
+	// A restart repeats the already committed refresh without duplicating it.
+	c.refresh = (&recordTranslator{store: store, failed: true}).refresh
+	if applied, err := c.drain(t.Context()); err != nil || applied != 2 {
+		t.Fatalf("replay: %d %v", applied, err)
+	}
+	if got := messageIDs(t, store, "one"); len(got) != 2 {
+		t.Fatalf("replay lost or duplicated content: %v", got)
 	}
 }
 

@@ -26,8 +26,8 @@ import (
 // `data` five times converts the row five times; convMemo makes the
 // repeats map lookups.
 //
-// ponytail: a bounded memo, cleared when full. Materialise into the
-// analytics mirror if a large v2 history still makes the list query slow.
+// The memo is bounded and cleared when full. Persisted application reads use
+// the ingested statev2 projection rather than these native views.
 
 var v2DSNs sync.Map // DSN -> true for databases opened with v2 views
 

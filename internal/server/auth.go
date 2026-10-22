@@ -238,7 +238,6 @@ func (a *Auth) setSecureCookies(on bool) {
 // requests: the SPA and its lockscreen must be reachable even for an
 // unauthenticated client. Only API routes return 401.
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	next = s.withSessionViews(next)
 	return s.csrfGuard(func(w http.ResponseWriter, r *http.Request) {
 		if s.auth == nil {
 			next(w, r)

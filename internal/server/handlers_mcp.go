@@ -116,7 +116,6 @@ func (s *Server) buildMCPHandler() http.Handler {
 
 func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handler {
 	deps := internalmcp.Deps{
-		ToolMiddleware: s.sessionIdentityToolMiddleware,
 		SignFile:       s.FileURL,
 		SessionService: sessionService,
 	}
@@ -141,7 +140,7 @@ func (s sessionMCPService) ListSessions(ctx context.Context, directory string) (
 		}
 	}
 	applySessionNotice(sessions)
-	return publicSessionValue(s.server, ctx, "", sessions, true)
+	return sessions, nil
 }
 
 // SearchSessionText searches this owner's retained platform-independent history;
@@ -157,16 +156,6 @@ func (s sessionMCPService) SearchSessionText(ctx context.Context, query, directo
 	matches := make([]db.TextMatch, 0, len(stored))
 	for _, match := range stored {
 		id := match.SessionID
-		if s.server.sessionCatalogue != nil {
-			mapping, err := s.server.sessions.PublicSessionReferences(ctx, match.Platform, []string{id})
-			if err != nil {
-				return nil, err
-			}
-			id = mapping[id]
-			if id == "" {
-				continue
-			}
-		}
 		matches = append(matches, db.TextMatch{Platform: match.Platform, SessionID: id, PartID: match.PartID, MessageID: match.MessageID, Role: match.Role, Snippet: match.Snippet})
 	}
 	return matches, nil
@@ -205,7 +194,7 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 		detail.Session = &sessions[0]
 	}
 	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
-	return publicSessionValue(s.server, ctx, string(adapter.ID()), detail, false)
+	return detail, nil
 }
 
 // findSession asks every available adapter for id, so callers may omit the

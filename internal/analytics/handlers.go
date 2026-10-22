@@ -11,10 +11,10 @@ import (
 )
 
 func (m *Module) handleSessionConcurrency(w http.ResponseWriter, r *http.Request) {
-	if !m.requireRuntimeAnalytics(w, r) {
+	if !m.requireAnalytics(w, r) {
 		return
 	}
-	data, err := m.runtimeAnalyticsReader(r.Context()).GetSessionConcurrency(r.Context(), sinceParam(r), time.Now().UnixMilli(), dirParam(r))
+	data, err := m.analyticsReader(r.Context()).GetSessionConcurrency(r.Context(), sinceParam(r), time.Now().UnixMilli(), dirParam(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching session concurrency", err)
 		return
@@ -23,7 +23,7 @@ func (m *Module) handleSessionConcurrency(w http.ResponseWriter, r *http.Request
 }
 
 func (m *Module) handleAgentRunHours(w http.ResponseWriter, r *http.Request) {
-	if !m.requireRuntimeAnalytics(w, r) {
+	if !m.requireAnalytics(w, r) {
 		return
 	}
 	since, until := sinceParam(r), time.Now().UnixMilli()
@@ -38,7 +38,7 @@ func (m *Module) handleAgentRunHours(w http.ResponseWriter, r *http.Request) {
 			waits[wait.SessionID] = append(waits[wait.SessionID], db.RunInterval{Start: wait.Start, End: wait.End})
 		}
 	}
-	data, err := m.runtimeAnalyticsReader(r.Context()).GetAgentRunHours(r.Context(), since, until, dirParam(r), waits)
+	data, err := m.analyticsReader(r.Context()).GetAgentRunHours(r.Context(), since, until, dirParam(r), waits)
 	if err != nil {
 		httpx.ServerError(w, "reading agent run hours", err)
 		return

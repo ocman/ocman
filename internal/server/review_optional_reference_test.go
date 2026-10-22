@@ -25,17 +25,6 @@ func TestCanonicalOptionalSessionReferencesPreserveAbsence(t *testing.T) {
 	if err := s.registry.EnableCanonicalSessions(); err != nil {
 		t.Fatal(err)
 	}
-	scope := newSessionReferenceScope("test", "")
-	for _, body := range []map[string]string{{"platform": "test"}, {"platform": "test", "parentSessionId": ""}} {
-		if err := (&sessionViewWriter{server: s}).ProjectRequest(httptest.NewRequest(http.MethodPost, "/api/sessions", nil), &body); err != nil {
-			t.Fatalf("empty optional parent body: %v", err)
-		}
-	}
-	for _, parent := range []bool{false, true} {
-		if id, err := scope.resolve(t.Context(), s, "", parent); err != nil || id != "" {
-			t.Fatalf("optional reference became lookup: %q %v", id, err)
-		}
-	}
 	mux, err := s.routes()
 	if err != nil {
 		t.Fatal(err)

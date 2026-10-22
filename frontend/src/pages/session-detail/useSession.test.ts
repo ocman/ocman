@@ -19,6 +19,7 @@ import { queryClient } from '../../lib/queryClient';
 import type { OceEvent } from '../../lib/conversation/events';
 import { SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from '../../lib/conversation/conversationStream';
 import { onQueueUpdated } from '../../lib/useGlobalEvents';
+import { remoteLog } from '../../lib/remoteLog';
 import { hello, oceEnvelope, partUpserted, streamSessionId, textDelta } from '../../test/oce';
 
 // ---------- Fake EventSource ----------
@@ -1153,6 +1154,28 @@ describe('useSession — loadMore', () => {
     await act(async () => { await result.current.loadMore(); });
 
     expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('keeps the conversation and stream usable after a failed history page', async () => {
+    const failure = new Error('history temporarily unavailable');
+    const log = vi.spyOn(remoteLog, 'error').mockImplementation(() => {});
+    const fetchSession = vi.fn()
+      .mockResolvedValueOnce(makeDetail({ messages: [msg('m2', SID)], totalMessages: 2 }))
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(makeDetail({ messages: [msg('m1', SID)], totalMessages: 2 }));
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    const stream = FakeEventSource.latest();
+
+    await act(async () => { await result.current.loadMore(); });
+    expect(result.current.messages.map((message) => message.id)).toEqual(['m2']);
+    expect(result.current.loadingMore).toBe(false);
+    expect(FakeEventSource.latest()).toBe(stream);
+    expect(stream?.closed).toBe(false);
+    expect(log).toHaveBeenCalledWith('loadMore failed', failure);
+
+    await act(async () => { await result.current.loadMore(); });
+    expect(result.current.messages.map((message) => message.id)).toEqual(['m1', 'm2']);
   });
 
   it('excludes synthetic notices from the pagination offset', async () => {

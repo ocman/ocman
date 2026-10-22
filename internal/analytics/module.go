@@ -6,8 +6,8 @@
 // OTel stats gauges and the LLM-turn scanner.
 //
 // Queries stay in internal/db (OpenCode, read-only) and internal/state;
-// the analytics mirror, the session snapshot and the server's own OTel
-// instruments (HTTP, SSE, auto-archive, projects index) stay in core.
+// the session snapshot and the server's own OTel instruments (HTTP, SSE,
+// auto-archive, projects index) stay in core.
 package analytics
 
 import (
@@ -124,10 +124,11 @@ func method(want string, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// requireAnalytics writes 501 when no platform contributes analytics.
+// requireAnalytics rejects a missing scoped reader. Routes normally reject it
+// in analyticsRoute before entering the handler.
 func (m *Module) requireAnalytics(w http.ResponseWriter, r *http.Request) bool {
 	if m.analyticsReader(r.Context()) == nil {
-		http.Error(w, "no analytics database: enable a platform", http.StatusNotImplemented)
+		http.Error(w, "conversation analytics unavailable", http.StatusServiceUnavailable)
 		return false
 	}
 	return true

@@ -10,26 +10,20 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/conversationingest"
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/historyparity"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/NoUseFreak/ocman/internal/testutil/historyparity"
 )
 
 func compareOpenCodeHistory(ctx context.Context, a *Adapter, store *statev2.DB, owner string) (historyparity.Report, error) {
-	source, ok := a.db.OpenCodeOnly()
-	if !ok {
-		return historyparity.Report{}, fmt.Errorf("fixture has no OpenCode-only analytics source")
-	}
-	return historyparity.Compare(ctx, historyparity.Deps{Source: source, Store: store, OwnerID: owner})
+	return historyparity.Compare(ctx, historyparity.Deps{Source: a.db, Store: store, OwnerID: owner})
 }
 
-// On a mixed-platform startup the analytics mirror also carries Claude's
-// rows. Parity compares the OpenCode history instance, so it must compare
-// OpenCode's analytics alone rather than report Claude activity as drift.
-func TestConversationHistoryParityIgnoresOtherPlatformsAnalytics(t *testing.T) {
+// Native and ingested accounting agree before and after canonical rekeying.
+func TestConversationHistoryParitySurvivesCanonicalRekeying(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode.db")
 	rw, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
@@ -56,16 +50,6 @@ func TestConversationHistoryParityIgnoresOtherPlatformsAnalytics(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer source.Close()
-	if err := source.EnableAnalyticsMirror(filepath.Join(t.TempDir(), "analytics-cache.db"), path); err != nil {
-		t.Fatal(err)
-	}
-	source.AddAnalyticsSource(func(context.Context, int64, int64) ([]db.AnalyticsSession, []db.AnalyticsMessage, error) {
-		return []db.AnalyticsSession{{ID: "claude", Title: "Claude", Directory: "/repo", TimeCreated: day}},
-			[]db.AnalyticsMessage{
-				{ID: "cl-u", SessionID: "claude", TimeCreated: day, Settled: true, Data: `{"role":"user"}`},
-				{ID: "cl-a", SessionID: "claude", TimeCreated: day + 1, Settled: true, Data: `{"role":"assistant","providerID":"anthropic","modelID":"claude","tokens":{"input":7,"output":3}}`},
-			}, nil
-	})
 	store, err := statev2.Open(filepath.Join(t.TempDir(), "statev2.db"))
 	if err != nil {
 		t.Fatal(err)

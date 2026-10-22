@@ -44,7 +44,7 @@ func TestJournalDeferredSnapshotDoesNotConsumeHook(t *testing.T) {
 	if err := historyjournal.Append(src.dir, "hook.jsonl", historyjournal.Record{Session: "session", Type: "Stop"}); err != nil {
 		t.Fatal(err)
 	}
-	c := &journalConsumer{store: store, dir: src.dir, instanceID: w.instance.ID, translator: journalRefresh{w}}
+	c := &journalConsumer{store: store, dir: src.dir, instanceID: w.instance.ID, refresh: w.refreshJournal}
 	if _, err := c.drain(t.Context()); err == nil {
 		t.Fatal("deferred snapshot consumed the final hook")
 	}

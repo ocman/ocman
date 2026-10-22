@@ -24,7 +24,7 @@ func TestSubagentStopDiscoversChildCreatedAfterBootstrap(t *testing.T) {
 	}
 	src.entries = append(src.entries, db.HistoryEntry{ID: "new-child", Version: child.Version})
 	src.snapshots["new-child"] = child
-	_, err := (journalRefresh{w}).Translate(t.Context(), w.instance.ID, []historyjournal.Record{{Session: "session", Type: "SubagentStop"}})
+	err := w.refreshJournal(t.Context(), []historyjournal.Record{{Session: "session", Type: "SubagentStop"}})
 	if err != nil {
 		t.Fatal(err)
 	}

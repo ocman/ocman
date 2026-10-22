@@ -14,15 +14,15 @@ func (d *DB) runIntervalsQuery() string {
 		AND json_extract(m.data,'$.time.completed')>? AND json_extract(m.data,'$.time.created')<?`
 }
 
-func (d *DB) questionIntervalsQuery(table, timeExpr, toolExpr string) string {
+func (d *DB) questionIntervalsQuery() string {
 	if d.historyScope != nil {
 		return `SELECT m.session_id,p.start,p.end FROM history_fact m
 			JOIN session s ON s.instance_id=m.instance_id AND s.id=m.session_id
 			JOIN history_question p ON p.instance_id=m.instance_id AND p.session_id=m.session_id AND p.message_id=m.id
 			WHERE m.completed_at>? AND m.started_at<?`
 	}
-	return `SELECT m.session_id,json_extract(` + timeExpr + `,'$.start'),json_extract(` + timeExpr + `,'$.end')
-		FROM ` + table + ` p JOIN message m ON m.id=p.message_id JOIN session s ON s.id=m.session_id
-		WHERE ` + toolExpr + `='question' AND json_extract(m.data,'$.time.completed')>?
+	return `SELECT m.session_id,json_extract(json_extract(p.data,'$.state.time'),'$.start'),json_extract(json_extract(p.data,'$.state.time'),'$.end')
+		FROM part p JOIN message m ON m.id=p.message_id JOIN session s ON s.id=m.session_id
+		WHERE json_extract(p.data,'$.tool')='question' AND json_extract(m.data,'$.time.completed')>?
 		AND json_extract(m.data,'$.time.created')<?`
 }

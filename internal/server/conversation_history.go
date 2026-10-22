@@ -29,11 +29,6 @@ func (s *Server) WithConversationHistory(store *statev2.DB, ownerID string) *Ser
 		deps.Tasks = s.taskManager()
 		catalogue, _ := sessioncatalog.New(s.stateDB)
 		s.sessions.WithSessionCatalogue(catalogue, ownerID)
-		if s.registry.CanonicalSessionIDs() {
-			s.sessionCatalogue = nil
-		} else {
-			s.sessionCatalogue = s.newSessionCatalogue(catalogue, store, ownerID)
-		}
 	}
 	for _, adapter := range s.registry.Platforms() {
 		if remoteID, _ := platforms.SplitPlatformID(string(adapter.ID())); remoteID != "" {

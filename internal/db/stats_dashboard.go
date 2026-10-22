@@ -189,7 +189,7 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 	query += `
 		ORDER BY m.time_created ASC, m.id ASC
 	`
-	source := d.analytics(ctx)
+	source := d.reads()
 	rows, qErr := source.QueryContext(ctx, query, args...)
 	if qErr != nil {
 		return nil, nil, nil, qErr
@@ -781,7 +781,7 @@ func (d *DB) lookupSessionMetadata(ctx context.Context, ids []string) (titles, d
 		args[i] = id
 	}
 	q := "SELECT id, title, directory FROM session WHERE id IN (" + strings.Join(placeholders, ",") + ")"
-	rows, err := d.sessionsDB(ctx).QueryContext(ctx, q, args...)
+	rows, err := d.reads().QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -67,21 +67,6 @@ func (m *Module) analyticsReader(ctx context.Context) *db.DB {
 	return nil
 }
 
-func (m *Module) runtimeAnalyticsReader(ctx context.Context) *db.DB {
-	if reader, ok := ctx.Value(analyticsSourceKey{}).(*db.DB); ok {
-		return reader
-	}
-	return nil
-}
-
-func (m *Module) requireRuntimeAnalytics(w http.ResponseWriter, r *http.Request) bool {
-	if m.runtimeAnalyticsReader(r.Context()) != nil {
-		return true
-	}
-	http.Error(w, "conversation analytics unavailable", http.StatusServiceUnavailable)
-	return false
-}
-
 // analyticsRoute makes one scoped source decision for the entire response.
 // Missing history never silently falls back to platform analytics.
 func (m *Module) analyticsRoute(next http.HandlerFunc) http.HandlerFunc {

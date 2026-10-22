@@ -61,7 +61,7 @@ export function foldOce(sessionId: string, envelopes: readonly OceEnvelope[], se
     dirty: () => { out.dirty++; },
   });
   const source = fakeSource();
-  stream.attach(source, false);
+  stream.attach(source);
   const handle = source.listeners.get('oce')!;
   for (const env of envelopes) handle(message(JSON.stringify(env)));
   stream.flush();

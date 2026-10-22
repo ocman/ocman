@@ -157,8 +157,7 @@ export function createConversationStream(options: {
 
   return {
     /** Every non-resumed hello fences a fresh authoritative history read. */
-    attach(source: EventSource, isReconnect: boolean) {
-      void isReconnect; // Kept for callers; the hello now decides recovery.
+    attach(source: EventSource) {
       source.addEventListener('oce', handle as EventListener);
     },
     cursor: () => cursor,

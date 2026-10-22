@@ -1,6 +1,5 @@
-// Package historyparity compares the current analytics reader, which reads
-// OpenCode, with the same reports computed from statev2. It only reads and
-// reports; no reader switches until the comparison stays clean.
+// Package historyparity supplies test comparisons between native OpenCode
+// accounting and statev2 accounting. It is not an application reader.
 package historyparity
 
 import (

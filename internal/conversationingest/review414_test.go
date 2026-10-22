@@ -90,7 +90,7 @@ func TestJournalTranslationFailureHasOneReceipt(t *testing.T) {
 	if err := historyjournal.Append(src.dir, "hook.jsonl", historyjournal.Record{Session: "session", Type: "Stop"}); err != nil {
 		t.Fatal(err)
 	}
-	consumer := &journalConsumer{store: store, dir: src.dir, instanceID: w.instance.ID, translator: journalRefresh{w}}
+	consumer := &journalConsumer{store: store, dir: src.dir, instanceID: w.instance.ID, refresh: w.refreshJournal}
 	for range 4 {
 		_, err := consumer.drain(context.Background())
 		if err == nil {

@@ -28,9 +28,6 @@ type DB struct {
 	// denormalised cost/tokens_input/tokens_output columns, letting the
 	// session list skip re-aggregating every message blob.
 	sessionTotals bool
-	// mirror, when enabled, serves the analytics queries; see
-	// analytics_mirror.go.
-	mirror *analyticsMirror
 	// v2 is true when OpenCode v2 is installed and reads go through the
 	// v1 views over its schema (v2views.go).
 	v2 bool
@@ -221,12 +218,6 @@ func OpenReadWrite(path string) (*DB, error) {
 
 // Close closes the database.
 func (d *DB) Close() error {
-	if d.mirror != nil {
-		d.mirror.close() // joins a running analytics sync first
-		if d.mirror.db != d.db {
-			_ = d.mirror.db.Close()
-		}
-	}
 	return d.db.Close()
 }
 

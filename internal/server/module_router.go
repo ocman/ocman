@@ -6,7 +6,7 @@ import (
 )
 
 // moduleRouter mounts module routes behind the server's guards and applies
-// public identity translation before session-scoped handlers inspect paths.
+// ownership checks before session-scoped handlers inspect paths.
 type moduleRouter struct {
 	s   *Server
 	mux *http.ServeMux
@@ -21,7 +21,7 @@ func (r moduleRouter) Local(pattern string, h http.HandlerFunc) {
 }
 
 func (r moduleRouter) Setting(pattern string, h http.HandlerFunc) {
-	r.mux.HandleFunc(pattern, r.sessionPath(pattern, r.s.settingsHandler(r.s.withSessionViews(h))))
+	r.mux.HandleFunc(pattern, r.sessionPath(pattern, r.s.settingsHandler(h)))
 }
 
 func (r moduleRouter) LocalSetting(pattern string, h http.HandlerFunc) {

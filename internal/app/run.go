@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -249,26 +248,6 @@ func run() {
 			fatal("Failed to upgrade Claude approval patterns: %v", err)
 		}
 
-		// Disposable copy of the analytics columns next to state.db; see
-		// internal/db/analytics_mirror.go. With OpenCode a failure only costs
-		// speed; without it the file is the analytics database other platforms
-		// fill (AD-12).
-		analyticsDB := database
-		mirrorPath := filepath.Join(filepath.Dir(stateDBPath), "analytics-cache.db")
-		if database != nil {
-			source, _ := filepath.Abs(*dbPath)
-			if err := database.EnableAnalyticsMirror(mirrorPath, source); err != nil {
-				log.WithError(err).Warn("analytics mirror disabled; analytics read OpenCode directly")
-			}
-		} else if len(enabledPlatforms) > 0 {
-			if analyticsDB, err = db.OpenAnalyticsStore(mirrorPath); err != nil {
-				log.WithError(err).Warn("analytics unavailable")
-				analyticsDB = nil
-			} else {
-				defer analyticsDB.Close()
-			}
-		}
-
 		useService := database != nil && sharesServiceDB(openCodeDBPath)
 		opencodePassword, err := startupOpenCodePassword(ctx, stateDB, startupPassword, enabledPlatforms[string(opencodeplatform.PlatformID)], useService)
 		if err != nil {
@@ -299,9 +278,7 @@ func run() {
 		var integrations []platforms.Integration
 		for id, enabled := range enabledPlatforms {
 			if enabled {
-				// analyticsDB is OpenCode's database whenever OpenCode is
-				// enabled; other platforms only add analytics sources to it.
-				platform := knownPlatforms[id](ctx, analyticsDB, stateDB, opencodeAuth)
+				platform := knownPlatforms[id](ctx, database, stateDB, opencodeAuth)
 				integrations = append(integrations, platform)
 				if closer, ok := platform.(interface{ Close() }); ok {
 					// Runs after cancel (deferred later): joins the platform's
@@ -315,15 +292,6 @@ func run() {
 			cancel()
 			return startupErr
 		}
-		if analyticsDB != nil {
-			// After registration: platforms add their analytics sources first,
-			// so this first sync already includes their history.
-			go func() {
-				if err := analyticsDB.SyncAnalyticsMirror(ctx); err != nil {
-					log.WithError(err).Warn("syncing analytics mirror")
-				}
-			}()
-		}
 		auth, err := buildAuth(ctx, stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 		if err != nil {
 			fatal("Failed to configure auth: %v", err)
@@ -334,7 +302,6 @@ func run() {
 		// it listens on *addr as before.
 		srv := server.New(database, stateDB, listener.Addr().String(), registry, auth).
 			WithConversationHistory(historyDB, ident.InstanceID).
-			WithAnalytics(analyticsDB).
 			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
 			WithPublicBaseURL(resolvedBaseURL).

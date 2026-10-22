@@ -18,7 +18,7 @@ func TestJournalKnownSessionDoesNotInventorySource(t *testing.T) {
 	// Once bootstrapped, a session-specific hook must not scan every transcript.
 	src.inventoryErr = errors.New("source-wide inventory must not run")
 	src.snapshots["session"] = historySnapshot("updated")
-	if _, err := (journalRefresh{w}).Translate(t.Context(), w.instance.ID, []historyjournal.Record{{Session: "session"}}); err != nil {
+	if err := w.refreshJournal(t.Context(), []historyjournal.Record{{Session: "session"}}); err != nil {
 		t.Fatal(err)
 	}
 	if text, _ := importText(t, store, sourceKey("claude")); text != "updated" {

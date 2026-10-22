@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"flag"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -111,6 +112,14 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
 				t.Fatalf("disabled startup executed opencode: %v\n%s", err, out)
+			}
+			if err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+				if err == nil && entry.Name() == "analytics-cache.db" {
+					t.Errorf("canonical startup created obsolete analytics mirror: %s", path)
+				}
+				return err
+			}); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}

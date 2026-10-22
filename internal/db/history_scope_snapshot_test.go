@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/statev2"
@@ -39,25 +38,5 @@ func TestScopedHistoryReaderReadsTheValidatedRevision(t *testing.T) {
 	}
 	if _, _, err := openTestDB(t).ScopedHistoryReader(t.Context()); err == nil {
 		t.Fatal("accepted a non-history reader")
-	}
-}
-
-func TestOpenCodeOnlyBypassesTheMirror(t *testing.T) {
-	store, err := OpenAnalyticsStore(filepath.Join(t.TempDir(), "analytics-cache.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	if _, ok := store.OpenCodeOnly(); ok {
-		t.Fatal("a platform-only analytics store has no OpenCode rows to read")
-	}
-	opencode := openTestDB(t)
-	defer opencode.Close()
-	if err := opencode.EnableAnalyticsMirror(filepath.Join(t.TempDir(), "mirror.db"), "src"); err != nil {
-		t.Fatal(err)
-	}
-	only, ok := opencode.OpenCodeOnly()
-	if !ok || only.mirror != nil || only.db != opencode.db {
-		t.Fatal("view does not read OpenCode directly")
 	}
 }

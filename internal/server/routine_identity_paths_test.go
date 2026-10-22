@@ -14,11 +14,11 @@ func TestRoutineTrailingSlashRequestsPersistResolvedSessionOwner(t *testing.T) {
 	for _, owner := range []string{"local", "remote"} {
 		for _, method := range []string{http.MethodPost, http.MethodPut} {
 			t.Run(owner+" "+method, func(t *testing.T) {
-				s, _, ownedID := identityHTTPFixture(t)
+				s, ownedID := canonicalHTTPFixture(t)
 				platform := "test"
 				if owner == "remote" {
 					ownedID, platform = "ocm_"+uuid.NewString(), "r-remote:test"
-					s.registry.Register(&taskIdentityPlatform{fakePlatform: &fakePlatform{id: platform}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", NativeID: "native", Origin: "external", CreationState: "ready"}})
+					s.registry.Register(&taskIdentityPlatform{fakePlatform: &fakePlatform{id: platform}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}})
 				}
 				mux, err := s.routes()
 				if err != nil {
@@ -43,7 +43,7 @@ func TestRoutineTrailingSlashRequestsPersistResolvedSessionOwner(t *testing.T) {
 					t.Fatalf("routine request: %d %s %v", response.Code, response.Body.String(), err)
 				}
 				stored, err := s.stateDB.GetRoutine(t.Context(), item.ID)
-				if err != nil || stored.SessionID != "native" || stored.Platform != platform || stored.RemoteID != owner {
+				if err != nil || stored.SessionID != ownedID || stored.Platform != platform || stored.RemoteID != owner {
 					t.Fatalf("accepted route persisted unresolved identity: %+v %v", stored, err)
 				}
 				if item.SessionID != ownedID {

@@ -65,7 +65,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 		return d.historyStats(ctx)
 	}
 	s := &Stats{}
-	sessions := d.sessionsDB(ctx)
+	sessions := d.reads()
 
 	err := sessions.QueryRowContext(ctx, `
 		SELECT count(*), COALESCE(SUM(instr(title, '@') > 0), 0)
@@ -74,7 +74,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = d.analytics(ctx).QueryRowContext(ctx, `SELECT count(*) FROM message WHERE json_extract(data, '$.role') = 'user'`).Scan(&s.TotalMessages)
+	err = d.reads().QueryRowContext(ctx, `SELECT count(*) FROM message WHERE json_extract(data, '$.role') = 'user'`).Scan(&s.TotalMessages)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +90,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 		SELECT COALESCE(SUM(tokens_input), 0), COALESCE(SUM(tokens_output), 0), COALESCE(SUM(cost), 0)
 		FROM session`
 	totalsDB := d.reads()
-	if !d.sessionTotals || d.mirrorOnly() {
-		totalsDB = d.analytics(ctx)
+	if !d.sessionTotals {
 		totals = `
 		SELECT
 			COALESCE(SUM(COALESCE(json_extract(data, '$.tokens.input'), 0)), 0),

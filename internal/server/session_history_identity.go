@@ -14,7 +14,7 @@ func (s *Server) historySessionPublicID(ctx context.Context, instance, reference
 	if canonical && !identity.IsSessionID(reference) {
 		return "", platforms.ErrHistoryUnavailable
 	}
-	if s.sessionCatalogue == nil && !canonical {
+	if !canonical {
 		return reference, nil
 	}
 	if s.historyAnalytics == nil || s.historyAnalytics.Store == nil {

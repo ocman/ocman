@@ -17,7 +17,8 @@ type taskIdentityPlatform struct {
 	info platforms.SessionIdentity
 }
 
-func (*taskIdentityPlatform) SessionOwnerID() string { return "remote" }
+func (*taskIdentityPlatform) SessionOwnerID() string    { return "remote" }
+func (*taskIdentityPlatform) CanonicalSessionIDs() bool { return true }
 func (p *taskIdentityPlatform) SessionIdentity(context.Context, platforms.SessionIdentityRequest) (*platforms.SessionIdentity, error) {
 	return &p.info, nil
 }
@@ -32,10 +33,10 @@ func TestCanonicalTaskReadIgnoresOppositeOwnerNativeCache(t *testing.T) {
 		return nil, nil
 	}
 	remoteID := "ocm_" + uuid.NewString()
-	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{id: "r-remote:test"}, info: platforms.SessionIdentity{ID: remoteID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", NativeID: "native", Origin: "external", CreationState: "ready"}}
+	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{id: "r-remote:test"}, info: platforms.SessionIdentity{ID: remoteID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}}
 	remote.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
-		if id != "native" {
-			t.Fatalf("native adapter received %s", id)
+		if id != remoteID {
+			t.Fatalf("remote adapter received noncanonical ID %s", id)
 		}
 		return &platforms.SessionDetail{Messages: []db.Message{{ID: "remote-message", SessionID: id}}, Parts: []db.Part{}}, nil
 	}

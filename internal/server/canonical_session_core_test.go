@@ -48,10 +48,9 @@ func TestCanonicalSessionPathsReachCoreWithoutNativeRewriting(t *testing.T) {
 
 func TestLegacyRequestReferenceBecomesCanonicalBeforeCoreMutation(t *testing.T) {
 	s, id := canonicalHTTPFixture(t)
-	scope := newSessionReferenceScope("test", "local")
-	resolved, err := scope.resolve(t.Context(), s, "native", false)
-	if err != nil || resolved != id {
-		t.Fatalf("core mutation received native reference: %s %v", resolved, err)
+	info, err := s.sessions.LookupSessionReference(t.Context(), "test", "native")
+	if err != nil || s.sessions.CoreSessionReference(info) != id {
+		t.Fatalf("core mutation received native reference: %+v %v", info, err)
 	}
 }
 
@@ -82,6 +81,21 @@ func TestCanonicalIdentityTransportDoesNotExportNativeExecutionBinding(t *testin
 	s.handleSessionIdentity(w, httptest.NewRequest(http.MethodGet, "/api/session-identity?nativeId=native", nil))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), id) || strings.Contains(w.Body.String(), "nativeId") || strings.Contains(w.Body.String(), "sourceKey") {
 		t.Fatalf("canonical identity transport exposed binding data: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCanonicalCapabilitiesEnableLegacyBrowserLinkAdoption(t *testing.T) {
+	s, _ := canonicalHTTPFixture(t)
+	if err := s.registry.EnableCanonicalSessions(); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	s.handleCapabilities(w, httptest.NewRequest(http.MethodGet, "/api/capabilities", nil))
+	var capabilities struct {
+		OwnedSessionIDs bool `json:"ownedSessionIds"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &capabilities); err != nil || w.Code != http.StatusOK || !capabilities.OwnedSessionIDs {
+		t.Fatalf("canonical browser-link adoption unavailable: %d %s %v", w.Code, w.Body.String(), err)
 	}
 }
 

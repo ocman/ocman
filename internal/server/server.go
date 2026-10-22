@@ -34,7 +34,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/remotesmod"
 	"github.com/NoUseFreak/ocman/internal/routines"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionrefrecovery"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/sessiontitles"
@@ -53,10 +52,8 @@ const (
 type Server struct {
 	tasks                   lazy[*tasksvc.Manager]
 	historyIngest           *conversationingest.Module
-	sessionCatalogue        *sessioncatalog.Module
 	historyAnalytics        *analytics.HistoryAnalytics
 	historyOwner            string
-	analytics               *db.DB
 	db                      *db.DB
 	subscriptionCredentials func(context.Context) (map[string]db.SubscriptionOAuth, error)
 	stateDB                 *state.DB
@@ -208,7 +205,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	}
 	s := &Server{
 		db:           database,
-		analytics:    database,
 		stateDB:      stateDB,
 		addr:         addr,
 		registry:     registry,
@@ -450,13 +446,4 @@ func (s *Server) get(h http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) post(h http.HandlerFunc) http.HandlerFunc {
 	return requirePOST(s.requireAuth(h))
-}
-
-// WithAnalytics sets the usage-analytics store when it is not OpenCode's
-// database (another platform feeds the mirror).
-func (s *Server) WithAnalytics(analytics *db.DB) *Server {
-	if analytics != nil {
-		s.analytics = analytics
-	}
-	return s
 }
