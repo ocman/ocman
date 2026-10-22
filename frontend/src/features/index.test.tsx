@@ -6,6 +6,10 @@ import { SETTINGS } from '../lib/settingsCatalog';
 const routes = FEATURES.flatMap((f) => f.routes ?? []);
 
 describe('feature registry', () => {
+  it('keeps background tasks reachable without a main navigation entry', () => {
+    expect(featureNav.some(item => item.to === '/background-tasks')).toBe(false);
+    expect(matchRoutes(routes, '/background-tasks')).not.toBeNull();
+  });
   it('gives every feature and route a unique key', () => {
     expect(new Set(FEATURES.map((f) => f.id)).size).toBe(FEATURES.length);
     expect(new Set(routes.map((r) => r.path)).size).toBe(routes.length);

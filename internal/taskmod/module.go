@@ -50,6 +50,17 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 	if !m.local(w, r) {
 		return
 	}
+	if r.URL.Query().Get("view") == "active-count" {
+		count, err := m.manager.ActiveCount(r.Context())
+		if err != nil {
+			taskError(w, err)
+			return
+		}
+		httpx.WriteJSON(w, struct {
+			Count int `json:"count"`
+		}{count})
+		return
+	}
 	limit := 100
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)

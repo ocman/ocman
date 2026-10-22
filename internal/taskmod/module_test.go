@@ -62,6 +62,8 @@ func TestQueryableTaskRoutesAreReadOnlyAndAuthenticated(t *testing.T) {
 		code         int
 	}{
 		{"GET", "/api/background-tasks", false, 401},
+		{"GET", "/api/background-tasks?view=active-count", false, 401},
+		{"GET", "/api/background-tasks?view=active-count&remoteId=offline", true, 503},
 		{"GET", "/api/background-tasks", true, 200},
 		{"GET", "/api/background-tasks?status=succeeded&kind=test&limit=1", true, 200},
 		{"GET", "/api/background-tasks?status=invalid", true, 400},
@@ -96,7 +98,7 @@ func TestQueryableTaskRoutesAreReadOnlyAndAuthenticated(t *testing.T) {
 		t.Fatalf("task response: %+v %v", got, err)
 	}
 	d.Close()
-	for _, path := range []string{"/api/background-tasks", "/api/background-tasks/unknown"} {
+	for _, path := range []string{"/api/background-tasks", "/api/background-tasks/unknown", "/api/background-tasks?view=active-count"} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		r.Header.Set("X-Test-Auth", "yes")
@@ -111,7 +113,7 @@ func TestUnavailableTaskManager(t *testing.T) {
 	m := New(tasksvc.New(nil, 1), module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }})
 	mux := http.NewServeMux()
 	m.Routes(router{mux})
-	for _, path := range []string{"/api/background-tasks", "/api/background-tasks/id"} {
+	for _, path := range []string{"/api/background-tasks", "/api/background-tasks/id", "/api/background-tasks?view=active-count"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != 503 {

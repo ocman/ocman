@@ -81,7 +81,6 @@ export const FEATURES: Feature[] = [
   {
     id: 'background-tasks',
     routes: [{ path: '/background-tasks', element: <BackgroundTasks />, layout: 'dashboard', title: 'Background tasks' }],
-    nav: { to: '/background-tasks', label: 'Background tasks', icon: 'bi-list-task' },
   },
   {
     id: 'factory',

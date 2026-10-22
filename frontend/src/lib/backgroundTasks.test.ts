@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { backgroundTask, backgroundTasks } from './backgroundTasks';
+import { backgroundTask, backgroundTaskCount, backgroundTasks } from './backgroundTasks';
 import { fetchJSON } from './api.requests';
 
 vi.mock('./api.requests', async (original) => ({
@@ -15,5 +15,7 @@ describe('background task requests', () => {
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?status=failed&limit=200', signal);
     await backgroundTask('task/id', signal);
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks/task%2Fid', signal);
+    await backgroundTaskCount(signal);
+    expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?view=active-count', signal);
   });
 });

@@ -40,7 +40,7 @@ export function ActiveSessions({ count, enabled }: { count: number; enabled: boo
   useEffect(() => () => clearTimeout(timer.current), [enabled]);
 
   return <>
-    <Button ref={trigger} variant="ghost" size="compact" className={styles.trigger}
+    <Button ref={trigger} variant="ghost" size="compact" className="backend-stats-counter"
       title="Currently running sessions, including archived sessions and subagents"
       aria-label={`Total active sessions: ${count}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       disabled={!enabled} onMouseEnter={enter} onMouseLeave={leave} onFocus={() => { if (!open) show(); }}

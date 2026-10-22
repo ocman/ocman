@@ -24,6 +24,12 @@
   margin-left: auto;
 }
 
+.backend-stats-counter {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
 .backend-stats-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));

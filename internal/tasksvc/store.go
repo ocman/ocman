@@ -97,6 +97,16 @@ func (m *Manager) List(ctx context.Context, status Status, kind string, limit in
 	return tasks, rows.Err()
 }
 
+// ActiveCount avoids loading task payloads and is not capped by list pagination.
+func (m *Manager) ActiveCount(ctx context.Context) (int, error) {
+	if !m.Enabled() {
+		return 0, ErrUnavailable
+	}
+	var count int
+	err := m.store.db.QueryRowContext(ctx, `SELECT count(*) FROM background_task WHERE status IN ('queued','running')`).Scan(&count)
+	return count, err
+}
+
 func (m *Manager) Get(ctx context.Context, id string) (Task, error) {
 	var task Task
 	if !m.Enabled() {

@@ -4,6 +4,7 @@ import { useRunningSessionCount } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { IconButton } from './IconButton';
 import { ActiveSessions } from './ActiveSessions';
+import { BackgroundTaskCounter } from './BackgroundTaskCounter';
 import { useLongTaskMonitor } from '../lib/useLongTaskMonitor';
 import './BackendStats.css';
 
@@ -138,6 +139,7 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
         {runningSessions !== undefined && (
           <ActiveSessions count={runningSessions} enabled={enabled} />
         )}
+        <BackgroundTaskCounter enabled={enabled} />
         <IconButton
           className="backend-stats-toggle"
           label={expanded ? 'Hide system stats' : 'Show system stats'}

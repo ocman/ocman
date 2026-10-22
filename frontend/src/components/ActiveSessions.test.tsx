@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ActiveSessions } from './ActiveSessions';
 import { BackendStats } from './BackendStats';
+vi.mock('./BackgroundTaskCounter', () => ({ BackgroundTaskCounter: () => null }));
 import { useUiStore } from '../lib/uiStore';
 import { TOOLTIP_DELAY_MS } from './Tooltip';
 

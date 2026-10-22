@@ -31,3 +31,7 @@ export function backgroundTasks(status: BackgroundTaskStatus | '', signal?: Abor
 export function backgroundTask(id: string, signal?: AbortSignal) {
   return fetchJSON<BackgroundTask>(`/api/background-tasks/${encodeURIComponent(id)}`, signal);
 }
+
+export function backgroundTaskCount(signal?: AbortSignal) {
+  return fetchJSON<{ count: number }>('/api/background-tasks?view=active-count', signal);
+}

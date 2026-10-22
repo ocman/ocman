@@ -825,13 +825,16 @@ flowchart LR
 
 `internal/tasksvc` runs bounded owner-local work inside Ocman's process.
 `internal/taskmod` exposes authenticated, read-only list and detail APIs at
-`/api/background-tasks`. The dashboard's Background tasks page polls while visible.
+`/api/background-tasks`. A compact `bgt` counter beside total active sessions
+links to the Background tasks page instead of a main navigation entry. Its
+`view=active-count` request counts queued/running rows without loading task
+payloads or applying list limits. Both counter and page pause polling while hidden.
 
 ```mermaid
 flowchart LR
     Import[History ingestion] -->|typed work + progress| Manager[tasksvc<br/>4 running, 128 admitted]
     Manager -->|module-owned schema| State[(state.db<br/>task records)]
-    Browser[Background tasks page] -->|authenticated GET| API[taskmod]
+    Browser[Sidebar task counter<br/>and Background tasks page] -->|authenticated GET| API[taskmod]
     API --> State
     Manager -->|snapshots and repairs| History[(state_conv.db)]
 ```

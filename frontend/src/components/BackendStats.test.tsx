@@ -4,6 +4,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getSystemStats = vi.fn();
+vi.mock('./BackgroundTaskCounter', () => ({
+  BackgroundTaskCounter: ({ enabled }: { enabled: boolean }) => <span aria-label="Background task counter" data-enabled={enabled}>bgt: 2</span>,
+}));
 let recentSessions: { status: string; platform?: string; parentId?: string; archived?: boolean }[] = [];
 let allSessions: typeof recentSessions | undefined = [];
 let longTasks = { count: 0, maxMs: 0 };
@@ -82,6 +85,7 @@ describe('BackendStats visibility gating (FR-10)', () => {
     const { unmount } = render(<BackendStats />);
     await flush();
     expect(screen.getByTitle('Currently running sessions, including archived sessions and subagents')).toHaveTextContent('tas: 1');
+    expect(screen.getByLabelText('Background task counter')).toHaveTextContent('bgt: 2');
     expect(screen.getByRole('button', { name: 'Show system stats' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTitle('Backend memory usage')).not.toBeInTheDocument();
     expect(getSystemStats).not.toHaveBeenCalled();
