@@ -620,8 +620,9 @@ flowchart LR
 The HTTP listener serves the embedded UI and a read-only `/api/startup` before
 opening databases. `internal/startup` reports the phase, elapsed seconds and
 phase-local completed/total counts. Updates and five-second heartbeats go to
-the logs. React's `StartupMonitor` records these facts for application health
-without gating application views; authentication remains enforced by `AuthGate`.
+the logs. Application health settings read this endpoint only while mounted
+and visible. There is no app-root startup wrapper, global startup store or
+always-on startup polling; authentication remains enforced by `AuthGate`.
 The shell, composer state and focus survive backend restarts. The desktop
 bootstrap also accepts startup responsiveness. Counts are never presented as
 an overall percentage. Initialization failures remain visible in application
@@ -631,6 +632,7 @@ health, with full details in server logs.
 flowchart LR
     Browser[Browser or desktop] --> Gateway[startup HTTP gateway]
     Gateway --> Progress[Read-only startup status<br/>application health diagnostics]
+    Settings[Application health settings] -->|only while open and visible| Progress
     Composition[Database opening + migrations] -->|phases and counts| Progress
     Composition -->|only after success| Application[Guarded application handler]
     Gateway -->|atomic handoff on same listener| Application

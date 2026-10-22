@@ -21,6 +21,4 @@ type CreationPendingError struct {
 func (e *CreationPendingError) Error() string {
 	return fmt.Sprintf("session %s requires creation reconciliation: %v", e.SessionID, e.Err)
 }
-func (e *CreationPendingError) Unwrap() error              { return e.Err }
-func (*CreationPendingError) RequiresReconciliation() bool { return true }
-func (e *CreationPendingError) CreationSessionID() string  { return e.SessionID }
+func (e *CreationPendingError) Unwrap() error { return e.Err }

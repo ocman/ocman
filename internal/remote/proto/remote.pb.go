@@ -349,7 +349,6 @@ type SessionReq struct {
 	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	Offset        int32                  `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
-	Browsing      bool                   `protobuf:"varint,5,opt,name=browsing,proto3" json:"browsing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -410,13 +409,6 @@ func (x *SessionReq) GetOffset() int32 {
 		return x.Offset
 	}
 	return 0
-}
-
-func (x *SessionReq) GetBrowsing() bool {
-	if x != nil {
-		return x.Browsing
-	}
-	return false
 }
 
 type CutoffReq struct {
@@ -948,15 +940,14 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x10\n" +
 	"\x03dir\x18\x02 \x01(\tR\x03dir\x12\x14\n" +
 	"\x05since\x18\x03 \x01(\x03R\x05since\x12#\n" +
-	"\rsidebar_query\x18\x04 \x01(\fR\fsidebarQuery\"\x91\x01\n" +
+	"\rsidebar_query\x18\x04 \x01(\fR\fsidebarQuery\"\x85\x01\n" +
 	"\n" +
 	"SessionReq\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x04 \x01(\x05R\x06offset\x12\x1a\n" +
-	"\bbrowsing\x18\x05 \x01(\bR\bbrowsing\"?\n" +
+	"\x06offset\x18\x04 \x01(\x05R\x06offsetJ\x04\b\x05\x10\x06R\bbrowsing\"?\n" +
 	"\tCutoffReq\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x16\n" +
 	"\x06cutoff\x18\x02 \x01(\x03R\x06cutoff\"$\n" +

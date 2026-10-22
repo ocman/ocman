@@ -5,7 +5,7 @@
 import type { QueuedMessage } from '../api.types';
 import { markSseFlush } from '../perfMonitor';
 import { truncateSseData } from '../sseHelpers';
-import { formatCursor, parseCursor, type OceEnvelope } from './events';
+import { formatCursor, OCE_VERSION, parseCursor, type OceEnvelope } from './events';
 
 export interface StreamDebugEvent { at: number; event: string; data: string }
 
@@ -31,7 +31,7 @@ function parseEnvelope(raw: string): OceEnvelope | null {
   try { value = JSON.parse(raw); } catch { return null; }
   if (!value || typeof value !== 'object') return null;
   const env = value as OceEnvelope;
-  if (env.v !== 1 || typeof env.epoch !== 'string' || !env.event || typeof env.event.type !== 'string') return null;
+  if (env.v !== OCE_VERSION || typeof env.epoch !== 'string' || !env.event || typeof env.event.type !== 'string') return null;
   return env;
 }
 

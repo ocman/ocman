@@ -1,23 +1,26 @@
 // @vitest-environment jsdom
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { renderWithQuery } from '../test/renderWithQuery';
 import { fetchJSON } from '../lib/api.requests';
 import { useBackendStatus } from '../lib/backendStatus';
-import { useStartupStatus } from '../lib/startupStatus';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 import { ApplicationHealthSettings } from './ApplicationHealthSettings';
 
 vi.mock('../lib/api.requests', () => ({ fetchJSON: vi.fn() }));
 vi.mock('../lib/usePanelVisible', () => ({ useDocumentVisible: vi.fn(() => true) }));
 
+const backendHealth = vi.fn();
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useDocumentVisible).mockReturnValue(true);
   useBackendStatus.setState({ unreachable: false, since: null, error: null });
-  useStartupStatus.setState({ status: null, unreachable: false });
+  backendHealth.mockReset().mockResolvedValue(new Response(JSON.stringify({ state: 'ready', phase: 'Ready' })));
+  vi.stubGlobal('fetch', backendHealth);
 });
+afterEach(() => vi.unstubAllGlobals());
 
 const renderHealth = () => renderWithQuery(<MemoryRouter><ApplicationHealthSettings /></MemoryRouter>);
 
@@ -37,9 +40,9 @@ it.each([
   ['starting', 'Starting'], ['failed', 'Startup failed'],
 ] as const)('shows backend %s progress in health settings', async (state, label) => {
   vi.mocked(fetchJSON).mockResolvedValue({ status: 'syncing', sources: 1 });
-  useStartupStatus.setState({ status: { state, phase: 'Loading history', completed: 0, total: 1, elapsedSeconds: 2 } });
+  backendHealth.mockResolvedValue(new Response(JSON.stringify({ state, phase: 'Loading history' })));
   renderHealth();
-  expect(screen.getByText(label)).toBeVisible();
+  expect(await screen.findByText(label)).toBeVisible();
   expect(screen.getByText('Loading history')).toBeVisible();
   await screen.findByText('Syncing in background');
 });
@@ -57,13 +60,35 @@ it('does not poll hidden settings and cancels its read on unmount', async () => 
   vi.mocked(useDocumentVisible).mockReturnValue(false);
   const hidden = renderHealth();
   expect(fetchJSON).not.toHaveBeenCalled();
+  expect(backendHealth).not.toHaveBeenCalled();
   hidden.unmount();
   vi.mocked(useDocumentVisible).mockReturnValue(true);
   vi.mocked(fetchJSON).mockReturnValue(new Promise(() => {}));
+  backendHealth.mockReturnValue(new Promise(() => {}));
   const view = renderHealth();
-  expect(screen.getByText('Checking…')).toBeVisible();
+  expect(screen.getAllByText('Checking…')).toHaveLength(2);
   await waitFor(() => expect(fetchJSON).toHaveBeenCalledOnce());
   const signal = vi.mocked(fetchJSON).mock.calls[0][1];
+  const backendSignal = backendHealth.mock.calls[0][1].signal;
   view.unmount();
   expect(signal?.aborted).toBe(true);
+  expect(backendSignal.aborted).toBe(true);
+});
+
+it('handles standalone servers without a startup endpoint', async () => {
+  backendHealth.mockResolvedValue(new Response('', { status: 404 }));
+  vi.mocked(fetchJSON).mockResolvedValue({ status: 'ready', sources: 1 });
+  renderHealth();
+  expect(await screen.findByText('Connected')).toBeVisible();
+});
+
+it.each([
+  [503, { state: 'starting', phase: 'Unavailable' }],
+  [200, { state: 'unknown', phase: 'Unknown' }],
+  [200, { state: 'ready' }],
+])('rejects unavailable or invalid backend health: %s %j', async (status, health) => {
+  backendHealth.mockResolvedValue(new Response(JSON.stringify(health), { status }));
+  vi.mocked(fetchJSON).mockResolvedValue({ status: 'ready', sources: 1 });
+  renderHealth();
+  expect(await screen.findByText('Reconnecting')).toBeVisible();
 });

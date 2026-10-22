@@ -157,7 +157,8 @@ message SessionReq {
   string session_id = 2;
   int32 limit = 3;
   int32 offset = 4;
-  bool browsing = 5;
+  reserved 5;
+  reserved "browsing";
 }
 
 message CutoffReq {

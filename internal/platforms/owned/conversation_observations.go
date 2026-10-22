@@ -10,7 +10,7 @@ import (
 func (a *Adapter) conversationObservations(ctx context.Context) (func(string) *platforms.LiveState, error) {
 	observer, ok := a.native.(platforms.CachedSessionObserver)
 	if !ok {
-		return a.cachedObservationLookup(), nil
+		return a.native.LiveStatus, nil
 	}
 	observations := maps.Clone(observer.CachedSessionObservations())
 	permissions, questions := map[string]bool{}, map[string]bool{}

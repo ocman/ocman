@@ -10,12 +10,21 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/conversationingest"
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/historyparity"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
+
+func compareOpenCodeHistory(ctx context.Context, a *Adapter, store *statev2.DB, owner string) (historyparity.Report, error) {
+	source, ok := a.db.OpenCodeOnly()
+	if !ok {
+		return historyparity.Report{}, fmt.Errorf("fixture has no OpenCode-only analytics source")
+	}
+	return historyparity.Compare(ctx, historyparity.Deps{Source: source, Store: store, OwnerID: owner})
+}
 
 // On a mixed-platform startup the analytics mirror also carries Claude's
 // rows. Parity compares the OpenCode history instance, so it must compare
@@ -81,7 +90,7 @@ func TestConversationHistoryParityIgnoresOtherPlatformsAnalytics(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := New(source, nil)
-	report, err := adapter.CompareHistory(t.Context(), store, "owner")
+	report, err := compareOpenCodeHistory(t.Context(), adapter, store, "owner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +113,7 @@ func TestConversationHistoryParityIgnoresOtherPlatformsAnalytics(t *testing.T) {
 	if err != nil || len(canonical) != 1 || !sessioncatalog.IsID(canonical[0].Session.SessionID) {
 		t.Fatalf("parity fixture was not rekeyed: %+v %v", canonical, err)
 	}
-	after, err := adapter.CompareHistory(t.Context(), store, "owner")
+	after, err := compareOpenCodeHistory(t.Context(), adapter, store, "owner")
 	if err != nil || len(after.Mismatches) != 0 || after.Days != report.Days || after.Models != report.Models {
 		t.Fatalf("canonical history changed aggregate parity: %+v %v", after, err)
 	}

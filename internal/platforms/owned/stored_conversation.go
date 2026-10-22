@@ -118,16 +118,3 @@ func (a *Adapter) overlayStoredObservation(row *db.Session, lookup func(string) 
 	}
 	platforms.OverlaySessionObservation(row, live, connected)
 }
-
-func (a *Adapter) cachedObservationLookup() func(string) *platforms.LiveState {
-	if observer, ok := a.native.(platforms.CachedSessionObserver); ok {
-		observations := observer.CachedSessionObservations()
-		return func(id string) *platforms.LiveState {
-			if value, exists := observations[id]; exists {
-				return &value
-			}
-			return nil
-		}
-	}
-	return a.native.LiveStatus
-}

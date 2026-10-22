@@ -12,7 +12,6 @@ import './App.css'
 import './print.css'
 import './components/RightPanelState.css'
 import App from './App'
-import { StartupMonitor } from './components/StartupMonitor'
 import { installRemoteLogHandlers, remoteLog } from './lib/remoteLog'
 import { hydrateDrafts } from './lib/newConversationDrafts'
 import { installAuthIntegration } from './lib/authStore'
@@ -60,7 +59,7 @@ registerServiceWorker()
 void hydrateDrafts().catch((error) => remoteLog.warn('Could not load saved drafts', error)).then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <StartupMonitor><App /></StartupMonitor>
+      <App />
     </StrictMode>,
   )
 })

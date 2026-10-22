@@ -32,9 +32,9 @@ type gateway struct {
 	done     chan error
 }
 
-// Run serves a read-only startup UI immediately, then hands the same HTTP
+// Run serves the normal embedded shell immediately, then hands the same HTTP
 // server to the application. compose still owns database and worker lifetimes.
-// Failure stays visible until shutdown, without exposing application routes.
+// Failure remains available to health diagnostics without exposing app routes.
 func Run(ctx context.Context, ln net.Listener, assets fs.FS, compose func(context.Context) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
