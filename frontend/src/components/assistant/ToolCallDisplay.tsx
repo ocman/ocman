@@ -109,7 +109,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   const argsTextWithMeta = shell ? `${shell.status}\n${shell.command}` : timeInfo ? timeInfo.strippedArgs : (rawArgsText || '');
   const { description: shellDescription, strippedArgs: argsTextNoDesc } = parseShellDescription(argsTextWithMeta);
   const argsLines = argsTextNoDesc.split('\n');
-  const userExecutedTool = argsLines.includes('@user-executed-tool');
+  const userExecutedTool = shell?.userExecuted || argsLines.includes('@user-executed-tool');
   const argsText = argsLines.filter((line) => line !== '@user-executed-tool').join('\n');
 
   if (toolName === 'ocman:auto-approved') {
@@ -243,7 +243,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
     );
   }
 
-  if (compactToolCalls && (/^(?:mcp_)?(?:bash|edit|write)$/i.test(toolName) || toolName === 'apply_patch')) {
+  if (compactToolCalls && !userExecutedTool && (/^(?:mcp_)?(?:bash|edit|write)$/i.test(toolName) || toolName === 'apply_patch')) {
     const projectDirectory = artifact && typeof artifact === 'object' && 'projectDirectory' in artifact && typeof artifact.projectDirectory === 'string' ? artifact.projectDirectory : '';
     return <CompactToolCall toolName={toolName} args={remainingArgs} description={shellDescription} projectDirectory={projectDirectory} status={toolStatus} expanded={expanded} onToggle={() => setExpanded(!expanded)} timeInfo={timeInfo}>
       <ToolCallBody {...props} toolName={toolName} argsText={shell ? argsTextWithMeta : rawArgsText} artifact={artifact} result={result} full />
