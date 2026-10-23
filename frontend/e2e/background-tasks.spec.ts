@@ -10,7 +10,11 @@ for (const width of [1280, 390]) {
       type: 'background.changed', count: 1, tasks: [{ id: 'one', description: 'pnpm test '.repeat(12) }],
     }]);
     await page.goto(`/session/${MOCK_SESSION.id}`);
-    await page.getByRole('button', { name: '1 background task running' }).click();
+    const trigger = page.getByRole('button', { name: '1 background task running' });
+    await expect(trigger).toHaveText('1');
+    await expect(page.locator('.oc-composer-footer-right').getByRole('button', { name: '1 background task running' })).toBeVisible();
+    await expect(page.getByTestId('composer-notices').getByRole('button', { name: '1 background task running' })).toHaveCount(0);
+    await trigger.click();
     const panel = page.getByRole('dialog', { name: 'Background tasks' });
     const stop = panel.getByRole('button', { name: /^Stop / });
     await expect(stop).toBeVisible();

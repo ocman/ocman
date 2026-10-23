@@ -8,53 +8,54 @@ afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 const tasks = [{ id: 'one', description: 'pnpm test' }, { id: 'two', description: 'go test' }];
 
-it('shows a quiet count only while tasks are running', () => {
+it('shows an icon with the task count only while tasks are running', () => {
   const { rerender } = render(<BackgroundTasksNotice count={0} />);
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   rerender(<BackgroundTasksNotice count={1} />);
-  expect(screen.getByRole('status')).toHaveTextContent('1 background task running');
+  expect(screen.getByRole('button', { name: '1 background task running' })).toHaveTextContent(/^1$/);
   rerender(<BackgroundTasksNotice count={3} />);
-  expect(screen.getByRole('status')).toHaveTextContent('3 background tasks running');
+  expect(screen.getByRole('button', { name: '3 background tasks running' })).toHaveTextContent(/^3$/);
   rerender(<BackgroundTasksNotice count={0} />);
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
-it('opens on hover and stays open while crossing into the task list', () => {
-  vi.useFakeTimers();
+it('opens the list on click only, toggles closed, and closes on outside clicks', () => {
   render(<BackgroundTasksNotice count={2} tasks={tasks} />);
   const trigger = screen.getByRole('button', { name: '2 background tasks running' });
   fireEvent.mouseEnter(trigger);
-  act(() => { vi.advanceTimersByTime(1000); });
+  fireEvent.focus(trigger);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.click(trigger);
   expect(screen.getByRole('dialog', { name: 'Background tasks' })).toBeInTheDocument();
+  expect(trigger).toHaveAttribute('aria-expanded', 'true');
   expect(screen.getByText('pnpm test')).toBeInTheDocument();
-  fireEvent.mouseLeave(trigger);
-  fireEvent.mouseEnter(screen.getByText('Background tasks').parentElement!);
-  act(() => { vi.advanceTimersByTime(200); });
-  expect(screen.getByRole('dialog')).toBeInTheDocument();
-  fireEvent.mouseLeave(screen.getByText('Background tasks').parentElement!);
-  act(() => { vi.advanceTimersByTime(200); });
+  fireEvent.click(trigger);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.mouseDown(document.body);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 
-it('cancels short hovers, supports click and focus, and clears the list after the last task ends', () => {
-  vi.useFakeTimers();
+it('moves focus into the open list on Tab and resets when the last task ends', () => {
   const { rerender } = render(<BackgroundTasksNotice count={1} />);
   const trigger = screen.getByRole('button');
-  fireEvent.mouseEnter(trigger);
-  fireEvent.mouseLeave(trigger);
-  act(() => { vi.advanceTimersByTime(1000); });
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  fireEvent.focus(trigger);
+  fireEvent.click(trigger);
   expect(screen.getByText('Task details are unavailable from this backend.')).toBeInTheDocument();
   fireEvent.keyDown(trigger, { key: 'Tab' });
   expect(screen.getByRole('dialog')).toHaveFocus();
-  fireEvent.mouseDown(document.body);
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  fireEvent.click(trigger);
-  expect(screen.getByRole('dialog')).toBeInTheDocument();
   rerender(<BackgroundTasksNotice count={0} />);
   rerender(<BackgroundTasksNotice count={1} />);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('anchors the list to the right edge of the trigger within the viewport', () => {
+  render(<BackgroundTasksNotice count={1} />);
+  const trigger = screen.getByRole('button');
+  vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ left: 900, right: 920, top: 700, bottom: 716, width: 20, height: 16, x: 900, y: 700, toJSON: () => ({}) });
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole('dialog');
+  expect(dialog.style.left).toBe(`${Math.max(12, Math.min(920 - 340, window.innerWidth - 352))}px`);
+  expect(dialog.style.bottom).toBe(`${window.innerHeight - 700 + 4}px`);
 });
 
 it('stops only the selected task with its owner and disables that row while pending', async () => {

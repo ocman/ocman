@@ -15,6 +15,7 @@ import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 
 interface ComposerFooterProps {
   machineControl?: ReactNode;
+  status?: ReactNode;
   directory?: string;
   newConversation?: boolean;
   worktreesSupported?: boolean;
@@ -48,7 +49,7 @@ interface ComposerFooterProps {
 }
 
 export function ComposerFooter({
-  machineControl,
+  machineControl, status,
   directory, newConversation, worktreesSupported, worktrees, target, onTargetChange, targetDisabled, disabled, isRunning,
   effectiveAgent, agentsLoaded, agents, tokensPerSecond, onAbort, tokenStats,
   estimatedCost, sessionTreeStats, contextTokens, effectiveModel, timeCreated,
@@ -97,6 +98,7 @@ export function ComposerFooter({
         )}
       </span>
       <span className="oc-composer-footer-right">
+        {status}
         {tokenStats && (
           <span className="oc-context-usage-wrap" ref={tokenPopoverRef}>
             <button type="button" className="oc-session-cost" title={reportedCost > 0 ? 'Click for cost and token usage details' : `${API_EQUIVALENT_TITLE}. Click for details`} onClick={() => setShowTokenPopover((value) => !value)}>

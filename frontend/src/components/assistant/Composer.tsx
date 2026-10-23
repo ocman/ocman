@@ -35,7 +35,7 @@ export function Composer({
   activeDurationMs, timeCreated, durationMs, sessionId, platform, draftKey: draftKeyProp, tokensPerSecond, initialAttachments, onAttachmentsChange, onAttachmentProcessing,
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
-  worktreesSupported, worktrees, permissionControl, composerRef, target, onTargetChange,
+  worktreesSupported, worktrees, permissionControl, footerStatus, composerRef, target, onTargetChange,
   remoteId, onMachineChange,
 }: ComposerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -367,6 +367,7 @@ export function Composer({
             micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} hasContent={hasText || images.length > 0 || files.length > 0 || attachments.pending > 0} onAbort={onAbort} sending={sending} submit={submit} />
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}
+          status={footerStatus}
           machineControl={newConversation && directory && onMachineChange && (<>
             <ComposerMachineSelector
               key={`${sessionId}:${directory}:${remoteId}`}

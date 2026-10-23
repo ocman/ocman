@@ -85,6 +85,8 @@ export interface ComposerProps {
   target?: SessionTarget;
   onTargetChange?: (target: SessionTarget) => void;
   permissionControl?: ReactNode;
+  /** Fixed-size status shown before the session cost; must not change footer height. */
+  footerStatus?: ReactNode;
   composerRef?: Ref<ComposerHandle>;
   remoteId?: string;
   onMachineChange?: (target: TargetCandidate) => Promise<void>;

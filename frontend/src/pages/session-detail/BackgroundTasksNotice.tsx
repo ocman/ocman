@@ -1,9 +1,8 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { useId, useRef, useState, type CSSProperties } from 'react';
 import { api } from '../../lib/api';
 import type { BackgroundTask } from '../../lib/sessionBackgroundTasks';
 import { Button } from '../../components/Control';
 import { Popover } from '../../components/Popover';
-import { TOOLTIP_DELAY_MS } from '../../components/Tooltip';
 import styles from './BackgroundTasksNotice.module.css';
 
 interface Props {
@@ -14,24 +13,24 @@ export function BackgroundTasksNotice(props: Props) {
   return props.count > 0 ? <RunningBackgroundTasksNotice {...props} /> : null;
 }
 
+// Matches the .oc-popover width.
+const PANEL_WIDTH = 340;
+
 function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platform = '', canStop = false }: Props) {
   const trigger = useRef<HTMLButtonElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const id = useId();
   const [position, setPosition] = useState<CSSProperties | null>(null);
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
-  const open = count > 0 && position !== null;
-  const cancelTimer = () => clearTimeout(timer.current);
-  const close = () => { cancelTimer(); setPosition(null); };
+  const open = position !== null;
+  const close = () => setPosition(null);
   const show = () => {
-    cancelTimer();
     const rect = trigger.current?.getBoundingClientRect();
-    if (rect) setPosition({ left: Math.max(12, Math.min(rect.left, window.innerWidth - 372)), bottom: window.innerHeight - rect.top + 4 });
+    if (!rect) return;
+    const width = Math.min(PANEL_WIDTH, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
+    setPosition({ left, bottom: window.innerHeight - rect.top + 4 });
   };
-  const enter = () => { cancelTimer(); if (!open) timer.current = setTimeout(show, TOOLTIP_DELAY_MS); };
-  const leave = () => { cancelTimer(); timer.current = setTimeout(close, 150); };
-  useEffect(() => () => clearTimeout(timer.current), []);
   const stop = async (task: BackgroundTask) => {
     setPending(previous => new Set(previous).add(task.id));
     setError('');
@@ -43,18 +42,20 @@ function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platf
       setPending(previous => { const next = new Set(previous); next.delete(task.id); return next; });
     }
   };
-  const text = `${count} background ${count === 1 ? 'task' : 'tasks'} running`;
+  const label = `${count} background ${count === 1 ? 'task' : 'tasks'} running`;
   return (
-    <div className="oc-sse-indicator" role="status">
-      <Button ref={trigger} variant="ghost" size="compact" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-        onMouseEnter={enter} onMouseLeave={leave} onFocus={() => { if (!open) show(); }} onClick={() => { if (!open) show(); }}
-        onBlur={event => { if (!document.getElementById(id)?.contains(event.relatedTarget)) close(); }}
+    <span className={styles.root} role="status">
+      <Button ref={trigger} variant="ghost" size="compact" className={styles.trigger} title={label} aria-label={label}
+        aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+        onClick={() => { if (open) close(); else show(); }}
         onKeyDown={event => {
           if (event.key === 'Tab' && !event.shiftKey && open) { event.preventDefault(); document.getElementById(id)?.focus(); }
-        }}>{text}</Button>
+        }}>
+        <i className="bi bi-list-task" aria-hidden="true" />
+        <span>{count}</span>
+      </Button>
       <Popover open={open} onClose={close} triggerRef={trigger} id={id} label="Background tasks" style={position ?? undefined} autoFocus={false}>
-        <div className={styles.content} onMouseEnter={cancelTimer} onMouseLeave={leave}
-          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget) && !trigger.current?.contains(event.relatedTarget)) close(); }}>
+        <div className={styles.content}>
           <h2 className={styles.title}>Background tasks</h2>
           {tasks.length === 0 ? <p>Task details are unavailable from this backend.</p> : <ul className={styles.tasks}>
             {tasks.map(task => <li key={task.id} className={styles.task}>
@@ -67,6 +68,6 @@ function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platf
           {error && <p role="alert">{error}</p>}
         </div>
       </Popover>
-    </div>
+    </span>
   );
 }

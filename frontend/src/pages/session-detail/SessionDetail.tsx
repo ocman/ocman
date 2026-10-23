@@ -992,8 +992,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   composer={(
                     <>
                     <div className="oc-composer-notices" data-testid="composer-notices" tabIndex={0} role="region" aria-label="Conversation status">
-                      <BackgroundTasksNotice key={`${session.platform}:${session.id}`} count={view.backgroundTaskCount ?? 0} tasks={view.backgroundTasks}
-                        sessionId={session.id} platform={session.platform} canStop={!!caps.backgroundTaskStop && portAvailable} />
                       {session.status === 'limited' && <StatusBadge status={session.status} resetsAt={session.resetsAt} />}
                       <SessionSyncIndicator
                         refreshing={view.refreshing}
@@ -1044,6 +1042,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         onMoveQueuedMessage: moveQueuedMessage,
                         onAbort: handleAbort,
                         isRunning,
+                        footerStatus: (
+                          <BackgroundTasksNotice key={`${session.platform}:${session.id}`} count={view.backgroundTaskCount ?? 0} tasks={view.backgroundTasks}
+                            sessionId={session.id} platform={session.platform} canStop={!!caps.backgroundTaskStop && portAvailable} />
+                        ),
                         disabled: !portAvailable || hasPendingPrompt,
                         disabledHint: hasPendingPrompt
                           ? 'Respond to the pending prompt above before sending a new message.'
