@@ -10,16 +10,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
-type factoryRowQueryer interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
 // GetFactoryEpicModels returns the Epic's per-phase model choices.
 func (d *DB) GetFactoryEpicModels(ctx context.Context, epicID string) (model.EpicModels, error) {
 	return getFactoryEpicModels(ctx, d.db, epicID)
 }
 
-func getFactoryEpicModels(ctx context.Context, q factoryRowQueryer, epicID string) (model.EpicModels, error) {
+func getFactoryEpicModels(ctx context.Context, q rowQuerier, epicID string) (model.EpicModels, error) {
 	var raw string
 	var models model.EpicModels
 	if err := q.QueryRowContext(ctx, `SELECT models_json FROM factory_epic WHERE id = ?`, epicID).Scan(&raw); errors.Is(err, sql.ErrNoRows) {

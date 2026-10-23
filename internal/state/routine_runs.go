@@ -11,7 +11,7 @@ import (
 const routineRunColumns = `id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, agent, model, session_mode, target_session_id, trigger,
 	platform, session_id, state, error, occurrence_at, created_at, started_at, finished_at, archive_session_after_success, notify_on_success, worktree, cleanup_worktree, worktree_path`
 
-func scanRoutineRun(row routineScanner) (RoutineRun, error) {
+func scanRoutineRun(row rowScanner) (RoutineRun, error) {
 	var run RoutineRun
 	err := row.Scan(&run.ID, &run.RoutineID, &run.RoutineUpdatedAt, &run.RoutineName, &run.Prompt, &run.Directory, &run.RemoteID,
 		&run.Agent, &run.Model, &run.SessionMode, &run.TargetSessionID, &run.Trigger, &run.Platform, &run.SessionID, &run.State, &run.Error, &run.OccurrenceAt,

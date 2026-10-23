@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -143,11 +142,7 @@ func (d *DB) DeliverFactoryEpicAsIs(ctx context.Context, epicID string, cancelAt
 
 const factoryDecisionPendingMessage = "a decision on paused work is still being carried out; try again shortly"
 
-type factoryQueryer interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-func factoryAttemptDecisionPendingTx(ctx context.Context, q factoryQueryer, attemptID string) (bool, error) {
+func factoryAttemptDecisionPendingTx(ctx context.Context, q rowQuerier, attemptID string) (bool, error) {
 	var pending bool
 	err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'resume', 'retry', 'cancel'))
 		OR EXISTS(SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('open', 'approve', 'reject'))

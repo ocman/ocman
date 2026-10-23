@@ -76,9 +76,7 @@ type RoutineRun struct {
 const routineColumns = `id, name, prompt, directory, remote_id, agent, model, session_mode, session_id, schedule_kind, schedule_config_json, permission_rules_json,
 	next_due_at, enabled, deleted, delete_after_success, created_at, updated_at, deleted_at, expired_at, archive_session_after_success, notify_on_success, worktree, cleanup_worktree, platform`
 
-type routineScanner interface{ Scan(...any) error }
-
-func scanRoutine(row routineScanner) (Routine, error) {
+func scanRoutine(row rowScanner) (Routine, error) {
 	var routine Routine
 	err := row.Scan(&routine.ID, &routine.Name, &routine.Prompt, &routine.Directory, &routine.RemoteID,
 		&routine.Agent, &routine.Model, &routine.SessionMode, &routine.SessionID, &routine.ScheduleKind, &routine.ScheduleConfigJSON, &routine.PermissionRulesJSON, &routine.NextDueAt, &routine.Enabled,

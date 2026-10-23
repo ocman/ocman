@@ -790,11 +790,7 @@ func loadFactoryRecoveryGate(ctx context.Context, scanner interface {
 	return gate, nil
 }
 
-type factoryAttemptScanner interface {
-	Scan(...any) error
-}
-
-func scanFactoryAttempt(scanner factoryAttemptScanner) (model.FactoryAttempt, error) {
+func scanFactoryAttempt(scanner rowScanner) (model.FactoryAttempt, error) {
 	var attempt model.FactoryAttempt
 	var retryOf sql.NullString
 	var policyJSON, resultJSON string

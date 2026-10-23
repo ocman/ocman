@@ -218,10 +218,6 @@ func (d *DB) listFactoryEpicProjects(ctx context.Context, epicID string) ([]mode
 	return listFactoryEpicProjectsWith(ctx, d.db, epicID)
 }
 
-type factoryProjectQueryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
 const factoryProjectColumns = `p.project_path, p.is_epic = 0 AND NOT EXISTS (
 		SELECT 1 FROM factory_attempt a WHERE a.epic_id = p.epic_id AND a.started_at > 0 AND json_extract(a.frozen_policy_json, '$.repository') = p.project_path
 	) AND NOT EXISTS (
@@ -230,7 +226,7 @@ const factoryProjectColumns = `p.project_path, p.is_epic = 0 AND NOT EXISTS (
 		SELECT 1 FROM factory_issue i WHERE i.epic_id = p.epic_id AND i.project_path = p.project_path AND i.status <> 'closed' AND i.kind IN ('implementation', 'task', 'delivery') AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)
 	)`
 
-func listFactoryEpicProjectsWith(ctx context.Context, queryer factoryProjectQueryer, epicID string) ([]model.EpicProject, error) {
+func listFactoryEpicProjectsWith(ctx context.Context, queryer rowsQuerier, epicID string) ([]model.EpicProject, error) {
 	rows, err := queryer.QueryContext(ctx, `SELECT `+factoryProjectColumns+` FROM factory_epic_project p WHERE p.epic_id = ? ORDER BY p.is_epic DESC, p.project_path`, epicID)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory Epic projects: %w", err)

@@ -175,7 +175,7 @@ func factoryGraphExternalReferences(ctx context.Context, tx *sql.Tx, epicID stri
 	return issues, rows.Err()
 }
 
-func blockFactoryGraphApproval(ctx context.Context, reader factoryIssueReader, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {
+func blockFactoryGraphApproval(ctx context.Context, reader rowsQuerier, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {
 	rows, err := reader.QueryContext(ctx, `SELECT g.issue_id FROM factory_plan_gate g JOIN factory_proposal_revision p ON p.epic_id = g.epic_id AND p.revision = g.proposal_revision WHERE g.epic_id = ? AND g.resolution <> 'approved' AND json_type(p.manifest_json, '$.issues') = 'array'`, epicID)
 	if err != nil {
 		return nil, err

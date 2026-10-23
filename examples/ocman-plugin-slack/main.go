@@ -10,7 +10,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -73,17 +72,16 @@ func description() plugin.Description {
 // readConfiguration consumes the single JSON line the host writes to fd 3
 // before the serve hello. Secrets exist only in this process's memory.
 func readConfiguration() (config, error) {
-	f := os.NewFile(3, "config")
-	if f == nil {
-		return config{}, errors.New("missing configuration")
+	values, err := plugin.ReadConfiguration()
+	if err != nil {
+		return config{}, err
 	}
-	defer f.Close()
-	line, err := bufio.NewReader(io.LimitReader(f, plugin.MaxMessageBytes+1)).ReadBytes('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	line, err := json.Marshal(values.Values)
+	if err != nil {
 		return config{}, err
 	}
 	var c config
-	if err := json.Unmarshal(bytes.TrimSpace(line), &c); err != nil {
+	if err := json.Unmarshal(line, &c); err != nil {
 		return config{}, err
 	}
 	if c.Project == "" || c.AppToken == "" || c.BotToken == "" {

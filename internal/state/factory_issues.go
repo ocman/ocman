@@ -23,12 +23,8 @@ func (d *DB) ListFactoryIssues(ctx context.Context, epicID string) ([]model.Nati
 	return listFactoryIssues(ctx, d.db, epicID)
 }
 
-type factoryIssueReader interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
 // The claim path uses the same dispatch calculation inside its transaction.
-func listFactoryIssues(ctx context.Context, reader factoryIssueReader, epicID string) ([]model.NativeIssue, error) {
+func listFactoryIssues(ctx context.Context, reader rowsQuerier, epicID string) ([]model.NativeIssue, error) {
 	rows, err := reader.QueryContext(ctx, `SELECT i.id, i.epic_id, i.project_path, COALESCE(h.parent_issue_id, ''), COALESCE(h.requirement, ''), i.kind, i.title, i.status, i.description, COALESCE(f.formula_id, ''), COALESCE(f.formula_version, 0), COALESCE(f.formula_hash, ''), COALESCE(f.bindings_json, '{}'), COALESCE(m.proposal_revision, 0), COALESCE(p.manifest_key, ''), i.outcome, i.outcome_reason, COALESCE(g.resolution, pg.resolution, ''), i.retry_at, i.retry_attempts, i.created_at, COALESCE(pg.attempt_id, ''), COALESCE(pg.work_item_id, ''), COALESCE(pg.requested_project, ''), COALESCE(pg.canonical_project, ''), COALESCE(pg.reason, ''), COALESCE(pg.response, ''), COALESCE(pg.resolution, ''), COALESCE(pg.plan_issue_id, '') FROM factory_issue i LEFT JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id LEFT JOIN factory_mol_formula f ON f.mol_id = i.id LEFT JOIN factory_materialization_provenance p ON p.entity_kind = 'issue' AND p.entity_id = i.id LEFT JOIN factory_materialization m ON m.id = p.materialization_id LEFT JOIN factory_plan_gate g ON g.issue_id = i.id LEFT JOIN factory_project_request_gate pg ON pg.issue_id = i.id LEFT JOIN factory_removed_issue r ON r.issue_id = i.id WHERE i.epic_id = ? AND r.issue_id IS NULL ORDER BY CASE i.kind WHEN 'mol' THEN 0 WHEN 'plan' THEN 1 WHEN 'gate' THEN 2 ELSE 3 END`, epicID)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory issues: %w", err)
@@ -84,7 +80,7 @@ func (d *DB) ListRemovedFactoryIssues(ctx context.Context, epicID string) ([]mod
 	return issues, rows.Err()
 }
 
-func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {
+func deriveFactoryIssueDispatch(ctx context.Context, reader rowsQuerier, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {
 	byID := make(map[string]*model.NativeIssue, len(issues))
 	delivered := map[string]bool{}
 	for i := range issues {

@@ -341,9 +341,7 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 	return gate, nil
 }
 
-type factoryPlanGateScanner interface{ Scan(...any) error }
-
-func scanFactoryPlanGate(scanner factoryPlanGateScanner) (model.NativePlanGate, error) {
+func scanFactoryPlanGate(scanner rowScanner) (model.NativePlanGate, error) {
 	var gate model.NativePlanGate
 	var review string
 	if err := scanner.Scan(&gate.EpicID, &gate.IssueID, &gate.ProposalRevision, &gate.ProposalHash, &gate.Outcome, &gate.Resolution, &gate.Feedback, &review, &gate.ImplementationModel); err != nil {

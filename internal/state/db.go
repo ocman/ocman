@@ -270,14 +270,11 @@ func (d *DB) Close() error {
 
 // SizeBytes returns SQLite's current logical database size.
 func (d *DB) SizeBytes(ctx context.Context) (int64, error) {
-	var pages, pageSize int64
-	if err := d.db.QueryRowContext(ctx, `PRAGMA page_count`).Scan(&pages); err != nil {
-		return 0, fmt.Errorf("reading state database page count: %w", err)
+	var size int64
+	if err := d.db.QueryRowContext(ctx, `SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()`).Scan(&size); err != nil {
+		return 0, fmt.Errorf("reading state database size: %w", err)
 	}
-	if err := d.db.QueryRowContext(ctx, `PRAGMA page_size`).Scan(&pageSize); err != nil {
-		return 0, fmt.Errorf("reading state database page size: %w", err)
-	}
-	return pages * pageSize, nil
+	return size, nil
 }
 
 // Key identifies a session by its owning platform + session ID. Used

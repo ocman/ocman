@@ -81,16 +81,15 @@ func main() {
 	}
 	reader := &beadsReader{beadsRunner: execBeadsRunner{}}
 	if os.Args[1] == string(plugin.ModeServe) {
-		config := os.NewFile(3, "configuration")
-		var values struct {
-			Executable string `json:"executable"`
-		}
-		err := json.NewDecoder(config).Decode(&values)
-		_ = config.Close()
-		if err != nil || !filepath.IsAbs(values.Executable) {
+		config, err := plugin.ReadConfiguration()
+		if err != nil {
 			os.Exit(1)
 		}
-		reader.executable = values.Executable
+		var executable string
+		if json.Unmarshal(config.Values["executable"], &executable) != nil || !filepath.IsAbs(executable) {
+			os.Exit(1)
+		}
+		reader.executable = executable
 	}
 	handler := plugin.PaneHandler(description(), func(ctx context.Context, request plugin.PaneRead) (plugin.PaneTree, error) {
 		return readTree(ctx, reader, request)

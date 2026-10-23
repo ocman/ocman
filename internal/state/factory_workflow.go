@@ -66,7 +66,7 @@ func putWorkflowStep(ctx context.Context, tx *sql.Tx, id string, step model.Work
 	return err
 }
 
-func workflowSteps(ctx context.Context, reader factoryIssueReader, epicID string) (map[string]*model.WorkflowStep, error) {
+func workflowSteps(ctx context.Context, reader rowsQuerier, epicID string) (map[string]*model.WorkflowStep, error) {
 	rows, err := reader.QueryContext(ctx, `SELECT w.issue_id, w.definition_json FROM factory_workflow_step w JOIN factory_issue i ON i.id = w.issue_id WHERE i.epic_id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)`, epicID)
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func workflowSteps(ctx context.Context, reader factoryIssueReader, epicID string
 	return steps, rows.Err()
 }
 
-func attachWorkflowSteps(ctx context.Context, reader factoryIssueReader, epicID string, issues []model.NativeIssue) error {
+func attachWorkflowSteps(ctx context.Context, reader rowsQuerier, epicID string, issues []model.NativeIssue) error {
 	steps, err := workflowSteps(ctx, reader, epicID)
 	if err != nil {
 		return err
