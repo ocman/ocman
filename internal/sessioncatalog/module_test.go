@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
@@ -61,7 +59,7 @@ func TestCatalogueModuleBackfillsPagesAndMaintainsLateParents(t *testing.T) {
 		t.Fatalf("restart reassigned identity: %+v %v", child, err)
 	}
 	writeMetadata(t, h, "new", "zzz-parent", "/repo")
-	if _, err := m.step(t.Context()); err != nil {
+	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	row, err := s.FindBinding(t.Context(), nativeBinding("new"))
@@ -71,7 +69,7 @@ func TestCatalogueModuleBackfillsPagesAndMaintainsLateParents(t *testing.T) {
 	if err := h.Purge(t.Context(), statev2.Key{InstanceID: "history", SessionID: "new"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.step(t.Context()); err != nil {
+	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if retained, err := s.Get(t.Context(), row.ID); err != nil || retained.NativeID != "new" || !retained.Purged || retained.Title != "" || retained.Directory != "" {
@@ -111,91 +109,9 @@ func TestCatalogueModuleSeesOfflinePurgesAtStartup(t *testing.T) {
 	}
 }
 
-func TestCatalogueModuleRetriesEarlyAnnouncementsWithoutAnotherHook(t *testing.T) {
-	s, _ := openStore(t)
-	h := metadataHistory(t)
-	reserved, _, err := s.Reserve(t.Context(), reservation())
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeMetadata(t, h, binding().NativeID, "", reserved.Directory)
-	m := NewModule(Deps{Store: s, History: h, OwnerID: reserved.OwnerID, Interval: time.Millisecond})
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if len(m.pending) != 1 {
-		t.Fatalf("early announcement dropped: %d", len(m.pending))
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() { m.Run(ctx); close(done) }()
-	defer func() { cancel(); <-done }()
-	if _, err := s.Bind(t.Context(), reserved.ID, binding()); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		row, err := s.Get(t.Context(), reserved.ID)
-		if err == nil && row.Title == binding().NativeID {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("metadata did not retry: %+v %v", row, err)
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-
 type failingMetadata struct {
 	*statev2.DB
-	fail      atomic.Bool
-	attempts  atomic.Int32
-	afterPage func()
-}
-
-func (h *failingMetadata) Metadata(ctx context.Context, key statev2.Key) (statev2.SessionMetadata, error) {
-	h.attempts.Add(1)
-	if h.fail.Load() {
-		return statev2.SessionMetadata{}, errors.New("temporarily unavailable")
-	}
-	return h.DB.Metadata(ctx, key)
-}
-
-func TestCatalogueModuleRunnerRetriesWithoutNewWrites(t *testing.T) {
-	s, _ := openStore(t)
-	h := &failingMetadata{DB: metadataHistory(t)}
-	var reports atomic.Int32
-	m := NewModule(Deps{Store: s, History: h, OwnerID: catalogSource().OwnerID, Interval: time.Millisecond, OnError: func(error) { reports.Add(1) }})
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	writeMetadata(t, h.DB, "retry", "", "/repo")
-	h.fail.Store(true)
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() { m.Run(ctx); close(done) }()
-	defer func() { cancel(); <-done }()
-	deadline := time.Now().Add(3 * time.Second)
-	for h.attempts.Load() < 2 {
-		if time.Now().After(deadline) {
-			t.Fatal("failed metadata read was not retried")
-		}
-		time.Sleep(time.Millisecond)
-	}
-	h.fail.Store(false)
-	for {
-		_, err := s.FindBinding(t.Context(), nativeBinding("retry"))
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("recovery required another source write: %v", err)
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if reports.Load() != 1 {
-		t.Fatalf("identical index errors reported %d times", reports.Load())
-	}
+	fail bool
 }
 
 func TestCatalogueModuleRejectsMissingDependenciesAndPrepareFailure(t *testing.T) {
@@ -224,7 +140,7 @@ func TestCatalogueModuleDoesNotIndexAnotherOwner(t *testing.T) {
 	if _, err := h.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "foreign", SessionID: "secret"}, Title: "private"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.step(t.Context()); err != nil {
+	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.List(t.Context(), "foreign", 10, 0)
@@ -234,37 +150,13 @@ func TestCatalogueModuleDoesNotIndexAnotherOwner(t *testing.T) {
 }
 
 func (h *failingMetadata) MetadataPage(ctx context.Context, owner string, after statev2.Key, limit int) ([]statev2.SessionMetadata, error) {
-	rows, err := h.DB.MetadataPage(ctx, owner, after, limit)
-	if h.afterPage != nil {
-		callback := h.afterPage
-		h.afterPage = nil
-		callback()
+	if h.fail {
+		return nil, errors.New("temporarily unavailable")
 	}
-	return rows, err
+	return h.DB.MetadataPage(ctx, owner, after, limit)
 }
 
-func TestCatalogueModuleInventoryFenceRecoversConcurrentInsert(t *testing.T) {
-	s, _ := openStore(t)
-	h := &failingMetadata{DB: metadataHistory(t)}
-	writeMetadata(t, h.DB, "z", "", "/repo")
-	h.afterPage = func() { writeMetadata(t, h.DB, "a", "", "/repo") }
-	m := NewModule(Deps{Store: s, History: h, OwnerID: catalogSource().OwnerID})
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	// "a" sorts before the page cursor and can only be caught by the fence.
-	if _, err := s.FindBinding(t.Context(), nativeBinding("a")); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("fixture did not insert behind cursor: %v", err)
-	}
-	if _, err := m.step(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.FindBinding(t.Context(), nativeBinding("a")); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCatalogueModuleFailedReadsDoNotConsumeChanges(t *testing.T) {
+func TestCatalogueBootstrapCanRetryFailedInventory(t *testing.T) {
 	s, _ := openStore(t)
 	h := &failingMetadata{DB: metadataHistory(t)}
 	m := NewModule(Deps{Store: s, History: h, OwnerID: catalogSource().OwnerID})
@@ -272,45 +164,15 @@ func TestCatalogueModuleFailedReadsDoNotConsumeChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeMetadata(t, h.DB, "late", "", "/repo")
-	h.fail.Store(true)
-	if _, err := m.step(t.Context()); err == nil || m.cursor != 0 {
-		t.Fatalf("failed read advanced cursor: %d %v", m.cursor, err)
+	h.fail = true
+	if err := m.Start(t.Context()); err == nil {
+		t.Fatal("failed inventory ignored")
 	}
-	h.fail.Store(false)
-	if _, err := m.step(t.Context()); err != nil {
+	h.fail = false
+	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.FindBinding(t.Context(), nativeBinding("late")); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestCatalogueModuleBoundsDeferredMetadata(t *testing.T) {
-	s, _ := openStore(t)
-	h := metadataHistory(t)
-	reserved, _, err := s.Reserve(t.Context(), reservation())
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows := make([]statev2.SessionMetadata, 5000)
-	for i := range rows {
-		rows[i] = statev2.SessionMetadata{Instance: statev2.Instance{OwnerID: reserved.OwnerID, Platform: reserved.Platform, SourceKey: binding().SourceKey}, Session: statev2.Session{Key: statev2.Key{InstanceID: "history", SessionID: fmt.Sprint(i)}, Directory: reserved.Directory}}
-	}
-	m := NewModule(Deps{Store: s, History: h, OwnerID: reserved.OwnerID})
-	if err := m.project(t.Context(), rows); err != nil {
-		t.Fatal(err)
-	}
-	if len(m.pending) > 4096 || !m.rebuild {
-		t.Fatalf("unbounded pending metadata: %d %v", len(m.pending), m.rebuild)
-	}
-	m.schedulePending()
-	if !m.pendingRetryAt.After(time.Now()) {
-		t.Fatal("deferred rebuild retries without backoff")
-	}
-	for range 20 {
-		m.schedulePending()
-	}
-	if m.pendingDelay > 30*time.Second {
-		t.Fatal("unbounded retry delay")
 	}
 }

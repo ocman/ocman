@@ -12,7 +12,7 @@ import (
 // NewLegacyCatalogue supports inventories written before canonical ingestion.
 // Its native provenance attribution runs only for the selected physical source.
 // Canonical ingestion adopts metadata directly and does not install this worker.
-func NewLegacyCatalogue(catalogue *sessioncatalog.Store, history *statev2.DB, ownerID string, core *state.DB, adapters func() []platforms.Platform, onError func(error)) *sessioncatalog.Module {
+func NewLegacyCatalogue(catalogue *sessioncatalog.Store, history *statev2.DB, ownerID string, core *state.DB, adapters func() []platforms.Platform) *sessioncatalog.Module {
 	var routines, factory map[state.Key]string
 	active := map[sessioncatalog.Source]bool{}
 	return sessioncatalog.NewModule(sessioncatalog.Deps{Store: catalogue, History: history, OwnerID: ownerID, Prepare: func(ctx context.Context) error {
@@ -50,5 +50,5 @@ func NewLegacyCatalogue(catalogue *sessioncatalog.Store, history *statev2.DB, ow
 		} else if id := factory[key]; id != "" {
 			row.Origin, row.OriginID = sessioncatalog.Factory, id
 		}
-	}, OnError: onError})
+	}})
 }

@@ -76,7 +76,7 @@ func PrepareBuiltCore(ctx context.Context, core *state.DB, history *statev2.DB, 
 func inventoryCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, adapters []platforms.Platform) error {
 	// Freeze legacy routine/Factory provenance before core state is rekeyed.
 	startup.Report(ctx, "Inventorying session provenance", 0, 0)
-	legacy := NewLegacyCatalogue(catalogue, history, owner, core, func() []platforms.Platform { return adapters }, nil)
+	legacy := NewLegacyCatalogue(catalogue, history, owner, core, func() []platforms.Platform { return adapters })
 	if err := legacy.Start(ctx); err != nil {
 		return err
 	}
