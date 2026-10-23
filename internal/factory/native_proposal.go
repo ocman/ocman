@@ -105,7 +105,6 @@ type Materialization struct {
 }
 
 func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRequest) (ProposalRevision, error) {
-	store := s.store
 	proposal, err := s.proposalForRequest(ctx, req)
 	if err != nil {
 		return ProposalRevision{}, err
@@ -116,18 +115,18 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 	var saved model.NativeProposalRevision
 	if req.Import {
 		var authorized bool
-		saved, authorized, err = store.ImportFactoryProposalRevision(ctx, proposal)
+		saved, authorized, err = s.store.ImportFactoryProposalRevision(ctx, proposal)
 		if err == nil && !authorized {
 			return ProposalRevision{}, fmt.Errorf("%w: plan import requires an open Epic with unclaimed planning work and an unresolved approval gate", ErrInvalidRequest)
 		}
 	} else if req.AttemptID != "" {
 		var authorized bool
-		saved, authorized, err = store.SaveFactoryProposalRevisionForAttempt(ctx, proposal, req.AttemptID, req.AttemptToken)
+		saved, authorized, err = s.store.SaveFactoryProposalRevisionForAttempt(ctx, proposal, req.AttemptID, req.AttemptToken)
 		if err == nil && !authorized {
 			return ProposalRevision{}, ErrActionNotPermitted
 		}
 	} else {
-		saved, err = store.SaveFactoryProposalRevision(ctx, proposal)
+		saved, err = s.store.SaveFactoryProposalRevision(ctx, proposal)
 	}
 	if err != nil {
 		return ProposalRevision{}, err
@@ -136,7 +135,6 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 }
 
 func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalRequest) (ProposalRevision, error) {
-	store := s.store
 	if req.AttemptID == "" || req.AttemptToken == "" {
 		return ProposalRevision{}, ErrActionNotPermitted
 	}
@@ -149,7 +147,7 @@ func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalR
 			return ProposalRevision{}, fmt.Errorf("%w: scope Plan can only add implementation work", ErrInvalidRequest)
 		}
 	}
-	saved, err := store.ApplyFactoryScopePlan(ctx, proposal, req.AttemptID, req.AttemptToken, time.Now())
+	saved, err := s.store.ApplyFactoryScopePlan(ctx, proposal, req.AttemptID, req.AttemptToken, time.Now())
 	if err != nil {
 		return ProposalRevision{}, err
 	}
@@ -185,15 +183,13 @@ func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitPropos
 	}
 	if req.AttemptID != "" {
 		{
-			attempts := s.store
-			attempt, found, attemptErr := attempts.GetFactoryAttempt(ctx, req.AttemptID)
+			attempt, found, attemptErr := s.store.GetFactoryAttempt(ctx, req.AttemptID)
 			if attemptErr != nil {
 				return model.NativeProposalRevision{}, attemptErr
 			}
 			if found {
 				{
-					projectRequests := s.store
-					if _, scopeExpansion, gateErr := projectRequests.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
+					if _, scopeExpansion, gateErr := s.store.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
 						return model.NativeProposalRevision{}, gateErr
 					} else if scopeExpansion {
 						for _, issue := range issues {
@@ -248,8 +244,7 @@ func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitPropos
 }
 
 func (s *NativeService) GetProposal(ctx context.Context, epicID string, revision int) (ProposalRevision, error) {
-	store := s.store
-	proposal, err := store.GetFactoryProposalRevision(ctx, epicID, revision)
+	proposal, err := s.store.GetFactoryProposalRevision(ctx, epicID, revision)
 	if err != nil {
 		return ProposalRevision{}, err
 	}
@@ -257,11 +252,10 @@ func (s *NativeService) GetProposal(ctx context.Context, epicID string, revision
 }
 
 func (s *NativeService) ListProposals(ctx context.Context, epicID string) ([]ProposalRevision, error) {
-	store := s.store
 	if _, err := s.GetWorkEpic(ctx, epicID); err != nil {
 		return nil, err
 	}
-	proposals, err := store.ListFactoryProposalRevisions(ctx, epicID)
+	proposals, err := s.store.ListFactoryProposalRevisions(ctx, epicID)
 	if err != nil {
 		return nil, err
 	}

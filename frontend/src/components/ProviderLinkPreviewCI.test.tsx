@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { notifyManager } from '@tanstack/react-query';
+beforeEach(() => notifyManager.setScheduler(queueMicrotask));
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 // @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.

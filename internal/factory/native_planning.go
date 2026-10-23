@@ -12,7 +12,6 @@ import (
 )
 
 func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action string, req PlanGateDecisionRequest) (PlanGate, error) {
-	store := s.store
 	if req.ExpectedRevision < 1 || strings.TrimSpace(req.ExpectedHash) == "" {
 		return PlanGate{}, fmt.Errorf("%w: plan revision and hash are required", ErrInvalidRequest)
 	}
@@ -27,7 +26,7 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 	if implementationModel != "" || req.UseDefaultImplementationModel {
 		modelChoice = []string{implementationModel}
 	}
-	gate, err := store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback), modelChoice...)
+	gate, err := s.store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback), modelChoice...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlanGate{}, fmt.Errorf("%w: factory Plan gate is unavailable", ErrInvalidRequest)
 	}
@@ -53,8 +52,7 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 func (s *NativeService) Materialize(ctx context.Context, epicID, issueID string) (Materialization, error) {
 	s.materializationMu.Lock()
 	defer s.materializationMu.Unlock()
-	store := s.store
-	materialization, err := store.MaterializeFactoryPlan(ctx, epicID, issueID, "factory-materialize/v1", time.Now())
+	materialization, err := s.store.MaterializeFactoryPlan(ctx, epicID, issueID, "factory-materialize/v1", time.Now())
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		err = ErrWorkEpicNotFound
 	}
@@ -73,11 +71,10 @@ func nativePlanGate(gate model.NativePlanGate) PlanGate {
 func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (ClaimedPlan, error) {
 	s.planningMu.Lock()
 	defer s.planningMu.Unlock()
-	store := s.store
 	if s.planning == nil {
 		return ClaimedPlan{}, ErrFactoryUnavailable
 	}
-	epic, attempt, err := store.ClaimFactoryPlan(ctx, epicID, issueID, planningProfile, time.Now())
+	epic, attempt, err := s.store.ClaimFactoryPlan(ctx, epicID, issueID, planningProfile, time.Now())
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		return ClaimedPlan{}, ErrWorkEpicNotFound
 	}
@@ -91,9 +88,9 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)", PermissionRules: attempt.FrozenPolicy.PermissionRules}
 	request.Model = attempt.FrozenPolicy.Model
 	request.Platform = attempt.FrozenPolicy.Platform
-	_, request.ScopeExpansion, err = store.GetFactoryProjectRequestGateForPlan(ctx, issueID)
+	_, request.ScopeExpansion, err = s.store.GetFactoryProjectRequestGateForPlan(ctx, issueID)
 	if err != nil {
-		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "scope_lookup_failed", Message: "Scope expansion could not be loaded"}, time.Now())
+		_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "scope_lookup_failed", Message: "Scope expansion could not be loaded"}, time.Now())
 		return ClaimedPlan{}, err
 	}
 	stage := "planning"
@@ -102,7 +99,7 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	}
 	request.Prompt, err = s.issuePrompt(ctx, epic, issueID, stage)
 	if err != nil {
-		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "formula_prompt_failed", Message: "Formula prompt could not be loaded"}, time.Now())
+		_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "formula_prompt_failed", Message: "Formula prompt could not be loaded"}, time.Now())
 		return ClaimedPlan{}, err
 	}
 	session, launchErr := s.planning.LaunchPlanningSession(ctx, request)
@@ -114,16 +111,16 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 		if request.ScopeExpansion {
 			failureType = "scope_launch_failed"
 		}
-		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session could not be launched"}, time.Now())
+		_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session could not be launched"}, time.Now())
 		return ClaimedPlan{}, ErrFactoryUnavailable
 	}
-	if activated, err := store.ActivateFactoryAttempt(ctx, attempt.ID, session, time.Now()); err != nil || !activated {
+	if activated, err := s.store.ActivateFactoryAttempt(ctx, attempt.ID, session, time.Now()); err != nil || !activated {
 		_ = s.planning.StopPlanningSession(context.WithoutCancel(ctx), session)
 		failureType := "activation_failed"
 		if request.ScopeExpansion {
 			failureType = "scope_activation_failed"
 		}
-		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session could not be recorded"}, time.Now())
+		_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session could not be recorded"}, time.Now())
 		if err == nil {
 			err = errors.New("factory attempt was no longer prepared")
 		}
@@ -131,7 +128,7 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	}
 	if err := s.planning.PromptPlanningSession(ctx, session, request); err != nil {
 		_ = s.planning.StopPlanningSession(context.WithoutCancel(ctx), session)
-		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "prompt_failed", Message: "Planning Session could not be prompted"}, time.Now())
+		_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "prompt_failed", Message: "Planning Session could not be prompted"}, time.Now())
 		return ClaimedPlan{}, ErrFactoryUnavailable
 	}
 	attempt.Phase, attempt.Session = model.FactoryAttemptActive, session

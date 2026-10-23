@@ -44,7 +44,7 @@ func TestWorkflowChecksEveryChangedProjectBeforeDelivery(t *testing.T) {
 	for _, issue := range issues {
 		if issue.Kind == "implementation" && issue.Project == "/unused" {
 			deferred = issue.ID
-			if err := svc.DeferIssue(t.Context(), epic.ID, issue.ID, "Skip optional project"); err != nil {
+			if err := db.DeferFactoryIssue(t.Context(), epic.ID, issue.ID, "Skip optional project"); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -93,7 +93,7 @@ func TestWorkflowChecksEveryChangedProjectBeforeDelivery(t *testing.T) {
 	if len(launcher.prompts) != 7 {
 		t.Fatal("completed steps ran twice")
 	}
-	if err := svc.ResumeIssue(t.Context(), epic.ID, deferred); err == nil {
+	if err := db.ResumeFactoryIssue(t.Context(), epic.ID, deferred); err == nil {
 		t.Fatal("optional work resumed after final delivery")
 	}
 }

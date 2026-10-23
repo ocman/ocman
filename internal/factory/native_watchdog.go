@@ -26,7 +26,6 @@ type ImplementationActivityProbe interface {
 // handled by the runtime probe; this covers the hung-but-alive one.
 func (s *NativeService) pauseIdleAttempt(ctx context.Context, attempt model.FactoryAttempt) error {
 	probe, ok := s.implementation.(ImplementationActivityProbe)
-	store := s.store
 	if !ok || time.Since(time.UnixMilli(attempt.StartedAt)) < factoryIdleTimeout {
 		return nil
 	}
@@ -45,7 +44,7 @@ func (s *NativeService) pauseIdleAttempt(ctx context.Context, attempt model.Fact
 		return nil
 	}
 	since := time.UnixMilli(attempt.StartedAt)
-	resumed, err := store.FactoryAttemptLastResumedAt(ctx, attempt.ID)
+	resumed, err := s.store.FactoryAttemptLastResumedAt(ctx, attempt.ID)
 	if err != nil {
 		return err
 	}
@@ -88,6 +87,6 @@ func (s *NativeService) pauseIdleAttempt(ctx context.Context, attempt model.Fact
 		}
 	}
 	question := fmt.Sprintf("The session has made no progress for %s without completing or requesting recovery. Resume it with guidance, retry the Issue, or cancel it.", idle.Round(time.Minute))
-	_, err = store.CreateFactoryRecoveryGate(ctx, attempt.ID, question, "Factory watchdog: session idle", nil, time.Now())
+	_, err = s.store.CreateFactoryRecoveryGate(ctx, attempt.ID, question, "Factory watchdog: session idle", nil, time.Now())
 	return err
 }

@@ -11,7 +11,6 @@ import (
 // reconcileAttention runs after dispatch so automatically runnable work never
 // produces an action notification. Inbox identities survive refresh/restart.
 func (s *NativeService) reconcileAttention(ctx context.Context) {
-	inbox := s.store
 	s.attentionMu.Lock()
 	defer s.attentionMu.Unlock()
 	// ponytail: scan all epics after dispatch; scope to changed epics if history makes this costly.
@@ -31,7 +30,7 @@ func (s *NativeService) reconcileAttention(ctx context.Context) {
 			attentionEpic.Status = "open"
 		}
 		actions := factoryAttention(attentionEpic, issues)
-		added, err := inbox.SyncFactoryActionInbox(ctx, epic.ID, "Factory needs attention: "+epic.Goal, actions)
+		added, err := s.store.SyncFactoryActionInbox(ctx, epic.ID, "Factory needs attention: "+epic.Goal, actions)
 		if err != nil {
 			logrus.WithError(err).WithField("epic", epic.ID).Warn("Factory attention Inbox sync failed")
 			continue

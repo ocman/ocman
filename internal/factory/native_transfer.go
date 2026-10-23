@@ -21,12 +21,11 @@ var errTransferLive = fmt.Errorf("%w: the transfer is still running", ErrInvalid
 // create is called, and the created URL is recorded before the ticket is
 // removed, so a retry after a local failure never creates a second issue.
 func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID string, create func(context.Context, Issue) (string, error)) (string, error) {
-	store := s.store
 	// Reserving and registering the live call are one step under the lock, as
 	// are Cancel's live check and release, so Cancel can never release a
 	// reservation whose tracker call is about to start.
 	s.transfersMu.Lock()
-	url, claim, err := store.ReserveFactoryIssueTransfer(ctx, epicID, issueID, time.Now())
+	url, claim, err := s.store.ReserveFactoryIssueTransfer(ctx, epicID, issueID, time.Now())
 	if err == nil && url == "" {
 		if s.liveTransfers == nil {
 			s.liveTransfers = map[string]bool{}
@@ -49,7 +48,7 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 		}()
 		issues, err := s.ListIssues(ctx, epicID)
 		if err != nil {
-			_ = store.ReleaseFactoryIssueTransfer(local, epicID, issueID, claim)
+			_ = s.store.ReleaseFactoryIssueTransfer(local, epicID, issueID, claim)
 			return "", err
 		}
 		var issue Issue
@@ -60,15 +59,15 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 		}
 		if url, err = create(ctx, issue); err != nil {
 			if !errors.Is(err, ErrTrackerUncertain) {
-				_ = store.ReleaseFactoryIssueTransfer(local, epicID, issueID, claim)
+				_ = s.store.ReleaseFactoryIssueTransfer(local, epicID, issueID, claim)
 			}
 			return "", err
 		}
-		if err := store.RecordFactoryIssueTransfer(local, epicID, issueID, claim, url); err != nil {
+		if err := s.store.RecordFactoryIssueTransfer(local, epicID, issueID, claim, url); err != nil {
 			return url, err
 		}
 	}
-	if err := store.CompleteFactoryIssueTransfer(local, epicID, issueID, url, time.Now()); err != nil {
+	if err := s.store.CompleteFactoryIssueTransfer(local, epicID, issueID, url, time.Now()); err != nil {
 		return url, err
 	}
 	s.wakeDispatch()
@@ -79,13 +78,12 @@ func (s *NativeService) TransferIssue(ctx context.Context, epicID, issueID strin
 // unknown, putting the ticket back in the Epic. Recorded transfers resume
 // instead; they cannot be cancelled.
 func (s *NativeService) CancelIssueTransfer(ctx context.Context, epicID, issueID string) error {
-	store := s.store
 	s.transfersMu.Lock()
 	defer s.transfersMu.Unlock()
 	if s.liveTransfers[issueID] {
 		return errTransferLive
 	}
-	if err := store.ReleaseFactoryIssueTransfer(ctx, epicID, issueID, ""); err != nil {
+	if err := s.store.ReleaseFactoryIssueTransfer(ctx, epicID, issueID, ""); err != nil {
 		return err
 	}
 	s.wakeDispatch()

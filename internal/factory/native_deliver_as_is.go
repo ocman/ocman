@@ -14,7 +14,6 @@ import (
 // work is left out, and verification of the current graph is waived, so
 // Factory delivers what is done. Other running work must finish first.
 func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]string, error) {
-	store := s.store
 	// Hold every decision path's lock (in their nesting order), so no gate on
 	// this Epic changes between the checks below and the cancellation.
 	s.authorityMu.Lock()
@@ -23,7 +22,7 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 	defer s.projectRequestMu.Unlock()
 	s.recoveryMu.Lock()
 	defer s.recoveryMu.Unlock()
-	attempts, err := store.ListFactoryAttempts(ctx, epicID)
+	attempts, err := s.store.ListFactoryAttempts(ctx, epicID)
 	if err != nil {
 		return nil, err
 	}
@@ -40,14 +39,14 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 		if attempt.Phase == model.FactoryAttemptTerminal {
 			continue
 		}
-		paused, err := store.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
+		paused, err := s.store.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
 		if err != nil {
 			return nil, err
 		}
 		if !verification[attempt.WorkID] && !paused {
 			return nil, fmt.Errorf("%w: wait for running work to finish: %s", ErrInvalidRequest, attempt.WorkID)
 		}
-		pending, err := store.FactoryAttemptDecisionPending(ctx, attempt.ID)
+		pending, err := s.store.FactoryAttemptDecisionPending(ctx, attempt.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +64,7 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 		}
 		// Recovery handoffs and later work advance the accepted state past the
 		// checkpoint this attempt started from.
-		accepted, err := store.LatestFactoryCheckpoint(ctx, epicID, policy.Repository)
+		accepted, err := s.store.LatestFactoryCheckpoint(ctx, epicID, policy.Repository)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +96,7 @@ func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]strin
 		}
 		cancel = append(cancel, attempt.ID)
 	}
-	deferred, err := store.DeliverFactoryEpicAsIs(ctx, epicID, cancel, time.Now())
+	deferred, err := s.store.DeliverFactoryEpicAsIs(ctx, epicID, cancel, time.Now())
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}

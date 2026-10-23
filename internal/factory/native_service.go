@@ -14,12 +14,11 @@ import (
 func (s *NativeService) Start(ctx context.Context) error {
 	s.planningMu.Lock()
 	defer s.planningMu.Unlock()
-	store := s.store
 	if s.planning == nil {
 		return nil
 	}
 	ctx = context.WithoutCancel(ctx)
-	attempts, err := store.ListFactoryAttempts(ctx, "")
+	attempts, err := s.store.ListFactoryAttempts(ctx, "")
 	if err != nil {
 		return err
 	}
@@ -29,8 +28,7 @@ func (s *NativeService) Start(ctx context.Context) error {
 		}
 		if attempt.FrozenPolicy.Profile == "factory-implement/v1" {
 			{
-				recovery := s.store
-				paused, err := recovery.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
+				paused, err := s.store.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
 				if err != nil {
 					return err
 				}
@@ -45,7 +43,7 @@ func (s *NativeService) Start(ctx context.Context) error {
 				if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
 					continue
 				}
-				if _, err := store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "delivery_migration", Message: "Implementation attempt predates shared delivery"}, time.Now()); err != nil {
+				if _, err := s.store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "delivery_migration", Message: "Implementation attempt predates shared delivery"}, time.Now()); err != nil {
 					return fmt.Errorf("migrate Implementation attempt: %w", err)
 				}
 				continue
@@ -61,7 +59,7 @@ func (s *NativeService) Start(ctx context.Context) error {
 					continue
 				}
 			}
-			_, err := store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "interrupted_startup", Message: "Implementation Session was not durably available after restart"}, time.Now())
+			_, err := s.store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "interrupted_startup", Message: "Implementation Session was not durably available after restart"}, time.Now())
 			if err != nil {
 				return fmt.Errorf("recover Implementation attempt: %w", err)
 			}
@@ -92,14 +90,13 @@ func (s *NativeService) Start(ctx context.Context) error {
 		}
 		failureType := "interrupted_startup"
 		{
-			projectRequests := s.store
-			if _, scopeExpansion, gateErr := projectRequests.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
+			if _, scopeExpansion, gateErr := s.store.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
 				return gateErr
 			} else if scopeExpansion {
 				failureType = "scope_interrupted_startup"
 			}
 		}
-		if _, err := store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session was not durably available after restart"}, time.Now()); err != nil {
+		if _, err := s.store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session was not durably available after restart"}, time.Now()); err != nil {
 			return fmt.Errorf("recover Planning attempt: %w", err)
 		}
 	}
@@ -176,8 +173,7 @@ func (s *NativeService) SetCapacityPolicy(ctx context.Context, policy CapacityPo
 		canonical[root] = capacity
 	}
 	policy.ProjectOverrides = canonical
-	store := s.store
-	if err := store.SetFactoryCapacityPolicy(ctx, policy); err != nil {
+	if err := s.store.SetFactoryCapacityPolicy(ctx, policy); err != nil {
 		return CapacityPolicy{}, err
 	}
 	s.wakeDispatch()

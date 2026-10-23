@@ -32,6 +32,29 @@ class DevDataConfigTest(unittest.TestCase):
                 )
 
 
+class FrontendWatchTest(unittest.TestCase):
+    def test_uses_native_watchers_and_survives_type_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            (root / "frontend").mkdir()
+            (root / "bin").mkdir()
+            shutil.copy(Path(__file__).with_name("watch-frontend-prod.sh"), root / "scripts")
+            pnpm = root / "bin/pnpm"
+            pnpm.write_text('#!/bin/sh\necho "$*" >> "$WATCH_LOG"\n'
+                            'if [ "$2" = tsc ]; then touch "$WATCH_LOG.tsc"; exit 1; fi\n'
+                            'while [ ! -f "$WATCH_LOG.tsc" ]; do sleep 0.01; done\n')
+            pnpm.chmod(0o755)
+            log = root / "commands"
+            result = subprocess.run(["bash", "scripts/watch-frontend-prod.sh"], cwd=root,
+                                    env=dict(os.environ, PATH=f'{root / "bin"}:{os.environ["PATH"]}', WATCH_LOG=str(log)),
+                                    capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(set(log.read_text().splitlines()), {
+                "exec tsc -b --watch --preserveWatchOutput", "exec vite build --watch",
+            })
+
+
 class DevLogsTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

@@ -17,17 +17,16 @@ import (
 // configured capacity is full. Plan and Materialization never enter this path.
 func (s *NativeService) Dispatch(ctx context.Context) error {
 	defer s.reconcileAttention(ctx)
-	store := s.store
 	if s.implementation == nil {
 		return nil
 	}
-	if err := s.reconcileImplementationSessions(ctx, store); err != nil {
+	if err := s.reconcileImplementationSessions(ctx, s.store); err != nil {
 		return err
 	}
 	if err := s.observeMergeGates(ctx); err != nil {
 		return err
 	}
-	if err := store.WakeFactoryRetries(ctx, time.Now()); err != nil {
+	if err := s.store.WakeFactoryRetries(ctx, time.Now()); err != nil {
 		return err
 	}
 	s.resumeQueuedRecoveries(ctx)
@@ -44,7 +43,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		if epic.Status != "open" {
 			continue
 		}
-		if err := store.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+		if err := s.store.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
 			return err
 		}
 		issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
@@ -70,7 +69,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			}
 			continue
 		}
-		epic, attempt, err := store.ClaimFactoryImplementation(ctx, next.epic.ID, next.issue.ID, "factory-implement/v1", time.Now())
+		epic, attempt, err := s.store.ClaimFactoryImplementation(ctx, next.epic.ID, next.issue.ID, "factory-implement/v1", time.Now())
 		if err != nil {
 			continue
 		} // A saturated project must not stall other projects.
@@ -87,21 +86,20 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		}
 		prompt, promptErr := s.issuePromptFromIssues(ctx, epic, attempt.WorkID, stage, attempt.LaunchIssues)
 		if promptErr != nil || issue.ID == "" {
-			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: fmt.Sprintf("Implementation launch context is unavailable: %v", promptErr)}, time.Now())
+			_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: fmt.Sprintf("Implementation launch context is unavailable: %v", promptErr)}, time.Now())
 			continue
 		}
 		branch := "factory/" + epic.ID
 		baseRef := ""
 		repository := attempt.FrozenPolicy.Repository
 		{
-			completionStore := s.store
 			var branchErr error
 			if attempt.FrozenPolicy.Branch != "" {
 				branch = attempt.FrozenPolicy.Branch
 			} else {
 				// Existing PR-based epics resolve their branch once when adopting checkpoints.
 				var previousPR string
-				previousPR, branchErr = completionStore.FactoryEpicPRURL(ctx, epic.ID, repository)
+				previousPR, branchErr = s.store.FactoryEpicPRURL(ctx, epic.ID, repository)
 				if branchErr == nil && previousPR != "" {
 					branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, repository, branch, previousPR, attempt.FrozenPolicy)
 				}
@@ -127,10 +125,10 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			if branchErr == nil {
 				attempt.FrozenPolicy.Branch = branch
 				attempt.FrozenPolicy.BaseRef = baseRef
-				branchErr = completionStore.SetFactoryAttemptWorkspace(ctx, attempt.ID, attempt.FrozenPolicy)
+				branchErr = s.store.SetFactoryAttemptWorkspace(ctx, attempt.ID, attempt.FrozenPolicy)
 			}
 			if branchErr != nil {
-				_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation branch could not be resolved: " + branchErr.Error()}, time.Now())
+				_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation branch could not be resolved: " + branchErr.Error()}, time.Now())
 				continue
 			}
 		}
@@ -153,27 +151,27 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			if session.ID != "" {
 				_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
 			}
-			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation Session could not be launched: " + launchErr.Error()}, time.Now())
+			_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation Session could not be launched: " + launchErr.Error()}, time.Now())
 			continue
 		}
 		if session.ID == "" || session.Platform == "" {
-			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation Session returned no session"}, time.Now())
+			_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation Session returned no session"}, time.Now())
 			continue
 		}
 		s.implementationMu.Lock()
-		activated, activationErr := store.ActivateFactoryAttempt(ctx, attempt.ID, session, time.Now())
+		activated, activationErr := s.store.ActivateFactoryAttempt(ctx, attempt.ID, session, time.Now())
 		if activationErr == nil && activated {
 			s.activeSessions.Store(session, struct{}{})
 		}
 		if activationErr != nil || !activated {
 			s.implementationMu.Unlock()
 			_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
-			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "activation_failed", Message: "Implementation Session could not be recorded"}, time.Now())
+			_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "activation_failed", Message: "Implementation Session could not be recorded"}, time.Now())
 			continue
 		}
 		if err := s.implementation.PromptImplementationSession(ctx, session, request); err != nil {
 			_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
-			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "prompt_failed", Message: "Implementation Session could not be prompted"}, time.Now())
+			_, _ = s.store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "prompt_failed", Message: "Implementation Session could not be prompted"}, time.Now())
 		}
 		s.implementationMu.Unlock()
 	}
@@ -183,8 +181,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 func (s *NativeService) observeMergeGates(ctx context.Context) error {
 	s.mergeGateMu.Lock()
 	defer s.mergeGateMu.Unlock()
-	store := s.store
-	observations, err := store.ListFactoryMergeGateDeliveries(ctx, time.Now().Add(-factoryMergeGatePollInterval), 8)
+	observations, err := s.store.ListFactoryMergeGateDeliveries(ctx, time.Now().Add(-factoryMergeGatePollInterval), 8)
 	if err != nil {
 		return err
 	}
@@ -205,7 +202,7 @@ func (s *NativeService) observeMergeGates(ctx context.Context) error {
 			} else {
 				observation.Status, observation.Reason = status, ""
 			}
-			if err := store.RecordFactoryDeliveryObservation(ctx, observation); err != nil {
+			if err := s.store.RecordFactoryDeliveryObservation(ctx, observation); err != nil {
 				errs <- err
 			}
 		}(observation)
@@ -262,8 +259,7 @@ func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, stor
 		}
 		active[attempt.ID] = true
 		{
-			recovery := s.store
-			paused, err := recovery.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
+			paused, err := s.store.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -293,12 +289,11 @@ func (s *NativeService) dispatchEpics(ctx context.Context) ([]model.NativeEpic, 
 }
 
 func (s *NativeService) Queue(ctx context.Context) ([]DispatchItem, error) {
-	store := s.store
 	epics, err := s.store.ListFactoryEpics(ctx)
 	if err != nil {
 		return nil, err
 	}
-	attempts, err := store.ListFactoryAttempts(ctx, "")
+	attempts, err := s.store.ListFactoryAttempts(ctx, "")
 	if err != nil {
 		return nil, err
 	}

@@ -35,8 +35,7 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if !req.AcknowledgeLocalExecution {
 		return WorkEpic{}, ErrAcknowledgementRequired
 	}
-	acks := s.store
-	if err := acks.UpsertFactoryLocalExecutionAck(ctx, "local", project, "factory-implement", "v1", "operator", time.Now()); err != nil {
+	if err := s.store.UpsertFactoryLocalExecutionAck(ctx, "local", project, "factory-implement", "v1", "operator", time.Now()); err != nil {
 		return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
 	}
 	secondary := make([]string, 0, len(req.Projects))
@@ -55,7 +54,7 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 		if !admission.AcknowledgeLocalExecution {
 			return WorkEpic{}, fmt.Errorf("%w for project %q", ErrAcknowledgementRequired, canonical)
 		}
-		if err := acks.UpsertFactoryLocalExecutionAck(ctx, "local", canonical, "factory-implement", "v1", "operator", time.Now()); err != nil {
+		if err := s.store.UpsertFactoryLocalExecutionAck(ctx, "local", canonical, "factory-implement", "v1", "operator", time.Now()); err != nil {
 			return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement for %q: %w", ErrFactoryUnavailable, canonical, err)
 		}
 		seen[canonical] = true
@@ -74,8 +73,7 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	for i, rule := range req.PermissionRules {
 		modelRules[i] = model.PermissionRule{Permission: rule.Permission, Pattern: rule.Pattern, Action: rule.Action}
 	}
-	store := s.store
-	epic, err := store.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary, modelRules, req.Platform)
+	epic, err := s.store.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary, modelRules, req.Platform)
 	switch {
 	case errors.Is(err, model.ErrNativeInstantiationConflict):
 		err = ErrInstantiationConflict
@@ -89,7 +87,6 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 }
 
 func (s *NativeService) RemoveWorkEpicProject(ctx context.Context, epicID, path string) error {
-	store := s.store
 	project, err := s.canonicalProject(ctx, path)
 	if err != nil {
 		if !filepath.IsAbs(path) {
@@ -97,7 +94,7 @@ func (s *NativeService) RemoveWorkEpicProject(ctx context.Context, epicID, path 
 		}
 		project = filepath.Clean(path)
 	}
-	err = store.RemoveFactoryEpicProject(ctx, epicID, project)
+	err = s.store.RemoveFactoryEpicProject(ctx, epicID, project)
 	return err
 }
 
@@ -105,15 +102,14 @@ func (s *NativeService) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 	epics, err := s.store.ListFactoryEpics(ctx)
 	result := nativeEpics(epics)
 	{
-		store := s.store
-		attempts, _ := store.ListFactoryAttempts(ctx, "")
+		attempts, _ := s.store.ListFactoryAttempts(ctx, "")
 		byEpic := make(map[string][]model.FactoryAttempt)
 		for _, attempt := range attempts {
 			byEpic[attempt.EpicID] = append(byEpic[attempt.EpicID], attempt)
 		}
 		for i := range result {
 			result[i].Attempts = byEpic[result[i].ID]
-			if gate, gateErr := store.GetFactoryPlanGate(ctx, result[i].ID); gateErr == nil {
+			if gate, gateErr := s.store.GetFactoryPlanGate(ctx, result[i].ID); gateErr == nil {
 				decoded := nativePlanGate(gate)
 				result[i].PlanGate = &decoded
 			}
@@ -131,8 +127,7 @@ func (s *NativeService) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 }
 
 func (s *NativeService) CloseMol(ctx context.Context, epicID, molID string) error {
-	store := s.store
-	err := store.CloseFactoryMol(ctx, epicID, molID)
+	err := s.store.CloseFactoryMol(ctx, epicID, molID)
 	if err == nil {
 		s.wakeDispatch()
 	}
@@ -140,8 +135,7 @@ func (s *NativeService) CloseMol(ctx context.Context, epicID, molID string) erro
 }
 
 func (s *NativeService) CloseEpic(ctx context.Context, epicID string, force bool) error {
-	store := s.store
-	err := store.CloseFactoryEpic(ctx, epicID, force)
+	err := s.store.CloseFactoryEpic(ctx, epicID, force)
 	if err == nil {
 		s.wakeDispatch()
 	}
@@ -149,8 +143,7 @@ func (s *NativeService) CloseEpic(ctx context.Context, epicID string, force bool
 }
 
 func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused bool) error {
-	store := s.store
-	if err := store.SetFactoryEpicPaused(ctx, epicID, paused); err != nil {
+	if err := s.store.SetFactoryEpicPaused(ctx, epicID, paused); err != nil {
 		return err
 	}
 	defer s.wakeDispatch()
@@ -167,8 +160,7 @@ func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused
 
 // ReopenIssue returns failed or cancelled work to the queue and dispatches.
 func (s *NativeService) ReopenIssue(ctx context.Context, epicID, issueID string) error {
-	store := s.store
-	if err := store.ReopenFactoryIssue(ctx, epicID, issueID); err != nil {
+	if err := s.store.ReopenFactoryIssue(ctx, epicID, issueID); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 	defer s.wakeDispatch()
@@ -182,7 +174,6 @@ func (s *NativeService) ReopenIssue(ctx context.Context, epicID, issueID string)
 }
 
 func (s *NativeService) MutateGraph(ctx context.Context, mutation GraphMutation) error {
-	store := s.store
 	epic, err := s.store.GetFactoryEpic(ctx, mutation.EpicID)
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		return ErrWorkEpicNotFound
@@ -193,7 +184,7 @@ func (s *NativeService) MutateGraph(ctx context.Context, mutation GraphMutation)
 	if err := s.canonicalMutationProjects(ctx, epic, &mutation); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
-	err = store.MutateFactoryGraph(ctx, mutation)
+	err = s.store.MutateFactoryGraph(ctx, mutation)
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
@@ -344,16 +335,15 @@ func (s *NativeService) GetWorkEpic(ctx context.Context, id string) (WorkEpic, e
 		return result, err
 	}
 	{
-		store := s.store
-		if attempts, attemptsErr := store.ListFactoryAttempts(ctx, id); attemptsErr == nil {
+		if attempts, attemptsErr := s.store.ListFactoryAttempts(ctx, id); attemptsErr == nil {
 			result.Attempts = attempts
 		}
-		if proposal, proposalErr := store.GetFactoryProposalRevision(ctx, id, 0); proposalErr == nil {
+		if proposal, proposalErr := s.store.GetFactoryProposalRevision(ctx, id, 0); proposalErr == nil {
 			if decoded, decodeErr := nativeProposal(proposal); decodeErr == nil {
 				result.Proposal = &decoded
 			}
 		}
-		if gate, gateErr := store.GetFactoryPlanGate(ctx, id); gateErr == nil {
+		if gate, gateErr := s.store.GetFactoryPlanGate(ctx, id); gateErr == nil {
 			decoded := nativePlanGate(gate)
 			result.PlanGate = &decoded
 		}

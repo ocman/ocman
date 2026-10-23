@@ -224,9 +224,6 @@ type nativeStore interface {
 	CompleteFactoryAuthorityEscalationGate(context.Context, string, string, time.Time) (model.AuthorityEscalationGate, error)
 	GetFactoryAuthorityEscalationGate(context.Context, string) (model.AuthorityEscalationGate, bool, error)
 	GetFactoryAttempt(context.Context, string) (model.FactoryAttempt, bool, error)
-	DeferFactoryIssue(context.Context, string, string, string) error
-	ResumeFactoryIssue(context.Context, string, string) error
-	RetryFactoryIssueAt(context.Context, string, string, time.Time) error
 	WakeFactoryRetries(context.Context, time.Time) error
 	CloseFactoryMol(context.Context, string, string) error
 	CloseFactoryEpic(context.Context, string, bool) error

@@ -1606,7 +1606,7 @@ flowchart TD
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Pages -->|pending prompt, before HTTP acknowledgment| Comp
     Stores --> Persistence[Browser persistence<br/>IndexedDB drafts, text + receipts]
-    Comp -->|PR rows + conversation previews share repository/SHA checks cache| Stores
+    Comp -->|owner-scoped PR queries + repository/SHA checks persistence| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Comp -->|delayed markdown hover: provider or Open Graph card, proxied image| API
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
@@ -1618,7 +1618,7 @@ flowchart TD
     Reporter --> API
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
-    Hub -->|ocman.settings.changed: clear settings cache| Stores
+    Hub -->|ocman.settings.changed: advance settings query generation| Stores
     Hub -->|background task counts + task detail snapshots| Stores
     Comp -->|capability-gated individual task stop| API
     Comp --> Caps[useCapabilities<br/>capability gating]
@@ -1626,6 +1626,12 @@ flowchart TD
     Comp <-->|image preview query, Back/Forward| Shell
 ```
 
+- **Shared query cache.** PR checks and review status use the application
+  QueryClient for request deduplication, polling and last-reader cancellation.
+  Inactive rows unsubscribe; poll deadlines survive viewport and tab changes.
+  Settled checks retain the bounded repository/SHA localStorage cache. Project
+  settings use owner/project/generation query keys, so invalidation cannot let
+  an older in-flight read restore stale settings.
 - **Feature registry.** `src/features/index.tsx` is a static list in which
   Factory, routines and artifacts contribute their routes, with layout tier and
   header titles, plus their main-nav link. Plugins, auto-approve, sharing and

@@ -25,14 +25,13 @@ func (s *NativeService) validateAttemptCheckpoint(ctx context.Context, attempt m
 	if err == nil || err.Error() != "factory handoff does not include the accepted checkpoint" || p.CheckpointSHA == "" {
 		return head, err
 	}
-	store := s.store
 	// The empty checkpoint skips only ancestry. Clean worktree, branch and
 	// pushed-upstream validation still run, on every completion validation.
 	head, checkErr := s.implementation.ValidateImplementationCheckpoint(ctx, p.Repository, p.Branch, "")
 	if checkErr != nil {
 		return "", checkErr
 	}
-	approved, checkErr := store.FactoryAttemptHasRecoveryResponse(ctx, attempt.ID, checkpointRebaseApproval(attempt, head))
+	approved, checkErr := s.store.FactoryAttemptHasRecoveryResponse(ctx, attempt.ID, checkpointRebaseApproval(attempt, head))
 	if checkErr != nil {
 		return "", checkErr
 	}
@@ -45,18 +44,17 @@ func (s *NativeService) validateAttemptCheckpoint(ctx context.Context, attempt m
 // RequestCheckpointRecovery asks a human to accept exactly the current clean,
 // pushed HEAD for this attempt. It never changes policy or accepts the rewrite.
 func (s *NativeService) RequestCheckpointRecovery(ctx context.Context, attemptID, token string) (RecoveryGate, error) {
-	store := s.store
 	if s.implementation == nil {
 		return RecoveryGate{}, ErrFactoryUnavailable
 	}
-	valid, err := store.ValidateFactoryAttemptToken(ctx, attemptID, token)
+	valid, err := s.store.ValidateFactoryAttemptToken(ctx, attemptID, token)
 	if err != nil {
 		return RecoveryGate{}, err
 	}
 	if !valid {
 		return RecoveryGate{}, fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
-	attempt, found, err := store.GetFactoryAttempt(ctx, attemptID)
+	attempt, found, err := s.store.GetFactoryAttempt(ctx, attemptID)
 	if err != nil {
 		return RecoveryGate{}, err
 	}

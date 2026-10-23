@@ -11,50 +11,18 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
-func (s *NativeService) DeferIssue(ctx context.Context, epicID, issueID, reason string) error {
-	store := s.store
-	err := store.DeferFactoryIssue(ctx, epicID, issueID, strings.TrimSpace(reason))
-	if err == nil {
-		s.wakeDispatch()
-	}
-	return err
-}
-
-func (s *NativeService) ResumeIssue(ctx context.Context, epicID, issueID string) error {
-	store := s.store
-	err := store.ResumeFactoryIssue(ctx, epicID, issueID)
-	if err == nil {
-		s.wakeDispatch()
-	}
-	return err
-}
-
-func (s *NativeService) RetryIssueAt(ctx context.Context, epicID, issueID string, wakeAt time.Time) error {
-	store := s.store
-	if !wakeAt.After(time.Now()) {
-		return errors.New("retry time must be in the future")
-	}
-	err := store.RetryFactoryIssueAt(ctx, epicID, issueID, wakeAt)
-	if err == nil {
-		s.wakeDispatch()
-	}
-	return err
-}
-
 func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agentToken, question, reason string, choices []string) (RecoveryGate, error) {
-	store := s.store
 	if strings.TrimSpace(attemptID) == "" || strings.TrimSpace(agentToken) == "" || strings.TrimSpace(question) == "" || strings.TrimSpace(reason) == "" {
 		return RecoveryGate{}, fmt.Errorf("%w: attempt, token, question, and reason are required", ErrInvalidRequest)
 	}
-	tokens := s.store
-	valid, err := tokens.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
+	valid, err := s.store.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
 	if err != nil {
 		return RecoveryGate{}, err
 	}
 	if !valid {
 		return RecoveryGate{}, fmt.Errorf("%w: factory implementation attempt token is invalid", ErrInvalidRequest)
 	}
-	gate, err := store.CreateFactoryRecoveryGate(ctx, attemptID, strings.TrimSpace(question), strings.TrimSpace(reason), choices, time.Now())
+	gate, err := s.store.CreateFactoryRecoveryGate(ctx, attemptID, strings.TrimSpace(question), strings.TrimSpace(reason), choices, time.Now())
 	if err == nil {
 		s.wakeDispatch()
 	}
@@ -62,20 +30,18 @@ func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agent
 }
 
 func (s *NativeService) RequestProject(ctx context.Context, attemptID, agentToken, project, reason string) (ProjectRequestGate, error) {
-	store := s.store
 	project, reason = strings.TrimSpace(project), strings.TrimSpace(reason)
 	if attemptID == "" || agentToken == "" || project == "" || reason == "" || !filepath.IsAbs(project) {
 		return ProjectRequestGate{}, fmt.Errorf("%w: attempt, token, absolute project path, and reason are required", ErrInvalidRequest)
 	}
-	tokens := s.store
-	valid, err := tokens.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
+	valid, err := s.store.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
 	if err != nil {
 		return ProjectRequestGate{}, err
 	}
 	if !valid {
 		return ProjectRequestGate{}, ErrActionNotPermitted
 	}
-	gate, err := store.CreateFactoryProjectRequestGate(ctx, attemptID, project, reason, time.Now())
+	gate, err := s.store.CreateFactoryProjectRequestGate(ctx, attemptID, project, reason, time.Now())
 	if err == nil {
 		s.wakeDispatch()
 	}
@@ -85,8 +51,7 @@ func (s *NativeService) RequestProject(ctx context.Context, attemptID, agentToke
 func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, action, response string, acknowledge bool) (ProjectRequestGate, error) {
 	s.projectRequestMu.Lock()
 	defer s.projectRequestMu.Unlock()
-	store := s.store
-	gate, found, err := store.GetFactoryProjectRequestGate(ctx, gateID)
+	gate, found, err := s.store.GetFactoryProjectRequestGate(ctx, gateID)
 	if err != nil {
 		return ProjectRequestGate{}, err
 	}
@@ -98,12 +63,11 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 		if response != gate.Response {
 			return ProjectRequestGate{}, fmt.Errorf("%w: project rejection response does not match the pending decision", ErrInvalidRequest)
 		}
-		attempts := s.store
-		attempt, found, err := attempts.GetFactoryAttempt(ctx, gate.AttemptID)
+		attempt, found, err := s.store.GetFactoryAttempt(ctx, gate.AttemptID)
 		if err != nil || !found {
 			return ProjectRequestGate{}, fmt.Errorf("%w: factory project request attempt is unavailable", ErrInvalidRequest)
 		}
-		return s.deliverProjectRejection(ctx, store, gate, attempt)
+		return s.deliverProjectRejection(ctx, gate, attempt)
 	}
 	if found && action == "approve" && gate.Resolution == "approved" {
 		if !acknowledge {
@@ -142,8 +106,7 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 				return ProjectRequestGate{}, fmt.Errorf("%w: project is already admitted", ErrInvalidRequest)
 			}
 		}
-		acks := s.store
-		if err = acks.UpsertFactoryLocalExecutionAck(ctx, "local", canonical, "factory-implement", "v1", "operator", time.Now()); err != nil {
+		if err = s.store.UpsertFactoryLocalExecutionAck(ctx, "local", canonical, "factory-implement", "v1", "operator", time.Now()); err != nil {
 			return ProjectRequestGate{}, err
 		}
 	} else if action != "reject" {
@@ -153,8 +116,7 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 		if s.implementation == nil {
 			return ProjectRequestGate{}, errors.New("implementation launcher is unavailable")
 		}
-		attempts := s.store
-		attempt, found, getErr := attempts.GetFactoryAttempt(ctx, gate.AttemptID)
+		attempt, found, getErr := s.store.GetFactoryAttempt(ctx, gate.AttemptID)
 		if getErr != nil || !found {
 			return ProjectRequestGate{}, fmt.Errorf("%w: factory project request attempt is unavailable", ErrInvalidRequest)
 		}
@@ -164,18 +126,18 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 			}
 		}
 	}
-	gate, attempt, err := store.ResolveFactoryProjectRequestGate(ctx, gateID, action, canonical, response, time.Now())
+	gate, attempt, err := s.store.ResolveFactoryProjectRequestGate(ctx, gateID, action, canonical, response, time.Now())
 	if err != nil {
 		return ProjectRequestGate{}, err
 	}
 	if action == "reject" {
-		return s.deliverProjectRejection(ctx, store, gate, attempt)
+		return s.deliverProjectRejection(ctx, gate, attempt)
 	}
 	_, err = s.ClaimPlan(ctx, gate.EpicID, gate.PlanIssueID)
 	return gate, err
 }
 
-func (s *NativeService) deliverProjectRejection(ctx context.Context, store nativeStore, gate ProjectRequestGate, attempt model.FactoryAttempt) (ProjectRequestGate, error) {
+func (s *NativeService) deliverProjectRejection(ctx context.Context, gate ProjectRequestGate, attempt model.FactoryAttempt) (ProjectRequestGate, error) {
 	if s.implementation == nil {
 		return ProjectRequestGate{}, errors.New("implementation launcher is unavailable")
 	}
@@ -187,9 +149,9 @@ func (s *NativeService) deliverProjectRejection(ctx context.Context, store nativ
 		if err := s.implementation.ResumeImplementationSession(context.WithoutCancel(ctx), attempt.Session, gate.IssueID, gate.Response); err != nil {
 			return ProjectRequestGate{}, fmt.Errorf("deliver project rejection: %w", err)
 		}
-		return store.CompleteFactoryProjectRequestRejection(context.WithoutCancel(ctx), gate.IssueID, time.Now())
+		return s.store.CompleteFactoryProjectRequestRejection(context.WithoutCancel(ctx), gate.IssueID, time.Now())
 	}
-	completed, err := store.FailFactoryProjectRequestRejection(context.WithoutCancel(ctx), gate.IssueID, time.Now())
+	completed, err := s.store.FailFactoryProjectRequestRejection(context.WithoutCancel(ctx), gate.IssueID, time.Now())
 	if err != nil {
 		return ProjectRequestGate{}, err
 	}
@@ -211,12 +173,11 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 }
 
 func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action, response string) (RecoveryGate, error) {
-	store := s.store
 	if action != "resume" && action != "retry" && action != "cancel" {
 		return RecoveryGate{}, fmt.Errorf("%w: invalid recovery gate action", ErrInvalidRequest)
 	}
 	response = strings.TrimSpace(response)
-	gate, found, err := store.GetFactoryRecoveryGate(ctx, gateID)
+	gate, found, err := s.store.GetFactoryRecoveryGate(ctx, gateID)
 	if err != nil {
 		return RecoveryGate{}, err
 	}
@@ -231,24 +192,21 @@ func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action,
 		return RecoveryGate{}, fmt.Errorf("%w: factory recovery response does not match the pending decision", ErrInvalidRequest)
 	}
 	queued := gate
-	gate, attempt, err := store.ResolveFactoryRecoveryGate(ctx, gateID, action, response, time.Now())
+	gate, attempt, err := s.store.ResolveFactoryRecoveryGate(ctx, gateID, action, response, time.Now())
 	if errors.Is(err, model.ErrRecoveryWorkspaceBusy) && !pending {
 		// Another Issue holds the Epic workspace. Keep the decision; Dispatch
 		// delivers it once the workspace is released instead of asking the user
 		// to come back and click again.
-		{
-			queue := s.store
-			if response == "" {
-				response = "Continue" // ponytail: a non-empty response marks the gate as queued; the delivered prompt is equivalent
-			}
-			if queued.Response != response { // Dispatch re-checks every pass; record the decision once
-				if err := queue.QueueFactoryRecoveryResume(ctx, gateID, response, time.Now()); err != nil {
-					return RecoveryGate{}, err
-				}
-				queued.Response = response
-			}
-			return queued, nil
+		if response == "" {
+			response = "Continue" // ponytail: a non-empty response marks the gate as queued; the delivered prompt is equivalent
 		}
+		if queued.Response != response { // Dispatch re-checks every pass; record the decision once
+			if err := s.store.QueueFactoryRecoveryResume(ctx, gateID, response, time.Now()); err != nil {
+				return RecoveryGate{}, err
+			}
+			queued.Response = response
+		}
+		return queued, nil
 	}
 	if err != nil {
 		return RecoveryGate{}, err
@@ -278,7 +236,7 @@ func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action,
 		}
 		completionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
-		return store.CompleteFactoryRecoveryGate(completionCtx, gateID, time.Now())
+		return s.store.CompleteFactoryRecoveryGate(completionCtx, gateID, time.Now())
 	}
 	if (action == "retry" || action == "cancel") && s.implementation != nil && attempt.Session.ID != "" {
 		_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session)
@@ -290,14 +248,13 @@ func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action,
 func (s *NativeService) ResolveAuthorityEscalationGate(ctx context.Context, gateID, action string) (AuthorityEscalationGate, error) {
 	s.authorityMu.Lock()
 	defer s.authorityMu.Unlock()
-	store := s.store
 	if action != "approve" && action != "reject" {
 		return AuthorityEscalationGate{}, fmt.Errorf("%w: invalid authority escalation action", ErrInvalidRequest)
 	}
 	if s.implementation == nil {
 		return AuthorityEscalationGate{}, errors.New("implementation launcher is unavailable")
 	}
-	gate, found, err := store.GetFactoryAuthorityEscalationGate(ctx, gateID)
+	gate, found, err := s.store.GetFactoryAuthorityEscalationGate(ctx, gateID)
 	pending := action + "_pending"
 	if err != nil {
 		return AuthorityEscalationGate{}, err
@@ -305,7 +262,7 @@ func (s *NativeService) ResolveAuthorityEscalationGate(ctx context.Context, gate
 	if !found || (gate.Resolution != "open" && gate.Resolution != pending) {
 		return AuthorityEscalationGate{}, fmt.Errorf("%w: authority escalation gate is unavailable", ErrInvalidRequest)
 	}
-	attempt, found, err := store.GetFactoryAttempt(ctx, gate.AttemptID)
+	attempt, found, err := s.store.GetFactoryAttempt(ctx, gate.AttemptID)
 	if err != nil {
 		return AuthorityEscalationGate{}, err
 	}
@@ -317,7 +274,7 @@ func (s *NativeService) ResolveAuthorityEscalationGate(ctx context.Context, gate
 		reply = "once"
 	}
 	if gate.Resolution == "open" {
-		gate, _, err = store.ResolveFactoryAuthorityEscalationGate(ctx, gateID, action, time.Now())
+		gate, _, err = s.store.ResolveFactoryAuthorityEscalationGate(ctx, gateID, action, time.Now())
 		if err != nil {
 			return AuthorityEscalationGate{}, err
 		}
@@ -332,5 +289,5 @@ func (s *NativeService) ResolveAuthorityEscalationGate(ctx context.Context, gate
 			return AuthorityEscalationGate{}, err
 		}
 	}
-	return store.CompleteFactoryAuthorityEscalationGate(ctx, gateID, action, time.Now())
+	return s.store.CompleteFactoryAuthorityEscalationGate(ctx, gateID, action, time.Now())
 }

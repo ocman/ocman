@@ -21,14 +21,13 @@ func validModel(value string) bool {
 // SetEpicModels saves the Epic's per-phase models. Attempts already claimed
 // keep the model frozen in their policy, so only unstarted work changes.
 func (s *NativeService) SetEpicModels(ctx context.Context, epicID string, models model.EpicModels) (model.EpicModels, error) {
-	store := s.store
 	models = model.EpicModels{Plan: strings.TrimSpace(models.Plan), Implementation: strings.TrimSpace(models.Implementation), Verification: strings.TrimSpace(models.Verification)}
 	for _, value := range []string{models.Plan, models.Implementation, models.Verification} {
 		if !validModel(value) {
 			return model.EpicModels{}, fmt.Errorf("%w: models must be provider/model", ErrInvalidRequest)
 		}
 	}
-	err := store.SetFactoryEpicModels(ctx, epicID, models)
+	err := s.store.SetFactoryEpicModels(ctx, epicID, models)
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		err = ErrWorkEpicNotFound
 	}

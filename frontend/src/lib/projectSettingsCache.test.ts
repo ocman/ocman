@@ -11,8 +11,9 @@ beforeEach(() => {
 
 it('shares concurrent and later reads across sibling worktrees, scoped by owner and project', async () => {
   const first = loadProjectSettings('/src/repo', 'box');
-  expect(loadProjectSettings('/src/.worktrees/repo/one', 'box')).toBe(first);
-  await first;
+  const second = loadProjectSettings('/src/.worktrees/repo/one', 'box');
+  expect(fetchJSON).toHaveBeenCalledTimes(1);
+  expect(await Promise.all([first, second])).toEqual([settings, settings]);
   await loadProjectSettings('/src/.worktrees/repo/two', 'box');
   expect(fetchJSON).toHaveBeenCalledTimes(1);
   await loadProjectSettings('/src/repo', 'local');

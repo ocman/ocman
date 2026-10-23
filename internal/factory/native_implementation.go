@@ -21,11 +21,10 @@ func (s *NativeService) IsImplementationSession(ctx context.Context, session str
 // EscalatePermission diverts only requests excluded by the frozen profile.
 // Other prompts continue through OpenCode's direct permission flow.
 func (s *NativeService) EscalatePermission(ctx context.Context, session, requestID, permission, target string) (AuthorityEscalationGate, bool, error) {
-	store := s.store
 	if session == "" || requestID == "" || permission == "" {
 		return AuthorityEscalationGate{}, false, errors.New("session, request, and permission are required")
 	}
-	gate, handled, err := store.CreateFactoryAuthorityEscalationGate(ctx, session, requestID, permission, target, time.Now())
+	gate, handled, err := s.store.CreateFactoryAuthorityEscalationGate(ctx, session, requestID, permission, target, time.Now())
 	if err == nil && handled {
 		s.wakeDispatch()
 	}
@@ -35,23 +34,21 @@ func (s *NativeService) EscalatePermission(ctx context.Context, session, request
 func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentToken, summary, prURL string) error {
 	s.implementationMu.Lock()
 	defer s.implementationMu.Unlock()
-	store := s.store
 	summary, prURL = strings.TrimSpace(summary), strings.TrimSpace(prURL)
 	if attemptID == "" || agentToken == "" || summary == "" {
 		return fmt.Errorf("%w: attempt ID, token, and summary are required", ErrInvalidRequest)
 	}
-	valid, err := store.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
+	valid, err := s.store.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
 	if err != nil {
 		return err
 	}
 	if !valid {
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
-	attemptStore := s.store
 	if s.implementation == nil {
 		return ErrFactoryUnavailable
 	}
-	attempt, found, err := attemptStore.GetFactoryAttempt(ctx, attemptID)
+	attempt, found, err := s.store.GetFactoryAttempt(ctx, attemptID)
 	if err != nil {
 		return err
 	}
@@ -85,7 +82,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	}
 	if attempt.FrozenPolicy.Delivery {
 		response := "Force-complete the delivery attempt using merged PR #" + path.Base(parsedPR.Path)
-		attempt.FrozenPolicy.ForceComplete, err = store.FactoryAttemptHasRecoveryResponse(ctx, attemptID, response)
+		attempt.FrozenPolicy.ForceComplete, err = s.store.FactoryAttemptHasRecoveryResponse(ctx, attemptID, response)
 		if err != nil {
 			return err
 		}
@@ -115,7 +112,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 		}
 		result.Summary += checks
 	}
-	stopping, err := store.StopFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, time.Now())
+	stopping, err := s.store.StopFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, time.Now())
 	if err != nil {
 		return err
 	}
@@ -128,12 +125,12 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if err := validate(context.WithoutCancel(ctx)); err != nil {
 		return factoryHandoffError(err)
 	}
-	changed, err := store.CompleteFactoryImplementationAttempt(context.WithoutCancel(ctx), attemptID, agentToken, result, time.Now())
+	changed, err := s.store.CompleteFactoryImplementationAttempt(context.WithoutCancel(ctx), attemptID, agentToken, result, time.Now())
 	if err != nil {
 		return err
 	}
 	if !changed {
-		completed, found, getErr := attemptStore.GetFactoryAttempt(context.WithoutCancel(ctx), attemptID)
+		completed, found, getErr := s.store.GetFactoryAttempt(context.WithoutCancel(ctx), attemptID)
 		if getErr != nil {
 			return getErr
 		}

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { notifyManager } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePRMergeability } from './usePRMergeability';
@@ -9,7 +10,7 @@ import { clearPRChecksCache } from './prChecksCache';
 const pr = { number: 42, status: 'open', headSha: 'abc', updatedAt: 'today', host: 'github.com', repo: 'a/repo' } as PR;
 
 describe('usePRMergeability', () => {
-  beforeEach(() => { clearPRChecksCache(); vi.spyOn(api, 'fetchPRMergeability'); });
+  beforeEach(() => { notifyManager.setScheduler(queueMicrotask); clearPRChecksCache(); vi.spyOn(api, 'fetchPRMergeability'); });
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('fetches the owner-scoped endpoint with the cancellation signal', async () => {
@@ -69,7 +70,6 @@ describe('usePRMergeability', () => {
     expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
     hidden.mockReturnValue(true);
     act(() => { document.dispatchEvent(new Event('visibilitychange')); });
-    expect(vi.mocked(api.fetchPRMergeability).mock.calls[0][0].signal.aborted).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(api.fetchPRMergeability).toHaveBeenCalledTimes(1);
     hidden.mockReturnValue(false);

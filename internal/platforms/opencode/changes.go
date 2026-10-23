@@ -3,6 +3,7 @@ package opencode
 import (
 	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -366,7 +367,7 @@ func synthesiseAllAdditionsPatch(path, content string) string {
 	b.WriteString("\n+++ ")
 	b.WriteString(path)
 	b.WriteString("\n@@ -0,0 +1,")
-	b.WriteString(itoa(len(lines)))
+	b.WriteString(strconv.Itoa(len(lines)))
 	b.WriteString(" @@\n")
 	for _, line := range lines {
 		b.WriteByte('+')
@@ -374,31 +375,6 @@ func synthesiseAllAdditionsPatch(path, content string) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
-}
-
-// itoa is a tiny strconv.Itoa stand-in to keep this file's import
-// list minimal. Inlining the conversion avoids a single-call import
-// of strconv.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }
 
 // firstStringField returns the first non-empty string value found in m

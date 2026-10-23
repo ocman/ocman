@@ -14,10 +14,8 @@
  *  - Enter on a nav item navigates to that route
  *  - Typing "stat" keeps the old Stats command alias
  *
- * Note on Alt+Space: react-hotkeys-hook requires a focused element in the
- * document to fire. The test ensures the body is focused before pressing
- * the shortcut. For palette-content tests we open programmatically via the
- * Zustand store to avoid OS-level shortcut interception.
+ * For palette-content tests we open programmatically via the Zustand store
+ * to avoid OS-level shortcut interception.
  */
 
 import { test, expect, MOCK_SESSION } from './fixtures';

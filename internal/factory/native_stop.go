@@ -10,7 +10,6 @@ import (
 // StopEpic is the confirmed user's unconditional exit. It does not validate,
 // reset, deliver, or remove a workspace. Failed stops leave the Epic paused.
 func (s *NativeService) StopEpic(ctx context.Context, epicID string) error {
-	store := s.store
 	s.authorityMu.Lock()
 	defer s.authorityMu.Unlock()
 	s.projectRequestMu.Lock()
@@ -21,10 +20,10 @@ func (s *NativeService) StopEpic(ctx context.Context, epicID string) error {
 	defer s.planningMu.Unlock()
 	s.implementationMu.Lock()
 	defer s.implementationMu.Unlock()
-	if err := store.SetFactoryEpicPaused(ctx, epicID, true); err != nil {
+	if err := s.store.SetFactoryEpicPaused(ctx, epicID, true); err != nil {
 		return err
 	}
-	attempts, err := store.ListFactoryAttempts(ctx, epicID)
+	attempts, err := s.store.ListFactoryAttempts(ctx, epicID)
 	if err != nil {
 		return err
 	}
@@ -55,7 +54,7 @@ func (s *NativeService) StopEpic(ctx context.Context, epicID string) error {
 			return fmt.Errorf("stop %s: %w", attempt.WorkID, err)
 		}
 	}
-	if err := store.CloseFactoryEpic(ctx, epicID, true); err != nil {
+	if err := s.store.CloseFactoryEpic(ctx, epicID, true); err != nil {
 		return err
 	}
 	s.wakeDispatch()

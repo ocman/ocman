@@ -155,7 +155,7 @@ export async function fetchUpstreams(dir: string, remoteId: string, signal?: Abo
   return json.upstreams ?? [];
 }
 
-export async function fetchPRs(opts: {
+interface ListOptions {
   dir: string;
   remoteId: string;
   remote: string;
@@ -164,35 +164,17 @@ export async function fetchPRs(opts: {
   page: number;
   signal?: AbortSignal;
   refresh?: boolean;
-}): Promise<ListPRsResponse> {
-  const q = new URLSearchParams({
-    dir: opts.dir,
-    remoteId: opts.remoteId,
-    remote: opts.remote,
-    state: opts.state,
-    page: String(opts.page),
-  });
-  if (opts.mine) q.set('mine', opts.mine);
-  if (opts.refresh) q.set('refresh', '1');
-  const resp = await fetchResponse(`/api/project/prs?${q.toString()}`, { signal: opts.signal });
-  if (!resp.ok) {
-    const env = await safeError(resp);
-    if (sessionExpired(resp, env)) throw raiseAuthError();
-    throw new UpstreamApiError(env, resp.status);
-  }
-  return readJSON<ListPRsResponse>(resp);
 }
 
-export async function fetchIssues(opts: {
-  dir: string;
-  remoteId: string;
-  remote: string;
-  state: StateFilter;
-  mine: string | undefined;
-  page: number;
-  signal?: AbortSignal;
-  refresh?: boolean;
-}): Promise<ListIssuesResponse> {
+export function fetchPRs(opts: ListOptions): Promise<ListPRsResponse> {
+  return fetchList('prs', opts);
+}
+
+export function fetchIssues(opts: ListOptions): Promise<ListIssuesResponse> {
+  return fetchList('issues', opts);
+}
+
+function fetchList<T>(kind: 'prs' | 'issues', opts: ListOptions): Promise<T> {
   const q = new URLSearchParams({
     dir: opts.dir,
     remoteId: opts.remoteId,
@@ -202,13 +184,7 @@ export async function fetchIssues(opts: {
   });
   if (opts.mine) q.set('mine', opts.mine);
   if (opts.refresh) q.set('refresh', '1');
-  const resp = await fetchResponse(`/api/project/issues?${q.toString()}`, { signal: opts.signal });
-  if (!resp.ok) {
-    const env = await safeError(resp);
-    if (sessionExpired(resp, env)) throw raiseAuthError();
-    throw new UpstreamApiError(env, resp.status);
-  }
-  return readJSON<ListIssuesResponse>(resp);
+  return forgeRequest<T>(`/api/project/${kind}?${q}`, { signal: opts.signal });
 }
 
 export interface PRMergeability {
@@ -226,13 +202,7 @@ export async function fetchPRMergeability(opts: {
 }): Promise<PRMergeability> {
   const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
   if (opts.refresh) q.set('refresh', '1');
-  const resp = await fetchResponse(`/api/project/pr-mergeability?${q}`, { signal: opts.signal });
-  if (!resp.ok) {
-    const env = await safeError(resp);
-    if (sessionExpired(resp, env)) throw raiseAuthError();
-    throw new UpstreamApiError(env, resp.status);
-  }
-  return readJSON<PRMergeability>(resp);
+  return forgeRequest<PRMergeability>(`/api/project/pr-mergeability?${q}`, { signal: opts.signal });
 }
 
 // fetchPRChecks returns the combined CI/build status for a PR's head
@@ -252,13 +222,7 @@ export async function fetchPRChecks(opts: {
     sha: opts.sha,
   });
   if (opts.refresh) q.set('refresh', '1');
-  const resp = await fetchResponse(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
-  if (!resp.ok) {
-    const env = await safeError(resp);
-    if (sessionExpired(resp, env)) throw raiseAuthError();
-    throw new UpstreamApiError(env, resp.status);
-  }
-  return readJSON<PRChecks>(resp);
+  return forgeRequest<PRChecks>(`/api/project/pr-checks?${q}`, { signal: opts.signal });
 }
 
 export async function fetchForgeUser(opts: {
@@ -280,17 +244,21 @@ export async function fetchForgeUser(opts: {
 }
 
 export async function postHandle(req: HandleRequest): Promise<HandleResponse> {
-  const resp = await fetchResponse('/api/project/handle', {
+  return forgeRequest<HandleResponse>('/api/project/handle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
+}
+
+async function forgeRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const resp = await fetchResponse(url, init);
   if (!resp.ok) {
     const env = await safeError(resp);
     if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
-  return readJSON<HandleResponse>(resp);
+  return readJSON<T>(resp);
 }
 
 export async function fetchPromptTemplates(): Promise<PromptTemplates> {

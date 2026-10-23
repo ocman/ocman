@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
 import type { CIState, Check, PRChecks } from './upstreamApi';
 import { UpstreamApiError } from './upstreamApi';
-import { CI_POLL_MS, PR_CHECKS_REFRESH_EVENT, cachePRChecks, getCachedPRChecks, isSettled } from './prChecksCache';
+import { CI_POLL_MS, cachePRChecks, getCachedPRChecks, isSettled } from './prChecksCache';
+import { usePRQuery } from './prQuery';
 
 export interface ChecksState {
   state: CIState;
@@ -13,100 +13,33 @@ export interface ChecksState {
 
 /** Both PR rows and conversation previews share the repository + SHA cache. */
 export function usePRChecks(cacheKey: string, requestKey: string, visible: boolean, fetchChecks: (signal: AbortSignal, refresh: boolean) => Promise<PRChecks>, refreshOnMount = false): ChecksState {
-  const [generation, setGeneration] = useState(refreshOnMount ? 1 : 0);
-  const consumedRefresh = useRef(0);
-  const retryState = useRef({ cacheKey: '', requestKey: '', generation: -1, failures: 0, emptyResponses: 0, nextPollAt: 0 });
-  useEffect(() => {
-    const refresh = (event: Event) => {
-      const repositories = (event as CustomEvent<string[]>).detail;
-      if (!repositories || repositories.some((repo) => cacheKey.startsWith(`${repo}@`))) {
-        setGeneration((g) => g + 1);
-      }
-    };
-    window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
-    return () => window.removeEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
-  }, [cacheKey]);
-  const [result, setResult] = useState<{ key: string; data: PRChecks | null; loading: boolean; error: boolean }>({ key: requestKey, data: null, loading: false, error: false });
-  useEffect(() => {
-    if (retryState.current.cacheKey !== cacheKey || retryState.current.requestKey !== requestKey || retryState.current.generation !== generation) {
-      retryState.current = { cacheKey, requestKey, generation, failures: 0, emptyResponses: 0, nextPollAt: 0 };
+  const query = usePRQuery<PRChecks>(['pr-checks', cacheKey.split('@')[0], cacheKey, requestKey], visible, async (signal, previous, refresh) => {
+    const cached = !refresh && !previous ? getCachedPRChecks(cacheKey) : undefined;
+    if (cached) return { value: cached };
+    let failures = previous?.failures ?? 0;
+    const backoff = (resetAt?: string) => Math.max(Math.min(CI_POLL_MS * 2 ** Math.min(failures++, 4), 60_000), Date.parse(resetAt ?? '') - Date.now() || 0);
+    try {
+      const value = await fetchChecks(signal, refresh);
+      signal.throwIfAborted();
+      const limited = value.rateLimit?.limited || value.rateLimit?.stale;
+      if (!limited) failures = 0;
+      const emptyResponses = !limited && value.state === 'unknown' && !value.checks.length ? (previous?.emptyResponses ?? 0) + 1 : 0;
+      const settled = isSettled(value, emptyResponses >= 3);
+      cachePRChecks(cacheKey, value, emptyResponses >= 3);
+      const delay = limited ? backoff(value.rateLimit?.resetAt) : emptyResponses ? 30_000 : CI_POLL_MS;
+      return { value, failures, emptyResponses, nextPollAt: settled ? undefined : Date.now() + delay };
+    } catch (error) {
+      signal.throwIfAborted();
+      const delay = backoff(error instanceof UpstreamApiError ? error.envelope?.error.retryAfter : undefined);
+      return { value: previous?.value, error, failures, emptyResponses: 0, nextPollAt: Date.now() + delay };
     }
-    const polling = retryState.current;
-    if (!visible) return;
-    const ctrl = new AbortController();
-    let timer: number | undefined;
-    let inFlight = false;
-    let settled = false;
-    // explicit: a Refresh click (or refreshOnMount) may bypass the server cache;
-    // refresh only skips this browser's final-status cache while polling.
-    let explicit = refreshOnMount || generation > consumedRefresh.current;
-    let refresh = polling.nextPollAt > 0 || explicit;
-    const schedule = (delay: number) => {
-      polling.nextPollAt = Date.now() + delay;
-      if (!document.hidden) timer = window.setTimeout(run, delay);
-    };
-    const retryDelay = () => Math.min(CI_POLL_MS * 2 ** Math.min(polling.failures++, 4), 60_000);
-    const run = () => {
-      timer = undefined;
-      if (document.hidden || inFlight || settled) return;
-      const cached = refresh ? undefined : getCachedPRChecks(cacheKey);
-      if (cached) {
-        settled = true;
-        polling.nextPollAt = 0;
-        setResult({ key: requestKey, data: cached, loading: false, error: false });
-        return;
-      }
-      setResult((prev) => ({ key: requestKey, data: prev.key === requestKey ? prev.data : null, loading: true, error: false }));
-      inFlight = true;
-      const request = fetchChecks(ctrl.signal, explicit);
-      explicit = false;
-      const wasRefresh = refresh;
-      refresh = false;
-      request.then((res) => {
-        if (ctrl.signal.aborted) return;
-        inFlight = false;
-        if (wasRefresh) {
-          consumedRefresh.current = generation;
-        }
-        const limited = res.rateLimit?.limited || res.rateLimit?.stale;
-        if (!limited) polling.failures = 0;
-        polling.emptyResponses = !limited && res.state === 'unknown' && res.checks.length === 0 ? polling.emptyResponses + 1 : 0;
-        // Allow newly queued checks a minute to appear before caching "no CI".
-        settled = isSettled(res, polling.emptyResponses >= 3);
-        if (settled) polling.nextPollAt = 0;
-        cachePRChecks(cacheKey, res, polling.emptyResponses >= 3);
-        setResult({ key: requestKey, data: res, loading: false, error: false });
-        if (!settled) {
-          refresh = true;
-          schedule(limited ? Math.max(retryDelay(), Date.parse(res.rateLimit?.resetAt ?? '') - Date.now() || 0) : polling.emptyResponses > 0 ? 30_000 : CI_POLL_MS);
-        }
-      }).catch((error: unknown) => {
-        if (ctrl.signal.aborted) return;
-        inFlight = false;
-        polling.emptyResponses = 0;
-        refresh = true;
-        setResult((prev) => ({ ...prev, key: requestKey, loading: false, error: true }));
-        const retryAt = error instanceof UpstreamApiError ? Date.parse(error.envelope?.error.retryAfter ?? '') : NaN;
-        schedule(Math.max(retryDelay(), retryAt - Date.now() || 0));
-      });
-    };
-    const visibility = () => {
-      window.clearTimeout(timer);
-      timer = undefined;
-      if (!document.hidden && !inFlight && !settled) schedule(Math.max(0, polling.nextPollAt - Date.now()));
-    };
-    document.addEventListener('visibilitychange', visibility);
-    if (polling.nextPollAt > Date.now()) schedule(polling.nextPollAt - Date.now());
-    else run();
-    return () => { ctrl.abort(); window.clearTimeout(timer); document.removeEventListener('visibilitychange', visibility); };
-  }, [cacheKey, requestKey, visible, fetchChecks, generation, refreshOnMount]);
-  const current = result.key === requestKey;
+  }, refreshOnMount);
   return {
-    state: current ? result.data?.state ?? 'unknown' : 'unknown',
-    checks: current ? result.data?.checks ?? [] : [],
-    loading: current && result.loading,
-    loaded: current && result.data !== null,
-    error: current && result.error,
+    state: query.data?.value?.state ?? 'unknown',
+    checks: query.data?.value?.checks ?? [],
+    loading: query.isFetching,
+    loaded: !!query.data?.value,
+    error: !!query.data?.error,
   };
 }
 

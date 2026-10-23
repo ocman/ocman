@@ -137,7 +137,7 @@ func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 					deferredID = issue.ID
 				}
 			}
-			if err := svc.DeferIssue(t.Context(), epic.ID, deferredID, "Later"); err != nil {
+			if err := db.DeferFactoryIssue(t.Context(), epic.ID, deferredID, "Later"); err != nil {
 				t.Fatal(err)
 			}
 			if err := svc.Dispatch(t.Context()); err != nil {
@@ -157,7 +157,7 @@ func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 			if len(items) != 1 || !strings.Contains(items[0].Title, "Delivery admission") || !strings.Contains(items[0].Body, "https://forge.example/pr/1") {
 				t.Fatalf("delivery did not notify inbox: %#v", items)
 			}
-			if err := svc.ResumeIssue(t.Context(), epic.ID, deferredID); err != nil {
+			if err := db.ResumeFactoryIssue(t.Context(), epic.ID, deferredID); err != nil {
 				t.Fatal(err)
 			}
 			if err := svc.Dispatch(t.Context()); err != nil {

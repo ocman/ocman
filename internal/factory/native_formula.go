@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,8 +30,7 @@ func (s *NativeService) GetFormula(ctx context.Context, id string, version int) 
 		formula.Version, formula.Source = 2, tracerFormulaV2Source
 	}
 	if id != formula.ID || version != formula.Version {
-		store := s.store
-		saved, err := store.GetNativeFactoryFormulaRevision(ctx, id, version)
+		saved, err := s.store.GetNativeFactoryFormulaRevision(ctx, id, version)
 		if errors.Is(err, sql.ErrNoRows) {
 			return NativeFormulaView{}, ErrFormulaNotFound
 		}
@@ -53,8 +53,7 @@ func (s *NativeService) ListFormulas(ctx context.Context) ([]NativeFormulaView, 
 		return nil, err
 	}
 	result := []NativeFormulaView{builtIn}
-	store := s.store
-	saved, err := store.ListNativeFactoryFormulaRevisions(ctx)
+	saved, err := s.store.ListNativeFactoryFormulaRevisions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +89,7 @@ func (s *NativeService) SaveFormula(ctx context.Context, req FormulaSaveRequest)
 	if !view.Valid {
 		return NativeFormulaView{}, fmt.Errorf("%w: %s", ErrInvalidFormula, strings.Join(view.Errors, "; "))
 	}
-	store := s.store
-	saved, err := store.SaveNativeFactoryFormulaRevision(ctx, model.NativeFormulaRevision{FormulaID: req.ID, Name: view.Name, SourceTOML: req.Source, CompiledJSON: string(view.Compiled), ContentHash: view.Hash}, time.Now())
+	saved, err := s.store.SaveNativeFactoryFormulaRevision(ctx, model.NativeFormulaRevision{FormulaID: req.ID, Name: view.Name, SourceTOML: req.Source, CompiledJSON: string(view.Compiled), ContentHash: view.Hash}, time.Now())
 	if err != nil {
 		return NativeFormulaView{}, err
 	}
@@ -99,8 +97,7 @@ func (s *NativeService) SaveFormula(ctx context.Context, req FormulaSaveRequest)
 }
 
 func (s *NativeService) nextFormulaRevision(ctx context.Context, id, hash string) int {
-	store := s.store
-	formulas, err := store.ListNativeFactoryFormulaRevisions(ctx)
+	formulas, err := s.store.ListNativeFactoryFormulaRevisions(ctx)
 	if err != nil {
 		return 1
 	}
@@ -176,12 +173,12 @@ func (s *NativeService) compositionErrors(ctx context.Context, root string, revi
 			parent, ok := composition.Bindings[input]
 			if !ok {
 				problems = append(problems, fmt.Sprintf("composition %s is missing binding for %s", composition.Key, input))
-			} else if !containsString(definition.Inputs, parent) {
+			} else if !slices.Contains(definition.Inputs, parent) {
 				problems = append(problems, fmt.Sprintf("composition %s binding %s is unresolved", composition.Key, input))
 			}
 		}
 		for input := range composition.Bindings {
-			if !containsString(child.Inputs, input) {
+			if !slices.Contains(child.Inputs, input) {
 				problems = append(problems, fmt.Sprintf("composition %s binding %s is unresolved", composition.Key, input))
 			}
 		}
@@ -204,21 +201,11 @@ func (s *NativeService) compositionSource(ctx context.Context, id string, revisi
 	if id == "ocman/tracer" && revision == 1 {
 		return tracerFormulaSource, nil
 	}
-	store := s.store
-	formula, err := store.GetNativeFactoryFormulaRevision(ctx, id, revision)
+	formula, err := s.store.GetNativeFactoryFormulaRevision(ctx, id, revision)
 	if err != nil {
 		return "", err
 	}
 	return formula.SourceTOML, nil
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *NativeService) Pour(ctx context.Context, id string) ([]Issue, error) {

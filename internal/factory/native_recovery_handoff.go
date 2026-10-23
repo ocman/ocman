@@ -15,8 +15,7 @@ var errHandoffBlocked = errors.New("factory recovery workspace handoff blocked")
 // resumeQueuedRecoveries delivers resume decisions that were queued while
 // another Issue held the Epic workspace. Still busy means keep waiting.
 func (s *NativeService) resumeQueuedRecoveries(ctx context.Context) {
-	queue, gates := s.store, s.store
-	queued, err := queue.ListFactoryQueuedRecoveryResumes(ctx)
+	queued, err := s.store.ListFactoryQueuedRecoveryResumes(ctx)
 	if err != nil {
 		logrus.WithError(err).Warn("Factory could not list queued recovery resumes")
 		return
@@ -24,7 +23,7 @@ func (s *NativeService) resumeQueuedRecoveries(ctx context.Context) {
 	for _, gate := range queued {
 		s.recoveryMu.Lock()
 		// Re-read under the lock: a newer decision may have replaced the listed one.
-		current, found, err := gates.GetFactoryRecoveryGate(ctx, gate.IssueID)
+		current, found, err := s.store.GetFactoryRecoveryGate(ctx, gate.IssueID)
 		if err == nil && found && current.Resolution == "open" && current.Response != "" {
 			_, err = s.resolveRecoveryGate(ctx, current.IssueID, "resume", current.Response)
 		}
@@ -42,8 +41,7 @@ func (s *NativeService) resumeQueuedRecoveries(ctx context.Context) {
 func (s *NativeService) handoffRecoveryWorkspace(ctx context.Context, epicID string) error {
 	s.recoveryMu.Lock()
 	defer s.recoveryMu.Unlock()
-	store := s.store
-	attempts, err := store.ListFactoryAttempts(ctx, epicID)
+	attempts, err := s.store.ListFactoryAttempts(ctx, epicID)
 	if err != nil {
 		return err
 	}
@@ -59,7 +57,7 @@ func (s *NativeService) handoffRecoveryWorkspace(ctx context.Context, epicID str
 			if issue.Kind != "gate" || issue.Status != "open" {
 				continue
 			}
-			gate, found, err := store.GetFactoryRecoveryGate(ctx, issue.ID)
+			gate, found, err := s.store.GetFactoryRecoveryGate(ctx, issue.ID)
 			if err != nil {
 				return err
 			}
@@ -93,7 +91,7 @@ func (s *NativeService) handoffRecoveryWorkspace(ctx context.Context, epicID str
 			}
 			delete(s.handoffBlocked, gate.IssueID)
 			result := model.FactoryAttemptResult{Branch: attempt.FrozenPolicy.Branch, CommitSHA: head, TargetBranch: attempt.FrozenPolicy.TargetBranch}
-			if err := store.RecordFactoryRecoveryCheckpoint(ctx, gate.IssueID, result, time.Now()); err != nil {
+			if err := s.store.RecordFactoryRecoveryCheckpoint(ctx, gate.IssueID, result, time.Now()); err != nil {
 				return err
 			}
 		}

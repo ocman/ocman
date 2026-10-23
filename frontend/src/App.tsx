@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
-import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
 import { lazyComponent } from './components/lazyComponent';
 import { ProjectDetail } from './pages/ProjectDetail';
@@ -197,13 +196,6 @@ export function GlobalHotkeys() {
   useShortcut(projectPaletteShortcut);
   useShortcut(reopenClosedShortcut);
   useShortcut(inboxShortcut);
-
-  useHotkeys('esc', () => closeShortcuts(), {
-    enabled: shortcutsOpen,
-    enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'],
-    enableOnContentEditable: true,
-    preventDefault: true,
-  }, [closeShortcuts, shortcutsOpen]);
 
   return (
     <>

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { fetchJSON } from './api';
 import { projectRootForDirectory } from './worktrees';
+import { queryClient } from './queryClient';
 
 export interface CachedProjectSettings {
   models: string[];
@@ -16,36 +17,27 @@ export interface ProjectDefaults {
   permissionMode?: '' | 'default' | 'plan' | 'auto-edit' | 'yolo';
 }
 
-const cache = new Map<string, Promise<CachedProjectSettings>>();
-const listeners = new Set<() => void>();
-let revision = 0;
+const revisionKey = ['settings-revision'];
+queryClient.setQueryDefaults(revisionKey, { gcTime: Infinity });
+const revision = () => queryClient.getQueryData<number>(revisionKey) ?? 0;
 
 export function clearSettingsCache(): void {
-  cache.clear();
-  revision++;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  void queryClient.invalidateQueries({ queryKey: ['project-settings'], refetchType: 'none' });
+  queryClient.setQueryData(revisionKey, revision() + 1);
 }
 
 export function useSettingsRevision(): number {
-  return useSyncExternalStore(subscribe, () => revision);
+  return useSyncExternalStore((notify) => queryClient.getQueryCache().subscribe(notify), revision);
 }
 
 export function loadProjectSettings(directory: string, remoteId = 'local'): Promise<CachedProjectSettings> {
   const root = projectRootForDirectory(directory);
-  const key = JSON.stringify([remoteId, root]);
-  const cached = cache.get(key);
-  if (cached) return cached;
-  const request: Promise<CachedProjectSettings> = fetchJSON<CachedProjectSettings>(`/api/project/settings?dir=${encodeURIComponent(root)}&remoteId=${encodeURIComponent(remoteId)}`)
-    .then((settings) => cache.get(key) === request ? settings : loadProjectSettings(directory, remoteId))
-    .catch((error) => {
-      if (cache.get(key) === request) cache.delete(key);
-      throw error;
-    });
-  cache.set(key, request);
-  return request;
+  const generation = revision();
+  return queryClient.fetchQuery({
+    queryKey: ['project-settings', remoteId, root, generation],
+    staleTime: Infinity,
+    retry: false,
+    queryFn: () => fetchJSON<CachedProjectSettings>(`/api/project/settings?dir=${encodeURIComponent(root)}&remoteId=${encodeURIComponent(remoteId)}`)
+      .then((settings) => generation === revision() ? settings : loadProjectSettings(directory, remoteId)),
+  });
 }

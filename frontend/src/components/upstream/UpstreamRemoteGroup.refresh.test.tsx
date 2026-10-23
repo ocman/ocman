@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { notifyManager } from '@tanstack/react-query';
+import { beforeEach } from 'vitest';
+beforeEach(() => notifyManager.setScheduler(queueMicrotask));
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithQuery as render } from '../../test/renderWithQuery';
 import { afterEach, expect, it, vi } from 'vitest';
