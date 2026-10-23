@@ -266,6 +266,11 @@ describe('seedDeltaOwnedFields', () => {
     expect(map.get('p1')?.has('text')).toBe(false);
   });
 
+  it('marks tool parts with non-empty streamed input as delta-owned on `state.raw`', () => {
+    const parts = [makeToolPart('p1', 'm1', 'bash', { status: 'running', raw: '{"command":"ls"}' })];
+    expect(seedDeltaOwnedFields(parts).get('p1')).toEqual(new Set(['state.raw']));
+  });
+
   it('returns an empty map when given no parts', () => {
     const map = seedDeltaOwnedFields([]);
     expect(map.size).toBe(0);

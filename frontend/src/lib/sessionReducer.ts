@@ -32,10 +32,10 @@ export { seedDeltaOwnedFields } from './sessionViewParts';
  * content (the streamed bash output, the just-arrived tool block).
  * Reconciling instead keeps everything visible.
  *
- * Snapshot-vs-delta ownership: streaming fields (`text`,
- * `state.output`) keep their local accumulated value when the
- * server's snapshot of the same part hasn't caught up — same rule
- * as for live `message.part.updated` events.
+ * Snapshot-vs-delta ownership: streaming fields (`STREAMING_FIELDS`)
+ * keep their local accumulated value when the server's snapshot of
+ * the same part hasn't caught up — same rule as for non-final live
+ * part upserts.
  */
 function reconcileLoad(state: SessionView, incoming: SessionView, statusRevision?: number): SessionView {
   if (state.sessionId !== incoming.sessionId) {
@@ -123,9 +123,9 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
         // the event emission by a few hundred ms during active
         // streaming).
         //
-        // `_deltaOwnedFields` is preserved so streaming
-        // delta-owned fields (text, state.output) keep their local
-        // accumulated value if the snapshot's data is older.
+        // `_deltaOwnedFields` is preserved so delta-owned streaming
+        // fields keep their local accumulated value if the
+        // snapshot's data is older.
         return reconcileLoad(state, action.view, action.statusRevision);
       }
       // Wholesale replacement. Preserve sessionId from the new view

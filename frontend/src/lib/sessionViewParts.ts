@@ -2,16 +2,35 @@
 // delta field-ownership rule described in sessionReducer.ts.
 
 import type { Message, Part } from './api';
+import { DELTA_FIELD_PATH } from './conversation/events';
+import { findIndexById, replaceAt } from './conversation/partIndex';
 
 /**
  * Streaming fields are appendable string values reachable by a
- * dotted path on `part.data`. They're the only fields a delta can
- * target; everything else is snapshot-owned by definition.
+ * dotted path on `part.data`: exactly the paths a delta can target.
+ * Everything else is snapshot-owned by definition.
  */
-export const STREAMING_FIELDS: ReadonlySet<string> = new Set([
-  'text',
-  'state.output',
-]);
+export const STREAMING_FIELDS: ReadonlySet<string> = new Set(Object.values(DELTA_FIELD_PATH));
+
+/**
+ * Return `snapshot` with every streaming field in `fields` taken from
+ * `local` when the local string is longer. Streaming fields are
+ * append-only, so the shorter value is always a prefix of the longer.
+ */
+export function keepLongerStreamedFields(
+  snapshot: Record<string, unknown>,
+  local: Record<string, unknown>,
+  fields: Iterable<string> = STREAMING_FIELDS,
+): Record<string, unknown> {
+  let merged = snapshot;
+  for (const field of fields) {
+    const mine = getFieldByPath(local, field);
+    if (typeof mine !== 'string') continue;
+    const theirs = getFieldByPath(merged, field);
+    if (typeof theirs !== 'string' || mine.length > theirs.length) merged = setFieldByPath(merged, field, mine);
+  }
+  return merged;
+}
 
 /**
  * Derive a `_deltaOwnedFields` map from a list of parts by marking
@@ -23,9 +42,8 @@ export const STREAMING_FIELDS: ReadonlySet<string> = new Set([
  * wipe streamed chunks that the server hadn't recorded yet.
  *
  * The rule is conservative — any streaming field with a non-empty
- * string is treated as delta-built. Snapshot-only parts (e.g. tool
- * inputs, step-finish blocks) have no streaming fields and won't be
- * marked. Combined with the longest-wins rule in `upsertSnapshotPart`,
+ * string is treated as delta-built. Snapshot-only parts (e.g.
+ * step-finish blocks) have no streaming fields and won't be marked. Combined with the longest-wins rule in `upsertSnapshotPart`,
  * this guarantees that streamed text only ever grows, never shrinks.
  */
 export function seedDeltaOwnedFields(parts: Part[]): Map<string, Set<string>> {
@@ -94,12 +112,8 @@ export function setFieldByPath(
 
 /** Sorted insert by `timeCreated` ascending, replacing on id match. */
 export function upsertMessage(prev: Message[], msg: Message): Message[] {
-  const idx = prev.findIndex((m) => m.id === msg.id);
-  if (idx >= 0) {
-    const next = [...prev];
-    next[idx] = msg;
-    return next;
-  }
+  const idx = findIndexById(prev, msg.id);
+  if (idx >= 0) return replaceAt(prev, idx, msg);
   const insertAt = prev.findIndex((m) => m.timeCreated > msg.timeCreated);
   if (insertAt < 0) return [...prev, msg];
   return [...prev.slice(0, insertAt), msg, ...prev.slice(insertAt)];
@@ -140,19 +154,7 @@ export function upsertSnapshotPart(
     next[idx] = snapshot;
     return next;
   }
-  const existingData = decode(parts[idx]);
-  let patched = decode(snapshot);
-  for (const field of owned) {
-    const localValue = getFieldByPath(existingData, field);
-    const snapshotValue = getFieldByPath(patched, field);
-    if (typeof localValue !== 'string') continue;
-    // Append-only contract: take whichever side is longer. If the
-    // snapshot has no string for this field (or a shorter one), keep
-    // the local value.
-    if (typeof snapshotValue !== 'string' || localValue.length >= snapshotValue.length) {
-      patched = setFieldByPath(patched, field, localValue);
-    }
-  }
+  const patched = keepLongerStreamedFields(decode(snapshot), decode(parts[idx]), owned);
   const next = [...parts];
   next[idx] = encode(snapshot, patched);
   return next;

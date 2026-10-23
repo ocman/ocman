@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { seedView } from '../../test/oceFixtures';
-import { decode } from '../sessionViewParts';
+import { decode, seedDeltaOwnedFields } from '../sessionViewParts';
 import type { Session } from '../api.session.types';
 import type { SessionView } from '../sessionViewTypes';
 import { reduceConversation } from './conversationReducer';
@@ -246,6 +246,30 @@ describe('stream.hello', () => {
     const sameQuestion = fold(view, hello(false, overlay({ prompts: [question('q2')] })));
     expect(sameQuestion.pendingQuestion).toBe(view.pendingQuestion);
     expect(sameQuestion.pendingPermission).toBeNull();
+  });
+});
+
+// Regression: on a cache revisit the delta-owned map is re-seeded from cached
+// parts. Streamed tool input (state.raw) must survive a lagging REST snapshot
+// just like streamed text and output.
+describe('streamed tool input during snapshot merges', () => {
+  const tool = (raw: string, output: string, status = 'running') => ({
+    id: 'tool', messageId: 'm', sessionId: 's', data: { type: 'tool', state: { status, raw, output } } as never,
+  });
+  const cached = (): SessionView => {
+    const parts = [tool('{"command":"ls -la"}', 'a\nb\n')];
+    return { ...seedView('s'), session: { ...seedView('s').session!, status: 'busy' }, parts, _deltaOwnedFields: seedDeltaOwnedFields(parts) };
+  };
+  const rest = (): SessionView => ({ ...cached(), parts: [tool('{"comm', 'a\n', 'completed')], _deltaOwnedFields: new Map() });
+
+  it('keeps the longer cached value on a restore', () => {
+    const view = reduceLiveSessionView(cached(), { type: 'recover', view: rest(), sinceFence: [], restoreLiveFields: true });
+    expect(dataOf(view, 'tool')).toMatchObject({ state: { status: 'completed', raw: '{"command":"ls -la"}', output: 'a\nb\n' } });
+  });
+
+  it('keeps the longer cached value on a reconcile load', () => {
+    const view = reduceLiveSessionView(cached(), { type: 'load', view: rest(), mode: 'reconcile' });
+    expect(dataOf(view, 'tool')).toMatchObject({ state: { status: 'completed', raw: '{"command":"ls -la"}', output: 'a\nb\n' } });
   });
 });
 

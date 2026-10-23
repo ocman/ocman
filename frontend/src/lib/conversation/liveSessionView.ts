@@ -5,26 +5,17 @@ import { timeSseBatch } from '../perfMonitor';
 import { reduceSessionView } from '../sessionReducer';
 import type { SessionAction, SessionView } from '../sessionViewTypes';
 import { reduceConversation } from './conversationReducer';
-import { upsertMessageIndexed, upsertPart } from './conversationParts';
-import { DELTA_FIELD_PATH, type OceEnvelope, type OcePart } from './events';
-import { decode, encode, getFieldByPath, setFieldByPath, upsertSnapshotPart } from '../sessionViewParts';
-import { replaceAt } from './partIndex';
+import { upsertPart } from './conversationParts';
+import type { OceEnvelope, OcePart } from './events';
+import { decode, encode, keepLongerStreamedFields, upsertMessage, upsertSnapshotPart } from '../sessionViewParts';
+import { findIndexById, replaceAt } from './partIndex';
 
 // A non-final live part only contributes streamed text. REST owns its status,
 // timing and other metadata, which may be newer than the live copy.
 function restoreStreamedFields(view: SessionView, live: OcePart): SessionView {
-  const idx = view.parts.findIndex((p) => p.id === live.id);
+  const idx = findIndexById(view.parts, live.id);
   if (idx < 0) return upsertPart(view, live, false);
-  const rest = decode(view.parts[idx]);
-  const streamed = decode(live as never);
-  let next = rest;
-  for (const path of Object.values(DELTA_FIELD_PATH)) {
-    const mine = getFieldByPath(streamed, path);
-    const theirs = getFieldByPath(rest, path);
-    if (typeof mine === 'string' && (typeof theirs !== 'string' || mine.length > theirs.length)) {
-      next = setFieldByPath(next, path, mine);
-    }
-  }
+  const next = keepLongerStreamedFields(decode(view.parts[idx]), decode(live as never));
   return { ...view, parts: replaceAt(view.parts, idx, encode(view.parts[idx], next)) };
 }
 
@@ -56,7 +47,7 @@ export function reduceLiveSessionView(view: SessionView, action: LiveSessionActi
         _deltaOwnedFields: live._deltaOwnedFields,
         session: incoming.session && live.session && live._statusRevision !== undefined ? { ...incoming.session, status: live.session.status,
           notice: live.session.notice, resetsAt: live.session.resetsAt, liveConnection: live.session.liveConnection } : incoming.session };
-      for (const message of live.messages) incoming = { ...incoming, messages: upsertMessageIndexed(incoming.messages, message) };
+      for (const message of live.messages) incoming = { ...incoming, messages: upsertMessage(incoming.messages, message) };
       for (const part of live.parts) {
         const oce = { ...part, data: typeof part.data === 'string' ? JSON.parse(part.data) : part.data };
         incoming = live._liveFinalParts?.has(part.id) ? upsertPart(incoming, oce, true) : restoreStreamedFields(incoming, oce);

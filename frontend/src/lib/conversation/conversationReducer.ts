@@ -3,7 +3,8 @@
 
 import { reduceBackgroundTaskCount } from '../sessionBackgroundTasks';
 import { initialSessionView, type SessionMetadata, type SessionView } from '../sessionViewTypes';
-import { applyAnchoredDelta, removeMessage, removePart, upsertMessageIndexed, upsertPart } from './conversationParts';
+import { upsertMessage } from '../sessionViewParts';
+import { applyAnchoredDelta, removeMessage, removePart, upsertPart } from './conversationParts';
 import { applyPromptOverlay, askPrompt, judgePrompt, resolvePrompt } from './conversationPrompts';
 import { coalesceDeltas } from './deltaBatch';
 import type {
@@ -74,7 +75,7 @@ function applyOverlay(view: SessionView, overlay: LiveOverlay): SessionView {
   s = applyPromptOverlay(s, overlay.prompts ?? [], overlay.judge ?? []);
   s = reduceBackgroundTaskCount(s, overlay.background?.count ?? 0, overlay.background?.tasks);
   let messages = s.messages;
-  for (const message of overlay.inflight?.messages ?? []) messages = upsertMessageIndexed(messages, message);
+  for (const message of overlay.inflight?.messages ?? []) messages = upsertMessage(messages, message);
   s = { ...s, messages };
   for (const part of overlay.inflight?.parts ?? []) s = upsertPart(s, part, false);
   if (s.session && s.session.liveConnection !== overlay.liveConnection) {
@@ -90,7 +91,7 @@ const requestRefetch = (s: SessionView): SessionView => ({ ...s, _refetchRequest
 // carry no view state; the stream client routes the side-channel ones.
 const HANDLERS: Handlers = {
   'stream.hello': (s, e) => (e.resumed || !e.overlay ? s : applyOverlay(s, e.overlay)),
-  'message.upserted': (s, e) => ({ ...s, messages: upsertMessageIndexed(s.messages, e.message) }),
+  'message.upserted': (s, e) => ({ ...s, messages: upsertMessage(s.messages, e.message) }),
   'message.removed': (s, e) => removeMessage(s, e.messageId),
   'part.upserted': (s, e) => upsertPart(s, e.part, e.final),
   'part.removed': (s, e) => removePart(s, e.partId),

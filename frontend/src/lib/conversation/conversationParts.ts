@@ -4,11 +4,9 @@
 
 import type { Message, Part } from '../api';
 import type { SessionView } from '../sessionViewTypes';
-import { decode, encode, getFieldByPath, setFieldByPath } from '../sessionViewParts';
+import { decode, encode, getFieldByPath, keepLongerStreamedFields, setFieldByPath, upsertMessage } from '../sessionViewParts';
 import { DELTA_FIELD_PATH, type OcePart, type PartDelta } from './events';
 import { findIndexById, replaceAt } from './partIndex';
-
-const STREAMING_PATHS = Object.values(DELTA_FIELD_PATH);
 
 function toPart(part: OcePart): Part {
   const out: Part = { id: part.id, messageId: part.messageId, sessionId: part.sessionId, data: part.data };
@@ -16,20 +14,11 @@ function toPart(part: OcePart): Part {
   return out;
 }
 
-/** Sorted insert by timeCreated, replacing on id match. */
-export function upsertMessageIndexed(messages: Message[], msg: Message): Message[] {
-  const idx = findIndexById(messages, msg.id);
-  if (idx >= 0) return replaceAt(messages, idx, msg);
-  const insertAt = messages.findIndex((m) => m.timeCreated > msg.timeCreated);
-  if (insertAt < 0) return [...messages, msg];
-  return [...messages.slice(0, insertAt), msg, ...messages.slice(insertAt)];
-}
-
 /** A minimal assistant message so parts that lead their message can render. */
 function ensureMessage(messages: Message[], messageId: string, sessionId: string, created: unknown): Message[] {
   if (findIndexById(messages, messageId) >= 0) return messages;
   const timeCreated = typeof created === 'number' ? created : Date.now();
-  return upsertMessageIndexed(messages, { id: messageId, sessionId, timeCreated, data: { role: 'assistant' } });
+  return upsertMessage(messages, { id: messageId, sessionId, timeCreated, data: { role: 'assistant' } });
 }
 
 function withStale(view: SessionView, partId: string, stale: boolean): ReadonlySet<string> | undefined {
@@ -56,20 +45,7 @@ export function upsertPart(view: SessionView, oce: OcePart, final: boolean): Ses
   if (idx < 0) {
     return { ...view, messages, parts: [...view.parts, incoming], _stale: withStale(view, incoming.id, !!view._stale?.has(incoming.id) && !final) };
   }
-  let part = incoming;
-  if (!final) {
-    const local = decode(view.parts[idx]);
-    let patched = decode(incoming);
-    for (const path of STREAMING_PATHS) {
-      const mine = getFieldByPath(local, path);
-      if (typeof mine !== 'string') continue;
-      const theirs = getFieldByPath(patched, path);
-      if (typeof theirs !== 'string' || theirs.length < mine.length) {
-        patched = setFieldByPath(patched, path, mine);
-      }
-    }
-    part = encode(incoming, patched);
-  }
+  const part = final ? incoming : encode(incoming, keepLongerStreamedFields(decode(incoming), decode(view.parts[idx])));
   // A snapshot as long as our retained prefix may still not cover a rejected
   // delta beyond that prefix. Only a final/authoritative replacement heals it.
   const stale = !!view._stale?.has(incoming.id) && !final;
