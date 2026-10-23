@@ -33,7 +33,7 @@ test('active session popover groups projects, accepts keyboard entry and closes 
   // The open session's row follows its live detail status (waiting), so the
   // busy row in its project is another session.
   const busy = { ...MOCK_SESSION, id: 'busy-myapp', title: 'Busy myapp task', status: 'busy' };
-  await page.route(/\/api\/sessions\?limit=0$/, route => route.fulfill({ json: [
+  await page.route(url => url.pathname === '/api/sessions' && url.searchParams.get('limit') === '0' && url.searchParams.get('view') === 'sidebar', route => route.fulfill({ json: [
     busy,
     { ...MOCK_SESSION_2, status: 'busy', archived: true, parentId: MOCK_SESSION.id },
     { ...MOCK_SESSION, id: 'other', title: 'Other project task', directory: '/projects/other', status: 'busy' },
