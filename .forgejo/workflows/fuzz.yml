@@ -1,8 +1,7 @@
 name: Fuzz
 
-# Runs every Go fuzz target for longer than a developer would locally. Each
-# failing target gets a Forgejo issue (or a comment on the open one) with
-# the crashing input and repro steps; the inputs are also uploaded.
+# Runs every Go fuzz target for longer than a developer would locally. On
+# failure, the crashing inputs Go wrote under testdata/fuzz are uploaded.
 on:
   schedule:
     - cron: "0 3 * * 1" # Mondays 03:00 UTC
@@ -14,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   fuzz:
@@ -30,8 +28,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Install zstd and jq
-        run: apt-get update && apt-get install -y zstd jq
+      - name: Install zstd
+        run: apt-get update && apt-get install -y zstd
       # Restores the CI build cache; Go's fuzz cache (the corpus each run
       # grows) lives under ~/.cache/go-build/fuzz and is saved with it.
       - name: Cache Go build and module cache
@@ -46,27 +44,18 @@ jobs:
             go-fuzz-${{ runner.os }}-${{ runner.arch }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-
-      - name: Fuzz script self-tests
-        run: |
-          ./scripts/fuzz_test.sh
-          ./scripts/fuzz_report_issues_test.sh
+      - name: Fuzz script self-test
+        run: ./scripts/fuzz_test.sh
       # The manual fuzztime input reaches the script only as an environment
-      # variable, which fuzz.sh validates; it is never part of shell source.
+      # variable, never as shell source; go test rejects invalid durations.
       - name: Fuzz
         env:
           FUZZTIME: ${{ github.event.inputs.fuzztime || '60s' }}
         run: ./scripts/fuzz.sh
-      - name: Report failures as issues
-        if: failure()
-        env:
-          FORGEJO_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
-          FORGEJO_API_URL: ${{ github.api_url }}
-          REPOSITORY: ${{ github.repository }}
-        run: ./scripts/fuzz-report-issues.sh
       - name: Upload crash inputs
         if: failure()
         uses: actions/upload-artifact@v3
         with:
           name: fuzz-failures
-          path: fuzz-failures/
+          path: internal/**/testdata/fuzz/
           retention-days: 30

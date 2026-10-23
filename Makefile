@@ -383,10 +383,10 @@ test-race: ## Run Go tests with -race
 
 # Run every Fuzz* target across internal/ for FUZZTIME each. Fuzzing is
 # opt-in: `go test` only runs the seed corpus unless -fuzz is passed, so the
-# regular test suite stays fast. A failing target does not stop the run;
-# failures are listed at the end and recorded under fuzz-failures/.
+# regular test suite stays fast. The run stops at the first failure; Go
+# writes the crashing input under the package's testdata/fuzz/.
 # FUZZTIME reaches the script through the environment, never the recipe's
-# shell source, and the script validates it.
+# shell source.
 FUZZTIME ?= 10s
 export FUZZTIME
 test-fuzz: ## Run all Fuzz* targets for FUZZTIME (default 10s) each
@@ -452,12 +452,10 @@ lint-css-tokens:
 	./scripts/check_css_tokens_test.sh
 	./scripts/check-css-tokens.sh
 
-# Self-tests for the weekly fuzz job's scripts, against fake go and curl
-# binaries: a run that fuzzes nothing must fail, and failures must reach
-# the issue tracker. Needs jq.
+# Self-test for the weekly fuzz job's script, against a fake go binary: a
+# run that fuzzes nothing or hits a failing target must fail.
 lint-fuzz-scripts:
 	./scripts/fuzz_test.sh
-	./scripts/fuzz_report_issues_test.sh
 
 # Refresh the Go DTO snapshot (frontend/src/lib/contracts/go-dtos.json) that
 # the frontend's hand-written API types are checked against. The Go test
@@ -479,15 +477,14 @@ proto:
 
 # --- Local observability stack (Grafana LGTM) ----------------------------
 #
-# Spins up grafana/otel-lgtm: Grafana on :3000, OTLP/gRPC on :4317,
-# OTLP/HTTP on :4318. Pre-wired Loki/Tempo/Mimir datasources, anonymous
+# Spins up grafana/otel-lgtm: Grafana on :3000 and OTLP/HTTP on :4318
+# (ocman exports OTLP/HTTP only). Pre-wired Loki/Tempo/Mimir datasources, anonymous
 # Admin enabled (dev-only). See deploy/docker-compose.otel.yml.
 
 otel-up:
 	docker compose -f deploy/docker-compose.otel.yml up -d
 	@echo ""
 	@echo "  Grafana:    http://localhost:3000  (anonymous Admin)"
-	@echo "  OTLP/gRPC:  localhost:4317"
 	@echo "  OTLP/HTTP:  http://localhost:4318"
 	@echo ""
 	@echo "  Run ocman with:  ./ocman --otel=http://localhost:4318"

@@ -37,9 +37,8 @@ make lint
 
 `make lint` runs Go vet, golangci-lint, TypeScript, ESLint and the repository
 guards for platform branching, host helpers, settings rows and CSS tokens, plus
-the fuzz-script self-tests. Install golangci-lint; CI enforces more than vet.
-Script self-tests need `jq`. See `.golangci.yml` and
-`spec/ci-coverage-ratchet/` for the configuration.
+the fuzz-script self-test. Install golangci-lint; CI enforces more than vet.
+See `.golangci.yml` and `spec/ci-coverage-ratchet/` for the configuration.
 
 ## CI
 
@@ -54,8 +53,9 @@ Forgejo-aware setup and `FORGEJO_API_URL` handling.
 - Playwright runs Chromium against the built Vite bundle.
 
 The weekly `.forgejo/workflows/fuzz.yml` workflow runs `scripts/fuzz_test.sh`
-and `scripts/fuzz_report_issues_test.sh` before fuzzing. These script self-tests
-use fake Go and curl commands and do not run in regular CI.
+before fuzzing. This self-test uses a fake Go command and does not run in
+regular CI. On failure the workflow uploads `internal/**/testdata/fuzz/`, where
+Go writes crashing inputs.
 
 ## E2e locators
 
