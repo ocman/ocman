@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   cleanTitle,
   escapeHtml,
@@ -13,10 +13,39 @@ import {
   fuzzyRank,
   fuzzyScore,
   relativeTime,
+  relativeTimeISO,
+  formatDate,
   renderModel,
   shortPath,
   shortSessionID,
 } from './format';
+
+describe('relative timestamp styles', () => {
+  it.each([
+    [-10_000, 'just now', '0s ago'],
+    [12_000, 'just now', '12s ago'],
+    [59_999, 'just now', '59s ago'],
+    [60_000, '1m ago', '1m ago'],
+    [3_600_000, '1h ago', '1h ago'],
+    [86_400_000, '1d ago', '1d ago'],
+    [31 * 86_400_000, null, '1mo ago'],
+    [365 * 86_400_000, null, '1y ago'],
+  ] as const)('keeps distinct short and extended output at %d ms', (age, short, extended) => {
+    const now = Date.UTC(2026, 9, 23, 12);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const timestamp = now - age;
+      expect(relativeTime(timestamp)).toBe(short ?? formatDate(timestamp));
+      expect(relativeTimeISO(new Date(timestamp).toISOString())).toBe(extended);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('rejects malformed ISO timestamps', () => {
+    expect(relativeTimeISO('not a timestamp')).toBe('');
+  });
+});
 
 describe('fuzzyScore', () => {
   const rank = (q: string, names: string[]) =>

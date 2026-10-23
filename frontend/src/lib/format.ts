@@ -159,16 +159,22 @@ export function formatSubscriptionResetDate(ts: string): string {
   return `${weekday} ${month} ${day}${suffix} ${date.getFullYear()}, ${time}`;
 }
 
-export function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
+function relativeAge(ts: number, extended: boolean): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  const mins = Math.floor(seconds / 60);
+  if (mins < 1) return extended ? `${seconds}s ago` : 'just now';
   if (mins < 60) return mins + 'm ago';
   const hours = Math.floor(mins / 60);
   if (hours < 24) return hours + 'h ago';
   const days = Math.floor(hours / 24);
   if (days < 30) return days + 'd ago';
-  return formatDate(ts);
+  if (!extended) return formatDate(ts);
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months}mo ago` : `${Math.floor(months / 12)}y ago`;
+}
+
+export function relativeTime(ts: number): string {
+  return relativeAge(ts, false);
 }
 
 // relativeTimeISO renders an ISO-8601 timestamp as "2h ago" / "3mo ago".
@@ -179,17 +185,7 @@ export function relativeTime(ts: number): string {
 export function relativeTimeISO(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return '';
-  const deltaSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (deltaSec < 60) return `${deltaSec}s ago`;
-  const min = Math.floor(deltaSec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}d ago`;
-  const mo = Math.floor(day / 30);
-  if (mo < 12) return `${mo}mo ago`;
-  return `${Math.floor(mo / 12)}y ago`;
+  return relativeAge(t, true);
 }
 
 export function shortPath(path: string): string {
