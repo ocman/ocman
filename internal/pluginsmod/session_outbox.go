@@ -9,8 +9,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/sessions/identity"
 )
 
 // sessionOutboxPrefix namespaces the wire operation id derived from a row's
@@ -187,6 +187,9 @@ func (m *Module) DeliverSessionCompletion(completion PluginSessionCompletion) {
 }
 
 func (m *Module) deliverSessionCompletion(ctx context.Context, completion PluginSessionCompletion) {
+	if identity.IsPendingReference(completion.SessionID) {
+		return
+	}
 	fields := log.Fields{"plugin_id": completion.PluginID, "delivery_id": completion.ID, "attempts": completion.Attempts}
 	current, err := m.plugins.PluginSessionCompletionCurrent(ctx, completion.ID, completion.Attempts)
 	if err != nil {
@@ -195,8 +198,11 @@ func (m *Module) deliverSessionCompletion(ctx context.Context, completion Plugin
 	if !current {
 		return
 	}
-	err = m.SessionBroker().Completed(ctx, completion.PluginID, sessionOutboxOperation(completion.ID),
-		plugins.SessionCompleted{SessionID: completion.SessionID, Text: completion.Text, Usage: completion.Usage})
+	wireID, err := m.pluginWireSession(ctx, completion.PlatformID, completion.SessionID)
+	if err != nil {
+		return // No broker delivery was attempted.
+	}
+	err = m.completePluginSession(ctx, completion, wireID)
 	// Settle an admitted attempt durably even if shutdown cancelled the call.
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()

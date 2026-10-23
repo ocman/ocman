@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
+import { renderWithQuery as render } from '../test/renderWithQuery';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../lib/api';
@@ -10,9 +11,10 @@ vi.mock('../lib/useIsPhone', () => ({ useIsPhone: vi.fn(() => false) }));
 const mocks = vi.hoisted(() => ({
   apiState: { archiveSession: vi.fn(async () => ({ ok: true })) },
 }));
-vi.mock('../lib/apiStore', () => ({
-  useApiStore: (selector: (state: typeof mocks.apiState) => unknown) => selector(mocks.apiState),
-}));
+vi.mock('../lib/api', async () => {
+  const real = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return { ...real, api: { ...real.api, ...mocks.apiState } };
+});
 vi.mock('../lib/useCapabilities', () => ({ useMultiHost: () => true }));
 
 import { SessionTable } from './SessionTable';

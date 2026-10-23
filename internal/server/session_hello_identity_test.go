@@ -42,6 +42,8 @@ func TestRemoteHelloPromptReplyKeepsOwnerAfterReconnect(t *testing.T) {
 			t.Fatalf("native hello overlay: %s", w.Body.String())
 		}
 		r := httptest.NewRequest(http.MethodPost, "/api/session/"+ownedID+"/permissions/permission", strings.NewReader(`{"reply":"reject"}`))
+		r.SetPathValue("id", ownedID)
+		r.SetPathValue("pid", "permission")
 		reply := httptest.NewRecorder()
 		s.withOwnedSessionPath(s.requireAuth(s.handleSessionPermission))(reply, r)
 		if reply.Code != http.StatusNoContent {

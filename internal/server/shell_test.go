@@ -32,7 +32,7 @@ func TestHandleSessionShell_DispatchesToAdapter(t *testing.T) {
 	srv.registry.RememberSessions("fake", fakeSessions)
 
 	body := strings.NewReader(`{"command":"echo hi"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/fk-1/shell", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/fk-1/shell?platform=fake", body)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -65,7 +65,7 @@ func TestHandleSessionShell_RejectsEmptyCommand(t *testing.T) {
 	srv.registry.RememberSessions("fake", fakeSessions)
 
 	for _, body := range []string{`{}`, `{"command":""}`, `{"command":"   "}`} {
-		req := httptest.NewRequest(http.MethodPost, "/api/session/fk-1/shell", strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/session/fk-1/shell?platform=fake", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
 		serveRoutes(t, srv, rr, req)
@@ -95,7 +95,7 @@ func TestHandleSessionShell_UnsupportedReturns501(t *testing.T) {
 	srv.registry.RememberSessions("fake", fakeSessions)
 
 	body := strings.NewReader(`{"command":"echo hi"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/fk-1/shell", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/fk-1/shell?platform=fake", body)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 

@@ -93,7 +93,7 @@ func TestDisabledCanonicalAdapterPausesCompletionUntilRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	completion := PluginSessionCompletion{ID: id, PluginID: "plugin", PlatformID: "test", SessionID: canonical, Text: "owed answer"}
-	for range sessionMaxAttempts + 1 {
+	for range outboxMaxAttempts + 1 {
 		m.deliverSessionCompletion(t.Context(), completion)
 	}
 	rows, err := m.plugins.ClaimPluginSessionCompletions(t.Context(), 10)

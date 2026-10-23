@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"google.golang.org/grpc"
@@ -142,11 +141,19 @@ func (h *remoteHost) WorktreeDefaultBaseRef(ctx context.Context, dir string) (st
 }
 
 func (h *remoteHost) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
-	raw, err := hostCall[json.RawMessage](ctx, h.conn, pb.OcmanClient.CreateWorktreeSession, req)
+	client := h.conn.Client()
+	if client == nil {
+		return nil, platforms.ErrRemoteOffline
+	}
+	b, err := marshalJSON(req)
 	if err != nil {
 		return nil, err
 	}
-	return h.decodeWorktreeSession(raw)
+	resp, err := client.CreateWorktreeSession(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return nil, err
+	}
+	return h.decodeWorktreeSession(resp.Payload)
 }
 
 func (h *remoteHost) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {

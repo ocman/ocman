@@ -46,11 +46,10 @@ func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		id, suffix, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, prefix), "/")
-		for _, route := range sessionSubRoutes {
-			if !strings.Contains(route.pattern, "{") && route.pattern == strings.TrimPrefix(r.URL.Path, prefix) {
-				next(w, r)
-				return
-			}
+		switch strings.TrimPrefix(r.URL.Path, prefix) {
+		case "archive", "seen", "pin":
+			next(w, r)
+			return
 		}
 		if identity.IsPendingReference(id) {
 			s.requireAuth(func(w http.ResponseWriter, _ *http.Request) { writeIdentityError(w, platforms.ErrPlatformUnreachable) })(w, r)
