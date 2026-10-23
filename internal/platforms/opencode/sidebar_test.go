@@ -6,13 +6,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-func TestSidebarSnapshotUsesOnlySeededCaches(t *testing.T) {
+func TestSidebarSnapshotUsesObservedLifecycleCaches(t *testing.T) {
 	a := New(nil, nil)
-	a.ObserveSessionStatus("7777", 0, "root", "busy")
 	if got := a.CachedSessionObservations(); len(got) != 0 {
-		t.Fatal("unseeded source supplied live status")
+		t.Fatal("unobserved source supplied live status")
 	}
-	a.turns.seeded["7777"] = 1
+	a.ObserveSessionStatus("7777", 0, "root", "busy")
 	a.ObservePromptAsked("7777", "/repo", "permission", platforms.LivePrompt{"sessionID": "child", "id": "p"})
 	a.ObservePromptAsked("7777", "/repo", "question", platforms.LivePrompt{"sessionID": "root", "id": "q"})
 	got := a.CachedSessionObservations()

@@ -12,7 +12,9 @@ func (a *Adapter) CachedSessionObservations() map[string]platforms.LiveState {
 	}
 	a.turns.mu.RLock()
 	for id, entry := range a.turns.entries {
-		if _, ok := a.turns.seeded[entry.port]; !ok {
+		// Explicit lifecycle events are authoritative before bootstrap finishes.
+		// Seeding is needed to infer idle from absence, not to trust an entry.
+		if entry.port == "" {
 			continue
 		}
 		status := db.SessionStatus("idle")
