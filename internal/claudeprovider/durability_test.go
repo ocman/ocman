@@ -341,11 +341,17 @@ func TestSnapshotCarriesTerminalState(t *testing.T) {
 `),
 	} {
 		t.Run(name, func(t *testing.T) {
+			// Keep the fake result behind the REST read, not the scheduler.
+			gate := filepath.Join(t.TempDir(), "result")
+			t.Setenv("FAKE_CLAUDE_HOLD", gate)
 			h := startLive(t, fixture, func(o *Options) { o.IdleTimeout = time.Hour })
 			id := h.create(t)
 			h.send(t, id, "hi")
 			if life, err := h.adapter.SessionLifecycle(t.Context(), id); err != nil || life.Status != db.StatusBusy {
 				t.Fatalf("REST read = %+v %v, want busy", life, err)
+			}
+			if err := os.WriteFile(gate, nil, 0o600); err != nil {
+				t.Fatal(err)
 			}
 			waitFor(t, "turn idle", func() bool { _, _, idles := h.events.get(id); return idles == 1 })
 			var buf bytes.Buffer
