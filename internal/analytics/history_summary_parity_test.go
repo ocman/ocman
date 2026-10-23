@@ -12,7 +12,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 )
 
-// The legacy reader buckets with SQLite's localtime, whose timezone is fixed
+// Analytics buckets with SQLite's localtime, whose timezone is fixed
 // when the process starts (on Linux the C library reads its own copy of TZ),
 // so each zone runs in a child test process started with that TZ.
 func TestHistorySummaryExactCutoffsAndLocalBuckets(t *testing.T) {
@@ -41,6 +41,7 @@ func testSummaryCutoffsInZone(t *testing.T, zone string) {
 		t.Fatalf("child process does not run in %s", zone)
 	}
 	var boundary int64
+	dstHours := map[string]int64{}
 	f, h, _ := analyticsSummaryFixture(t, func(f *fixture, now time.Time) {
 		base := now.Add(-48 * time.Hour).UTC().Truncate(time.Hour)
 		boundary = base.Add(15 * time.Minute).UnixMilli()
@@ -56,20 +57,32 @@ func testSummaryCutoffsInZone(t *testing.T, zone string) {
 		nov = nov.AddDate(0, 0, (7-int(nov.Weekday()))%7)
 		for i, offset := range []time.Duration{5*time.Hour + 30*time.Minute, 6*time.Hour + 30*time.Minute} {
 			at := nov.Add(offset).UnixMilli()
+			dstHours[time.UnixMilli(at).Format("2006-01-02 15")] += 9
 			if _, err := f.raw.Exec(`INSERT INTO message(id,session_id,time_created,data) VALUES(?,?,?,?)`, fmt.Sprintf("dst-%d", i), "root", at, `{"role":"assistant","providerID":"p","modelID":"dst","tokens":{"input":9,"output":4}}`); err != nil {
 				t.Fatal(err)
 			}
 		}
 	})
-	// The routes derive cutoffs from whole days only, so compare the
-	// readers directly at the partial-hour boundary.
+	// Routes derive cutoffs from whole days, so test the partial-hour
+	// boundary directly on the production stored reader.
 	t.Run("boundary", func(t *testing.T) {
 		history, release, reason := h.projection(t.Context())
 		if history == nil {
 			t.Fatal(reason)
 		}
 		defer release()
-		compareSummaryReaders(t, f.legacy, history, boundary)
+		checkSummaryBoundary(t, history, boundary)
+		hours, err := history.GetHourlyTokensByModel(t.Context(), 730, 0, "dst", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]int64{}
+		for _, hour := range hours {
+			got[hour.Datetime] += hour.TokensIn
+		}
+		if !reflect.DeepEqual(got, dstHours) {
+			t.Fatalf("DST buckets = %v, want %v", got, dstHours)
+		}
 	})
 	for _, route := range []string{
 		"/api/hourly-tokens?days=7&model=nested%2F%20model%20",
@@ -78,43 +91,22 @@ func testSummaryCutoffsInZone(t *testing.T, zone string) {
 		"/api/metrics?days=7", "/api/metrics/performance?days=7&agent=build", "/api/metric-logs?kind=request&days=7&offset=1&limit=2",
 	} {
 		t.Run(route, func(t *testing.T) {
-			before := f.serveLegacy(http.MethodGet, route, "")
-			var want any
-			decode(t, before, &want)
 			after := f.serve(http.MethodGet, route, "")
 			var got any
 			decode(t, after, &got)
-			if !reflect.DeepEqual(want, got) {
-				t.Fatalf("summary parity differs: %s\nlegacy=%s\nsummary=%s", route, before.Body, after.Body)
+			if after.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+				t.Fatalf("route bypassed history: %s %v", route, after.Header())
 			}
 		})
 	}
 }
 
-// compareSummaryReaders checks that the legacy and summary readers agree at
-// an exact cutoff 15 minutes into an hour, and that the cutoff is inclusive:
+// checkSummaryBoundary checks an inclusive cutoff 15 minutes into an hour:
 // of the six boundary messages, those at +0 and +14 minutes are excluded.
-func compareSummaryReaders(t *testing.T, legacy, history *db.DB, boundary int64) {
+func checkSummaryBoundary(t *testing.T, history *db.DB, boundary int64) {
 	t.Helper()
 	ctx := t.Context()
-	for name, read := range map[string]func(*db.DB) (any, error){
-		"activity": func(r *db.DB) (any, error) { return r.GetDailyActivity(ctx, boundary, "", "") },
-		"models":   func(r *db.DB) (any, error) { return r.GetModelUsage(ctx, boundary, "") },
-		"hourly":   func(r *db.DB) (any, error) { return r.GetHourlyTokensByModel(ctx, 7, boundary, "", "") },
-	} {
-		want, err := read(legacy)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := read(history)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(want, got) {
-			t.Fatalf("%s differs at the boundary\nlegacy=%+v\nsummary=%+v", name, want, got)
-		}
-	}
-	for _, r := range []*db.DB{legacy, history} {
+	for _, r := range []*db.DB{history} {
 		models, err := r.GetModelUsage(ctx, boundary, "")
 		if err != nil {
 			t.Fatal(err)

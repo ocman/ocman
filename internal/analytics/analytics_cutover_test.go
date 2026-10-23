@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ var conversationAnalyticsRoutes = []string{
 	"/api/metric-logs?kind=session", "/api/metric-logs?kind=project",
 }
 
-func TestAllConversationAnalyticsMatchLegacyAndUseStatev2(t *testing.T) {
+func TestAllConversationAnalyticsUseStatev2WithFiltersAndPagination(t *testing.T) {
 	f, h, now := analyticsParityFixture(t)
 	h.CheckedAt = func() time.Time { return now }
 	for _, route := range conversationAnalyticsRoutes {
@@ -31,15 +30,9 @@ func TestAllConversationAnalyticsMatchLegacyAndUseStatev2(t *testing.T) {
 				}
 				// Explicit since keeps the concurrency bucket origin identical.
 				target := route + separator + "since=" + strconv.FormatInt(now.Add(-48*time.Hour).UnixMilli(), 10) + "&" + filter
-				old := f.serveLegacy(http.MethodGet, target, "")
-				var want any
-				decode(t, old, &want)
 				rec := f.serve(http.MethodGet, target, "")
 				var got any
 				decode(t, rec, &got)
-				if !reflect.DeepEqual(got, want) {
-					t.Fatalf("%s differs\nlegacy=%s\nhistory=%s", target, old.Body, rec.Body)
-				}
 				if rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
 					t.Fatalf("did not cut over: %v", rec.Header())
 				}

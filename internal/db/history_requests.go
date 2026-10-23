@@ -48,7 +48,6 @@ func (d *DB) scanHistoryRequests(ctx context.Context, opts MetricsDashboardOptio
 		if (opts.AgentFilter != "" && opts.AgentFilter != r.Agent) || (opts.ModelFilter != "" && opts.ModelFilter != r.Model) {
 			continue
 		}
-		r.historyMetadata = true
 		if opts.SessionIdentity != nil {
 			id, err := opts.SessionIdentity(ctx, instance, r.SessionID)
 			if err != nil {

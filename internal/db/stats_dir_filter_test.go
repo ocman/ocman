@@ -92,7 +92,7 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	seedDirFilter(t, db)
 
 	t.Run("empty dir matches everything (regression)", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+		got, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 		})
 
@@ -108,7 +108,7 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	})
 
 	t.Run("dir scope includes self and descendants but not siblings", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+		got, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 			Dir: "/repo/foo",
 		})
@@ -126,7 +126,7 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	})
 
 	t.Run("dir scope filters the project log too", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+		got, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 			Dir: "/repo/foo",
 		})
@@ -147,7 +147,7 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	})
 
 	t.Run("dir scope with no matches yields zero rows", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+		got, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 			Dir: "/nonexistent",
 		})
@@ -176,11 +176,11 @@ func TestGetDailyActivity_DirFilter(t *testing.T) {
 	insertMessage(t, db, "u_sib", "s_sib", now, map[string]interface{}{"role": "user"})
 	insertMessage(t, db, "u_other", "s_other", now, map[string]interface{}{"role": "user"})
 
-	all, err := db.GetDailyActivity(t.Context(), 0, "", "")
+	all, err := storedFixture(t, db).GetDailyActivity(t.Context(), 0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity (no dir): %v", err)
 	}
-	scoped, err := db.GetDailyActivity(t.Context(), 0, "", "/repo/foo")
+	scoped, err := storedFixture(t, db).GetDailyActivity(t.Context(), 0, "", "/repo/foo")
 	if err != nil {
 		t.Fatalf("GetDailyActivity (dir): %v", err)
 	}
@@ -217,7 +217,7 @@ func TestGetModelUsage_DirFilter(t *testing.T) {
 	defer db.Close()
 	seedDirFilter(t, db)
 
-	all, err := db.GetModelUsage(t.Context(), 0, "")
+	all, err := storedFixture(t, db).GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage (no dir): %v", err)
 	}
@@ -225,7 +225,7 @@ func TestGetModelUsage_DirFilter(t *testing.T) {
 		t.Fatalf("unfiltered model usage = %#v, want 1 row with Count=4", all)
 	}
 
-	scoped, err := db.GetModelUsage(t.Context(), 0, "/repo/foo")
+	scoped, err := storedFixture(t, db).GetModelUsage(t.Context(), 0, "/repo/foo")
 	if err != nil {
 		t.Fatalf("GetModelUsage (dir): %v", err)
 	}
@@ -241,7 +241,7 @@ func TestGetHourlyTokensByModel_DirFilter(t *testing.T) {
 	defer db.Close()
 	seedDirFilter(t, db)
 
-	all, err := db.GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
+	all, err := storedFixture(t, db).GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel (no dir): %v", err)
 	}
@@ -253,7 +253,7 @@ func TestGetHourlyTokensByModel_DirFilter(t *testing.T) {
 		t.Errorf("unfiltered tokensIn = %d, want 1500", allIn)
 	}
 
-	scoped, err := db.GetHourlyTokensByModel(t.Context(), 7, 0, "", "/repo/foo")
+	scoped, err := storedFixture(t, db).GetHourlyTokensByModel(t.Context(), 7, 0, "", "/repo/foo")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel (dir): %v", err)
 	}
@@ -273,7 +273,7 @@ func TestGetHourlyActivity_DirFilter(t *testing.T) {
 	defer db.Close()
 	seedDirFilter(t, db)
 
-	all, err := db.GetHourlyActivity(t.Context(), 0, "")
+	all, err := storedFixture(t, db).GetHourlyActivity(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetHourlyActivity (no dir): %v", err)
 	}
@@ -285,7 +285,7 @@ func TestGetHourlyActivity_DirFilter(t *testing.T) {
 		t.Errorf("unfiltered sessions = %d, want 4", allSess)
 	}
 
-	scoped, err := db.GetHourlyActivity(t.Context(), 0, "/repo/foo")
+	scoped, err := storedFixture(t, db).GetHourlyActivity(t.Context(), 0, "/repo/foo")
 	if err != nil {
 		t.Fatalf("GetHourlyActivity (dir): %v", err)
 	}

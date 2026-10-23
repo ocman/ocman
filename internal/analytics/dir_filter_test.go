@@ -65,6 +65,7 @@ func dirFilterFixture(t *testing.T) *fixture {
 	mkMessage("m_desc", "s_desc", 200, 0)
 	mkMessage("m_sib", "s_sib", 400, 0)
 	mkMessage("m_other", "s_other", 800, 0)
+	srv.importFixture()
 
 	return srv
 }

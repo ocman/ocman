@@ -10,6 +10,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/NoUseFreak/ocman/internal/conversationingest"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -21,9 +22,11 @@ import (
 // handle, for seeding) and a fresh state database.
 type fixture struct {
 	*Module
-	raw    *sql.DB
-	legacy *db.DB
-	mux    *http.ServeMux
+	raw         *sql.DB
+	legacy      *db.DB
+	mux         *http.ServeMux
+	t           *testing.T
+	seedHistory *HistoryAnalytics
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -83,8 +86,8 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	h := &HistoryAnalytics{Store: history, Instances: func() ([]string, bool) { return []string{"fixture"}, true }}
-	f := &fixture{Module: newTestModule(Deps{Store: store, HistoryAnalytics: func() *HistoryAnalytics { return h }}), raw: raw, legacy: database}
-	f.mux = calculationRoutes(f.Module, f.legacy)
+	f := &fixture{Module: newTestModule(Deps{Store: store, HistoryAnalytics: func() *HistoryAnalytics { return h }}), raw: raw, legacy: database, t: t, seedHistory: h}
+	f.mux = routes(f.Module)
 	return f
 }
 
@@ -118,7 +121,37 @@ func routes(m *Module) *http.ServeMux {
 
 // serve sends one request through the module's routes.
 func (f *fixture) serve(method, target, body string) *httptest.ResponseRecorder {
+	if f.legacy != nil && f.deps.HistoryAnalytics != nil && f.deps.HistoryAnalytics() == f.seedHistory {
+		f.importFixture()
+	}
 	return serve(f.mux, method, target, body)
+}
+
+// Seed old-style test rows through ingestion, then exercise production routes.
+// Tests that install a different history store manage its contents themselves.
+func (f *fixture) importFixture() {
+	f.t.Helper()
+	entries, err := f.legacy.HistoryInventory(f.t.Context())
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for _, entry := range entries {
+		snapshot, err := f.legacy.HistorySnapshot(f.t.Context(), entry.ID)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		key := statev2.Key{InstanceID: "fixture", SessionID: entry.ID}
+		batch, _, err := conversationingest.Normalize(key, snapshot)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		if old, err := f.seedHistory.Store.Metadata(f.t.Context(), key); err == nil {
+			batch.ExpectedRevision = old.Session.Revision
+		}
+		if _, err := f.seedHistory.Store.Commit(f.t.Context(), batch); err != nil {
+			f.t.Fatal(err)
+		}
+	}
 }
 
 func serve(mux *http.ServeMux, method, target, body string) *httptest.ResponseRecorder {

@@ -3,7 +3,11 @@ package db
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 )
+
+type toolTiming = analyticsdata.ToolTiming
 
 func TestWaitTimeByAgent(t *testing.T) {
 	d := openTestDB(t)
@@ -39,7 +43,7 @@ func TestWaitTimeByAgent(t *testing.T) {
 	})
 	check := func(opts MetricsDashboardOptions, want map[string][3]int64) {
 		t.Helper()
-		metrics, err := d.GetMetricsPerformance(t.Context(), opts)
+		metrics, err := storedFixture(t, d).GetMetricsPerformance(t.Context(), opts)
 		if err != nil {
 			t.Fatal(err)
 		}

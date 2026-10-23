@@ -21,7 +21,10 @@ func TestSessionConcurrencyRoute(t *testing.T) {
 		t.Fatalf("POST = %d", rec.Code)
 	}
 	f.legacy.Close()
-	if rec := f.serve(http.MethodGet, "/api/analytics/session-concurrency", ""); rec.Code != http.StatusInternalServerError {
+	f.legacy = nil
+	_ = f.seedHistory.Store.Close()
+	f.seedHistory.Store = nil
+	if rec := f.serve(http.MethodGet, "/api/analytics/session-concurrency", ""); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("closed database = %d", rec.Code)
 	}
 	if rec := serve(routes(newTestModule(Deps{})), http.MethodGet, "/api/analytics/session-concurrency", ""); rec.Code == http.StatusOK {

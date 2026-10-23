@@ -39,7 +39,7 @@ func TestAgentRunHoursIncludesToolsExcludesWaits(t *testing.T) {
 	})
 	// Permission overlaps the question: subtract its union, not twice.
 	waits := map[string][]RunInterval{"a": {{start + hour/4, start + hour/2 + hour/4}, {start + hour + hour/2, start + 2*hour}}}
-	got, err := d.GetAgentRunHours(t.Context(), start, start+3*hour, "/repo", waits)
+	got, err := storedFixture(t, d).GetAgentRunHours(t.Context(), start, start+3*hour, "/repo", waits)
 	want := []AgentRunHour{{start, 75}, {start + hour, 30}, {start + 2*hour, 0}}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("hours = %v, %v; want %v", got, err, want)
@@ -47,7 +47,7 @@ func TestAgentRunHoursIncludesToolsExcludesWaits(t *testing.T) {
 	if len(waits["a"]) != 2 {
 		t.Fatal("mutated caller waits")
 	}
-	clipped, err := d.GetAgentRunHours(t.Context(), start+hour/2, start+hour+hour/2, "/repo", waits)
+	clipped, err := storedFixture(t, d).GetAgentRunHours(t.Context(), start+hour/2, start+hour+hour/2, "/repo", waits)
 	if err != nil || !reflect.DeepEqual(clipped, []AgentRunHour{{start, 30}, {start + hour, 30}}) {
 		t.Fatalf("clipped = %v, %v", clipped, err)
 	}
@@ -93,7 +93,7 @@ func TestAgentRunHoursMissedWaitResolutionAcrossRestart(t *testing.T) {
 		for _, wait := range observed {
 			waits[wait.SessionID] = append(waits[wait.SessionID], RunInterval{wait.Start, wait.End})
 		}
-		got, err := d.GetAgentRunHours(t.Context(), since, 4*hour, "/repo", waits)
+		got, err := storedFixture(t, d).GetAgentRunHours(t.Context(), since, 4*hour, "/repo", waits)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("runtime after restart = %v, %v; want %v", got, err, want)
 		}

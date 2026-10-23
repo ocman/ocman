@@ -347,9 +347,8 @@ flowchart LR
   compares each session's stored accounting with totals recomputed from the
   snapshot it just read; a `usage-mismatch` counter means a normalization or
   column mapping bug.
-- Integration tests use `internal/testutil/historyparity` to compare native
-  OpenCode daily and model totals with statev2. Production adapters do not
-  expose the comparison or import this test helper.
+- Analytics queries read retained summaries only. Native fixture rows are
+  imported before tests assert totals, filters, pricing and runtime.
 - Project totals aggregate stored sessions across local platform instances and
   exclude helpers only from visible session counts. Plugin directory grants
   require ingested project-root evidence; conflicting roots fail closed. Local
@@ -473,16 +472,14 @@ hydrated store never produces incomplete totals. Startup requires the history
 store to open successfully. While initial imports or repairs are pending,
 unavailable readers return HTTP 503 rather than selecting platform history.
 
-Route-level parity tests compare all conversation analytics with the legacy
-reader on the same fixtures, including filters, pagination, pricing, throughput
-and question timings. They also close the legacy handle to verify selected
-statev2 routes do not query it. Summary tests cover exact cutoffs, fractional
-timezones, repeated DST hours, tool-only repairs, collision markers and upgrade
-rollback. The opt-in `TestHistorySummarySnapshotParity` compares the old
-projection calculations and summaries against one frozen compact snapshot,
-including pricing, metrics and runtime. It must not use a changing live store.
-The scheduled real-data parity task still checks
-daily and per-model totals; it is not a full production-data dashboard audit.
+Route tests cover conversation analytics filters, pagination and source headers.
+They close the native handle to verify that statev2 routes do not query it.
+Calculation tests import fixtures into retained history and assert expected
+totals, pricing, throughput and question timings. Summary tests cover exact
+cutoffs, fractional timezones, repeated DST hours, tool-only repairs, collision
+markers and upgrade rollback. There is no native-SQL analytics fallback or
+parallel parity implementation. Optional read-only latency tests still measure
+the production queries against an explicitly supplied validation snapshot.
 
 ### Compact session sidebar
 
@@ -567,8 +564,9 @@ flowchart LR
   them again on replay. Remote disposal uses a dedicated RPC through sessionsvc;
   uncertain creation or cleanup retains the workspace for reconciliation.
 - Forks reserve the child and its Ocman parent link before native history copy.
-  Startup migration backfills legacy metadata before serving; canonical ingestion
-  adopts later metadata directly. There is no parallel native-ID HTTP/MCP
+  Startup migration backfills legacy metadata during fenced preparation;
+  canonical ingestion adopts later metadata directly. The bootstrap has no
+  background runner or change cursor. There is no parallel native-ID HTTP/MCP
   translation mode or background legacy catalogue indexer. Adapter event
   projection still preserves opaque payloads. Migration preserves pin/seen/archive
   associations, and attributes native-only provenance only to the selected
@@ -585,6 +583,9 @@ flowchart LR
   The shared `platforms.SessionRegistry` contract requires wrappers to forward
   `CanonicalSessionIDs`, so ownership comes from the catalogue, never the
   registry's reverse cache.
+  Raw-adapter lookup fallbacks and native-binding mirroring are removed; legacy
+  bookmarks still resolve inside the canonical adapter for the authenticated
+  owner and physical source.
 - Catalogue v1 is frozen. The append-only v2 upgrade preserves development
   databases, including both intermediate native-parent column spellings.
 - Notifications, routine/Factory references, Inbox, artifacts, webhook
@@ -716,8 +717,8 @@ flowchart LR
   a source-wide refresh rather than assigning an unverified native ID.
   Canonical startup omits the legacy native indexer. A source-deleted conversation
   retains its validated physical head so settled reads can use retained history
-  without falling back to a missing native transcript. Aggregate parity is tested
-  before and after rekeying and needs no identity translator.
+  without falling back to a missing native transcript. Rekeying tests verify
+  retained analytics rows without a separate native analytics implementation.
 - History rekeying preserves revisions, change-outbox sequences, source-deletion
   state, analytics rows, purge tombstones and session-scoped receipts. Core-state
   rekeying covers declared columns, Inbox/control-session JSON, packed unarchive

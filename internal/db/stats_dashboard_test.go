@@ -17,7 +17,7 @@ func TestGetMetricsLog_ReturnsOnlySelectedGrain(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 10, "output": 5},
 	})
 
-	got, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{RequestLimit: 20}, MetricsLogRequests)
+	got, err := storedFixture(t, db).GetMetricsLog(t.Context(), MetricsDashboardOptions{RequestLimit: 20}, MetricsLogRequests)
 	if err != nil {
 		t.Fatalf("GetMetricsLog: %v", err)
 	}
@@ -28,15 +28,15 @@ func TestGetMetricsLog_ReturnsOnlySelectedGrain(t *testing.T) {
 		t.Fatalf("unselected logs must stay nil: %+v", got)
 	}
 
-	sessions, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{SessionLimit: 20}, MetricsLogSessions)
+	sessions, err := storedFixture(t, db).GetMetricsLog(t.Context(), MetricsDashboardOptions{SessionLimit: 20}, MetricsLogSessions)
 	if err != nil || sessions.Total != 1 || len(sessions.Sessions) != 1 || sessions.Requests != nil {
 		t.Fatalf("unexpected session log: result=%+v err=%v", sessions, err)
 	}
-	projects, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{ProjectLimit: 20}, MetricsLogProjects)
+	projects, err := storedFixture(t, db).GetMetricsLog(t.Context(), MetricsDashboardOptions{ProjectLimit: 20}, MetricsLogProjects)
 	if err != nil || projects.Total != 1 || len(projects.Projects) != 1 || projects.Requests != nil {
 		t.Fatalf("unexpected project log: result=%+v err=%v", projects, err)
 	}
-	if _, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{}, "unknown"); err == nil {
+	if _, err := storedFixture(t, db).GetMetricsLog(t.Context(), MetricsDashboardOptions{}, "unknown"); err == nil {
 		t.Fatal("unknown log kind did not return an error")
 	}
 }
@@ -74,7 +74,7 @@ func TestGetMetricsDashboard_DailyGranularity_30Day(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 50, "output": 25},
 	})
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -112,7 +112,7 @@ func TestGetMetricsDashboard_HourlyGranularity_24h(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 10, "output": 5},
 	})
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 1, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -138,7 +138,7 @@ func TestGetMetricsDashboard_EmptyDB_ZeroFilledBuckets(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -182,7 +182,7 @@ func TestGetMetricsDashboard_CumulativeCostMonotonic(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -216,7 +216,7 @@ func TestGetMetricsDashboard_ProjectFilter_NarrowsResult(t *testing.T) {
 		"time": map[string]interface{}{"created": now - 500, "completed": now},
 	})
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 		Dir: "/proj/a",
 	})
@@ -254,7 +254,7 @@ func TestGetMetricsDashboard_SessionLog_RespectsLimitAndCostSort(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 2, ProjectLimit: 50,
 	})
 
@@ -306,7 +306,7 @@ func TestGetMetricsDashboard_SessionLog_TieBreaksByRecency(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -346,7 +346,7 @@ func TestGetMetricsDashboard_CostByModel_BasicSplit(t *testing.T) {
 		"time": map[string]interface{}{"created": now - 500, "completed": now},
 	})
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -423,7 +423,7 @@ func TestGetMetricsDashboard_DailyEstimatedCostByModel(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 300, "output": 0},
 	})
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 7, Since: now.Add(-48 * time.Hour).UnixMilli(),
 		Pricing: stubPricing{inputRate: 0.01},
 	})
@@ -516,7 +516,7 @@ func TestGetMetricsDashboard_RequestOutcomesDurationsCostsAndAgents(t *testing.T
 		insertMessage(t, db, request.id, "s1", created, data)
 	}
 
-	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	metrics, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Pricing: stubPricing{inputRate: 0.1},
 	})
 	if err != nil {
@@ -583,7 +583,7 @@ func TestGetMetricsDashboard_EstimatedCostByType(t *testing.T) {
 		},
 	})
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Pricing: stubPricing{inputRate: 1, outputRate: 2, cacheReadRate: 3, cacheWriteRate: 4},
 	})
 	if err != nil {
@@ -611,7 +611,7 @@ func TestGetMetricsDashboard_CostByModel_UsesEstimatedCostWhenReportedCostIsZero
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, Pricing: stubPricing{inputRate: 0.01, outputRate: 0.02},
 	})
 
@@ -660,7 +660,7 @@ func TestGetMetricsDashboard_CostByModel_TopNAndOther(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -697,7 +697,7 @@ func TestGetMetricsDashboard_CostByModel_EmptyDB(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 

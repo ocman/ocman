@@ -2,15 +2,11 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
 	"sort"
-	"strings"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // CostCalculator can compute the API-equivalent cost for a request given token counts.
@@ -169,112 +165,7 @@ func (d *DB) GetMetricsLog(ctx context.Context, opts MetricsDashboardOptions, ki
 // and returns the filtered request rows plus the pre-filter agent/model sets
 // (used to keep dropdowns populated even when a filter is active).
 func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions) (filtered []requestRow, agentSet, modelSet map[string]struct{}, err error) {
-	if d.historyScope != nil {
-		return d.scanHistoryRequests(ctx, opts)
-	}
-	dirFrag, dirArgs := directoryWhere(opts.Dir)
-	query := `
-		SELECT m.id, m.session_id, m.time_created, m.data
-		FROM ` + d.messagesFrom(opts.Since, dirFrag != "") + `
-		WHERE json_extract(m.data, '$.role') = 'assistant'`
-	var args []interface{}
-	if opts.Since > 0 {
-		query += "\n		  AND m.time_created >= ?"
-		args = append(args, opts.Since)
-	}
-	if dirFrag != "" {
-		query += "\n		  AND " + dirFrag
-		args = append(args, dirArgs...)
-	}
-	query += `
-		ORDER BY m.time_created ASC, m.id ASC
-	`
-	source := d.reads()
-	rows, qErr := source.QueryContext(ctx, query, args...)
-	if qErr != nil {
-		return nil, nil, nil, qErr
-	}
-	defer rows.Close()
-
-	agentSet = make(map[string]struct{})
-	modelSet = make(map[string]struct{})
-
-	for rows.Next() {
-		var id, sessionID string
-		var timeCreated int64
-		var raw string
-		if err := rows.Scan(&id, &sessionID, &timeCreated, &raw); err != nil {
-			log.WithError(err).Warn("failed to scan metrics dashboard row")
-			continue
-		}
-		var md MessageData
-		if err := json.Unmarshal([]byte(raw), &md); err != nil {
-			log.WithError(err).Warn("failed to unmarshal metrics dashboard message")
-			continue
-		}
-
-		agent := strings.TrimSpace(md.Agent)
-		provider, model := extractModelProvider(md)
-		trimmed := strings.TrimSpace(model)
-		mkey := modelKey(provider, trimmed)
-
-		if agent != "" {
-			agentSet[agent] = struct{}{}
-		}
-		if mkey != "" {
-			modelSet[mkey] = struct{}{}
-		}
-
-		if opts.AgentFilter != "" && agent != opts.AgentFilter {
-			continue
-		}
-		if opts.ModelFilter != "" && mkey != opts.ModelFilter {
-			continue
-		}
-
-		entry := requestRow{RequestLogEntry: RequestLogEntry{
-			ID:          id,
-			SessionID:   sessionID,
-			TimeCreated: timeCreated,
-			Agent:       agent,
-			Model:       mkey,
-			Cost:        md.Cost,
-		}}
-		if md.Tokens != nil {
-			entry.InputTokens = md.Tokens.Input
-			entry.OutputTokens = md.Tokens.Output
-			if md.Tokens.Cache != nil {
-				entry.CacheReadTokens = md.Tokens.Cache.Read
-				entry.CacheWriteTokens = md.Tokens.Cache.Write
-			}
-		}
-		if md.Time != nil && md.Time.Completed > md.Time.Created {
-			entry.DurationMs = md.Time.Completed - md.Time.Created
-			entry.modelStarted = md.Time.Created
-		}
-		finish := strings.TrimSpace(md.Finish)
-		entry.isError = finish == "error" || persistedError(md.Error)
-		entry.completed = finish != "" || entry.isError
-		entry.StopReason = finish
-		if entry.StopReason == "" {
-			entry.StopReason = "none"
-		}
-		// Effective cost: prefer the platform-reported value; fall back
-		// to the token-derived estimate when the platform reports $0
-		// (subscription plans). This is the figure the dashboard
-		// headlines and table rows display.
-		priceRequest(&entry, opts.Pricing)
-
-		filtered = append(filtered, entry)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, nil, err
-	}
-	rows.Close()
-	if err := d.applyThroughput(ctx, source, filtered); err != nil {
-		return nil, nil, nil, err
-	}
-	return filtered, agentSet, modelSet, nil
+	return d.scanHistoryRequests(ctx, opts)
 }
 
 // bucketAcc accumulates per-time-bucket metrics while building the series.
@@ -415,11 +306,6 @@ func percentile(values []int64, percent int) float64 {
 	slices.Sort(ordered)
 	index := (len(ordered)*percent+99)/100 - 1
 	return float64(ordered[index])
-}
-
-func persistedError(raw json.RawMessage) bool {
-	trimmed := strings.TrimSpace(string(raw))
-	return trimmed != "" && trimmed != "null"
 }
 
 // buildModelCostSeries ranks models by whole-window cost and folds models below
@@ -590,8 +476,8 @@ func costDescLess(costI, costJ float64, timeI, timeJ int64) bool {
 }
 
 // populateSessionLog aggregates the already-filtered request rows by session id
-// and applies pagination. Session metadata (title, directory) is fetched from
-// the session table in a single query.
+// and applies pagination. Titles and directories come from the same retained
+// snapshot as the request rows.
 func (d *DB) populateSessionLog(ctx context.Context, dashboard *MetricsDashboard, filtered []requestRow, sessionLimit, sessionOffset int) error {
 	if len(filtered) == 0 {
 		return nil
@@ -681,8 +567,7 @@ func (d *DB) populateSessionLog(ctx context.Context, dashboard *MetricsDashboard
 }
 
 // populateProjectLog aggregates the already-filtered request rows by project
-// directory and applies pagination. Directories are resolved from session
-// metadata in a single query. Sorted by most-recent activity first.
+// directory and applies pagination using each row's retained session metadata.
 func (d *DB) populateProjectLog(ctx context.Context, dashboard *MetricsDashboard, filtered []requestRow, projectLimit, projectOffset int) error {
 	if len(filtered) == 0 {
 		return nil
@@ -762,43 +647,6 @@ func (d *DB) populateProjectLog(ctx context.Context, dashboard *MetricsDashboard
 	dashboard.TotalProjects = len(entries)
 	dashboard.Projects = paginateSlice(entries, projectOffset, projectLimit)
 	return nil
-}
-
-// lookupSessionMetadata returns title and directory maps keyed by session id.
-// Missing sessions simply have empty strings.
-func (d *DB) lookupSessionMetadata(ctx context.Context, ids []string) (titles, dirs map[string]string, err error) {
-	titles = make(map[string]string, len(ids))
-	dirs = make(map[string]string, len(ids))
-	if len(ids) == 0 {
-		return titles, dirs, nil
-	}
-	// Build a parameterised IN clause; session counts in a filtered window
-	// are typically small, so a single query is fine.
-	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	q := "SELECT id, title, directory FROM session WHERE id IN (" + strings.Join(placeholders, ",") + ")"
-	rows, err := d.reads().QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, title, dir string
-		if err := rows.Scan(&id, &title, &dir); err != nil {
-			log.WithError(err).Warn("failed to scan session metadata row")
-			continue
-		}
-		titles[id] = title
-		dirs[id] = dir
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, err
-	}
-	return titles, dirs, nil
 }
 
 func sortedKeys(values map[string]struct{}) []string {

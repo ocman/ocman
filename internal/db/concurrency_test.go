@@ -31,7 +31,7 @@ func TestSessionConcurrency(t *testing.T) {
 			"role": row.role, "time": map[string]any{"created": row.from, "completed": row.to},
 		})
 	}
-	got, err := d.GetSessionConcurrency(t.Context(), start, start+4*hour, "/repo")
+	got, err := storedFixture(t, d).GetSessionConcurrency(t.Context(), start, start+4*hour, "/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestSessionConcurrency(t *testing.T) {
 	if got.BucketMs != hour || !reflect.DeepEqual(got.Series, want) {
 		t.Fatalf("got %+v, want %v", got, want)
 	}
-	all, err := d.GetSessionConcurrency(t.Context(), 0, start+4*hour, "")
+	all, err := storedFixture(t, d).GetSessionConcurrency(t.Context(), 0, start+4*hour, "")
 	if err != nil || all.Series[0].Sessions != 3 || all.Series[0].Timestamp != start-100 {
 		t.Fatalf("all time = %+v, %v", all, err)
 	}
@@ -49,19 +49,20 @@ func TestConcurrencyEmptyAndBounded(t *testing.T) {
 	d := openTestDB(t)
 	defer d.Close()
 	for _, since := range []int64{0, 1000, 2000} {
-		got, err := d.GetSessionConcurrency(t.Context(), since, 2000, "")
+		got, err := storedFixture(t, d).GetSessionConcurrency(t.Context(), since, 2000, "")
 		if err != nil || got.Series == nil {
 			t.Fatalf("empty = %+v, %v", got, err)
 		}
 	}
-	got, err := d.GetSessionConcurrency(t.Context(), 1000, 1000+1001*time.Hour.Milliseconds(), "")
+	got, err := storedFixture(t, d).GetSessionConcurrency(t.Context(), 1000, 1000+1001*time.Hour.Milliseconds(), "")
 	if err != nil || len(got.Series) > 1000 || got.BucketMs != 2*time.Hour.Milliseconds() {
 		t.Fatalf("bounded = %+v, %v", got, err)
 	}
-	if _, err := d.db.Exec(`DROP TABLE message`); err != nil {
+	reader := storedFixture(t, d)
+	if _, err := reader.db.Exec(`DROP VIEW history_fact`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.GetSessionConcurrency(t.Context(), 0, 2000, ""); err == nil {
+	if _, err := reader.GetSessionConcurrency(t.Context(), 0, 2000, ""); err == nil {
 		t.Fatal("expected query error")
 	}
 }

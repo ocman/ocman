@@ -763,7 +763,7 @@ func TestGetStats(t *testing.T) {
 		"cost":   0.01,
 	})
 
-	stats, err := db.GetStats(t.Context())
+	stats, err := storedFixture(t, db).GetStats(t.Context())
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
@@ -787,10 +787,8 @@ func TestGetStats(t *testing.T) {
 	}
 }
 
-// TestGetStatsUsesSessionTotals: with OpenCode's denormalised session
-// columns present, totals come from them rather than a message-blob scan
-// (the message row deliberately disagrees to prove which source is read).
-func TestGetStatsUsesSessionTotals(t *testing.T) {
+// Native session totals do not override retained message accounting.
+func TestGetStatsIgnoresNativeSessionTotals(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	if _, err := db.db.Exec(`
@@ -810,12 +808,12 @@ func TestGetStatsUsesSessionTotals(t *testing.T) {
 		"role": "assistant", "tokens": map[string]interface{}{"input": 1, "output": 1}, "cost": 0.01,
 	})
 
-	stats, err := db.GetStats(t.Context())
+	stats, err := storedFixture(t, db).GetStats(t.Context())
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
-	if stats.TotalTokensIn != 600 || stats.TotalTokensOut != 140 || stats.TotalCost != 3 {
-		t.Errorf("totals = %d/%d/%v, want 600/140/3", stats.TotalTokensIn, stats.TotalTokensOut, stats.TotalCost)
+	if stats.TotalTokensIn != 1 || stats.TotalTokensOut != 1 || stats.TotalCost != 0.01 {
+		t.Errorf("totals = %d/%d/%v, want retained message totals 1/1/0.01", stats.TotalTokensIn, stats.TotalTokensOut, stats.TotalCost)
 	}
 }
 
@@ -840,7 +838,7 @@ func TestGetMetricsDashboard(t *testing.T) {
 		},
 	})
 
-	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	metrics, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -947,7 +945,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 10, "output": 20},
 	})
 
-	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	metrics, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
 
@@ -988,7 +986,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Pagination: sessionLimit=1 returns just the most expensive.
-	paged, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	paged, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 1, ProjectLimit: 50,
 	})
 
@@ -1003,7 +1001,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Offset skips the most expensive (s1) — what's left is s2.
-	offset, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	offset, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 1, SessionOffset: 1, ProjectLimit: 50,
 	})
 
@@ -1015,92 +1013,11 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 }
 
-func TestGetProjects(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Session 1", "/project/a", now, now)
-	insertSession(t, db, "s2", "Session 2", "/project/a", now, now)
-	insertSession(t, db, "s3", "Session 3", "/project/b", now, now)
-	// Subagent session under /project/a — must be excluded from
-	// SessionCount but its token/cost contributions must still
-	// be folded into the project totals (real spend).
-	insertSession(t, db, "s4", "Task (code subagent)", "/project/a", now, now)
-	insertMessage(t, db, "m1", "s4", now, map[string]interface{}{
-		"role":   "assistant",
-		"tokens": map[string]interface{}{"input": 100, "output": 50},
-		"cost":   0.25,
-	})
-
-	projects, err := db.GetProjects(t.Context())
-	if err != nil {
-		t.Fatalf("GetProjects: %v", err)
-	}
-	if len(projects) != 2 {
-		t.Fatalf("expected 2 projects, got %d", len(projects))
-	}
-	var foundA bool
-	for _, p := range projects {
-		if p.Directory != "/project/a" {
-			continue
-		}
-		foundA = true
-		if p.SessionCount != 2 {
-			t.Errorf("project /a: expected 2 sessions (subagent excluded), got %d", p.SessionCount)
-		}
-		if p.TotalTokensIn != 100 {
-			t.Errorf("project /a: expected 100 input tokens (subagent included), got %d", p.TotalTokensIn)
-		}
-		if p.TotalTokensOut != 50 {
-			t.Errorf("project /a: expected 50 output tokens (subagent included), got %d", p.TotalTokensOut)
-		}
-		if p.TotalCost != 0.25 {
-			t.Errorf("project /a: expected cost 0.25 (subagent included), got %v", p.TotalCost)
-		}
-	}
-	if !foundA {
-		t.Fatalf("project /a not returned")
-	}
-}
-
-// TestGetProjects_UsesSessionTotalsWhenPresent: with the denormalised
-// columns present, project totals sum the session rows (subagents
-// included) and never re-read the message blobs.
-func TestGetProjects_UsesSessionTotalsWhenPresent(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	addSessionTotalsColumns(t, db)
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Session 1", "/project/a", now, now)
-	insertSession(t, db, "s4", "Task (code subagent)", "/project/a", now, now)
-	if _, err := db.db.Exec(`UPDATE session SET cost = 0.5, tokens_input = 10, tokens_output = 20`); err != nil {
-		t.Fatal(err)
-	}
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
-	insertMessage(t, db, "m2", "s4", now, map[string]interface{}{
-		"role": "assistant", "tokens": map[string]interface{}{"input": 100, "output": 50}, "cost": 0.25,
-	})
-
-	projects, err := db.GetProjects(t.Context())
-	if err != nil {
-		t.Fatalf("GetProjects: %v", err)
-	}
-	if len(projects) != 1 {
-		t.Fatalf("projects = %+v, want one", projects)
-	}
-	p := projects[0]
-	if p.SessionCount != 1 || p.MessageCount != 2 || p.TotalTokensIn != 20 || p.TotalTokensOut != 40 || p.TotalCost != 1.0 {
-		t.Errorf("project = %+v, want sessions 1, messages 2, tokens 20/40, cost 1.0", p)
-	}
-}
-
 func TestGetHourlyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyActivity(t.Context(), 0, "")
+	result, err := storedFixture(t, db).GetHourlyActivity(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetHourlyActivity: %v", err)
 	}
@@ -1133,7 +1050,7 @@ func TestGetModelUsage(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetModelUsage(t.Context(), 0, "")
+	result, err := storedFixture(t, db).GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1183,7 +1100,7 @@ func TestGetModelUsage_CacheTokens(t *testing.T) {
 		},
 	})
 
-	result, err := db.GetModelUsage(t.Context(), 0, "")
+	result, err := storedFixture(t, db).GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1214,7 +1131,7 @@ func TestGetModelUsage_SortedOutput(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 20, "output": 10},
 	})
 
-	result, err := db.GetModelUsage(t.Context(), 0, "")
+	result, err := storedFixture(t, db).GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1245,7 +1162,7 @@ func TestGetModelUsage_FallbackToNestedModel(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 50, "output": 25},
 	})
 
-	result, err := db.GetModelUsage(t.Context(), 0, "")
+	result, err := storedFixture(t, db).GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1261,7 +1178,7 @@ func TestGetDailyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetDailyActivity(t.Context(), 0, "", "")
+	result, err := storedFixture(t, db).GetDailyActivity(t.Context(), 0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity: %v", err)
 	}
@@ -1294,7 +1211,7 @@ func TestGetDailyActivity_UserMessages(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 10, "output": 5},
 	})
 
-	result, err := db.GetDailyActivity(t.Context(), 0, "", "")
+	result, err := storedFixture(t, db).GetDailyActivity(t.Context(), 0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity: %v", err)
 	}
@@ -1329,7 +1246,7 @@ func TestGetDailyActivity_IncludesSubagentAssistantMessages(t *testing.T) {
 	insertMessage(t, database, "u1", "child", now, map[string]interface{}{"role": "user"})
 	insertMessage(t, database, "a1", "child", now, map[string]interface{}{"role": "assistant"})
 
-	result, err := database.GetDailyActivity(t.Context(), 0, "", "")
+	result, err := storedFixture(t, database).GetDailyActivity(t.Context(), 0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity: %v", err)
 	}
@@ -1369,7 +1286,7 @@ func TestGetDailyActivity_ModelFilter(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 	messagesToday := func(t *testing.T, modelFilter string) int {
 		t.Helper()
-		result, err := db.GetDailyActivity(t.Context(), 0, modelFilter, "")
+		result, err := storedFixture(t, db).GetDailyActivity(t.Context(), 0, modelFilter, "")
 		if err != nil {
 			t.Fatalf("GetDailyActivity(%q): %v", modelFilter, err)
 		}
@@ -1423,7 +1340,7 @@ func TestGetNewAssistantMessages(t *testing.T) {
 	})
 
 	// Query all messages since before the first one.
-	rows, hwm, err := db.GetNewAssistantMessages(t.Context(), now-5000)
+	rows, hwm, err := storedFixture(t, db).GetNewAssistantMessages(t.Context(), now-5000)
 	if err != nil {
 		t.Fatalf("GetNewAssistantMessages: %v", err)
 	}
@@ -1459,7 +1376,7 @@ func TestGetNewAssistantMessages(t *testing.T) {
 	}
 
 	// Second query with the returned high-water mark should return nothing.
-	rows2, hwm2, err := db.GetNewAssistantMessages(t.Context(), hwm)
+	rows2, hwm2, err := storedFixture(t, db).GetNewAssistantMessages(t.Context(), hwm)
 	if err != nil {
 		t.Fatalf("GetNewAssistantMessages (second call): %v", err)
 	}
@@ -1475,7 +1392,7 @@ func TestGetNewAssistantMessages_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	rows, hwm, err := db.GetNewAssistantMessages(t.Context(), 0)
+	rows, hwm, err := storedFixture(t, db).GetNewAssistantMessages(t.Context(), 0)
 	if err != nil {
 		t.Fatalf("GetNewAssistantMessages: %v", err)
 	}
@@ -1552,7 +1469,7 @@ func TestGetHourlyTokensByModel(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
+	result, err := storedFixture(t, db).GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}
@@ -1571,7 +1488,7 @@ func TestGetHourlyTokensByModel_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
+	result, err := storedFixture(t, db).GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}
@@ -1768,7 +1685,7 @@ func TestGetMetricsDashboardCumulativeCalcCost(t *testing.T) {
 	//                                   m2 calc = 200*0.01 + 400*0.02 = 10.0
 	pricing := stubPricing{inputRate: 0.01, outputRate: 0.02}
 
-	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	metrics, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 		Pricing: pricing,
 	})
@@ -1845,7 +1762,7 @@ func TestGetMetricsDashboardEffectiveCost(t *testing.T) {
 	//   m2 calc = 200*0.01 + 400*0.02 = 10.0 (reported 0 → est wins)
 	pricing := stubPricing{inputRate: 0.01, outputRate: 0.02}
 
-	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+	metrics, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 		Pricing: pricing,
 	})

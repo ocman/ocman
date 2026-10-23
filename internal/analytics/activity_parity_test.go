@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -16,8 +15,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
-// Seed the real legacy reader, import its snapshots, and compare the HTTP
-// response before and after cutover. No fake implementation of query rules.
+// Import native snapshots and exercise the stored-history HTTP routes.
 func analyticsParityFixture(t *testing.T) (*fixture, *HistoryAnalytics, time.Time) {
 	return analyticsSummaryFixture(t, nil)
 }
@@ -91,22 +89,23 @@ func analyticsSummaryFixture(t *testing.T, seed func(*fixture, time.Time)) (*fix
 	return f, h, now
 }
 
-func TestActivityCutoverMatchesLegacyQueriesAndHeaders(t *testing.T) {
+func TestActivityReadsStoredHistoryWithFiltersAndHeaders(t *testing.T) {
 	f, h, now := analyticsParityFixture(t)
 	today := now.UnixMilli()
 	for _, q := range []string{"", "?model=" + url.QueryEscape("p/org/model"), "?model=" + url.QueryEscape("org/model"), "?model=missing", "?dir=" + url.QueryEscape("/repo"), "?dir=/repo/wt", "?since=" + strconv.FormatInt(today, 10), "?dir=/repo&model=org%2Fmodel"} {
 		t.Run(q, func(t *testing.T) {
-			old := f.serveLegacy(http.MethodGet, "/api/activity"+q, "")
-			if old.Header().Get("X-Ocman-Activity-Source") != "legacy" {
-				t.Fatal(old.Header())
-			}
-			var want []db.DailyActivity
-			decode(t, old, &want)
 			rec := f.serve(http.MethodGet, "/api/activity"+q, "")
 			var got []db.DailyActivity
 			decode(t, rec, &got)
-			if !reflect.DeepEqual(want, got) {
-				t.Fatalf("cutover differs for %s", q)
+			messages := 0
+			for _, day := range got {
+				messages += day.Messages
+			}
+			want := map[string]int{"": 4, "?model=p%2Forg%2Fmodel": 3, "?model=org%2Fmodel": 3,
+				"?model=missing": 0, "?dir=%2Frepo": 3, "?dir=/repo/wt": 1,
+				"?since=" + strconv.FormatInt(today, 10): 4, "?dir=/repo&model=org%2Fmodel": 3}[q]
+			if messages != want || len(got) != 366 {
+				t.Fatalf("%s: messages=%d want=%d days=%d", q, messages, want, len(got))
 			}
 			if rec.Header().Get("X-Ocman-Activity-Source") != "statev2" || rec.Header().Get("X-Ocman-Activity-Fallback") != "" {
 				t.Fatal(rec.Header())

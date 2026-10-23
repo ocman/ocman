@@ -88,7 +88,8 @@ func TestHistoryJoinedMessagesCheckSessionOnlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	rows, err := reader.db.Query(`EXPLAIN QUERY PLAN SELECT count(*) FROM ` + reader.messagesFrom(0, true) + ` WHERE json_extract(m.data,'$.role')='user'`)
+	rows, err := reader.db.Query(`EXPLAIN QUERY PLAN SELECT count(*) FROM history_fact m JOIN session s
+		ON s.instance_id=m.instance_id AND s.id=m.session_id WHERE m.role='user'`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +238,11 @@ func TestHistoryRecentWindowDoesNotScanMessagesForEverySession(t *testing.T) {
 	defer reader.Close()
 	for _, join := range []bool{false, true} {
 		t.Run(fmt.Sprint(join), func(t *testing.T) {
-			rows, err := reader.db.Query(`EXPLAIN QUERY PLAN SELECT m.id FROM `+reader.messagesFrom(time.Now().UnixMilli(), join)+` WHERE json_extract(m.data,'$.role')='assistant' AND m.time_created>=?`, time.Now().UnixMilli())
+			from := "history_fact m"
+			if join {
+				from += " JOIN session s ON s.instance_id=m.instance_id AND s.id=m.session_id"
+			}
+			rows, err := reader.db.Query(`EXPLAIN QUERY PLAN SELECT m.id FROM `+from+` WHERE m.role='assistant' AND m.time_created>=?`, time.Now().UnixMilli())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -256,7 +261,7 @@ func TestHistoryRecentWindowDoesNotScanMessagesForEverySession(t *testing.T) {
 			if err := rows.Err(); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(first, "USING INDEX analytics_message_role") {
+			if !strings.Contains(first, "INDEX analytics_fact_window") {
 				t.Fatalf("recent window repeats message scan for each session: %s", first)
 			}
 		})

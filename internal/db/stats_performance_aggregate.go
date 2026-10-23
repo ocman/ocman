@@ -8,7 +8,6 @@ import (
 // requestRow attaches computed fields without changing the request-log API.
 type requestRow struct {
 	RequestLogEntry
-	historyMetadata                bool
 	sessionTitle, sessionDirectory string
 	estimatedCostByType            CostByType
 	completed                      bool

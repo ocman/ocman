@@ -95,6 +95,8 @@ func planUses(t *testing.T, d *DB, query, index string, args ...any) {
 
 func TestAnalyticsQueriesUseIndexes(t *testing.T) {
 	d := openTestDB(t)
+	planUses(t, d, `SELECT count(*) FROM message WHERE instance_id=? AND role='assistant' AND created_at>=?`, "message_role", "first", int64(0))
+	planUses(t, d, `SELECT count(*) FROM session WHERE instance_id=? AND created_at>=?`, "session_created", "first", int64(0))
 	planUses(t, d, `SELECT count(*) FROM message WHERE created_at >= ?`, "message_created", int64(0))
 	planUses(t, d, `SELECT count(*) FROM message WHERE instance_id=? AND model=? AND created_at >= ?`, "message_model", "first", "x", int64(0))
 	planUses(t, d, `SELECT id FROM session WHERE instance_id=? AND parent_id=?`, "session_parent", "first", "parent")

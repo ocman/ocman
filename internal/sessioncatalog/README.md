@@ -11,8 +11,8 @@ remote metadata. `MirrorCanonical` stores an authenticated owner's ID without a
 native execution binding on the hub. `GetCanonical` can read that metadata, but
 `Resolve` cannot turn it into local execution authority. Native-link compatibility
 and old creation receipts now live in `internal/platforms/owned`, not services.
-The application-wide canonical cutover is still being wired; these helpers do
-not by themselves replace startup's existing native-keyed state paths.
+Startup preparation completes the canonical cutover before enabling session
+consumers. Legacy keys and creation receipts remain available for recovery.
 
 ## Current implementation
 
@@ -45,10 +45,9 @@ not by themselves replace startup's existing native-keyed state paths.
   when parents arrive later, and repairs the Ocman parent links atomically.
   Cycles fail without committing a partial hierarchy. Empty historical
   directories do not prevent identity backfill.
-- The catalogue module inventories statev2 metadata on startup, fenced by its
-  durable outbox sequence, then consumes changes. It never reads conversation
-  messages, opaque source payloads or platform content. Deferred announcements
-  retry independently with bounded buffers/backoff; overflow rebuilds metadata.
+- The catalogue bootstrap inventories retained metadata during fenced startup
+  preparation. It has no background runner, change cursor or retry buffer.
+  Canonical ingestion adopts later metadata through the owning adapter.
 - Explicit history purges scrub display metadata while retaining an identity
   tombstone. Startup also reads purge tombstones, so offline purges are not
   missed and stale inventories cannot restore a purged title.
@@ -79,46 +78,29 @@ tracking until binding completes, without requiring another history update.
 
 ## Transport integration
 
-Owner-local `sessionsvc` creation and forks reserve before calling the platform, attach
-the returned native ID before configuration, and complete binding before
-publishing. `server.WithConversationHistory` installs it alongside
-history ingestion. Routine and factory origins travel through worktree requests
+Owner-local canonical adapters reserve before native creation and forks, attach
+the native ID before configuration, and complete binding before publication.
+`sessionsvc` coordinates application linkage and publication; it does not keep
+a second creation reservation. Routine and factory origins travel through worktree requests
 and remote RPCs. The remote owner applies the initial permission rules and
 reserves the identity; the hub does not allocate another ID. Completed keyed
-requests return the existing native ID without launching again. Unkeyed callers
+requests return the existing canonical ID without launching again. Unkeyed callers
 receive a new request key for each invocation.
 
-Public session lists, detail/creation responses, MCP session reads and browser
-events now project normalized references to Ocman IDs. `sessionview` leaves
-native message/part IDs and opaque provider/tool data unchanged. Owner-scoped
-identity RPCs batch projection and mirror the owner's ID on the hub. Unknown
-IDs, disconnected owners and inactive physical sources fail closed.
-Remote protocol v8 requires the identity RPCs before publishing adapters or
-launching sessions. Both machines must be upgraded; an older remote is not
-replaced with hub-minted IDs or a native-ID response fallback.
+Public session lists, detail/creation responses, MCP reads, browser events and
+feature stores carry canonical IDs directly. There is no HTTP/MCP projection
+layer. Adapters translate native execution keys and events internally while
+preserving message/part IDs and opaque payloads. Owner-scoped identity RPCs
+mirror canonical metadata only, never another owner's native execution binding.
+Unknown IDs, disconnected owners and inactive physical sources fail closed.
+The gateway rejects raw adapters instead of discovering or mirroring native
+bindings on their behalf. Legacy-link resolution still runs inside canonical
+adapters, with physical-source and owner validation.
 
-Projection follows explicit wire contracts rather than recursively rewriting
-ID-like JSON keys. The wire shape and incomplete-list-row policy are separate;
-omitting unresolved rows never allows an unresolved detail response. REST and
-MCP share the same projector setup. Covered public boundaries include notifications and push
-destinations, routine definitions/latest runs/history, Factory attempts/control
-sessions, Inbox links, artifact filters/metadata, webhook dispatches, shares,
-worktree/forge launches, feature MCP arguments/results, and REST/OCE content.
-Analytics resolves by physical history instance before grouping session logs;
-native message IDs and snapshot titles/directories remain unchanged.
-
-Cold/reconnected `stream.hello` overlays project prompt and in-flight session
-references, leaving prompt, message and part IDs unchanged. Batched task reads
-keep canonical IDs until adapter selection; explicit owners never use the
-native-only registry cache. Each task response carries its platform for projection.
-Identity RPCs and request projections retain lookup causes and local 404/409
-semantics instead of replacing them with generic transport/history errors.
-
-Public session paths and declared top-level request references translate back
-to native keys before mutation. REST bodies, query references and MCP arguments
-share owner validation. REST request contracts select fields by route and method,
-not Go reflection; unrelated ID-shaped fields remain opaque. Existing archive, seen, pin, queue and permission data
-therefore retain their native ownership and do not need destructive rewriting.
+Startup migration preserves native-keyed state and receipts while rekeying
+declared session references. Transport errors retain lookup causes and local
+404/409 semantics. Task reads keep canonical IDs until owner selection;
+explicit owners never use the native-only registry cache.
 Legacy browser links resolve through `/api/session-identity` before loading
 the conversation or attaching its stream. The capability is enabled by the
 backend automatically, not an experimental setting.

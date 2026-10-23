@@ -43,7 +43,6 @@ Read [remotes-and-forges.md](remotes-and-forges.md) for ownership rules.
 | `internal/permissions`, `internal/autoapprove` | Inherited rules, judging, provenance and pending-prompt/watch lifetime. |
 | `internal/snooze` | Snooze route and joined wake worker, checked on startup and every minute independently of auto-archive. Archive persistence stays in state. |
 | `internal/db`, `internal/state` | Read-only OpenCode queries and writable ocman state. |
-| `internal/testutil/historyparity` | Test-only comparison of native OpenCode analytics with statev2 reports. |
 | `internal/statev2`, `internal/conversationingest` | Durable owner/instance-scoped session reads, conversation history, indexed accounting, ingestion readiness and read-your-writes acknowledgements. Canonical adapters never fall back to native history for persisted reads. |
 | `internal/sidebar` | Compact session-list queries over the history projection, read-only catalogue/user-state joins and generation-scoped event-cache observations. No request-time accounting or platform RPCs. |
 | `internal/analyticsdata` | Shared accounting metadata and tool-timing rules used by legacy queries and ingestion-maintained analytics summaries. |

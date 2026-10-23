@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"sort"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/analytics"
@@ -19,7 +21,52 @@ func installProjectCacheFixture(t *testing.T, s *Server, reference *db.DB) {
 	t.Cleanup(func() { _ = history.Close() })
 	s.historyAnalytics = &analytics.HistoryAnalytics{Store: history}
 	s.historyOwner = "fixture"
-	s.projects.fetch = func() ([]db.ProjectStats, error) { return reference.GetProjects(t.Context()) }
+	s.projects.fetch = func() ([]db.ProjectStats, error) { return fixtureProjects(t, reference) }
+}
+
+// Cache tests use mutable native fixtures, not the production analytics API.
+func fixtureProjects(t *testing.T, reference *db.DB) ([]db.ProjectStats, error) {
+	entries, err := reference.HistoryInventory(t.Context())
+	if err != nil {
+		return nil, err
+	}
+	projects := map[string]*db.ProjectStats{}
+	for _, entry := range entries {
+		snapshot, err := reference.HistorySnapshot(t.Context(), entry.ID)
+		if err != nil {
+			return nil, err
+		}
+		s := snapshot.Session
+		p := projects[s.Directory]
+		if p == nil {
+			p = &db.ProjectStats{Directory: s.Directory}
+			projects[s.Directory] = p
+		}
+		if !snapshot.Subagent {
+			p.SessionCount++
+		}
+		p.LastUsed = max(p.LastUsed, s.TimeUpdated)
+		p.MessageCount += len(snapshot.Messages)
+		for _, m := range snapshot.Messages {
+			var md db.MessageData
+			if err := json.Unmarshal(m.Data, &md); err != nil {
+				return nil, err
+			}
+			if md.Role == "assistant" {
+				p.TotalCost += md.Cost
+				if md.Tokens != nil {
+					p.TotalTokensIn += md.Tokens.Input
+					p.TotalTokensOut += md.Tokens.Output
+				}
+			}
+		}
+	}
+	var out []db.ProjectStats
+	for _, p := range projects {
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].LastUsed > out[j].LastUsed })
+	return out, nil
 }
 
 func storedProjectFixture(t *testing.T, s *Server) *statev2.DB {

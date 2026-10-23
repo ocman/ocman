@@ -30,18 +30,19 @@ func TestThroughputMissingTimingDoesNotDeflateAverages(t *testing.T) {
 			insertPart(t, db, id, id, "s", 2000, map[string]any{"type": "tool", "state": map[string]any{"time": timing}})
 		}
 	}
-	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{})
+	reader := storedFixture(t, db)
+	metrics, err := reader.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if metrics.Summary.AvgTokensPerSec != 20 || metrics.Series[0].AvgOutputTokensSec != 20 || metrics.Sessions[0].AvgTokensPerSec != 20 || metrics.Projects[0].AvgTokensPerSec != 20 {
 		t.Fatalf("unknown timing must be omitted from averages: %+v", metrics)
 	}
-	if _, err := db.db.Exec(`DROP TABLE part`); err != nil {
+	if _, err := reader.db.Exec(`DROP VIEW history_fact`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{}); err == nil {
-		t.Fatal("expected timing query failure")
+	if _, err := reader.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{}); err == nil {
+		t.Fatal("expected retained timing query failure")
 	}
 }
 
@@ -60,7 +61,7 @@ func TestThroughputExcludesToolWaits(t *testing.T) {
 			"type": "tool", "state": map[string]any{"status": "completed", "time": map[string]any{"start": span[0], "end": span[1]}},
 		})
 	}
-	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{})
+	metrics, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestThroughputRefreshesToolTimings(t *testing.T) {
 	})
 	check := func(want float64) {
 		t.Helper()
-		metrics, err := db.GetMetricsPerformance(t.Context(), MetricsDashboardOptions{})
+		metrics, err := storedFixture(t, db).GetMetricsPerformance(t.Context(), MetricsDashboardOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
