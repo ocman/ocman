@@ -3,8 +3,8 @@ import { test, expect, MOCK_SESSION } from './fixtures';
 test('bash descriptions show running elapsed time and completed duration inline', async ({ mockedPage: page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const now = Date.now();
-  await page.clock.install({ time: now - 1000 });
-  await page.clock.pauseAt(now);
+  // Freeze wall time without pausing query notifications or route resolution.
+  await page.clock.setFixedTime(now);
   await page.addInitScript(() => localStorage.setItem('ocman:ui', JSON.stringify({
     state: { compactToolCalls: true, changesSidebarOpenTabs: [] }, version: 7,
   })));
@@ -28,7 +28,7 @@ test('bash descriptions show running elapsed time and completed duration inline'
   const completed = viewport.getByRole('button', { name: 'Bash: Check formatting 8.5s $ pnpm lint' });
   await expect(completed).toBeVisible();
   await expect(viewport.getByTestId('bash-spinner')).toBeVisible();
-  await page.clock.runFor(1000);
+  await page.clock.setFixedTime(now + 1000);
   const running = viewport.getByRole('button', { name: /13.0s/ });
   await expect(running).toBeVisible();
   await expect(completed).toBeVisible();

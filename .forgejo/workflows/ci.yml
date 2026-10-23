@@ -39,7 +39,7 @@ jobs:
         working-directory: frontend
         run: pnpm exec tsc -b
       - name: Install script test dependencies
-        run: apt-get update && apt-get install -y jq python3
+        run: apt-get update && apt-get install -y ripgrep jq python3
       - name: CSS token guard
         run: |
           ./scripts/check_css_tokens_test.sh
