@@ -10,6 +10,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
+// checkHistoryScope opens and releases one scoped reader.
+func (d *DB) checkHistoryScope(ctx context.Context) error {
+	_, release, err := d.ScopedHistoryReader(ctx)
+	if err == nil {
+		release()
+	}
+	return err
+}
+
 func TestHistoryAnalyticsScopesSourcesAndRejectsCollisions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "history ?# ü.db")
 	store, err := statev2.Open(path)
@@ -34,7 +43,7 @@ func TestHistoryAnalyticsScopesSourcesAndRejectsCollisions(t *testing.T) {
 	if _, err := single.db.Exec(`DELETE FROM main.analytics_message`); err == nil {
 		t.Fatal("history reader could write")
 	}
-	if err := single.ValidateHistoryScope(t.Context()); err != nil {
+	if err := single.checkHistoryScope(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	stats, err := single.GetStats(t.Context())
@@ -46,7 +55,7 @@ func TestHistoryAnalyticsScopesSourcesAndRejectsCollisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer both.Close()
-	if err := both.ValidateHistoryScope(t.Context()); err == nil {
+	if err := both.checkHistoryScope(t.Context()); err == nil {
 		t.Fatal("native ID collision not rejected")
 	}
 	// Every new pooled connection must install its own scoped TEMP views.
@@ -61,7 +70,7 @@ func TestHistoryAnalyticsScopesSourcesAndRejectsCollisions(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := single.ValidateHistoryScope(ctx); err == nil {
+	if err := single.checkHistoryScope(ctx); err == nil {
 		t.Fatal("ignored cancellation")
 	}
 }
@@ -89,7 +98,7 @@ func TestHistoryAnalyticsOpenErrors(t *testing.T) {
 	reader, err := OpenHistoryAnalytics(path, []string{"one"})
 	if err == nil {
 		defer reader.Close()
-		if err := reader.ValidateHistoryScope(t.Context()); err == nil {
+		if err := reader.checkHistoryScope(t.Context()); err == nil {
 			t.Fatal("accepted foreign database")
 		}
 	}

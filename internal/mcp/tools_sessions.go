@@ -15,8 +15,9 @@ import (
 type sessionService interface {
 	ListSessions(context.Context, string) ([]db.Session, error)
 	GetSession(context.Context, string, string, int) (*platforms.SessionDetail, error)
-	// SearchSessionText scans message text of sessions updated since the
-	// unix-ms cutoff. Slow: it reads every text part in the window.
+	// SearchSessionText searches this owner's stored user and assistant text
+	// of sessions updated since the unix-ms cutoff. There is no full-text
+	// index: it scans every stored text part in the window.
 	SearchSessionText(ctx context.Context, query, directory string, since int64) ([]db.TextMatch, error)
 }
 

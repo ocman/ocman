@@ -23,7 +23,7 @@ func TestHistoryAnalyticsNeverReadsPayloadProjections(t *testing.T) {
 		name string
 		run  func(context.Context) error
 	}{
-		{"scope", reader.ValidateHistoryScope},
+		{"scope", reader.checkHistoryScope},
 		{"stats", func(ctx context.Context) error { _, err := reader.GetStats(ctx); return err }},
 		{"activity", func(ctx context.Context) error { _, err := reader.GetDailyActivity(ctx, 0, "", ""); return err }},
 		{"models", func(ctx context.Context) error { _, err := reader.GetModelUsage(ctx, 0, ""); return err }},

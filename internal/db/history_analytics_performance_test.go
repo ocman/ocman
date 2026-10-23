@@ -34,8 +34,8 @@ func TestHistoryAnalyticsReadOnlyLatency(t *testing.T) {
 		name string
 		run  func(context.Context) error
 	}{
-		{"scope", reader.ValidateHistoryScope},
-		{"scope-unchanged", reader.ValidateHistoryScope},
+		{"scope", reader.checkHistoryScope},
+		{"scope-unchanged", reader.checkHistoryScope},
 		{"catalog-recents", func(ctx context.Context) error { _, err := reader.GetRecentModels(ctx, 50, 10); return err }},
 		{"catalog-defaults", func(ctx context.Context) error { _, err := reader.GetSessionDefaults(ctx, "", ""); return err }},
 		{"models-7d", func(ctx context.Context) error { _, err := reader.GetModelUsage(ctx, since, ""); return err }},
@@ -149,7 +149,7 @@ func TestHistoryScopeDetectsLaterCollisionsAndPurgeRepair(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer reader.Close()
-			if err := reader.ValidateHistoryScope(t.Context()); err != nil {
+			if err := reader.checkHistoryScope(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			sessionID, messageID := "other-session", "other-message"
@@ -163,26 +163,26 @@ func TestHistoryScopeDetectsLaterCollisionsAndPurgeRepair(t *testing.T) {
 				t.Fatal(err)
 			}
 			for range 2 {
-				if err := reader.ValidateHistoryScope(t.Context()); err == nil || !strings.Contains(err.Error(), collision+" IDs collide") {
+				if err := reader.checkHistoryScope(t.Context()); err == nil || !strings.Contains(err.Error(), collision+" IDs collide") {
 					t.Fatalf("missed later %s collision: %v", collision, err)
 				}
 			}
 			if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: key, SourceDeleted: true}, ExpectedRevision: 1}); err != nil {
 				t.Fatal(err)
 			}
-			if err := reader.ValidateHistoryScope(t.Context()); err != nil {
+			if err := reader.checkHistoryScope(t.Context()); err != nil {
 				t.Fatalf("hidden source blocked active scope: %v", err)
 			}
 			if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: key}, ExpectedRevision: 2}); err != nil {
 				t.Fatal(err)
 			}
-			if err := reader.ValidateHistoryScope(t.Context()); err == nil {
+			if err := reader.checkHistoryScope(t.Context()); err == nil {
 				t.Fatal("restored collision was not detected")
 			}
 			if err := store.Purge(t.Context(), key); err != nil {
 				t.Fatal(err)
 			}
-			if err := reader.ValidateHistoryScope(t.Context()); err != nil {
+			if err := reader.checkHistoryScope(t.Context()); err != nil {
 				t.Fatalf("purge did not repair scope: %v", err)
 			}
 		})
@@ -197,25 +197,25 @@ func TestHistoryScopeReusesValidationUntilHistoryChanges(t *testing.T) {
 	}
 	defer reader.Close()
 	reader.db.SetMaxOpenConns(1)
-	if err := reader.ValidateHistoryScope(t.Context()); err != nil {
+	if err := reader.checkHistoryScope(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	// Make any repeated full scan observable without wall-clock assertions.
 	if _, err := reader.db.Exec(`DROP VIEW history_fact; CREATE TEMP VIEW history_fact AS SELECT json('invalid') AS id`); err != nil {
 		t.Fatal(err)
 	}
-	if err := reader.ValidateHistoryScope(t.Context()); err != nil {
+	if err := reader.checkHistoryScope(t.Context()); err != nil {
 		t.Fatalf("rescanned unchanged history: %v", err)
 	}
 	if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "one", SessionID: "two"}}, Messages: []statev2.Message{{ID: "message-first", Role: "assistant"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := reader.ValidateHistoryScope(t.Context()); err == nil {
+	if err := reader.checkHistoryScope(t.Context()); err == nil {
 		t.Fatal("did not revalidate changed history")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := reader.ValidateHistoryScope(ctx); err == nil {
+	if err := reader.checkHistoryScope(ctx); err == nil {
 		t.Fatal("ignored cancellation")
 	}
 }
@@ -223,7 +223,7 @@ func TestHistoryScopeReusesValidationUntilHistoryChanges(t *testing.T) {
 func TestHistoryScopeRejectsLegacyReader(t *testing.T) {
 	reader := openTestDB(t)
 	defer reader.Close()
-	if err := reader.ValidateHistoryScope(t.Context()); err == nil {
+	if err := reader.checkHistoryScope(t.Context()); err == nil {
 		t.Fatal("accepted a non-history reader")
 	}
 }

@@ -66,41 +66,6 @@ func (d *DB) GetSessions(ctx context.Context, directory string, since int64) ([]
 	return sessions, nil
 }
 
-// GetSessionTree returns the session containing sessionID, all of its native
-// OpenCode ancestors, and every descendant of those ancestors. It uses the
-// same projection as GetSessions so token and cost totals cannot drift.
-func (d *DB) GetSessionTree(ctx context.Context, sessionID string) ([]Session, error) {
-	query := `
-		WITH RECURSIVE tree(id) AS (
-			SELECT id FROM session WHERE id = ?
-			UNION
-			SELECT s.parent_id FROM session s JOIN tree t ON s.id = t.id
-			WHERE s.parent_id IS NOT NULL
-			UNION
-			SELECT s.id FROM session s JOIN tree t ON s.parent_id = t.id
-		), selected_sessions AS (
-			SELECT * FROM session s WHERE s.id IN (SELECT id FROM tree)` +
-		d.sessionListProjection() + ` ORDER BY s.time_created, s.id`
-
-	rows, err := d.db.QueryContext(ctx, query, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var sessions []Session
-	for rows.Next() {
-		session, keep, err := scanSessionRow(rows.Scan)
-		if err != nil {
-			return nil, err
-		}
-		if keep {
-			sessions = append(sessions, session)
-		}
-	}
-	return sessions, rows.Err()
-}
-
 // GetSession returns session metadata by ID without reading message history.
 func (d *DB) GetSession(ctx context.Context, sessionID string) (*Session, error) {
 	var s Session

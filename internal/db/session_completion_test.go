@@ -67,11 +67,7 @@ func TestSessionCompletionTimestamp(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tree, err := d.GetSessionTree(t.Context(), "session")
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, row := range []any{list[0], summary, tree[0]} {
+		for _, row := range []any{list[0], summary} {
 			if got := completionTimestamp(t, row); got != want {
 				t.Fatalf("completion = %d, want %d", got, want)
 			}
@@ -153,11 +149,7 @@ func TestLastUserPromptTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := d.GetSessionTree(t.Context(), "prompted")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range []Session{list[0], summary, tree[0]} {
+	for _, row := range []Session{list[0], summary} {
 		raw, err := json.Marshal(row)
 		if err != nil {
 			t.Fatal(err)

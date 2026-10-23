@@ -83,18 +83,11 @@ func OpenHistoryAnalytics(path string, instances []string) (*DB, error) {
 	return &DB{db: conn, historyScope: &historyScopeValidation{}}, nil
 }
 
-// ValidateHistoryScope fails closed when legacy-shaped IDs would collide.
+// ScopedHistoryReader fails closed when legacy-shaped IDs would collide.
 // Storage is instance-scoped, but the existing response types cannot yet
 // express duplicate native IDs. Reject rather than merge unrelated sessions.
-func (d *DB) ValidateHistoryScope(ctx context.Context) error {
-	_, release, err := d.ScopedHistoryReader(ctx)
-	if err == nil {
-		release()
-	}
-	return err
-}
-
-// ScopedHistoryReader validates the scope in one read transaction and returns a
+//
+// It validates the scope in one read transaction and returns a
 // reader bound to it. Every query building a response must use that reader:
 // a commit after a separate validation could add a colliding identity that
 // the response would then merge. release ends the transaction.
