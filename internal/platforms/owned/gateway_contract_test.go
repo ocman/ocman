@@ -72,19 +72,9 @@ func TestGatewayOwnershipAndCompatibilityProjectionFailClosed(t *testing.T) {
 		}
 		return nil, platforms.ErrPlatformUnreachable
 	}, func(string) error { return sessioncatalog.ErrInvalid })
-	if parent, err := gateway.Parent(t.Context(), a, row.ID); err != nil || parent.ID != row.ID || parent.Directory != "/repo" {
-		t.Fatalf("canonical creation parent lost: %+v %v", parent, err)
-	}
-	if _, err := gateway.Parent(t.Context(), a, "unknown"); !errors.Is(err, sessioncatalog.ErrNotFound) {
-		t.Fatalf("unknown parent acquired linkage: %v", err)
-	}
 	for _, scope := range []string{"", "test"} {
 		if owner, err := gateway.OwnerPlatform(t.Context(), row.ID, scope); err != nil || owner != a {
 			t.Fatalf("durable owner not selected: %v %v", owner, err)
-		}
-		mapping, err := gateway.ReferenceMapping(t.Context(), scope, []string{"native", row.ID, identity.PendingReference()})
-		if err != nil || len(mapping) != 2 || mapping["native"] != row.ID || mapping[row.ID] != row.ID {
-			t.Fatalf("compatibility projection: %+v %v", mapping, err)
 		}
 	}
 	for _, tc := range []struct {
@@ -102,9 +92,6 @@ func TestGatewayOwnershipAndCompatibilityProjectionFailClosed(t *testing.T) {
 	if _, err := gateway.LookupReference(t.Context(), "test", identity.PendingReference()); !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		t.Fatal(err)
 	}
-	if _, err := gateway.ReferenceMapping(t.Context(), "test", []string{"missing"}); err == nil {
-		t.Fatal("unattributed legacy reference guessed")
-	}
 	registry.Unregister("test")
 	if _, err := gateway.OwnerPlatform(t.Context(), row.ID, ""); !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		t.Fatalf("offline owner fell back: %v", err)
@@ -112,9 +99,6 @@ func TestGatewayOwnershipAndCompatibilityProjectionFailClosed(t *testing.T) {
 	registry.Register(native)
 	if _, err := gateway.OwnerPlatform(t.Context(), row.ID, ""); !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		t.Fatalf("raw adapter gained canonical execution: %v", err)
-	}
-	if mapping, err := gateway.ReferenceMapping(t.Context(), "test", []string{"native"}); err != nil || mapping["native"] != row.ID {
-		t.Fatalf("legacy compatibility mapping: %+v %v", mapping, err)
 	}
 	registry.Register(a)
 	pending, _, err := store.Reserve(t.Context(), sessioncatalog.Reservation{OwnerID: "owner", Platform: "test", Directory: "/repo", Origin: sessioncatalog.User, RequestKey: "pending-owner", PayloadHash: strings.Repeat("b", 64)})

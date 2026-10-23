@@ -1,8 +1,6 @@
 package sessionsvc
 
 import (
-	"context"
-
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
@@ -14,9 +12,6 @@ import (
 func (s *Service) WithSessionCatalogue(store *sessioncatalog.Store, ownerID string) {
 	s.identities = owned.NewIdentityGateway(store, ownerID, func() owned.IdentityRegistry { return s.registry }, s.pickAdapter, validation)
 }
-
-type creationAttempt = owned.CreationAttempt
-type CreationUncertainError = owned.LegacyCreationUncertainError
 
 func prepareCreationIdentity(req *platforms.CreateSessionRequest, routineID string) error {
 	if req.Creation == nil {
@@ -32,8 +27,4 @@ func prepareCreationIdentity(req *platforms.CreateSessionRequest, routineID stri
 		req.Creation.Origin, req.Creation.OriginID = string(sessioncatalog.Routine), routineID
 	}
 	return nil
-}
-
-func (s *Service) reserveCreation(ctx context.Context, p platforms.Platform, req platforms.CreateSessionRequest, rules []platforms.PermissionRule, operation ...any) (*creationAttempt, *platforms.CreateSessionResponse, error) {
-	return s.identities.Reserve(ctx, p, req, rules, operation...)
 }

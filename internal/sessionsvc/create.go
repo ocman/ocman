@@ -141,24 +141,17 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 			return nil, platforms.ErrUnsupported
 		}
 	}
-	attempt, replay, err := s.reserveCreation(ctx, adapter, req, rules)
-	if err != nil || replay != nil {
-		return replay, err
-	}
 	createPhase := srvtiming.Begin(ctx, "create_session")
 	resp, err := adapter.CreateSession(ctx, req)
 	createPhase.EndWithDesc("adapter.CreateSession")
 	if err != nil {
-		return nil, attempt.NativeFailure(ctx, err)
+		return nil, err
 	}
 	if resp == nil || strings.TrimSpace(resp.ID) == "" {
-		return nil, attempt.Uncertain("", fmt.Errorf("platform %s returned no session", adapter.ID()))
+		return nil, fmt.Errorf("platform %s returned no session", adapter.ID())
 	}
 	if _, canonical := adapter.(platforms.SessionCreationCommitter); canonical && resp.Replayed {
 		return resp, nil
-	}
-	if err := attempt.Attach(ctx, resp.ID); err != nil {
-		return nil, err
 	}
 	if rules != nil && !resp.ConfigurationApplied {
 		err = adapter.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: resp.ID, Rules: rules})
@@ -171,11 +164,8 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		defer cancel()
 		cleanupErr := disposer.DisposeSession(cleanupCtx, platforms.DisposeSessionRequest{SessionID: resp.ID, Port: req.Port})
 		if cleanupErr != nil {
-			return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: attempt.Uncertain(resp.ID, errors.Join(err, cleanupErr))}
+			return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: errors.Join(err, cleanupErr)}
 		}
-		return nil, attempt.Failed(ctx, err)
-	}
-	if err := attempt.Bind(ctx, resp.ID); err != nil {
 		return nil, err
 	}
 	if err := commitCreation(ctx, adapter, resp.ID); err != nil {

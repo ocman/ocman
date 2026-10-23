@@ -65,8 +65,6 @@ func (g *IdentityGateway) catalogueParent(ctx context.Context, p platforms.Platf
 	return row, nil
 }
 
-type CreationParent struct{ ID, Directory string }
-
 func (g *IdentityGateway) legacyPlatform(ctx context.Context, reference string) (platforms.Platform, error) {
 	var selected platforms.Platform
 	var lookupErr error
@@ -105,18 +103,4 @@ func (g *IdentityGateway) legacyPlatform(ctx context.Context, reference string) 
 		return nil, platforms.ErrNotFound
 	}
 	return p, nil
-}
-
-func (g *IdentityGateway) Parent(ctx context.Context, p platforms.Platform, id string) (CreationParent, error) {
-	var row sessioncatalog.Session
-	var err error
-	if CanonicalSessionIDs(p) {
-		row, err = g.store.Get(ctx, id)
-	} else {
-		row, err = g.catalogueParent(ctx, p, id)
-	}
-	if err != nil {
-		return CreationParent{}, err
-	}
-	return CreationParent{ID: row.ID, Directory: row.Directory}, nil
 }

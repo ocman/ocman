@@ -582,6 +582,9 @@ flowchart LR
   session IDs directly. Legacy browser links canonicalize through the identity
   gateway before opening streams; unknown IDs never fall back to native probing.
   Inactive source bindings return unavailable instead of targeting a new installation.
+  The shared `platforms.SessionRegistry` contract requires wrappers to forward
+  `CanonicalSessionIDs`, so ownership comes from the catalogue, never the
+  registry's reverse cache.
 - Catalogue v1 is frozen. The append-only v2 upgrade preserves development
   databases, including both intermediate native-parent column spellings.
 - Notifications, routine/Factory references, Inbox, artifacts, webhook

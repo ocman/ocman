@@ -31,40 +31,17 @@ func (s *Service) Fork(ctx context.Context, platformID string, req platforms.For
 		return nil, err
 	}
 	defer unlock()
-	var attempt *creationAttempt
 	_, canonical := p.(platforms.SessionCreationCommitter)
-	if remoteID, _ := platforms.SplitPlatformID(string(p.ID())); !canonical && s.identities != nil && remoteID == "" {
-		parent, err := s.identities.Parent(ctx, p, req.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		if intent.Creation.ParentID != "" && intent.Creation.ParentID != parent.ID {
-			return nil, validation("fork parent identity mismatch")
-		}
-		intent.Directory, intent.Creation.ParentID = parent.Directory, parent.ID
-		req.Creation = intent.Creation
-		var replay *platforms.CreateSessionResponse
-		attempt, replay, err = s.reserveCreation(ctx, p, intent, nil, req)
-		if err != nil || replay != nil {
-			return replay, err
-		}
-	}
 	req.Creation = intent.Creation
 	resp, err := p.ForkSession(ctx, req)
 	if err != nil {
-		return nil, attempt.NativeFailure(ctx, err)
+		return nil, err
 	}
 	if resp == nil || strings.TrimSpace(resp.ID) == "" {
-		return nil, attempt.Uncertain("", fmt.Errorf("platform %s returned no forked session", p.ID()))
+		return nil, fmt.Errorf("platform %s returned no forked session", p.ID())
 	}
 	if canonical && resp.Replayed {
 		return resp, nil
-	}
-	if err := attempt.Attach(ctx, resp.ID); err != nil {
-		return nil, err
-	}
-	if err := attempt.Bind(ctx, resp.ID); err != nil {
-		return nil, err
 	}
 	if err := commitCreation(ctx, p, resp.ID); err != nil {
 		return nil, err

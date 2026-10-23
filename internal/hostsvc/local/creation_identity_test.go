@@ -26,7 +26,7 @@ func TestWorktreeCreationCarriesIdentityAndPreservesUncertainExecution(t *testin
 					}
 					cause := errors.New("creation failed")
 					if uncertain {
-						return nil, &sessionsvc.CreationUncertainError{OcmanID: "owned", NativeID: "native", Err: cause}
+						return nil, &platforms.CreationPendingError{SessionID: "ocm_owned", Err: cause}
 					}
 					return nil, cause
 				}})

@@ -52,10 +52,3 @@ func (s *Service) LookupSessionReference(ctx context.Context, scope, reference s
 	}
 	return s.identities.LookupReference(ctx, scope, reference)
 }
-
-func (s *Service) PublicSessionReferences(ctx context.Context, scope string, refs []string) (map[string]string, error) {
-	if s.identities == nil {
-		return nil, platforms.ErrHistoryUnavailable
-	}
-	return s.identities.ReferenceMapping(ctx, scope, refs)
-}

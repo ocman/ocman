@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
 )
 
 type factoryIdentityPlatform struct{ *fakePlatform }
@@ -16,11 +18,20 @@ func (p *factoryIdentityPlatform) HistoryIdentity(context.Context) (platforms.Hi
 
 func TestFactoryControlReservesEpicProvenanceBeforeCreation(t *testing.T) {
 	f := newControlFixture(t)
-	f.srv.registry.Register(&factoryIdentityPlatform{f.platform})
 	catalogue, err := sessioncatalog.New(f.srv.stateDB)
 	if err != nil {
 		t.Fatal(err)
 	}
+	adapter, err := owned.New(t.Context(), &factoryIdentityPlatform{f.platform}, catalogue, statev2test.Open(t), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := platforms.NewRegistry()
+	registry.Register(adapter)
+	if err := registry.EnableCanonicalSessions(); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.registry = registry
 	f.srv.sessions.WithSessionCatalogue(catalogue, "owner")
 	control, created, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1")
 	if err != nil || !created {

@@ -8,10 +8,12 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
 )
 
 type identityOwnerPlatform struct {
@@ -64,8 +66,15 @@ func TestRemoteCreationReservesAndBindsOnOwnerOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &identityOwnerPlatform{fakePlatform: &fakePlatform{id: "opencode"}, catalogue: catalogue}
+	adapter, err := owned.New(t.Context(), p, catalogue, statev2test.Open(t), "owner-instance")
+	if err != nil {
+		t.Fatal(err)
+	}
 	registry := platforms.NewRegistry()
-	registry.Register(p)
+	registry.Register(adapter)
+	if err := registry.EnableCanonicalSessions(); err != nil {
+		t.Fatal(err)
+	}
 	ownerSessions := sessionsvc.New(registry, sessionsvc.Hooks{})
 	ownerSessions.WithSessionCatalogue(catalogue, "owner-instance")
 	server := NewServer(registry, localStubHost{}, "owner-instance", "test").UseSessions(ownerSessions)
@@ -80,28 +89,33 @@ func TestRemoteCreationReservesAndBindsOnOwnerOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	conn.mu.Lock()
+	conn.protocolVersion = canonicalSessionProtocol
+	conn.mu.Unlock()
 	remote := newRemotePlatform(conn, "opencode", func() string { return "owner" })
 	hubRegistry := platforms.NewRegistry()
 	hubRegistry.Register(remote)
+	if err := hubRegistry.EnableCanonicalSessions(); err != nil {
+		t.Fatal(err)
+	}
 	hubSessions := sessionsvc.New(hubRegistry, sessionsvc.Hooks{})
-	// A broken hub catalogue must not affect owner-local reservation.
+	// A missing hub catalogue must not affect owner-local reservation.
 	hubSessions.WithSessionCatalogue(nil, "hub-instance")
 	req := platforms.CreateSessionRequest{Directory: "/repo", Creation: &platforms.CreationIdentity{RequestKey: "run", Origin: "routine", OriginID: "routine", Configured: true, PermissionRules: []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}}}}
+	var created string
 	for range 2 {
 		resp, err := hubSessions.Create(t.Context(), string(remote.ID()), req)
-		if err != nil || resp.ID != "native" {
+		if err != nil || !sessioncatalog.IsID(resp.ID) || (created != "" && resp.ID != created) {
 			t.Fatalf("remote create: %+v %v", resp, err)
 		}
+		created = resp.ID
 	}
-	if p.creates.Load() != 1 {
-		t.Fatalf("replayed native execution %d times", p.creates.Load())
+	if p.creates.Load() != 1 || p.rules.Load() != 1 {
+		t.Fatalf("replayed owner side effects: creates=%d rules=%d", p.creates.Load(), p.rules.Load())
 	}
 	rows, err := catalogue.List(t.Context(), "owner-instance", 10, 0)
-	if err != nil || len(rows) != 1 || rows[0].NativeID != "native" || rows[0].CreationState != sessioncatalog.Ready || rows[0].SourceKey != "owner-source" {
+	if err != nil || len(rows) != 1 || rows[0].ID != created || rows[0].NativeID != "native" || rows[0].CreationState != sessioncatalog.Ready || rows[0].SourceKey != "owner-source" {
 		t.Fatalf("owner binding: %+v %v", rows, err)
-	}
-	if p.rules.Load() != 1 {
-		t.Fatalf("initial configuration applied %d times", p.rules.Load())
 	}
 	hubDB, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
 	if err != nil {
@@ -113,47 +127,27 @@ func TestRemoteCreationReservesAndBindsOnOwnerOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	hubSessions.WithSessionCatalogue(hubCatalogue, "hub-instance")
-	identity, err := hubSessions.LookupSessionIdentity(t.Context(), string(remote.ID()), platforms.SessionIdentityRequest{NativeID: "native"})
-	if err != nil || identity.ID != rows[0].ID || identity.OwnerID != "owner-instance" || identity.Platform != string(remote.ID()) {
-		t.Fatalf("hub reminted owner identity: %+v %v", identity, err)
-	}
-	batch, err := hubSessions.LookupSessionIdentities(t.Context(), string(remote.ID()), []string{"native"})
-	if err != nil || len(batch) != 1 || batch[0].ID != identity.ID {
-		t.Fatalf("remote identity batch: %+v %v", batch, err)
-	}
-	if mirrored, err := hubCatalogue.Get(t.Context(), identity.ID); err != nil || mirrored.OwnerID != "owner-instance" || mirrored.NativeID != "native" {
-		t.Fatalf("owner identity not persisted on hub: %+v %v", mirrored, err)
-	}
-	if resolved, err := hubSessions.LookupSessionIdentity(t.Context(), "", platforms.SessionIdentityRequest{ID: identity.ID}); err != nil || resolved.ID != identity.ID {
-		t.Fatalf("owned ID required native rediscovery: %+v %v", resolved, err)
-	}
 	for range 2 {
-		resp, err := hubSessions.Fork(t.Context(), string(remote.ID()), platforms.ForkSessionRequest{SessionID: "native", MessageID: "message", Creation: &platforms.CreationIdentity{RequestKey: "fork", Origin: "user"}})
-		if err != nil || resp.ID != "native-fork" {
+		resp, err := hubSessions.Fork(t.Context(), string(remote.ID()), platforms.ForkSessionRequest{SessionID: created, MessageID: "message", Creation: &platforms.CreationIdentity{RequestKey: "fork", Origin: "user"}})
+		if err != nil || !sessioncatalog.IsID(resp.ID) {
 			t.Fatalf("remote fork: %+v %v", resp, err)
 		}
 	}
 	fork, err := catalogue.FindBinding(t.Context(), sessioncatalog.Binding{OwnerID: "owner-instance", Platform: "opencode", SourceKey: "owner-source", NativeID: "native-fork"})
-	if err != nil || fork.ParentID != rows[0].ID || p.forks.Load() != 1 {
+	if err != nil || fork.ParentID != created || p.forks.Load() != 1 {
 		t.Fatalf("remote fork identity not owner-scoped: %+v %v calls=%d", fork, err, p.forks.Load())
 	}
-	if err := remote.DisposeSession(t.Context(), platforms.DisposeSessionRequest{SessionID: "native"}); err != nil {
+	if err := remote.DisposeSession(t.Context(), platforms.DisposeSessionRequest{SessionID: created}); err != nil {
 		t.Fatal(err)
 	}
 	if p.disposes.Load() != 1 {
 		t.Fatal("remote disposal did not reach owner")
 	}
-	if err := remote.DisposeSession(t.Context(), platforms.DisposeSessionRequest{}); err == nil {
-		t.Fatal("empty disposal accepted")
-	}
-	if p.disposes.Load() != 1 {
-		t.Fatal("invalid disposal reached platform")
+	if err := remote.DisposeSession(t.Context(), platforms.DisposeSessionRequest{}); err == nil || p.disposes.Load() != 1 {
+		t.Fatalf("empty disposal accepted: %v", err)
 	}
 	conn.Close()
-	if _, err := hubSessions.LookupSessionIdentity(t.Context(), "", platforms.SessionIdentityRequest{ID: identity.ID}); !errors.Is(err, platforms.ErrRemoteOffline) {
-		t.Fatalf("disconnected owner did not fail closed: %v", err)
-	}
-	if err := remote.DisposeSession(t.Context(), platforms.DisposeSessionRequest{SessionID: "native"}); !errors.Is(err, platforms.ErrRemoteOffline) {
+	if err := remote.DisposeSession(t.Context(), platforms.DisposeSessionRequest{SessionID: created}); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatalf("offline disposal: %v", err)
 	}
 }

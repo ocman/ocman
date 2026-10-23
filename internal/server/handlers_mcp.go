@@ -155,8 +155,7 @@ func (s sessionMCPService) SearchSessionText(ctx context.Context, query, directo
 	}
 	matches := make([]db.TextMatch, 0, len(stored))
 	for _, match := range stored {
-		id := match.SessionID
-		matches = append(matches, db.TextMatch{Platform: match.Platform, SessionID: id, PartID: match.PartID, MessageID: match.MessageID, Role: match.Role, Snippet: match.Snippet})
+		matches = append(matches, db.TextMatch{Platform: match.Platform, SessionID: match.SessionID, PartID: match.PartID, MessageID: match.MessageID, Role: match.Role, Snippet: match.Snippet})
 	}
 	return matches, nil
 }
