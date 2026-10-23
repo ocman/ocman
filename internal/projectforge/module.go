@@ -70,7 +70,7 @@ func NewModule(d Deps) *Module {
 func (m *Module) Name() string { return "project-forge" }
 
 // Routes keeps the method check outside the auth guard, as the server's
-// requireGET/requirePOST do, so a wrong method is 405 for every caller.
+// method-pattern routes do, so a wrong method is 405 for every caller.
 func (m *Module) Routes(r module.Router) {
 	auth, local := m.Guards.Auth, m.Guards.Localhost
 	r.Handle("/api/project/upstreams", only(http.MethodGet, auth(m.handleUpstreams)))

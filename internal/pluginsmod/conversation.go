@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -21,8 +20,6 @@ import (
 // conversationFetchLimit bounds the messages read to extract one completed
 // reply. Only the newest assistant message is used.
 const conversationFetchLimit = 20
-
-const conversationReconcileInterval = 5 * time.Minute
 
 // conversationInboundPrefix namespaces inbound delivery receipts in the shared
 // plugin operation table, so a message's event id can never collide with an
@@ -80,7 +77,6 @@ func (m *Module) buildConversations() {
 	m.conversationDeliveries = worker.NewKeyed(func(d state.PluginConversationDelivery) {
 		runWithRecover("plugin-conversation-delivery", func() { m.deliverConversationReply(d) })
 	}, state.PluginConversationDelivery.Group)
-	m.conversationInFlight = make(map[int64]bool)
 }
 
 func (m *Module) runConversationJob(job conversationJob) {
@@ -308,7 +304,7 @@ func (m *Module) ReplyToConversation(ctx context.Context, platformID, sessionID 
 		return
 	}
 	if delivery != 0 {
-		m.kickConversationOutbox()
+		m.conversationOutbox.kick()
 	}
 }
 
@@ -316,24 +312,10 @@ func conversationReplyReady(status db.SessionStatus) bool {
 	return status == db.StatusWaiting || status == db.StatusDone || status == db.StatusError
 }
 
-// runConversationReplyReconciliation is the backstop for OpenCode instances
-// that omit terminal idle/changed events. The outbox's session:message key
-// makes recovery safe. Idle/changed events handle normal delivery; this scan
-// runs at startup and every five minutes to recover missed events.
-func (m *Module) runConversationReplyReconciliation(ctx context.Context) {
-	m.reconcileConversationReplies(ctx)
-	ticker := time.NewTicker(conversationReconcileInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			m.reconcileConversationReplies(ctx)
-		}
-	}
-}
-
+// reconcileConversationReplies is the backstop for OpenCode instances that
+// omit terminal idle/changed events. The outbox's session:message key makes
+// recovery safe. Idle/changed events handle normal delivery; Run scans at
+// startup and every five minutes to recover missed events.
 func (m *Module) reconcileConversationReplies(ctx context.Context) {
 	if m.store == nil {
 		return

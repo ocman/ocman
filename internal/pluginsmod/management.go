@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/plugins"
@@ -108,37 +109,33 @@ func (m *Module) pluginProjectCatalog(ctx context.Context, input remote.PluginIn
 	}{agents, models}, nil
 }
 
-// The action routes have longer mux matches and never pass through this handler.
-func (m *Module) handlePluginManagement(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	id, action, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/plugins/"), "/")
-	if !ok || id == "" {
-		http.NotFound(w, r)
-		return
+// managementRoutes mounts /api/plugins/{id}/{action}: reads need auth (and
+// stderr localhost), mutations are localhost POSTs.
+func (m *Module) managementRoutes(r module.Router) {
+	local := m.deps.Guards.Localhost
+	auth := func(h http.HandlerFunc) http.HandlerFunc {
+		h = m.deps.Guards.Auth(h)
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			h(w, r)
+		}
 	}
-	read := false
-	switch action {
-	case "health", "stderr", "conversations":
-		read = true
-	case "grants", "configuration":
-		read = r.Method == http.MethodGet
-	case "enable", "disable", "restart", "retry", "configuration/validate", "remove-data",
+	manage := func(action string, read bool) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			m.managePlugin(w, r, r.PathValue("id"), action, read)
+		}
+	}
+	for _, action := range []string{"health", "conversations", "grants", "configuration"} {
+		r.Handle("GET /api/plugins/{id}/"+action, auth(manage(action, true)))
+	}
+	r.Handle("GET /api/plugins/{id}/stderr", auth(local(manage("stderr", true))))
+	for _, action := range []string{"grants", "configuration", "enable", "disable", "restart", "retry",
+		"configuration/validate", "remove-data",
 		// Retrying or discarding a dead letter is a privileged control, not a
 		// read: it decides whether a reply reaches a thread. It takes the same
 		// localhost-only POST path as every other plugin mutation.
-		"conversations/retry", "conversations/discard":
-	default:
-		http.NotFound(w, r)
-		return
-	}
-	handler := func(w http.ResponseWriter, r *http.Request) { m.managePlugin(w, r, id, action, read) }
-	if read {
-		if action == "stderr" {
-			handler = m.deps.Guards.Localhost(handler)
-		}
-		get(handler)(w, r)
-	} else {
-		post(m.deps.Guards.Localhost(handler))(w, r)
+		"conversations/retry", "conversations/discard"} {
+		r.Handle("POST /api/plugins/{id}/"+action, auth(local(manage(action, false))))
 	}
 }
 

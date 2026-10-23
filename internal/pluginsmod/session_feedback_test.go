@@ -42,10 +42,10 @@ func TestSessionPumpPassesPausedHeads(t *testing.T) {
 	m.sessionOnce.Do(m.buildSessions)
 	m.sessionDeliveries.Close()
 	seen := make(chan string, 33)
-	m.sessionDeliveries = worker.NewKeyed(func(c PluginSessionCompletion) { seen <- c.SessionID; m.endSessionDelivery(c.ID) }, PluginSessionCompletion.Group)
+	m.sessionDeliveries = worker.NewKeyed(func(c PluginSessionCompletion) { seen <- c.SessionID; m.sessionOutbox.end(c.ID) }, PluginSessionCompletion.Group)
 	t.Cleanup(m.sessionJobs.Close)
 	t.Cleanup(m.sessionDeliveries.Close)
-	m.pumpSessionOutbox(t.Context())
+	m.sessionOutbox.pump(t.Context())
 	if err := m.sessionDeliveries.Drain(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestSessionPumpPassesPausedHeads(t *testing.T) {
 	if err := db.SetPluginEnabled(t.Context(), disabled.ID, true, disabled.RequestedGrants); err != nil {
 		t.Fatal(err)
 	}
-	m.pumpSessionOutbox(t.Context())
+	m.sessionOutbox.pump(t.Context())
 	if err := m.sessionDeliveries.Drain(t.Context()); err != nil {
 		t.Fatal(err)
 	}

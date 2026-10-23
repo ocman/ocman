@@ -133,7 +133,7 @@ func (r testRouter) Setting(p string, h http.HandlerFunc)      { panic("unused")
 func (r testRouter) LocalSetting(p string, h http.HandlerFunc) { panic("unused") }
 
 // Reads need a login, mutations need localhost, and a wrong method is 405
-// before either guard runs, as requireGET/requirePOST ordered it.
+// before either guard runs.
 func TestRoutesGuardsAndMethods(t *testing.T) {
 	deny := func(code int) func(http.HandlerFunc) http.HandlerFunc {
 		return func(http.HandlerFunc) http.HandlerFunc {

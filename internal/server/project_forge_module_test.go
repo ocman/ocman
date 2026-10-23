@@ -57,7 +57,7 @@ func TestProjectForgeRoutesRejectDisconnectedOwner(t *testing.T) {
 	}
 }
 
-// Method is checked before the guard, as the server's requireGET does.
+// Method is checked before the guard, as the server's method patterns do.
 func TestProjectForgeRoutesRejectWrongMethod(t *testing.T) {
 	srv := testServer(t)
 	for _, req := range []*http.Request{

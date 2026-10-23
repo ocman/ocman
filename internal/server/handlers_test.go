@@ -60,52 +60,6 @@ func TestValidateID(t *testing.T) {
 // parseOpenCodeModelRef tests moved to internal/platforms/opencode/
 // together with the function itself.
 
-// --- requireGET / requirePOST tests ---
-
-func TestRequireGET(t *testing.T) {
-	handler := requireGET(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	// GET should pass through
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	rr := httptest.NewRecorder()
-	handler(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("GET: expected 200, got %d", rr.Code)
-	}
-
-	// POST should be rejected
-	req = httptest.NewRequest(http.MethodPost, "/test", nil)
-	rr = httptest.NewRecorder()
-	handler(rr, req)
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Errorf("POST: expected 405, got %d", rr.Code)
-	}
-}
-
-func TestRequirePOST(t *testing.T) {
-	handler := requirePOST(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	// POST should pass through
-	req := httptest.NewRequest(http.MethodPost, "/test", nil)
-	rr := httptest.NewRecorder()
-	handler(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("POST: expected 200, got %d", rr.Code)
-	}
-
-	// GET should be rejected
-	req = httptest.NewRequest(http.MethodGet, "/test", nil)
-	rr = httptest.NewRecorder()
-	handler(rr, req)
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Errorf("GET: expected 405, got %d", rr.Code)
-	}
-}
-
 // --- requireLocalhost tests ---
 
 func TestRequireLocalhost(t *testing.T) {
@@ -221,13 +175,13 @@ func TestRequireLoopbackPeer(t *testing.T) {
 	}
 }
 
-// --- s.post CSRF guard tests (#410) ---
+// --- requireAuth CSRF guard tests (#410) ---
 
 // A cross-site POST must be rejected even when auth is disabled;
 // Origin-less local CLI clients must keep working.
 func TestPostCSRFGuard_AuthDisabled(t *testing.T) {
 	srv := &Server{}
-	handler := srv.post(func(w http.ResponseWriter, _ *http.Request) {
+	handler := srv.requireAuth(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 

@@ -48,8 +48,4 @@ func TestFactoryEpicModelsRoute(t *testing.T) {
 	if rec := post(srv, `{"plan":"bad"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid models = %d: %s", rec.Code, rec.Body.String())
 	}
-	useFactory(srv, &fakeFactoryService{})
-	if rec := post(srv, `{}`); rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("unsupported factory = %d: %s", rec.Code, rec.Body.String())
-	}
 }

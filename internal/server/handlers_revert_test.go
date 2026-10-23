@@ -34,7 +34,7 @@ func TestSessionRevertAndUnrevert_Post(t *testing.T) {
 	} {
 		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
 		rr := httptest.NewRecorder()
-		srv.dispatchSessionSubpath(rr, req)
+		serveRoutes(t, srv, rr, req)
 		if rr.Code != http.StatusNoContent {
 			t.Fatalf("%s status = %d, want 204; body=%s", tc.path, rr.Code, rr.Body)
 		}

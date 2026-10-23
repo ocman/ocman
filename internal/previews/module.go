@@ -69,7 +69,7 @@ func NewModule(d Deps) *Module { return &Module{Deps: d} }
 func (m *Module) Name() string { return "previews" }
 
 // Routes keeps the method check outside the auth guard, as the server's
-// requireGET/requirePOST do, so a wrong method is 405 for every caller.
+// method-pattern routes do, so a wrong method is 405 for every caller.
 func (m *Module) Routes(r module.Router) {
 	auth := m.Guards.Auth
 	get := func(h http.HandlerFunc) http.HandlerFunc { return only(http.MethodGet, auth(m.withStore(h))) }

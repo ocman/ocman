@@ -92,16 +92,4 @@ func TestFactoryIssueTransfer(t *testing.T) {
 	if cancel.Code != http.StatusNoContent || svc.cancelled != "epic.1.3.4" {
 		t.Fatalf("cancel = %d, %q", cancel.Code, svc.cancelled)
 	}
-	unsupported := New(nil, nil, "", platforms.NewRegistry(), nil)
-	useFactory(unsupported, &fakeFactoryService{})
-	if _, err := unsupported.factoryModule().TransferIssue(t.Context(), "epic", "x"); !errors.Is(err, factory.ErrFactoryUnavailable) {
-		t.Fatalf("unsupported = %v", err)
-	}
-	rec = httptest.NewRecorder()
-	unsupportedCancel := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic/issues/x/transfer/cancel", nil)
-	unsupportedCancel.RemoteAddr = "127.0.0.1:1"
-	serveFactory(unsupported, rec, unsupportedCancel)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("unsupported cancel = %d", rec.Code)
-	}
 }

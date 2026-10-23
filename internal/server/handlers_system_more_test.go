@@ -104,7 +104,6 @@ func TestHandleDebugLog(t *testing.T) {
 // /api/debug/log is POST-only and localhost-only.
 func TestDebugLogRoute_MethodAndLocalhostEnforcement(t *testing.T) {
 	srv := testServer(t)
-	h := requirePOST(srv.requireLocalhost(srv.handleDebugLog))
 	tests := []struct {
 		name       string
 		method     string
@@ -126,7 +125,7 @@ func TestDebugLogRoute_MethodAndLocalhostEnforcement(t *testing.T) {
 				req.Header.Set("Origin", tt.origin)
 			}
 			rr := httptest.NewRecorder()
-			h(rr, req)
+			serveRoutes(t, srv, rr, req)
 			if rr.Code != tt.wantCode {
 				t.Fatalf("got %d, want %d: %s", rr.Code, tt.wantCode, rr.Body.String())
 			}

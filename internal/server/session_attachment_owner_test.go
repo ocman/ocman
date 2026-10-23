@@ -49,7 +49,7 @@ func TestSessionAttachmentSavesOnExplicitOwner(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/api/session/s1/attachment?platform=r-box%3Aopencode", &body)
 	r.Header.Set("Content-Type", writer.FormDataContentType())
 	w := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(w, r)
+	serveRoutes(t, srv, w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}

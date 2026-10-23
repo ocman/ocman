@@ -32,7 +32,7 @@ func TestSessionFork_Post(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/session/sess-1/fork", strings.NewReader(`{"messageID":"msg-9"}`))
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
@@ -64,7 +64,7 @@ func TestSessionMove_Post(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/session/sess-1/move", strings.NewReader(`{"directory":"/tmp/dst"}`))
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
@@ -87,7 +87,7 @@ func TestSessionMove_MissingDirectoryIsValidationError(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/session/sess-1/move", strings.NewReader(`{"directory":"  "}`))
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body=%s", rr.Code, rr.Body)

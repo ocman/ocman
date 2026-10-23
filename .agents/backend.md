@@ -42,11 +42,13 @@ module under `internal/module`, not a collection of `*Server` methods.
   `GIT_DIR`/`GIT_INDEX_FILE` and disables terminal prompts and optional locks.
 - Resolve explicit `remoteId` through `Server.resolveOwner`; disconnected named
   remotes return 503. Only inferred `ForDir` ownership may fall back to the hub.
-- Enforce methods with `requireGET`/`requirePOST`. Privileged host-control routes
-  also use `requireLocalhost`, checking both the peer and browser origin.
+- Enforce methods with Go mux method patterns such as `GET /api/projects` or
+  `GET /api/session/{id}/shares`; the mux answers a wrong method with 405. API
+  routes live on their own mux so the SPA fallback cannot shadow that 405.
+  Privileged host-control routes also use `requireLocalhost`, checking both the
+  peer and browser origin.
 - Modules use supplied guards: `Router.Local`/`LocalSetting` for whole mounts,
-  or `Router.Handle` with `Deps.Guards` for mixed routes. Session routes use Go
-  mux patterns such as `GET /api/session/{id}/shares`, ahead of the dispatcher.
+  or `Router.Handle` with `Deps.Guards` for mixed routes.
 - Use `internal/httpx` for shared JSON, request-body, inert-file and platform
   error behavior. Do not make module responses diverge from server responses.
 

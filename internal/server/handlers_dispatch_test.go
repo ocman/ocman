@@ -3,144 +3,83 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 )
 
-// TestSessionSubRoutesUnique asserts no two table entries share the
-// same (method, pattern) pair. Catching a copy-paste duplicate at
-// build time is cheaper than tracking down the resulting silent
-// shadowing in production.
-func TestSessionSubRoutesUnique(t *testing.T) {
-	seen := map[string]bool{}
-	for _, r := range sessionSubRoutes {
-		key := r.method + " " + r.pattern
-		if seen[key] {
-			t.Errorf("duplicate route: %s", key)
+func TestSessionRoutes_UnknownPathReturns404(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		rr := httptest.NewRecorder()
+		serveRoutes(t, srv, rr, httptest.NewRequest(method, "/api/session/abc/totally-fake-subpath", nil))
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want 404; body=%s", method, rr.Code, rr.Body)
 		}
-		seen[key] = true
 	}
 }
 
-func TestMatchSessionSubRoute(t *testing.T) {
-	cases := []struct {
-		pattern, subpath string
-		wantOK           bool
-		wantParams       map[string]string
-	}{
-		{"archive", "archive", true, map[string]string{}},
-		{"archive", "abc", false, nil},
-		{"{id}", "abc", true, map[string]string{"id": "abc"}},
-		{"{id}/agents", "abc/agents", true, map[string]string{"id": "abc"}},
-		{"{id}/agents", "abc", false, nil},
-		{"{id}/agents", "abc/agents/extra", false, nil},
-		{"{id}/permissions/{pid}", "abc/permissions/p1", true, map[string]string{"id": "abc", "pid": "p1"}},
-		{"{id}/questions/{qid}/reject", "abc/questions/q1/reject", true, map[string]string{"id": "abc", "qid": "q1"}},
-		{"{id}/questions/{qid}/reject", "abc/questions/q1", false, nil},
-		// Empty segment shouldn't bind to a placeholder.
-		{"{id}/agents", "/agents", false, nil},
+// A path that matches a known pattern with the wrong method is 405 with
+// the allowed methods, whether the route is the server's or a module's.
+func TestRoutes_WrongMethodReturns405(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	cases := []struct{ method, path, allow string }{
+		{http.MethodDelete, "/api/session/abc/agents", "GET, HEAD"},
+		{http.MethodPost, "/api/projects", "GET, HEAD"},
+		{http.MethodGet, "/api/client-activity", "POST"},
+		{http.MethodGet, "/api/sessions/prepare", "POST"},
+		{http.MethodPost, "/api/session/abc/queue", "GET, HEAD"},
+		{http.MethodGet, "/api/session/abc/abort", "POST"},
+		{http.MethodGet, "/api/debug/log", "POST"},
+		{http.MethodPut, "/api/session/abc", "GET, HEAD, PATCH"},
 	}
 	for _, c := range cases {
-		t.Run(c.pattern+"_vs_"+c.subpath, func(t *testing.T) {
-			gotParams, gotOK := matchSessionSubRoute(c.pattern, c.subpath)
-			if gotOK != c.wantOK {
-				t.Fatalf("match %q vs %q: ok=%v, want %v", c.pattern, c.subpath, gotOK, c.wantOK)
+		t.Run(c.method+" "+c.path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			serveRoutes(t, srv, rr, httptest.NewRequest(c.method, c.path, nil))
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want 405; body=%s", rr.Code, rr.Body)
 			}
-			if c.wantOK && !reflect.DeepEqual(gotParams, c.wantParams) {
-				t.Fatalf("params = %v, want %v", gotParams, c.wantParams)
-			}
-		})
-	}
-}
-
-// TestDispatchSessionSubpath_MoreSpecificWinsForOverlap asserts that
-// "{id}/questions/{qid}/reject" wins over "{id}/questions/{qid}" when
-// the path matches both. This is the only place in the table where
-// patterns overlap, so it deserves a dedicated test.
-//
-// We can't run the real handler (no DB / state setup), but we can
-// verify that the dispatcher *would* route the request to the right
-// handler by inspecting the table directly: the reject variant must
-// come first in sessionSubRoutes.
-func TestDispatchSessionSubpath_MoreSpecificWinsForOverlap(t *testing.T) {
-	rejectIdx, rejectFound := -1, false
-	plainIdx, plainFound := -1, false
-	for i, r := range sessionSubRoutes {
-		if r.pattern == "{id}/questions/{qid}/reject" {
-			rejectIdx, rejectFound = i, true
-		}
-		if r.pattern == "{id}/questions/{qid}" {
-			plainIdx, plainFound = i, true
-		}
-	}
-	if !rejectFound || !plainFound {
-		t.Fatalf("expected both /questions/{qid} and /questions/{qid}/reject in table")
-	}
-	if rejectIdx > plainIdx {
-		t.Fatalf("table order incorrect: /reject (idx %d) must precede /questions/{qid} (idx %d) so the more-specific pattern wins", rejectIdx, plainIdx)
-	}
-}
-
-// TestDispatchSessionSubpath_UnknownPathReturns404 verifies that an
-// unsupported sub-path produces a 404 whose body includes the
-// offending request path. This is FR-6's "future typo surfaces
-// quickly" guarantee.
-func TestDispatchSessionSubpath_UnknownPathReturns404(t *testing.T) {
-	srv, _ := newSessionsTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/session/abc/totally-fake-subpath", nil)
-	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404; body=%s", rr.Code, rr.Body)
-	}
-	if !strings.Contains(rr.Body.String(), "/api/session/abc/totally-fake-subpath") {
-		t.Errorf("404 body %q missing offending path", rr.Body.String())
-	}
-}
-
-// TestDispatchSessionSubpath_WrongMethodReturns405 covers the case
-// where the path matches a known pattern but the method does not —
-// e.g. PATCH /api/session/{id}/agents (only GET is allowed).
-func TestDispatchSessionSubpath_WrongMethodReturns405(t *testing.T) {
-	srv, _ := newSessionsTestServer(t)
-	req := httptest.NewRequest(http.MethodDelete, "/api/session/abc/agents", nil)
-	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
-
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want 405; body=%s", rr.Code, rr.Body)
-	}
-}
-
-// TestDispatchSessionSubpath_AllRoutesReachable enumerates every
-// table entry and verifies the dispatcher matches the synthetic path
-// against the entry. We don't care that the handler returns a useful
-// response — we only need to confirm that the matcher routes it
-// somewhere other than 404 / 405.
-func TestDispatchSessionSubpath_AllRoutesReachable(t *testing.T) {
-	for _, route := range sessionSubRoutes {
-		t.Run(route.method+" "+route.pattern, func(t *testing.T) {
-			path := "/api/session/" + fillPattern(route.pattern)
-			req := httptest.NewRequest(route.method, path, nil)
-
-			// We need the matcher to *find* the route. Verify via
-			// matchSessionSubRoute against the trimmed path.
-			trimmed := strings.TrimPrefix(req.URL.Path, "/api/session/")
-			if _, ok := matchSessionSubRoute(route.pattern, trimmed); !ok {
-				t.Fatalf("synthetic path %q didn't match own pattern %q", trimmed, route.pattern)
+			if got := rr.Header().Get("Allow"); got != c.allow {
+				t.Fatalf("Allow = %q, want %q", got, c.allow)
 			}
 		})
 	}
 }
 
-// fillPattern substitutes "{id}", "{pid}", "{qid}" placeholders with
-// dummy literals so the resulting path matches the pattern.
-func fillPattern(pattern string) string {
-	out := pattern
-	out = strings.ReplaceAll(out, "{id}", "sess1")
-	out = strings.ReplaceAll(out, "{pid}", "perm1")
-	out = strings.ReplaceAll(out, "{qid}", "q1")
-	return out
+// The SPA fallback serves every non-API path for GET and HEAD, without
+// swallowing API 404s.
+func TestRoutes_SPAFallback(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	cases := []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/", http.StatusOK},
+		{http.MethodHead, "/", http.StatusOK},
+		{http.MethodGet, "/sessions/abc", http.StatusOK},
+		{http.MethodHead, "/sessions/abc", http.StatusOK},
+		{http.MethodGet, "/api/no-such-route", http.StatusNotFound},
+	}
+	for _, c := range cases {
+		t.Run(c.method+" "+c.path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			serveRoutes(t, srv, rr, httptest.NewRequest(c.method, c.path, nil))
+			if rr.Code != c.want {
+				t.Fatalf("status = %d, want %d; body=%s", rr.Code, c.want, rr.Body)
+			}
+			if c.want == http.StatusOK && !strings.Contains(rr.Header().Get("Content-Type"), "text/html") {
+				t.Fatalf("Content-Type = %q, want the SPA's index.html", rr.Header().Get("Content-Type"))
+			}
+		})
+	}
+}
+
+// HEAD on a GET route reaches the handler, as GET patterns match HEAD.
+func TestRoutes_HeadReachesGETRoute(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	rr := httptest.NewRecorder()
+	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodHead, "/api/projects", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
+	}
 }

@@ -1,121 +1,35 @@
 package server
 
-import (
-	"net/http"
-	"strings"
-)
+import "net/http"
 
-// sessionSubPath splits "/api/session/{id}/{rest}" into id and rest.
-func sessionSubPath(path, basePrefix string) (id, rest string, ok bool) {
-	trimmed := strings.TrimPrefix(path, basePrefix)
-	if trimmed == path {
-		return "", "", false
+// mountSessionRoutes registers the core /api/session/... endpoints. Feature
+// modules mount their own session patterns (lifecycle actions, queue,
+// shares, auto-approve) on the same mux.
+func (s *Server) mountSessionRoutes(mux *http.ServeMux) {
+	for _, route := range []struct {
+		pattern string
+		handler http.HandlerFunc
+	}{
+		// Non-session reserved sub-paths (no {id}).
+		{"POST /api/session/archive", s.handleArchiveSession},
+		{"POST /api/session/seen", s.handleSeenSession},
+		{"POST /api/session/pin", s.handlePinSession},
+
+		{"GET /api/session/{id}", s.handleSession},
+		{"GET /api/session/{id}/agents", s.handleSessionAgents},
+		{"GET /api/session/{id}/commands", s.handleSessionCommands},
+		{"GET /api/session/{id}/models", s.handleSessionModels},
+		{"GET /api/session/{id}/changes", s.handleSessionChanges},
+		{"GET /api/session/{id}/info", s.handleSessionInfo},
+		{"GET /api/session/{id}/permissions", s.handleSessionPermissions},
+		{"GET /api/session/{id}/questions", s.handleSessionQuestions},
+		{"GET /api/session/{id}/tasks", s.handleSessionTasks},
+
+		{"POST /api/session/{id}/questions/{qid}", s.handleSessionQuestion},
+		{"POST /api/session/{id}/questions/{qid}/reject", s.handleSessionQuestion},
+		{"POST /api/session/{id}/permissions/{pid}", s.handleSessionPermission},
+		{"POST /api/session/{id}/message", s.handleSessionMessage},
+	} {
+		mux.HandleFunc(route.pattern, s.withOwnedSessionPath(s.requireAuth(route.handler)))
 	}
-	slash := strings.IndexByte(trimmed, '/')
-	if slash < 0 {
-		return trimmed, "", true
-	}
-	return trimmed[:slash], trimmed[slash+1:], true
-}
-
-// sessionSubRoute describes a single /api/session/... entry.
-type sessionSubRoute struct {
-	method  string
-	pattern string
-	handler func(s *Server, w http.ResponseWriter, r *http.Request)
-}
-
-// sessionSubRoutes is the canonical registry of every supported
-// /api/session/... endpoint. Order matters: more-specific entries
-// must come before less-specific ones.
-var sessionSubRoutes = []sessionSubRoute{
-	// Non-session reserved sub-paths (no {id}).
-	{http.MethodPost, "archive", (*Server).handleArchiveSession},
-	{http.MethodPost, "seen", (*Server).handleSeenSession},
-	{http.MethodPost, "pin", (*Server).handlePinSession},
-
-	// Session-scoped GETs.
-	{http.MethodGet, "{id}/agents", (*Server).handleSessionAgents},
-	{http.MethodGet, "{id}/commands", (*Server).handleSessionCommands},
-	{http.MethodGet, "{id}/models", (*Server).handleSessionModels},
-	{http.MethodGet, "{id}/changes", (*Server).handleSessionChanges},
-	{http.MethodGet, "{id}/info", (*Server).handleSessionInfo},
-	{http.MethodGet, "{id}/permissions", (*Server).handleSessionPermissions},
-	{http.MethodGet, "{id}/permission-rules", (*Server).handleSessionPermissionRulesGet},
-	{http.MethodPut, "{id}/permission-rules", (*Server).handleSessionPermissionRulesSet},
-	{http.MethodGet, "{id}/questions", (*Server).handleSessionQuestions},
-	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},
-
-	// Session-scoped POSTs (specific patterns first).
-	{http.MethodPost, "{id}/questions/{qid}/reject", (*Server).handleSessionQuestion},
-	{http.MethodPost, "{id}/questions/{qid}", (*Server).handleSessionQuestion},
-	{http.MethodPost, "{id}/permissions/{pid}", (*Server).handleSessionPermission},
-	{http.MethodPost, "{id}/attachment", (*Server).handleSessionAttachment},
-	{http.MethodPost, "{id}/message", (*Server).handleSessionMessage},
-	{http.MethodPost, "{id}/restart-opencode", (*Server).handleSessionRestartOpencode},
-	{http.MethodPost, "{id}/reload-opencode", (*Server).handleSessionReloadOpencode},
-	{http.MethodPost, "{id}/command", (*Server).handleSessionCommand},
-	{http.MethodPost, "{id}/shell", (*Server).handleSessionShell},
-	{http.MethodPost, "{id}/abort", (*Server).handleSessionAbort},
-	{http.MethodPost, "{id}/revert", (*Server).handleSessionRevert},
-	{http.MethodPost, "{id}/unrevert", (*Server).handleSessionUnrevert},
-	{http.MethodPost, "{id}/compact", (*Server).handleSessionCompact},
-	{http.MethodPost, "{id}/fork", (*Server).handleSessionFork},
-	{http.MethodPost, "{id}/move", (*Server).handleSessionMove},
-
-	// Bare /api/session/{id} (kept last so longer matches win).
-	{http.MethodGet, "{id}", (*Server).handleSession},
-	{http.MethodPatch, "{id}", (*Server).handleSessionRename},
-}
-
-// matchSessionSubRoute matches a path against pattern.
-func matchSessionSubRoute(pattern, subpath string) (map[string]string, bool) {
-	patSegs := strings.Split(pattern, "/")
-	pathSegs := strings.Split(subpath, "/")
-	if len(patSegs) != len(pathSegs) {
-		return nil, false
-	}
-	params := make(map[string]string)
-	for i, ps := range patSegs {
-		if len(ps) >= 2 && ps[0] == '{' && ps[len(ps)-1] == '}' {
-			name := ps[1 : len(ps)-1]
-			if pathSegs[i] == "" {
-				return nil, false
-			}
-			params[name] = pathSegs[i]
-			continue
-		}
-		if ps != pathSegs[i] {
-			return nil, false
-		}
-	}
-	return params, true
-}
-
-// dispatchSessionSubpath routes every /api/session/... request via
-// the sessionSubRoutes table.
-func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) {
-	trimmed := strings.TrimPrefix(r.URL.Path, "/api/session/")
-
-	pathMatched := false
-	for _, route := range sessionSubRoutes {
-		params, ok := matchSessionSubRoute(route.pattern, trimmed)
-		if !ok {
-			continue
-		}
-		pathMatched = true
-		if r.Method != route.method {
-			continue
-		}
-		for name, value := range params {
-			r.SetPathValue(name, value)
-		}
-		route.handler(s, w, r)
-		return
-	}
-	if pathMatched {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
 }

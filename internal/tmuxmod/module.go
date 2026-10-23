@@ -49,24 +49,14 @@ func NewModule(deps Deps) *Module {
 
 func (m *Module) Name() string { return "tmux" }
 
-// Routes keeps the method check ahead of the localhost guard, as before
-// the extraction, so a wrong method answers 405 without probing the peer.
+// Routes uses method patterns, so the mux answers a wrong method with 405
+// without probing the peer.
 func (m *Module) Routes(r module.Router) {
 	local := m.deps.Guards.Localhost
-	r.Handle("/api/tmux/clients", method(http.MethodGet, local(m.handleClients)))
-	r.Handle("/api/tmux/sessions", method(http.MethodGet, local(m.handleSessions)))
-	r.Handle("/api/tmux/switch", method(http.MethodPost, local(m.handleSwitch)))
-	r.Handle("/api/tmux/launch-opencode", method(http.MethodPost, local(m.handleLaunchOpencode)))
-}
-
-func method(want string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != want {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
+	r.Handle("GET /api/tmux/clients", local(m.handleClients))
+	r.Handle("GET /api/tmux/sessions", local(m.handleSessions))
+	r.Handle("POST /api/tmux/switch", local(m.handleSwitch))
+	r.Handle("POST /api/tmux/launch-opencode", local(m.handleLaunchOpencode))
 }
 
 func (m *Module) handleClients(w http.ResponseWriter, r *http.Request) {

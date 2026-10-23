@@ -61,7 +61,6 @@ func (m *Module) buildSessions() {
 	m.sessionDeliveries = worker.NewKeyed(func(c PluginSessionCompletion) {
 		runWithRecover("plugin-session-delivery", func() { m.DeliverSessionCompletion(c) })
 	}, PluginSessionCompletion.Group)
-	m.sessionInFlight = make(map[int64]bool)
 }
 
 func (m *Module) runSessionJob(job sessionJob) {

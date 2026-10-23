@@ -10,7 +10,6 @@ package pluginsmod
 import (
 	"context"
 	"maps"
-	"net/http"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -100,25 +99,22 @@ type Module struct {
 
 	// conversation.v1: the broker, its inbound worker and the outbound
 	// delivery worker. Durable state lives in state.db (plugin_conversation
-	// and plugin_conversation_outbox). conversationInFlight only prevents
-	// this process from delivering one outbox row twice; it is not state.
+	// and plugin_conversation_outbox).
 	conversationOnce       sync.Once
 	conversationBroker     *plugins.ConversationBroker
 	conversationJobs       *worker.Worker[conversationJob]
 	conversationDeliveries *worker.Worker[state.PluginConversationDelivery]
-	conversationMu         sync.Mutex
-	conversationInFlight   map[int64]bool
+	conversationOutbox     *outbox[state.PluginConversationDelivery]
 
 	// session.v1: the broker, its inbound run worker and the completed-turn
 	// delivery worker. The session<->plugin mapping (plugin_session) and the
 	// completion outbox (plugin_session_outbox) live in state.db, so both
-	// survive a restart. sessionInFlight is not state; see session_outbox.go.
+	// survive a restart.
 	sessionOnce       sync.Once
 	sessionBroker     *plugins.SessionBroker
 	sessionJobs       *worker.Worker[sessionJob]
 	sessionDeliveries *worker.Worker[PluginSessionCompletion]
-	sessionMu         sync.Mutex
-	sessionInFlight   map[int64]bool
+	sessionOutbox     *outbox[PluginSessionCompletion]
 }
 
 var (
@@ -133,6 +129,8 @@ func NewModule(deps Deps) *Module {
 	if deps.Store != nil {
 		m.plugins = NewStore(deps.Store)
 	}
+	m.conversationOutbox = m.newConversationOutbox()
+	m.sessionOutbox = m.newSessionOutbox()
 	return m
 }
 
@@ -140,19 +138,18 @@ func (m *Module) Name() string { return "Plugins" }
 
 func (m *Module) Routes(r module.Router) {
 	auth, local := m.deps.Guards.Auth, m.deps.Guards.Localhost
-	r.Handle("/api/plugins", get(auth(m.handlePluginCatalog)))
-	r.Handle("/api/plugins/discovery", get(auth(m.handlePluginDiscovery)))
-	r.Handle("/api/plugins/rescan", post(auth(local(m.handlePluginRescan))))
-	r.Handle("/api/plugins/project-catalog", post(auth(local(m.handlePluginProjectCatalog))))
-	// Guards each action itself: reads need auth, mutations are localhost POSTs.
-	r.Handle("/api/plugins/", auth(m.handlePluginManagement))
-	r.Handle("/api/plugins/actions", get(auth(m.handlePluginActions)))
-	r.Handle("/api/plugins/actions/invoke", post(auth(m.handlePluginActionInvoke)))
-	r.Handle("/api/plugins/actions/artifact", get(auth(m.handlePluginActionArtifact)))
-	r.Handle("/api/plugins/panes", get(auth(m.handlePluginPanes)))
-	r.Handle("/api/plugins/pages", get(auth(m.handlePluginPages)))
-	r.Handle("/api/plugins/pages/call", post(auth(m.handlePluginPage)))
-	r.Handle("/api/plugins/panes/read", get(auth(m.handlePluginPaneRead)))
+	r.Handle("GET /api/plugins", auth(m.handlePluginCatalog))
+	r.Handle("GET /api/plugins/discovery", auth(m.handlePluginDiscovery))
+	r.Handle("POST /api/plugins/rescan", auth(local(m.handlePluginRescan)))
+	r.Handle("POST /api/plugins/project-catalog", auth(local(m.handlePluginProjectCatalog)))
+	m.managementRoutes(r)
+	r.Handle("GET /api/plugins/actions", auth(m.handlePluginActions))
+	r.Handle("POST /api/plugins/actions/invoke", auth(m.handlePluginActionInvoke))
+	r.Handle("GET /api/plugins/actions/artifact", auth(m.handlePluginActionArtifact))
+	r.Handle("GET /api/plugins/panes", auth(m.handlePluginPanes))
+	r.Handle("GET /api/plugins/pages", auth(m.handlePluginPages))
+	r.Handle("POST /api/plugins/pages/call", auth(m.handlePluginPage))
+	r.Handle("GET /api/plugins/panes/read", auth(m.handlePluginPaneRead))
 	// Profiles are Settings data (normal auth, like the other settings rows):
 	// they only take effect when an approved session.v1 plugin names one.
 	r.Handle("/api/permission-profiles", auth(m.handlePermissionProfiles))
@@ -187,11 +184,15 @@ func (m *Module) Start(ctx context.Context) error {
 // retries, and reconciles completed turns whose idle edge was missed.
 func (m *Module) Run(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Go(func() { m.runConversationDeliveryPump(ctx) })
-	wg.Go(func() { m.runConversationReplyReconciliation(ctx) })
+	if m.store != nil {
+		wg.Go(func() { m.conversationOutbox.run(ctx) })
+	}
+	wg.Go(func() { runEvery(ctx, outboxReconcileInterval, m.reconcileConversationReplies) })
 	// Same guarantees for session.v1 completed turns.
-	wg.Go(func() { m.runSessionDeliveryPump(ctx) })
-	wg.Go(func() { m.runSessionReplyReconciliation(ctx) })
+	if m.store != nil {
+		wg.Go(func() { m.sessionOutbox.run(ctx) })
+	}
+	wg.Go(func() { runEvery(ctx, outboxReconcileInterval, m.ReconcileSessionCompletions) })
 	wg.Wait()
 	m.mu.Lock()
 	m.stopping = true
@@ -259,19 +260,6 @@ func runWithRecover(name string, body func()) {
 	}()
 	body()
 }
-
-func method(want string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != want {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
-}
-
-func get(h http.HandlerFunc) http.HandlerFunc  { return method(http.MethodGet, h) }
-func post(h http.HandlerFunc) http.HandlerFunc { return method(http.MethodPost, h) }
 
 // AdoptProcesses makes m call through from's running processes while keeping
 // none of from's other memory: what a host restarted over the same plugin

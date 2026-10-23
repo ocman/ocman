@@ -72,7 +72,7 @@ func TestReloadOpencodeEndpoint(t *testing.T) {
 				req.Header.Set("Origin", tc.origin)
 			}
 			rr := httptest.NewRecorder()
-			srv.dispatchSessionSubpath(rr, req)
+			serveRoutes(t, srv, rr, req)
 			if rr.Code != tc.status || local.calls != tc.localCalls || remote.calls != tc.remoteCalls {
 				t.Fatalf("status=%d body=%s local=%d remote=%d", rr.Code, rr.Body, local.calls, remote.calls)
 			}

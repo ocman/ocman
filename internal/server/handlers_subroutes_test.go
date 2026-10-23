@@ -51,7 +51,7 @@ func TestDispatchSessionSubpath_GETSubroutes_ReachHandlers(t *testing.T) {
 		t.Run(c.path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, c.path, nil)
 			rr := httptest.NewRecorder()
-			srv.dispatchSessionSubpath(rr, req)
+			serveRoutes(t, srv, rr, req)
 
 			if rr.Code == http.StatusNotFound {
 				t.Fatalf("dispatcher returned 404 for known route %q; body=%s", c.path, rr.Body)

@@ -86,16 +86,11 @@ type sessionHandlerFunc func(w http.ResponseWriter, r *http.Request, sessionID, 
 // the session ID is missing or unknown, eliminating the repeated 5-line
 // preamble across all session-scoped handlers.
 func (s *Server) withSessionAdapter(w http.ResponseWriter, r *http.Request, fn sessionHandlerFunc) {
-	sessionID, rest, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	fn(w, r, sessionID, rest, adapter)
+	httpx.WithSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
+		if adapter := s.resolvePlatformForSession(w, r, sessionID); adapter != nil {
+			fn(w, r, sessionID, rest, adapter)
+		}
+	})
 }
 
 // withSessionPath extracts and validates the session ID from the URL

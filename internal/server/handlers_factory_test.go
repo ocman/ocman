@@ -14,7 +14,10 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factorymod"
 )
 
+// fakeFactoryService embeds the interface so a method a test does not
+// stub panics instead of silently succeeding.
 type fakeFactoryService struct {
+	factorymod.Service
 	onSetPaused           func()
 	epics                 []factory.WorkEpic
 	issues                []factory.Issue
@@ -143,6 +146,10 @@ func (f *fakeFactoryService) GetFormula(_ context.Context, id string, version in
 }
 func (*fakeFactoryService) Start(context.Context) error { return nil }
 func (*fakeFactoryService) Close()                      {}
+
+func (*fakeFactoryService) OnAttention(func(context.Context, string, []string)) {}
+func (*fakeFactoryService) NotifySessionIdle(string, string)                    {}
+func (*fakeFactoryService) ReconcileAttention(context.Context)                  {}
 func (*fakeFactoryService) Status(context.Context) factory.Status {
 	return factory.Status{Health: factory.HealthHealthy, Idle: true}
 }

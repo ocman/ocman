@@ -51,27 +51,17 @@ func NewModule(d Deps) *Module { return &Module{Deps: d} }
 
 func (m *Module) Name() string { return "git" }
 
-// Routes keeps the method check outside the auth guard, as the server's
-// requireGET/requirePOST do, so a wrong method is 405 for every caller.
-// Reads need a login; mutations and launches are localhost-only.
+// Routes uses method patterns, so the mux answers a wrong method with 405
+// before any guard runs. Reads need a login; mutations and launches are
+// localhost-only.
 func (m *Module) Routes(r module.Router) {
 	auth, local := m.Guards.Auth, m.Guards.Localhost
-	r.Handle("/api/git/diff", only(http.MethodGet, auth(m.handleGitDiff)))
-	r.Handle("/api/git/info", only(http.MethodGet, auth(m.handleGitInfo)))
-	r.Handle("/api/git/branches", only(http.MethodGet, auth(m.handleGitBranches)))
-	r.Handle("/api/git/checkout", only(http.MethodPost, local(m.handleGitCheckout)))
-	r.Handle("/api/worktree/list", only(http.MethodGet, auth(m.handleWorktreeList)))
-	r.Handle("/api/worktree/default-base-ref", only(http.MethodGet, auth(m.handleWorktreeDefaultBaseRef)))
-	r.Handle("/api/worktree/create-and-launch", only(http.MethodPost, local(m.handleWorktreeCreateAndLaunch)))
-	r.Handle("/api/worktree/remove", only(http.MethodPost, local(m.handleWorktreeRemove)))
-}
-
-func only(method string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != method {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
+	r.Handle("GET /api/git/diff", auth(m.handleGitDiff))
+	r.Handle("GET /api/git/info", auth(m.handleGitInfo))
+	r.Handle("GET /api/git/branches", auth(m.handleGitBranches))
+	r.Handle("POST /api/git/checkout", local(m.handleGitCheckout))
+	r.Handle("GET /api/worktree/list", auth(m.handleWorktreeList))
+	r.Handle("GET /api/worktree/default-base-ref", auth(m.handleWorktreeDefaultBaseRef))
+	r.Handle("POST /api/worktree/create-and-launch", local(m.handleWorktreeCreateAndLaunch))
+	r.Handle("POST /api/worktree/remove", local(m.handleWorktreeRemove))
 }

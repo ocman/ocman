@@ -11,19 +11,19 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-func TestConversationRetryDelayIsBounded(t *testing.T) {
-	if got := conversationRetryDelay(0); got != conversationRetryBase {
+func TestOutboxRetryDelayIsBounded(t *testing.T) {
+	if got := outboxRetryDelay(0); got != outboxRetryBase {
 		t.Fatalf("first retry waits %s", got)
 	}
 	previous := time.Duration(0)
 	for attempts := range 20 {
-		got := conversationRetryDelay(attempts)
-		if got < previous || got > conversationRetryMax {
-			t.Fatalf("attempt %d: %s after %s, ceiling %s", attempts, got, previous, conversationRetryMax)
+		got := outboxRetryDelay(attempts)
+		if got < previous || got > outboxRetryMax {
+			t.Fatalf("attempt %d: %s after %s, ceiling %s", attempts, got, previous, outboxRetryMax)
 		}
 		previous = got
 	}
-	if conversationRetryDelay(19) != conversationRetryMax {
+	if outboxRetryDelay(19) != outboxRetryMax {
 		t.Fatal("the backoff never reaches its ceiling")
 	}
 }
@@ -66,7 +66,7 @@ func TestConversationStaleClaimIsNotResent(t *testing.T) {
 	if err != nil || len(stale) != 1 || stale[0].ID != id {
 		t.Fatalf("claim: %v %v", stale, err)
 	}
-	if _, err := store.FailPluginConversationReply(t.Context(), id, "unavailable", 0, conversationMaxAttempts); err != nil {
+	if _, err := store.FailPluginConversationReply(t.Context(), id, "unavailable", 0, outboxMaxAttempts); err != nil {
 		t.Fatal(err)
 	}
 	m.deliverConversationReply(stale[0])

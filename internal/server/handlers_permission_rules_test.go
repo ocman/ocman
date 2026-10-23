@@ -38,7 +38,7 @@ func TestSessionPermissionRules_Get(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/sess-1/permission-rules", nil)
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
@@ -65,7 +65,7 @@ func TestSessionPermissionRules_GetNilRulesReturnsEmptyArray(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/sess-1/permission-rules", nil)
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
@@ -80,7 +80,7 @@ func TestSessionPermissionRules_GetUnsupported(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/sess-1/permission-rules", nil)
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rr.Code)
@@ -101,7 +101,7 @@ func TestSessionPermissionRules_Put(t *testing.T) {
 	body := `{"rules":[{"permission":"edit","pattern":"*","action":"allow"},{"permission":"bash","action":"ask"}]}`
 	req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(body))
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
@@ -128,7 +128,7 @@ func TestSessionPermissionRules_PutEmptyRestoresDefaults(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(`{"rules":[]}`))
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
@@ -174,7 +174,7 @@ func TestSessionPermissionRules_PutYoloAnswersPendingPrompts(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(body))
 		rr := httptest.NewRecorder()
-		srv.dispatchSessionSubpath(rr, req)
+		serveRoutes(t, srv, rr, req)
 		if rr.Code != http.StatusNoContent {
 			t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
 		}
@@ -212,7 +212,7 @@ func TestSessionPermissionRules_PutValidation(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(c.body))
 			rr := httptest.NewRecorder()
-			srv.dispatchSessionSubpath(rr, req)
+			serveRoutes(t, srv, rr, req)
 
 			if rr.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400; body=%s", rr.Code, rr.Body)

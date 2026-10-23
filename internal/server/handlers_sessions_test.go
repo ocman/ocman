@@ -457,7 +457,7 @@ func TestHandleSessionAttachment_SavesFileToCache(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/attachment", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
@@ -1223,7 +1223,7 @@ func TestHandleSessionRestartOpencode_RejectsNonLoopback(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode", nil)
 	rr := httptest.NewRecorder()
-	srv.handleSessionRestartOpencode(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rr.Code)
@@ -1280,7 +1280,7 @@ func TestHandleSessionRestartOpencode_DefersUntilSessionsIdle(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
-	srv.handleSessionRestartOpencode(rr, req)
+	srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1303,7 +1303,7 @@ func TestHandleSessionRestartOpencode_ForceNeedsConfirmationWhenBusy(t *testing.
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode?force=true", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
-	srv.handleSessionRestartOpencode(rr, req)
+	srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "confirmationRequired") {
 		t.Fatalf("status=%d body=%s, want confirmation", rr.Code, rr.Body.String())
 	}
@@ -1328,7 +1328,7 @@ func TestHandleSessionRestartOpencode_AllIncludesConnectedRemoteHosts(t *testing
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode?all=true", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
-	srv.handleSessionRestartOpencode(rr, req)
+	srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1731,7 +1731,7 @@ func TestHandleSessionRestartOpencode_MachineScopedServer(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, url, nil)
 			req.RemoteAddr = "127.0.0.1:1234"
 			rr := httptest.NewRecorder()
-			srv.handleSessionRestartOpencode(rr, req)
+			srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
 			// The busy session in another project blocks the shared restart.
 			if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "confirmationRequired") || len(host.restarted) != 0 {
 				t.Fatalf("status=%d body=%s restarted=%v, want confirmation for the busy sibling", rr.Code, rr.Body.String(), host.restarted)

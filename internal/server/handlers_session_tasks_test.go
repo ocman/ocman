@@ -22,7 +22,7 @@ func getSessionTasks(t *testing.T, s *Server, path string) sessionTasksResponse 
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
-	s.dispatchSessionSubpath(rec, req)
+	serveRoutes(t, s, rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}

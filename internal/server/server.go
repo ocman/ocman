@@ -419,33 +419,3 @@ func (s *Server) SetRemoteManager(m *remote.Manager) { s.remotes = m }
 func (s *Server) HasDemand(scope string) bool {
 	return s.activity == nil || s.activity.HasDemand(scope)
 }
-
-// requireMethod wraps a handler to only allow the given HTTP method.
-func requireMethod(method string) func(http.HandlerFunc) http.HandlerFunc {
-	return func(h http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != method {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			h(w, r)
-		}
-	}
-}
-
-// requireGET wraps a handler to only allow GET requests.
-func requireGET(h http.HandlerFunc) http.HandlerFunc { return requireMethod(http.MethodGet)(h) }
-
-// requirePOST wraps a handler to only allow POST requests.
-func requirePOST(h http.HandlerFunc) http.HandlerFunc { return requireMethod(http.MethodPost)(h) }
-
-// get and post compose the method guard with requireAuth. They're
-// method-valued so handlers referring to s.auth can see it. When auth
-// is disabled, requireAuth is a pass-through.
-func (s *Server) get(h http.HandlerFunc) http.HandlerFunc {
-	return requireGET(s.requireAuth(h))
-}
-
-func (s *Server) post(h http.HandlerFunc) http.HandlerFunc {
-	return requirePOST(s.requireAuth(h))
-}

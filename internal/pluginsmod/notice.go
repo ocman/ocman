@@ -122,7 +122,7 @@ func (m *Module) appendConversationNotice(ctx context.Context, key state.PluginC
 		return
 	}
 	if delivery != 0 {
-		m.kickConversationOutbox()
+		m.conversationOutbox.kick()
 	}
 }
 

@@ -24,14 +24,14 @@ func NewModule(r *Runner, guards module.Guards) *Module {
 
 func (m *Module) Name() string { return "maintenance" }
 
-// Routes keeps the pre-extraction order: method, auth, then localhost for
-// the actions, which stop opencode and rewrite its database.
+// Routes checks the method (mux pattern), auth, then localhost for the
+// actions, which stop opencode and rewrite its database.
 func (m *Module) Routes(r module.Router) {
 	auth, local := m.guards.Auth, m.guards.Localhost
-	r.Handle("/api/maintenance/opencode-db", method(http.MethodGet, auth(m.handleStatus)))
-	r.Handle("/api/maintenance/opencode-db/cleanup", method(http.MethodPost, auth(local(m.action((*Runner).Cleanup)))))
-	r.Handle("/api/maintenance/opencode-db/restore", method(http.MethodPost, auth(local(m.action((*Runner).Restore)))))
-	r.Handle("/api/maintenance/opencode-db/delete-dump", method(http.MethodPost, auth(local(m.action((*Runner).DeleteDump)))))
+	r.Handle("GET /api/maintenance/opencode-db", auth(m.handleStatus))
+	r.Handle("POST /api/maintenance/opencode-db/cleanup", auth(local(m.action((*Runner).Cleanup))))
+	r.Handle("POST /api/maintenance/opencode-db/restore", auth(local(m.action((*Runner).Restore))))
+	r.Handle("POST /api/maintenance/opencode-db/delete-dump", auth(local(m.action((*Runner).DeleteDump))))
 }
 
 // LaunchBlocked reports why opencode may not launch right now.
@@ -48,16 +48,6 @@ func (m *Module) Run(ctx context.Context) {
 	<-ctx.Done()
 	if m.runner != nil {
 		m.runner.Shutdown()
-	}
-}
-
-func method(want string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != want {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
 	}
 }
 

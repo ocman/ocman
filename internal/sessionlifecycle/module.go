@@ -57,12 +57,6 @@ func (*Module) Name() string   { return "sessionlifecycle" }
 func (m *Module) Routes(r module.Router) {
 	r.Local("POST /api/sessions/prepare", m.HandlePrepareSession)
 	r.Local("POST /api/sessions/start", m.HandleStartSession)
-	// The core SPA fallback otherwise turns wrong launch methods into 404s.
-	for _, path := range []string{"/api/sessions/prepare", "/api/sessions/start"} {
-		r.Handle(path, func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		})
-	}
 	for _, route := range []struct {
 		pattern string
 		handler http.HandlerFunc

@@ -7,7 +7,6 @@ package remotesmod
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/module"
@@ -66,11 +65,11 @@ func NewModule(d Deps) *Module {
 
 func (m *Module) Name() string { return "remotes" }
 
-// Routes keeps the pre-extraction guards: method, then auth, then localhost.
+// Routes checks the method (mux pattern), then auth, then localhost.
 func (m *Module) Routes(r module.Router) {
 	auth, local := m.d.Guards.Auth, m.d.Guards.Localhost
-	r.Handle("/api/settings/remote-access", method(http.MethodGet, auth(m.handleAccess)))
-	r.Handle("/api/settings/remote-access/reveal-token", method(http.MethodPost, auth(local(m.handleRevealToken))))
+	r.Handle("GET /api/settings/remote-access", auth(m.handleAccess))
+	r.Handle("POST /api/settings/remote-access/reveal-token", auth(local(m.handleRevealToken)))
 	r.Handle("/api/remotes", auth(local(m.handleRemotes)))
 	r.Handle("/api/remotes/", auth(local(m.handleRemoteByID)))
 }
@@ -89,14 +88,4 @@ func (m *Module) manager() Manager {
 		return nil
 	}
 	return m.d.Manager()
-}
-
-func method(want string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != want {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
 }

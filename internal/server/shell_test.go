@@ -36,7 +36,7 @@ func TestHandleSessionShell_DispatchesToAdapter(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rr.Code, rr.Body.String())
@@ -68,7 +68,7 @@ func TestHandleSessionShell_RejectsEmptyCommand(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/session/fk-1/shell", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
-		srv.dispatchSessionSubpath(rr, req)
+		serveRoutes(t, srv, rr, req)
 
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("body=%s: expected 400, got %d: %s", body, rr.Code, rr.Body.String())
@@ -99,7 +99,7 @@ func TestHandleSessionShell_UnsupportedReturns501(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
-	srv.dispatchSessionSubpath(rr, req)
+	serveRoutes(t, srv, rr, req)
 
 	if rr.Code != http.StatusNotImplemented {
 		t.Errorf("expected 501, got %d: %s", rr.Code, rr.Body.String())

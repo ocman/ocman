@@ -32,7 +32,7 @@ func TestHandleSessionPermissionsRefresh(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
 			reg.Register(c.adapter)
 			rr := httptest.NewRecorder()
-			srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodGet, "/api/session/"+sid+"/permissions"+c.query, nil))
+			serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodGet, "/api/session/"+sid+"/permissions"+c.query, nil))
 			if rr.Code != c.wantCode {
 				t.Fatalf("status = %d, want %d; body=%s", rr.Code, c.wantCode, rr.Body)
 			}

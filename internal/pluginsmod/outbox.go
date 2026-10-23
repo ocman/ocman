@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strconv"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -13,46 +12,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
-const (
-	// conversationDeliveryBatch bounds one pump pass. Only one delivery per
-	// conversation is ever claimed, so this bounds concurrent conversations.
-	conversationDeliveryBatch = 32
-	// conversationRetryBase and conversationRetryMax bound the retry schedule:
-	// 5s doubling to a 5 minute ceiling. A provider asking for a longer wait
-	// (Slack's Retry-After) is absorbed inside the plugin, which knows the
-	// provider's limits; the host only guarantees the backoff stays bounded.
-	conversationRetryBase = 5 * time.Second
-	conversationRetryMax  = 5 * time.Minute
-	// conversationMaxAttempts is where a poison reply stops consuming the
-	// conversation's ordering slot and becomes a visible dead letter.
-	conversationMaxAttempts = 6
-	// conversationPumpInterval wakes deliveries whose backoff has elapsed. A
-	// fresh reply kicks the pump directly, so this is only the retry clock and
-	// the recovery path after a restart.
-	conversationPumpInterval = 5 * time.Second
-	// conversationPruneInterval drops delivered receipts past their retention.
-	conversationPruneInterval = time.Hour
-	// conversationOutboxPrefix namespaces the wire operation id derived from a
-	// delivery's immutable row id. The id is stable across retries, which is
-	// what lets a plugin recognize a repeat and not post a second time.
-	conversationOutboxPrefix = "conv-out:"
-)
+// conversationOutboxPrefix namespaces the wire operation id derived from a
+// delivery's immutable row id. The id is stable across retries, which is what
+// lets a plugin recognize a repeat and not post a second time.
+const conversationOutboxPrefix = "conv-out:"
 
 func conversationOutboxOperation(id int64) string {
 	return conversationOutboxPrefix + strconv.FormatInt(id, 10)
-}
-
-// conversationRetryDelay is exponential with a hard ceiling. attempts is the
-// number of failures already recorded, so the first retry waits the base.
-func conversationRetryDelay(attempts int) time.Duration {
-	delay := conversationRetryBase
-	for range attempts {
-		if delay >= conversationRetryMax/2 {
-			return conversationRetryMax
-		}
-		delay *= 2
-	}
-	return delay
 }
 
 // conversationDeliveryWorker delivers outbox rows. The key is the ordering
@@ -64,53 +30,30 @@ func (m *Module) conversationDeliveryWorker() *worker.Worker[state.PluginConvers
 	return m.conversationDeliveries
 }
 
-// runConversationDeliveryPump is the retry clock and the crash-recovery path:
-// every unacknowledged row left by a disconnect or a restart is claimed again
-// here. One immediate pass runs at startup, before the first tick.
-func (m *Module) runConversationDeliveryPump(ctx context.Context) {
-	if m.store == nil {
-		return
-	}
-	tick := time.NewTicker(conversationPumpInterval)
-	defer tick.Stop()
-	prune := time.NewTicker(conversationPruneInterval)
-	defer prune.Stop()
-	m.pumpConversationOutbox(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			m.pumpConversationOutbox(ctx)
-		case <-prune.C:
-			if err := m.store.PrunePluginConversationOutbox(ctx); err != nil {
-				log.WithError(err).Warn("pruning delivered conversation replies")
+func (m *Module) newConversationOutbox() *outbox[state.PluginConversationDelivery] {
+	return &outbox[state.PluginConversationDelivery]{
+		name: "conversation",
+		claim: func(ctx context.Context, admit func(state.PluginConversationDelivery) bool) {
+			if m.store == nil {
+				return
 			}
-		}
-	}
-}
-
-// pumpConversationOutbox enqueues every due head delivery that is not already
-// in flight. The in-flight set is what keeps a pump tick during a slow send
-// from posting the same reply twice.
-func (m *Module) pumpConversationOutbox(ctx context.Context) {
-	if m.store == nil {
-		return
-	}
-	claimed, err := m.store.ClaimPluginConversationReplies(ctx, conversationDeliveryBatch)
-	if err != nil {
-		log.WithError(err).Warn("claiming conversation replies for delivery")
-		return
-	}
-	allowed := map[string]bool{}
-	for _, delivery := range claimed {
-		id := delivery.Key.PluginID
-		if _, asked := allowed[id]; !asked {
-			allowed[id] = m.conversationDeliveryAllowed(ctx, id)
-		}
-		if allowed[id] && m.beginConversationDelivery(delivery.ID) {
-			m.conversationDeliveryWorker().Enqueue(delivery)
-		}
+			claimed, err := m.store.ClaimPluginConversationReplies(ctx, outboxDeliveryBatch)
+			if err != nil {
+				log.WithError(err).Warn("claiming conversation replies for delivery")
+				return
+			}
+			for _, delivery := range claimed {
+				admit(delivery)
+			}
+		},
+		row:     func(d state.PluginConversationDelivery) (int64, string) { return d.ID, d.Key.PluginID },
+		allowed: m.conversationDeliveryAllowed,
+		enqueue: func(d state.PluginConversationDelivery) { m.conversationDeliveryWorker().Enqueue(d) },
+		prune: func(ctx context.Context) error {
+			return m.store.PrunePluginConversationOutbox(ctx)
+		},
+		pruneFailed: "pruning delivered conversation replies",
+		workers:     &m.workers,
 	}
 }
 
@@ -138,39 +81,12 @@ func (m *Module) conversationDeliveryAllowed(ctx context.Context, pluginID strin
 		}) == nil
 }
 
-// kickConversationOutbox pumps without waiting for the next tick, so a fresh
-// reply and the next reply in a conversation both go out immediately.
-func (m *Module) kickConversationOutbox() {
-	m.workers.Go(func(ctx context.Context) {
-		runWithRecover("plugin-conversation-pump", func() {
-			m.pumpConversationOutbox(ctx)
-		})
-	})
-}
-
-func (m *Module) beginConversationDelivery(id int64) bool {
-	m.conversationOnce.Do(m.buildConversations)
-	m.conversationMu.Lock()
-	defer m.conversationMu.Unlock()
-	if m.conversationInFlight[id] {
-		return false
-	}
-	m.conversationInFlight[id] = true
-	return true
-}
-
-func (m *Module) endConversationDelivery(id int64) {
-	m.conversationMu.Lock()
-	delete(m.conversationInFlight, id)
-	m.conversationMu.Unlock()
-}
-
 // deliverConversationReply attempts one delivery and then acknowledges or
 // records the failure. Send-then-acknowledge is deliberate: a crash in that
 // window replays the delivery, so the guarantee is at-least-once for the send
 // and the plugin is responsible for not repeating a post it already made.
 func (m *Module) deliverConversationReply(delivery state.PluginConversationDelivery) {
-	defer m.endConversationDelivery(delivery.ID)
+	defer m.conversationOutbox.end(delivery.ID)
 	ctx := context.Background()
 	fields := log.Fields{
 		"plugin_id": delivery.Key.PluginID, "delivery_id": delivery.ID, "attempts": delivery.Attempts,
@@ -193,11 +109,11 @@ func (m *Module) deliverConversationReply(delivery state.PluginConversationDeliv
 			log.WithError(ack).WithFields(fields).Warn("acknowledging a delivered conversation reply")
 		}
 		// Advance the conversation: its next reply was held behind this one.
-		m.kickConversationOutbox()
+		m.conversationOutbox.kick()
 		return
 	}
 	dead, failErr := m.store.FailPluginConversationReply(ctx, delivery.ID,
-		conversationFailureReason(err), conversationRetryDelay(delivery.Attempts), conversationMaxAttempts)
+		conversationFailureReason(err), outboxRetryDelay(delivery.Attempts), outboxMaxAttempts)
 	if failErr != nil {
 		log.WithError(failErr).WithFields(fields).Warn("recording a failed conversation reply")
 		return
@@ -262,7 +178,7 @@ func (m *Module) manageConversationBacklog(ctx context.Context, pluginID, action
 		if err := m.store.RetryPluginConversationReply(ctx, pluginID, input.DeliveryID); err != nil {
 			return nil, err
 		}
-		m.kickConversationOutbox()
+		m.conversationOutbox.kick()
 	case "conversations/discard":
 		if input.DeliveryID <= 0 {
 			return nil, state.ErrPluginInvalid
@@ -271,7 +187,7 @@ func (m *Module) manageConversationBacklog(ctx context.Context, pluginID, action
 			return nil, err
 		}
 		// Discarding unblocks the conversation's next reply.
-		m.kickConversationOutbox()
+		m.conversationOutbox.kick()
 	default:
 		return nil, state.ErrPluginInvalid
 	}
@@ -281,6 +197,6 @@ func (m *Module) manageConversationBacklog(ctx context.Context, pluginID, action
 // DeliverOwed claims every due reply, as a pump tick does, and waits until
 // those deliveries have settled.
 func (m *Module) DeliverOwed(ctx context.Context) error {
-	m.pumpConversationOutbox(ctx)
+	m.conversationOutbox.pump(ctx)
 	return m.conversationDeliveryWorker().Drain(ctx)
 }

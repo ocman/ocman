@@ -114,7 +114,7 @@ func TestSessionIdleReadEndsWithModuleLifetime(t *testing.T) {
 	// A late idle edge and pump kick are rejected after shutdown, not launched
 	// on Background against a database the caller may already have closed.
 	bus.PublishSessionIdle(t.Context(), module.SessionIdle{Platform: "opencode", SessionID: "ses-1"})
-	m.kickSessionOutbox()
+	m.sessionOutbox.kick()
 	if m.workers.Go(func(context.Context) { t.Error("late worker ran") }) {
 		t.Fatal("shutdown admitted a worker")
 	}

@@ -9,49 +9,32 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/sessions/identity"
 )
 
-const (
-	// sessionDeliveryBatch bounds one pump pass. Only one completion per
-	// session is ever claimed, so this bounds concurrent sessions.
-	sessionDeliveryBatch = 32
-	// sessionRetryBase and sessionRetryMax bound the retry schedule, exactly
-	// as conversation replies do: 5s doubling to a 5 minute ceiling.
-	sessionRetryBase = 5 * time.Second
-	sessionRetryMax  = 5 * time.Minute
-	// sessionMaxAttempts is where a poison completion stops consuming its
-	// session's ordering slot and becomes a dead letter.
-	sessionMaxAttempts = 6
-	// sessionPumpInterval wakes deliveries whose backoff has elapsed; a fresh
-	// completion kicks the pump directly, so this is the retry clock and the
-	// recovery path after a restart.
-	sessionPumpInterval = 5 * time.Second
-	// sessionPruneInterval drops delivered receipts past their retention.
-	sessionPruneInterval = time.Hour
-	// sessionOutboxPrefix namespaces the wire operation id derived from a
-	// row's immutable id. The id is stable across retries, which is what lets
-	// a plugin recognize a repeat and not act on the turn twice.
-	sessionOutboxPrefix = "sess-out:"
-	// sessionReconcileInterval is the backstop for instances that omit
-	// terminal idle/changed events, mirroring the conversation reconciliation.
-	sessionReconcileInterval = 5 * time.Minute
-)
+// sessionOutboxPrefix namespaces the wire operation id derived from a row's
+// immutable id. The id is stable across retries, which is what lets a plugin
+// recognize a repeat and not act on the turn twice.
+const sessionOutboxPrefix = "sess-out:"
 
 func sessionOutboxOperation(id int64) string {
 	return sessionOutboxPrefix + strconv.FormatInt(id, 10)
 }
 
-func sessionRetryDelay(attempts int) time.Duration {
-	delay := sessionRetryBase
-	for range attempts {
-		if delay >= sessionRetryMax/2 {
-			return sessionRetryMax
-		}
-		delay *= 2
+func (m *Module) newSessionOutbox() *outbox[PluginSessionCompletion] {
+	return &outbox[PluginSessionCompletion]{
+		name:    "session",
+		claim:   m.claimSessionCompletions,
+		row:     func(c PluginSessionCompletion) (int64, string) { return c.ID, c.PluginID },
+		allowed: m.sessionDeliveryAllowed,
+		enqueue: func(c PluginSessionCompletion) { m.sessionDeliveryWorker().Enqueue(c) },
+		prune: func(ctx context.Context) error {
+			return m.plugins.PrunePluginSessionOutbox(ctx)
+		},
+		pruneFailed: "pruning delivered session completions",
+		workers:     &m.workers,
 	}
-	return delay
 }
 
 // ReplyToSession records the session's completed assistant turn for delivery to
@@ -98,18 +81,14 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 	if detail.TotalMessages > len(detail.Messages) {
 		usage = nil
 	}
-	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
-	if err != nil {
-		return
-	}
-	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, prefix+":"+messageID, text, usage)
+	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, sessionID+":"+messageID, text, usage)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": pluginID, "session_id": sessionID}).
 			Error("recording completed session turn for delivery")
 		return
 	}
 	if delivery != 0 {
-		m.kickSessionOutbox()
+		m.sessionOutbox.kick()
 	}
 }
 
@@ -133,24 +112,18 @@ func (m *Module) sessionCompletionAlreadyRecorded(ctx context.Context, adapter p
 	if lifecycle.LatestMessageRole != "assistant" || lifecycle.LatestMessageID == "" {
 		return false, nil
 	}
-	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
-	if err != nil {
-		return false, err
-	}
-	return m.plugins.HasPluginSessionCompletion(ctx, pluginID, prefix+":"+lifecycle.LatestMessageID)
+	return m.plugins.HasPluginSessionCompletion(ctx, pluginID, sessionID+":"+lifecycle.LatestMessageID)
 }
 
-// pumpSessionOutbox enqueues every due head completion that is not already in
-// flight. The in-flight set keeps a pump tick during a slow send from posting
-// the same turn twice.
-func (m *Module) pumpSessionOutbox(ctx context.Context) {
+// claimSessionCompletions pages through due head completions until a batch
+// has been admitted.
+func (m *Module) claimSessionCompletions(ctx context.Context, admit func(PluginSessionCompletion) bool) {
 	if m.store == nil {
 		return
 	}
-	allowed := map[string]bool{}
 	var after int64
-	for admitted := 0; admitted < sessionDeliveryBatch && ctx.Err() == nil; {
-		claimed, err := m.plugins.sessionCompletionPage(ctx, after, sessionDeliveryBatch)
+	for admitted := 0; admitted < outboxDeliveryBatch && ctx.Err() == nil; {
+		claimed, err := m.plugins.sessionCompletionPage(ctx, after, outboxDeliveryBatch)
 		if err != nil {
 			log.WithError(err).Warn("claiming session completions for delivery")
 			return
@@ -160,19 +133,14 @@ func (m *Module) pumpSessionOutbox(ctx context.Context) {
 			if identity.IsPendingReference(completion.SessionID) {
 				continue
 			}
-			id := completion.PluginID
-			if _, asked := allowed[id]; !asked {
-				allowed[id] = m.sessionDeliveryAllowed(ctx, id)
-			}
-			if allowed[id] && m.beginSessionDelivery(completion.ID) {
-				m.sessionDeliveryWorker().Enqueue(completion)
+			if admit(completion) {
 				admitted++
-				if admitted == sessionDeliveryBatch {
+				if admitted == outboxDeliveryBatch {
 					return
 				}
 			}
 		}
-		if len(claimed) < sessionDeliveryBatch {
+		if len(claimed) < outboxDeliveryBatch {
 			return
 		}
 	}
@@ -195,61 +163,12 @@ func (m *Module) sessionDeliveryAllowed(ctx context.Context, pluginID string) bo
 		}) == nil
 }
 
-func (m *Module) beginSessionDelivery(id int64) bool {
-	m.sessionOnce.Do(m.buildSessions)
-	m.sessionMu.Lock()
-	defer m.sessionMu.Unlock()
-	if m.sessionInFlight[id] {
-		return false
-	}
-	m.sessionInFlight[id] = true
-	return true
-}
-
-func (m *Module) endSessionDelivery(id int64) {
-	m.sessionMu.Lock()
-	delete(m.sessionInFlight, id)
-	m.sessionMu.Unlock()
-}
-
-// kickSessionOutbox pumps without waiting for the next tick.
-func (m *Module) kickSessionOutbox() {
-	m.workers.Go(func(ctx context.Context) {
-		runWithRecover("plugin-session-pump", func() { m.pumpSessionOutbox(ctx) })
-	})
-}
-
-// runSessionDeliveryPump is the retry clock and the crash-recovery path: every
-// unacknowledged row left by a disconnect or a restart is claimed again here.
-func (m *Module) runSessionDeliveryPump(ctx context.Context) {
-	if m.store == nil {
-		return
-	}
-	tick := time.NewTicker(sessionPumpInterval)
-	defer tick.Stop()
-	prune := time.NewTicker(sessionPruneInterval)
-	defer prune.Stop()
-	m.pumpSessionOutbox(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			m.pumpSessionOutbox(ctx)
-		case <-prune.C:
-			if err := m.plugins.PrunePluginSessionOutbox(ctx); err != nil {
-				log.WithError(err).Warn("pruning delivered session completions")
-			}
-		}
-	}
-}
-
 // DeliverSessionCompletion attempts one delivery and then acknowledges or
 // records the failure. Send-then-acknowledge is deliberate: a crash in that
 // window replays the delivery, so the guarantee is at-least-once for the call
 // and the plugin recognizes the repeat by the stable operation id.
 func (m *Module) DeliverSessionCompletion(completion PluginSessionCompletion) {
-	defer m.endSessionDelivery(completion.ID)
+	defer m.sessionOutbox.end(completion.ID)
 	m.mu.Lock()
 	ctx := m.workerCtx
 	m.mu.Unlock()
@@ -260,9 +179,6 @@ func (m *Module) DeliverSessionCompletion(completion PluginSessionCompletion) {
 }
 
 func (m *Module) deliverSessionCompletion(ctx context.Context, completion PluginSessionCompletion) {
-	if identity.IsPendingReference(completion.SessionID) {
-		return
-	}
 	fields := log.Fields{"plugin_id": completion.PluginID, "delivery_id": completion.ID, "attempts": completion.Attempts}
 	current, err := m.plugins.PluginSessionCompletionCurrent(ctx, completion.ID, completion.Attempts)
 	if err != nil {
@@ -271,11 +187,8 @@ func (m *Module) deliverSessionCompletion(ctx context.Context, completion Plugin
 	if !current {
 		return
 	}
-	wireID, err := m.pluginWireSession(ctx, completion.PlatformID, completion.SessionID)
-	if err != nil {
-		return
-	} // No broker delivery was attempted.
-	err = m.completePluginSession(ctx, completion, wireID)
+	err = m.SessionBroker().Completed(ctx, completion.PluginID, sessionOutboxOperation(completion.ID),
+		plugins.SessionCompleted{SessionID: completion.SessionID, Text: completion.Text, Usage: completion.Usage})
 	// Settle an admitted attempt durably even if shutdown cancelled the call.
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
@@ -283,11 +196,11 @@ func (m *Module) deliverSessionCompletion(ctx context.Context, completion Plugin
 		if ack := m.plugins.AckPluginSessionCompletion(writeCtx, completion.ID); ack != nil {
 			log.WithError(ack).WithFields(fields).Warn("acknowledging a delivered session completion")
 		}
-		m.kickSessionOutbox()
+		m.sessionOutbox.kick()
 		return
 	}
 	dead, failErr := m.plugins.FailPluginSessionCompletion(writeCtx, completion.ID,
-		conversationFailureReason(err), sessionRetryDelay(completion.Attempts), sessionMaxAttempts)
+		conversationFailureReason(err), outboxRetryDelay(completion.Attempts), outboxMaxAttempts)
 	if failErr != nil {
 		log.WithError(failErr).WithFields(fields).Warn("recording a failed session completion")
 		return
@@ -297,23 +210,6 @@ func (m *Module) deliverSessionCompletion(ctx context.Context, completion Plugin
 		return
 	}
 	log.WithError(err).WithFields(fields).Warn("retrying session completion delivery")
-}
-
-// runSessionReplyReconciliation is the backstop for OpenCode instances that
-// omit terminal idle/changed events. The outbox's session:message key makes
-// recovery safe.
-func (m *Module) runSessionReplyReconciliation(ctx context.Context) {
-	m.ReconcileSessionCompletions(ctx)
-	ticker := time.NewTicker(sessionReconcileInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			m.ReconcileSessionCompletions(ctx)
-		}
-	}
 }
 
 // ReconcileSessionCompletions records every linked session's completed turn

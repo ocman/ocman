@@ -75,8 +75,8 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
-		permissionID := strings.TrimPrefix(rest, "permissions/")
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		permissionID := r.PathValue("pid")
 		if !validateID(permissionID) {
 			http.Error(w, "invalid permission ID", http.StatusBadRequest)
 			return
@@ -138,19 +138,9 @@ func stringValue(value any) string { result, _ := value.(string); return result 
 // handleSessionQuestion dispatches POST /api/session/{id}/questions/{qid}
 // and POST /api/session/{id}/questions/{qid}/reject.
 func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
-	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
-		rest = strings.TrimPrefix(rest, "questions/")
-		questionID := rest
-		reject := false
-		if slash := strings.IndexByte(rest, '/'); slash >= 0 {
-			questionID = rest[:slash]
-			if rest[slash+1:] == "reject" {
-				reject = true
-			} else {
-				http.Error(w, "unknown question subpath", http.StatusNotFound)
-				return
-			}
-		}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		questionID := r.PathValue("qid")
+		reject := strings.HasSuffix(r.Pattern, "/reject")
 		if !validateID(questionID) {
 			http.Error(w, "invalid question ID", http.StatusBadRequest)
 			return

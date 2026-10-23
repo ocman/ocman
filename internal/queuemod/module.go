@@ -3,7 +3,6 @@ package queuemod
 
 import (
 	"context"
-	"net/http"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -64,13 +63,6 @@ func (m *Module) Name() string               { return "queue" }
 func (m *Module) Service() *queuesvc.Service { return m.queue }
 
 func (m *Module) Routes(r module.Router) {
-	// The core dispatcher also matches this prefix. Preserve its 405 for
-	// queue paths whose method does not match a feature route.
-	for _, path := range []string{"/api/session/{id}/queue", "/api/session/{id}/queue/{qmid}", "/api/session/{id}/queue/{qmid}/move"} {
-		r.Handle(path, m.d.Guards.Auth(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}))
-	}
 	r.Handle("GET /api/session/{id}/queue", m.d.Guards.Auth(m.List))
 	r.Handle("DELETE /api/session/{id}/queue/{qmid}", m.d.Guards.Auth(m.Delete))
 	r.Handle("POST /api/session/{id}/queue/{qmid}/move", m.d.Guards.Auth(m.Move))
