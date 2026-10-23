@@ -191,7 +191,10 @@
   margin: 0;
 }
 /* Consecutive compact tools share one rhythm, even across message boundaries. */
-:is(.oc-msg-muted, .oc-msg-tools:not(:has(.oc-tool))) + :is(.oc-msg-muted, .oc-msg-tools:not(:has(.oc-tool))) { margin-top: -12px; }
+:is(.oc-msg-muted, .oc-msg-tools:not(:has(.oc-tool)),
+  .oc-msg-assistant:has(> .oc-msg-body > .oc-exploration:last-child),
+  .oc-msg-assistant:has(> .oc-msg-body > .oc-tool-source:last-child > .oc-tool-compact))
+  + :is(.oc-msg-muted, .oc-msg-tools:not(:has(.oc-tool))) { margin-top: -12px; }
 .oc-tool-source { display: flow-root; }
 
 .oc-timeline-marker {
