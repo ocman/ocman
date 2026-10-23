@@ -52,13 +52,6 @@ func TestFactoryMCPScopeActionsReachUnderlyingService(t *testing.T) {
 	if err != nil || gate.EpicID != "epic" || underlying.attempt != "attempt" || underlying.token != "token" || underlying.project != "/other" || underlying.reason != "Missing API" {
 		t.Fatalf("project request = %#v, %v", gate, err)
 	}
-	unsupported := factoryMCPService{Service: struct{ Service }{}}
-	if _, err := unsupported.SubmitScopePlan(t.Context(), req); !errors.Is(err, factory.ErrActionNotPermitted) {
-		t.Fatalf("unsupported scope = %v", err)
-	}
-	if _, err := unsupported.RequestProject(t.Context(), "attempt", "token", "/other", "Missing API"); !errors.Is(err, factory.ErrActionNotPermitted) {
-		t.Fatalf("unsupported project = %v", err)
-	}
 }
 
 func TestFactoryMCPControlProposalsNeedAProposer(t *testing.T) {

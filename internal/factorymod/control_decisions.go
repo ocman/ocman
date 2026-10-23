@@ -50,13 +50,7 @@ func (m *Module) runFactoryControlDecision(ctx context.Context, epicID, action s
 			if args["decision"] == "approve" && !consent {
 				return fmt.Errorf("%w: the user must allow local command execution for this project", factory.ErrInvalidRequest)
 			}
-			resolver, ok := m.svc.(interface {
-				ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error)
-			})
-			if !ok {
-				return factory.ErrFactoryUnavailable
-			}
-			_, err := resolver.ResolveProjectRequest(ctx, args["project_gate_id"], args["decision"], args["response"], consent)
+			_, err := m.svc.ResolveProjectRequest(ctx, args["project_gate_id"], args["decision"], args["response"], consent)
 			return err
 		}
 	}

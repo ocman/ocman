@@ -8,12 +8,12 @@ package factorymod
 
 import (
 	"context"
-	"net/http"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/module"
@@ -22,9 +22,9 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// Service is the Factory domain service the module drives. Optional
-// capabilities (queue, transfers, pausing, idle wake-ups, ...) are checked
-// with type assertions so test fakes implement only what they exercise.
+// Service is the Factory domain service the module drives. Production uses
+// *factory.NativeService; the interface exists so tests can substitute fakes,
+// which embed it so unexercised methods panic.
 type Service interface {
 	Start(context.Context) error
 	Close()
@@ -56,7 +56,28 @@ type Service interface {
 	EscalatePermission(context.Context, string, string, string, string) (factory.AuthorityEscalationGate, bool, error)
 	ResolveAuthorityEscalationGate(context.Context, string, string) (factory.AuthorityEscalationGate, error)
 	CompleteAttempt(context.Context, string, string, string, string) error
+	Queue(context.Context) ([]factory.DispatchItem, error)
+	ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error)
+	RemoveWorkEpicProject(context.Context, string, string) error
+	ListRemovedIssues(context.Context, string) ([]factory.Issue, error)
+	DeliverAsIs(context.Context, string) ([]string, error)
+	CloseEpic(context.Context, string, bool) error
+	StopEpic(context.Context, string) error
+	SetEpicPaused(context.Context, string, bool) error
+	CloseMol(context.Context, string, string) error
+	ReopenIssue(context.Context, string, string) error
+	SetEpicModels(context.Context, string, model.EpicModels) (model.EpicModels, error)
+	TransferIssue(context.Context, string, string, func(context.Context, factory.Issue) (string, error)) (string, error)
+	CancelIssueTransfer(context.Context, string, string) error
+	SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
+	RequestProject(context.Context, string, string, string, string) (factory.ProjectRequestGate, error)
+	RequestCheckpointRecovery(context.Context, string, string) (factory.RecoveryGate, error)
+	OnAttention(func(context.Context, string, []string))
+	NotifySessionIdle(string, string)
+	ReconcileAttention(context.Context)
 }
+
+var _ Service = (*factory.NativeService)(nil)
 
 // Registry resolves platform adapters at call time.
 type Registry interface {
@@ -135,39 +156,11 @@ func (m *Module) ImplementationLauncher() ImplementationLauncher { return Implem
 
 func (m *Module) Name() string { return "Factory" }
 
-func (m *Module) Routes(r module.Router) {
-	auth := m.deps.Guards.Auth
-	r.Handle("/api/factory/status", get(auth(m.handleFactoryStatus)))
-	r.Handle("/api/factory/queue", get(auth(m.handleFactoryQueue)))
-	r.Handle("/api/factory/recovery-gates/", auth(m.handleFactoryRecoveryGate))
-	r.Handle("/api/factory/authority-gates/", auth(m.handleFactoryAuthorityGate))
-	r.Handle("/api/factory/project-gates/", auth(m.handleFactoryProjectGate))
-	r.Handle("/api/factory/configuration", auth(m.handleFactoryConfiguration))
-	r.Handle("/api/factory/epics", auth(m.handleFactoryEpics))
-	r.Handle("/api/factory/epics/", auth(m.handleFactoryEpic))
-	r.Handle("/api/factory/formulas", auth(m.handleFactoryFormulas))
-	r.Handle("/api/factory/formulas/", auth(m.handleFactoryFormulas))
-}
-
-func get(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
-}
-
 // Launch recovers persisted attempts and starts dispatch. It runs after
 // the MCP listener is up: dispatch immediately launches sessions whose
 // ocman MCP connection is verified before they are prompted.
 func (m *Module) Launch(ctx context.Context) error {
-	if listener, ok := m.svc.(interface {
-		OnAttention(func(context.Context, string, []string))
-	}); ok {
-		listener.OnAttention(m.AttentionToControl)
-	}
+	m.svc.OnAttention(m.AttentionToControl)
 	return m.svc.Start(ctx)
 }
 
@@ -177,12 +170,8 @@ func (m *Module) Close() { m.svc.Close() }
 // Subscribe wakes dispatch when a tracked implementation session goes idle.
 // The wake is a non-blocking signal, so it cannot delay later subscribers.
 func (m *Module) Subscribe(b *module.Bus) {
-	notifier, ok := m.svc.(interface{ NotifySessionIdle(string, string) })
-	if !ok {
-		return
-	}
 	b.OnSessionIdle(func(_ context.Context, e module.SessionIdle) {
-		notifier.NotifySessionIdle(e.Platform, e.SessionID)
+		m.svc.NotifySessionIdle(e.Platform, e.SessionID)
 	})
 }
 

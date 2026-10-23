@@ -23,28 +23,16 @@ func (t *factoryTools) handleGraphAction(ctx context.Context, req mcplib.CallToo
 	epicID := req.GetString("epic_id", "")
 	var result *mcplib.CallToolResult
 	if req.GetString("action", "") == "submit_scope_plan" {
-		service, ok := t.svc.(interface {
-			SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
-		})
-		if !ok {
-			return mcplib.NewToolResultError("factory action is not permitted"), nil
-		}
 		manifest, invalid := factoryProposalManifest(req)
 		if invalid != nil {
 			return invalid, nil
 		}
-		proposal, err := service.SubmitScopePlan(ctx, factory.SubmitProposalRequest{EpicID: epicID, Manifest: manifest, RationaleMarkdown: req.GetString("rationale_markdown", ""), AttemptID: req.GetString("attempt_id", ""), AttemptToken: req.GetString("attempt_token", "")})
+		proposal, err := t.svc.SubmitScopePlan(ctx, factory.SubmitProposalRequest{EpicID: epicID, Manifest: manifest, RationaleMarkdown: req.GetString("rationale_markdown", ""), AttemptID: req.GetString("attempt_id", ""), AttemptToken: req.GetString("attempt_token", "")})
 		if err != nil {
 			return factoryToolError(err), nil
 		}
 		result = toolResultJSON(proposal)
 	} else {
-		mutator, ok := t.svc.(interface {
-			MutateGraph(context.Context, factory.GraphMutation) error
-		})
-		if !ok {
-			return mcplib.NewToolResultError("factory action is not permitted"), nil
-		}
 		raw, err := req.RequireString("mutation_json")
 		var mutation factory.GraphMutation
 		decoder := json.NewDecoder(strings.NewReader(raw))
@@ -53,7 +41,7 @@ func (t *factoryTools) handleGraphAction(ctx context.Context, req mcplib.CallToo
 			return mcplib.NewToolResultError("mutation_json is invalid"), nil
 		}
 		mutation.Actor = "mcp"
-		if err := mutator.MutateGraph(ctx, mutation); err != nil {
+		if err := t.svc.MutateGraph(ctx, mutation); err != nil {
 			return factoryToolError(err), nil
 		}
 		epicID = mutation.EpicID

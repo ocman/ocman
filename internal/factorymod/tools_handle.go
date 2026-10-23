@@ -85,13 +85,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 		}
 		return toolResultJSON(gate), nil
 	case "request_checkpoint_recovery":
-		service, ok := t.svc.(interface {
-			RequestCheckpointRecovery(context.Context, string, string) (factory.RecoveryGate, error)
-		})
-		if !ok {
-			return factoryToolError(factory.ErrActionNotPermitted), nil
-		}
-		gate, err := service.RequestCheckpointRecovery(ctx, req.GetString("attempt_id", ""), req.GetString("attempt_token", ""))
+		gate, err := t.svc.RequestCheckpointRecovery(ctx, req.GetString("attempt_id", ""), req.GetString("attempt_token", ""))
 		if err != nil {
 			return factoryToolError(err), nil
 		}
@@ -111,13 +105,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 		}
 		return toolResultJSON(gate), nil
 	case "request_project":
-		service, ok := t.svc.(interface {
-			RequestProject(context.Context, string, string, string, string) (factory.ProjectRequestGate, error)
-		})
-		if !ok {
-			return mcplib.NewToolResultError("factory action is not permitted"), nil
-		}
-		gate, err := service.RequestProject(ctx, req.GetString("attempt_id", ""), req.GetString("attempt_token", ""), req.GetString("project", ""), req.GetString("reason", ""))
+		gate, err := t.svc.RequestProject(ctx, req.GetString("attempt_id", ""), req.GetString("attempt_token", ""), req.GetString("project", ""), req.GetString("reason", ""))
 		if err != nil {
 			return factoryToolError(err), nil
 		}

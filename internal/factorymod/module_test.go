@@ -24,9 +24,4 @@ func TestIdleEdgeWakesDispatchWithOwner(t *testing.T) {
 	if len(svc.woken) != 1 || svc.woken[0] != (module.SessionIdle{Platform: "r-owner:opencode", SessionID: "s"}) {
 		t.Fatalf("woken = %v", svc.woken)
 	}
-
-	// A service without idle wake-ups subscribes nothing.
-	plain := &module.Bus{}
-	NewModule(Deps{Service: struct{ Service }{}}).Subscribe(plain)
-	plain.PublishSessionIdle(context.Background(), module.SessionIdle{Platform: "p", SessionID: "s"})
 }

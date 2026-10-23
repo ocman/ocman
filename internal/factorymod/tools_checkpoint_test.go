@@ -57,8 +57,4 @@ func TestFactoryCheckpointRecoveryTool(t *testing.T) {
 	if got := callTool(t, srv, "factory", args); !got.IsError {
 		t.Fatal("recovery failure was hidden")
 	}
-	unsupported := factoryMCPService{Service: struct{ Service }{}}
-	if _, err := unsupported.RequestCheckpointRecovery(t.Context(), "attempt", "token"); !errors.Is(err, factory.ErrActionNotPermitted) {
-		t.Fatalf("unsupported service: %v", err)
-	}
 }

@@ -11,7 +11,9 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// toolService lists every Factory method the MCP tools may call.
 type toolService interface {
+	factoryControlService
 	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
 	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
 	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
@@ -33,7 +35,14 @@ type toolService interface {
 	ResolveRecoveryGate(context.Context, string, string, string) (factory.RecoveryGate, error)
 	ResolveAuthorityEscalationGate(context.Context, string, string) (factory.AuthorityEscalationGate, error)
 	CompleteAttempt(context.Context, string, string, string, string) error
+	MutateGraph(context.Context, factory.GraphMutation) error
+	SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
+	RequestProject(context.Context, string, string, string, string) (factory.ProjectRequestGate, error)
+	RequestCheckpointRecovery(context.Context, string, string) (factory.RecoveryGate, error)
 }
+
+var _ toolService = factoryMCPService{}
+
 type factoryTools struct{ svc toolService }
 
 const factoryFormulaExample = `version = 1\nname = \"Team\"\n\n[[input]]\nkey = \"goal\"\n\n[[input]]\nkey = \"initial_project\"\n\n[[issue]]\nkey = \"plan\"\nkind = \"plan\"\n`

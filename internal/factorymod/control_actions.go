@@ -35,63 +35,63 @@ func decodeFactoryControlMutation(raw string) (factory.GraphMutation, error) {
 	return mutation, nil
 }
 
-// handleFactoryControl: GET returns the Epic's control session (404 before
-// it exists), POST opens it.
-func (m *Module) handleFactoryControl(w http.ResponseWriter, r *http.Request, epicID string) {
-	switch r.Method {
-	case http.MethodGet:
-		store, err := m.factoryControlStore()
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
-		control, found, err := store.GetFactoryControlSession(r.Context(), epicID)
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
-		if !found {
-			http.Error(w, "no control session", http.StatusNotFound)
-			return
-		}
-		httpx.WriteJSON(w, control)
-	case http.MethodPost:
-		m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
-			control, _, err := m.EnsureControlSession(r.Context(), epicID)
-			if err != nil {
-				WriteError(w, err)
-				return
-			}
-			httpx.WriteJSON(w, control)
-		})(w, r)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleFactoryControlAction serves a proposal's card: GET reads it, POST
-// confirm runs it, POST dismiss drops it. Only a human click reaches here.
-func (m *Module) handleFactoryControlAction(w http.ResponseWriter, r *http.Request, epicID, actionID, verb string) {
+// handleGetControl returns the Epic's control session, 404 before it exists.
+func (m *Module) handleGetControl(w http.ResponseWriter, r *http.Request) {
 	store, err := m.factoryControlStore()
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
-	if verb == "" && r.Method == http.MethodGet {
-		action, found, err := store.GetFactoryControlAction(r.Context(), epicID, actionID)
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
-		if !found {
-			http.Error(w, "control action not found", http.StatusNotFound)
-			return
-		}
-		httpx.WriteJSON(w, action)
+	control, found, err := store.GetFactoryControlSession(r.Context(), r.PathValue("epic"))
+	if err != nil {
+		WriteError(w, err)
 		return
 	}
-	if r.Method != http.MethodPost || (verb != "confirm" && verb != "dismiss") {
+	if !found {
+		http.Error(w, "no control session", http.StatusNotFound)
+		return
+	}
+	httpx.WriteJSON(w, control)
+}
+
+// handleEnsureControl opens the Epic's control session.
+func (m *Module) handleEnsureControl(w http.ResponseWriter, r *http.Request) {
+	control, _, err := m.EnsureControlSession(r.Context(), r.PathValue("epic"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, control)
+}
+
+// handleGetControlAction reads a proposal's card.
+func (m *Module) handleGetControlAction(w http.ResponseWriter, r *http.Request) {
+	store, err := m.factoryControlStore()
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	action, found, err := store.GetFactoryControlAction(r.Context(), r.PathValue("epic"), r.PathValue("action"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	if !found {
+		http.Error(w, "control action not found", http.StatusNotFound)
+		return
+	}
+	httpx.WriteJSON(w, action)
+}
+
+// handleDecideControlAction serves POST confirm, which runs a proposal, and
+// POST dismiss, which drops it. Only a human click reaches here.
+func (m *Module) handleDecideControlAction(w http.ResponseWriter, r *http.Request) {
+	if _, err := m.factoryControlStore(); err != nil {
+		WriteError(w, err)
+		return
+	}
+	verb := r.PathValue("verb")
+	if verb != "confirm" && verb != "dismiss" {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -105,7 +105,7 @@ func (m *Module) handleFactoryControlAction(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "invalid confirmation", http.StatusBadRequest)
 			return
 		}
-		action, err := m.DecideControlAction(r.Context(), epicID, actionID, verb, request.AcknowledgeLocalExecution)
+		action, err := m.DecideControlAction(r.Context(), r.PathValue("epic"), r.PathValue("action"), verb, request.AcknowledgeLocalExecution)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -165,9 +165,7 @@ func (m *Module) DecideControlAction(ctx context.Context, epicID, actionID, verb
 			return action, err
 		}
 		outcome = fmt.Sprintf("The user confirmed: %s\nOutcome: %s %s", action.Summary, action.Status, action.Result)
-		if reconciler, ok := m.svc.(interface{ ReconcileAttention(context.Context) }); ok {
-			reconciler.ReconcileAttention(detached)
-		}
+		m.svc.ReconcileAttention(detached)
 	}
 	// Tell the control session, if there is one, so it can carry on.
 	postCtx, cancelPost := context.WithTimeout(detached, 2*time.Minute)
@@ -211,13 +209,7 @@ func (m *Module) runFactoryControlAction(ctx context.Context, action state.Facto
 		_, err := m.svc.Materialize(ctx, epicID, args["issue_id"])
 		return "", err
 	case "reopen":
-		reopener, ok := m.svc.(interface {
-			ReopenIssue(context.Context, string, string) error
-		})
-		if !ok {
-			return "", factory.ErrFactoryUnavailable
-		}
-		return "", reopener.ReopenIssue(ctx, epicID, args["issue_id"])
+		return "", m.svc.ReopenIssue(ctx, epicID, args["issue_id"])
 	case "mutate_graph":
 		mutation, err := decodeFactoryControlMutation(args["mutation_json"])
 		if err != nil {
@@ -238,33 +230,15 @@ func (m *Module) runFactoryControlAction(ctx context.Context, action state.Facto
 		}
 		return "", fmt.Errorf("%w: recovery gate %s is not part of Epic %s", factory.ErrInvalidRequest, args["recovery_gate_id"], epicID)
 	case "deliver_as_is":
-		deliverer, ok := m.svc.(interface {
-			DeliverAsIs(context.Context, string) ([]string, error)
-		})
-		if !ok {
-			return "", factory.ErrFactoryUnavailable
-		}
-		leftOut, err := deliverer.DeliverAsIs(ctx, epicID)
+		leftOut, err := m.svc.DeliverAsIs(ctx, epicID)
 		if len(leftOut) == 0 {
 			return "", err
 		}
 		return "left out " + strings.Join(leftOut, ", "), err
 	case "pause", "resume":
-		pauser, ok := m.svc.(interface {
-			SetEpicPaused(context.Context, string, bool) error
-		})
-		if !ok {
-			return "", factory.ErrFactoryUnavailable
-		}
-		return "", pauser.SetEpicPaused(ctx, epicID, action.Action == "pause")
+		return "", m.svc.SetEpicPaused(ctx, epicID, action.Action == "pause")
 	case "stop":
-		stopper, ok := m.svc.(interface {
-			StopEpic(context.Context, string) error
-		})
-		if !ok {
-			return "", factory.ErrFactoryUnavailable
-		}
-		return "Epic stopped without delivery; unfinished work cancelled, files and history preserved.", stopper.StopEpic(ctx, epicID)
+		return "Epic stopped without delivery; unfinished work cancelled, files and history preserved.", m.svc.StopEpic(ctx, epicID)
 	case "decide_plan", "resolve_authority", "resolve_project":
 		return "", m.runFactoryControlDecision(ctx, epicID, action.Action, args, acknowledged...)
 	}

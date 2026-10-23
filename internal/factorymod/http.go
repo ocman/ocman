@@ -6,9 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
@@ -20,14 +18,7 @@ func (m *Module) handleFactoryStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleFactoryQueue(w http.ResponseWriter, r *http.Request) {
-	queueService, ok := m.svc.(interface {
-		Queue(context.Context) ([]factory.DispatchItem, error)
-	})
-	if !ok {
-		WriteError(w, factory.ErrFactoryUnavailable)
-		return
-	}
-	queue, err := queueService.Queue(r.Context())
+	queue, err := m.svc.Queue(r.Context())
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -38,15 +29,12 @@ func (m *Module) handleFactoryQueue(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, queue)
 }
 
+// Gate actions are validated before the localhost guard, so a malformed
+// action is a 400 wherever it comes from.
 func (m *Module) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/recovery-gates/"), "/"), "/")
-	if len(parts) != 2 || parts[0] == "" || (parts[1] != "resume" && parts[1] != "retry" && parts[1] != "cancel") {
+	action := r.PathValue("action")
+	if action != "resume" && action != "retry" && action != "cancel" {
 		http.Error(w, "invalid recovery gate action", http.StatusBadRequest)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
@@ -56,12 +44,7 @@ func (m *Module) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Reques
 		if !decodeFactoryRequest(w, r, &request) {
 			return
 		}
-		gateID, err := url.PathUnescape(parts[0])
-		if err != nil {
-			http.Error(w, "invalid recovery gate ID", http.StatusBadRequest)
-			return
-		}
-		gate, err := m.svc.ResolveRecoveryGate(r.Context(), gateID, parts[1], request.Response)
+		gate, err := m.svc.ResolveRecoveryGate(r.Context(), r.PathValue("gate"), action, request.Response)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -71,23 +54,13 @@ func (m *Module) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Reques
 }
 
 func (m *Module) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/authority-gates/"), "/"), "/")
-	if len(parts) != 2 || parts[0] == "" || (parts[1] != "approve" && parts[1] != "reject") {
+	action := r.PathValue("action")
+	if action != "approve" && action != "reject" {
 		http.Error(w, "invalid authority gate action", http.StatusBadRequest)
 		return
 	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
-		gateID, err := url.PathUnescape(parts[0])
-		if err != nil {
-			http.Error(w, "invalid authority gate ID", http.StatusBadRequest)
-			return
-		}
-		gate, err := m.svc.ResolveAuthorityEscalationGate(r.Context(), gateID, parts[1])
+		gate, err := m.svc.ResolveAuthorityEscalationGate(r.Context(), r.PathValue("gate"), action)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -97,24 +70,12 @@ func (m *Module) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Reque
 }
 
 func (m *Module) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/project-gates/"), "/"), "/")
-	if len(parts) != 2 || parts[0] == "" || (parts[1] != "approve" && parts[1] != "reject") {
+	action := r.PathValue("action")
+	if action != "approve" && action != "reject" {
 		http.Error(w, "invalid project gate action", http.StatusBadRequest)
 		return
 	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
-		service, ok := m.svc.(interface {
-			ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error)
-		})
-		if !ok {
-			WriteError(w, factory.ErrFactoryUnavailable)
-			return
-		}
 		var request struct {
 			Response                  string `json:"response"`
 			AcknowledgeLocalExecution bool   `json:"acknowledgeLocalExecution"`
@@ -122,12 +83,7 @@ func (m *Module) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request
 		if !decodeFactoryRequest(w, r, &request) {
 			return
 		}
-		gateID, err := url.PathUnescape(parts[0])
-		if err != nil {
-			http.Error(w, "invalid project gate ID", http.StatusBadRequest)
-			return
-		}
-		gate, err := service.ResolveProjectRequest(r.Context(), gateID, parts[1], request.Response, request.AcknowledgeLocalExecution)
+		gate, err := m.svc.ResolveProjectRequest(r.Context(), r.PathValue("gate"), action, request.Response, request.AcknowledgeLocalExecution)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -136,52 +92,38 @@ func (m *Module) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request
 	})(w, r)
 }
 
-func (m *Module) handleFactoryConfiguration(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		policy, err := m.svc.GetCapacityPolicy(r.Context())
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
-		httpx.WriteJSON(w, policy)
-	case http.MethodPost:
-		m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
-			var policy factory.CapacityPolicy
-			if !decodeFactoryRequest(w, r, &policy) {
-				return
-			}
-			policy, err := m.svc.SetCapacityPolicy(r.Context(), policy)
-			if err != nil {
-				WriteError(w, err)
-				return
-			}
-			httpx.WriteJSON(w, policy)
-		})(w, r)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (m *Module) handleGetConfiguration(w http.ResponseWriter, r *http.Request) {
+	policy, err := m.svc.GetCapacityPolicy(r.Context())
+	if err != nil {
+		WriteError(w, err)
+		return
 	}
+	httpx.WriteJSON(w, policy)
 }
 
-func (m *Module) handleFactoryEpics(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		epics, err := m.svc.ListWorkEpics(r.Context())
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
-		if epics == nil {
-			epics = []factory.WorkEpic{}
-		}
-		httpx.WriteJSON(w, epics)
-	case http.MethodPost:
-		m.deps.Guards.Localhost(m.handleFactoryEpicCreate)(w, r)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (m *Module) handleSetConfiguration(w http.ResponseWriter, r *http.Request) {
+	var policy factory.CapacityPolicy
+	if !decodeFactoryRequest(w, r, &policy) {
+		return
 	}
+	policy, err := m.svc.SetCapacityPolicy(r.Context(), policy)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, policy)
+}
+
+func (m *Module) handleListEpics(w http.ResponseWriter, r *http.Request) {
+	epics, err := m.svc.ListWorkEpics(r.Context())
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	if epics == nil {
+		epics = []factory.WorkEpic{}
+	}
+	httpx.WriteJSON(w, epics)
 }
 
 func (m *Module) handleFactoryEpicCreate(w http.ResponseWriter, r *http.Request) {
@@ -197,89 +139,57 @@ func (m *Module) handleFactoryEpicCreate(w http.ResponseWriter, r *http.Request)
 	httpx.WriteJSONStatus(w, http.StatusCreated, epic)
 }
 
-func (m *Module) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/factory/formulas")
-	if path == "" || path == "/" {
-		switch r.Method {
-		case http.MethodGet:
-			formulas, err := m.svc.ListFormulas(r.Context())
-			if err != nil {
-				WriteError(w, err)
-				return
-			}
-			if formulas == nil {
-				formulas = []factory.NativeFormulaView{}
-			}
-			httpx.WriteJSON(w, formulas)
-		case http.MethodPost:
-			m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
-				var req factory.FormulaSaveRequest
-				if !decodeFactoryRequest(w, r, &req) {
-					return
-				}
-				formula, err := m.svc.SaveFormula(r.Context(), req)
-				if err != nil {
-					WriteError(w, err)
-					return
-				}
-				httpx.WriteJSONStatus(w, http.StatusCreated, formula)
-			})(w, r)
-		default:
-			w.Header().Set("Allow", "GET, POST")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
+func (m *Module) handleListFormulas(w http.ResponseWriter, r *http.Request) {
+	formulas, err := m.svc.ListFormulas(r.Context())
+	if err != nil {
+		WriteError(w, err)
 		return
 	}
-	if path == "/validate" || path == "/preview" {
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if formulas == nil {
+		formulas = []factory.NativeFormulaView{}
+	}
+	httpx.WriteJSON(w, formulas)
+}
+
+func (m *Module) handleSaveFormula(w http.ResponseWriter, r *http.Request) {
+	var req factory.FormulaSaveRequest
+	if !decodeFactoryRequest(w, r, &req) {
+		return
+	}
+	formula, err := m.svc.SaveFormula(r.Context(), req)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSONStatus(w, http.StatusCreated, formula)
+}
+
+// checkFormula serves POST formulas/validate and formulas/preview.
+func checkFormula(check func(context.Context, string, string) (factory.NativeFormulaView, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Source string `json:"source"`
+			ID     string `json:"id"`
+		}
+		if !decodeFactoryRequest(w, r, &req) {
 			return
 		}
-		m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
-			var req struct {
-				Source string `json:"source"`
-				ID     string `json:"id"`
-			}
-			if !decodeFactoryRequest(w, r, &req) {
-				return
-			}
-			var formula factory.NativeFormulaView
-			var err error
-			if path == "/validate" {
-				formula, err = m.svc.ValidateFormula(r.Context(), req.Source, req.ID)
-			} else {
-				formula, err = m.svc.PreviewFormula(r.Context(), req.Source, req.ID)
-			}
-			if err != nil {
-				WriteError(w, err)
-				return
-			}
-			httpx.WriteJSON(w, formula)
-		})(w, r)
-		return
+		formula, err := check(r.Context(), req.Source, req.ID)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		httpx.WriteJSON(w, formula)
 	}
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	parts := strings.Split(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/formulas/"), "/")
-	if len(parts) != 2 || parts[0] == "" {
-		http.Error(w, "invalid Formula reference", http.StatusBadRequest)
-		return
-	}
-	id, err := url.PathUnescape(parts[0])
-	if err != nil {
-		http.Error(w, "invalid Formula reference", http.StatusBadRequest)
-		return
-	}
-	version, err := strconv.Atoi(parts[1])
+}
+
+func (m *Module) handleGetFormula(w http.ResponseWriter, r *http.Request) {
+	version, err := strconv.Atoi(r.PathValue("version"))
 	if err != nil || version < 1 {
 		http.Error(w, "invalid Formula revision", http.StatusBadRequest)
 		return
 	}
-	formula, err := m.svc.GetFormula(r.Context(), id, version)
+	formula, err := m.svc.GetFormula(r.Context(), r.PathValue("formula"), version)
 	if err != nil {
 		WriteError(w, err)
 		return

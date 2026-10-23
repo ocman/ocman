@@ -6,7 +6,9 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 )
 
-// Agents can propose graph edits; approval remains an operator decision.
+// factoryMCPService is what the factory and factory_control MCP tools call.
+// Agents can propose graph edits; approval remains an operator decision, so
+// the user-only actions below refuse with ErrActionNotPermitted.
 type factoryMCPService struct {
 	Service
 	proposeControl func(context.Context, string, string, map[string]string, string) (string, error)
@@ -30,46 +32,6 @@ func (s factoryMCPService) CreateWorkEpic(ctx context.Context, req factory.Creat
 func (s factoryMCPService) MutateGraph(ctx context.Context, mutation factory.GraphMutation) error {
 	mutation.Actor = "mcp"
 	return s.Service.MutateGraph(ctx, mutation)
-}
-
-func (s factoryMCPService) SubmitScopePlan(ctx context.Context, req factory.SubmitProposalRequest) (factory.ProposalRevision, error) {
-	service, ok := s.Service.(interface {
-		SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
-	})
-	if !ok {
-		return factory.ProposalRevision{}, factory.ErrActionNotPermitted
-	}
-	return service.SubmitScopePlan(ctx, req)
-}
-
-func (s factoryMCPService) RequestProject(ctx context.Context, attemptID, token, project, reason string) (factory.ProjectRequestGate, error) {
-	service, ok := s.Service.(interface {
-		RequestProject(context.Context, string, string, string, string) (factory.ProjectRequestGate, error)
-	})
-	if !ok {
-		return factory.ProjectRequestGate{}, factory.ErrActionNotPermitted
-	}
-	return service.RequestProject(ctx, attemptID, token, project, reason)
-}
-
-func (s factoryMCPService) RequestCheckpointRecovery(ctx context.Context, attemptID, token string) (factory.RecoveryGate, error) {
-	service, ok := s.Service.(interface {
-		RequestCheckpointRecovery(context.Context, string, string) (factory.RecoveryGate, error)
-	})
-	if !ok {
-		return factory.RecoveryGate{}, factory.ErrActionNotPermitted
-	}
-	return service.RequestCheckpointRecovery(ctx, attemptID, token)
-}
-
-func (s factoryMCPService) ReopenIssue(ctx context.Context, epicID, issueID string) error {
-	reopener, ok := s.Service.(interface {
-		ReopenIssue(context.Context, string, string) error
-	})
-	if !ok {
-		return factory.ErrActionNotPermitted
-	}
-	return reopener.ReopenIssue(ctx, epicID, issueID)
 }
 
 func (factoryMCPService) SaveFormula(context.Context, factory.FormulaSaveRequest) (factory.NativeFormulaView, error) {

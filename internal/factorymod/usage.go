@@ -25,7 +25,8 @@ type EpicUsage struct {
 	Incomplete bool                       `json:"incomplete"`
 }
 
-func (m *Module) handleFactoryUsage(w http.ResponseWriter, r *http.Request, epicID string) {
+func (m *Module) handleFactoryUsage(w http.ResponseWriter, r *http.Request) {
+	epicID := r.PathValue("epic")
 	if _, err := m.svc.GetWorkEpic(r.Context(), epicID); err != nil {
 		WriteError(w, err)
 		return

@@ -15,11 +15,7 @@ type factoryControlService interface {
 
 var factoryControlFields = []string{"issue_id", "mutation_json", "recovery_gate_id", "authority_gate_id", "project_gate_id", "decision", "response", "expected_revision", "expected_hash", "implementation_model"}
 
-func factoryControlServerTools(service any) []server.ServerTool {
-	svc, ok := service.(factoryControlService)
-	if !ok {
-		return nil
-	}
+func factoryControlServerTools(svc factoryControlService) []server.ServerTool {
 	options := []mcplib.ToolOption{
 		mcplib.WithDescription("Proposes a change to a Factory Epic for user confirmation: claim_plan, materialize, or reopen (issue_id), mutate_graph (mutation_json), resolve_recovery (recovery_gate_id, decision resume|retry|cancel, response), resolve_authority (authority_gate_id, decision approve|reject), resolve_project (project_gate_id, decision approve|reject, response; the user must explicitly allow local execution on the confirmation card), decide_plan (decision approve|revise|reject, expected_revision, expected_hash, response, implementation_model), deliver_as_is, pause, resume, or stop. Stop ends all Epic work without delivery, preserving partial files and recording unfinished work as cancelled. Nothing runs until the user clicks Confirm."),
 		mcplib.WithString("action", mcplib.Required()),
