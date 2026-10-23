@@ -33,9 +33,5 @@ func InferredStatus(s statev2.SessionSummary) db.SessionStatus {
 			return extra.InferredStatus
 		}
 	}
-	finish := s.Totals.Finish
-	if finish == "tool-calls" || finish == "unknown" {
-		finish = ""
-	}
-	return db.InferSessionStatus(s.Totals.Role, finish, s.Totals.Error, false)
+	return db.InferStoredSessionStatus(s.Totals.Role, s.Totals.Finish, s.Totals.Error)
 }

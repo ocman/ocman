@@ -68,6 +68,16 @@ func InferSessionStatus(lastRole, lastFinish, lastError string, synthesizedTermi
 	return StatusDone
 }
 
+// InferStoredSessionStatus applies InferSessionStatus to retained totals. A
+// stored tool-call or unknown finish ends a step, not the turn, so it remains
+// unfinished. Every stored reader must use this rule to agree on status.
+func InferStoredSessionStatus(lastRole, lastFinish, lastError string) SessionStatus {
+	if lastFinish == "tool-calls" || lastFinish == "unknown" {
+		lastFinish = ""
+	}
+	return InferSessionStatus(lastRole, lastFinish, lastError, false)
+}
+
 // Session represents a coding-platform session. Platform identifies the tool,
 // not the composer agent role. Unsupported platform fields are zero or nil.
 type Session struct {

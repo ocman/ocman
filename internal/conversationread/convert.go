@@ -13,7 +13,7 @@ import (
 // but do not consume normal conversation paging slots.
 func Convert(page *statev2.Detail, head *platforms.ConversationHead, platform string) (*platforms.SessionDetail, error) {
 	root := sessionRow(page.Session, platform)
-	root.Status = db.SettleSessionStatus(db.TurnUnobserved, false, db.InferSessionStatus(page.Conversation.LatestRole, page.Conversation.LatestFinish, page.Conversation.LatestError, false))
+	root.Status = db.SettleSessionStatus(db.TurnUnobserved, false, db.InferStoredSessionStatus(page.Conversation.LatestRole, page.Conversation.LatestFinish, page.Conversation.LatestError))
 	if head.Session != nil {
 		root = *head.Session
 		root.Platform = platform
@@ -64,7 +64,7 @@ func Convert(page *statev2.Detail, head *platforms.ConversationHead, platform st
 	for _, s := range page.Tree {
 		row := sessionRow(s, platform)
 		total := page.ConversationTotals[s.SessionID]
-		row.Status = db.SettleSessionStatus(db.TurnUnobserved, false, db.InferSessionStatus(total.Role, total.Finish, total.Error, false))
+		row.Status = db.SettleSessionStatus(db.TurnUnobserved, false, InferredStatus(statev2.SessionSummary{Session: s, Totals: total}))
 		if row.ID == root.ID {
 			row = root
 		}

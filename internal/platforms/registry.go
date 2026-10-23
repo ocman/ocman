@@ -42,7 +42,7 @@ func (r *Registry) Register(p Platform) {
 	defer r.mu.Unlock()
 
 	id := p.ID()
-	if r.canonical && !canonicalAdapter(p) {
+	if r.canonical && !CanonicalAdapter(p) {
 		log.WithField("platform", id).Error("refusing non-canonical session adapter after identity cutover")
 		return
 	}
@@ -55,7 +55,18 @@ func (r *Registry) Register(p Platform) {
 	}
 }
 
-func canonicalAdapter(p Platform) bool {
+// SessionRegistry is the routing contract shared by session services. Wrappers
+// must forward CanonicalSessionIDs; dropping it silently reverts to native
+// reverse-cache ownership.
+type SessionRegistry interface {
+	Get(ID) (Platform, bool)
+	Platforms() []Platform
+	PlatformForSession(context.Context, string) (Platform, bool)
+	CanonicalSessionIDs() bool
+}
+
+// CanonicalAdapter reports whether an adapter exposes Ocman session IDs.
+func CanonicalAdapter(p any) bool {
 	canonical, ok := p.(interface{ CanonicalSessionIDs() bool })
 	return ok && canonical.CanonicalSessionIDs()
 }
@@ -67,7 +78,7 @@ func (r *Registry) EnableCanonicalSessions() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, p := range r.byID {
-		if !canonicalAdapter(p) {
+		if !CanonicalAdapter(p) {
 			return fmt.Errorf("platform %s has no canonical session boundary", p.ID())
 		}
 	}

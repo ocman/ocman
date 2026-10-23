@@ -17,7 +17,7 @@ func pluginSessionReference(ctx context.Context, adapter platforms.Platform, id 
 	if compatibility, ok := adapter.(platforms.PluginSessionCompatibility); ok {
 		return compatibility.PluginSessionReference(ctx, id)
 	}
-	if canonical, ok := adapter.(interface{ CanonicalSessionIDs() bool }); ok && canonical.CanonicalSessionIDs() {
+	if platforms.CanonicalAdapter(adapter) {
 		return "", plugins.ErrUnavailable
 	}
 	return id, nil

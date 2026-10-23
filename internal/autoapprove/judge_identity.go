@@ -11,8 +11,7 @@ import (
 // application notification crosses the canonical identity boundary.
 func (s *Service) judgeSessionIdentity(ctx context.Context, native string) (string, error) {
 	adapter := s.OpencodeAdapter()
-	canonical, ok := adapter.(interface{ CanonicalSessionIDs() bool })
-	if !ok || !canonical.CanonicalSessionIDs() {
+	if !platforms.CanonicalAdapter(adapter) {
 		return native, nil
 	}
 	projector, ok := adapter.(platforms.HelperSessionIdentity)

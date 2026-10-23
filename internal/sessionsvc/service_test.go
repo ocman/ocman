@@ -187,9 +187,12 @@ func (f *fakePlatform) Unrevert(_ context.Context, req platforms.UnrevertSession
 
 // fakeRegistry serves Get from byID and PlatformForSession from owner.
 type fakeRegistry struct {
-	byID  map[platforms.ID]platforms.Platform
-	owner platforms.Platform
+	byID      map[platforms.ID]platforms.Platform
+	owner     platforms.Platform
+	canonical bool
 }
+
+func (r *fakeRegistry) CanonicalSessionIDs() bool { return r.canonical }
 
 func (r *fakeRegistry) Get(id platforms.ID) (platforms.Platform, bool) {
 	p, ok := r.byID[id]

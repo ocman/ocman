@@ -291,6 +291,7 @@ func (r registryRef) Platforms() []platforms.Platform                { return r.
 func (r registryRef) PlatformForSession(ctx context.Context, sessionID string) (platforms.Platform, bool) {
 	return r.s.registry.PlatformForSession(ctx, sessionID)
 }
+func (r registryRef) CanonicalSessionIDs() bool { return r.s.registry.CanonicalSessionIDs() }
 
 // refreshProjectsIndexAsync refreshes the projects index off the request
 // path: the heavy GetProjects() aggregate (correlated per-directory

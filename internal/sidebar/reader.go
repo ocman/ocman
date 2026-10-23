@@ -129,7 +129,7 @@ func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		switch status {
 		case db.StatusBusy, db.StatusWaiting, db.StatusDone, db.StatusError, db.StatusInterrupted:
 		default:
-			status = db.InferSessionStatus(role, finish, lastError, false)
+			status = db.InferStoredSessionStatus(role, finish, lastError)
 		}
 		row.Status = status
 		platforms.OverlaySessionObservation(&row, &platforms.LiveState{Status: liveStatus, PendingPermission: row.PendingPermission, PendingQuestion: row.PendingQuestion}, row.LiveConnection)

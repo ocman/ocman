@@ -31,7 +31,7 @@ func (s *Service) CanonicalSessionReferences(scope string) bool {
 	if s == nil || s.registry == nil {
 		return false
 	}
-	if canonical, ok := s.registry.(interface{ CanonicalSessionIDs() bool }); ok && canonical.CanonicalSessionIDs() {
+	if s.registry.CanonicalSessionIDs() {
 		return true
 	}
 	if scope != "" {

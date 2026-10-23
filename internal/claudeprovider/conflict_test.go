@@ -106,6 +106,7 @@ type providerPlatform struct {
 }
 
 type oneAdapter struct{ a platforms.Platform }
+func (oneAdapter) CanonicalSessionIDs() bool { return false }
 
 func (r oneAdapter) Get(id platforms.ID) (platforms.Platform, bool) { return r.a, id == r.a.ID() }
 func (r oneAdapter) Platforms() []platforms.Platform                { return []platforms.Platform{r.a} }

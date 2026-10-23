@@ -8,11 +8,7 @@ import (
 )
 
 // IdentityRegistry is the routing contract needed by the legacy-link gateway.
-type IdentityRegistry interface {
-	Get(platforms.ID) (platforms.Platform, bool)
-	Platforms() []platforms.Platform
-	PlatformForSession(context.Context, string) (platforms.Platform, bool)
-}
+type IdentityRegistry = platforms.SessionRegistry
 
 // IdentityGateway keeps pre-cutover identity and receipt compatibility inside
 // the platform integration. Core services never resolve native execution keys.
@@ -30,10 +26,7 @@ func NewIdentityGateway(store *sessioncatalog.Store, owner string, registry func
 
 // CanonicalSessionIDs is an integration capability, not a platform identity.
 func CanonicalSessionIDs(p platforms.Integration) bool {
-	if canonical, ok := p.(interface{ CanonicalSessionIDs() bool }); ok {
-		return canonical.CanonicalSessionIDs()
-	}
-	return false
+	return platforms.CanonicalAdapter(p)
 }
 
 func (*Adapter) CanonicalSessionIDs() bool { return true }
@@ -47,7 +40,7 @@ func (g *IdentityGateway) CoreReference(info *platforms.SessionIdentity) string 
 	if g == nil {
 		return info.ID
 	}
-	if canonical, ok := g.registry().(interface{ CanonicalSessionIDs() bool }); ok && canonical.CanonicalSessionIDs() {
+	if g.registry().CanonicalSessionIDs() {
 		return info.ID
 	}
 	if p, ok := g.registry().Get(platforms.ID(info.Platform)); ok && CanonicalSessionIDs(p) {

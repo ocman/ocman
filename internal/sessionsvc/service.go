@@ -20,11 +20,7 @@ import (
 
 // Registry is the consumer-side subset of *platforms.Registry the
 // service needs.
-type Registry interface {
-	Get(id platforms.ID) (platforms.Platform, bool)
-	Platforms() []platforms.Platform
-	PlatformForSession(ctx context.Context, sessionID string) (platforms.Platform, bool)
-}
+type Registry = platforms.SessionRegistry
 
 // Hooks are optional callbacks fired around mutations. Nil fields are
 // skipped. They exist so transport-independent side effects (auto-approve
@@ -130,7 +126,7 @@ func (s *Service) resolve(ctx context.Context, sessionID, platformID string) (pl
 	if identity.IsPendingReference(sessionID) {
 		return nil, platforms.ErrPlatformUnreachable
 	}
-	if canonical, ok := s.registry.(interface{ CanonicalSessionIDs() bool }); ok && canonical.CanonicalSessionIDs() {
+	if s.registry.CanonicalSessionIDs() {
 		return s.identities.OwnerPlatform(ctx, sessionID, platformID)
 	}
 	if platformID != "" {
