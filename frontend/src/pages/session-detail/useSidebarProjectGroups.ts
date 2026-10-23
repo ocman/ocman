@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Session, SessionStatus } from '../../lib/api';
-import { useApiStore } from '../../lib/apiStore';
+import { api } from '../../lib/api';
 import { useUiStore } from '../../lib/uiStore';
 import { useProjects } from '../../lib/queries';
 import { shortPath } from '../../lib/format';
@@ -57,7 +57,7 @@ export function useSidebarProjectGroups({
     expanded.current = opened;
     expandProjects([key]);
   }, [id, recentSessions, identity, expandProjects]);
-  const archiveProject = useApiStore((state) => state.archiveProject);
+  const archiveProject = api.archiveProject;
   // Optimistically-archived project roots: hides the group immediately
   // while /api/projects refetches (project-archive state isn't carried
   // on the session payloads driving the sidebar).

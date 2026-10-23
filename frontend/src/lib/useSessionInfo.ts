@@ -1,4 +1,4 @@
-import { useApiStore } from './apiStore';
+import { api } from './api';
 import type { SessionInfo } from './api';
 import {
   useSessionResourceQuery,
@@ -36,7 +36,7 @@ export function useSessionInfo(
   sessionId: string | undefined,
   { platformId, ...options }: UseSessionInfoOptions = {},
 ): UseSessionInfoResult {
-  const getSessionInfo = useApiStore((s) => s.getSessionInfo);
+  const getSessionInfo = api.sessionInfo;
   return useSessionResourceQuery(
     sessionId ? ['session-info', platformId ?? 'local', sessionId] : undefined,
     (signal) => getSessionInfo(sessionId!, signal, platformId),

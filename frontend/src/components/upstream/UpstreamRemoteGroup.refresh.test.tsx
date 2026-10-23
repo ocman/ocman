@@ -46,7 +46,7 @@ it('keeps an expanded PR row and its CI status mounted through list and checks r
   expect(screen.getByTestId('pr-row-7')).toBe(row);
   expect(screen.getByTestId('pr-detail-7')).toBe(details);
   expect(screen.getByRole('img', { name: /All checks passed/ })).toBe(badge);
-  expect(screen.getByText('Updated change')).toBeInTheDocument();
+  expect(await screen.findByText('Updated change')).toBeInTheDocument();
   await act(async () => finishChecks({ state: 'failure', checks: [{ name: 'build', state: 'failure' }] }));
   expect(screen.getByRole('img', { name: /Some checks failed/ })).toBe(badge);
 });

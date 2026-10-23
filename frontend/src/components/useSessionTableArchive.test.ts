@@ -5,7 +5,7 @@ import type { Session } from '../lib/api';
 import { useSessionTableArchive } from './useSessionTableArchive';
 
 const archiveSession = vi.hoisted(() => vi.fn());
-vi.mock('../lib/apiStore', () => ({ useApiStore: (select: (state: { archiveSession: typeof archiveSession }) => unknown) => select({ archiveSession }) }));
+vi.mock('../lib/api', () => ({ api: { archiveSession, debugLog: vi.fn() } }));
 const session = { id: 'session', platform: 'r-box:opencode', timeUpdated: 123 } as Session;
 const event = () => ({ stopPropagation: vi.fn() }) as never;
 beforeEach(() => archiveSession.mockReset());

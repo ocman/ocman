@@ -107,7 +107,7 @@ interface WorktreeFormProps {
 }
 
 function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId, close }: WorktreeFormProps) {
-  const projectsLoader = useApiStore((s) => s.getProjects);
+  const projectsLoader = api.projects;
   const seedNewSession = useApiStore((s) => s.seedNewSession);
   const navigate = useNavigate();
 

@@ -15,8 +15,8 @@ const info: SessionInfo = {
   commits: [],
 };
 const getSessionInfo = vi.fn<(id: string, signal?: AbortSignal, platform?: string) => Promise<SessionInfo>>(() => Promise.resolve(info));
-vi.mock('./apiStore', () => ({
-  useApiStore: (selector: (state: { getSessionInfo: typeof getSessionInfo }) => unknown) => selector({ getSessionInfo }),
+vi.mock('./api', () => ({
+  api: { sessionInfo: getSessionInfo },
 }));
 
 const { useSessionInfo } = await import('./useSessionInfo');

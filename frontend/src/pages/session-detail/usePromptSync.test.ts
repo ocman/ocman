@@ -11,9 +11,12 @@ const listPermissions = vi.fn<(sid?: string, platform?: string) => Promise<unkno
 const listQuestions = vi.fn<(sid?: string, platform?: string) => Promise<unknown[]>>(async () => []);
 const refreshPermissions = vi.fn<(sid?: string) => Promise<unknown[]>>(async () => []);
 
-vi.mock('../../lib/apiStore', () => ({
-  useApiStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ listPermissions, listQuestions, refreshPermissions }),
+vi.mock('../../lib/api', () => ({
+  api: {
+    listPermissions: (...args: Parameters<typeof listPermissions>) => listPermissions(...args),
+    listQuestions: (...args: Parameters<typeof listQuestions>) => listQuestions(...args),
+    refreshPermissions: (...args: Parameters<typeof refreshPermissions>) => refreshPermissions(...args),
+  },
 }));
 
 import { usePromptSync, type UsePromptSyncOptions } from './usePromptSync';

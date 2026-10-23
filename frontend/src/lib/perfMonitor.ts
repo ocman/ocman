@@ -21,9 +21,7 @@
  * Read with `window.__ocmanPerf.metrics()`; reset with `resetMetrics()`.
  * A summary is beaconed to `POST /api/debug/log` when the tab is hidden.
  *
- * Entries are taken from PerformanceObservers, never from the global
- * performance buffer, so usePerformanceCleanup's periodic
- * clearMarks/clearMeasures/clearResourceTimings cannot drop them.
+ * Entries are copied from PerformanceObservers into a bounded ring buffer.
  */
 import { attachServerTiming, installDevHandle, templatePath } from './perfRing';
 

@@ -18,7 +18,25 @@ vi.hoisted(() => {
 });
 
 import { api, type Session, type SessionDetail } from '../../lib/api';
-import { useApiStore } from '../../lib/apiStore';
+import { useApiStore as store } from '../../lib/apiStore';
+
+// Keep each test's scheduling fixtures separate from the real store state.
+const useApiStore = {
+  getState: store.getState,
+  setState: (patch: Partial<ReturnType<typeof store.getState>> & {
+    getSessions?: typeof api.sessions;
+    getSession?: typeof api.session;
+    archiveSession?: typeof api.archiveSession;
+    pinSession?: typeof api.pinSession;
+  }) => {
+    const { getSessions, getSession, archiveSession, pinSession, ...state } = patch;
+    if (getSessions) vi.spyOn(api, 'sessions').mockImplementation(getSessions);
+    if (getSession) vi.spyOn(api, 'session').mockImplementation(getSession);
+    if (archiveSession) vi.spyOn(api, 'archiveSession').mockImplementation(archiveSession);
+    if (pinSession) vi.spyOn(api, 'pinSession').mockImplementation(pinSession);
+    store.setState(state);
+  },
+};
 import { useUiStore } from '../../lib/uiStore';
 import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
 

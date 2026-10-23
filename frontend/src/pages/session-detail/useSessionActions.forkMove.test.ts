@@ -37,8 +37,7 @@ const forkSession = vi.mocked(api.forkSession);
 const moveSession = vi.mocked(api.moveSession);
 const navigateToSession = vi.fn();
 const failFn = vi.fn();
-const setShowForkPicker = vi.fn();
-const setShowMovePicker = vi.fn();
+const openModal = vi.fn();
 
 function makeOptions(caps: Partial<UseSessionActionsOptions['caps']> = {}): UseSessionActionsOptions {
   return {
@@ -69,9 +68,7 @@ function makeOptions(caps: Partial<UseSessionActionsOptions['caps']> = {}): UseS
     handleCompact: vi.fn().mockResolvedValue(undefined),
     handleNewSession: vi.fn().mockResolvedValue(undefined),
     handleTmuxShortcut: vi.fn(),
-    setShowRenameModal: vi.fn(),
-    setShowForkPicker,
-    setShowMovePicker,
+    openModal,
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),
@@ -85,8 +82,7 @@ beforeEach(() => {
   navigateToSession.mockClear();
   patchRecentSession.mockClear();
   failFn.mockClear();
-  setShowForkPicker.mockClear();
-  setShowMovePicker.mockClear();
+  openModal.mockClear();
 });
 
 describe('useSessionActions — /fork command', () => {
@@ -97,7 +93,7 @@ describe('useSessionActions — /fork command', () => {
       await result.current.handleCommand('fork', '');
     });
 
-    expect(setShowForkPicker).toHaveBeenCalledWith(true);
+    expect(openModal).toHaveBeenCalledWith('fork');
     expect(forkSession).not.toHaveBeenCalled();
   });
 
@@ -120,7 +116,7 @@ describe('useSessionActions — /move command', () => {
       await result.current.handleCommand('move', '');
     });
 
-    expect(setShowMovePicker).toHaveBeenCalledWith(true);
+    expect(openModal).toHaveBeenCalledWith('move');
     expect(moveSession).not.toHaveBeenCalled();
   });
 
@@ -132,6 +128,6 @@ describe('useSessionActions — /move command', () => {
     });
 
     expect(moveSession).not.toHaveBeenCalled();
-    expect(setShowMovePicker).not.toHaveBeenCalled();
+    expect(openModal).not.toHaveBeenCalled();
   });
 });

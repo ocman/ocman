@@ -7,7 +7,7 @@ import { SaveStatus } from '../../components/SaveStatus';
 import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../components/SettingRow';
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
-import { useApiStore } from '../../lib/apiStore';
+import { api } from '../../lib/api';
 import { useLocalOpenCode } from '../../lib/useCapabilities';
 import { Button } from '../../components/Control';
 import { ReviewerPromptSectionEditor, type PromptSection } from './ReviewerPromptSectionEditor';
@@ -26,11 +26,8 @@ export function AutoApproveSection() {
   const setAutoApproveDelayMs = useUiStore((s) => s.setAutoApproveDelayMs);
   const promptSections = useUiStore((s) => s.promptSections);
   const setPromptSections = useUiStore((s) => s.setPromptSections);
-  const setPromptSectionsApi = useApiStore((s) => s.setPromptSectionsApi);
-  const setJudgeDelayApi = useApiStore((s) => s.setJudgeDelayApi);
-  const getJudgeModel = useApiStore((s) => s.getJudgeModel);
-  const setJudgeModelApi = useApiStore((s) => s.setJudgeModelApi);
-  const getJudgeModelOptions = useApiStore((s) => s.getJudgeModelOptions);
+  const { setPromptSections: setPromptSectionsApi, setJudgeDelay: setJudgeDelayApi,
+    getJudgeModel, setJudgeModel: setJudgeModelApi, getJudgeModelOptions } = api;
   const delaySave = useSaveStatus();
   const sectionsSave = useSaveStatus();
   const autoApproveSave = useSettingSave();
@@ -39,8 +36,7 @@ export function AutoApproveSection() {
   // The reviewer model picks an OpenCode model; the Claude judge is fixed.
   const openCode = useLocalOpenCode();
   const [modelCatalog, setModelCatalog] = useState({ models: [] as string[], default: '' });
-  const getPromptSections = useApiStore((s) => s.getPromptSections);
-  const getJudgeDelay = useApiStore((s) => s.getJudgeDelay);
+  const { getPromptSections, getJudgeDelay } = api;
 
   // Settings keeps this section mounted while open: load what the backend
   // judge actually uses, even if another client changed it.

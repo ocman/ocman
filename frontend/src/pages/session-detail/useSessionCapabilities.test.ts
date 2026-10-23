@@ -23,6 +23,7 @@ vi.mock('../../lib/apiStore', () => ({
 
 vi.mock('../../lib/api', () => ({
   api: {
+    models: () => storeState.getModels(),
     agents: vi.fn().mockResolvedValue([{ name: 'build' }]),
     sessionModels: vi.fn().mockResolvedValue({ models: [{ provider: 'p', model: 'm' }] }),
     addFavorite: vi.fn().mockResolvedValue(undefined),

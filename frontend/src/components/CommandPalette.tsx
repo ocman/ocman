@@ -1,7 +1,6 @@
 import { useState, useEffect, useId, useRef, useMemo, useCallback } from 'react';
 import './CommandPalette.css';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useApiStore } from '../lib/apiStore';
 import { useSessions } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
@@ -155,9 +154,9 @@ export function CommandPalette() {
   });
   const navigate = useNavigate();
   const location = useLocation();
-  const projects = useApiStore((s) => s.getProjects);
-  const browseDirectories = useApiStore((s) => s.browseDirectories);
-  const searchDirectories = useApiStore((s) => s.searchDirectories);
+  const projects = api.projects;
+  const browseDirectories = api.browseDirectories;
+  const searchDirectories = api.searchDirectories;
   const launchAllowed = useOpencodeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const paletteOpen = useUiStore((s) => s.paletteOpen);

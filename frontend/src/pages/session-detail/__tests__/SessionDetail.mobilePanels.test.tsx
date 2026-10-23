@@ -118,7 +118,11 @@ describe('SessionDetail — phone overlay panels', () => {
   it.each(['archive', 'next'] as const)('reports a forced current-session fallback failure for %s', async (action) => {
     vi.stubGlobal('innerWidth', 390);
     try {
-      const { store } = renderSessionPage({ sessionId: 'sess_1', sessions: [], storeOverrides: { getSession: vi.fn().mockRejectedValue(new Error('Fallback unavailable')) } });
+      const { store } = renderSessionPage({ sessionId: 'sess_1', sessions: [], storeOverrides: {
+        getSession: vi.fn().mockImplementation((_id: string, limit?: number) => limit === 1
+          ? Promise.reject(new Error('Fallback unavailable'))
+          : Promise.resolve(makeSessionDetail(makeSession({ id: 'sess_1' })))),
+      } });
       const input = await screen.findByRole('textbox');
       if (action === 'archive') {
         await userEvent.type(input, '/archive');

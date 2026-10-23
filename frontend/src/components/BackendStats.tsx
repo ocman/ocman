@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useApiStore } from '../lib/apiStore';
+import { api } from '../lib/api';
 import { useRunningSessionCount } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { IconButton } from './IconButton';
@@ -25,7 +25,7 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
   const [uptime, setUptime] = useState<number | null>(null);
   const [frontendMemory, setFrontendMemory] = useState<number | null>(null);
   const longTasks = useLongTaskMonitor();
-  const getSystemStats = useApiStore((s) => s.getSystemStats);
+  const getSystemStats = api.systemStats;
   const runningSessions = useRunningSessionCount(enabled).data?.count;
   const expanded = useUiStore((s) => s.sidebarStatsExpanded);
   const toggleStats = useUiStore((s) => s.toggleSidebarStats);

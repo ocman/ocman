@@ -32,13 +32,12 @@ import { SetupPrompt } from './components/SetupPrompt';
 import { BackendStatusBanner } from './components/BackendStatusBanner';
 import { AuthGate } from './components/AuthGate';
 import { useUiStore } from './lib/uiStore';
+import { api } from './lib/api';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
 import { insertProvisionalSession, inboxEventRefresh } from './lib/queries';
 import { queryEventRefresh } from './lib/queryEventRefresh';
 import { remoteLog } from './lib/remoteLog';
-import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
-import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 import { installPerfMonitor } from './lib/perfMonitor';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
@@ -80,10 +79,10 @@ export function GlobalHotkeys() {
   // Pops the closed-session stack, unarchives it on the server, flips the
   // optimistic flag in the recent-sessions list, then navigates to it.
   const reopenClosedSession = useCallback(() => {
-    const { popClosedSession, archiveSession } = useApiStore.getState();
+    const { popClosedSession } = useApiStore.getState();
     const closed = popClosedSession();
     if (!closed) return;
-    archiveSession(closed.platform, closed.id, closed.timeUpdated, false).catch((err) => {
+    api.archiveSession(closed.platform, closed.id, closed.timeUpdated, false).catch((err) => {
       remoteLog.error('Failed to reopen closed session', err);
     });
     patchSessionLists(closed.id, { archived: false }, closed.platform);
@@ -250,16 +249,6 @@ function ServiceWorkerNavListener() {
   return null;
 }
 
-function PerformanceCleanup() {
-  usePerformanceCleanup();
-  return null;
-}
-
-function MemoryMonitor() {
-  useMemoryMonitor();
-  return null;
-}
-
 // Mounts the global longtask observer at app boot so we capture
 // main-thread stalls regardless of whether BackendStats is rendered.
 // The hook is idempotent — BackendStats can also call useLongTaskMonitor
@@ -347,8 +336,6 @@ function AuthenticatedShell() {
       <HookPluginPrompt />
       <SetupPrompt />
       <ServiceWorkerNavListener />
-      <PerformanceCleanup />
-      <MemoryMonitor />
       <LongTaskMonitor />
       <PerfDevHandle />
       <GlobalHotkeys />

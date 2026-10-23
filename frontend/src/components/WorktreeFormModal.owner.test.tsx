@@ -14,6 +14,7 @@ vi.mock('../lib/uiStore', () => ({
 }));
 vi.mock('../lib/api', () => ({
   api: {
+    projects: (...args: unknown[]) => projectsLoader(...args),
     gitBranches: vi.fn().mockResolvedValue({ branches: ['main', 'develop'] }),
     worktree: {
       defaultBaseRef: vi.fn().mockResolvedValue({ baseRef: 'main' }),

@@ -93,7 +93,7 @@ function Child() {
     recentSessionsRef: useRef([]), messagesRef: useRef([]), partsRef: useRef([]), isRunningRef: busy,
     failedSends, setFailedSends, pending, navigate: noop, navigateToSession: noop, openWorktreeForm: noop,
     handleCompact: async () => {}, handleNewSession: async () => {}, handleTmuxShortcut: noop,
-    setShowRenameModal: noop, setShowForkPicker: noop, setShowMovePicker: noop, setShowRenameToast: noop,
+    openModal: noop, setShowRenameToast: noop,
     setShowDisconnectedToast: noop, setRestartToastMessage: noop, setCopyToastMessage: noop,
   });
   return <>

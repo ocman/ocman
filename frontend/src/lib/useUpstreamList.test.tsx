@@ -3,8 +3,9 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import * as api from './upstreamApi';
 import { useUpstreamList } from './useUpstreamList';
+import { queryClient } from './queryClient';
 
-beforeEach(() => vi.restoreAllMocks());
+beforeEach(() => { vi.restoreAllMocks(); queryClient.clear(); });
 
 it('only bypasses the backend cache for an explicit refresh, not page changes or automatic reads', async () => {
   const fetch = vi.spyOn(api, 'fetchPRs').mockResolvedValue({ prs: [], pagination: { page: 1, hasMore: true }, rateLimit: { limited: false } });
@@ -116,7 +117,7 @@ it('does not expose rows from another owner or query', async () => {
   }
 });
 
-it('does not expose rows from the previous page', async () => {
+it('keeps rows from the previous page while the next page loads', async () => {
   vi.spyOn(api, 'fetchPRs')
     .mockResolvedValueOnce({
       prs: [{ number: 7, title: 'page one' } as api.PR],
@@ -134,8 +135,9 @@ it('does not expose rows from the previous page', async () => {
   await waitFor(() => expect(result.current.items).toHaveLength(1));
 
   act(() => result.current.setPage(2));
-  expect(result.current.items).toEqual([]);
-  expect(snapshots).not.toContainEqual({ page: 2, titles: ['page one'] });
+  expect(result.current.items.map(item => item.title)).toEqual(['page one']);
+  expect(result.current.loading).toBe(true);
+  expect(snapshots).toContainEqual({ page: 2, titles: ['page one'] });
 });
 
 it.each(['prs', 'issues'] as const)('keeps %s visible on refresh failure and updates them on retry', async (kind) => {

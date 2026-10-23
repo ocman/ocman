@@ -14,6 +14,7 @@ import { openVSCode } from '../../lib/shortcuts';
 import type { UsePendingSendResult } from './usePendingSend';
 import { remoteLog } from '../../lib/remoteLog';
 import { runSlashCommand } from './slashCommands';
+import type { SessionModal } from './useSessionModal';
 import type { Message, Part, Session } from '../../lib/api';
 
 // Narrowed session shape — only the fields needed by these handlers.
@@ -79,9 +80,7 @@ export interface UseSessionActionsOptions {
   handleCompact: () => Promise<void>;
   handleNewSession: (title?: string) => Promise<void>;
   handleTmuxShortcut: () => void;
-  setShowRenameModal: (show: boolean) => void;
-  setShowForkPicker: (show: boolean) => void;
-  setShowMovePicker: (show: boolean) => void;
+  openModal: (modal: SessionModal) => void;
   setShowRenameToast: Dispatch<SetStateAction<boolean>>;
   setShowDisconnectedToast: Dispatch<SetStateAction<boolean>>;
   setRestartToastMessage: Dispatch<SetStateAction<string | null>>;
@@ -170,9 +169,7 @@ export function useSessionActions({
   handleCompact,
   handleNewSession,
   handleTmuxShortcut,
-  setShowRenameModal,
-  setShowForkPicker,
-  setShowMovePicker,
+  openModal,
   setShowRenameToast,
   setShowDisconnectedToast,
   setRestartToastMessage,
@@ -211,8 +208,7 @@ export function useSessionActions({
     : null;
 
   const sendMessage = useApiStore((state) => state.sendMessage);
-  const abortSession = useApiStore((state) => state.abortSession);
-  const archiveSession = useApiStore((state) => state.archiveSession);
+  const { abortSession, archiveSession } = api;
 
   // Internal send. Drives both `handleSend` (fresh prompt) and
   // `handleRetrySend` (replay of a previously failed send) so the
@@ -452,9 +448,7 @@ export function useSessionActions({
       handleNewSession,
       handleTmuxShortcut,
       handleVSCodeShortcut,
-      setShowRenameModal,
-      setShowForkPicker,
-      setShowMovePicker,
+      openModal,
       setShowRenameToast,
       setShowDisconnectedToast,
       setRestartToastMessage,
@@ -485,7 +479,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, loadNavigationSessions, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending, routeSessionId, scope]);
+  }, [activeAgent, archiveSession, caps, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, loadNavigationSessions, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, openModal, setShowDisconnectedToast, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending, routeSessionId, scope]);
 
   return {
     awaitingAssistantResponse,

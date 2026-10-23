@@ -1,14 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { queryClient } from './queryClient';
 import { useDocumentVisible } from './usePanelVisible';
 import {
-  fetchPRs,
-  fetchIssues,
-  UpstreamApiError,
-  type PR,
-  type Issue,
-  type Pagination,
-  type RateLimit,
-  type StateFilter,
+  fetchPRs, fetchIssues, UpstreamApiError,
+  type PR, type Issue, type Pagination, type RateLimit, type StateFilter,
 } from './upstreamApi';
 
 export type UpstreamListItem = PR | Issue;
@@ -24,12 +20,7 @@ export interface UseUpstreamListResult<T extends UpstreamListItem> {
   page: number;
 }
 
-/**
- * useUpstreamList fetches one page of PRs or Issues for a single
- * remote. Re-fetches when any of (dir, remoteId, remote, state, mine, page)
- * change, and exposes a manual `refresh()` callback for the toolbar
- * refresh button. Same-query refreshes keep existing rows visible.
- */
+/** One owner-scoped page. Page changes keep rows; filter changes clear them. */
 export function useUpstreamList<T extends UpstreamListItem>(opts: {
   kind: 'prs' | 'issues';
   dir: string;
@@ -37,120 +28,48 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   remote: string;
   state: StateFilter;
   mine: string | undefined;
-  /** When false (e.g. tab not yet opened), no fetch is issued. */
   enabled: boolean;
 }): UseUpstreamListResult<T> {
   const visible = useDocumentVisible();
   const { kind, dir, remoteId, remote, state, mine, enabled } = opts;
-  const [page, setPage] = useState(1);
-  const [items, setItems] = useState<T[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<UpstreamApiError | Error | null>(null);
-  const [pagination, setPagination] = useState<Pagination>({ page: 1, hasMore: false });
-  const [rateLimit, setRateLimit] = useState<RateLimit>({ limited: false });
-  // refreshCounter increments to force a re-run of the effect even
-  // when none of the dependencies changed (manual refresh button).
-  const [refreshCounter, setRefreshCounter] = useState(0);
-  const refreshRequested = useRef(false);
-  const requestKey = JSON.stringify([kind, dir, remoteId, remote, state, mine, page, enabled]);
-  const [activeKey, setActiveKey] = useState(requestKey);
-  const lastRequestKey = useRef(requestKey);
-
-  const abortRef = useRef<AbortController | null>(null);
-
-  // Reset to page 1 whenever the filter changes — otherwise we'd be
-  // showing page 3 of "open" right after toggling to "closed". Wrap
-  // the call to satisfy the lint rule against synchronous setState
-  // in effect bodies.
-  useEffect(() => {
-    const reset = () => setPage(1);
-    reset();
-  }, [state, mine, dir, remoteId, remote, kind]);
-
-  useEffect(() => {
-    if (!visible) return;
-    if (!enabled || !dir || !remote) {
-      const reset = () => {
-        lastRequestKey.current = requestKey;
-        setActiveKey(requestKey);
-        setItems([]);
-        setLoading(false);
-        setError(null);
-        setPagination({ page: 1, hasMore: false });
-        setRateLimit({ limited: false });
-      };
-      reset();
-      return;
-    }
-    // Defer the synchronous setStates into a helper so the lint
-    // rule's "no setState directly in effect" check passes. Matches
-    // useGitInfo's structure.
-    const run = () => {
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
-      if (lastRequestKey.current !== requestKey) {
-        setItems([]);
-        setPagination({ page: 1, hasMore: false });
+  const filters = JSON.stringify([kind, dir, remoteId, remote, state, mine]);
+  const [selection, setSelection] = useState({ filters, page: 1 });
+  if (selection.filters !== filters) setSelection({ filters, page: 1 });
+  const page = selection.filters === filters ? selection.page : 1;
+  const fresh = useRef(false);
+  const active = enabled && !!dir && !!remote;
+  const query = useQuery({
+    queryKey: ['upstream-list', filters, page],
+    queryFn: async ({ signal }) => {
+      const params = { dir, remoteId, remote, state, mine, page, signal, refresh: fresh.current };
+      fresh.current = false;
+      if (kind === 'prs') {
+        const result = await fetchPRs(params);
+        return { items: result.prs as T[], pagination: result.pagination, rateLimit: result.rateLimit };
       }
-      lastRequestKey.current = requestKey;
-      setActiveKey(requestKey);
-      setLoading(true);
-      setError(null);
-      setRateLimit({ limited: false });
-
-      const params = { dir, remoteId, remote, state, mine, page, signal: ctrl.signal, refresh: refreshRequested.current };
-      refreshRequested.current = false;
-      const fetcher =
-        kind === 'prs'
-          ? fetchPRs(params).then((r) => ({
-              items: r.prs as unknown as T[],
-              pagination: r.pagination,
-              rateLimit: r.rateLimit,
-            }))
-          : fetchIssues(params).then((r) => ({
-              items: r.issues as unknown as T[],
-              pagination: r.pagination,
-              rateLimit: r.rateLimit,
-            }));
-
-      fetcher
-        .then((res) => {
-          if (ctrl.signal.aborted) return;
-          setItems(res.items);
-          setPagination(res.pagination);
-          setRateLimit(res.rateLimit);
-          setLoading(false);
-        })
-        .catch((err: unknown) => {
-          if (ctrl.signal.aborted) return;
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          if (err instanceof UpstreamApiError) {
-            setError(err);
-          } else if (err instanceof Error) {
-            setError(err);
-          } else {
-            setError(new Error(String(err)));
-          }
-          setLoading(false);
-        });
-    };
-    run();
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, [enabled, dir, remoteId, remote, state, mine, page, kind, refreshCounter, requestKey, visible]);
-
-  const refresh = useCallback((fresh = true) => {
-    refreshRequested.current = fresh;
-    setRefreshCounter((n) => n + 1);
-  }, []);
-
-  if (activeKey !== requestKey) {
-    return {
-      items: [], loading: enabled && !!dir && !!remote, error: null,
-      pagination: { page: 1, hasMore: false }, rateLimit: { limited: false }, refresh, setPage, page,
-    };
-  }
-  return { items, loading, error, pagination, rateLimit, refresh, setPage, page };
+      const result = await fetchIssues(params);
+      return { items: result.issues as T[], pagination: result.pagination, rateLimit: result.rateLimit };
+    },
+    enabled: active && visible,
+    staleTime: 0,
+    retry: false,
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === filters ? keepPreviousData(previous) : undefined,
+  }, queryClient);
+  const error = query.error instanceof Error ? query.error : query.error ? new Error(String(query.error)) : null;
+  return {
+    items: active ? query.data?.items ?? [] : [],
+    loading: active && (query.isFetching || query.isPending),
+    error: active ? error : null,
+    pagination: active ? query.data?.pagination ?? EMPTY_PAGINATION : EMPTY_PAGINATION,
+    rateLimit: active && !query.isFetching ? query.data?.rateLimit ?? EMPTY_RATE_LIMIT : EMPTY_RATE_LIMIT,
+    refresh: (refresh = true) => {
+      fresh.current = refresh;
+      if (active && visible) void query.refetch();
+    },
+    setPage: page => setSelection({ filters, page }),
+    page,
+  };
 }
+
+const EMPTY_PAGINATION: Pagination = { page: 1, hasMore: false };
+const EMPTY_RATE_LIMIT: RateLimit = { limited: false };

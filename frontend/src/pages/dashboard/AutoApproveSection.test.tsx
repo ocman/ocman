@@ -29,12 +29,13 @@ vi.mock('../../lib/uiStore', () => ({
     setPromptSections: store.setPromptSections,
   }),
 }));
-vi.mock('../../lib/apiStore', () => ({
-  useApiStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    setJudgeDelayApi: vi.fn(),
-    setJudgeModelApi: vi.fn(),
+vi.mock('../../lib/api', () => ({
+  api: {
+    setJudgeDelay: vi.fn(),
+    setJudgeModel: vi.fn(),
     ...store,
-  }),
+    setPromptSections: store.setPromptSectionsApi,
+  },
 }));
 
 describe('AutoApproveSection reviewer model', () => {

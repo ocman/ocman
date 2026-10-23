@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import type { SessionModelEntry, SessionModelsResponse } from '../../lib/api';
-import { useApiStore } from '../../lib/apiStore';
 import { formatModelRef } from '../../lib/sessionStatus';
 import {
   availabilityUnknown, mergeWithCatalog, readModelCatalog, writeModelCatalog,
@@ -21,18 +20,15 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
     pendingFavorites.current.clear();
     return () => { activeScope.current = null; };
   }, [scope]);
-  const getModels = useApiStore((s) => s.getModels);
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelEntries, setModelEntries] = useState<SessionModelEntry[]>([]);
+  const modelOptions = useMemo(() => refsOf(modelEntries), [modelEntries]);
 
   const applyModels = useCallback((entries: SessionModelEntry[]) => {
     setModelEntries(entries);
-    setModelOptions(refsOf(entries));
   }, []);
   // Seed only an empty picker so a failed refresh never wipes the list on screen.
   const seedModels = useCallback((entries: SessionModelEntry[]) => {
     setModelEntries((prev) => prev.length > 0 ? prev : entries);
-    setModelOptions((prev) => prev.length > 0 ? prev : refsOf(entries));
   }, []);
 
   // Show the platform's last known catalog the moment the session loads;
@@ -74,7 +70,7 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
         seedModels(cached);
         return;
       }
-      getModels()
+      api.models()
         .then((models) => {
           if (!isCurrent()) return;
           const ordered = [...models].sort((a, b) => b.count - a.count);
@@ -82,7 +78,7 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
         })
         .catch(() => { /* keep existing data on failure */ });
     });
-  }, [id, platform, directory, getModels, receiveModels, seedModels, scope]);
+  }, [id, platform, directory, receiveModels, seedModels, scope]);
 
   // Toggle a favorite model. Optimistic flip in the picker first,
   // then re-fetch for authoritative ordering. On error revert.
@@ -112,5 +108,5 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
     }
   }, [platform, id, refreshModels, scope]);
 
-  return { modelOptions, setModelOptions, modelEntries, setModelEntries, refreshModels, handleToggleFavorite };
+  return { modelOptions, modelEntries, refreshModels, handleToggleFavorite };
 }

@@ -2,20 +2,8 @@ import { create } from 'zustand';
 import { api } from './api';
 import { getSidebarSessions, patchSessionLists, seedSessionLists } from './sessionsCache';
 import type {
-  DirectoryBrowseResponse,
-  DirectorySearchResponse,
-  ModelUsage,
-  PermissionRequest,
-  QuestionRequest,
-  Project,
   Session,
   SessionDetail,
-  SystemStats,
-  SessionChanges,
-  SessionInfo,
-  TmuxClient,
-  TmuxSession,
-  WorkingTreeDiff,
 } from './api';
 
 /**
@@ -84,47 +72,11 @@ type ApiStore = {
    * this stub as soon as the fetch resolves.
    */
   seedNewSession: (id: string, directory: string, platform: string, title?: string, remoteId?: string) => void;
-  getProjects: (signal?: AbortSignal) => Promise<Project[]>;
-  browseDirectories: (directory?: string, signal?: AbortSignal) => Promise<DirectoryBrowseResponse>;
-  searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => Promise<DirectorySearchResponse>;
-  getSessions: (params?: { dir?: string; since?: number; limit?: number; view?: 'sidebar' }, signal?: AbortSignal) => Promise<Session[]>;
-  getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
   /** Reads a session without opening it, so it is not unarchived. */
   peekSession: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionDetail>;
-  getSessionChanges: (id: string, signal?: AbortSignal) => Promise<SessionChanges>;
-  getSessionInfo: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionInfo>;
-  getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
-  archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
-  archiveProject: (directory: string, archived?: boolean, remoteId?: string) => Promise<{ ok: boolean }>;
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number, interrupted?: boolean) => Promise<{ ok: boolean }>;
-  pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
-  getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string, platform?: string, queue?: boolean) => Promise<void>;
-  listPermissions: (sessionId: string, platform?: string) => Promise<PermissionRequest[]>;
-  refreshPermissions: (sessionId: string, platform: string) => Promise<PermissionRequest[]>;
-  respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
-  listQuestions: (sessionId: string, platform?: string) => Promise<QuestionRequest[]>;
-  respondQuestion: (sessionId: string, requestId: string, answers: string[][]) => Promise<void>;
-  rejectQuestion: (sessionId: string, requestId: string) => Promise<void>;
-  getAutoApprove: (sessionId: string) => Promise<{ enabled: boolean; overridden: boolean }>;
-  setAutoApprove: (sessionId: string, enabled: boolean) => Promise<void>;
-  getPromptSections: () => Promise<Array<{ title: string; content: string; enabled?: boolean }>>;
-  setPromptSectionsApi: (
-    sections: Array<{ title: string; content: string; enabled?: boolean }>,
-  ) => Promise<void>;
-  getJudgeDelay: () => Promise<number>;
-  setJudgeDelayApi: (delayMs: number) => Promise<void>;
-  getJudgeModel: () => Promise<string>;
-  setJudgeModelApi: (model: string) => Promise<void>;
-  getJudgeModelOptions: (signal?: AbortSignal) => Promise<{ models: string[]; default: string }>;
-  abortSession: (sessionId: string) => Promise<void>;
-  getTmuxClients: (signal?: AbortSignal) => Promise<{ available: boolean; clients: TmuxClient[] }>;
-  getTmuxSessions: (signal?: AbortSignal) => Promise<{ available: boolean; sessions: TmuxSession[] }>;
-  switchTmuxSession: (session: string, client?: string) => Promise<void>;
-  launchOpencodeInTmux: (directory: string, remoteId?: string) => Promise<{ session: string }>;
   getWhisperStatus: (signal?: AbortSignal) => Promise<{ available: boolean }>;
-  transcribe: (audio: Blob) => Promise<string>;
-  getSystemStats: (signal?: AbortSignal) => Promise<SystemStats>;
 };
 
 export const useApiStore = create<ApiStore>((set, get) => ({
@@ -230,17 +182,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     // instead of waiting for a poll tick.
     seedSessionLists(stub.session);
   },
-  getProjects: (signal) => api.projects(signal),
-  browseDirectories: (directory, signal) => api.browseDirectories(directory, signal),
-  searchDirectories: (root, query, limit, signal) => api.searchDirectories(root, query, limit, signal),
-  getSessions: (params, signal) => api.sessions(params, signal),
-  getSession: (id, limit = 50, offset = 0, signal) => api.session(id, limit, offset, signal),
   peekSession: (id, signal, platform) => api.session(id, 1, 0, signal, platform, true),
-  getSessionChanges: (id, signal) => api.sessionChanges(id, signal),
-  getSessionInfo: (id, signal, platform) => api.sessionInfo(id, signal, platform),
-  getGitDiff: (dir, opts, signal) => api.gitDiff(dir, opts, signal),
-  archiveSession: (platform, sessionId, timeUpdated, archived = true) => api.archiveSession(platform, sessionId, timeUpdated, archived),
-  archiveProject: (directory, archived = true, remoteId) => api.archiveProject(directory, archived, remoteId),
   markSessionSeen: async (platform, sessionId, timeUpdated, interrupted) => {
     const key = `${platform}:${sessionId}`;
     const pending = { timeUpdated };
@@ -266,8 +208,6 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       });
     }
   },
-  pinSession: (platform, sessionId, pinned) => api.pinSession(platform, sessionId, pinned),
-  getModels: (signal) => api.models(undefined, signal),
   sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => {
     const owns = (s: Session) => s.id === sessionId && (!platform || s.platform === platform);
     const previous = getSidebarSessions().find(owns)?.timeUpdated;
@@ -282,26 +222,6 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       throw error;
     });
   },
-  listPermissions: (sessionId, platform) => api.listPermissions(sessionId, platform),
-  refreshPermissions: (sessionId, platform) => api.refreshPermissions(sessionId, platform),
-  respondPermission: (sessionId, permissionId, reply) => api.respondPermission(sessionId, permissionId, reply),
-  listQuestions: (sessionId, platform) => api.listQuestions(sessionId, platform),
-  respondQuestion: (sessionId, requestId, answers) => api.respondQuestion(sessionId, requestId, answers),
-  rejectQuestion: (sessionId, requestId) => api.rejectQuestion(sessionId, requestId),
-  getAutoApprove: (sessionId) => api.getAutoApprove(sessionId),
-  setAutoApprove: (sessionId, enabled) => api.setAutoApprove(sessionId, enabled),
-  getPromptSections: () => api.getPromptSections(),
-  setPromptSectionsApi: (sections) => api.setPromptSections(sections),
-  getJudgeDelay: () => api.getJudgeDelay(),
-  setJudgeDelayApi: (delayMs) => api.setJudgeDelay(delayMs),
-  getJudgeModel: () => api.getJudgeModel(),
-  setJudgeModelApi: (model) => api.setJudgeModel(model),
-  getJudgeModelOptions: (signal) => api.getJudgeModelOptions(signal),
-  abortSession: (sessionId) => api.abortSession(sessionId),
-  getTmuxClients: (signal) => api.tmuxClients(signal),
-  getTmuxSessions: (signal) => api.tmuxSessions(signal),
-  switchTmuxSession: (session, client) => api.tmuxSwitch(session, client),
-  launchOpencodeInTmux: (directory, remoteId) => api.tmuxLaunchOpencode(directory, remoteId),
   getWhisperStatus: (signal) => {
     // Whisper availability is machine state, so one successful read per
     // app load serves every session switch. A failure is not cached.
@@ -309,6 +229,4 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       .catch((err) => { whisperStatus = null; throw err; });
     return whisperStatus;
   },
-  transcribe: (audio) => api.transcribe(audio),
-  getSystemStats: (signal) => api.systemStats(signal),
 }));

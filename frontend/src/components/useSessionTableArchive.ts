@@ -1,11 +1,11 @@
 import { useRef, useState, type MouseEvent } from 'react';
 import type { Session } from '../lib/api';
-import { useApiStore } from '../lib/apiStore';
+import { api } from '../lib/api';
 import { remoteLog } from '../lib/remoteLog';
 
 /** Shared mutation state lets both table layouts hide pending phone archives. */
 export function useSessionTableArchive() {
-  const archiveSession = useApiStore(state => state.archiveSession);
+  const archiveSession = api.archiveSession;
   const inFlight = useRef(new Set<string>());
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [locallyArchivedSessionIds, setLocallyArchivedSessionIds] = useState<Set<string>>(new Set());

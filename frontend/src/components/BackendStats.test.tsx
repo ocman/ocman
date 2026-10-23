@@ -17,9 +17,8 @@ vi.mock('../lib/queries', () => ({
   useProjects: () => ({ data: [] }),
 }));
 
-vi.mock('../lib/apiStore', () => ({
-  useApiStore: (selector: (state: { getSystemStats: typeof getSystemStats; recentSessions: typeof recentSessions }) => unknown) =>
-    selector({ getSystemStats, recentSessions }),
+vi.mock('../lib/api', () => ({
+  api: { systemStats: (...args: unknown[]) => getSystemStats(...args) },
 }));
 
 vi.mock('../lib/useLongTaskMonitor', () => ({

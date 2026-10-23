@@ -44,9 +44,7 @@ export interface CommandContext {
   handleNewSession: (title?: string) => Promise<void>;
   handleTmuxShortcut: () => void;
   handleVSCodeShortcut: () => void;
-  setShowRenameModal: (show: boolean) => void;
-  setShowForkPicker: (show: boolean) => void;
-  setShowMovePicker: (show: boolean) => void;
+  openModal: (modal: 'rename' | 'fork' | 'move') => void;
   setShowRenameToast: (show: boolean) => void;
   setShowDisconnectedToast: (show: boolean) => void;
   setRestartToastMessage: (message: string | null) => void;
@@ -269,12 +267,12 @@ const compact: SlashCommand = {
 
 const fork: SlashCommand = {
   live: true,
-  run: ({ caps, setShowForkPicker }) => { if (caps.fork) setShowForkPicker(true); },
+  run: ({ caps, openModal }) => { if (caps.fork) openModal('fork'); },
 };
 
 const move: SlashCommand = {
   live: true,
-  run: ({ caps, setShowMovePicker }) => { if (caps.move) setShowMovePicker(true); },
+  run: ({ caps, openModal }) => { if (caps.move) openModal('move'); },
 };
 
 const newSession: SlashCommand = {
@@ -303,10 +301,10 @@ const vscode: SlashCommand = { live: true, run: ({ handleVSCodeShortcut }) => ha
 
 const rename: SlashCommand = {
   live: true,
-  run: async ({ session, setShowRenameToast, setShowRenameModal }, args) => {
+  run: async ({ session, setShowRenameToast, openModal }, args) => {
     const newTitle = args.trim();
     if (!newTitle) {
-      setShowRenameModal(true);
+      openModal('rename');
       return;
     }
     try {

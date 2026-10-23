@@ -22,13 +22,12 @@ const respondPermission = vi.fn();
 const respondQuestion = vi.fn();
 const rejectQuestion = vi.fn();
 
-vi.mock('../../lib/apiStore', () => ({
-  useApiStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      respondPermission,
-      respondQuestion,
-      rejectQuestion,
-    }),
+vi.mock('../../lib/api', () => ({
+  api: {
+    respondPermission: (...args: unknown[]) => respondPermission(...args),
+    respondQuestion: (...args: unknown[]) => respondQuestion(...args),
+    rejectQuestion: (...args: unknown[]) => rejectQuestion(...args),
+  },
 }));
 
 vi.mock('../../lib/useToastNotify', () => ({ notifyPromptDismissed: vi.fn() }));

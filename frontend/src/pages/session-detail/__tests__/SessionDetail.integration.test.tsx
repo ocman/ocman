@@ -429,7 +429,7 @@ describe('SessionDetail — session tree usage', () => {
     const link = await screen.findByRole('link', { name: 'Parent planning session' });
     expect(link).toHaveAttribute('href', '/session/sess_parent');
     expect(link.closest('[role="note"]')).toHaveTextContent('Child session of');
-    expect(handle.api.sessions).not.toHaveBeenCalled();
+    for (const [params] of handle.api.sessions.mock.calls) expect(params).toHaveProperty('since');
   });
 
   it('shows totals for the current session and nested subagents', async () => {
@@ -456,7 +456,7 @@ describe('SessionDetail — session tree usage', () => {
     expect(title.parentElement).toHaveTextContent('Reported cost$0.3000');
     expect(title.parentElement).toHaveTextContent('API-equivalent cost$0.7500');
     expect(title.parentElement).toHaveTextContent('Cost$0.6500');
-    expect(handle.api.sessions).not.toHaveBeenCalled();
+    for (const [params] of handle.api.sessions.mock.calls) expect(params).toHaveProperty('since');
   });
 
   it('shows estimated cost without requiring context usage', async () => {

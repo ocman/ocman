@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useApiStore } from './apiStore';
+import { api } from './api';
 import { useUiStore } from './uiStore';
 
 export interface UseAutoApproveOptions {
@@ -30,8 +30,7 @@ export function useAutoApprove({
   sessionId,
   capable,
 }: UseAutoApproveOptions): UseAutoApproveResult {
-  const getAutoApprove = useApiStore((s) => s.getAutoApprove);
-  const setAutoApproveApi = useApiStore((s) => s.setAutoApprove);
+  const { getAutoApprove, setAutoApprove: setAutoApproveApi } = api;
 
   // Global default from settings — applied when no per-session override exists.
   const autoApproveDefault = useUiStore((s) => s.autoApproveDefault);

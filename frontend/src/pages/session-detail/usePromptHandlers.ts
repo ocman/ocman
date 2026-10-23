@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { useApiStore } from '../../lib/apiStore';
+import { api } from '../../lib/api';
 import type { PlatformCapabilities } from '../../lib/api';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
@@ -107,9 +107,7 @@ export function usePromptHandlers({
   pendingQuestion,
   clearPrompt,
 }: UsePromptHandlersOptions): UsePromptHandlersResult {
-  const respondPermission = useApiStore((s) => s.respondPermission);
-  const respondQuestion = useApiStore((s) => s.respondQuestion);
-  const rejectQuestion = useApiStore((s) => s.rejectQuestion);
+  const { respondPermission, respondQuestion, rejectQuestion } = api;
 
   const [answeringPermission, setAnsweringPermission] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);

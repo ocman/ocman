@@ -513,6 +513,19 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   // Apply spies to the real store. Zustand merges the patch onto
   // the existing slice so untouched selectors keep working.
   const { recentSessions, ...storeOverrides } = (opts.storeOverrides ?? {}) as { recentSessions?: Session[] };
+  const actions = { ...storeSpies, ...storeOverrides };
+  Object.assign(mockState.apiStub, {
+    session: actions.getSession,
+    sessions: actions.getSessions,
+    listPermissions: actions.listPermissions,
+    respondPermission: actions.respondPermission,
+    listQuestions: actions.listQuestions,
+    respondQuestion: actions.respondQuestion,
+    rejectQuestion: actions.rejectQuestion,
+    abortSession: actions.abortSession,
+    archiveSession: actions.archiveSession,
+    pinSession: actions.pinSession,
+  }, opts.apiOverrides);
   useApiStore.setState({
     ...storeSpies,
     ...storeOverrides,

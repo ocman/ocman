@@ -15,8 +15,7 @@ vi.hoisted(() => {
   });
 });
 
-import type { Project, Session } from '../../lib/api';
-import { useApiStore } from '../../lib/apiStore';
+import { api, type Project, type Session } from '../../lib/api';
 import { useUiStore } from '../../lib/uiStore';
 
 const projects: Project[] = [
@@ -57,7 +56,7 @@ describe('useSidebarProjectGroups', () => {
     ] as Project[];
     projects.push(...shared);
     const archiveProject = vi.fn(async () => ({ ok: true }));
-    useApiStore.setState({ archiveProject });
+    vi.spyOn(api, 'archiveProject').mockImplementation(archiveProject);
     try {
       const recentSessions = [
         session({ id: 'local', directory: '/local/repo' }),
@@ -121,7 +120,7 @@ describe('useSidebarProjectGroups', () => {
   it('reorders without the pinned pseudo-group and hides archived projects optimistically', async () => {
     useUiStore.setState({ projectOrder: [] });
     const archiveProject = vi.fn(async () => ({ ok: true }));
-    useApiStore.setState({ archiveProject });
+    vi.spyOn(api, 'archiveProject').mockImplementation(archiveProject);
     const recentSessions = [session({ id: 'a1', directory: '/repo/a' })];
     const { result } = renderHook(() =>
       useSidebarProjectGroups({ id: 'a1', recentSessions, displayStatus: 'done' }));
@@ -137,7 +136,7 @@ describe('useSidebarProjectGroups', () => {
 
   it('reverts the optimistic hide when archiving fails', async () => {
     useUiStore.setState({ projectOrder: [] });
-    useApiStore.setState({ archiveProject: vi.fn(async () => { throw new Error('nope'); }) });
+    vi.spyOn(api, 'archiveProject').mockRejectedValue(new Error('nope'));
     const recentSessions = [session({ id: 'a1', directory: '/repo/a' })];
     const { result } = renderHook(() =>
       useSidebarProjectGroups({ id: 'a1', recentSessions, displayStatus: 'done' }));

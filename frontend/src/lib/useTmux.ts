@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { TmuxClient, TmuxSession } from './api';
-import { useApiStore } from './apiStore';
+import { useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api, type TmuxClient, type TmuxSession } from './api';
+import { queryClient } from './queryClient';
 
 function checkIsLocal(): boolean {
   const h = window.location.hostname;
@@ -25,49 +26,30 @@ export interface TmuxState {
 }
 
 export function useTmux(): TmuxState {
-  const [available, setAvailable] = useState(false);
-  const [sessions, setSessions] = useState<TmuxSession[]>([]);
-  const [clients, setClients] = useState<TmuxClient[]>([]);
+  const query = useQuery({
+    queryKey: ['tmux'],
+    queryFn: async ({ signal }) => {
+      const [sessions, clients] = await Promise.all([api.tmuxSessions(signal), api.tmuxClients(signal)]);
+      return { available: sessions.available, sessions: sessions.sessions ?? [], clients: clients.clients ?? [] };
+    },
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  }, queryClient);
+  const available = !query.error && query.data?.available === true;
+  const sessions = query.data?.sessions ?? EMPTY_SESSIONS;
+  const clients = query.data?.clients ?? EMPTY_CLIENTS;
   const isLocal = checkIsLocal();
-  const getTmuxSessions = useApiStore((state) => state.getTmuxSessions);
-  const getTmuxClients = useApiStore((state) => state.getTmuxClients);
-  const switchTmuxSession = useApiStore((state) => state.switchTmuxSession);
-  const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [sessRes, cliRes] = await Promise.all([
-          getTmuxSessions(),
-          getTmuxClients(),
-        ]);
-        if (cancelled) return;
-
-        setAvailable(sessRes.available);
-        setSessions(sessRes.sessions || []);
-        setClients(cliRes.clients || []);
-      } catch {
-        if (!cancelled) setAvailable(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [getTmuxClients, getTmuxSessions]);
-
-  const switchSession = useCallback(async (tmuxSessionName: string, clientTTY?: string) => {
-    await switchTmuxSession(tmuxSessionName, clientTTY);
-  }, [switchTmuxSession]);
 
   const findSession = useCallback((directory: string) => {
     return sessions.find(ts => ts.resolvedPath === directory);
   }, [sessions]);
 
-  const launchOpencode = useCallback((directory: string) => {
-    return launchOpencodeInTmux(directory);
-  }, [launchOpencodeInTmux]);
-
   return useMemo(
-    () => ({ available, isLocal, sessions, clients, switchSession, findSession, launchOpencode }),
-    [available, isLocal, sessions, clients, switchSession, findSession, launchOpencode],
+    () => ({ available, isLocal, sessions, clients, switchSession: api.tmuxSwitch, findSession, launchOpencode: api.tmuxLaunchOpencode }),
+    [available, isLocal, sessions, clients, findSession],
   );
 }
+
+const EMPTY_SESSIONS: TmuxSession[] = [];
+const EMPTY_CLIENTS: TmuxClient[] = [];

@@ -37,7 +37,7 @@ export interface PaletteCommandsOptions {
   /** Current tmux handle — captured in a ref internally. */
   tmux: TmuxHandle;
   setSelectedReasoning: (v: string) => void;
-  setShowRenameModal: (v: boolean) => void;
+  openModal: (modal: 'rename') => void;
   openModelPicker: () => void;
   openAgentPicker: () => void;
 }
@@ -52,7 +52,7 @@ export function usePaletteCommands({
   activeModelRef,
   tmux,
   setSelectedReasoning,
-  setShowRenameModal,
+  openModal,
   openModelPicker,
   openAgentPicker,
 }: PaletteCommandsOptions): void {
@@ -61,8 +61,8 @@ export function usePaletteCommands({
   // Stable refs for setters so the effect only re-runs when paletteCommand changes.
   const setSelectedReasoningRef = useRef(setSelectedReasoning);
   useEffect(() => { setSelectedReasoningRef.current = setSelectedReasoning; }, [setSelectedReasoning]);
-  const setShowRenameModalRef = useRef(setShowRenameModal);
-  useEffect(() => { setShowRenameModalRef.current = setShowRenameModal; }, [setShowRenameModal]);
+  const openModalRef = useRef(openModal);
+  useEffect(() => { openModalRef.current = openModal; }, [openModal]);
 
   const paletteCommand = useUiStore((s) => s.paletteCommand);
 
@@ -91,7 +91,7 @@ export function usePaletteCommands({
         .then(() => navigateRef.current(-1))
         .catch((err) => remoteLog.error('Failed to archive session', err));
     } else if (cmd.id === 'scoped.rename') {
-      setShowRenameModalRef.current(true);
+      openModalRef.current('rename');
     } else if (cmd.id === 'scoped.new-project') {
       useUiStore.getState().openProjectSessionPalette();
     } else if (cmd.id === 'scoped.compact' && sessionRef.current && portAvailableRef.current && capsRef.current.compact) {

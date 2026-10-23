@@ -22,11 +22,13 @@ const resp = (...remotes: string[]): CapabilitiesResponse => ({
   ],
 });
 
-const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(1); });
 
 describe('useOpencodeLaunch with a late-connecting owner', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
+    const { notifyManager } = await import('@tanstack/react-query');
+    notifyManager.setScheduler(queueMicrotask);
     vi.useFakeTimers();
     capabilities.mockReset();
     connections.clear();
@@ -50,6 +52,7 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
     expect(warm.result.current?.hosts?.map((h) => h.remoteId)).toEqual(['local']);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    await flush();
     expect(early.result.current).toBe(true);
     expect(warm.result.current?.hosts?.map((h) => h.remoteId)).toEqual(['local', 'B']);
 
@@ -89,6 +92,7 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
     expect(view.result.current?.hosts).toHaveLength(1);
     act(() => { for (const cb of connections) cb(); });
     await flush();
+    await flush();
     expect(view.result.current?.hosts).toHaveLength(2);
     view.unmount();
     expect(connections.size).toBe(0);
@@ -102,6 +106,7 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
     await flush();
     first.unmount();
     act(() => { for (const cb of connections) cb(); });
+    await flush();
     await flush();
     expect(survivor.result.current?.hosts).toHaveLength(2);
     survivor.unmount();

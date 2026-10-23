@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { queryClient } from './queryClient';
 import { onSseConnect } from './useGlobalEvents';
 
 // How often a mounted consumer waiting on an absent host re-asks the
@@ -35,10 +37,6 @@ const EMPTY_CAPS: PlatformCapabilities = {
   runtimeRestart: false,
 };
 
-let cached: CapabilitiesResponse | null = null;
-let inflight: Promise<CapabilitiesResponse> | null = null;
-const subscribers = new Set<(c: CapabilitiesResponse) => void>();
-
 // Platform ids we've already tried to (re)resolve via a cache-miss
 // refetch, so an unknown id (e.g. a genuinely absent platform) can't
 // loop the network. Reset whenever a fresh response arrives.
@@ -52,34 +50,25 @@ const refetchedFor = new Set<string>();
  * a full reload. The stale response stays readable while it refetches.
  */
 function invalidateAndReload() {
-  loadCapabilities(true).catch(() => {});
+  void queryClient.invalidateQueries({ queryKey: ['capabilities'] }, { cancelRefetch: false });
 }
 
-/**
- * Loads /api/capabilities once per page load, caching the response in
- * module scope. Subsequent callers get the cached value immediately;
- * the result is shared across hook instances so the network call happens
- * exactly once.
- */
-function loadCapabilities(force = false): Promise<CapabilitiesResponse> {
-  if (cached && !force) return Promise.resolve(cached);
-  if (inflight) return inflight;
-  inflight = api.capabilities()
-    .then((resp) => {
-      cached = resp;
-      inflight = null;
-      // Un-suppress any ids that are now present, so a later
-      // disconnect/reconnect can retry them. Ids still absent stay
-      // suppressed to avoid a refetch loop on a genuinely-unknown id.
-      for (const p of resp.platforms) refetchedFor.delete(p.id);
-      for (const fn of subscribers) fn(resp);
-      return resp;
-    })
-    .catch((err) => {
-      inflight = null;
-      throw err;
-    });
-  return inflight;
+function useCapabilitiesQuery(remoteId?: string) {
+  const query = useQuery({
+    queryKey: ['capabilities'],
+    queryFn: async () => {
+      const response = await api.capabilities();
+      for (const platform of response.platforms) refetchedFor.delete(platform.id);
+      return response;
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    refetchInterval: query => remoteId && remoteId !== 'local' && query.state.data &&
+      !query.state.data.hosts?.some(host => host.remoteId === remoteId) ? HOST_MISS_RETRY_MS : false,
+  }, queryClient);
+  useEffect(() => onSseConnect(() => invalidateAndReload()), []);
+  return query;
 }
 
 /**
@@ -90,33 +79,7 @@ function loadCapabilities(force = false): Promise<CapabilitiesResponse> {
  * and falls back to disabled flags when the platform isn't known.
  */
 export function useCapabilities(): CapabilitiesResponse | null {
-  // Lazy initializer reads the module-level cache so first render of
-  // every consumer after the initial fetch already has the data —
-  // there's no flash of all-false flags.
-  const [state, setState] = useState<CapabilitiesResponse | null>(() => cached);
-
-  useEffect(() => {
-    // Subscribe even when warm, so a later refetch (a remote connecting)
-    // reaches consumers that mounted after the initial load.
-    let cancelled = false;
-    const handler = (c: CapabilitiesResponse) => {
-      if (!cancelled) setState(c);
-    };
-    subscribers.add(handler);
-    const unsubscribeConnect = onSseConnect(() => invalidateAndReload());
-    if (!cached) loadCapabilities().catch(() => {
-      // Network errors leave state at null. Components defaulting
-      // through usePlatformCapabilities will treat that as "no
-      // capabilities available", matching the conservative default.
-    });
-    return () => {
-      cancelled = true;
-      subscribers.delete(handler);
-      unsubscribeConnect();
-    };
-  }, []);
-
-  return state;
+  return useCapabilitiesQuery().data ?? null;
 }
 
 /**
@@ -132,15 +95,16 @@ export function useCapabilities(): CapabilitiesResponse | null {
  */
 export function usePlatformCapabilities(platformID: string | undefined): PlatformCapabilities {
   const all = useCapabilities();
-  if (!platformID || !all) return EMPTY_CAPS;
-  const entry = all.platforms.find((p): p is PlatformCapabilityEntry => p.id === platformID);
+  const entry = all?.platforms.find((p): p is PlatformCapabilityEntry => p.id === platformID);
   // Cache miss: the id may belong to a remote that connected after the
   // initial fetch. Refetch once (per id, per response) so its composer
   // and other capability-gated UI appear without a page reload.
-  if (!entry && !refetchedFor.has(platformID)) {
-    refetchedFor.add(platformID);
-    invalidateAndReload();
-  }
+  useEffect(() => {
+    if (platformID && all && !entry && !refetchedFor.has(platformID)) {
+      refetchedFor.add(platformID);
+      invalidateAndReload();
+    }
+  }, [platformID, all, entry]);
   return entry?.capabilities ?? EMPTY_CAPS;
 }
 
@@ -186,7 +150,7 @@ export function useMultiPlatform(): boolean {
  * capability flag.
  */
 export function useOpencodeLaunch(remoteId?: string): boolean {
-  const all = useCapabilities();
+  const all = useCapabilitiesQuery(remoteId).data;
   const hosts = all?.hosts ?? [];
   const named = !!remoteId && remoteId !== 'local';
   const host = named
@@ -199,8 +163,6 @@ export function useOpencodeLaunch(remoteId?: string): boolean {
   useEffect(() => {
     if (!missing) return;
     invalidateAndReload();
-    const timer = setInterval(invalidateAndReload, HOST_MISS_RETRY_MS);
-    return () => clearInterval(timer);
   }, [missing, remoteId]);
   return host?.capabilities.opencodeLaunch === true;
 }

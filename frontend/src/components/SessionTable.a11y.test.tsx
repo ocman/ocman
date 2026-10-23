@@ -17,9 +17,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../lib/apiStore', () => ({
-  useApiStore: (selector: (state: typeof mocks.apiState) => unknown) => selector(mocks.apiState),
-}));
+vi.mock('../lib/api', async () => {
+  const real = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return { ...real, api: { ...real.api, ...mocks.apiState } };
+});
 
 import { SessionTable } from './SessionTable';
 

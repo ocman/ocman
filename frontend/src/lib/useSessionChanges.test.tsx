@@ -6,8 +6,8 @@ import { renderHookWithQuery } from '../test/renderWithQuery';
 
 const changes: SessionChanges = { sessionId: 'sess-1', supported: true, totalAdditions: 1, totalDeletions: 0, filesChanged: 1, files: [] };
 const getSessionChanges = vi.fn<(id: string, signal?: AbortSignal) => Promise<SessionChanges>>(() => Promise.resolve(changes));
-vi.mock('./apiStore', () => ({
-  useApiStore: (selector: (state: { getSessionChanges: typeof getSessionChanges }) => unknown) => selector({ getSessionChanges }),
+vi.mock('./api', () => ({
+  api: { sessionChanges: getSessionChanges },
 }));
 
 const { useSessionChanges } = await import('./useSessionChanges');

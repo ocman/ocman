@@ -505,7 +505,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [messageJumpHistory, setMessageJumpHistory] = useState<MessageJumpHistory | null>(null);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
 
-  const archiveSession = useApiStore((state) => state.archiveSession);
+  const archiveSession = api.archiveSession;
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
 
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
@@ -672,9 +672,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleCompact,
     handleNewSession,
     handleTmuxShortcut,
-    setShowRenameModal: modal.setterFor('rename'),
-    setShowForkPicker: modal.setterFor('fork'),
-    setShowMovePicker: modal.setterFor('move'),
+    openModal: modal.open,
     ...toasts.setters,
     reloadCapabilities,
     refreshThread: reload,
@@ -753,7 +751,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     activeModelRef: useSyncRef(activeModel),
     tmux,
     setSelectedReasoning,
-    setShowRenameModal: modal.setterFor('rename'),
+    openModal: modal.open,
     openModelPicker,
     openAgentPicker,
   });

@@ -6,8 +6,7 @@ import { clearModelCatalogCache, readModelCatalog } from '../../lib/modelCatalog
 import { useModelCatalog } from './useModelCatalog';
 
 const { getModels } = vi.hoisted(() => ({ getModels: vi.fn() }));
-vi.mock('../../lib/apiStore', () => ({ useApiStore: (select: (state: { getModels: typeof getModels }) => unknown) => select({ getModels }) }));
-vi.mock('../../lib/api', () => ({ api: { sessionModels: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn() } }));
+vi.mock('../../lib/api', () => ({ api: { models: getModels, sessionModels: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn() } }));
 const catalog = (model: string): SessionModelsResponse => ({ hasProviders: true, models: [{ provider: 'p', model }] });
 
 beforeEach(() => {

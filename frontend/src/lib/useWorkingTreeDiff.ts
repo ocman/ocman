@@ -1,4 +1,4 @@
-import { useApiStore } from './apiStore';
+import { api } from './api';
 import type { WorkingTreeDiff } from './api';
 import { useSessionResourceQuery, type SessionResourceOptions } from './useSessionResourceQuery';
 
@@ -45,7 +45,7 @@ export function useWorkingTreeDiff(
   dir: string | undefined,
   options: UseWorkingTreeDiffOptions = {},
 ): UseWorkingTreeDiffResult {
-  const getGitDiff = useApiStore((s) => s.getGitDiff);
+  const getGitDiff = api.gitDiff;
   const { data, loading, error, refresh } = useSessionResourceQuery(
     dir ? ['git-diff', dir] : undefined,
     async (signal) => {

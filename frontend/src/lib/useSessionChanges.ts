@@ -1,4 +1,4 @@
-import { useApiStore } from './apiStore';
+import { api } from './api';
 import type { SessionChanges } from './api';
 import {
   useSessionResourceQuery,
@@ -33,7 +33,7 @@ export function useSessionChanges(
   sessionId: string | undefined,
   options: UseSessionChangesOptions = {},
 ): UseSessionChangesResult {
-  const getSessionChanges = useApiStore((s) => s.getSessionChanges);
+  const getSessionChanges = api.sessionChanges;
   return useSessionResourceQuery(
     sessionId ? ['session-changes', sessionId] : undefined,
     (signal) => getSessionChanges(sessionId!, signal),

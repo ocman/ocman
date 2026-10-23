@@ -17,7 +17,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { encodeWav } from '../../lib/audio/encodeWav';
-import { useApiStore } from '../../lib/apiStore';
+import { api } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
 
 // ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ export function useComposerAudio({
   const disabledRef = useRef(disabled);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
 
-  const transcribe = useApiStore((state) => state.transcribe);
+  const transcribe = api.transcribe;
 
   // -------------------------------------------------------------------------
   // Button visual state

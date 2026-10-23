@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { queryClient } from './queryClient';
 
 const store = vi.hoisted(() => ({
   getTmuxSessions: vi.fn(),
@@ -8,14 +9,16 @@ const store = vi.hoisted(() => ({
   switchTmuxSession: vi.fn(),
   launchOpencodeInTmux: vi.fn(),
 }));
-vi.mock('./apiStore', () => ({
-  useApiStore: (selector: (state: typeof store) => unknown) => selector(store),
+vi.mock('./api', () => ({
+  api: { tmuxSessions: store.getTmuxSessions, tmuxClients: store.getTmuxClients,
+    tmuxSwitch: store.switchTmuxSession, tmuxLaunchOpencode: store.launchOpencodeInTmux },
 }));
 
 const { useTmux } = await import('./useTmux');
 
 describe('useTmux', () => {
   beforeEach(() => {
+    queryClient.clear();
     vi.clearAllMocks();
     store.getTmuxSessions.mockResolvedValue({ available: true, sessions: [{ name: 'work', resolvedPath: '/repo' }] });
     store.getTmuxClients.mockResolvedValue({ clients: [{ tty: '/dev/ttys001' }] });

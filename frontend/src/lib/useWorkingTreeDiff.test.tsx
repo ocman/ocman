@@ -6,8 +6,8 @@ import { renderHookWithQuery } from '../test/renderWithQuery';
 
 const diff: WorkingTreeDiff = { repo: '/x', branch: 'main', ahead: 0, behind: 0, files: [], truncated: false };
 const getGitDiff = vi.fn<(dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>>(() => Promise.resolve(diff));
-vi.mock('./apiStore', () => ({
-  useApiStore: (selector: (state: { getGitDiff: typeof getGitDiff }) => unknown) => selector({ getGitDiff }),
+vi.mock('./api', () => ({
+  api: { gitDiff: getGitDiff },
 }));
 
 const { useWorkingTreeDiff } = await import('./useWorkingTreeDiff');

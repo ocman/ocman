@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import type { Session } from '../../lib/api';
+import { api, type Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { hasPendingPrompt } from '../../lib/sessionVisibility';
@@ -12,9 +12,12 @@ import { useSessionFilterPreference } from '../../lib/useSessionFilterPreference
 import { SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
 import { useIsPhone } from '../../lib/useIsPhone';
 import { flushSync } from 'react-dom';
+import { useQuery } from '@tanstack/react-query';
+import { queryClient } from '../../lib/queryClient';
+import { useDocumentVisible } from '../../lib/usePanelVisible';
 import { withDeadline } from '../../lib/coalescedRefresh';
 import { useSidebarEvents } from './useSidebarEvents';
-import { getSidebarSessions, patchSessionLists, setSidebarSessions, useSidebarSessionList } from '../../lib/sessionsCache';
+import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebarSessions, useSidebarSessionList } from '../../lib/sessionsCache';
 
 /**
  * Reconciliation backstop for events missed while disconnected. Normal
@@ -98,10 +101,7 @@ export function useSidebarSessions({
   const enabledRef = useRef(enabled);
   useLayoutEffect(() => { enabledRef.current = enabled; }, [enabled]);
   useActivityScope(enabled ? 'sessions' : undefined);
-  const getSessions = useApiStore((s) => s.getSessions);
-  const getSession = useApiStore((s) => s.getSession);
-  const archiveSession = useApiStore((s) => s.archiveSession);
-  const pinSession = useApiStore((s) => s.pinSession);
+  const { sessions: getSessions, session: getSession, archiveSession, pinSession } = api;
   const recentSessions = useSidebarSessionList();
   const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
   const expandProjects = useUiStore((s) => s.expandProjects);
@@ -236,41 +236,21 @@ export function useSidebarSessions({
   useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions, abortSignalRef,
     recentRequest, showArchivedRecentRef, sidebarRecentHoursRef });
 
-  // Slow reconciliation loop, paused while the tab is hidden.
-  useEffect(() => {
-    if (!enabled) return;
-    let refreshId: number | null = null;
-    const start = () => {
-      if (refreshId !== null) return;
-      refreshId = window.setInterval(() => {
-        reconcileRecentSessions(abortSignalRef.current?.signal)
-          .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
-      }, SIDEBAR_REFRESH_MS);
-    };
-    const stop = () => {
-      if (refreshId === null) return;
-      window.clearInterval(refreshId);
-      refreshId = null;
-    };
-    const onVisibility = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        // Fire once immediately on re-focus so the user sees fresh
-        // data without waiting a full interval, then resume polling.
-        reconcileRecentSessions(abortSignalRef.current?.signal)
-          .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
-        start();
-      }
-    };
-    if (!document.hidden) start();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      stop();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadRecentSessions, reconcileRecentSessions, enabled]);
+  const visible = useDocumentVisible();
+  useQuery({
+    queryKey: SIDEBAR_SESSIONS_KEY,
+    queryFn: async () => {
+      await loadRecentSessions(abortSignalRef.current?.signal);
+      return getSidebarSessions();
+    },
+    initialData: getSidebarSessions,
+    enabled: enabled && visible,
+    staleTime: 0,
+    refetchOnMount: false, // The session-change effect owns the first load.
+    refetchOnWindowFocus: 'always',
+    refetchInterval: SIDEBAR_REFRESH_MS,
+    retry: false,
+  }, queryClient);
 
   // Cleanup any outstanding archive timers on unmount.
   useEffect(() => () => {

@@ -49,9 +49,13 @@ vi.mock('../lib/uiStore', () => {
   return { useUiStore };
 });
 
-vi.mock('../lib/apiStore', () => ({
-  useApiStore: (selector: (state: typeof mocks.apiState) => unknown) => selector(mocks.apiState),
-}));
+vi.mock('../lib/api', async () => {
+  const real = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return { ...real, api: { ...real.api, projects: mocks.apiState.getProjects,
+    browseDirectories: mocks.apiState.browseDirectories, searchDirectories: mocks.apiState.searchDirectories,
+    tmuxSessions: mocks.apiState.getTmuxSessions, tmuxClients: mocks.apiState.getTmuxClients,
+    tmuxSwitch: mocks.apiState.switchTmuxSession } };
+});
 
 vi.mock('../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => false,

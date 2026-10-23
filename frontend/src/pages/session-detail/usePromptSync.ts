@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Part, Session } from '../../lib/api';
-import { useApiStore } from '../../lib/apiStore';
+import { api } from '../../lib/api';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import {
@@ -59,9 +59,7 @@ export function usePromptSync({
   setPendingQuestion,
   setPermissionError,
 }: UsePromptSyncOptions): void {
-  const listPermissions = useApiStore((state) => state.listPermissions);
-  const refreshPermissions = useApiStore((state) => state.refreshPermissions);
-  const listQuestions = useApiStore((state) => state.listQuestions);
+  const { listPermissions, refreshPermissions, listQuestions } = api;
 
   // Mirror pending prompt flags into the sidebar row so the badge
   // lights up/clears immediately from SSE.

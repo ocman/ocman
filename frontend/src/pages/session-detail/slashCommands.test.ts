@@ -32,9 +32,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     handleNewSession: vi.fn(async () => undefined),
     handleTmuxShortcut: vi.fn(),
     handleVSCodeShortcut: vi.fn(),
-    setShowRenameModal: vi.fn(),
-    setShowForkPicker: vi.fn(),
-    setShowMovePicker: vi.fn(),
+    openModal: vi.fn(),
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),
@@ -179,8 +177,7 @@ describe('runSlashCommand', () => {
     const c = ctx();
     await runSlashCommand(c, 'fork', '');
     await runSlashCommand(c, 'move', '');
-    expect(c.setShowForkPicker).toHaveBeenCalledWith(true);
-    expect(c.setShowMovePicker).not.toHaveBeenCalled();
+    expect(c.openModal).toHaveBeenCalledExactlyOnceWith('fork');
 
     await runSlashCommand(c, 'wt', ' feat/x ');
     expect(c.openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/repo', branch: 'feat/x', parentSessionId: 's1', remoteId: 'local' });

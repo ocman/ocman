@@ -33,17 +33,13 @@ export interface UseSessionCapabilitiesResult {
   /** Whether the agent catalog has been fetched (or known to be
    *  empty). UI defers per-agent coloring until this flips true. */
   agentsLoaded: boolean;
-  setAgentsLoaded: Dispatch<SetStateAction<boolean>>;
   /** Agents reported by the platform's /agent endpoint. */
   agents: AgentInfo[];
-  setAgents: Dispatch<SetStateAction<AgentInfo[]>>;
   /** Provider/model strings for the model picker drop-down. */
   modelOptions: string[];
-  setModelOptions: Dispatch<SetStateAction<string[]>>;
   /** Detailed model entries (with favorites + recents metadata)
    *  used by the rich model picker. */
   modelEntries: SessionModelEntry[];
-  setModelEntries: Dispatch<SetStateAction<SessionModelEntry[]>>;
   /** Selected model / agent / reasoning level for the next message. */
   selectedModel: string;
   setSelectedModel: Dispatch<SetStateAction<string>>;
@@ -79,7 +75,7 @@ export function useSessionCapabilities({
 }: UseSessionCapabilitiesOptions): UseSessionCapabilitiesResult {
   const [portAvailable, setPortAvailable] = useState(false);
   const {
-    modelOptions, setModelOptions, modelEntries, setModelEntries, refreshModels, handleToggleFavorite,
+    modelOptions, modelEntries, refreshModels, handleToggleFavorite,
   } = useModelCatalog(id, platform, directory, sessionLoaded);
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
@@ -185,13 +181,9 @@ export function useSessionCapabilities({
     setPortAvailable,
     portAvailableRef,
     agentsLoaded,
-    setAgentsLoaded,
     agents,
-    setAgents,
     modelOptions,
-    setModelOptions,
     modelEntries,
-    setModelEntries,
     selectedModel,
     setSelectedModel,
     selectedAgent,
