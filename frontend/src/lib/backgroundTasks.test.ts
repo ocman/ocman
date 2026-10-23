@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { backgroundTask, backgroundTaskCount, backgroundTasks } from './backgroundTasks';
+import { backgroundTaskCount, backgroundTasks } from './backgroundTasks';
 import { fetchJSON } from './api.requests';
 
 vi.mock('./api.requests', async (original) => ({
@@ -7,14 +7,12 @@ vi.mock('./api.requests', async (original) => ({
 }));
 
 describe('background task requests', () => {
-  it('uses bounded reads, optional filters and encoded identities with cancellation', async () => {
+  it('uses bounded reads and optional filters with cancellation', async () => {
     const signal = new AbortController().signal;
     await backgroundTasks('', signal);
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?limit=200', signal);
     await backgroundTasks('failed', signal);
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?status=failed&limit=200', signal);
-    await backgroundTask('task/id', signal);
-    expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks/task%2Fid', signal);
     await backgroundTaskCount(signal);
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?view=active-count', signal);
   });

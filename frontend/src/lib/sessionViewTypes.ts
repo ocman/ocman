@@ -1,7 +1,6 @@
 // State and action types for the SessionDetail reducer (sessionReducer.ts).
 
 import type { Message, Part, SessionDetail } from './api';
-import type { SessionNotice, SessionStatus } from './api.types';
 import type { PendingPermission } from './sseHelpers';
 import type { PendingQuestion } from '../components/session/QuestionPrompt';
 
@@ -48,10 +47,10 @@ export interface SessionView {
   /** Per-part set of fields that have ever received a streaming
    *  delta. Snapshots must leave those fields alone. */
   _deltaOwnedFields: Map<string, Set<string>>;
-  /** True when the reducer wants the host hook to refetch
-   *  `/api/session/{id}` (set when a turn settles).
-   *  Consumers must reset this flag once the refetch has been
-   *  scheduled. */
+  /** True from a stream event that makes REST history stale (turn end,
+   *  history rewrite, stream reset, unknown child) until the next load
+   *  or recovery. Nothing refetches on it; the stream reconciles on its
+   *  own. It only holds back speech until history is reconciled. */
   _refetchRequested: boolean;
   /**
    * Set by the stream's `prompt.judge` scheduled phase.
@@ -80,12 +79,6 @@ export interface SessionView {
    * is the only judge artifact carried in client state.
    */
   judgeReasoning: string | null;
-  /** Last conversation stream cursor folded into this view ("<epoch>:<seq>"). */
-  cursor?: string;
-  /** Latest statev2 revision the stream reported. */
-  lastRevision?: number;
-  /** Descendant status levels reported by the conversation stream. */
-  childStatus?: Record<string, { status: SessionStatus; notice?: SessionNotice }>;
   /** Parts whose stream skipped ahead of local content; reconcile heals them. */
   _stale?: ReadonlySet<string>;
   /** Stream-owned ledger and current-turn content, separate from REST history. */

@@ -43,20 +43,18 @@ function pickString(obj: Record<string, unknown>, ...keys: string[]): string {
   return '';
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
 /**
- * Extract a `PendingPermission` from a `permission.asked` SSE event.
- * Returns `null` when the event isn't a permission ask or lacks a
- * usable id.
+ * Read a pending permission from the REST list (`PermissionRequest`).
+ * Fields beyond the id vary by platform, so each one is validated.
+ * Returns `null` when the request lacks a usable id.
  */
-export function extractPendingPermission(node: unknown): PendingPermission | null {
-  if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
-  const obj = node as Record<string, unknown>;
-
-  if (obj.type !== 'permission.asked') return null;
-
-  const properties = (obj.properties && typeof obj.properties === 'object')
-    ? obj.properties as Record<string, unknown>
-    : {};
+export function permissionFromRequest(request: PermissionRequest): PendingPermission | null {
+  const properties = asRecord(request);
+  if (!properties) return null;
 
   const id = pickString(properties, 'id', 'requestID');
   if (!id) return null;
@@ -73,9 +71,7 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
     ? rawAlways.filter((p): p is string => typeof p === 'string')
     : undefined;
 
-  const metadata = properties.metadata && typeof properties.metadata === 'object' && !Array.isArray(properties.metadata)
-    ? properties.metadata as Record<string, unknown>
-    : undefined;
+  const metadata = asRecord(properties.metadata) ?? undefined;
 
   // sessionID is the (sub)agent that issued the prompt.
   const sessionId = pickString(properties, 'sessionID', 'sessionId');
@@ -92,37 +88,20 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
 }
 
 /**
- * Extract a `PendingQuestion` from a `question.asked` SSE event.
- * Returns `null` when the event isn't a question ask, lacks an id,
- * or carries no parsable questions.
+ * Read a pending question from the REST list (`QuestionRequest`).
+ * Returns `null` when the request lacks an id or carries no parsable
+ * questions.
  */
-/** Read a pending permission from the REST list (`PermissionRequest`). */
-export function permissionFromRequest(request: PermissionRequest): PendingPermission | null {
-  return extractPendingPermission({ type: 'permission.asked', properties: request });
-}
-
-/** Read a pending question from the REST list (`QuestionRequest`). */
 export function questionFromRequest(request: QuestionRequest): PendingQuestion | null {
-  return extractPendingQuestion({ type: 'question.asked', properties: request });
-}
-
-export function extractPendingQuestion(node: unknown): PendingQuestion | null {
-  if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
-  const obj = node as Record<string, unknown>;
-
-  if (obj.type !== 'question.asked') return null;
-
-  const properties = (obj.properties && typeof obj.properties === 'object')
-    ? obj.properties as Record<string, unknown>
-    : {};
+  const properties = asRecord(request);
+  if (!properties) return null;
 
   const id = pickString(properties, 'id', 'requestID', 'requestId');
   if (!id) return null;
 
   const sessionID = pickString(properties, 'sessionID', 'sessionId');
 
-  const rawQuestions = properties.questions;
-  const questions = normalizeQuestionItems(rawQuestions);
+  const questions = normalizeQuestionItems(properties.questions);
   if (questions.length === 0) return null;
 
   return { requestId: id, sessionID, questions };

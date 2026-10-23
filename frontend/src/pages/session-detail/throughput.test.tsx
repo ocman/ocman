@@ -36,8 +36,7 @@ it('excludes overlapping tool waits and stays stable while another message is ru
     },
   })) as Part[];
   const options = {
-    messages, parts, lastMsg: messages[2], subagentTokens: new Map(),
-    setSubagentTokens: vi.fn(), isRunning: true, pendingPermission: null, pendingQuestion: null,
+    messages, parts, lastMsg: messages[2], isRunning: true, pendingPermission: null, pendingQuestion: null,
   };
   const { result } = renderHook(() => useSessionStatus(options));
   expect(result.current.liveTokensPerSecond).toBe(100);

@@ -3,13 +3,13 @@ import { useApiStore } from '../../lib/apiStore';
 import { initialSessionView, seedDeltaOwnedFields, type SessionView } from '../../lib/sessionReducer';
 import { onPageResume } from '../../lib/pageResume';
 import { watchKeepalive } from '../../lib/sseKeepalive';
-import { conversationStreamUrl, createConversationStream } from '../../lib/conversation/conversationStream';
+import { conversationStreamUrl, createConversationStream, type StreamDebugEvent } from '../../lib/conversation/conversationStream';
 import { reduceConversation } from '../../lib/conversation/conversationReducer';
 import type { OceEnvelope } from '../../lib/conversation/events';
 import type { LiveSessionAction } from '../../lib/conversation/liveSessionView';
 import { notifyQueueUpdated } from '../../lib/useGlobalEvents';
 import { isSessionPageRestore, latestPage, viewFromDetail } from './sessionView';
-import type { SseDebugEvent, UseSessionOptions, UseSessionStatus } from './useSession';
+import type { UseSessionOptions, UseSessionStatus } from './useSession';
 
 interface Options {
   sessionId?: string;
@@ -39,7 +39,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
   const [sseReconnecting, setSseReconnecting] = useState(false);
   const [sseReconnectAttempt, setSseReconnectAttempt] = useState(0);
   const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
-  const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+  const [sseDebugEvents, setSseDebugEvents] = useState<StreamDebugEvent[]>([]);
   const [changesDirtyTick, setChangesDirtyTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const reloadRef = useRef<() => Promise<void>>(async () => {});

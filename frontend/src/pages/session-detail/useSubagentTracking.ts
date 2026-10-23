@@ -1,25 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import type { Part, TaskSessionData } from '../../lib/api';
 import { api } from '../../lib/api';
 import { extractTaskId, isTaskTool } from '../../lib/taskId';
-
-/**
- * Maximum number of per-message token entries we keep in the
- * subagent token map. The map is the input to the live-tokens-per-
- * second indicator; without a bound a long subagent stream would
- * grow it unboundedly.
- */
-const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
-
-/** Drop the oldest entries when the map outgrows the cap. */
-function trimSubagentTokens(
-  prev: Map<string, { output: number; created: number }>,
-): Map<string, { output: number; created: number }> {
-  if (prev.size <= MAX_SUBAGENT_TOKEN_ENTRIES) return prev;
-  const entries = Array.from(prev.entries());
-  return new Map(entries.slice(entries.length - MAX_SUBAGENT_TOKEN_ENTRIES));
-}
 
 /**
  * Merge fetched task data into the cache, returning `prev` when nothing
@@ -46,28 +29,9 @@ export interface RunningTaskEntry {
   status: string;
 }
 
-/** Per-message token snapshot used by the TPS indicator. */
-export type SubagentTokenMap = Map<string, { output: number; created: number }>;
-
-/**
- * Public surface of useSubagentTracking. The setters are exposed so
- * the SSE handler can drop new token observations into the same map
- * without re-importing the hook's internals.
- */
 export interface UseSubagentTrackingResult {
-  /** Set of subagent session ids derived from task-tool parts. */
-  subagentSessionIds: Set<string>;
-  /**
-   * Ref-mirror of `subagentSessionIds`. The SSE effect reads this so
-   * it can route subagent events without re-subscribing every time
-   * the set changes.
-   */
-  subagentSessionIdsRef: MutableRefObject<Set<string>>;
   /** In-flight task entries, derived from task-tool parts. */
   runningTaskIds: RunningTaskEntry[];
-  /** Per-message token snapshots, keyed by subagent message id. */
-  subagentTokens: SubagentTokenMap;
-  setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>>;
   /** Sub-session data per subagent task, keyed by task id. */
   taskLiveOutput: Record<string, TaskSessionData>;
   setTaskLiveOutput: Dispatch<SetStateAction<Record<string, TaskSessionData>>>;
@@ -76,15 +40,9 @@ export interface UseSubagentTrackingResult {
 /**
  * Track subagent (`task` / `mcp_task`) progress for a session.
  *
- * Owns three pieces of state:
- *   1. The set of subagent session ids referenced by the page's
- *      parts. The SSE handler uses this to recognise events from
- *      subagent sessions (their session id differs from the page's).
- *   2. The token-output snapshot per subagent assistant message,
- *      used to compute live tokens-per-second across subagent runs.
- *   3. The sub-session data cache per task, fed to the runtime
- *      provider so the assistant thread can render an embedded
- *      thread preview of the subagent conversation.
+ * Owns the sub-session data cache per task, fed to the runtime
+ * provider so the assistant thread can render an embedded thread
+ * preview of the subagent conversation.
  *
  * The hook runs a 2-second poll against /api/session/{id}/tasks for
  * running tasks, and a one-shot fetch for completed tasks whose
@@ -94,59 +52,16 @@ export function useSubagentTracking(
   parts: Part[],
   sessionId: string | undefined,
 ): UseSubagentTrackingResult {
-  const [subagentTokens, setSubagentTokensRaw] = useState<SubagentTokenMap>(new Map());
   const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, TaskSessionData>>({});
   const fetchedCompletedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const reset = () => {
-      setSubagentTokensRaw(new Map());
       setTaskLiveOutput({});
       fetchedCompletedRef.current.clear();
     };
     reset();
   }, [sessionId]);
-
-  // Wrap the setter in a stable identity that always trims trailing
-  // entries past the cap. Stability matters because the new
-  // pipeline lists `setSubagentTokens` as an effect dependency in
-  // `useSessionStatus`; a fresh identity per render would cause the
-  // 1 Hz TPS interval to be torn down + re-armed on every render,
-  // and (worse) re-fire the effect synchronously, producing a
-  // "Maximum update depth exceeded" warning during active
-  // streaming.
-  const setSubagentTokens = useCallback<Dispatch<SetStateAction<SubagentTokenMap>>>((next) => {
-    setSubagentTokensRaw((prev) => {
-      const updated = typeof next === 'function'
-        ? (next as (p: SubagentTokenMap) => SubagentTokenMap)(prev)
-        : next;
-      return trimSubagentTokens(updated);
-    });
-  }, []);
-
-  // Derive subagent session IDs from task-tool parts. Recomputes
-  // whenever parts changes; the result is fed into a ref so the SSE
-  // effect doesn't need it as a dependency.
-  const subagentSessionIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const p of parts) {
-      const d = typeof p.data === 'string'
-        ? (() => { try { return JSON.parse(p.data); } catch { return null; } })()
-        : p.data;
-      if (!d || typeof d !== 'object') continue;
-      const toolName = (d as Record<string, unknown>).tool as string | undefined;
-      if (!isTaskTool(toolName)) continue;
-      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
-      const taskId = extractTaskId(st);
-      if (taskId) ids.add(taskId);
-    }
-    return ids;
-  }, [parts]);
-
-  // Ref-mirror so the SSE effect reads the latest set without
-  // re-running on every change.
-  const subagentSessionIdsRef = useRef<Set<string>>(subagentSessionIds);
-  useLayoutEffect(() => { subagentSessionIdsRef.current = subagentSessionIds; }, [subagentSessionIds]);
 
   // Derive in-flight task ids — ones whose state.status === 'running'.
   const runningTaskIds = useMemo(() => {
@@ -253,11 +168,7 @@ export function useSubagentTracking(
   }, [completedTaskKey, sessionId]);
 
   return {
-    subagentSessionIds,
-    subagentSessionIdsRef,
     runningTaskIds,
-    subagentTokens,
-    setSubagentTokens,
     taskLiveOutput,
     setTaskLiveOutput,
   };

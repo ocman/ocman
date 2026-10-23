@@ -14,7 +14,7 @@ import type {
 // Backoff notices describe the attempt in flight; any newer level supersedes them.
 const TRANSIENT_NOTICES = new Set(['retry', 'rate_limit', 'provider_overloaded']);
 
-export function applyStatus(view: SessionView, e: SessionStatusEvent): SessionView {
+function applyStatus(view: SessionView, e: SessionStatusEvent): SessionView {
   let session = view.session;
   if (session) {
     let notice = session.notice;
@@ -52,9 +52,7 @@ function patchMeta(view: SessionView, { patch }: SessionUpdated): SessionView {
 function upsertChild(view: SessionView, { child }: ChildUpserted): SessionView {
   const idx = view.sessionTree.findIndex((s) => s.id === child.id);
   if (child.deleted) {
-    const childStatus = { ...view.childStatus };
-    delete childStatus[child.id];
-    return { ...view, sessionTree: idx < 0 ? view.sessionTree : view.sessionTree.filter((s) => s.id !== child.id), childStatus };
+    return idx < 0 ? view : { ...view, sessionTree: view.sessionTree.filter((s) => s.id !== child.id) };
   }
   if (idx < 0) return { ...view, _refetchRequested: true };
   const sessionTree = [...view.sessionTree];
@@ -63,11 +61,8 @@ function upsertChild(view: SessionView, { child }: ChildUpserted): SessionView {
 }
 
 function patchChild(view: SessionView, e: ChildStatus): SessionView {
-  const entry = { status: e.status, ...(e.notice ? { notice: e.notice } : {}) };
-  const sessionTree = view.sessionTree.some((s) => s.id === e.childId)
-    ? view.sessionTree.map((s) => (s.id === e.childId ? { ...s, status: e.status } : s))
-    : view.sessionTree;
-  return { ...view, sessionTree, childStatus: { ...view.childStatus, [e.childId]: entry } };
+  if (!view.sessionTree.some((s) => s.id === e.childId && s.status !== e.status)) return view;
+  return { ...view, sessionTree: view.sessionTree.map((s) => (s.id === e.childId ? { ...s, status: e.status } : s)) };
 }
 
 function applyOverlay(view: SessionView, overlay: LiveOverlay): SessionView {
@@ -107,7 +102,6 @@ const HANDLERS: Handlers = {
   'child.status': patchChild,
   'history.rewritten': requestRefetch,
   'stream.reset': requestRefetch,
-  'history.committed': (s, e) => (s.lastRevision === e.revision ? s : { ...s, lastRevision: e.revision }),
 };
 
 function reduceEvent(s: SessionView, e: OceEvent): SessionView {
@@ -144,11 +138,9 @@ function trackLive(view: SessionView, e: OceEvent): SessionView {
 /** Pure fold of a batch of envelopes. Returns `view` itself when nothing applies. */
 export function reduceConversation(view: SessionView, batch: readonly OceEnvelope[]): SessionView {
   let s = view;
-  let cursor: string | undefined;
   for (const env of coalesceDeltas(batch)) {
     if (env.sessionId !== s.sessionId || !env.event) continue;
     s = trackLive(reduceEvent(s, env.event), env.event);
-    if (typeof env.seq === 'number') cursor = `${env.epoch}:${env.seq}`;
   }
-  return cursor === undefined || cursor === s.cursor ? s : { ...s, cursor };
+  return s;
 }

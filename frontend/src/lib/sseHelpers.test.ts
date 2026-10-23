@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { Part } from './api';
 import {
-  extractPendingPermission,
-  extractPendingQuestion,
+  permissionFromRequest,
+  questionFromRequest,
   normalizeQuestionItems,
   hasQuestionOutput,
   extractPendingQuestionFromPart,
@@ -17,50 +17,39 @@ function makePart(data: unknown, id = 'p1', messageId = 'm1'): Part {
   return { id, messageId, sessionId: SID, data: data as string };
 }
 
-describe('extractPendingPermission', () => {
-  it('returns null for non-permission events', () => {
-    expect(extractPendingPermission(null)).toBeNull();
-    expect(extractPendingPermission('not an object')).toBeNull();
-    expect(extractPendingPermission({ type: 'other' })).toBeNull();
-    expect(extractPendingPermission([])).toBeNull();
+const request = (value: unknown) => value as never;
+
+describe('permissionFromRequest', () => {
+  it('returns null for non-object requests', () => {
+    expect(permissionFromRequest(request(null))).toBeNull();
+    expect(permissionFromRequest(request('not an object'))).toBeNull();
+    expect(permissionFromRequest(request([]))).toBeNull();
   });
 
   it('returns null when no id is present', () => {
-    expect(extractPendingPermission({
-      type: 'permission.asked',
-      properties: {},
-    })).toBeNull();
+    expect(permissionFromRequest(request({}))).toBeNull();
   });
 
   it('extracts an id, falling back to requestID', () => {
-    expect(extractPendingPermission({
-      type: 'permission.asked',
-      properties: { requestID: 'req_1' },
-    })?.permissionId).toBe('req_1');
+    expect(permissionFromRequest(request({ requestID: 'req_1' }))?.permissionId).toBe('req_1');
   });
 
   it('defaults permission text and patterns when missing', () => {
-    const out = extractPendingPermission({
-      type: 'permission.asked',
-      properties: { id: 'p1' },
-    });
+    const out = permissionFromRequest({ id: 'p1' });
     expect(out?.permission).toBe('Permission required');
     expect(out?.patterns).toEqual([]);
     expect(out?.sessionId).toBe('');
   });
 
   it('captures sessionID and permission patterns when present', () => {
-    const out = extractPendingPermission({
-      type: 'permission.asked',
-      properties: {
-        id: 'p1',
-        permission: 'Run shell command?',
-        patterns: ['ls *', 1, 'git status'],
-        always: ['ls *', 1, 'git *'],
-        metadata: { command: 'git status' },
-        sessionID: 'sub_1',
-      },
-    });
+    const out = permissionFromRequest(request({
+      id: 'p1',
+      permission: 'Run shell command?',
+      patterns: ['ls *', 1, 'git status'],
+      always: ['ls *', 1, 'git *'],
+      metadata: { command: 'git status' },
+      sessionID: 'sub_1',
+    }));
     expect(out?.permission).toBe('Run shell command?');
     expect(out?.patterns).toEqual(['ls *', 'git status']); // non-string filtered
     expect(out?.always).toEqual(['ls *', 'git *']);
@@ -69,32 +58,23 @@ describe('extractPendingPermission', () => {
   });
 });
 
-describe('extractPendingQuestion', () => {
+describe('questionFromRequest', () => {
   const validQ = { question: 'q?', options: [] };
 
-  it('returns null for non-question events', () => {
-    expect(extractPendingQuestion({ type: 'other' })).toBeNull();
+  it('returns null for non-object requests', () => {
+    expect(questionFromRequest(request(null))).toBeNull();
   });
 
   it('returns null without a usable id', () => {
-    expect(extractPendingQuestion({
-      type: 'question.asked',
-      properties: { questions: [validQ] },
-    })).toBeNull();
+    expect(questionFromRequest(request({ questions: [validQ] }))).toBeNull();
   });
 
   it('returns null when no questions parse', () => {
-    expect(extractPendingQuestion({
-      type: 'question.asked',
-      properties: { id: 'q1' },
-    })).toBeNull();
+    expect(questionFromRequest({ id: 'q1' })).toBeNull();
   });
 
-  it('extracts a well-formed question event', () => {
-    const out = extractPendingQuestion({
-      type: 'question.asked',
-      properties: { id: 'q1', sessionID: 'sub_1', questions: [validQ] },
-    });
+  it('extracts a well-formed question request', () => {
+    const out = questionFromRequest({ id: 'q1', sessionID: 'sub_1', questions: [validQ] });
     expect(out?.requestId).toBe('q1');
     expect(out?.sessionID).toBe('sub_1');
     expect(out?.questions).toHaveLength(1);

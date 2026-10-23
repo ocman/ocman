@@ -8,11 +8,10 @@ import { coalesceDeltas } from './deltaBatch';
 import { reduceLiveSessionView } from './liveSessionView';
 import type { LiveOverlay, OceEnvelope, OceEvent, OcePrompt } from './events';
 
-// One fixed cursor, so identity checks see only the event's own effect.
 const env = (event: OceEvent, sessionId = 's'): OceEnvelope => ({
   v: 1, epoch: 'e', seq: 1, sessionId, platform: 'opencode', at: 0, durability: 'live', event,
 });
-const seed = (): SessionView => ({ ...seedView('s'), cursor: 'e:1' });
+const seed = (): SessionView => seedView('s');
 const fold = (view: SessionView, ...events: OceEvent[]) => reduceConversation(view, events.map((e) => env(e)));
 const permission = (id: string, sessionId = 's'): OcePrompt => ({
   id, kind: 'permission', sessionId, askedAt: 9, permission: { permission: 'bash', patterns: ['ls'], always: ['ls *'], metadata: { c: 1 } },
@@ -27,15 +26,14 @@ const part = (id: string, data: Record<string, unknown>, final = false): OceEven
 const dataOf = (view: SessionView, id: string) => decode(view.parts.find((p) => p.id === id)!);
 
 describe('reduceConversation', () => {
-  it('returns the same view for an empty or foreign batch and tracks the cursor', () => {
+  it('returns the same view for an empty, foreign or stateless batch', () => {
     const view = seedView('s');
     expect(reduceConversation(view, [])).toBe(view);
     expect(reduceConversation(view, [env(status('busy'), 'other')])).toBe(view);
-    const next = reduceConversation(view, [{ ...env(status('busy')), epoch: 'x', seq: 4 }]);
-    expect(next.cursor).toBe('x:4');
-    expect(reduceConversation(next, [{ ...env({ type: 'turn.started', startedAt: 1 }), epoch: 'x', seq: 4 }])).toBe(next);
+    expect(reduceConversation(view, [{ ...env({ type: 'turn.started', startedAt: 1 }), epoch: 'x', seq: 4 }])).toBe(view);
+    expect(reduceConversation(view, [env({ type: 'history.committed', revision: 3 })])).toBe(view);
     for (const type of ['future.event', 'toString', 'constructor']) {
-      expect(reduceConversation(next, [{ ...env({ type } as never), epoch: 'x', seq: 4 }])).toBe(next);
+      expect(reduceConversation(view, [{ ...env({ type } as never), epoch: 'x', seq: 4 }])).toBe(view);
     }
   });
 
@@ -84,16 +82,14 @@ describe('reduceConversation', () => {
     const notice = { kind: 'retry', message: 'x', retryAt: 0, attempt: 1 };
     view = fold(view, { type: 'child.status', childId: 'c', status: 'busy', notice }, { type: 'child.status', childId: 'x', status: 'done' });
     expect(view.sessionTree[1].status).toBe('busy');
-    expect(view.childStatus).toEqual({ c: { status: 'busy', notice }, x: { status: 'done' } });
-    view = fold(view, { type: 'child.upserted', child: { ...child, deleted: true } }, { type: 'child.upserted', child: { ...child, id: 'x', deleted: true } });
+    expect(fold(view, { type: 'child.status', childId: 'c', status: 'busy' })).toBe(view);
+    view = fold(view, { type: 'child.upserted', child: { ...child, deleted: true } });
     expect(view.sessionTree.map((s) => s.id)).toEqual(['s']);
-    expect(view.childStatus).toEqual({});
+    expect(fold(view, { type: 'child.upserted', child: { ...child, id: 'x', deleted: true } })).toBe(view);
   });
 
-  it('records bookkeeping and reconcile requests', () => {
-    let view = fold(seed(), { type: 'history.committed', revision: 3 });
-    expect(view.lastRevision).toBe(3);
-    expect(fold(view, { type: 'history.committed', revision: 3 }).lastRevision).toBe(3);
+  it('records reconcile requests', () => {
+    let view = seed();
     for (const event of [
       { type: 'turn.ended', outcome: 'done', endedAt: 1 },
       { type: 'history.rewritten', reason: 'revert' },
@@ -276,16 +272,15 @@ describe('streamed tool input during snapshot merges', () => {
 describe('reduceLiveSessionView', () => {
   it('folds stream batches and keeps stream bookkeeping across loads of the same session', () => {
     const view = reduceLiveSessionView(seed(), { type: 'oceBatch', envelopes: [
-      { ...env({ type: 'history.committed', revision: 2 }), epoch: 'e', seq: 3 },
-      env({ type: 'child.status', childId: 'c', status: 'busy' }),
+      env(status('busy')),
       env({ type: 'part.delta', messageId: 'm', partId: 'p', field: 'text', offset: 4, text: 'gap' }),
     ] });
     expect(view._stale?.size).toBe(1);
     const reloaded = reduceLiveSessionView(view, { type: 'load', view: seed(), mode: 'reconcile' });
-    expect(reloaded).toMatchObject({ lastRevision: 2, childStatus: { c: { status: 'busy' } }, _stale: undefined });
-    expect(reloaded.cursor).toBe(view.cursor);
+    expect(reloaded._stale).toBeUndefined();
+    expect(reloaded._live).toBe(view._live);
     const other = reduceLiveSessionView(view, { type: 'load', view: seedView('t') });
-    expect(other).toMatchObject({ sessionId: 't', cursor: undefined, lastRevision: undefined, childStatus: undefined });
+    expect(other).toMatchObject({ sessionId: 't', _live: undefined });
     const cleared = reduceLiveSessionView(view, { type: 'clearPrompt', kind: 'question', id: 'x' });
     expect(cleared).toBe(view);
   });

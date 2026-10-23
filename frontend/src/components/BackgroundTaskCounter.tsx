@@ -1,17 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
 import { backgroundTaskCount } from '../lib/backgroundTasks';
-import { withDeadline } from '../lib/coalescedRefresh';
-import { useDocumentVisible } from '../lib/usePanelVisible';
+import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import { RouteButton } from './Control';
 
 export function BackgroundTaskCounter({ enabled }: { enabled: boolean }) {
-  const visible = useDocumentVisible();
-  const query = useQuery({
-    queryKey: ['background-task-count'],
-    queryFn: ({ signal }) => withDeadline(10_000, backgroundTaskCount, signal),
-    enabled: enabled && visible,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: false,
+  const query = useVisiblePollingQuery({
+    queryKey: ['background-task-count'], run: backgroundTaskCount, intervalMs: 5_000, timeoutMs: 10_000, enabled,
   });
   const count = query.data?.count;
   return <RouteButton to="/background-tasks" variant="ghost" size="compact" className="backend-stats-counter"

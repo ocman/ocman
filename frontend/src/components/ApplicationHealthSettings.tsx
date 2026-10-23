@@ -1,7 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
 import { fetchJSON } from '../lib/api.requests';
-import { withDeadline } from '../lib/coalescedRefresh';
-import { useDocumentVisible } from '../lib/usePanelVisible';
+import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import { useBackendStatus } from '../lib/backendStatus';
 import { RouteButton } from './Control';
 import { SettingRow } from './SettingRow';
@@ -28,21 +26,13 @@ async function readBackendHealth(signal: AbortSignal): Promise<BackendHealth> {
 }
 
 export function ApplicationHealthSettings() {
-  const visible = useDocumentVisible();
   const backend = useBackendStatus();
-  const startup = useQuery({
-    queryKey: ['application-health', 'backend'],
-    queryFn: ({ signal }) => withDeadline(3_000, readBackendHealth, signal),
-    enabled: visible,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: false,
+  const startup = useVisiblePollingQuery({
+    queryKey: ['application-health', 'backend'], run: readBackendHealth, intervalMs: 5_000, timeoutMs: 3_000,
   });
-  const query = useQuery({
-    queryKey: ['application-health', 'history'],
-    queryFn: ({ signal }) => withDeadline(10_000, (deadline) => fetchJSON<HistoryHealth>('/api/analytics/history-health', deadline), signal),
-    enabled: visible,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: false,
+  const query = useVisiblePollingQuery({
+    queryKey: ['application-health', 'history'], intervalMs: 5_000, timeoutMs: 10_000,
+    run: (signal) => fetchJSON<HistoryHealth>('/api/analytics/history-health', signal),
   });
   const health = query.data;
   const status = query.error ? 'Health check unavailable' : !health ? 'Checking…'

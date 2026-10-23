@@ -1464,8 +1464,8 @@ describe('useSession — retryNow', () => {
 });
 
 describe('useSession — subagent event routing', () => {
-  async function connected() {
-    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
+  async function connected(detail = makeDetail()) {
+    const fetchSession = vi.fn().mockResolvedValue(detail);
     const hook = renderHook(() => useSession(SID, { fetchSession }));
     await waitFor(() => expect(hook.result.current.session?.id).toBe(SID));
     const sse = FakeEventSource.latest()!;
@@ -1491,13 +1491,14 @@ describe('useSession — subagent event routing', () => {
   });
 
   it('surfaces a descendant prompt the owner routed to this stream and tracks child status', async () => {
-    const { result, sse } = await connected();
+    const parent = makeDetail().session;
+    const { result, sse } = await connected(makeDetail({ sessionTree: [parent, { ...parent, id: 'child', parentId: SID, status: 'busy' }] }));
     act(() => {
       sse.emitOce({ type: 'prompt.asked', prompt: { id: 'perm-child', kind: 'permission', sessionId: 'child', askedAt: 5, permission: { permission: 'bash', patterns: ['ls'] } } });
       sse.emitOce({ type: 'child.status', childId: 'child', status: 'waiting' });
     });
     await waitFor(() => expect(result.current.pendingPermission).toMatchObject({ permissionId: 'perm-child', sessionId: 'child', askedAt: 5 }));
-    expect(result.current.childStatus).toEqual({ child: { status: 'waiting' } });
+    expect(result.current.sessionTree.find((s) => s.id === 'child')?.status).toBe('waiting');
   });
 });
 

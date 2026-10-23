@@ -1,12 +1,10 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Button, SelectField } from '../components/Control';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
 import { backgroundTasks, type BackgroundTask, type BackgroundTaskStatus } from '../lib/backgroundTasks';
-import { withDeadline } from '../lib/coalescedRefresh';
-import { useDocumentVisible } from '../lib/usePanelVisible';
+import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import './BackgroundTasks.css';
 
 const labels: Record<BackgroundTaskStatus, string> = {
@@ -44,13 +42,9 @@ function TaskGroup({ title, tasks }: { title: string; tasks: BackgroundTask[] })
 
 export function BackgroundTasks() {
   const [status, setStatus] = useState<BackgroundTaskStatus | ''>('');
-  const visible = useDocumentVisible();
-  const query = useQuery({
-    queryKey: ['background-tasks', status],
-    queryFn: ({ signal }) => withDeadline(10_000, (deadline) => backgroundTasks(status, deadline), signal),
-    enabled: visible,
-    refetchInterval: 2_000,
-    refetchIntervalInBackground: false,
+  const query = useVisiblePollingQuery({
+    queryKey: ['background-tasks', status], intervalMs: 2_000, timeoutMs: 10_000,
+    run: (signal) => backgroundTasks(status, signal),
   });
   const tasks = query.data ?? [];
   const active = tasks.filter((task) => task.status === 'queued' || task.status === 'running');

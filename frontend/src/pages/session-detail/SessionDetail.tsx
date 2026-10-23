@@ -367,12 +367,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if (sseActive && session?.liveConnection) setPortAvailable(true);
   }, [sseActive, session?.liveConnection, setPortAvailable]);
 
-  // Subagent tracking — TPS / inline stdout / known subagent ids.
-  const {
-    subagentTokens,
-    setSubagentTokens,
-    taskLiveOutput,
-  } = useSubagentTracking(parts, id);
+  // Subagent tracking — inline sub-session output for task tools.
+  const { taskLiveOutput } = useSubagentTracking(parts, id);
   useSessionSeen({ session, patchSession });
 
   // Sidebar state, archive/pin handlers, archived toggle, collapsed groups.
@@ -840,8 +836,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     messages,
     parts,
     taskLiveOutput,
-    subagentTokens,
-    setSubagentTokens,
     sessionStatus: session?.status,
     awaitingAssistantResponse,
     isRunning,

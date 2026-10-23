@@ -70,11 +70,11 @@ export function foldOce(sessionId: string, envelopes: readonly OceEnvelope[], se
   return { view, ...out };
 }
 
-/** The comparable view: `_` bookkeeping and stream-only fields dropped, part data decoded. */
+/** The comparable view: `_` bookkeeping dropped, part data decoded. */
 export function comparable(view: SessionView): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(view)) {
-    if (key.startsWith('_') || key === 'cursor' || key === 'lastRevision' || key === 'childStatus') continue;
+    if (key.startsWith('_')) continue;
     out[key] = value;
   }
   out.parts = view.parts.map((p) => ({ id: p.id, messageId: p.messageId, sessionId: p.sessionId, data: decode(p) }));

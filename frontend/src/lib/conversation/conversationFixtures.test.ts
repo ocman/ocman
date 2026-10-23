@@ -2,7 +2,7 @@
 // checked against the shared golden fixtures (design §13.2).
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { decode } from '../sessionViewParts';
-import { foldOce, loadFixtures, type Fixture } from '../../test/oceFixtures';
+import { foldOce, loadFixtures, seedView, type Fixture } from '../../test/oceFixtures';
 import type { OceEnvelope } from './events';
 
 const FIXTURES = loadFixtures(import.meta.glob('../../../../internal/convevents/v1map/testdata/*/*.oce.jsonl', {
@@ -81,8 +81,10 @@ describe('golden fixtures', () => {
   it('tracks descendant status', () => {
     const fx = fixture('opencode/subagent-child');
     const deleted = fx.envelopes.findIndex((e) => e.event.type === 'child.upserted' && 'child' in e.event && e.event.child.deleted);
-    expect(foldOce(fx.sessionId, fx.envelopes.slice(0, deleted)).view.childStatus).toEqual({ ses_child: { status: 'done' } });
-    expect(fold(fx).childStatus).toEqual({});
+    const base = seedView(fx.sessionId);
+    const seed = { ...base, sessionTree: [base.session!, { ...base.session!, id: 'ses_child', parentId: fx.sessionId, status: 'busy' as const }] };
+    expect(foldOce(fx.sessionId, fx.envelopes.slice(0, deleted), seed).view.sessionTree[1]).toMatchObject({ id: 'ses_child', status: 'done' });
+    expect(foldOce(fx.sessionId, fx.envelopes, seed).view.sessionTree.map((s) => s.id)).toEqual([fx.sessionId]);
   });
 
   it('shows a descendant prompt on the parent', () => {

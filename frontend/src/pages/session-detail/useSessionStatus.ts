@@ -1,9 +1,6 @@
-import { useEffect } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
 import type { Message, Part, Session, TaskSessionData } from '../../lib/api';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
-import type { SubagentTokenMap } from './useSubagentTracking';
 import { trackRender } from '../../lib/renderRateMonitor';
 import { estimateThroughput } from '../../lib/throughput';
 
@@ -15,10 +12,6 @@ export interface UseSessionStatusOptions {
   messages: Message[];
   parts?: Part[];
   taskLiveOutput?: Record<string, TaskSessionData>;
-  /** Snapshot of per-message token counts from subagent runs. */
-  subagentTokens: SubagentTokenMap;
-  /** Setter for the subagent token map; cleared when a run ends. */
-  setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>>;
   /** Latest session status mirrored from the API/SSE session object. */
   sessionStatus?: Session['status'] | null;
   /**
@@ -97,7 +90,6 @@ export function useSessionStatus({
   messages,
   parts = [],
   taskLiveOutput,
-  setSubagentTokens,
   sessionStatus = null,
   awaitingAssistantResponse = false,
   isRunning,
@@ -108,12 +100,6 @@ export function useSessionStatus({
   const displayStatus = resolveDisplayStatus(sessionStatus, justSentPrompt, lastMsgErrored);
 
   const liveTokensPerSecond = isRunning ? estimateThroughput(messages, parts, taskLiveOutput) : null;
-  useEffect(() => {
-    if (!isRunning) {
-      setSubagentTokens((prev) => (prev.size > 0 ? new Map() : prev));
-    }
-  }, [isRunning, setSubagentTokens]);
-
   return {
     displayStatus,
     liveTokensPerSecond,

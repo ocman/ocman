@@ -40,10 +40,10 @@ export function reduceLiveSessionView(view: SessionView, action: LiveSessionActi
     // turn. Anchored deltas and upserts are idempotent when replayed below.
     const live = view.sessionId === incoming.sessionId ? view._live : undefined;
     if (live) {
-      incoming = { ...incoming, _live: live, cursor: view.cursor, lastRevision: view.lastRevision,
+      incoming = { ...incoming, _live: live,
         pendingPermission: live.pendingPermission, pendingQuestion: live.pendingQuestion,
         judgeStartsAt: live.judgeStartsAt, checkingPermissionId: live.checkingPermissionId, judgeReasoning: live.judgeReasoning,
-        backgroundTaskCount: live.backgroundTaskCount, backgroundTasks: live.backgroundTasks, childStatus: view.childStatus,
+        backgroundTaskCount: live.backgroundTaskCount, backgroundTasks: live.backgroundTasks,
         _deltaOwnedFields: live._deltaOwnedFields,
         session: incoming.session && live.session && live._statusRevision !== undefined ? { ...incoming.session, status: live.session.status,
           notice: live.session.notice, resetsAt: live.session.resetsAt, liveConnection: live.session.liveConnection } : incoming.session };
@@ -68,9 +68,6 @@ export function reduceLiveSessionView(view: SessionView, action: LiveSessionActi
   return {
     ...next,
     _stale: undefined,
-    cursor: same ? view.cursor : undefined,
-    lastRevision: same ? view.lastRevision : undefined,
-    childStatus: same ? view.childStatus : undefined,
     _live: same ? view._live : undefined,
   };
 }

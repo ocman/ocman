@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { Message, SessionStatus } from '../../lib/api';
 import { useSessionStatus } from './useSessionStatus';
-import type { SubagentTokenMap } from './useSubagentTracking';
 
 // Minimal user / assistant message builders. Only the fields the
 // hook reads (`role`, `finish`, `error`, `time`) are populated.
@@ -58,7 +57,6 @@ function erroredAssistantMessage(id: string, created: number): Message {
 interface HookProps {
   lastMsg: Message | null;
   messages: Message[];
-  subagentTokens: SubagentTokenMap;
   sessionStatus?: SessionStatus;
   awaitingAssistantResponse?: boolean;
   isRunning: boolean;
@@ -67,14 +65,11 @@ interface HookProps {
 }
 
 function buildHook(initial: HookProps) {
-  const setSubagentTokens = vi.fn();
   return renderHook(
     (props: HookProps) =>
       useSessionStatus({
         lastMsg: props.lastMsg,
         messages: props.messages,
-        subagentTokens: props.subagentTokens,
-        setSubagentTokens: (next) => setSubagentTokens(next),
         sessionStatus: props.sessionStatus,
         awaitingAssistantResponse: props.awaitingAssistantResponse,
         isRunning: props.isRunning,
@@ -88,7 +83,7 @@ function buildHook(initial: HookProps) {
 describe('useSessionStatus', () => {
   it('keeps limited despite an errored transcript or a pending send', () => {
     for (const message of [erroredAssistantMessage('m1', 1), userMessage('m2', 2)]) {
-      const { result, unmount } = buildHook({ lastMsg: message, messages: [message], subagentTokens: new Map(), sessionStatus: 'limited', awaitingAssistantResponse: true, isRunning: false, pendingPermission: null, pendingQuestion: null });
+      const { result, unmount } = buildHook({ lastMsg: message, messages: [message], sessionStatus: 'limited', awaitingAssistantResponse: true, isRunning: false, pendingPermission: null, pendingQuestion: null });
       expect(result.current.displayStatus).toBe('limited');
       unmount();
     }
@@ -122,7 +117,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus,
       isRunning: false,
       pendingPermission: null,
@@ -142,7 +137,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus: 'busy',
       isRunning: false,
       pendingPermission: null,
@@ -162,7 +157,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus: 'busy',
       isRunning: false,
       pendingPermission: null,
@@ -191,7 +186,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus,
       isRunning: false,
       pendingPermission: null,
@@ -214,7 +209,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: errored,
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus: 'done',
       isRunning: false,
       pendingPermission: null,
@@ -234,7 +229,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus: 'interrupted',
       isRunning: false,
       pendingPermission: null,
@@ -250,7 +245,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: null,
       messages: [],
-      subagentTokens: new Map(),
+
       isRunning: false,
       pendingPermission: null,
       pendingQuestion: null,
@@ -266,7 +261,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[0],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus: 'done',
       awaitingAssistantResponse: true,
       isRunning: true,
@@ -284,7 +279,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus: 'interrupted',
       awaitingAssistantResponse: true,
       isRunning: false,
@@ -308,7 +303,7 @@ describe('useSessionStatus', () => {
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
-      subagentTokens: new Map(),
+
       sessionStatus: 'waiting',
       awaitingAssistantResponse: true,
       isRunning: false,

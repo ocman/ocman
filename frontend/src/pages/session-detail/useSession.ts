@@ -9,6 +9,7 @@ import { useActivityScope } from '../../lib/activityScopes';
 import { markSseCommit } from '../../lib/perfMonitor';
 import { computeReconnectDelay } from './sseBackoff';
 import { reduceLiveSessionView } from '../../lib/conversation/liveSessionView';
+import type { StreamDebugEvent } from '../../lib/conversation/conversationStream';
 import { platformMessageCount } from './sessionView';
 import { useSessionCache } from './useSessionCache';
 import { useSessionLifecycle } from './useSessionLifecycle';
@@ -17,7 +18,6 @@ import { patchSessionLists } from '../../lib/sessionsCache';
 export { latestPage, platformMessageCount } from './sessionView';
 
 export type UseSessionStatus = 'loading' | 'live' | 'reconnecting' | 'error';
-export interface SseDebugEvent { at: number; event: string; data: string }
 
 export interface UseSessionOptions {
   /** Owner supplied by an explicit deep link, authoritative over cached rows. */
@@ -55,7 +55,7 @@ export interface UseSessionResult extends SessionView {
   sseReconnectAttempt: number;
   sseNextRetryAt: number | null;
   retryNow: () => void;
-  sseDebugEvents: SseDebugEvent[];
+  sseDebugEvents: StreamDebugEvent[];
   changesDirtyTick: number;
   /** Clear only the currently displayed matching prompt. */
   clearPrompt: (kind: 'permission' | 'question', id: string) => void;
