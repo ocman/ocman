@@ -20,7 +20,7 @@ vi.mock('../lib/apiStore', () => ({
   useApiStore: (selector: (state: typeof mocks.apiState) => unknown) => selector(mocks.apiState),
 }));
 
-import { GroupedSessionTable, SessionTable } from './SessionTable';
+import { SessionTable } from './SessionTable';
 
 function makeSession(over: Partial<Session> = {}): Session {
   return {
@@ -69,27 +69,5 @@ describe('session rows are keyboard reachable', () => {
 
     await user.keyboard('{Enter}');
     expect(screen.getByTestId('location')).toHaveTextContent('/session/ses_1');
-  });
-
-  it('exposes the grouped table row as a link and opens it with Enter', async () => {
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <GroupedSessionTable
-          sessions={[makeSession({ id: 'ses_2', title: 'Refactor auth' })]}
-          includeArchived
-          collapsedProjects={new Set<string>()}
-          toggleCollapsedProject={() => {}}
-        />
-        <Location />
-      </MemoryRouter>,
-    );
-
-    const link = screen.getByRole('link', { name: /Refactor auth/ });
-    expect(link).toHaveAttribute('href', '/session/ses_2');
-
-    link.focus();
-    await user.keyboard('{Enter}');
-    expect(screen.getByTestId('location')).toHaveTextContent('/session/ses_2');
   });
 });

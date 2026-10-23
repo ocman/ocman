@@ -64,7 +64,6 @@ PATTERNS=(
 	"tmux\\.ListSessions\\("
 	"tmux\\.ListWindows\\("
 	"tmux\\.SwitchClient\\("
-	"tmux\\.KillTarget\\("
 	"tmux\\.LaunchOpencode[A-Za-z]*\\("
 	"tmux\\.RestartOpencode[A-Za-z]*\\("
 	# internal/term — in-app terminal windows and PTYs

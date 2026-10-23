@@ -47,10 +47,6 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 }
 
-func Register(ctx context.Context, store *state.DB, routineID, relayURL, enrollmentToken string, client *http.Client) (state.WebhookInbox, error) {
-	return RegisterWithSecret(ctx, store, routineID, relayURL, enrollmentToken, "", "", client)
-}
-
 // RegisterWithSecret registers a legacy routine-owned inbox and subscribes
 // that routine to every delivery.
 func RegisterWithSecret(ctx context.Context, store *state.DB, routineID, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {

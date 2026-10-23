@@ -38,7 +38,6 @@
   .oc-tool-pre:not(.oc-collapse-tools *),
   .oc-shell-block:not(.oc-collapse-tools *),
   .oc-tool-compact-body:not(.oc-collapse-tools *),
-  .oc-embedded-thread:not(.oc-collapse-tools *),
   .oc-tool-content:not(.oc-collapse-tools *) {
     max-height: none !important;
     overflow: visible !important;

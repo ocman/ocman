@@ -70,12 +70,6 @@
   .phone-session-table td[colspan],
   .phone-project-table td[colspan] { grid-column: 1 / -1; }
 
-  .oc-session-group { margin-bottom: 16px; }
-  .oc-session-group-header-row { border: 0; background: transparent; }
-  .oc-session-group-header { min-height: 44px; padding-inline: 4px; }
-  .oc-project-menu-trigger { width: 44px; min-height: 44px; border: 0; }
-  .oc-project-menu-list { overflow: hidden; }
-  .oc-project-menu-item { min-height: 44px; }
   .phone-session-filters { display: block; margin-bottom: 16px; }
   .phone-session-filters .oc-segmented-control { display: flex; padding: 4px; gap: 8px; background: var(--mantle); }
   .phone-session-filters .oc-segmented-option { flex: 1; margin: 0; }

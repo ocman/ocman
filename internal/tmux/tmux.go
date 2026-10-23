@@ -60,32 +60,3 @@ func outputCommand(ctx context.Context, args ...string) ([]byte, error) {
 func Output(ctx context.Context, args ...string) ([]byte, error) {
 	return outputCommand(ctx, args...)
 }
-
-func combinedOutputCommand(ctx context.Context, args ...string) ([]byte, error) {
-	cmd, cmdCtx, cancel := commandContext(ctx, commandTimeout, args...)
-	defer cancel()
-	out, err := cmd.CombinedOutput()
-	if err != nil && cmdCtx.Err() != nil {
-		return out, cmdCtx.Err()
-	}
-	return out, err
-}
-
-// KillTarget kills a tmux window or session by target identifier. A
-// "session:window" target (containing a colon) is killed with
-// kill-window; a bare session name with kill-session. The target may
-// already be gone, in which case tmux exits non-zero and the error is
-// returned for the caller to treat as best-effort.
-func KillTarget(ctx context.Context, target string) error {
-	var args []string
-	if strings.Contains(target, ":") {
-		args = []string{"kill-window", "-t", target}
-	} else {
-		args = []string{"kill-session", "-t", target}
-	}
-	out, err := combinedOutputCommand(ctx, args...)
-	if err != nil {
-		return fmt.Errorf("tmux %v: %w: %s", args, err, string(out))
-	}
-	return nil
-}
