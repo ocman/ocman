@@ -21,7 +21,7 @@ import { isMutedTool } from '../lib/mutedTools';
 import { useStickyBottom } from '../lib/useStickyBottom';
 import { useHistoryPagination } from '../lib/useHistoryPagination';
 import { useHistoryScrollAnchor } from '../lib/useHistoryScrollAnchor';
-import { trackRender } from '../lib/renderRateMonitor';
+import { countRender } from '../lib/perfMonitor';
 import { useUiStore } from '../lib/uiStore';
 import type { FC } from 'react';
 import { LinkPreviewStrip } from './GitHubLinkPreview';
@@ -561,7 +561,7 @@ export function AssistantThread({
   scrollToBottomTick?: number;
   scrollToToolCall?: { messageId: string; toolCallId: string; tick: number } | null;
 }) {
-  trackRender('AssistantThread');
+  countRender('AssistantThread');
   const showToolDetails = useUiStore((s) => s.showToolDetails);
   const speech = React.useContext(TurnSpeechContext);
   const threadRef = useRef<HTMLDivElement>(null);

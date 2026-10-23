@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { cleanTitle, fuzzyMatch } from '../../lib/format';
 import { usePageTitle } from '../../lib/headerContext';
 import { SessionTable } from '../../components/SessionTable';
@@ -32,7 +32,7 @@ export function SessionsTab() {
     showRoutines, setShowRoutines, showSnoozed, setShowSnoozed } = useSessionListFilters();
   const [archivedPreference, setArchivedPreference] = useSessionFilterPreference('archived', SESSION_FILTER_DEFAULTS.showArchived);
   const filters = { alwaysShowPrompts, showArchived: showArchived || archivedPreference, showSnoozed, showChildren, showFactory, showRoutines };
-  const hidden = useMemo(() => hiddenSessionOrigins(sessions, showFactory, showRoutines), [sessions, showFactory, showRoutines]);
+  const hidden = hiddenSessionOrigins(sessions, showFactory, showRoutines);
 
   const filterControls = <>
     <ButtonGroup label="Session filters" className={styles.filters}>

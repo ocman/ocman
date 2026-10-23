@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { renderHook as renderHookRaw, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import * as api from './upstreamApi';
-import { _resetForgeUserCacheForTests, useForgeUser } from './useForgeUser';
+import { useForgeUser } from './useForgeUser';
+import { renderHookWithQuery as renderHook } from '../test/renderWithQuery';
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  _resetForgeUserCacheForTests();
 });
 
 it('cancels an in-flight identity request on unmount', async () => {
@@ -20,19 +22,25 @@ it('cancels an in-flight identity request on unmount', async () => {
   expect(signal?.aborted).toBe(true);
 });
 
-it('rechecks forge identity after the cache expires', async () => {
+it('reuses a known identity for a minute, then rechecks', async () => {
   let now = 1_000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
   const fetcher = vi.spyOn(api, 'fetchForgeUser')
     .mockResolvedValueOnce({ login: 'alice', host: 'github.com' })
     .mockResolvedValueOnce({ login: 'bob', host: 'github.com' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 
-  const first = renderHook(() => useForgeUser('/repo', 'origin', 'local'));
+  const first = renderHookRaw(() => useForgeUser('/repo', 'origin', 'local'), { wrapper });
   await waitFor(() => expect(first.result.current.login).toBe('alice'));
   first.unmount();
+
+  const cached = renderHookRaw(() => useForgeUser('/repo', 'origin', 'local'), { wrapper });
+  expect(cached.result.current).toMatchObject({ login: 'alice', ready: true });
+  cached.unmount();
   now += 60_001;
 
-  const second = renderHook(() => useForgeUser('/repo', 'origin', 'local'));
+  const second = renderHookRaw(() => useForgeUser('/repo', 'origin', 'local'), { wrapper });
   await waitFor(() => expect(second.result.current.login).toBe('bob'));
   expect(fetcher).toHaveBeenCalledTimes(2);
 });

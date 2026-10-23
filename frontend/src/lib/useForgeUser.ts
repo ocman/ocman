@@ -1,12 +1,5 @@
+import { useQuery } from '@tanstack/react-query';
 import { fetchForgeUser } from './upstreamApi';
-import { useAsyncResource } from './useAsyncResource';
-
-const forgeUsers = new Map<string, { login: string; expiresAt: number }>();
-const maxForgeUsers = 32;
-
-export function _resetForgeUserCacheForTests(): void {
-  forgeUsers.clear();
-}
 
 /**
  * useForgeUser resolves the authenticated user's login for the given
@@ -23,31 +16,20 @@ export function useForgeUser(
   remote: string | undefined,
   remoteId: string,
 ): { login: string | null; loading: boolean; ready: boolean } {
-  const key = `${remoteId}\0${dir}\0${remote}`;
-  // Errors (e.g. 401 unauthenticated) resolve to null — the resource's
-  // initial value — which is exactly the "no login" signal callers want.
-  const { data, loading, ready } = useAsyncResource<{ key: string; login: string | null }>({
-    fetcher: (signal) => {
-      const cached = forgeUsers.get(key);
-      if (cached && cached.expiresAt > Date.now()) return Promise.resolve({ key, login: cached.login });
-      return fetchForgeUser({ dir: dir!, remoteId, remote: remote!, signal }).then((user) => {
-        const login = user?.login ?? null;
-        if (login) {
-          if (forgeUsers.size >= maxForgeUsers) forgeUsers.delete(forgeUsers.keys().next().value!);
-          forgeUsers.set(key, { login, expiresAt: Date.now() + 60_000 });
-        }
-        return { key, login };
-      });
-    },
-    deps: [dir, remote, remoteId],
-    initial: { key, login: null },
-    enabled: !!dir && !!remote,
+  const enabled = !!dir && !!remote;
+  const query = useQuery({
+    queryKey: ['forge-user', remoteId, dir, remote],
+    queryFn: async ({ signal }) => (await fetchForgeUser({ dir: dir!, remoteId, remote: remote!, signal }))?.login ?? null,
+    enabled,
+    // A known login is reused for a minute; "no login" is rechecked on mount.
+    staleTime: (q) => (q.state.data ? 60_000 : 0),
   });
 
-  const current = data.key === key;
+  // Errors (e.g. 401 unauthenticated) resolve to null, the "no login"
+  // signal callers want.
   return {
-    login: current ? data.login : null,
-    loading: !!dir && !!remote && (!current || loading || !ready),
-    ready: current && ready,
+    login: enabled ? query.data ?? null : null,
+    loading: enabled && (query.isPending || query.isFetching),
+    ready: enabled && !query.isPending,
   };
 }

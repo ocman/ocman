@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderWithQuery as render } from '../../test/renderWithQuery';
 import { afterEach, expect, it, vi } from 'vitest';
 import { UpstreamRemoteGroup } from './UpstreamRemoteGroup';
 import * as api from '../../lib/upstreamApi';

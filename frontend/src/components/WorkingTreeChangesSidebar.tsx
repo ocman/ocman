@@ -9,7 +9,7 @@ import { useFullscreenDiff } from './useFullscreenDiff';
 import type { PaneSummary } from './SessionChangesSidebar';
 import { RefreshButton } from './RefreshButton';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
-import { SidebarFileListSkeleton } from './Skeleton';
+import { SkeletonLines } from './Skeleton';
 import { ChangedFileRow } from './ChangedFileRow';
 
 // Lazy-mount budget for the per-file rows. Working trees with
@@ -137,7 +137,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
         <div className="oc-changes-sidebar-empty">No directory available.</div>
       )}
       {enabled && loading && !data && (
-        <SidebarFileListSkeleton rows={6} />
+        <SkeletonLines label="Loading file list" />
       )}
       {enabled && notRepo && (
         <div className="oc-changes-sidebar-empty">

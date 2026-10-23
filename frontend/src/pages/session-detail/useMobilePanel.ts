@@ -32,10 +32,10 @@ export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
     if (phone) setPhonePanel(panel);
     else setLocalPanel(panel);
   }, [phone, setPhonePanel]);
-  const toggleMobileSidebar = useCallback(() => {
+  const toggleMobileSidebar = () => {
     setMobilePanel(mobilePanel === 'sidebar' ? null : 'sidebar');
-  }, [mobilePanel, setMobilePanel]);
-  const toggleMobileDetails = useCallback(() => {
+  };
+  const toggleMobileDetails = () => {
     // Seeding happens OUTSIDE the setState updater: updaters must be
     // pure (StrictMode double-invokes them), so the store mutation
     // can't live inside one.
@@ -50,7 +50,7 @@ export function useMobilePanel(id: string | undefined): UseMobilePanelResult {
       if (ui.changesSidebarOpenTabs.length === 0) ui.toggleChangesSidebarTab('info');
     }
     setMobilePanel(opening ? 'details' : null);
-  }, [mobilePanel, setMobilePanel]);
+  };
   const setPanelRef = useRef(setMobilePanel);
   useLayoutEffect(() => { setPanelRef.current = setMobilePanel; }, [setMobilePanel]);
   const closeMobilePanel = useCallback(() => setPanelRef.current(null), []);

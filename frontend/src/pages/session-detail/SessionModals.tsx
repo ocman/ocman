@@ -1,4 +1,3 @@
-import { useCallback } from 'react';
 import { api } from '../../lib/api';
 import type { Message, Part, Project, Session } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
@@ -59,7 +58,7 @@ export function SessionModals({
   onScrollToMessage,
 }: SessionModalsProps) {
 
-  const handleMoveDestination = useCallback((directory: string) => {
+  const handleMoveDestination = (directory: string) => {
     pending.begin(`/move ${directory}`);
     api.moveSession(session.id, directory)
       .then(() => {
@@ -71,7 +70,7 @@ export function SessionModals({
         remoteLog.error('Failed to move session', error);
         pending.fail(error instanceof Error ? error.message : 'Unknown error');
       });
-  }, [patchSession, pending, session.id, session.platform]);
+  };
 
   const sameHost = (remoteId: string | undefined) => (remoteId || 'local') === (session.remoteId || 'local');
   const jumpHistory = messageJumpHistory?.sessionId === session.id ? messageJumpHistory : null;

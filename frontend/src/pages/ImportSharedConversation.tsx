@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, type Project, type SharedConversation } from '../lib/api';
 import { mergeRelayChunks, parseRelayShareURL, readRelayShare } from '../lib/relayShare';
@@ -59,7 +59,7 @@ export function ImportSharedConversation() {
     return () => controller.abort();
   }, [shareURL]);
 
-  const title = useMemo(() => conversation?.session?.title?.trim() || 'Forked conversation', [conversation]);
+  const title = conversation?.session?.title?.trim() || 'Forked conversation';
 
   const fork = async () => {
     if (!conversation || !directory) return;

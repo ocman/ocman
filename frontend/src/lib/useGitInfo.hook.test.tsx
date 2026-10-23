@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, waitFor } from '@testing-library/react';
+import { renderHookWithQuery as renderHook } from '../test/renderWithQuery';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useGitInfo } from './useGitInfo';
 
@@ -67,7 +68,7 @@ it('keeps the infos reference when a poll returns the same data', async () => {
   await waitFor(() => expect(result.current.infos['/repo']?.branch).toBe('main'));
   const first = result.current.infos;
 
-  act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+  act(() => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); });
   await waitFor(() => expect(result.current.loading).toBe(false));
   await act(async () => { await Promise.resolve(); });
   expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);

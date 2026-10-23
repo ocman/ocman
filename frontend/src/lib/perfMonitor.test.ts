@@ -51,7 +51,9 @@ describe('perfEnabled', () => {
     expect(timeSseBatch(3, () => 42)).toBe(42);
     markSseFlush();
     markSseCommit();
+    countRender('SessionDetail');
     expect(summary().metrics).toEqual({});
+    expect(summary().counters).toEqual({});
   });
 
   it('turns on with ?debug or the localStorage flag', () => {

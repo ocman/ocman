@@ -49,13 +49,13 @@ export function useHoverPrefetch(id: string, platform?: string) {
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = null;
   }, []);
-  const start = useCallback(() => {
+  const start = () => {
     cancel();
     timer.current = window.setTimeout(() => {
       timer.current = null;
       void prefetchSession(id, platform);
     }, PREFETCH_DELAY_MS);
-  }, [cancel, id, platform]);
+  };
   useEffect(() => cancel, [cancel]);
   return { onPointerEnter: start, onPointerLeave: cancel, onFocus: start, onBlur: cancel };
 }

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
+import { renderWithQuery as render } from '../test/renderWithQuery';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { RightPanel } from './RightPanel';
@@ -152,7 +153,7 @@ it('keeps upstream controls during detection and hides them only for an unsuppor
   expect(screen.getByRole('radio', { name: 'closed' })).toBeChecked();
   expect(screen.queryByText('No supported upstream detected')).not.toBeInTheDocument();
   await act(async () => resolve([]));
-  expect(screen.getByText('No supported upstream detected')).toBeInTheDocument();
+  expect(await screen.findByText('No supported upstream detected')).toBeInTheDocument();
   expect(screen.queryByRole('tab', { name: 'Issues' })).not.toBeInTheDocument();
 
   rerender(panel(session('s3', '/third', 'third-proj')));

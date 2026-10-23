@@ -97,10 +97,9 @@ import { StartProgress } from './StartProgress';
 import { useStartHandoff } from './startHandoffs';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
-import { ThreadSkeleton } from '../../components/Skeleton';
+import { SkeletonLines } from '../../components/Skeleton';
 import { PreviewOwnerContext, PreviewSessionContext } from '../../lib/previews';
-import { markSessionSwitchRendered, markSessionSwitchStart } from '../../lib/perfMonitor';
-import { trackRender } from '../../lib/renderRateMonitor';
+import { countRender, markSessionSwitchRendered, markSessionSwitchStart } from '../../lib/perfMonitor';
 import { PerfProfiler } from '../../components/PerfProfiler';
 
 /** Memory bound on the in-memory message list. */
@@ -173,13 +172,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // The drawer click path closes synchronously here (no flicker frame);
   // useMobilePanel's id-keyed effect covers every other navigation source
   // (command palette, auto-redirect, closed-session reopen).
-  const navigateFromSidebar = useCallback((nextId: string) => {
+  const navigateFromSidebar = (nextId: string) => {
     const phoneOverlay = mobilePanel !== null && phone;
     if (phoneOverlay && nextId === id) return closeMobilePanel();
     if (!phoneOverlay) closeMobilePanel();
     setSidebarScroll((previous) => ({ sessionId: nextId, tick: previous.tick + 1 }));
     navigateToSession(nextId, phoneOverlay);
-  }, [closeMobilePanel, navigateToSession, mobilePanel, phone, id]);
+  };
 
   // The new SSE pipeline. Owns the EventSource, the reducer, the
   // initial fetch + reload + loadMore, the cache mirror, and the
@@ -259,7 +258,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setCommitSourceStatus(null);
   }, [id, session?.platform]);
 
-  const showCommitSource = useCallback((commit: SessionInfoCommit) => {
+  const showCommitSource = (commit: SessionInfoCommit) => {
     if (!session || session.id !== id) return;
     commitSourceAbortRef.current?.abort();
     commitSourceAbortRef.current = null;
@@ -300,12 +299,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
         remoteLog.error('Failed to load commit source', error);
         setCommitSourceStatus({ sessionId, platformId, message: 'Source call could not be loaded.' });
       });
-  }, [session, id, messages, parts, hydrateHistory, closeMobilePanel]);
+  };
 
   const { firstUnreadMessageId, unreadMessageCount } = useUnreadMarker(session, messages);
   const { visibleSessionWarnings, dismissSessionWarning } = useSessionWarnings(session);
 
-  const handleScrollToMessageBookmark = useCallback((bookmark: MessageBookmark) => {
+  const handleScrollToMessageBookmark = (bookmark: MessageBookmark) => {
     const updateScrollRequest = () => {
       setScrollToMessageBookmark((current) => ({
         sessionId: bookmark.sessionId,
@@ -321,7 +320,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       updateScrollRequest();
       navigate(`/session/${bookmark.sessionId}`);
     });
-  }, [id, navigate]);
+  };
 
   const sseActive = sseStatus === 'live';
 
@@ -435,8 +434,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     gitInfoRemoteId,
     sidebarVisible,
   );
-  const siblingGitInfos = useMemo(() => Object.fromEntries(Object.entries(ownerGitInfos)
-    .map(([directory, info]) => [checkoutKey(directory, gitInfoRemoteId), info])), [ownerGitInfos, gitInfoRemoteId]);
+  const siblingGitInfos = Object.fromEntries(Object.entries(ownerGitInfos)
+    .map(([directory, info]) => [checkoutKey(directory, gitInfoRemoteId), info]));
   const {
     bookmarkedMessageIds,
     selectedMessageBookmarkKey,
@@ -783,7 +782,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     },
   });
 
-  trackRender('SessionDetail');
+  countRender('SessionDetail');
   // Perf monitoring: a switch has painted once the new thread is rendered.
   useEffect(() => {
     if (id && session?.id === id && !loading) markSessionSwitchRendered(id);
@@ -926,7 +925,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <ShareLinkModal sessionId={session.id} onClose={modal.close} />
           )}
           {loading ? (
-            <ThreadSkeleton rows={5} />
+            <SkeletonLines rows={10} label="Loading conversation" testId="thread-skeleton" />
           ) : loadError ? (
             <SessionLoadError message={loadError} onRetry={() => { void reload(); }} />
           ) : newConversation && !session ? (

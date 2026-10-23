@@ -1,62 +1,47 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { useAsyncResource } from './useAsyncResource';
-import { useDebouncedSessionResource } from './useDebouncedSessionResource';
+import { renderHookWithQuery } from '../test/renderWithQuery';
+import { useUpstreams } from './useUpstreams';
 import { useUpstreamList } from './useUpstreamList';
 import * as upstream from './upstreamApi';
 
+const snapshot = [{ remote: 'origin', host: 'github.com', type: 'github' as const, repo: 'a/repo' }];
+
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
+// Real browsers bubble visibilitychange to window, where react-query listens.
+function setHidden(hidden: boolean) {
+  vi.spyOn(document, 'hidden', 'get').mockReturnValue(hidden);
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(hidden ? 'hidden' : 'visible');
+  document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+}
+
 it('retains the upstream discovery snapshot while hidden and during resume', async () => {
-  let hidden = false;
-  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
-  const fetcher = vi.fn().mockResolvedValue('snapshot');
-  const { result } = renderHook(() => useAsyncResource({ fetcher, deps: [], initial: '', enabled: true }));
-  await waitFor(() => expect(result.current.data).toBe('snapshot'));
-  act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
-  expect(result.current.data).toBe('snapshot');
+  const fetcher = vi.spyOn(upstream, 'fetchUpstreams').mockResolvedValue(snapshot);
+  const { result } = renderHookWithQuery(() => useUpstreams('/repo', 'local'));
+  await waitFor(() => expect(result.current.upstreams).toBe(snapshot));
+  act(() => setHidden(true));
+  expect(result.current.upstreams).toBe(snapshot);
   fetcher.mockReturnValue(new Promise(() => {}));
-  act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
-  expect(fetcher).toHaveBeenCalledTimes(2);
-  expect(result.current.data).toBe('snapshot');
+  act(() => setHidden(false));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  expect(result.current.upstreams).toBe(snapshot);
   expect(result.current.ready).toBe(true);
 });
 
 it('retains the same-resource discovery snapshot when resume fails', async () => {
-  let hidden = false;
-  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
-  const fetcher = vi.fn().mockResolvedValue('snapshot');
-  const { result, rerender } = renderHook(({ key }) => useAsyncResource({ fetcher, deps: [key], initial: '', enabled: true }), { initialProps: { key: 'owner-a' } });
-  await waitFor(() => expect(result.current.data).toBe('snapshot'));
-  act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
+  const fetcher = vi.spyOn(upstream, 'fetchUpstreams').mockResolvedValue(snapshot);
+  const { result, rerender } = renderHookWithQuery(({ owner }) => useUpstreams('/repo', owner), { initialProps: { owner: 'owner-a' } });
+  await waitFor(() => expect(result.current.upstreams).toBe(snapshot));
+  act(() => setHidden(true));
   fetcher.mockRejectedValue(new Error('offline'));
-  act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+  act(() => setHidden(false));
   await waitFor(() => expect(result.current.error).toBe('offline'));
-  expect(result.current.data).toBe('snapshot');
-  act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
-  rerender({ key: 'owner-b' });
-  act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+  expect(result.current.upstreams).toBe(snapshot);
+  rerender({ owner: 'owner-b' });
   await waitFor(() => expect(result.current.error).toBe('offline'));
-  expect(result.current.data).toBe('');
-});
-
-it('retains diff/info data, cancels dirty work while hidden, then refreshes', async () => {
-  let hidden = false;
-  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
-  const fetcher = vi.fn().mockResolvedValue('diff');
-  const { result, rerender } = renderHook(({ tick }) => useDebouncedSessionResource('session', fetcher, '', 'error', { dirtyTick: tick }), { initialProps: { tick: 0 } });
-  await waitFor(() => expect(result.current.data).toBe('diff'));
-  vi.useFakeTimers();
-  act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); });
-  rerender({ tick: 1 });
-  act(() => result.current.refresh());
-  await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-  expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(result.current.data).toBe('diff');
-  await act(async () => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
-  expect(fetcher).toHaveBeenCalledTimes(2);
-  expect(result.current.data).toBe('diff');
+  expect(result.current.upstreams).toEqual([]);
 });
 
 it('keeps the PR page and rows across backgrounding, without hidden requests', async () => {

@@ -1,10 +1,6 @@
-import { useCallback, useState } from 'react';
 import { useApiStore } from './apiStore';
 import type { WorkingTreeDiff } from './api';
-import {
-  useDebouncedSessionResource,
-  type DebouncedSessionResourceOptions,
-} from './useDebouncedSessionResource';
+import { useSessionResourceQuery, type SessionResourceOptions } from './useSessionResourceQuery';
 
 const EMPTY_DIFF: WorkingTreeDiff = {
   repo: '',
@@ -21,14 +17,13 @@ export interface UseWorkingTreeDiffResult {
   error: string | null;
   notRepo: boolean;
   /**
-   * Manually trigger an immediate refetch, bypassing the debounce.
-   * Wired to the user-facing "Refresh" button. Safe to call when
-   * `enabled` is false (no-op).
+   * Refetch immediately. Wired to the user-facing "Refresh" button.
+   * Safe to call when `enabled` is false (no-op).
    */
   refresh: () => void;
 }
 
-export type UseWorkingTreeDiffOptions = DebouncedSessionResourceOptions;
+export type UseWorkingTreeDiffOptions = SessionResourceOptions;
 
 // A 404 (or "not a git worktree" body) means the directory isn't a git
 // repo. gitDiff throws a plain Error whose message is the response text
@@ -40,50 +35,33 @@ function isNotRepoError(err: unknown): boolean {
 
 /**
  * useWorkingTreeDiff fetches /api/git/diff for the given absolute
- * directory and re-fetches on dirtyTick changes. It's a thin wrapper
- * around useDebouncedSessionResource, keying on `dir` instead of a
- * session id (the base hook treats the key as an opaque reset trigger).
+ * directory and re-fetches on dirtyTick changes.
  *
- * The hook distinguishes "directory isn't a git worktree" (HTTP 404)
- * from a real error: the fetch worker catches that case, flips the
- * `notRepo` flag, and resolves with the empty diff so the base hook
- * reports `error: null`. Consumers can then render a friendly empty
- * state for non-repo directories rather than a generic error toast.
+ * "Directory isn't a git worktree" (HTTP 404) is not an error: it sets
+ * `notRepo` and yields the empty diff, so consumers can render a
+ * friendly empty state for non-repo directories.
  */
 export function useWorkingTreeDiff(
   dir: string | undefined,
   options: UseWorkingTreeDiffOptions = {},
 ): UseWorkingTreeDiffResult {
-  const [notRepo, setNotRepo] = useState(false);
   const getGitDiff = useApiStore((s) => s.getGitDiff);
-
-  const fetchDiff = useCallback(
-    async (id: string, signal: AbortSignal): Promise<WorkingTreeDiff> => {
-      // Clear the flag at the start of every fetch (covers dir changes
-      // and refreshes) so a stale notRepo doesn't linger.
-      setNotRepo(false);
+  const { data, loading, error, refresh } = useSessionResourceQuery(
+    dir ? ['git-diff', dir] : undefined,
+    async (signal) => {
       try {
         // fresh=true bypasses the backend's tiny cache so an
         // edit-event-triggered refresh is never sub-second stale.
-        return await getGitDiff(id, { fresh: true }, signal);
+        return { diff: await getGitDiff(dir!, { fresh: true }, signal), notRepo: false };
       } catch (err) {
-        if (isNotRepoError(err)) {
-          setNotRepo(true);
-          return EMPTY_DIFF;
-        }
+        if (isNotRepoError(err)) return { diff: EMPTY_DIFF, notRepo: true };
         throw err;
       }
     },
-    [getGitDiff],
-  );
-
-  const { data, loading, error, refresh } = useDebouncedSessionResource(
-    dir,
-    fetchDiff,
-    EMPTY_DIFF,
+    { diff: EMPTY_DIFF, notRepo: false },
     'Failed to load diff',
     options,
   );
 
-  return { data, loading, error, notRepo, refresh };
+  return { data: data?.diff ?? null, loading, error, notRepo: data?.notRepo ?? false, refresh };
 }

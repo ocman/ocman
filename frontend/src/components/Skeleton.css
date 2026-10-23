@@ -33,14 +33,6 @@
   height: 16px;
 }
 
-/* Small badge / pill */
-.oc-skeleton-badge {
-  height: 18px;
-  width: 48px;
-  border-radius: 9px;
-  display: inline-block;
-}
-
 /* ── Skeleton table rows ───────────────────────────────────────── */
 
 /* Wraps one "fake" table row with column cells matching the real
@@ -58,91 +50,14 @@
   vertical-align: middle;
 }
 
-/* ── Sidebar skeleton rows ─────────────────────────────────────── */
+/* ── Stacked lines (sidebars, threads, terminal) ───────────────── */
 
-.oc-skeleton-sidebar-rows {
-  padding: 8px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.oc-skeleton-sidebar-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* ── Info-section skeleton ─────────────────────────────────────── */
-
-.oc-skeleton-info-section {
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.oc-skeleton-info-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-/* ── Thread skeleton ───────────────────────────────────────────── */
-
-.oc-skeleton-thread {
+.oc-skeleton-lines {
   display: flex;
   flex-direction: column;
   flex: 1;
-  /* Match the real thread's horizontal padding (.oc-thread-viewport)
-     so skeleton bubbles don't stick to the edge. */
-  padding: 16px;
-  overflow: hidden;
-  gap: 0;
-}
-
-/* Assistant bubble: left-aligned, no background, multi-line */
-.oc-skeleton-bubble {
-  padding: 16px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* User bubble: right-aligned with card background + accent border */
-.oc-skeleton-bubble--user {
-  align-items: flex-end;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent3);
-  padding: 16px 20px;
-  margin-bottom: 4px;
-}
-
-.oc-skeleton-bubble-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-}
-
-/* ── Terminal skeleton ─────────────────────────────────────────── */
-
-.oc-skeleton-terminal {
-  display: flex;
-  flex-direction: column;
   gap: 10px;
-  height: 100%;
-  padding: 10px 12px;
+  padding: 12px 14px;
   box-sizing: border-box;
-  background: var(--bg);
   overflow: hidden;
-}
-
-.oc-skeleton-terminal-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }

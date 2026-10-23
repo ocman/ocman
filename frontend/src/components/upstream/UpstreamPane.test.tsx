@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UpstreamPane } from './UpstreamPane';
 import * as upstreamApi from '../../lib/upstreamApi';
 import { useGitInfo } from '../../lib/useGitInfo';
-import { _resetForgeUserCacheForTests } from '../../lib/useForgeUser';
+import { renderWithQuery as render } from '../../test/renderWithQuery';
 import { cachePRChecks, getCachedPRChecks } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import type { GitCommandHint } from '../../lib/useGlobalEvents';
@@ -40,7 +40,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   useUpstreamPreferences.setState(useUpstreamPreferences.getInitialState());
-  _resetForgeUserCacheForTests();
   upstreamListMock.items = [];
   upstreamListMock.error = null;
   upstreamListMock.page = 1;
@@ -226,19 +225,6 @@ describe('UpstreamPane owner-scoped resources', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Issues' }));
     fireEvent.click(screen.getByTestId('upstream-filter-mine'));
     await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(4));
-  });
-
-  it('evicts old successful forge identities', async () => {
-    const oneUpstream = [upstreams[0]];
-    const { rerender } = render(<UpstreamPane directory="/repo/0" remoteId="box" upstreams={oneUpstream} />);
-    fireEvent.click(screen.getByTestId('upstream-filter-mine'));
-    await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(1));
-    for (let i = 1; i <= 32; i += 1) {
-      rerender(<UpstreamPane directory={`/repo/${i}`} remoteId="box" upstreams={oneUpstream} />);
-      await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(i + 1));
-    }
-    rerender(<UpstreamPane directory="/repo/0" remoteId="box" upstreams={oneUpstream} />);
-    await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(34));
   });
 
   it('resets row launch state when the project changes', async () => {

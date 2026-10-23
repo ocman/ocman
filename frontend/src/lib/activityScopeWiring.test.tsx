@@ -101,7 +101,7 @@ describe('activity scope wiring', () => {
   it('tracks one git-status scope per canonical directory', () => {
     const { rerender, unmount } = renderHook(
       ({ dirs }) => useGitInfo(dirs, 'local'),
-      { initialProps: { dirs: ['/repo/b', ' /repo/a ', '/repo/b'] } },
+      { wrapper, initialProps: { dirs: ['/repo/b', ' /repo/a ', '/repo/b'] } },
     );
 
     expect(activityScopeSnapshot()).toEqual([

@@ -7,7 +7,7 @@ import { relativeTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { sessionsForWorktree } from '../lib/worktrees';
-import { WorktreesTableSkeleton } from '../components/Skeleton';
+import { SkeletonTable } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { RefreshButton } from '../components/RefreshButton';
@@ -138,7 +138,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
       </HeaderPortal>
 
       {loading ? (
-        <WorktreesTableSkeleton rows={3} />
+        <SkeletonTable columns={['Branch', 'Path', 'Sessions', 'Last activity', 'Actions']} rows={3} label="Loading worktrees" />
       ) : error ? (
         <InlineAlert onRetry={() => { void load(); }} retrying={loading}>{error}</InlineAlert>
       ) : rows.length === 0 ? (

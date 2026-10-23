@@ -1,7 +1,7 @@
 import type { Message, Part, Session, TaskSessionData } from '../../lib/api';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
-import { trackRender } from '../../lib/renderRateMonitor';
+import { countRender } from '../../lib/perfMonitor';
 import { estimateThroughput } from '../../lib/throughput';
 
 export interface UseSessionStatusOptions {
@@ -94,7 +94,7 @@ export function useSessionStatus({
   awaitingAssistantResponse = false,
   isRunning,
 }: UseSessionStatusOptions): UseSessionStatusResult {
-  trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
+  countRender('useSessionStatus');
   const justSentPrompt = awaitingAssistantResponse && lastMsg?.data?.role === 'user';
   const lastMsgErrored = lastMsg?.data?.finish === 'error' || !!lastMsg?.data?.error;
   const displayStatus = resolveDisplayStatus(sessionStatus, justSentPrompt, lastMsgErrored);

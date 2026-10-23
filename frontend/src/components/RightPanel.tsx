@@ -15,7 +15,7 @@ import type { Session, SessionInfoCommit } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
 import { pluginPaneTab, usePluginPanes } from '../lib/pluginPanes';
 import { Pane } from './RightPanelPane';
-import { trackRender } from '../lib/renderRateMonitor';
+import { countRender } from '../lib/perfMonitor';
 import { Button } from './Control';
 import { PhoneSessionTools } from './PhoneSessionTools';
 import { useIsPhone } from '../lib/useIsPhone';
@@ -99,7 +99,7 @@ export function RightPanel({
   onNavigateCommit,
   commitSourceStatus,
 }: RightPanelProps) {
-  trackRender('RightPanel');
+  countRender('RightPanel');
   const phone = useIsPhone();
   const documentVisible = useDocumentVisible();
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);

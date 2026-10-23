@@ -3,7 +3,7 @@ import './PhoneTables.css';
 import type { Session } from '../lib/api';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { nestSessions } from '../lib/nestSessions';
-import { SessionTableSkeleton } from './Skeleton';
+import { SkeletonTable } from './Skeleton';
 import { DataTable } from './DataTable';
 import { SessionTableRow } from './SessionTableRow';
 import { useSessionTableArchive } from './useSessionTableArchive';
@@ -25,7 +25,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived, 
   const { archivingSessionIds, locallyArchivedSessionIds, archiveError, handleArchiveSession } = useSessionTableArchive();
 
   if (loading) {
-    return <SessionTableSkeleton rows={5} showProject={showProject} />;
+    return <SkeletonTable columns={showProject ? ['Session', 'Project', 'Activity', 'Started', ''] : ['Session', 'Activity', 'Started', '']} label="Loading sessions" />;
   }
 
   const colCount = showProject ? 5 : 4;

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -21,7 +21,7 @@ import { cleanTitle, fuzzyMatch } from '../../lib/format';
 import { BackendStats } from '../../components/BackendStats';
 import { Resizer } from '../../components/Resizer';
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useUiStore } from '../../lib/uiStore';
-import { SessionSidebarListSkeleton } from '../../components/Skeleton';
+import { SkeletonLines } from '../../components/Skeleton';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus, visibleSidebarSessions } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
@@ -37,7 +37,7 @@ import { TmuxClientPopover } from '../../components/TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
 import { checkoutKey } from '../../lib/projectIdentity';
-import { trackRender } from '../../lib/renderRateMonitor';
+import { countRender } from '../../lib/perfMonitor';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
 import type { ConversationDraft } from '../../lib/newConversationDrafts';
 import { useSidebarDraftGroups } from './useSidebarDraftGroups';
@@ -129,7 +129,7 @@ export function SessionSidebar({
   onNewSessionInDirectory,
   onArchiveProject,
 }: SessionSidebarProps) {
-  trackRender('SessionSidebar');
+  countRender('SessionSidebar');
   const phone = useIsPhone();
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const [searchQuery, setSearchQuery] = useState('');
@@ -142,9 +142,9 @@ export function SessionSidebar({
   useSidebarReorder(sidebarListRef, sidebarView);
   const draftSessionIds = useDraftSessionIds();
   // Sessions hidden by the Factory/routine filters, including descendants.
-  const hiddenSessions = useMemo(() => hiddenSessionOrigins(
+  const hiddenSessions = hiddenSessionOrigins(
     [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)], showFactory, showRoutines,
-  ), [recentSessions, sidebarProjectGroups, showFactory, showRoutines]);
+  );
 
   // Reveal the selection on navigation or initial load. Live activity must
   // not repeatedly pull the user away from a manually scrolled position.
@@ -189,35 +189,25 @@ export function SessionSidebar({
   );
 
   // Pinned rows come first; only project groups are reorderable.
-  const filteredProjectGroups = useMemo(() => {
-    const query = searchQuery.trim();
-    return sidebarProjectGroups.flatMap((group) => {
-      const projectMatches = !!query && fuzzyMatch(query, group.directory);
-      const sessions = group.sessions.filter((session) =>
-        matchesSessionListFilters(session, { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines },
-          hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
-      );
-      return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
-    });
-  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed, showFactory, showRoutines]);
-
-  const filteredPinnedSessions = useMemo(() => {
-    return recentSessions
-      .filter((session) => session.pinned && (!session.snoozedUntil || showSnoozed))
-      .sort((a, b) => b.pinnedAt - a.pinnedAt);
-  }, [recentSessions, showSnoozed]);
-  const sortableGroups = useMemo(
-    () => filteredProjectGroups.filter((g) => !g.isPinned),
-    [filteredProjectGroups],
-  );
-  const flatUnpinned = useMemo(() => {
-    const query = searchQuery.trim();
-    return recentSessions.filter((session) =>
-      !session.pinned &&
+  const query = searchQuery.trim();
+  const filteredProjectGroups = sidebarProjectGroups.flatMap((group) => {
+    const projectMatches = !!query && fuzzyMatch(query, group.directory);
+    const sessions = group.sessions.filter((session) =>
       matchesSessionListFilters(session, { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines },
-        hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
+        hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
     );
-  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId, alwaysShowPrompts, showArchivedRecent, showSnoozed, showFactory, showRoutines]);
+    return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
+  });
+
+  const filteredPinnedSessions = recentSessions
+    .filter((session) => session.pinned && (!session.snoozedUntil || showSnoozed))
+    .sort((a, b) => b.pinnedAt - a.pinnedAt);
+  const sortableGroups = filteredProjectGroups.filter((g) => !g.isPinned);
+  const flatUnpinned = recentSessions.filter((session) =>
+    !session.pinned &&
+    matchesSessionListFilters(session, { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines },
+      hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
+  );
 
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.
@@ -363,7 +353,7 @@ export function SessionSidebar({
       )}
       <div className="session-sidebar-list" ref={sidebarListRef}>
         {loadingRecentSessions ? (
-          <SessionSidebarListSkeleton rows={5} />
+          <SkeletonLines rows={10} label="Loading sessions" />
         ) : sidebarView === 'recent' && allRecentSessions.length === 0 && !preparedDrafts.length ? (
           <GettingStartedEmpty compact />
         ) : sidebarView === 'recent' ? (

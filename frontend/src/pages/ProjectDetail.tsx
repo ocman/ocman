@@ -28,17 +28,17 @@ export function ProjectDetail() {
   // Carry an explicit owner on to the Worktrees view (absent = this machine).
   const ownerId = searchParams.get('remoteId');
 
-  const setTimeRange = useCallback((v: number) => {
+  const setTimeRange = (v: number) => {
     setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
-  }, [setSearchParams]);
+  };
 
-  const setExcludeArchived = useCallback((v: boolean) => {
+  const setExcludeArchived = (v: boolean) => {
     setSearchParams((p) => {
       if (v) p.set('a', '1');
       else p.delete('a');
       return p;
     }, { replace: true });
-  }, [setSearchParams]);
+  };
 
   // TanStack Query handles dedup, cancellation, stale-while-revalidate,
   // and visibility pausing automatically (Wave 3 / P4+P5 fix).
@@ -46,7 +46,7 @@ export function ProjectDetail() {
   // computed inside the queryFn at fetch time.
   const sinceHours = timeRange > 0 ? timeRange : undefined;
   const projectsQ = useProjects();
-  const identity = useMemo(() => projectIdentityIndex(projectsQ.data ?? []), [projectsQ.data]);
+  const identity = projectIdentityIndex(projectsQ.data ?? []);
   const sessionsQ = useSessions(
     { sinceHours, limit: 0, accounting: true },
     { poll: true, enabled: !!directory },

@@ -1,11 +1,10 @@
-import { useCallback } from 'react';
 import { useApiStore } from './apiStore';
 import type { SessionInfo } from './api';
 import {
-  useDebouncedSessionResource,
-  type DebouncedSessionResourceOptions,
-  type DebouncedSessionResourceResult,
-} from './useDebouncedSessionResource';
+  useSessionResourceQuery,
+  type SessionResourceOptions,
+  type SessionResourceResult,
+} from './useSessionResourceQuery';
 
 // Stable empty payload returned when the hook is disabled or the
 // platform doesn't expose this data. Reused across renders so
@@ -22,34 +21,25 @@ const EMPTY_INFO: SessionInfo = {
   commits: [],
 };
 
-export type UseSessionInfoOptions = DebouncedSessionResourceOptions & { platformId?: string };
-export type UseSessionInfoResult = DebouncedSessionResourceResult<SessionInfo>;
+export type UseSessionInfoOptions = SessionResourceOptions & { platformId?: string };
+export type UseSessionInfoResult = SessionResourceResult<SessionInfo>;
 
 /**
  * useSessionInfo fetches /api/session/{id}/info and re-fetches
- * whenever `options.dirtyTick` changes. Refetch timing follows
- * DebouncedTrigger: a 500 ms inner debounce that resets on every
- * tick, with a 5 s hard ceiling so a continuously-busy session still
- * sees periodic updates.
+ * (coalesced) whenever `options.dirtyTick` changes.
  *
- * Returns `{ data, loading, error, refresh }`. When `enabled` is
- * false, returns a synchronous EMPTY_INFO with `loading: false` so
- * the caller can render a "Not supported" empty state without a
- * flash of skeleton.
+ * When `enabled` is false, returns a synchronous EMPTY_INFO with
+ * `loading: false` so the caller can render a "Not supported" empty
+ * state without a flash of skeleton.
  */
 export function useSessionInfo(
   sessionId: string | undefined,
   { platformId, ...options }: UseSessionInfoOptions = {},
 ): UseSessionInfoResult {
   const getSessionInfo = useApiStore((s) => s.getSessionInfo);
-  const fetchInfo = useCallback(
-    (_resourceId: string, signal: AbortSignal) => getSessionInfo(sessionId!, signal, platformId),
-    [getSessionInfo, sessionId, platformId],
-  );
-  const resourceId = sessionId ? `${platformId ?? 'local'}:${sessionId}` : undefined;
-  return useDebouncedSessionResource(
-    resourceId,
-    fetchInfo,
+  return useSessionResourceQuery(
+    sessionId ? ['session-info', platformId ?? 'local', sessionId] : undefined,
+    (signal) => getSessionInfo(sessionId!, signal, platformId),
     EMPTY_INFO,
     'Failed to load session info',
     options,

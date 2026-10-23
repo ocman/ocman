@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { fetchJSON } from './api';
 import type { GitInfo } from './api';
 import { acquireActivityScope } from './activityScopes';
@@ -27,6 +28,7 @@ import { acquireActivityScope } from './activityScopes';
  */
 
 const REFRESH_INTERVAL_MS = 30_000;
+const EMPTY: Record<string, GitInfo> = {};
 
 export interface UseGitInfoResult {
   infos: Record<string, GitInfo>;
@@ -86,120 +88,38 @@ export async function fetchGitInfoOnce(
   }
 }
 
-// Module-level helpers exposed for tests; not part of the public API.
-// Currently a no-op but kept for symmetry with the other hooks in
-// this directory (useLongTaskMonitor etc.) so a future refactor can
-// add a shared cache without changing the test surface.
-export function _resetForTests(): void { /* intentionally empty */ }
-
 /**
- * useGitInfo is the React hook side. The effect depends on the
- * canonical query-param *string* rather than the array reference,
- * so callers can pass a fresh array literal on every render
- * (`useGitInfo(sessions.map(s => s.dir))`) without making the
- * effect re-run and aborting in-flight fetches.
- *
- * That subtlety bit us once: an earlier version memoised the dirs
- * array via useMemo([...], [dirs]), which still keyed on the array
- * reference and re-ran on every parent render. Each render aborted
- * the previous fetch before it could land, so /api/git/info was
- * never observed completing. Keying on the string fixes it because
- * `buildDirsQueryParam` is deterministic on the input contents.
+ * useGitInfo polls git status for `dirs` every 30 s while mounted and
+ * `enabled`. The query key uses the canonical query-param string, so
+ * callers can pass a fresh array literal on every render. Polling pauses
+ * while the tab is hidden and refreshes on return. When disabled, the
+ * last same-owner result stays visible, limited to the requested dirs.
  */
 export function useGitInfo(dirs: string[] | undefined, remoteId: string, enabled = true): UseGitInfoResult {
-  // Compute the canonical query param fresh on every render. It's
-  // O(n) in the dir count, which is small (a sidebar's worth), so
-  // skipping useMemo here is fine and avoids the array-identity
-  // trap.
   const queryParam = buildDirsQueryParam(dirs);
-  const requestKey = `${remoteId}\0${queryParam ?? ''}`;
+  const dirList = queryParam === null ? [] : decodeURIComponent(queryParam).split(',');
+  const active = enabled && queryParam !== null;
 
-  const [infos, setInfos] = useState<Record<string, GitInfo>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeKey, setActiveKey] = useState(requestKey);
-
-  const abortRef = useRef<AbortController | null>(null);
-  const lastRequestKey = useRef(requestKey);
+  const query = useQuery({
+    queryKey: ['git-info', remoteId, queryParam],
+    queryFn: ({ signal }) => fetchGitInfoOnce(dirList, remoteId, signal),
+    enabled: active,
+    refetchInterval: REFRESH_INTERVAL_MS,
+    placeholderData: (prev, prevQuery) => (!enabled && prevQuery?.queryKey[1] === remoteId ? prev : undefined),
+  });
 
   useEffect(() => {
-    // No dirs to track — stand down. State (infos/loading/error)
-    // intentionally retains whatever it last held; consumers that
-    // pass an empty dirs array are signalling "I no longer care",
-    // so the stale value won't be observed. Resetting here would
-    // trigger a setState during the post-render commit phase,
-    // which the React Compiler flags as a cascading-renders
-    // antipattern.
-    if (queryParam === null || !enabled) return;
+    if (!active || queryParam === null) return;
+    const releaseScopes = decodeURIComponent(queryParam).split(',').map((dir) => acquireActivityScope(`git-status:${dir}`));
+    return () => releaseScopes.forEach((release) => release());
+  }, [active, queryParam]);
 
-    const dirList = decodeURIComponent(queryParam).split(',');
-    const releaseScopes = dirList.map((dir) => acquireActivityScope(`git-status:${dir}`));
-    const reset = () => {
-      setActiveKey(requestKey);
-      setInfos({});
-      setError(null);
-    };
-    if (lastRequestKey.current !== requestKey) {
-      lastRequestKey.current = requestKey;
-      reset();
-    }
-
-    const runFetch = () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        // Tab is in the background; skip this tick and let the
-        // visibilitychange listener trigger an immediate refresh
-        // when the user returns.
-        return;
-      }
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setLoading(true);
-      fetchGitInfoOnce(dirList, remoteId, controller.signal)
-        .then((res) => {
-          if (controller.signal.aborted) return;
-          // Keep the old reference when nothing changed so consumers
-          // keyed on it (every sidebar row) skip the 30 s re-render.
-          setInfos((prev) => JSON.stringify(prev) === JSON.stringify(res) ? prev : res);
-          setError(null);
-          setLoading(false);
-        })
-        .catch((err: unknown) => {
-          if (controller.signal.aborted) return;
-          if (err instanceof Error && err.name === 'AbortError') return;
-          setError(err instanceof Error ? err.message : 'Failed to load git info');
-          setLoading(false);
-        });
-    };
-
-    // Initial fetch on mount / when the dirs change.
-    runFetch();
-    const id = setInterval(runFetch, REFRESH_INTERVAL_MS);
-
-    // visibilitychange: refresh immediately on tab return so the
-    // user sees fresh data without waiting up to REFRESH_INTERVAL_MS.
-    const onVisibility = () => {
-      if (typeof document !== 'undefined' && !document.hidden) runFetch();
-    };
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', onVisibility);
-    }
-
-    return () => {
-      releaseScopes.forEach((release) => release());
-      clearInterval(id);
-      abortRef.current?.abort();
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', onVisibility);
-      }
-    };
-  }, [queryParam, remoteId, requestKey, enabled]);
-
-  if (queryParam === null) return { infos: {}, loading: false, error: null };
-  if (!enabled && activeKey.startsWith(`${remoteId}\0`)) {
-    const requested = new Set(decodeURIComponent(queryParam).split(','));
+  if (queryParam === null) return { infos: EMPTY, loading: false, error: null };
+  const error = query.error ? (query.error instanceof Error ? query.error.message : 'Failed to load git info') : null;
+  const infos = query.data ?? EMPTY;
+  if (!enabled) {
+    const requested = new Set(dirList);
     return { infos: Object.fromEntries(Object.entries(infos).filter(([dir]) => requested.has(dir))), loading: false, error };
   }
-  if (activeKey !== requestKey) return { infos: {}, loading: enabled, error: null };
-  return { infos, loading: enabled && loading, error };
+  return { infos, loading: query.isFetching, error };
 }

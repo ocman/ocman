@@ -9,7 +9,7 @@ import { FileChangeGroup } from './FileChangeGroup';
 import { ChangedFileRow } from './ChangedFileRow';
 import { FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
 import { useFullscreenDiff } from './useFullscreenDiff';
-import { SidebarFileListSkeleton } from './Skeleton';
+import { SkeletonLines } from './Skeleton';
 import { RefreshButton } from './RefreshButton';
 
 // Lazy-mount budget for the per-file rows themselves. Sessions with
@@ -123,7 +123,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
         </div>
       )}
       {enabled && loading && !data && (
-        <SidebarFileListSkeleton rows={6} />
+        <SkeletonLines label="Loading file list" />
       )}
       {enabled && error && (
         <div className="oc-changes-sidebar-error" role="alert">

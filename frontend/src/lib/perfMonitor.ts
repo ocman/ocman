@@ -125,8 +125,9 @@ export function markSessionSwitchRendered(id: string): void {
 // React Profiler
 // ---------------------------------------------------------------------------
 
-/** Render counter fed by renderRateMonitor.trackRender. */
+/** Count one render of `key`; call from a render body. No-op when disabled. */
 export function countRender(key: string): void {
+  if (!perfEnabled()) return;
   bump(`renders|${key}`);
 }
 

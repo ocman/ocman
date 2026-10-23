@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   buildDirsQueryParam,
   fetchGitInfoOnce,
-  _resetForTests,
 } from './useGitInfo';
 
 // We cover the React hook lifecycle in component-level tests; here we
@@ -38,7 +37,6 @@ describe('buildDirsQueryParam', () => {
 describe('fetchGitInfoOnce', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
   beforeEach(() => {
-    _resetForTests();
     fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
   });

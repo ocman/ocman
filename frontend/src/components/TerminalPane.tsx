@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { copyToClipboard } from '../lib/clipboard';
-import { TerminalSkeleton } from './Skeleton';
+import { SkeletonLines } from './Skeleton';
 import { Button } from './Control';
 import '@xterm/xterm/css/xterm.css';
 import './TerminalPane.css';
@@ -202,7 +202,7 @@ export function TerminalPane({ dir, window: win, readonly = false, remoteId }: T
           socket is open. */}
       {state === 'connecting' && (
         <div className="oc-term-overlay">
-          <TerminalSkeleton rows={7} />
+          <SkeletonLines rows={7} label="Connecting terminal" testId="terminal-skeleton" />
         </div>
       )}
       {(state === 'closed' || state === 'error') && (

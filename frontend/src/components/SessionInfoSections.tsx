@@ -6,7 +6,7 @@
  */
 import { Link } from 'react-router-dom';
 import { formatDuration, formatNumber } from '../lib/format';
-import { InfoSidebarSkeleton } from './Skeleton';
+import { SkeletonLines } from './Skeleton';
 import type { Session, SessionInfo } from '../lib/api';
 
 // Human-friendly relabel for known statuses. Unknown values forward
@@ -213,7 +213,7 @@ export function LiveSection({
   return (
     <>
       {loading && !data && (
-        <InfoSidebarSkeleton sections={2} rowsPerSection={3} />
+        <SkeletonLines rows={8} label="Loading session info" />
       )}
       {error && (
         <section className="oc-info-section">

@@ -3,7 +3,8 @@
 // Keyboard reachability of session rows. The row-wide onClick is a
 // mouse-only affordance, so the primary cell has to carry a real link
 // that can be tabbed to, announced as a link, and activated with Enter.
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import { renderWithQuery as render } from '../test/renderWithQuery';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

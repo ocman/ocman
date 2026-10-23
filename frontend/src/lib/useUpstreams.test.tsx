@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import { waitFor } from '@testing-library/react';
+import { renderHookWithQuery as renderHook } from '../test/renderWithQuery';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './upstreamApi';
 import { useUpstreams } from './useUpstreams';
@@ -62,6 +63,14 @@ describe('useUpstreams', () => {
     expect(result.current.upstreams).toEqual([]);
     expect(result.current.loading).toBe(true);
     expect(snapshots).not.toContainEqual({ directory: '/new', repos: ['old/repo'] });
+  });
+
+  it('refetches on refresh', async () => {
+    const fetchUpstreams = vi.spyOn(api, 'fetchUpstreams').mockResolvedValue([]);
+    const { result } = renderHook(() => useUpstreams('/repo', 'local'));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    result.current.refresh();
+    await waitFor(() => expect(fetchUpstreams).toHaveBeenCalledTimes(2));
   });
 
   it('clears loading when disabled during a request', async () => {
