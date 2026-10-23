@@ -80,16 +80,15 @@ func TestLegacySupervisorPatternsAreExact(t *testing.T) {
 	}
 }
 
-// Allow-always approvals saved before exact patterns were raw tool
-// arguments: they load as exact approvals, once, while explicit rulesets
-// keep their globs.
-func TestLegacyRulesStoreApprovalsBecomeExact(t *testing.T) {
+// Saved approvals stay exact across restarts; explicit rules keep their globs.
+func TestExactRulesStoreApprovalsSurviveReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rules.json")
 	requireNoError(t, os.WriteFile(path, []byte(`{
+		"exactPatterns":true,"exactRules":true,
 		"rules":{"s":[{"permission":"bash","pattern":"git *","action":"allow"}]},
-		"approved":{"s":[{"permission":"bash","pattern":"echo *","action":"allow"},{"permission":"todowrite","pattern":"*","action":"allow"}]},
-		"tentative":{"p9":{"session":"s","rules":[{"permission":"edit","pattern":"/tmp/a*","action":"allow"}]}}}`), 0o600))
-	for range 2 { // the conversion is recorded: a reopened store is not escaped again
+		"approved":{"s":[{"permission":"bash","pattern":"echo \\*","action":"allow"},{"permission":"todowrite","pattern":"\\*","action":"allow"}]},
+		"tentative":{"p9":{"session":"s","rules":[{"permission":"edit","pattern":"/tmp/a\\*","action":"allow"}]}}}`), 0o600))
+	for range 2 {
 		r := mustRules(t, path)
 		for value, want := range map[[2]string]string{
 			{"bash", "echo *"}: "once",

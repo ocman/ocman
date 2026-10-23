@@ -91,16 +91,6 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 		log.WithError(err).Error("Claude Code sessions unavailable: permission rules unreadable")
 		return nil
 	}
-	if stateDB != nil {
-		// Children forked before exact patterns hold their parent's
-		// approvals as globs; never serve them before converting.
-		approvals, err := stateDB.ListPlatformApprovals(ctx, string(claudeprovider.PlatformID))
-		if err != nil {
-			log.WithError(err).Error("Claude Code sessions unavailable: reading approvals to upgrade inherited rules")
-			return nil
-		}
-		rules.EscapeInheritedApprovals(approvals)
-	}
 	adapter.SetRules(rules)
 	p := &claudePlatform{Adapter: adapter, cli: opts.CLI, configDir: opts.ConfigDir, marketplace: marketplace, hooks: statusAddr != "", journal: journal, launchPath: opts.LaunchPath, slots: opts.SlotDir}
 	p.history = history

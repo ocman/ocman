@@ -32,14 +32,9 @@ type Rules struct {
 		// outcome is known: an effective "always" moves them to Approved,
 		// any other outcome drops them.
 		Tentative map[string]tentative `json:"tentative,omitempty"`
-		// ExactPatterns marks Approved and Tentative patterns as escaped
-		// (providerprotocol.ExactPattern). A store written before it holds
-		// raw prompt patterns: OpenRules escapes them once. Rules are the
-		// explicit rulesets (YOLO, custom, inherited) and keep their globs.
-		ExactPatterns bool `json:"exactPatterns,omitempty"`
-		// ExactRules marks Rules as free of approvals inherited before
-		// exact patterns (EscapeInheritedApprovals).
-		ExactRules bool `json:"exactRules,omitempty"`
+		// Retain format markers so unsupported raw approvals fail closed.
+		ExactPatterns bool `json:"exactPatterns"`
+		ExactRules    bool `json:"exactRules"`
 	}
 }
 
@@ -65,22 +60,10 @@ func OpenRules(path string) (*Rules, error) {
 		}
 	}
 	r.initLocked()
-	if !r.data.ExactPatterns && len(r.data.Approved)+len(r.data.Tentative) == 0 {
-		r.data.ExactPatterns = true // nothing to convert; the next write records it
+	if !r.data.ExactPatterns && len(r.data.Approved)+len(r.data.Tentative) > 0 || !r.data.ExactRules && len(r.data.Rules) > 0 {
+		return nil, fmt.Errorf("permission rules %s use an unsupported pre-release format", path)
 	}
-	if len(r.data.Rules) == 0 {
-		r.data.ExactRules = true
-	}
-	if !r.data.ExactPatterns {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		// An unwritable store keeps working on the escaped copy; the
-		// next successful write records it.
-		if err := r.commitLocked(r.escapeLegacyLocked); err != nil {
-			r.escapeLegacyLocked()
-			log.WithError(err).Warn("provider: recording exact Allow-always patterns")
-		}
-	}
+	r.data.ExactPatterns, r.data.ExactRules = true, true
 	return r, nil
 }
 
