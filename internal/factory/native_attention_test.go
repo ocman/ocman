@@ -109,7 +109,7 @@ func TestFactoryAttentionRetiresObsoleteRequestsWhilePaused(t *testing.T) {
 }
 
 type attentionErrorStore struct {
-	nativeStore
+	nativeStoreFake
 	listErr, issueErr, syncErr error
 	issueReads, syncs          int
 }

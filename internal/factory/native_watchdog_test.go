@@ -12,7 +12,6 @@ import (
 
 type watchdogStoreFake struct {
 	nativeStore
-	nativeRecoveryStore
 	questions []string
 	resumed   time.Time
 	resumeErr error

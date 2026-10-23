@@ -9,11 +9,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
-type nativeModelsStore interface {
-	GetFactoryEpicModels(context.Context, string) (model.EpicModels, error)
-	SetFactoryEpicModels(context.Context, string, model.EpicModels) error
-}
-
 // validModel accepts "" (use the fallback) or a "provider/model" reference.
 func validModel(value string) bool {
 	if value == "" {
@@ -26,10 +21,7 @@ func validModel(value string) bool {
 // SetEpicModels saves the Epic's per-phase models. Attempts already claimed
 // keep the model frozen in their policy, so only unstarted work changes.
 func (s *NativeService) SetEpicModels(ctx context.Context, epicID string, models model.EpicModels) (model.EpicModels, error) {
-	store, ok := s.store.(nativeModelsStore)
-	if !ok {
-		return model.EpicModels{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	models = model.EpicModels{Plan: strings.TrimSpace(models.Plan), Implementation: strings.TrimSpace(models.Implementation), Verification: strings.TrimSpace(models.Verification)}
 	for _, value := range []string{models.Plan, models.Implementation, models.Verification} {
 		if !validModel(value) {
@@ -44,10 +36,8 @@ func (s *NativeService) SetEpicModels(ctx context.Context, epicID string, models
 }
 
 func (s *NativeService) epicModels(ctx context.Context, epicID string) model.EpicModels {
-	if store, ok := s.store.(nativeModelsStore); ok {
-		if models, err := store.GetFactoryEpicModels(ctx, epicID); err == nil {
-			return models
-		}
+	if models, err := s.store.GetFactoryEpicModels(ctx, epicID); err == nil {
+		return models
 	}
 	return model.EpicModels{}
 }

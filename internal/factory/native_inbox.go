@@ -10,12 +10,7 @@ import (
 // lands a PR. Soft-fail: the handoff already succeeded, so a missing inbox
 // only loses the notification.
 func (s *NativeService) notifyEpicDelivered(ctx context.Context, epicID, summary, prURL, platform, sessionID string) {
-	inbox, ok := s.store.(interface {
-		NotifySessionInbox(context.Context, string, string, string, string, string) error
-	})
-	if !ok {
-		return
-	}
+	inbox := s.store
 	title := "Factory epic delivered"
 	if epic, err := s.store.GetFactoryEpic(ctx, epicID); err == nil && epic.Goal != "" {
 		title = "Factory delivered: " + epic.Goal

@@ -21,17 +21,13 @@ type ImplementationActivityProbe interface {
 	ImplementationActivity(context.Context, PlanningSession) (lastActivity time.Time, waitingOnUser bool, err error)
 }
 
-type attemptResumeStore interface {
-	FactoryAttemptLastResumedAt(context.Context, string) (time.Time, error)
-}
-
 // pauseIdleAttempt opens a recovery gate for a live attempt that stopped
 // making progress without completing or asking for help. A dead session is
 // handled by the runtime probe; this covers the hung-but-alive one.
 func (s *NativeService) pauseIdleAttempt(ctx context.Context, attempt model.FactoryAttempt) error {
 	probe, ok := s.implementation.(ImplementationActivityProbe)
-	store, storeOK := s.store.(nativeRecoveryStore)
-	if !ok || !storeOK || time.Since(time.UnixMilli(attempt.StartedAt)) < factoryIdleTimeout {
+	store := s.store
+	if !ok || time.Since(time.UnixMilli(attempt.StartedAt)) < factoryIdleTimeout {
 		return nil
 	}
 	s.checksMu.Lock()
@@ -49,14 +45,12 @@ func (s *NativeService) pauseIdleAttempt(ctx context.Context, attempt model.Fact
 		return nil
 	}
 	since := time.UnixMilli(attempt.StartedAt)
-	if resumes, ok := s.store.(attemptResumeStore); ok {
-		resumed, err := resumes.FactoryAttemptLastResumedAt(ctx, attempt.ID)
-		if err != nil {
-			return err
-		}
-		if resumed.After(since) {
-			since = resumed
-		}
+	resumed, err := store.FactoryAttemptLastResumedAt(ctx, attempt.ID)
+	if err != nil {
+		return err
+	}
+	if resumed.After(since) {
+		since = resumed
 	}
 	s.checksMu.Lock()
 	nudgedAt := s.idleNudgedAt[attempt.ID]

@@ -35,10 +35,7 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if !req.AcknowledgeLocalExecution {
 		return WorkEpic{}, ErrAcknowledgementRequired
 	}
-	acks, ok := s.store.(localExecutionAckStore)
-	if !ok {
-		return WorkEpic{}, ErrFactoryUnavailable
-	}
+	acks := s.store
 	if err := acks.UpsertFactoryLocalExecutionAck(ctx, "local", project, "factory-implement", "v1", "operator", time.Now()); err != nil {
 		return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
 	}
@@ -77,10 +74,7 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	for i, rule := range req.PermissionRules {
 		modelRules[i] = model.PermissionRule{Permission: rule.Permission, Pattern: rule.Pattern, Action: rule.Action}
 	}
-	store, ok := s.store.(configuredEpicStore)
-	if !ok {
-		return WorkEpic{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	epic, err := store.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary, modelRules, req.Platform)
 	switch {
 	case errors.Is(err, model.ErrNativeInstantiationConflict):
@@ -95,10 +89,7 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 }
 
 func (s *NativeService) RemoveWorkEpicProject(ctx context.Context, epicID, path string) error {
-	store, ok := s.store.(nativeProjectSetStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	project, err := s.canonicalProject(ctx, path)
 	if err != nil {
 		if !filepath.IsAbs(path) {
@@ -113,7 +104,8 @@ func (s *NativeService) RemoveWorkEpicProject(ctx context.Context, epicID, path 
 func (s *NativeService) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 	epics, err := s.store.ListFactoryEpics(ctx)
 	result := nativeEpics(epics)
-	if store, ok := s.store.(nativePlanningStore); ok {
+	{
+		store := s.store
 		attempts, _ := store.ListFactoryAttempts(ctx, "")
 		byEpic := make(map[string][]model.FactoryAttempt)
 		for _, attempt := range attempts {
@@ -139,10 +131,7 @@ func (s *NativeService) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 }
 
 func (s *NativeService) CloseMol(ctx context.Context, epicID, molID string) error {
-	store, ok := s.store.(nativeClosureStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	err := store.CloseFactoryMol(ctx, epicID, molID)
 	if err == nil {
 		s.wakeDispatch()
@@ -151,10 +140,7 @@ func (s *NativeService) CloseMol(ctx context.Context, epicID, molID string) erro
 }
 
 func (s *NativeService) CloseEpic(ctx context.Context, epicID string, force bool) error {
-	store, ok := s.store.(nativeClosureStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	err := store.CloseFactoryEpic(ctx, epicID, force)
 	if err == nil {
 		s.wakeDispatch()
@@ -163,10 +149,7 @@ func (s *NativeService) CloseEpic(ctx context.Context, epicID string, force bool
 }
 
 func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused bool) error {
-	store, ok := s.store.(nativeEpicLifecycleStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	if err := store.SetFactoryEpicPaused(ctx, epicID, paused); err != nil {
 		return err
 	}
@@ -184,10 +167,7 @@ func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused
 
 // ReopenIssue returns failed or cancelled work to the queue and dispatches.
 func (s *NativeService) ReopenIssue(ctx context.Context, epicID, issueID string) error {
-	store, ok := s.store.(nativeReopenStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	if err := store.ReopenFactoryIssue(ctx, epicID, issueID); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
@@ -202,10 +182,7 @@ func (s *NativeService) ReopenIssue(ctx context.Context, epicID, issueID string)
 }
 
 func (s *NativeService) MutateGraph(ctx context.Context, mutation GraphMutation) error {
-	store, ok := s.store.(nativeMutationStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	epic, err := s.store.GetFactoryEpic(ctx, mutation.EpicID)
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		return ErrWorkEpicNotFound
@@ -366,7 +343,8 @@ func (s *NativeService) GetWorkEpic(ctx context.Context, id string) (WorkEpic, e
 	if err != nil {
 		return result, err
 	}
-	if store, ok := s.store.(nativePlanningStore); ok {
+	{
+		store := s.store
 		if attempts, attemptsErr := store.ListFactoryAttempts(ctx, id); attemptsErr == nil {
 			result.Attempts = attempts
 		}

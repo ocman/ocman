@@ -17,8 +17,8 @@ import (
 // configured capacity is full. Plan and Materialization never enter this path.
 func (s *NativeService) Dispatch(ctx context.Context) error {
 	defer s.reconcileAttention(ctx)
-	store, ok := s.store.(nativePlanningStore)
-	if !ok || s.implementation == nil {
+	store := s.store
+	if s.implementation == nil {
 		return nil
 	}
 	if err := s.reconcileImplementationSessions(ctx, store); err != nil {
@@ -27,10 +27,8 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 	if err := s.observeMergeGates(ctx); err != nil {
 		return err
 	}
-	if delays, ok := s.store.(nativeDelayStore); ok {
-		if err := delays.WakeFactoryRetries(ctx, time.Now()); err != nil {
-			return err
-		}
+	if err := store.WakeFactoryRetries(ctx, time.Now()); err != nil {
+		return err
 	}
 	s.resumeQueuedRecoveries(ctx)
 	type candidate struct {
@@ -46,10 +44,8 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		if epic.Status != "open" {
 			continue
 		}
-		if completionStore, ok := s.store.(nativeAttemptCompletionStore); ok {
-			if err := completionStore.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
-				return err
-			}
+		if err := store.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+			return err
 		}
 		issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
 		if err != nil {
@@ -97,7 +93,8 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		branch := "factory/" + epic.ID
 		baseRef := ""
 		repository := attempt.FrozenPolicy.Repository
-		if completionStore, ok := s.store.(nativeAttemptCompletionStore); ok {
+		{
+			completionStore := s.store
 			var branchErr error
 			if attempt.FrozenPolicy.Branch != "" {
 				branch = attempt.FrozenPolicy.Branch
@@ -186,10 +183,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 func (s *NativeService) observeMergeGates(ctx context.Context) error {
 	s.mergeGateMu.Lock()
 	defer s.mergeGateMu.Unlock()
-	store, ok := s.store.(nativeMergeGateStore)
-	if !ok {
-		return nil
-	}
+	store := s.store
 	observations, err := store.ListFactoryMergeGateDeliveries(ctx, time.Now().Add(-factoryMergeGatePollInterval), 8)
 	if err != nil {
 		return err
@@ -224,7 +218,7 @@ func (s *NativeService) observeMergeGates(ctx context.Context) error {
 	return nil
 }
 
-func (s *NativeService) reconcileImplementationSessions(ctx context.Context, store nativePlanningStore) error {
+func (s *NativeService) reconcileImplementationSessions(ctx context.Context, store nativeStore) error {
 	alive, err := s.reconcileImplementationRuntime(ctx, store)
 	if err != nil {
 		return err
@@ -242,7 +236,7 @@ func (s *NativeService) reconcileImplementationSessions(ctx context.Context, sto
 
 // reconcileImplementationRuntime fails attempts whose session is gone and
 // returns the live, unpaused ones.
-func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, store nativePlanningStore) ([]model.FactoryAttempt, error) {
+func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, store nativeStore) ([]model.FactoryAttempt, error) {
 	s.implementationMu.Lock()
 	defer s.implementationMu.Unlock()
 	attempts, err := store.ListFactoryAttempts(ctx, "")
@@ -267,7 +261,8 @@ func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, stor
 			continue
 		}
 		active[attempt.ID] = true
-		if recovery, ok := s.store.(nativeRecoveryStore); ok {
+		{
+			recovery := s.store
 			paused, err := recovery.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
 			if err != nil {
 				return nil, err
@@ -294,19 +289,11 @@ func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, stor
 }
 
 func (s *NativeService) dispatchEpics(ctx context.Context) ([]model.NativeEpic, error) {
-	if store, ok := s.store.(interface {
-		ListFactoryDispatchEpics(context.Context) ([]model.NativeEpic, error)
-	}); ok {
-		return store.ListFactoryDispatchEpics(ctx)
-	}
-	return s.store.ListFactoryEpics(ctx)
+	return s.store.ListFactoryDispatchEpics(ctx)
 }
 
 func (s *NativeService) Queue(ctx context.Context) ([]DispatchItem, error) {
-	store, ok := s.store.(nativePlanningStore)
-	if !ok {
-		return nil, ErrFactoryUnavailable
-	}
+	store := s.store
 	epics, err := s.store.ListFactoryEpics(ctx)
 	if err != nil {
 		return nil, err

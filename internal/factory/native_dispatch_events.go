@@ -47,12 +47,7 @@ func (s *NativeService) rememberImplementationSessions(attempts []model.FactoryA
 // Persisted retry deadlines and outstanding merge gates get their own timer.
 // Everything else waits for an event or the five-minute recovery scan.
 func (s *NativeService) nextDispatchDelay(ctx context.Context, recovery time.Duration) time.Duration {
-	store, ok := s.store.(interface {
-		NextFactoryDispatchAt(context.Context, time.Duration) (time.Time, error)
-	})
-	if !ok {
-		return recovery
-	}
+	store := s.store
 	next, err := store.NextFactoryDispatchAt(ctx, factoryMergeGatePollInterval)
 	if err != nil {
 		logrus.WithError(err).Error("Factory dispatch deadline failed")

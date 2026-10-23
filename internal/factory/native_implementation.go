@@ -15,20 +15,13 @@ import (
 // IsImplementationSession cheaply identifies sessions whose out-of-profile
 // permissions need Factory authority handling.
 func (s *NativeService) IsImplementationSession(ctx context.Context, session string) (bool, error) {
-	store, ok := s.store.(nativeAuthorityStore)
-	if !ok {
-		return false, nil
-	}
-	return store.IsFactoryImplementationSession(ctx, session)
+	return s.store.IsFactoryImplementationSession(ctx, session)
 }
 
 // EscalatePermission diverts only requests excluded by the frozen profile.
 // Other prompts continue through OpenCode's direct permission flow.
 func (s *NativeService) EscalatePermission(ctx context.Context, session, requestID, permission, target string) (AuthorityEscalationGate, bool, error) {
-	store, ok := s.store.(nativeAuthorityStore)
-	if !ok {
-		return AuthorityEscalationGate{}, false, ErrFactoryUnavailable
-	}
+	store := s.store
 	if session == "" || requestID == "" || permission == "" {
 		return AuthorityEscalationGate{}, false, errors.New("session, request, and permission are required")
 	}
@@ -42,10 +35,7 @@ func (s *NativeService) EscalatePermission(ctx context.Context, session, request
 func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentToken, summary, prURL string) error {
 	s.implementationMu.Lock()
 	defer s.implementationMu.Unlock()
-	store, ok := s.store.(nativeAttemptCompletionStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	summary, prURL = strings.TrimSpace(summary), strings.TrimSpace(prURL)
 	if attemptID == "" || agentToken == "" || summary == "" {
 		return fmt.Errorf("%w: attempt ID, token, and summary are required", ErrInvalidRequest)
@@ -57,10 +47,8 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if !valid {
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
-	attemptStore, ok := s.store.(interface {
-		GetFactoryAttempt(context.Context, string) (model.FactoryAttempt, bool, error)
-	})
-	if !ok || s.implementation == nil {
+	attemptStore := s.store
+	if s.implementation == nil {
 		return ErrFactoryUnavailable
 	}
 	attempt, found, err := attemptStore.GetFactoryAttempt(ctx, attemptID)

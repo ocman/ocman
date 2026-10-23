@@ -12,10 +12,7 @@ import (
 )
 
 func (s *NativeService) DeferIssue(ctx context.Context, epicID, issueID, reason string) error {
-	store, ok := s.store.(nativeDelayStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	err := store.DeferFactoryIssue(ctx, epicID, issueID, strings.TrimSpace(reason))
 	if err == nil {
 		s.wakeDispatch()
@@ -24,10 +21,7 @@ func (s *NativeService) DeferIssue(ctx context.Context, epicID, issueID, reason 
 }
 
 func (s *NativeService) ResumeIssue(ctx context.Context, epicID, issueID string) error {
-	store, ok := s.store.(nativeDelayStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	err := store.ResumeFactoryIssue(ctx, epicID, issueID)
 	if err == nil {
 		s.wakeDispatch()
@@ -36,10 +30,7 @@ func (s *NativeService) ResumeIssue(ctx context.Context, epicID, issueID string)
 }
 
 func (s *NativeService) RetryIssueAt(ctx context.Context, epicID, issueID string, wakeAt time.Time) error {
-	store, ok := s.store.(nativeDelayStore)
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	if !wakeAt.After(time.Now()) {
 		return errors.New("retry time must be in the future")
 	}
@@ -51,17 +42,11 @@ func (s *NativeService) RetryIssueAt(ctx context.Context, epicID, issueID string
 }
 
 func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agentToken, question, reason string, choices []string) (RecoveryGate, error) {
-	store, ok := s.store.(nativeRecoveryStore)
-	if !ok {
-		return RecoveryGate{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	if strings.TrimSpace(attemptID) == "" || strings.TrimSpace(agentToken) == "" || strings.TrimSpace(question) == "" || strings.TrimSpace(reason) == "" {
 		return RecoveryGate{}, fmt.Errorf("%w: attempt, token, question, and reason are required", ErrInvalidRequest)
 	}
-	tokens, ok := s.store.(nativeAttemptCompletionStore)
-	if !ok {
-		return RecoveryGate{}, ErrFactoryUnavailable
-	}
+	tokens := s.store
 	valid, err := tokens.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
 	if err != nil {
 		return RecoveryGate{}, err
@@ -77,18 +62,12 @@ func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agent
 }
 
 func (s *NativeService) RequestProject(ctx context.Context, attemptID, agentToken, project, reason string) (ProjectRequestGate, error) {
-	store, ok := s.store.(nativeProjectRequestStore)
-	if !ok {
-		return ProjectRequestGate{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	project, reason = strings.TrimSpace(project), strings.TrimSpace(reason)
 	if attemptID == "" || agentToken == "" || project == "" || reason == "" || !filepath.IsAbs(project) {
 		return ProjectRequestGate{}, fmt.Errorf("%w: attempt, token, absolute project path, and reason are required", ErrInvalidRequest)
 	}
-	tokens, ok := s.store.(nativeAttemptCompletionStore)
-	if !ok {
-		return ProjectRequestGate{}, ErrFactoryUnavailable
-	}
+	tokens := s.store
 	valid, err := tokens.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
 	if err != nil {
 		return ProjectRequestGate{}, err
@@ -106,10 +85,7 @@ func (s *NativeService) RequestProject(ctx context.Context, attemptID, agentToke
 func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, action, response string, acknowledge bool) (ProjectRequestGate, error) {
 	s.projectRequestMu.Lock()
 	defer s.projectRequestMu.Unlock()
-	store, ok := s.store.(nativeProjectRequestStore)
-	if !ok {
-		return ProjectRequestGate{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	gate, found, err := store.GetFactoryProjectRequestGate(ctx, gateID)
 	if err != nil {
 		return ProjectRequestGate{}, err
@@ -122,10 +98,7 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 		if response != gate.Response {
 			return ProjectRequestGate{}, fmt.Errorf("%w: project rejection response does not match the pending decision", ErrInvalidRequest)
 		}
-		attempts, ok := s.store.(nativeAuthorityStore)
-		if !ok {
-			return ProjectRequestGate{}, ErrFactoryUnavailable
-		}
+		attempts := s.store
 		attempt, found, err := attempts.GetFactoryAttempt(ctx, gate.AttemptID)
 		if err != nil || !found {
 			return ProjectRequestGate{}, fmt.Errorf("%w: factory project request attempt is unavailable", ErrInvalidRequest)
@@ -169,10 +142,7 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 				return ProjectRequestGate{}, fmt.Errorf("%w: project is already admitted", ErrInvalidRequest)
 			}
 		}
-		acks, ok := s.store.(localExecutionAckStore)
-		if !ok {
-			return ProjectRequestGate{}, ErrFactoryUnavailable
-		}
+		acks := s.store
 		if err = acks.UpsertFactoryLocalExecutionAck(ctx, "local", canonical, "factory-implement", "v1", "operator", time.Now()); err != nil {
 			return ProjectRequestGate{}, err
 		}
@@ -183,10 +153,7 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 		if s.implementation == nil {
 			return ProjectRequestGate{}, errors.New("implementation launcher is unavailable")
 		}
-		attempts, ok := s.store.(nativeAuthorityStore)
-		if !ok {
-			return ProjectRequestGate{}, ErrFactoryUnavailable
-		}
+		attempts := s.store
 		attempt, found, getErr := attempts.GetFactoryAttempt(ctx, gate.AttemptID)
 		if getErr != nil || !found {
 			return ProjectRequestGate{}, fmt.Errorf("%w: factory project request attempt is unavailable", ErrInvalidRequest)
@@ -208,7 +175,7 @@ func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, actio
 	return gate, err
 }
 
-func (s *NativeService) deliverProjectRejection(ctx context.Context, store nativeProjectRequestStore, gate ProjectRequestGate, attempt model.FactoryAttempt) (ProjectRequestGate, error) {
+func (s *NativeService) deliverProjectRejection(ctx context.Context, store nativeStore, gate ProjectRequestGate, attempt model.FactoryAttempt) (ProjectRequestGate, error) {
 	if s.implementation == nil {
 		return ProjectRequestGate{}, errors.New("implementation launcher is unavailable")
 	}
@@ -244,10 +211,7 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 }
 
 func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action, response string) (RecoveryGate, error) {
-	store, ok := s.store.(nativeRecoveryStore)
-	if !ok {
-		return RecoveryGate{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	if action != "resume" && action != "retry" && action != "cancel" {
 		return RecoveryGate{}, fmt.Errorf("%w: invalid recovery gate action", ErrInvalidRequest)
 	}
@@ -272,7 +236,8 @@ func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action,
 		// Another Issue holds the Epic workspace. Keep the decision; Dispatch
 		// delivers it once the workspace is released instead of asking the user
 		// to come back and click again.
-		if queue, ok := s.store.(nativeRecoveryQueueStore); ok {
+		{
+			queue := s.store
 			if response == "" {
 				response = "Continue" // ponytail: a non-empty response marks the gate as queued; the delivered prompt is equivalent
 			}
@@ -325,10 +290,7 @@ func (s *NativeService) resolveRecoveryGate(ctx context.Context, gateID, action,
 func (s *NativeService) ResolveAuthorityEscalationGate(ctx context.Context, gateID, action string) (AuthorityEscalationGate, error) {
 	s.authorityMu.Lock()
 	defer s.authorityMu.Unlock()
-	store, ok := s.store.(nativeAuthorityStore)
-	if !ok {
-		return AuthorityEscalationGate{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	if action != "approve" && action != "reject" {
 		return AuthorityEscalationGate{}, fmt.Errorf("%w: invalid authority escalation action", ErrInvalidRequest)
 	}

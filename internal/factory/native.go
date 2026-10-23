@@ -179,16 +179,8 @@ type nativeStore interface {
 	GetFactoryEpic(context.Context, string) (model.NativeEpic, error)
 	PourFactoryEpic(context.Context, string, model.NativeFormula) (model.NativeEpic, []model.NativeIssue, error)
 	ListFactoryIssues(context.Context, string) ([]model.NativeIssue, error)
-}
-
-type nativeProjectSetStore interface {
 	RemoveFactoryEpicProject(context.Context, string, string) error
-}
-
-type configuredEpicStore interface {
 	CreateFactoryEpicWithProjectsAndPermissionRules(context.Context, string, string, string, string, string, model.NativeFormula, []string, []model.PermissionRule, ...string) (model.NativeEpic, error)
-}
-type nativeProjectRequestStore interface {
 	CreateFactoryProjectRequestGate(context.Context, string, string, string, time.Time) (model.ProjectRequestGate, error)
 	GetFactoryProjectRequestGate(context.Context, string) (model.ProjectRequestGate, bool, error)
 	GetFactoryProjectRequestGateForPlan(context.Context, string) (model.ProjectRequestGate, bool, error)
@@ -196,13 +188,9 @@ type nativeProjectRequestStore interface {
 	CompleteFactoryProjectRequestRejection(context.Context, string, time.Time) (model.ProjectRequestGate, error)
 	FailFactoryProjectRequestRejection(context.Context, string, time.Time) (model.ProjectRequestGate, error)
 	ApplyFactoryScopePlan(context.Context, model.NativeProposalRevision, string, string, time.Time) (model.NativeProposalRevision, error)
-}
-type nativeFormulaStore interface {
 	ListNativeFactoryFormulaRevisions(context.Context) ([]model.NativeFormulaRevision, error)
 	GetNativeFactoryFormulaRevision(context.Context, string, int) (model.NativeFormulaRevision, error)
 	SaveNativeFactoryFormulaRevision(context.Context, model.NativeFormulaRevision, time.Time) (model.NativeFormulaRevision, error)
-}
-type nativePlanningStore interface {
 	ClaimFactoryPlan(context.Context, string, string, string, time.Time) (model.NativeEpic, model.FactoryAttempt, error)
 	ListFactoryAttempts(context.Context, string) ([]model.FactoryAttempt, error)
 	ActivateFactoryAttempt(context.Context, string, model.PlanningSession, time.Time) (bool, error)
@@ -216,8 +204,6 @@ type nativePlanningStore interface {
 	DecideFactoryPlanGate(context.Context, string, string, int, string, string, ...string) (model.NativePlanGate, error)
 	MaterializeFactoryPlan(context.Context, string, string, string, time.Time) (model.NativeMaterialization, error)
 	ClaimFactoryImplementation(context.Context, string, string, string, time.Time) (model.NativeEpic, model.FactoryAttempt, error)
-}
-type nativeAttemptCompletionStore interface {
 	EnsureFactoryDeliveryIssue(context.Context, string) error
 	SetFactoryAttemptWorkspace(context.Context, string, model.FactoryAttemptPolicy) error
 	FactoryAttemptHasRecoveryResponse(context.Context, string, string) (bool, error)
@@ -225,59 +211,51 @@ type nativeAttemptCompletionStore interface {
 	FactoryEpicPRURL(context.Context, string, string) (string, error)
 	StopFactoryAttempt(context.Context, string, time.Time) (bool, error)
 	ValidateFactoryAttemptToken(context.Context, string, string) (bool, error)
-}
-type nativeRecoveryStore interface {
 	CreateFactoryRecoveryGate(context.Context, string, string, string, []string, time.Time) (model.RecoveryGate, error)
 	ResolveFactoryRecoveryGate(context.Context, string, string, string, time.Time) (model.RecoveryGate, model.FactoryAttempt, error)
 	CompleteFactoryRecoveryGate(context.Context, string, time.Time) (model.RecoveryGate, error)
 	IsFactoryAttemptRecoveryPaused(context.Context, string) (bool, error)
 	GetFactoryRecoveryGate(context.Context, string) (model.RecoveryGate, bool, error)
-}
-type nativeRecoveryQueueStore interface {
 	QueueFactoryRecoveryResume(context.Context, string, string, time.Time) error
 	ListFactoryQueuedRecoveryResumes(context.Context) ([]model.RecoveryGate, error)
-}
-type nativeAuthorityStore interface {
 	IsFactoryImplementationSession(context.Context, string) (bool, error)
 	CreateFactoryAuthorityEscalationGate(context.Context, string, string, string, string, time.Time) (model.AuthorityEscalationGate, bool, error)
 	ResolveFactoryAuthorityEscalationGate(context.Context, string, string, time.Time) (model.AuthorityEscalationGate, model.FactoryAttempt, error)
 	CompleteFactoryAuthorityEscalationGate(context.Context, string, string, time.Time) (model.AuthorityEscalationGate, error)
 	GetFactoryAuthorityEscalationGate(context.Context, string) (model.AuthorityEscalationGate, bool, error)
 	GetFactoryAttempt(context.Context, string) (model.FactoryAttempt, bool, error)
-}
-type nativeDelayStore interface {
 	DeferFactoryIssue(context.Context, string, string, string) error
 	ResumeFactoryIssue(context.Context, string, string) error
 	RetryFactoryIssueAt(context.Context, string, string, time.Time) error
 	WakeFactoryRetries(context.Context, time.Time) error
-}
-type nativeClosureStore interface {
 	CloseFactoryMol(context.Context, string, string) error
 	CloseFactoryEpic(context.Context, string, bool) error
-}
-type nativeEpicLifecycleStore interface {
 	SetFactoryEpicPaused(context.Context, string, bool) error
-}
-type nativeReopenStore interface {
 	ReopenFactoryIssue(context.Context, string, string) error
-}
-type nativeMutationStore interface {
 	MutateFactoryGraph(context.Context, GraphMutation) error
-}
-type nativeMergeGateStore interface {
 	ListFactoryMergeGateDeliveries(context.Context, time.Time, int) ([]model.FactoryDeliveryObservation, error)
 	RecordFactoryDeliveryObservation(context.Context, model.FactoryDeliveryObservation) error
-}
-type nativeCommentStore interface {
 	AppendFactoryIssueComment(context.Context, string, string, string, string, time.Time) (model.NativeIssueComment, error)
 	ListFactoryIssueComments(context.Context, string, string) ([]model.NativeIssueComment, error)
-}
-type capacityPolicyStore interface {
 	GetFactoryCapacityPolicy(context.Context) (model.FactoryCapacityPolicy, error)
 	SetFactoryCapacityPolicy(context.Context, model.FactoryCapacityPolicy) error
-}
-type localExecutionAckStore interface {
 	UpsertFactoryLocalExecutionAck(context.Context, string, string, string, string, string, time.Time) error
+	ReserveFactoryIssueTransfer(context.Context, string, string, time.Time) (string, string, error)
+	RecordFactoryIssueTransfer(context.Context, string, string, string, string) error
+	ReleaseFactoryIssueTransfer(context.Context, string, string, string) error
+	CompleteFactoryIssueTransfer(context.Context, string, string, string, time.Time) error
+	GetFactoryEpicModels(context.Context, string) (model.EpicModels, error)
+	SetFactoryEpicModels(context.Context, string, model.EpicModels) error
+	DeliverFactoryEpicAsIs(context.Context, string, []string, time.Time) ([]string, error)
+	FactoryAttemptDecisionPending(context.Context, string) (bool, error)
+	LatestFactoryCheckpoint(context.Context, string, string) (string, error)
+	FactoryAttemptLastResumedAt(context.Context, string) (time.Time, error)
+	NextFactoryDispatchAt(context.Context, time.Duration) (time.Time, error)
+	NotifySessionInbox(context.Context, string, string, string, string, string) error
+	SyncFactoryActionInbox(context.Context, string, string, map[string]string) ([]string, error)
+	RecordFactoryRecoveryCheckpoint(context.Context, string, model.FactoryAttemptResult, time.Time) error
+	ListFactoryDispatchEpics(context.Context) ([]model.NativeEpic, error)
+	ListRemovedFactoryIssues(context.Context, string) ([]model.NativeIssue, error)
 }
 type nativeProjectResolver interface {
 	ResolveLocalProject(context.Context, string) (string, error)

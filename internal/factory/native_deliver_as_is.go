@@ -9,23 +9,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
-type nativeDeliverAsIsStore interface {
-	ListFactoryAttempts(context.Context, string) ([]model.FactoryAttempt, error)
-	IsFactoryAttemptRecoveryPaused(context.Context, string) (bool, error)
-	DeliverFactoryEpicAsIs(context.Context, string, []string, time.Time) ([]string, error)
-	FactoryAttemptDecisionPending(context.Context, string) (bool, error)
-	LatestFactoryCheckpoint(context.Context, string, string) (string, error)
-}
-
 // DeliverAsIs is the user's way out of a review loop: running validators and
 // work paused for a human decision are stopped, unfinished implementation
 // work is left out, and verification of the current graph is waived, so
 // Factory delivers what is done. Other running work must finish first.
 func (s *NativeService) DeliverAsIs(ctx context.Context, epicID string) ([]string, error) {
-	store, ok := s.store.(nativeDeliverAsIsStore)
-	if !ok {
-		return nil, ErrFactoryUnavailable
-	}
+	store := s.store
 	// Hold every decision path's lock (in their nesting order), so no gate on
 	// this Epic changes between the checks below and the cancellation.
 	s.authorityMu.Lock()

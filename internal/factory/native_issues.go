@@ -55,7 +55,8 @@ func (s *NativeService) ListIssues(ctx context.Context, epicID string) ([]Issue,
 		err = ErrWorkEpicNotFound
 	}
 	result := nativeIssues(issues)
-	if store, ok := s.store.(nativePlanningStore); ok && err == nil {
+	if err == nil {
+		store := s.store
 		attempts, attemptErr := store.ListFactoryAttempts(ctx, epicID)
 		if attemptErr != nil {
 			return nil, attemptErr
@@ -74,7 +75,8 @@ func (s *NativeService) ListIssues(ctx context.Context, epicID string) ([]Issue,
 					result[i].PRURL = attempt.Result.PRURL
 				}
 			}
-			if recovery, ok := s.store.(nativeRecoveryStore); ok {
+			{
+				recovery := s.store
 				gate, found, recoveryErr := recovery.GetFactoryRecoveryGate(ctx, result[i].ID)
 				if recoveryErr != nil {
 					return nil, recoveryErr
@@ -83,7 +85,8 @@ func (s *NativeService) ListIssues(ctx context.Context, epicID string) ([]Issue,
 					result[i].Recovery = &gate
 				}
 			}
-			if authority, ok := s.store.(nativeAuthorityStore); ok {
+			{
+				authority := s.store
 				gate, found, authorityErr := authority.GetFactoryAuthorityEscalationGate(ctx, result[i].ID)
 				if authorityErr != nil {
 					return nil, authorityErr
@@ -98,10 +101,7 @@ func (s *NativeService) ListIssues(ctx context.Context, epicID string) ([]Issue,
 }
 
 func (s *NativeService) ListIssueComments(ctx context.Context, epicID, issueID string) ([]IssueComment, error) {
-	store, ok := s.store.(nativeCommentStore)
-	if !ok {
-		return nil, ErrFactoryUnavailable
-	}
+	store := s.store
 	comments, err := store.ListFactoryIssueComments(ctx, epicID, issueID)
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		err = fmt.Errorf("%w: issue not found", ErrInvalidRequest)
@@ -110,10 +110,7 @@ func (s *NativeService) ListIssueComments(ctx context.Context, epicID, issueID s
 }
 
 func (s *NativeService) AddIssueComment(ctx context.Context, epicID, issueID, actor, body string) (IssueComment, error) {
-	store, ok := s.store.(nativeCommentStore)
-	if !ok {
-		return IssueComment{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	comment, err := store.AppendFactoryIssueComment(ctx, epicID, issueID, actor, body, time.Now())
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		err = fmt.Errorf("%w: issue and comment body are required", ErrInvalidRequest)
@@ -122,12 +119,7 @@ func (s *NativeService) AddIssueComment(ctx context.Context, epicID, issueID, ac
 }
 
 func (s *NativeService) ListRemovedIssues(ctx context.Context, epicID string) ([]Issue, error) {
-	store, ok := s.store.(interface {
-		ListRemovedFactoryIssues(context.Context, string) ([]model.NativeIssue, error)
-	})
-	if !ok {
-		return nil, ErrFactoryUnavailable
-	}
+	store := s.store
 	issues, err := store.ListRemovedFactoryIssues(ctx, epicID)
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		err = ErrWorkEpicNotFound

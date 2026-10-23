@@ -25,10 +25,7 @@ func (s *NativeService) validateAttemptCheckpoint(ctx context.Context, attempt m
 	if err == nil || err.Error() != "factory handoff does not include the accepted checkpoint" || p.CheckpointSHA == "" {
 		return head, err
 	}
-	store, ok := s.store.(nativeAttemptCompletionStore)
-	if !ok {
-		return "", ErrFactoryUnavailable
-	}
+	store := s.store
 	// The empty checkpoint skips only ancestry. Clean worktree, branch and
 	// pushed-upstream validation still run, on every completion validation.
 	head, checkErr := s.implementation.ValidateImplementationCheckpoint(ctx, p.Repository, p.Branch, "")
@@ -48,11 +45,8 @@ func (s *NativeService) validateAttemptCheckpoint(ctx context.Context, attempt m
 // RequestCheckpointRecovery asks a human to accept exactly the current clean,
 // pushed HEAD for this attempt. It never changes policy or accepts the rewrite.
 func (s *NativeService) RequestCheckpointRecovery(ctx context.Context, attemptID, token string) (RecoveryGate, error) {
-	store, ok := s.store.(interface {
-		ValidateFactoryAttemptToken(context.Context, string, string) (bool, error)
-		GetFactoryAttempt(context.Context, string) (model.FactoryAttempt, bool, error)
-	})
-	if !ok || s.implementation == nil {
+	store := s.store
+	if s.implementation == nil {
 		return RecoveryGate{}, ErrFactoryUnavailable
 	}
 	valid, err := store.ValidateFactoryAttemptToken(ctx, attemptID, token)

@@ -16,6 +16,7 @@ import (
 )
 
 type nativeStoreFake struct {
+	nativeStore
 	epic             model.NativeEpic
 	issues           []model.NativeIssue
 	poured           bool
@@ -294,55 +295,9 @@ func TestNativeServiceMutatesGraphThroughTypedStore(t *testing.T) {
 	if err := NewNativeWithExecution(store, nil, nil, nil).MutateGraph(context.Background(), mutation); err != nil || !reflect.DeepEqual(store.mutation, mutation) {
 		t.Fatalf("MutateGraph = %#v, %v", store.mutation, err)
 	}
-	if err := NewNativeWithExecution(struct{ nativeStore }{&nativeStoreFake{}}, nil, nil, nil).MutateGraph(context.Background(), mutation); !errors.Is(err, ErrFactoryUnavailable) {
+	store.mutationErr = ErrFactoryUnavailable
+	if err := NewNativeWithExecution(store, nil, nil, nil).MutateGraph(context.Background(), mutation); !errors.Is(err, ErrFactoryUnavailable) {
 		t.Fatalf("MutateGraph unavailable error = %v", err)
-	}
-}
-
-func TestNativeServiceRejectsUnavailableOptionalStores(t *testing.T) {
-	ctx := context.Background()
-	svc := NewNativeWithExecution(struct{ nativeStore }{&nativeStoreFake{}}, nil, nil, nil)
-
-	tests := []struct {
-		name string
-		call func() error
-	}{
-		{"capacity policy", func() error { _, err := svc.GetCapacityPolicy(ctx); return err }},
-		{"set capacity policy", func() error {
-			_, err := svc.SetCapacityPolicy(ctx, CapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1})
-			return err
-		}},
-		{"close Mol", func() error { return svc.CloseMol(ctx, "epic", "mol") }},
-		{"close Epic", func() error { return svc.CloseEpic(ctx, "epic", false) }},
-		{"defer Issue", func() error { return svc.DeferIssue(ctx, "epic", "issue", "later") }},
-		{"resume Issue", func() error { return svc.ResumeIssue(ctx, "epic", "issue") }},
-		{"retry Issue", func() error { return svc.RetryIssueAt(ctx, "epic", "issue", time.Now().Add(time.Minute)) }},
-		{"materialize", func() error { _, err := svc.Materialize(ctx, "epic", "issue"); return err }},
-		{"create recovery gate", func() error {
-			_, err := svc.CreateRecoveryGate(ctx, "attempt", "token", "question", "reason", nil)
-			return err
-		}},
-		{"resolve recovery gate", func() error { _, err := svc.ResolveRecoveryGate(ctx, "gate", "resume", ""); return err }},
-		{"escalate permission", func() error {
-			_, _, err := svc.EscalatePermission(ctx, "session", "request", "bash", "git status")
-			return err
-		}},
-		{"resolve authority gate", func() error { _, err := svc.ResolveAuthorityEscalationGate(ctx, "gate", "approve"); return err }},
-		{"queue", func() error { _, err := svc.Queue(ctx); return err }},
-		{"complete attempt", func() error { return svc.CompleteAttempt(ctx, "attempt", "token", "done", "https://example.com/pr/1") }},
-		{"claim plan", func() error { _, err := svc.ClaimPlan(ctx, "epic", "plan"); return err }},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.call(); !errors.Is(err, ErrFactoryUnavailable) {
-				t.Fatalf("error = %v, want ErrFactoryUnavailable", err)
-			}
-		})
-	}
-
-	implementation, err := svc.IsImplementationSession(ctx, "session")
-	if err != nil || implementation {
-		t.Fatalf("IsImplementationSession = %v, %v", implementation, err)
 	}
 }
 
@@ -844,10 +799,10 @@ func TestNativeServiceCreatesReadsAndPoursTracer(t *testing.T) {
 	}
 }
 
-func TestNativeQueueRequiresAttemptStore(t *testing.T) {
-	_, err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).Queue(context.Background())
-	if !errors.Is(err, ErrFactoryUnavailable) {
-		t.Fatalf("Queue error = %v", err)
+func TestNativeQueueEmptyStore(t *testing.T) {
+	queue, err := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).Queue(context.Background())
+	if err != nil || len(queue) != 0 {
+		t.Fatalf("Queue = %v, %v", queue, err)
 	}
 }
 

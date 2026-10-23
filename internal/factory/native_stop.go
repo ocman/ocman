@@ -10,14 +10,7 @@ import (
 // StopEpic is the confirmed user's unconditional exit. It does not validate,
 // reset, deliver, or remove a workspace. Failed stops leave the Epic paused.
 func (s *NativeService) StopEpic(ctx context.Context, epicID string) error {
-	store, ok := s.store.(interface {
-		nativeClosureStore
-		nativeEpicLifecycleStore
-		ListFactoryAttempts(context.Context, string) ([]model.FactoryAttempt, error)
-	})
-	if !ok {
-		return ErrFactoryUnavailable
-	}
+	store := s.store
 	s.authorityMu.Lock()
 	defer s.authorityMu.Unlock()
 	s.projectRequestMu.Lock()

@@ -144,7 +144,7 @@ func TestDeliverAsIsRetiresGatesAndChecksTheWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	next(1)
-	attempts, err := svc.store.(nativeDeliverAsIsStore).ListFactoryAttempts(t.Context(), epicID)
+	attempts, err := svc.store.ListFactoryAttempts(t.Context(), epicID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestDeliverAsIsWaitsForAPendingDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 	next(1)
-	attempts, err := svc.store.(nativeDeliverAsIsStore).ListFactoryAttempts(t.Context(), epicID)
+	attempts, err := svc.store.ListFactoryAttempts(t.Context(), epicID)
 	if err != nil {
 		t.Fatal(err)
 	}

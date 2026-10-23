@@ -105,10 +105,7 @@ type Materialization struct {
 }
 
 func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRequest) (ProposalRevision, error) {
-	store, ok := s.store.(nativePlanningStore)
-	if !ok {
-		return ProposalRevision{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	proposal, err := s.proposalForRequest(ctx, req)
 	if err != nil {
 		return ProposalRevision{}, err
@@ -139,8 +136,8 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 }
 
 func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalRequest) (ProposalRevision, error) {
-	store, ok := s.store.(nativeProjectRequestStore)
-	if !ok || req.AttemptID == "" || req.AttemptToken == "" {
+	store := s.store
+	if req.AttemptID == "" || req.AttemptToken == "" {
 		return ProposalRevision{}, ErrActionNotPermitted
 	}
 	proposal, err := s.proposalForRequest(ctx, req)
@@ -187,13 +184,15 @@ func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitPropos
 		}
 	}
 	if req.AttemptID != "" {
-		if attempts, ok := s.store.(nativeAuthorityStore); ok {
+		{
+			attempts := s.store
 			attempt, found, attemptErr := attempts.GetFactoryAttempt(ctx, req.AttemptID)
 			if attemptErr != nil {
 				return model.NativeProposalRevision{}, attemptErr
 			}
 			if found {
-				if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
+				{
+					projectRequests := s.store
 					if _, scopeExpansion, gateErr := projectRequests.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
 						return model.NativeProposalRevision{}, gateErr
 					} else if scopeExpansion {
@@ -249,10 +248,7 @@ func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitPropos
 }
 
 func (s *NativeService) GetProposal(ctx context.Context, epicID string, revision int) (ProposalRevision, error) {
-	store, ok := s.store.(nativePlanningStore)
-	if !ok {
-		return ProposalRevision{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	proposal, err := store.GetFactoryProposalRevision(ctx, epicID, revision)
 	if err != nil {
 		return ProposalRevision{}, err
@@ -261,10 +257,7 @@ func (s *NativeService) GetProposal(ctx context.Context, epicID string, revision
 }
 
 func (s *NativeService) ListProposals(ctx context.Context, epicID string) ([]ProposalRevision, error) {
-	store, ok := s.store.(nativePlanningStore)
-	if !ok {
-		return nil, ErrFactoryUnavailable
-	}
+	store := s.store
 	if _, err := s.GetWorkEpic(ctx, epicID); err != nil {
 		return nil, err
 	}

@@ -12,10 +12,7 @@ import (
 )
 
 func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action string, req PlanGateDecisionRequest) (PlanGate, error) {
-	store, ok := s.store.(nativePlanningStore)
-	if !ok {
-		return PlanGate{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	if req.ExpectedRevision < 1 || strings.TrimSpace(req.ExpectedHash) == "" {
 		return PlanGate{}, fmt.Errorf("%w: plan revision and hash are required", ErrInvalidRequest)
 	}
@@ -56,10 +53,7 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 func (s *NativeService) Materialize(ctx context.Context, epicID, issueID string) (Materialization, error) {
 	s.materializationMu.Lock()
 	defer s.materializationMu.Unlock()
-	store, ok := s.store.(nativePlanningStore)
-	if !ok {
-		return Materialization{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	materialization, err := store.MaterializeFactoryPlan(ctx, epicID, issueID, "factory-materialize/v1", time.Now())
 	if errors.Is(err, model.ErrNativeEpicNotFound) {
 		err = ErrWorkEpicNotFound
@@ -79,8 +73,8 @@ func nativePlanGate(gate model.NativePlanGate) PlanGate {
 func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (ClaimedPlan, error) {
 	s.planningMu.Lock()
 	defer s.planningMu.Unlock()
-	store, ok := s.store.(nativePlanningStore)
-	if !ok || s.planning == nil {
+	store := s.store
+	if s.planning == nil {
 		return ClaimedPlan{}, ErrFactoryUnavailable
 	}
 	epic, attempt, err := store.ClaimFactoryPlan(ctx, epicID, issueID, planningProfile, time.Now())
@@ -97,12 +91,10 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)", PermissionRules: attempt.FrozenPolicy.PermissionRules}
 	request.Model = attempt.FrozenPolicy.Model
 	request.Platform = attempt.FrozenPolicy.Platform
-	if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
-		_, request.ScopeExpansion, err = projectRequests.GetFactoryProjectRequestGateForPlan(ctx, issueID)
-		if err != nil {
-			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "scope_lookup_failed", Message: "Scope expansion could not be loaded"}, time.Now())
-			return ClaimedPlan{}, err
-		}
+	_, request.ScopeExpansion, err = store.GetFactoryProjectRequestGateForPlan(ctx, issueID)
+	if err != nil {
+		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "scope_lookup_failed", Message: "Scope expansion could not be loaded"}, time.Now())
+		return ClaimedPlan{}, err
 	}
 	stage := "planning"
 	if request.ScopeExpansion {

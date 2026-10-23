@@ -14,8 +14,8 @@ import (
 func (s *NativeService) Start(ctx context.Context) error {
 	s.planningMu.Lock()
 	defer s.planningMu.Unlock()
-	store, ok := s.store.(nativePlanningStore)
-	if !ok || s.planning == nil {
+	store := s.store
+	if s.planning == nil {
 		return nil
 	}
 	ctx = context.WithoutCancel(ctx)
@@ -28,7 +28,8 @@ func (s *NativeService) Start(ctx context.Context) error {
 			continue
 		}
 		if attempt.FrozenPolicy.Profile == "factory-implement/v1" {
-			if recovery, ok := s.store.(nativeRecoveryStore); ok {
+			{
+				recovery := s.store
 				paused, err := recovery.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
 				if err != nil {
 					return err
@@ -90,7 +91,8 @@ func (s *NativeService) Start(ctx context.Context) error {
 			}
 		}
 		failureType := "interrupted_startup"
-		if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
+		{
+			projectRequests := s.store
 			if _, scopeExpansion, gateErr := projectRequests.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
 				return gateErr
 			} else if scopeExpansion {
@@ -152,11 +154,7 @@ func (*NativeService) Status(context.Context) Status {
 }
 
 func (s *NativeService) GetCapacityPolicy(ctx context.Context) (CapacityPolicy, error) {
-	store, ok := s.store.(capacityPolicyStore)
-	if !ok {
-		return CapacityPolicy{}, ErrFactoryUnavailable
-	}
-	return store.GetFactoryCapacityPolicy(ctx)
+	return s.store.GetFactoryCapacityPolicy(ctx)
 }
 
 func (s *NativeService) SetCapacityPolicy(ctx context.Context, policy CapacityPolicy) (CapacityPolicy, error) {
@@ -178,10 +176,7 @@ func (s *NativeService) SetCapacityPolicy(ctx context.Context, policy CapacityPo
 		canonical[root] = capacity
 	}
 	policy.ProjectOverrides = canonical
-	store, ok := s.store.(capacityPolicyStore)
-	if !ok {
-		return CapacityPolicy{}, ErrFactoryUnavailable
-	}
+	store := s.store
 	if err := store.SetFactoryCapacityPolicy(ctx, policy); err != nil {
 		return CapacityPolicy{}, err
 	}

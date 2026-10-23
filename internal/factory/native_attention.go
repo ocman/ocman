@@ -11,12 +11,7 @@ import (
 // reconcileAttention runs after dispatch so automatically runnable work never
 // produces an action notification. Inbox identities survive refresh/restart.
 func (s *NativeService) reconcileAttention(ctx context.Context) {
-	inbox, ok := s.store.(interface {
-		SyncFactoryActionInbox(context.Context, string, string, map[string]string) ([]string, error)
-	})
-	if !ok {
-		return
-	}
+	inbox := s.store
 	s.attentionMu.Lock()
 	defer s.attentionMu.Unlock()
 	// ponytail: scan all epics after dispatch; scope to changed epics if history makes this costly.
