@@ -16,6 +16,7 @@ import (
 // ListenConfig configures the remote-side gRPC server.
 type ListenConfig struct {
 	Context context.Context // owner lifetime; nil for standalone listeners
+	Ready   func() bool     // nil outside application composition
 	// Addr is the bind address (e.g. "0.0.0.0:8230").
 	Addr string
 	// Token is the remote-access token inbound hubs must present.
@@ -75,9 +76,10 @@ func NewListener(cfg ListenConfig, srv *Server) (*Listener, error) {
 	}
 	lifetime, cancel := context.WithCancel(parent)
 	lu, ls := lifetimeInterceptors(lifetime)
+	ru, rs := readinessInterceptors(cfg.Ready)
 	opts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(lu, unary),
-		grpc.ChainStreamInterceptor(ls, stream),
+		grpc.ChainUnaryInterceptor(lu, unary, ru),
+		grpc.ChainStreamInterceptor(ls, stream, rs),
 		grpc.WaitForHandlers(true),
 	}
 

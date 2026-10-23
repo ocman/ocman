@@ -11,7 +11,8 @@ Preserve legacy provider names in commands, packages, wire fields and databases.
 `Hello.PlatformID` and `BackendRuntime.PlatformID` identify the platform.
 Adding a platform means a new `platforms.Integration` (execution, live
 observation, `HistoryReader` ingestion and `SessionIdentityProbe`) composed by
-`owned.PrepareCore`. Integrations never serve browsing reads; the canonical
+  `owned.BuildCore`, with historical cutover in `owned.PrepareBuiltCore` before
+  session admission. Integrations never serve browsing reads; the canonical
 adapter serves those from statev2.
 See `spec/multi-agent-support/architecture.md`.
 

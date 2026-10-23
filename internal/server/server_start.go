@@ -11,9 +11,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/ocv2"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/startup"
 )
 
@@ -65,31 +62,13 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if s.remotes != nil {
 		s.remotes.SetWebhookInboxes(s.localWebhookInboxes())
 	}
-	for _, adapter := range s.registry.Platforms() {
-		if starter, ok := adapter.(platforms.SessionCacheStarter); ok {
-			starter.StartSessionCache(ctx, s.HasDemand)
-		}
-	}
 	// The auto-approve module seeds the judge delay before the other
 	// modules start and runs the headless watcher among their workers.
 	startup.Report(ctx, "Starting application modules", 0, 0)
-	if err := s.startModules(ctx, &workers); err != nil {
+	if err := s.startServingServices(ctx, &workers); err != nil {
 		return err
 	}
-	s.watchProviderPrompts(ctx, &workers)
-
-	workers.Go(func() { s.runAutoArchiveLoop(ctx) })
-	workers.Go(func() { s.runProjectsIndexLoop(ctx) })
-	if _, enabled := s.registry.Get(opencode.PlatformID); enabled {
-		if health, ok := s.router().Local().(interface{ RunOpenCodeHealthChecks(context.Context) }); ok {
-			workers.Go(func() { health.RunOpenCodeHealthChecks(ctx) })
-		}
-		workers.Go(func() { ocv2.WatchInstalledVersion(ctx) })
-		workers.Go(ensureOpenCodeMCPLayout)
-		if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
-			workers.Go(func() { sup.RunMachineSupervisor(ctx) })
-		}
-	}
+	defer s.stopSessionPreparation()
 
 	mux, err := s.routes()
 	if err != nil {
@@ -109,14 +88,15 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Server-Timing captures otelhttp's overhead too. otelhttp is a
 	// no-op when telemetry is disabled (its global TracerProvider is
 	// the SDK noop in that case).
-	httpServer := newHTTPServer(ln.Addr().String(), s.requests.track(s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux))))))
+	handler := s.withSessionReadiness(mux)
+	httpServer := newHTTPServer(ln.Addr().String(), s.requests.track(s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(handler))))))
 	httpServer.BaseContext = func(net.Listener) context.Context { return ctx }
 
 	// The MCP endpoint also gets its own loopback-only listener so local
 	// MCP clients work without a cookie, without exposing the tools
 	// through a reverse proxy on the main port.
 	stopMCP := s.startMCPListener()
-	closeModules, err := launchModules(ctx, s.modules())
+	closeModules, err := s.launchServingServices(ctx)
 	if err != nil {
 		stopMCP()
 		return err

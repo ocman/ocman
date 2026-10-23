@@ -19,6 +19,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
+// Tests drive scheduled cutover synchronously without launching a server.
+func prepareCanonicalSessionCore(ctx context.Context, core *state.DB, history *statev2.DB, registry *platforms.Registry, native []platforms.Integration, owner string) error {
+	work, err := composeCanonicalSessionCore(ctx, core, history, registry, native, owner)
+	if err != nil || work == nil {
+		return err
+	}
+	return work(ctx)
+}
+
 func TestCanonicalStartupCancellationIsGracefulOnlyForStoppedComposition(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

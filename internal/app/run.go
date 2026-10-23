@@ -287,7 +287,8 @@ func run() {
 				}
 			}
 		}
-		if err := prepareCanonicalSessionCore(ctx, stateDB, historyDB, registry, integrations, ident.InstanceID); err != nil {
+		preparation, err := composeCanonicalSessionCore(ctx, stateDB, historyDB, registry, integrations, ident.InstanceID)
+		if err != nil {
 			startupErr := canonicalStartupError(ctx, err)
 			cancel()
 			return startupErr
@@ -301,6 +302,7 @@ func run() {
 		// is only reachable from the Wails WebView proxy.  In headless mode
 		// it listens on *addr as before.
 		srv := server.New(database, stateDB, listener.Addr().String(), registry, auth).
+			WithSessionPreparation(preparation).
 			WithConversationHistory(historyDB, ident.InstanceID).
 			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
@@ -329,11 +331,10 @@ func run() {
 			// remote platform/host adapters as they connect. With zero saved
 			// remotes this is a no-op (NFR-6).
 			mgr := remote.NewManager(srv.Registry(), srv.HostRouter(), stateDB, string(opencodeplatform.PlatformID))
-			mgr.Start(ctx)
 			srv.SetRemoteManager(mgr)
 			// Stop after Start returns: the remotes module's inventory loop
 			// has been joined by then, and state.db closes after this.
-			defer mgr.Stop()
+			defer startPreparedRemoteManager(ctx, srv, mgr)()
 		}
 		defer cancel()
 		defer opencodeplatform.ResetCaches()

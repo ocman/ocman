@@ -27,6 +27,15 @@ type Progress struct {
 
 type progressKey struct{}
 
+type reporterKey struct{}
+
+// WithReporter redirects phase observations to background task progress once
+// historical preparation no longer belongs to blocking application startup.
+// report must not block or write to databases used by the caller.
+func WithReporter(ctx context.Context, report func(string, int, int)) context.Context {
+	return context.WithValue(ctx, reporterKey{}, report)
+}
+
 func New(ctx context.Context) (context.Context, *Progress) {
 	p := &Progress{started: time.Now(), status: Snapshot{State: "starting", Phase: "Opening databases"}}
 	return context.WithValue(ctx, progressKey{}, p), p
@@ -35,6 +44,10 @@ func New(ctx context.Context) (context.Context, *Progress) {
 // Report is a no-op outside startup. Counts describe this phase, not an
 // estimated overall percentage. Never pass paths, session IDs or raw errors.
 func Report(ctx context.Context, phase string, completed, total int) {
+	if report, ok := ctx.Value(reporterKey{}).(func(string, int, int)); ok {
+		report(phase, completed, total)
+		return
+	}
 	if p, ok := ctx.Value(progressKey{}).(*Progress); ok {
 		p.mu.Lock()
 		defer p.mu.Unlock()

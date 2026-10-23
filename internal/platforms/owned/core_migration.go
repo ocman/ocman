@@ -19,6 +19,19 @@ import (
 // registry enforcement only after all feature-specific migrations have finished.
 // It never connects to remotes or allocates identities on their behalf.
 func PrepareCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, native []platforms.Integration) ([]platforms.Platform, error) {
+	adapters, err := BuildCore(ctx, core, history, catalogue, owner, native)
+	if err != nil {
+		return nil, err
+	}
+	if err := PrepareBuiltCore(ctx, core, history, catalogue, owner, adapters); err != nil {
+		return nil, err
+	}
+	return adapters, nil
+}
+
+// BuildCore constructs canonical adapters without enumerating historical data.
+// Consumers must remain fenced until PrepareBuiltCore has completed.
+func BuildCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, native []platforms.Integration) ([]platforms.Platform, error) {
 	if core == nil || history == nil || catalogue == nil || owner == "" {
 		return nil, sessioncatalog.ErrInvalid
 	}
@@ -42,31 +55,54 @@ func PrepareCore(ctx context.Context, core *state.DB, history *statev2.DB, catal
 		}
 		adapters = append(adapters, a)
 	}
+	return adapters, nil
+}
+
+// PrepareBuiltCore performs replayable identity cutover with consumers stopped.
+// The adapters are constructed before serving; this never replaces live ones.
+func PrepareBuiltCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, adapters []platforms.Platform) error {
+	ready, err := history.SessionRekeyInventoryReady(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		if err := inventoryCore(ctx, core, history, catalogue, owner, adapters); err != nil {
+			return err
+		}
+	}
+	return migrateCore(ctx, core, history, catalogue, owner, adapters)
+}
+
+func inventoryCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, adapters []platforms.Platform) error {
 	// Freeze legacy routine/Factory provenance before core state is rekeyed.
 	startup.Report(ctx, "Inventorying session provenance", 0, 0)
 	legacy := NewLegacyCatalogue(catalogue, history, owner, core, func() []platforms.Platform { return adapters }, nil)
 	if err := legacy.Start(ctx); err != nil {
-		return nil, err
+		return err
 	}
 	routines, err := core.RoutineSessions(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	factory, err := core.FactorySessions(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, p := range adapters {
 		if p.(*Adapter).unavailable != nil {
 			continue
 		}
 		if err := p.(*Adapter).inventoryLegacy(ctx, routines, factory); err != nil {
-			return nil, err
+			return err
 		}
 	}
+	return nil
+}
+
+func migrateCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, adapters []platforms.Platform) error {
 	startup.Report(ctx, "Migrating retained conversation history", 0, 0)
 	if err := MigrateHistory(ctx, catalogue, history, owner); err != nil {
-		return nil, err
+		return err
 	}
 	for _, p := range adapters {
 		a := p.(*Adapter)
@@ -74,21 +110,21 @@ func PrepareCore(ctx context.Context, core *state.DB, history *statev2.DB, catal
 			continue
 		}
 		if err := catalogue.RetainSourceLegacyKeys(ctx, sessioncatalog.Source{OwnerID: owner, Platform: a.source.Platform, SourceKey: a.source.SourceKey}); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	references, err := NewReferences(core)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	scopes, err := core.SessionReferenceScopes(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, scope := range scopes {
 		startup.Report(ctx, "Restoring owner-local session references", 0, 0)
 		if err := references.QuarantineState(ctx, core, scope); err != nil {
-			return nil, err
+			return err
 		}
 		if scope == "" {
 			continue
@@ -97,10 +133,10 @@ func PrepareCore(ctx context.Context, core *state.DB, history *statev2.DB, catal
 			continue
 		}
 		if err := references.restoreLocalState(ctx, core, catalogue, owner, scope); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return adapters, ctx.Err()
+	return ctx.Err()
 }
 
 func (a *Adapter) inventoryLegacy(ctx context.Context, routines, factory map[state.Key]string) error {
@@ -131,8 +167,12 @@ func (a *Adapter) inventoryLegacy(ctx context.Context, routines, factory map[sta
 	if err := a.checkSource(ctx); err != nil {
 		return err
 	}
-	if _, err := a.store.Reconcile(ctx, sessioncatalog.Source{OwnerID: a.owner, Platform: a.source.Platform, SourceKey: a.source.SourceKey}, metadata); err != nil {
-		return err
+	for len(metadata) > 0 {
+		n := min(len(metadata), 500)
+		if _, err := a.store.Reconcile(ctx, sessioncatalog.Source{OwnerID: a.owner, Platform: a.source.Platform, SourceKey: a.source.SourceKey}, metadata[:n]); err != nil {
+			return err
+		}
+		metadata = metadata[n:]
 	}
 	return nil
 }

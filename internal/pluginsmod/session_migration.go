@@ -76,7 +76,7 @@ func (d *Store) MigrateSessionReferences(ctx context.Context, core *state.DB, re
 	if !changed {
 		return nil
 	}
-	if err := core.BackupSessionReferences(); err != nil {
+	if err := core.BackupSessionReferences(ctx); err != nil {
 		return err
 	}
 	tx, err := d.db.BeginTx(ctx, nil)

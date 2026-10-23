@@ -16,7 +16,7 @@ import (
 // unattributed legacy records without guessing a platform or machine.
 var ReferenceSchema = state.ModuleSchema{
 	Module: "platform-session-references",
-	Tables: []string{"platform_session_reference"},
+	Tables: []string{"platform_session_reference", "platform_session_preparation"},
 	Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 		_, err := tx.Exec(`CREATE TABLE platform_session_reference (
 			ref_id TEXT PRIMARY KEY, scope TEXT NOT NULL, native_id TEXT NOT NULL CHECK(native_id<>''),
@@ -24,7 +24,7 @@ var ReferenceSchema = state.ModuleSchema{
 			UNIQUE(scope,native_id));
 			CREATE INDEX platform_session_reference_pending ON platform_session_reference(scope,canonical_id,ref_id);`)
 		return err
-	}},
+	}, preparationSchema},
 }
 
 type ReferenceStore struct{ db *sql.DB }

@@ -34,7 +34,7 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 		UseInboxStore(stateDB).UsePlugins(srv.RemotePluginOperation).UseSessions(srv.SessionService()).
 		UseWebhookInboxes(webhook.LocalInboxes{Store: stateDB, Routines: srv.RoutineService()}).UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseEventProxy(srv.ProxyRemoteSessionEvents).
 		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred).UsePermissionPolicy(srv.SessionPermissionPolicy)
-	ln, err := remote.NewListener(remote.ListenConfig{Context: ctx, Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
+	ln, err := remote.NewListener(remote.ListenConfig{Context: ctx, Ready: srv.SessionsReady, Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
 	if err != nil {
 		log.WithError(err).Error("remote: failed to start gRPC server; continuing without it")
 		return false, "", false, func() {}
@@ -58,4 +58,18 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 	}
 	log.WithFields(log.Fields{"addr": ln.Addr(), "transport": transport}).Info("remote: gRPC server listening")
 	return true, ln.Addr(), ln.TLS(), func() { unhook(); stop() }
+}
+
+// Reconnect inventory can write catalogue/reference state. Do not start it while
+// the owner-local cutover still requires stopped session-state consumers.
+func startPreparedRemoteManager(ctx context.Context, srv *server.Server, mgr *remote.Manager) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	started := make(chan struct{})
+	go func() {
+		defer close(started)
+		if srv.AwaitSessionPreparation(ctx) {
+			mgr.Start(ctx)
+		}
+	}()
+	return func() { cancel(); <-started; mgr.Stop() }
 }

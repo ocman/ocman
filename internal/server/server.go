@@ -50,6 +50,7 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
+	sessionPreparation      *sessionPreparation
 	tasks                   lazy[*tasksvc.Manager]
 	historyIngest           *conversationingest.Module
 	historyAnalytics        *analytics.HistoryAnalytics

@@ -631,22 +631,30 @@ flowchart LR
     Gateway --> Progress[Read-only startup status<br/>application health diagnostics]
     Settings[Application health settings] -->|only while open and visible| Progress
     Composition[Database opening + migrations] -->|phases and counts| Progress
-    Composition -->|only after success| Application[Guarded application handler]
+    Composition -->|schemas and essential setup ready| Application[Guarded application handler]
     Gateway -->|atomic handoff on same listener| Application
+    Application -->|schedule historical cutover| Tasks[Background tasks]
+    Tasks -->|open session admission after commit| Sessions[Session APIs and workers]
 ```
 
-During startup normal API calls return 503 with a retry hint. Migrations still
-finish before any application routes, remote listener or workers can access
-state. Once application modules are initialized, the same listener dispatches
-to the normal guarded handler; its authentication and request tracking are
-unchanged. The progress endpoint stays available for reloads and contains no
+During database opening and schema migrations normal API calls return 503 with
+a retry hint. Once essential setup completes, the same listener dispatches to
+the guarded application handler. Authentication, embedded routes, capabilities,
+system statistics and authenticated background-task status are available even
+while historical identity preparation is unfinished. Session-dependent APIs
+return `session_preparing` with a retry hint until cutover and module startup
+succeed. The progress endpoint stays available for reloads and contains no
 paths, session identifiers or raw errors. Shutdown joins the HTTP server and
 heartbeat before database teardown.
 
-`internal/platforms/owned` is the session identity integration boundary. Startup
-migrates core, history and plugin references before registering canonical adapters
-and starting servers or workers. Native session IDs remain inside integrations
-and compatibility adapters.
+`internal/platforms/owned` is the session identity integration boundary.
+`app.composeCanonicalSessionCore` builds canonical adapters without historical
+inventories. Incomplete cutovers run as a `session.preparation` background task.
+The initial cutover conservatively fences all session consumers, including
+headless watchers, ingestion, plugin delivery, remote-manager inventory and
+authenticated unary/streaming remote calls. Dedicated MCP and hooks use the
+same fence; module launchers may use MCP after preparation and module startup.
+Native session IDs remain inside integrations and compatibility adapters.
 
 ```mermaid
 flowchart LR
@@ -659,10 +667,10 @@ flowchart LR
     Owned -->|canonical history envelopes| Ingest[conversationingest]
     Ingest --> History[(state_conv.db)]
     History -->|persisted session reads and indexed accounting| Owned
-    Migration[app.prepareCanonicalSessionCore<br/>owned.PrepareCore] -->|backup and atomic rekey| History
+    Migration[session.preparation task<br/>owned.PrepareBuiltCore] -->|backup and bounded atomic batches| History
     Migration -->|backup and atomic rekey| State[(state.db)]
     Recovery[sessionrefrecovery] -->|authenticated owner proofs| Owned
-    Recovery -->|drained reload, then pre-serving migration| Migration
+    Recovery -->|invalidate receipt and request drained reload| Migration
 ```
 
 - Execution rejects native caller IDs, unknown Ocman IDs, purged
@@ -717,9 +725,16 @@ flowchart LR
   dropping durable records. Both stores take restorable backups before mutation.
   Routine run snapshots remain immutable outside rekeying: the transaction saves,
   suspends and restores the original snapshot trigger, including on rollback.
-  `owned.PrepareCore` freezes legacy routine/Factory provenance, inventories active
-  and retained local sources, and returns wrapped adapters only after migrating
-  history and core references. Source-less local state resolves only against a
+  `owned.PrepareBuiltCore` freezes legacy routine/Factory provenance and inventories
+  active and retained local sources before migrating history and core references.
+  Discovery/parent reconciliation uses batches of at most 500 metadata rows.
+  History mappings are staged durably before any pagination keys change; an
+  inventory-complete receipt lets an interrupted cutover resume application
+  without interpreting a partly migrated child's canonical parent as native.
+  Each rekey transaction applies at most 500 staged identities, and the plan is
+  removed only after commit. Core/feature batches share one pre-mutation backup;
+  history application takes one backup per attempt, not one per batch.
+  Source-less local state resolves only against a
   unique catalogue binding across all physical sources. Active/inactive source
   collisions remain quarantined. Replaying legacy indexing validates canonical
   history keys instead of adopting them as new native execution bindings.
@@ -743,7 +758,7 @@ flowchart LR
   The canonical-only `sessionrefrecovery` module polls connected canonical owners
   for unresolved proofs. It persists bindings without rekeying live application
   tables, then requests the existing admission drain and authoritative idle check.
-  A graceful backend reload applies those bindings through pre-serving migration
+  A graceful backend reload applies those bindings through the fenced background task
   and rebuilds caches and workers. Held quarantine queues remain durable and do
   not block the reload. Saving unchanged platform settings cannot cancel it.
 - `sessionsvc` supports adapter-owned creation/configuration followed by a
@@ -797,28 +812,37 @@ flowchart LR
   Live-only conversation heads need no transcript fingerprint. Settled heads
   still require the immutable physical source. Claude config fingerprints resolve
   existing physical ancestors so first-run directory creation does not change them.
-- The plugin store has a separate backed-up, atomic pre-serving migration for
+- The plugin store has a separate backed-up, atomic migration under the preparation fence for
   `session.v1` mappings, run results and completion outbox references. Fingerprints,
   unsettled admission fences, delivery sequence numbers and operation keys stay
   unchanged. Source-less run receipts use only the same plugin's unambiguous
   durable mappings, otherwise they remain quarantined. Platform-owned compatibility
   projection preserves legacy run-result/completion wire correlations and notice
   deduplication prefixes without using them for execution or public links.
-  Quarantined completions pause without consuming their retry budget. Pre-serving
+  Quarantined completions pause without consuming their retry budget. Fenced
   migration also applies owner proofs saved before a reconnect-triggered reload.
   Restored remote wire/deduplication correlations come from the same scoped,
   immutable proof store. No native execution binding is mirrored onto the hub,
   and ambiguous correlations fail rather than changing receipt identity.
   An unavailable identity projection pauses completion delivery without spending
   attempts. Only calls that reach the plugin broker consume the retry budget.
-- The app coordinator runs core and plugin migrations before installing
-  wrapped adapters, preserving fallback judge capabilities and finally enabling
-  canonical registry enforcement. Unavailable selected sources remain fail-closed
+- The app coordinator constructs wrapped adapters and canonical routing before
+  historical work, preserving fallback judge capabilities. Session consumers
+  start only after core and plugin migrations succeed. Unavailable selected sources remain fail-closed
   adapters and their legacy references stay quarantined. Runtime-owned reload
   idleness remains authoritative even when browsing is unavailable. Disposable-home
   startup tests cover creation, streaming, prompts and supervisor recovery.
-  Existing databases are backed up and migrated on the next startup or drained
-  reload, never by a live rekey of active core services.
+  Existing databases are backed up and migrated after startup or a drained
+  reload, never by a live rekey of active core services. Failed tasks remain
+  visible and keep session admission closed; restarting retries unfinished work.
+  Completion receipts in both stores bind the owner, physical-source selection
+  and history database together. Ordinary restarts check indexed receipts rather
+  than repeating retained-conversation scans, native inventories or parent walks.
+  Indexed pending-local-reference checks still detect bindings discovered after
+  cutover, so a completed receipt cannot suppress later recovery.
+  New reference proofs invalidate the core receipt atomically. Newly imported
+  legacy history invalidates the history receipt. Replacing/restoring either
+  store cannot reuse the other store's mismatched receipt.
 
 ### Background task status
 
@@ -832,6 +856,7 @@ payloads or applying list limits. Both counter and page pause polling while hidd
 ```mermaid
 flowchart LR
     Import[History ingestion] -->|typed work + progress| Manager[tasksvc<br/>4 running, 128 admitted]
+    Prepare[Historical identity preparation] -->|typed work + phase counters| Manager
     Manager -->|module-owned schema| State[(state.db<br/>task records)]
     Browser[Sidebar task counter<br/>and Background tasks page] -->|authenticated GET| API[taskmod]
     API --> State
@@ -850,7 +875,9 @@ flowchart LR
 - Active keys deduplicate work within a task kind. At most 1,000 terminal records
   are retained. Reads return at most 200 records, active work first. Remote task
   queries fail closed; hub aggregation is not implemented.
-- Only history ingestion currently uses the manager. Other candidates are
+- History ingestion and initial session identity preparation use the manager.
+  Producers own durable resume checkpoints; task records do not replay closures.
+  Other candidates are
   project inventory refreshes, database cleanup and
   restore, artifact/share publishing, auto-archive and attachment cleanup, and
   plugin discovery or reconciliation. These can report rows, checkouts, named

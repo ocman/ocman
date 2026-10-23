@@ -146,7 +146,7 @@ func (d *DB) rekeySessionReferences(ctx context.Context, platform string, identi
 		return nil
 	}
 	startup.Report(ctx, "Backing up session references", 0, 0)
-	if err := snapshotBeforeMigration(d.db, "canonical-session-keys"); err != nil {
+	if err := d.backupSessionReferences(ctx, "canonical-session-keys"); err != nil {
 		return err
 	}
 	tx, err := d.db.BeginTx(ctx, nil)

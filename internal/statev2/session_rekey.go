@@ -32,6 +32,10 @@ var sessionKeyColumns = []struct{ table, column, prefix string }{
 // backup is created beside the store before the first affected row is changed.
 // Repeating a completed mapping is a no-op, without another backup.
 func (d *DB) RekeySessions(ctx context.Context, instance string, identities map[string]string) error {
+	return d.rekeySessions(ctx, instance, identities, true)
+}
+
+func (d *DB) rekeySessions(ctx context.Context, instance string, identities map[string]string, backup bool) error {
 	if instance == "" {
 		return fmt.Errorf("statev2: empty rekey instance")
 	}
@@ -59,8 +63,10 @@ func (d *DB) RekeySessions(ctx context.Context, instance string, identities map[
 	if err != nil || !changed {
 		return err
 	}
-	if err := d.backupSessionKeys(ctx); err != nil {
-		return err
+	if backup {
+		if err := d.backupSessionKeys(ctx); err != nil {
+			return err
+		}
 	}
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {

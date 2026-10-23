@@ -19,7 +19,13 @@ func MigrateHistory(ctx context.Context, catalogue *sessioncatalog.Store, histor
 	if catalogue == nil || history == nil || owner == "" {
 		return sessioncatalog.ErrInvalid
 	}
-	plans := map[string]map[string]string{}
+	ready, err := history.SessionRekeyInventoryReady(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if ready {
+		return applyHistoryPlan(ctx, history, owner)
+	}
 	processed := 0
 	var cursor statev2.Key
 	for {
@@ -30,6 +36,7 @@ func MigrateHistory(ctx context.Context, catalogue *sessioncatalog.Store, histor
 		if len(page) == 0 {
 			break
 		}
+		plans := map[string]map[string]string{}
 		for _, metadata := range page {
 			mapping := plans[metadata.Instance.ID]
 			if mapping == nil {
@@ -40,21 +47,30 @@ func MigrateHistory(ctx context.Context, catalogue *sessioncatalog.Store, histor
 				return fmt.Errorf("adopting retained session identity: %w", err)
 			}
 		}
+		for instance, mapping := range plans {
+			if err := history.PlanSessionRekeys(ctx, instance, mapping); err != nil {
+				return err
+			}
+		}
 		cursor = page[len(page)-1].Session.Key
 		processed += len(page)
 		startup.Report(ctx, "Inventorying retained conversations", processed, 0)
 	}
 	// No history keys change during the inventory above. Rekeying mid-page
 	// would invalidate its lexical cursor and could skip retained sessions.
-	completed := 0
-	for instance, mapping := range plans {
-		startup.Report(ctx, "Rekeying conversation sources", completed, len(plans))
-		if err := history.RekeySessions(ctx, instance, mapping); err != nil {
-			return err
-		}
-		completed++
+	if err := history.SetSessionRekeyInventoryReady(ctx, owner, true); err != nil {
+		return err
 	}
-	return nil
+	return applyHistoryPlan(ctx, history, owner)
+}
+
+func applyHistoryPlan(ctx context.Context, history *statev2.DB, owner string) error {
+	if err := history.ApplyPlannedSessionRekeys(ctx, owner, func(completed int) {
+		startup.Report(ctx, "Rekeying conversation sources", completed, 0)
+	}); err != nil {
+		return err
+	}
+	return history.SetSessionRekeyInventoryReady(ctx, owner, false)
 }
 
 func migrateMetadata(ctx context.Context, catalogue *sessioncatalog.Store, metadata statev2.SessionMetadata, mapping map[string]string) error {

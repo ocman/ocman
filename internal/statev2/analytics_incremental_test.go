@@ -48,7 +48,8 @@ func TestAnalyticsSubagentUpgradePreservesFacts(t *testing.T) {
 	b := fixture("first")
 	b.Session.Subagent = true
 	commit(t, d, b)
-	if _, err := d.db.Exec(fmt.Sprintf(`ALTER TABLE analytics_session DROP COLUMN is_subagent; DROP INDEX analytics_fact_hour; PRAGMA user_version=%d`, len(migrations)-1)); err != nil {
+	removePreparationSchema(t, d)
+	if _, err := d.db.Exec(`ALTER TABLE analytics_session DROP COLUMN is_subagent; DROP INDEX analytics_fact_hour; PRAGMA user_version=13`); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()

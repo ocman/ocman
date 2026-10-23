@@ -8,6 +8,7 @@ import (
 
 func removeSidebarSchema(t *testing.T, d *DB) {
 	t.Helper()
+	removePreparationSchema(t, d)
 	if _, err := d.db.Exec(`DROP TRIGGER sidebar_source_deleted; DROP TABLE session_sidebar; DROP TABLE sidebar_branch; DROP TABLE sidebar_observation; DROP TABLE sidebar_connection; DROP INDEX message_unread_range`); err != nil {
 		t.Fatal(err)
 	}

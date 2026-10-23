@@ -12,6 +12,9 @@ module under `internal/module`, not a collection of `*Server` methods.
 
 - `Starter` runs before serving. `Launcher` runs after the MCP listener starts,
   for work whose agents call MCP. `Runner` workers are joined at shutdown.
+  During initial canonical cutover the server defers session consumers behind
+  `sessionPreparation` while HTTP/auth/task status serve. Do not start a session
+  worker outside `startSessionServices` or bypass the HTTP/MCP/gRPC fences.
 - `Closer` runs in reverse order after HTTP/MCP listeners stop and before workers
   are joined. `ToolProvider` supplies MCP tools; `Subscriber` uses the typed bus.
   `Finalizer` releases startup resources after workers join, even when startup

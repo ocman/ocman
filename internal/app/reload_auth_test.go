@@ -117,7 +117,7 @@ func TestGeneratedOpenCodePasswordSurvivesReload(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	ready := false
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(base + "/api/auth/me")
+		resp, err := client.Get(base + "/api/settings/platforms")
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {

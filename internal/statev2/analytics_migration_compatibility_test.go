@@ -7,7 +7,17 @@ import (
 
 func removeIncrementalAnalyticsSchema(t *testing.T, d *DB) {
 	t.Helper()
+	removePreparationSchema(t, d)
 	if _, err := d.db.Exec(`ALTER TABLE analytics_session DROP COLUMN is_subagent; DROP INDEX analytics_fact_hour`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func removePreparationSchema(t *testing.T, d *DB) {
+	t.Helper()
+	if _, err := d.db.Exec(`DROP TRIGGER IF EXISTS session_preparation_legacy_insert;
+		DROP TABLE IF EXISTS session_identity_plan; DROP TABLE IF EXISTS session_identity_inventory;
+		DROP TABLE IF EXISTS session_preparation`); err != nil {
 		t.Fatal(err)
 	}
 }
