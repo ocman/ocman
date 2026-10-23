@@ -6,7 +6,6 @@ package artifacts
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -35,7 +34,10 @@ type Deps struct {
 	Broadcast func(event string, data []byte)
 }
 
-type Module struct{ Deps }
+type Module struct {
+	Deps
+	mux *http.ServeMux
+}
 
 var (
 	_ module.Module       = (*Module)(nil)
@@ -43,14 +45,17 @@ var (
 	_ http.Handler        = (*Module)(nil)
 )
 
-func NewModule(deps Deps) *Module { return &Module{deps} }
+func NewModule(deps Deps) *Module {
+	m := &Module{Deps: deps, mux: http.NewServeMux()}
+	m.routes(func(pattern string, h http.HandlerFunc) { m.mux.HandleFunc(pattern, h) })
+	return m
+}
 
 func (m *Module) Name() string { return "artifacts" }
 
-// Routes mounts one dispatcher; ServeHTTP guards each subroute itself.
+// Routes registers each subroute with its method and access guard.
 func (m *Module) Routes(r module.Router) {
-	r.Handle("/api/artifacts", m.ServeHTTP)
-	r.Handle("/api/artifacts/", m.ServeHTTP)
+	m.routes(r.Handle)
 }
 
 func (m *Module) Tools() []mcpserver.ServerTool {
@@ -61,44 +66,41 @@ func (m *Module) Tools() []mcpserver.ServerTool {
 // /api/artifacts/{id}, /api/artifacts/{id}/files/{ordinal} and the
 // /api/artifacts/{id}/share(s) relay routes.
 func (m *Module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.mux.ServeHTTP(w, r)
+}
+
+func (m *Module) routes(handle func(string, http.HandlerFunc)) {
 	auth, local := m.Guards.Auth, m.Guards.Localhost
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/artifacts"), "/"), "/")
-	switch {
-	case parts[0] == "" && len(parts) == 1:
-		get(auth(m.handleList))(w, r)
-	case parts[0] == "stats" && len(parts) == 1:
-		get(auth(m.handleStats))(w, r)
-	case len(parts) == 1 && r.Method == http.MethodDelete:
-		local(func(w http.ResponseWriter, r *http.Request) { m.handleDelete(w, r, parts[0]) })(w, r)
-	case len(parts) == 1:
-		get(auth(func(w http.ResponseWriter, r *http.Request) { m.handleGet(w, r, parts[0]) }))(w, r)
+	handle("GET /api/artifacts", auth(m.handleList))
+	handle("GET /api/artifacts/{$}", auth(m.handleList))
+	// Reserve "stats" for all methods so DELETE cannot treat it as an ID.
+	stats := http.NewServeMux()
+	stats.HandleFunc("GET /api/artifacts/stats", auth(m.handleStats))
+	handle("/api/artifacts/stats", stats.ServeHTTP)
+	item := http.NewServeMux()
+	item.HandleFunc("DELETE /api/artifacts/{id}", local(func(w http.ResponseWriter, r *http.Request) {
+		m.handleDelete(w, r, r.PathValue("id"))
+	}))
+	item.HandleFunc("GET /api/artifacts/{id}", auth(func(w http.ResponseWriter, r *http.Request) {
+		m.handleGet(w, r, r.PathValue("id"))
+	}))
+	handle("/api/artifacts/{id}", item.ServeHTTP)
 	// Share routes hand out decryption keys, so they are localhost-only.
-	case len(parts) == 2 && parts[1] == "share":
-		post(local(func(w http.ResponseWriter, r *http.Request) { m.handleShareCreate(w, r, parts[0]) }))(w, r)
-	case len(parts) == 2 && parts[1] == "shares":
-		get(local(func(w http.ResponseWriter, r *http.Request) { m.handleShareList(w, r, parts[0]) }))(w, r)
-	case len(parts) == 3 && parts[1] == "share" && r.Method == http.MethodDelete:
-		local(func(w http.ResponseWriter, r *http.Request) { m.handleShareRevoke(w, r, parts[0], parts[2]) })(w, r)
-	case len(parts) == 3 && parts[1] == "files":
-		get(m.FileAuth(func(w http.ResponseWriter, r *http.Request) { m.serveFile(w, r, parts[0], parts[2], false) }))(w, r)
+	handle("POST /api/artifacts/{id}/share", local(func(w http.ResponseWriter, r *http.Request) {
+		m.handleShareCreate(w, r, r.PathValue("id"))
+	}))
+	handle("GET /api/artifacts/{id}/shares", local(func(w http.ResponseWriter, r *http.Request) {
+		m.handleShareList(w, r, r.PathValue("id"))
+	}))
+	handle("DELETE /api/artifacts/{id}/share/{share}", local(func(w http.ResponseWriter, r *http.Request) {
+		m.handleShareRevoke(w, r, r.PathValue("id"), r.PathValue("share"))
+	}))
+	handle("GET /api/artifacts/{id}/files/{ordinal}", m.FileAuth(func(w http.ResponseWriter, r *http.Request) {
+		m.serveFile(w, r, r.PathValue("id"), r.PathValue("ordinal"), false)
+	}))
 	// A path segment rather than a query flag, so a preview that navigates
 	// itself with "?page=…" (as exported design boards do) stays interactive.
-	case len(parts) == 4 && parts[1] == "files" && parts[3] == "interactive":
-		get(auth(func(w http.ResponseWriter, r *http.Request) { m.serveFile(w, r, parts[0], parts[2], true) }))(w, r)
-	default:
-		http.NotFound(w, r)
-	}
+	handle("GET /api/artifacts/{id}/files/{ordinal}/interactive", auth(func(w http.ResponseWriter, r *http.Request) {
+		m.serveFile(w, r, r.PathValue("id"), r.PathValue("ordinal"), true)
+	}))
 }
-
-func method(want string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != want {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
-}
-
-func get(h http.HandlerFunc) http.HandlerFunc  { return method(http.MethodGet, h) }
-func post(h http.HandlerFunc) http.HandlerFunc { return method(http.MethodPost, h) }

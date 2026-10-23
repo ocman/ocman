@@ -9,7 +9,6 @@ ocman-desktop
 # Coverage output (CI ratchet, spec/ci-coverage-ratchet). Baselines
 # live on the gh-pages branch, never on main.
 coverage/
-fuzz-failures/
 frontend/coverage/
 build/appicon.png
 build/bin/

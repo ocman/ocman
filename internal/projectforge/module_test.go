@@ -39,6 +39,10 @@ func TestRoutesGuards(t *testing.T) {
 	m := NewModule(Deps{Guards: module.Guards{Auth: guard("auth"), Localhost: guard("local")}})
 	r := &recordingRouter{kinds: map[string]string{}, handlers: map[string]http.HandlerFunc{}}
 	m.Routes(r)
+	mux := http.NewServeMux()
+	for pattern, handler := range r.handlers {
+		mux.HandleFunc(pattern, handler)
+	}
 	for pattern, want := range map[string]struct{ method, guard, kind string }{
 		"/api/project/upstreams":         {http.MethodGet, "auth", "handle"},
 		"/api/project/prs":               {http.MethodGet, "local", "handle"},
@@ -49,13 +53,16 @@ func TestRoutesGuards(t *testing.T) {
 		"/api/project/handle":            {http.MethodPost, "local", "handle"},
 		"/api/settings/prompt-templates": {http.MethodGet, "auth", "setting"},
 	} {
-		h := r.handlers[pattern]
-		if h == nil || r.kinds[pattern] != want.kind {
-			t.Fatalf("%s: registered as %q", pattern, r.kinds[pattern])
+		registered := pattern
+		if want.kind == "handle" {
+			registered = want.method + " " + pattern
+		}
+		if r.handlers[registered] == nil || r.kinds[registered] != want.kind {
+			t.Fatalf("%s: registered as %q", registered, r.kinds[registered])
 		}
 		guarded = nil
 		rr := httptest.NewRecorder()
-		h(rr, httptest.NewRequest(want.method, pattern, nil))
+		mux.ServeHTTP(rr, httptest.NewRequest(want.method, pattern, nil))
 		if rr.Code != http.StatusTeapot || len(guarded) != 1 || guarded[0] != want.guard {
 			t.Fatalf("%s: status = %d, guards = %v, want %s", pattern, rr.Code, guarded, want.guard)
 		}
@@ -64,7 +71,7 @@ func TestRoutesGuards(t *testing.T) {
 		}
 		guarded = nil
 		rr = httptest.NewRecorder()
-		h(rr, httptest.NewRequest(http.MethodPut, pattern, nil))
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, pattern, nil))
 		if rr.Code != http.StatusMethodNotAllowed || len(guarded) != 0 {
 			t.Fatalf("%s PUT: status = %d, guards = %v", pattern, rr.Code, guarded)
 		}

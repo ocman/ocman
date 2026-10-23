@@ -72,31 +72,20 @@ func (m *Module) Name() string { return "previews" }
 // method-pattern routes do, so a wrong method is 405 for every caller.
 func (m *Module) Routes(r module.Router) {
 	auth := m.Guards.Auth
-	get := func(h http.HandlerFunc) http.HandlerFunc { return only(http.MethodGet, auth(m.withStore(h))) }
-	post := func(h http.HandlerFunc) http.HandlerFunc { return only(http.MethodPost, auth(m.withStore(h))) }
-	r.Handle("/api/integrations/status", only(http.MethodGet, auth(m.handleIntegrationsStatus)))
+	guard := func(h http.HandlerFunc) http.HandlerFunc { return auth(m.withStore(h)) }
+	r.Handle("GET /api/integrations/status", auth(m.handleIntegrationsStatus))
 	// Machine credentials for private previews (auth.go).
-	r.Handle("/api/previews/providers", get(m.handlePreviewProviders))
-	r.Handle("/api/previews/connect", post(m.handlePreviewConnect))
-	r.Handle("/api/previews/disconnect", post(m.handlePreviewDisconnect))
-	r.Handle("/api/previews/resolve", post(m.handlePreviewResolve))
-	r.Handle("/api/previews/image", get(m.handlePreviewImage))
-	r.Handle("/api/previews/token", post(m.handlePreviewToken))
-	r.Handle("/api/previews/apps", get(m.handlePreviewApps))
-	r.Handle("/api/previews/apps/save", post(m.handleSavePreviewApp))
-	r.Handle("/api/previews/apps/remove", post(m.handleRemovePreviewApp))
-	r.Handle(previewCallback, get(m.handlePreviewCallback))
+	r.Handle("GET /api/previews/providers", guard(m.handlePreviewProviders))
+	r.Handle("POST /api/previews/connect", guard(m.handlePreviewConnect))
+	r.Handle("POST /api/previews/disconnect", guard(m.handlePreviewDisconnect))
+	r.Handle("POST /api/previews/resolve", guard(m.handlePreviewResolve))
+	r.Handle("GET /api/previews/image", guard(m.handlePreviewImage))
+	r.Handle("POST /api/previews/token", guard(m.handlePreviewToken))
+	r.Handle("GET /api/previews/apps", guard(m.handlePreviewApps))
+	r.Handle("POST /api/previews/apps/save", guard(m.handleSavePreviewApp))
+	r.Handle("POST /api/previews/apps/remove", guard(m.handleRemovePreviewApp))
+	r.Handle("GET "+previewCallback, guard(m.handlePreviewCallback))
 	r.Setting("/api/settings/link-preview-rules", auth(m.withStore(m.handleLinkPreviewRules)))
-}
-
-func only(method string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != method {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
 }
 
 func (m *Module) withStore(h http.HandlerFunc) http.HandlerFunc {

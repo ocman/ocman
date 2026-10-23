@@ -74,28 +74,27 @@ func (m *Module) Name() string { return "analytics" }
 // Routes keeps each route's method check ahead of its guard, as before the
 // extraction.
 func (m *Module) Routes(r module.Router) {
-	get := func(h http.HandlerFunc) http.HandlerFunc { return method(http.MethodGet, m.deps.Guards.Auth(h)) }
-	data := func(h http.HandlerFunc) http.HandlerFunc { return get(m.analyticsRoute(h)) }
-	post := func(h http.HandlerFunc) http.HandlerFunc { return method(http.MethodPost, m.deps.Guards.Auth(h)) }
-	r.Handle("/api/stats", data(m.handleStats))
-	r.Handle("/api/analytics/overview", data(m.handleAnalyticsOverview))
-	r.Handle("/api/analytics/history-health", get(m.handleHistoryHealth))
-	r.Handle("/api/analytics/session-concurrency", data(m.handleSessionConcurrency))
-	r.Handle("/api/analytics/database-sizes", get(m.handleDatabaseSizes))
-	r.Handle("/api/analytics/ui-usage", get(m.handleUIUsageDays))
-	r.Handle("/api/analytics/agent-run-hours", data(m.handleAgentRunHours))
-	r.Handle("/api/ui-usage", post(m.handleUIUsage))
-	r.Handle("/api/subscription-usage", method(http.MethodGet, m.deps.Guards.Localhost(m.handleSubscriptionUsage)))
-	r.Handle("/api/provider-usage", method(http.MethodGet, m.deps.Guards.Localhost(m.handleSubscriptionUsage)))
-	r.Handle("/api/metrics", data(m.handleMetrics))
-	r.Handle("/api/metrics/performance", data(m.handleMetricsPerformance))
-	r.Handle("/api/metric-logs", data(m.handleMetricLogs))
-	r.Handle("/api/permission-stats", get(m.handlePermissionStats))
-	r.Handle("/api/activity", data(m.handleActivity))
-	r.Handle("/api/models", data(m.handleModels))
-	r.Handle("/api/hourly", data(m.handleHourly))
-	r.Handle("/api/hourly-tokens", data(m.handleHourlyTokens))
-	r.Handle("/api/cost/calc", post(m.handleCalcCost))
+	auth, local := m.deps.Guards.Auth, m.deps.Guards.Localhost
+	data := func(h http.HandlerFunc) http.HandlerFunc { return auth(m.analyticsRoute(h)) }
+	r.Handle("GET /api/stats", data(m.handleStats))
+	r.Handle("GET /api/analytics/overview", data(m.handleAnalyticsOverview))
+	r.Handle("GET /api/analytics/history-health", auth(m.handleHistoryHealth))
+	r.Handle("GET /api/analytics/session-concurrency", data(m.handleSessionConcurrency))
+	r.Handle("GET /api/analytics/database-sizes", auth(m.handleDatabaseSizes))
+	r.Handle("GET /api/analytics/ui-usage", auth(m.handleUIUsageDays))
+	r.Handle("GET /api/analytics/agent-run-hours", data(m.handleAgentRunHours))
+	r.Handle("POST /api/ui-usage", auth(m.handleUIUsage))
+	r.Handle("GET /api/subscription-usage", local(m.handleSubscriptionUsage))
+	r.Handle("GET /api/provider-usage", local(m.handleSubscriptionUsage))
+	r.Handle("GET /api/metrics", data(m.handleMetrics))
+	r.Handle("GET /api/metrics/performance", data(m.handleMetricsPerformance))
+	r.Handle("GET /api/metric-logs", data(m.handleMetricLogs))
+	r.Handle("GET /api/permission-stats", auth(m.handlePermissionStats))
+	r.Handle("GET /api/activity", data(m.handleActivity))
+	r.Handle("GET /api/models", data(m.handleModels))
+	r.Handle("GET /api/hourly", data(m.handleHourly))
+	r.Handle("GET /api/hourly-tokens", data(m.handleHourlyTokens))
+	r.Handle("POST /api/cost/calc", auth(m.handleCalcCost))
 }
 
 // Run samples database sizes, scans LLM turns (only with telemetry on) and
@@ -112,16 +111,6 @@ func (m *Module) Run(ctx context.Context) {
 	workers.Go(func() { m.runDatabaseSizeLoop(ctx) })
 	workers.Wait()
 	<-ctx.Done() // the gauges stay registered for the server's lifetime
-}
-
-func method(want string, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != want {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
 }
 
 // requireAnalytics rejects a missing scoped reader. Routes normally reject it
