@@ -6,6 +6,15 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
+const platformRestrictions = [{
+  selector: 'BinaryExpression[operator=/^(===|!==)$/]:matches([left.property.name="platform"], [left.expression.property.name="platform"])[right.type="Literal"][right.raw=/^[\x27\x22]/]',
+  message: 'Gate behavior through capabilities, not platform identity.',
+}]
+const settingsRestrictions = [{
+  selector: 'JSXAttribute[name.name="className"][value.type="Literal"][value.value=/^settings-row(\\s|$)/]',
+  message: 'Use SettingRow, SettingToggle or SettingNumber so settings retain save feedback.',
+}]
+
 // The shared control components: the only places that render raw
 // <button>/<input>/<select>/<textarea>.
 const sharedControlFiles = [
@@ -82,6 +91,16 @@ export default defineConfig([
     'src/wailsjs/**', // Wails-generated bindings/runtime.
   ]),
   {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['**/*.{test,spec}.{ts,tsx}'],
+    rules: { 'no-restricted-syntax': ['error', ...platformRestrictions] },
+  },
+  {
+    files: ['src/**/*.tsx'],
+    ignores: ['**/*.{test,spec}.tsx', 'src/components/SettingRow.tsx'],
+    rules: { 'no-restricted-syntax': ['error', ...platformRestrictions, ...settingsRestrictions] },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
@@ -126,6 +145,8 @@ export default defineConfig([
     rules: {
       'no-restricted-syntax': [
         'error',
+        ...platformRestrictions,
+        ...settingsRestrictions,
         {
           selector: "JSXOpeningElement[name.name=/^(button|input|select|textarea)$/]",
           message:

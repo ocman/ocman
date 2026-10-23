@@ -21,7 +21,7 @@ instances over long-lived authenticated gRPC and re-emits events as SSE.
   Cloned state.db files are a common source of duplicates.
 - Machine-aware creation uses `/api/sessions/resolve-targets` and the composer
   selector; the default is local. Keep the frontend host-agnostic.
-  `scripts/check-host-helpers.sh` enforces handler boundaries.
+  golangci-lint's `forbidigo` rule enforces handler boundaries.
 
 `internal/remotesmod` owns auth-gated remote CRUD/reconnect and local remote-access
 settings. Status never includes the token; revealing this instance's own token

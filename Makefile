@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -411,7 +411,7 @@ coverage-check: ## Compare coverage/*.json against $(BASELINE_DIR)
 	./scripts/coverage-ratchet.sh "$(BASELINE_DIR)" $(SUITE)
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers lint-settings-rows lint-css-tokens lint-fuzz-scripts
+lint: lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts
 
 lint-backend:
 	go vet ./...
@@ -419,32 +419,6 @@ lint-backend:
 
 lint-frontend:
 	cd frontend && pnpm exec tsc -b && pnpm lint
-
-# Guard against reintroducing `session.platform === 'foo'` branching,
-# which would undermine the multi-platform architecture.
-# Suppress individual lines with a trailing `// ocman:allow-platform-branch`
-# pragma — expect to justify it in review.
-lint-platform-branching:
-	./scripts/check-platform-branching.sh
-
-# Guard against HTTP handlers calling host-local helpers (git/tmux/term)
-# directly instead of routing through the hostsvc.Host seam, which would
-# silently break for remote projects (architecture.md AD-16/R-A).
-# Suppress justified exceptions with a trailing `// ocman:allow-host-helper`.
-#
-# The self-test runs first: the guard once rotted into a no-op because
-# its patterns named renamed identifiers, so it must prove it still
-# catches a planted bypass before its verdict is worth anything.
-lint-host-helpers:
-	./scripts/check_host_helpers_test.sh
-	./scripts/check-host-helpers.sh
-
-# Guard against hand-rolled `settings-row` markup that skips the
-# <SettingRow>/<SettingToggle>/<SettingNumber> components, which would
-# drop the save-status indicator (spinner/checkmark) for a setting.
-# Suppress justified exceptions with `{/* ocman:allow-raw-setting */}`.
-lint-settings-rows:
-	./scripts/check-settings-rows.sh
 
 # Guard against var(--x) naming a custom property defined nowhere, which
 # silently falls back to inherited styles (off-theme UI).

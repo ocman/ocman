@@ -36,7 +36,7 @@ make lint
 ```
 
 `make lint` runs Go vet, golangci-lint, TypeScript, ESLint and the repository
-guards for platform branching, host helpers, settings rows and CSS tokens, plus
+checks for platform branching, host helpers, settings rows and CSS tokens, plus
 the fuzz-script self-test. Install golangci-lint; CI enforces more than vet.
 See `.golangci.yml` and `spec/ci-coverage-ratchet/` for the configuration.
 

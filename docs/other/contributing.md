@@ -137,6 +137,6 @@ ships with tests.
 
 The frontend must not branch on `session.platform === 'opencode'` (or similar string comparisons).
 UI capability gating goes through `/api/capabilities` and `useCapabilities()` instead.
-`scripts/check-platform-branching.sh` enforces this, and `make lint` runs it. If you hit a false
-positive, the pragma `// ocman:allow-platform-branch` suppresses the check on the next line. Use
+ESLint's `no-restricted-syntax` rule enforces this, and `make lint` runs it. If you hit a false
+positive, use a justified `// eslint-disable-next-line no-restricted-syntax` comment. Use
 it sparingly, for generic helpers that genuinely need the platform identity.

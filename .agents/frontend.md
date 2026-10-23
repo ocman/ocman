@@ -7,8 +7,8 @@ draft, first-delivery, queue or status behavior.
 ## Platform and owner independence
 
 Do not branch on `session.platform === '...'`. Use `/api/capabilities` and
-`useCapabilities()`. `scripts/check-platform-branching.sh` enforces this.
-Use `// ocman:allow-platform-branch` only for false positives in generic helpers.
+`useCapabilities()`. ESLint's `no-restricted-syntax` rule enforces this.
+Use a justified `eslint-disable-next-line no-restricted-syntax` only for false positives.
 Keep machine differences behind host badges, capabilities and owner-routed APIs.
 
 ## Reuse the UI
